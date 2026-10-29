@@ -24,7 +24,7 @@ services:
     volumes:
       - ./tailscale-state:/var/lib/tailscale
       - ./deploy/tailscale-serve.json:/config/serve.json:ro
-    networks: [internal]
+    networks: [egress, internal]                    # egress: outbound to Tailscale only (nothing published)
     restart: unless-stopped
 
   caddy:
@@ -56,5 +56,6 @@ services:
     restart: unless-stopped
 
 networks:
+  egress: {}                                      # ordinary bridge: tailscaled reaches the control plane
   internal:
     internal: true                                  # no gateway: xerscope cannot reach the internet

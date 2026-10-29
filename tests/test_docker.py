@@ -29,6 +29,7 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     compose = (ROOT / "compose.funnel.yaml").read_text()
     assert not re.search(r"^\s+ports:", compose, re.M) and "network_mode: host" not in compose
     assert 'TS_USERSPACE: "true"' in compose and "internal: true" in compose
+    assert "networks: [egress, internal]" in compose  # tailscaled needs a route out; the app has none
     assert "network_mode: service:tailscale" in compose  # Caddy shares the Tailscale namespace
     assert "--advertise-routes" not in compose and "exit-node" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()

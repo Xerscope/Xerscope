@@ -3,9 +3,10 @@
 #   docker run --rm caddy:2.10.0 caddy hash-password --plaintext 'your password'
 {
     auto_https off
+    default_bind 127.0.0.1
 }
 
-:8080 {
+http://127.0.0.1:8080 {
     basic_auth {
         quentin $2a$14$REPLACE-WITH-THE-HASH
     }

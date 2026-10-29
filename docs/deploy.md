@@ -138,7 +138,7 @@ change the tag, Build again. `sha-<short>` tags exist for every `main` build too
 - [ ] Package private; repo private; token = `read:packages` only, rotated at expiry.
 - [ ] Tailscale key: tagged, non-ephemeral, single-use; delete it from the admin console once the node is up.
 - [ ] `compose.yaml` on the NAS holds the key and the bcrypt hash: the `docker` share must not be readable by other NAS users.
-- [ ] No `ports:` anywhere, `internal: true` network: xerscope cannot reach the internet, the NAS LAN cannot reach xerscope.
+- [ ] No `ports:` anywhere. Two networks: `egress` (plain bridge, tailscale only, outbound) and `internal` (no gateway: xerscope cannot reach the internet, the NAS LAN cannot reach xerscope).
 - [ ] Basic auth is one shared password → change it when the viewer changes; move to Tailscale Serve + a Tailscale login (no Funnel) the day the viewer can install Tailscale, or to Cloudflare Access.
 - [ ] Caddy logs IP + path to stdout (Container Manager → container → Log): review them from time to time.
 
