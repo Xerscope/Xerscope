@@ -96,7 +96,9 @@ def write_caddyfile() -> None:
         # arrive with Host: <node>.<tailnet>.ts.net (Caddy then answers nothing, status 0).
         "{\n    auto_https off\n    default_bind 127.0.0.1\n}\n\n:8080 {\n"
         f"    basic_auth {{\n        {user} {password_hash()}\n    }}\n"
-        "    reverse_proxy 127.0.0.1:8501\n    log {\n        output stdout\n        format console\n    }\n}\n"
+        "    reverse_proxy 127.0.0.1:8501\n    log {\n        output stdout\n"
+        # the Referer carries the full URL, i.e. XERSCOPE_PATH: keep it out of the logs
+        "        format filter {\n            wrap console\n            request>headers>Referer delete\n        }\n    }\n}\n"
     )
 
 

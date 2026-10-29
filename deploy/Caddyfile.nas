@@ -13,6 +13,9 @@
     reverse_proxy xerscope:8501
     log {
         output stdout
-        format console
+        format filter {
+            wrap console
+            request>headers>Referer delete   # the Referer holds the full URL, i.e. the secret prefix
+        }
     }
 }
