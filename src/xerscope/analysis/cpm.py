@@ -568,12 +568,21 @@ class _Run:
             elif status[s] == "TK_Complete":
                 if late and self.retain:
                     # Retained Logic: a finished successor passes back the late date its own
-                    # successors give it (MPXJ, as P6 per its issue #972: a lead to it is dropped)
-                    # (an FS lag is dropped, an FF lag kept, SS / SF keep theirs unless this
-                    # side started: MPXJ's case table)
+                    # successors give it, less this link's lag: in full for FS / FF (it runs
+                    # from a finish still to come: corpus H1-08 A1020, 40 h kept), the part
+                    # not yet expired since the actual start for SS / SF (H6-07 A1030), a lead
+                    # from started work not at all; between two finished activities only the
+                    # carried date passes (H1-08 A1050). MPXJ's case table (FS lag dropped)
+                    # differs: P6 settled it, +121 corpus values.
                     lc = self.lcarry[s]
-                    keep = typ == "FF" or (typ != "FS" and status[c] == "TK_NotStart")
-                    bound = self.shift(self.lag_axis(c, s), lc, -lag) if keep else lc
+                    if status[c] == "TK_Complete":
+                        bound = lc
+                    else:
+                        lx = self.lag_axis(c, s)
+                        use = self.unexpired(c, lx, lag) if typ in ("SS", "SF") else lag
+                        if typ in ("SS", "SF") and lag < 0 and status[c] == "TK_Active":
+                            use = 0.0
+                        bound = self.shift(lx, lc, -use)
                     (l_f if typ in ("FS", "FF") else l_s).append(bound)
                 continue
             else:

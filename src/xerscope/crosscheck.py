@@ -196,6 +196,9 @@ P6_SETTLED = {
     "sf_from_started": "SF from a started predecessor into unstarted work: MPXJ binds nothing past the data "
     "date; P6 applies the link from the predecessor's remaining early start (corpus H1-08 A1240, +85 values "
     "on H1-H7 when applied)",
+    "lag_to_finished_successor": "lag on a link into a finished successor under Retained Logic: MPXJ drops an FS lag "
+    "in the backward pass; P6 passes the full FS / FF lag back, the unexpired SS / SF lag, and nothing between "
+    "two finished activities (corpus, +121 values)",
     "expected_finish_edge": "an expected finish before the early start or on work with an FF / SF predecessor: "
     "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win (corpus, "
     "300 activities with an expected finish)",
@@ -210,6 +213,9 @@ def settled_patterns(snap) -> set[str]:
     out = set()
     if ((r["type"] == "SF") & (p == "TK_Active") & (s == "TK_NotStart")).any():
         out.add("sf_from_started")
+    retained = snap.options.get("progressed", "retained_logic") == "retained_logic"
+    if retained and ((s == "TK_Complete") & (p != "TK_Complete") & (r["lag_hr"] != 0)).any():
+        out.add("lag_to_finished_successor")
     if (snap.options.get("sched") or {}).get("sched_use_expect_end_flag", "Y") != "N" and "expect_end_date" in t:
         exp = t["expect_end_date"]
         has = exp.notna() & (t["task_type"] == "TT_Task") & (t["status_code"] != "TK_Complete")

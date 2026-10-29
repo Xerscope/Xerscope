@@ -160,6 +160,9 @@ PINNED = {
     "R5 expected finish earlier than the Mandatory Finish is the late finish": [
         ("H22", "H22-06", "A1120", "late_finish")
     ],
+    "R9a FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
+    "R9a SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
+    "R9a lag between two finished activities does not pass back": [("H1", "H1-08", "A1050", "late_finish")],
 }
 
 
