@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: ghcr.io/quentingouttaya/xerscope:latest
+    image: ghcr.io/xerscope/xerscope:latest
     environment:
       XERSCOPE_DATA: /data
     volumes:

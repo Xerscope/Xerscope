@@ -121,12 +121,12 @@ and Caddy, driven by a small supervisor (`deploy/remote/supervisor.py`). Build a
 from any machine with Docker, then create one container in the NAS UI:
 
 ```bash
-docker build -f Dockerfile.remote -t mish1ma/xerscope-remote:latest . && docker push mish1ma/xerscope-remote:latest
+docker build -f Dockerfile.remote -t ghcr.io/xerscope/xerscope-remote:latest . && docker push ghcr.io/xerscope/xerscope-remote:latest
 ```
 
 | In the Container Manager form | Value |
 |---|---|
-| Image | `mish1ma/xerscope-remote:latest` |
+| Image | `ghcr.io/xerscope/xerscope-remote:latest` |
 | Environment | `TS_AUTHKEY` (tagged key), `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH` (`caddy hash-password`) or `XERSCOPE_PASSWORD` |
 | Volumes | `/volume1/plannings` → `/data` read-only; a folder or named volume → `/var/lib/tailscale` |
 | Ports | none |
@@ -139,12 +139,13 @@ pins those properties, and the stack was run end to end outside Docker (401 with
 credentials, 200 with, loopback listeners only, clean shutdown).
 
 **With Container Manager Projects (compose)** instead: `.github/workflows/image.yml`
-publishes `ghcr.io/quentingouttaya/xerscope:latest` on every push to `main`, so the NAS
+publishes `ghcr.io/xerscope/xerscope:latest` on every push to `main`, so the NAS
 only pulls. In File Station, create `docker/xerscope/` holding `deploy/compose.nas.yaml`,
 `deploy/tailscale-serve.json` and `deploy/Caddyfile.nas` renamed to `Caddyfile` with your
 hash written in (make it on any machine with Docker); then Container Manager > Project >
 Create from that folder. Put the exports in a shared folder (`/volume1/plannings` in the
-file) and upload new weeks through Drive or SMB.
+file) and upload new weeks through Drive or SMB. Step by step, registry login and checks:
+[docs/deploy.md](docs/deploy.md).
 
 Allow Funnel for the tag in the tailnet ACL (`"nodeAttrs": [{"target": ["tag:xerscope"],
 "attr": ["funnel"]}]`). A shared password is the weakest link of this setup: use a long
