@@ -15,9 +15,12 @@ Variables
     XERSCOPE_DATA            folder of XER exports, default /data (mount it read-only)
     XERSCOPE_BASELINE        optional baseline XER
     XERSCOPE_PATH            optional secret URL prefix, e.g. /k7Qx2mPz: Funnel then exposes only
-                             https://<host>.<tailnet>.ts.net/k7Qx2mPz and Tailscale answers 404 to
-                             everything else before it reaches the container (internet scanners
-                             probe "/", "/.env", "/wp-admin"...). Letters, digits, - and _ only.
+                             https://<host>.<tailnet>.ts.net/k7Qx2mPz/ (keep the trailing slash:
+                             the page's relative asset URLs must resolve under the prefix) and
+                             Tailscale answers 404 to everything else before it reaches the
+                             container (internet scanners probe "/", "/.env", "/wp-admin"...).
+                             Tailscale strips the prefix before proxying, so the app itself is
+                             unaware of it. Letters, digits, - and _ only.
 
 Volumes
     /data                    the exports
@@ -111,13 +114,17 @@ def tailscale_up(authkey: str, hostname: str) -> None:
     if up.returncode != 0:
         log(f"tailscale up failed: {(up.stderr or up.stdout).strip()}")
         sys.exit(1)
+    ts("serve", "reset", check=False)  # the serve config persists in the state dir: drop old handlers
     path = url_path()
-    if path:  # only this prefix is served; the path is forwarded unchanged to Caddy -> Streamlit
+    if path:  # only this prefix is published. Tailscale strips it before proxying, so Caddy and
+        # Streamlit still see "/": the prefix exists only in the public URL.
         ts("funnel", "--bg", "--set-path", path, "8080")
     else:
         ts("funnel", "--bg", "8080")  # https://<hostname>.<tailnet>.ts.net -> Caddy
     status = ts("funnel", "status", check=False)
     log(status.stdout.strip() or status.stderr.strip())
+    if path:
+        log(f"hand out the URL WITH its trailing slash: https://{hostname}.<tailnet>.ts.net{path}/")
 
 
 class Procs:
@@ -189,8 +196,7 @@ def run(procs: Procs, authkey: str, hostname: str) -> int:
     os.chdir(APP_PATH.parent)  # the packaged .streamlit/config.toml (theme, localhost) applies
     app = [PYTHON, "-m", "streamlit", "run", str(APP_PATH), "--server.address", "127.0.0.1", "--server.port", "8501",
            "--browser.gatherUsageStats", "false"]  # fmt: skip
-    if path := url_path():
-        app += ["--server.baseUrlPath", path]  # Streamlit serves under the same prefix Funnel forwards
+    # No --server.baseUrlPath: Funnel strips XERSCOPE_PATH before proxying, Streamlit lives at "/".
     procs.start("xerscope", app)
     procs.start("caddy", [CADDY, "run", "--config", str(CADDYFILE), "--adapter", "caddyfile"])
     return procs.watch()
