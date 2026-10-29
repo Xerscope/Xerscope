@@ -21,36 +21,36 @@ from conftest import P6_CORPUS_HINT, missing
 HELD_OUT = Path(__file__).parent / "reference" / "data" / "p6-heldout" / "validation" / "held-out"
 
 FLOORS = {
-    "H1": 0.99,
+    "H1": 1.00,
     "H2": 0.99,
     "H3": 0.99,
-    "H4": 0.99,
+    "H4": 1.00,
     "H5": 0.99,
     "H6": 0.99,
-    "H7": 0.99,
+    "H7": 1.00,
     "H8": 0.98,
     "H9": 0.99,
     "H10": 0.88,
     "H11": 0.99,
-    "H12": 0.97,
+    "H12": 0.98,
     "H13": 0.98,
-    "H14": 0.94,
+    "H14": 0.95,
     "H15": 0.97,
     "H16": 0.89,
-    "H17": 0.94,
+    "H17": 0.95,
     "H18": 0.97,
     "H19": 0.97,
-    "H20": 0.93,
-    "H21": 0.90,
-    "H22": 0.96,
-    "H23": 0.68,
-    "H24": 0.63,
-    "H25": 0.69,
-    "H26": 0.74,
-    "H27": 0.70,
-    "H28": 0.68,
-    "H29": 0.73,
-    "H30": 0.79,
+    "H20": 0.94,
+    "H21": 0.99,
+    "H22": 0.99,
+    "H23": 0.73,
+    "H24": 0.67,
+    "H25": 0.73,
+    "H26": 0.76,
+    "H27": 0.74,
+    "H28": 0.71,
+    "H29": 0.74,
+    "H30": 0.82,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -208,6 +208,21 @@ PINNED = {
     "resource dependent: the Mandatory Finish stays the late finish under an earlier expected finish": [
         ("H25", "H25-05", "A1150", "late_finish"),
         ("H25", "H25-05", "A1150", "early_finish"),
+    ],
+    "open ends critical: never past the Must Finish By": [
+        ("H25", "H25-05", "A1380", "late_finish"),
+        ("H25", "H25-05", "A1410", "late_finish"),
+    ],
+    "open ends critical: a successor that binds nothing still makes the activity not open-ended": [
+        ("H27", "H27-04", "A1390", "late_finish")
+    ],
+    "as late as possible moves the remaining work of started activities": [
+        ("H27", "H27-05", "A1170", "early_start"),
+        ("H27", "H27-05", "A1170", "early_finish"),
+    ],
+    "no free float where the expected finish applies": [
+        ("H1", "H1-08", "A1090", "free_float_hr"),
+        ("H5", "H5-01", "A1120", "free_float_hr"),
     ],
 }
 

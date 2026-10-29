@@ -81,24 +81,11 @@ def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
 
 
 @pytest.mark.reference
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param(
-            n,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="P6 20.12 flags level-of-effort activities on the longest path; xerscope leaves LOE out "
-                "(open: see docs/cpm.md, Validation)",
-            ),
-        )
-        if n == "xereditor/sample.xer"
-        else n
-        for n in REFERENCE
-    ],
-)
+@pytest.mark.parametrize("name", REFERENCE)
 def test_longest_path_matches_p6s_flag(name):
-    """Every open activity's computed longest-path membership = P6's driving_path_flag."""
+    """Every open activity's computed longest-path membership = P6's driving_path_flag,
+    level-of-effort activities included (P6 20.12 flags the ten LOEs of the xereditor
+    sample, each spanning two activities of the path)."""
     if not (REF / name).exists():
         missing("reference", REFERENCE_HINT)
     s = load_snapshot(REF / name)

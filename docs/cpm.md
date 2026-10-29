@@ -35,10 +35,10 @@ level-of-effort and resource-dependent work, under every scheduling option.
 
 | Scope | Values | Identical to P6 |
 |---|---|---|
-| H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.6 % |
-| task-dependent work, all 30 sets | 41,868 | 89.1 % |
-| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 77.2 % |
-| all | 54,726 | 86.3 % |
+| H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.9 % |
+| task-dependent work, all 30 sets | 41,868 | 90.5 % |
+| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 79.3 % |
+| all | 54,726 | 87.9 % |
 
 `FLOORS` in the test holds each set's share and fails on any drop; `PINNED` names the
 corpus activity each rule of the engine was taken from, so a regression on one rule is
@@ -53,8 +53,11 @@ suspended work resumes on its resume date; a constraint of the wrong kind on a m
 is ignored; LOE late dates follow their links' late dates; under Progress Override an SS
 from a started predecessor is measured from the data date; resource-dependent work takes
 its bounds on the activity calendar and places each driving assignment from there (early
-and late), with the expected finish measured on the resource calendar. What is still
-open is in `docs/backlog.md`.
+and late), with the expected finish measured on the resource calendar; "make open-ended
+activities critical" never puts a late finish past the Must Finish By and counts any
+successor row (finished, WBS summary) as a successor; As Late As Possible moves the
+remaining work of started activities; an activity whose expected finish applies has no
+free float. What is still open is in `docs/backlog.md`.
 
 **2. Real P6 exports** with stored dates, exact clock time required (`tests/test_cpm.py`):
 
@@ -65,7 +68,7 @@ open is in `docs/backlog.md`.
 | 20 kW PV plant | P6 25.12 | 25 | 150 | all |
 | XER editor sample | P6 20.12 | 52, 10 of them level of effort | 252 | all |
 | Hotel + Terminal assignments | P6 6.0 / 5.0 | 2,340 assignments | 9,360 | all |
-| Longest path flag | Hotel, Terminal | 4,283 open activities | 4,283 | all |
+| Longest path flag | Hotel, Terminal, PV, XER editor sample (LOE included) | 4,360 open activities | 4,360 | all |
 
 All four are unstarted; the corpus covers what they do not. No P6 Professional 24 file is
 public: 23.12 and 25.12 bracket it.
@@ -208,7 +211,7 @@ work before either.
 | SS | start ≤ succ late start − lag |
 | FF | finish ≤ succ late finish − lag |
 | SF | start ≤ succ late finish − lag |
-| no open successor | finish ≤ project "must finish by" if set, else the latest early finish; its own early finish if "make open-ended activities critical" |
+| no open successor | finish ≤ project "must finish by" if set, else the latest early finish; with "make open-ended activities critical", an activity without any successor row ends at its own early finish, never past the Must Finish By (H25-05 A1380); one whose successors bind nothing (finished, WBS summary) is not open-ended (H27-04 A1390) |
 | any activity | finish ≤ the same project end: an activity whose successors only bound its start (SS, SF) would otherwise float past the end (MPXJ caps the same way; no P6 file has the case) |
 | finished successor (Retained Logic) | its carried late date: FS drops the lag, FF keeps it, SS / SF keep it unless the predecessor started |
 | Start on / Start on or before | start ≤ date |
@@ -229,15 +232,21 @@ under an earlier expected finish (H25-05 A1150, observed).
   finished successor sits at its carried date). It can exceed total float when the late
   finish stops at the project end, as in MPXJ.
   For an open end, it runs to the project's early finish (not to "must finish by":
-  Terminal shows 8 h of total float but 0 free float).
+  Terminal shows 8 h of total float but 0 free float). An activity whose expected finish
+  applies has none, whatever its successors' dates (corpus, 265 of 265 such values:
+  H1-08 A1090, H5-01 A1120; observed, not explained).
 - **As late as possible:** in reverse order, an ALAP activity moves right to use its free
-  float, against its successors' already moved dates. Free float is measured after that,
-  as P6 shows it: Hotel's chained ALAP activities pin this.
+  float, against its successors' already moved dates; the remaining work of a started
+  ALAP activity moves the same way (H27-05 A1170). Free float is measured after that, as
+  P6 shows it: Hotel's chained ALAP activities pin this.
 
 **Longest path** (Oracle: "activities that have an early finish equal to the latest
 calculated early finish for the project and tracing all driving relationships for those
 activities back"): from the open activities finishing last, walk back through every
-relationship whose bound equals the successor's start (FS/SS) or finish (FF/SF).
+relationship whose bound equals the successor's start (FS/SS) or finish (FF/SF). A
+level-of-effort activity is on the path when one of its links into a path activity
+drives that activity's date (the P6 20.12 export flags its ten LOEs, each spanning two
+activities of the path); the trace stops at the LOE, whose own dates come from its links.
 
 **Assignments.** Task dependent: remaining start = the activity's remaining start +
 assignment lag, finish = start + remaining units / units per hour (else the activity's
@@ -273,9 +282,10 @@ Each rule below is pinned by a real file:
 
 ## Conventions no reference file settles
 
-- **Resource-dependent activity:** FF/SF bounds and the float are measured on the
-  activity's calendar; the start is the earliest driving assignment start. The corpus
-  agrees with 62 % of the values only; this is the engine's largest open area.
+- **Resource-dependent activity:** bounds are taken on the activity's calendar, the
+  float is measured on it; each assignment is placed on its resource calendar from the
+  activity's start. The corpus agrees with 79 % of the values; this is the engine's
+  largest open area (docs/backlog.md).
 - **Start float vs finish float:** equal on task-dependent work (in P6 too); they differ
   on resource-dependent work only, where the float-type option decides.
 - **LOE dates:** Oracle's and Boyle's descriptions, confirmed by the P6 20.12 export for

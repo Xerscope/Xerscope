@@ -282,6 +282,7 @@ class _Run:
         self.loe_preds: dict[str, list] = defaultdict(list)
         self.loe_succs: dict[str, list] = defaultdict(list)
         rel = self.snap.relationships[["pred_code", "succ_code", "type", "lag_hr"]]
+        self.linked_on = set(rel["pred_code"])  # has a successor of any kind (LOE, WBS summary included)
         for p, s, typ, lag in rel.itertuples(index=False):
             lag_m = float(lag or 0) * 60
             if p in node_set and s in node_set:
@@ -718,7 +719,12 @@ class _Run:
             k, d = self.kind(c), self.dur_min(c)
             l_s, l_f = self.successor_limits(c, late=True)
             if not l_s and not l_f:
-                l_f.append(self.ef[c] if opt.open_critical else end_anchor)
+                # "Make open-ended activities critical": the late finish of an activity
+                # without any successor link is its early finish, never past the project's
+                # Must Finish By (H25-05 A1380); one whose successors bind nothing (finished,
+                # a WBS summary) is not open-ended and ends at the project's end (H27-04 A1390)
+                open_end = c not in self.linked_on
+                l_f.append(min(self.ef[c], end_anchor) if opt.open_critical and open_end else end_anchor)
             else:
                 # No late finish after the project's: an activity whose successors only bound
                 # its start (SS, SF) would otherwise float past the end, and so would its
@@ -755,7 +761,9 @@ class _Run:
         for c in reversed(self.open_):
             ax = self.cal_ax[c]
             k, d = self.kind(c), self.dur_min(c)
-            alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2")) and self.status[c] == "TK_NotStart"
+            # As Late As Possible moves the remaining work of started activities too
+            # (H27-05 A1170: in progress, remaining 3 h, placed at its late dates)
+            alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
             e_s, e_f = self.successor_limits(c, late=False)
             if alap:
                 if not e_s and not e_f:
@@ -763,7 +771,9 @@ class _Run:
                 keep = dict(self.a_late)
                 new_s, new_f = self.place_late(c, ax, k, d, e_s, e_f)
                 if new_f > ef[c]:
-                    es[c], ef[c], rs[c] = new_s, new_f, new_s
+                    ef[c], rs[c] = new_f, new_s
+                    if self.status[c] == "TK_NotStart":
+                        es[c] = new_s
                     for a in self.driving(c) if c in self.rsrc_dep else []:
                         self.a_early[a.taskrsrc_id] = self.a_late[a.taskrsrc_id]
                 self.a_late.clear()
@@ -771,6 +781,11 @@ class _Run:
             gaps = [ax.between(ef[c], x) / 60 for x in e_f] + [ax.between(rs[c], x) / 60 for x in e_s]
             # open end: free float runs to the project's early finish, not to "must finish by"
             self.ff[c] = max(0.0, min(gaps)) if gaps else max(0.0, ax.between(ef[c], self.finish) / 60)
+            if c in self.dur_override:
+                # an activity whose expected finish applies has no free float in P6, whatever
+                # its successors' early dates (corpus: 265 of 265 such values; H1-08 A1090,
+                # H5-01 A1120). Observed, not explained.
+                self.ff[c] = 0.0
             fin_f = ax.between(ef[c], lf[c]) / 60
             st_f = ax.between(rs[c], ls[c]) / 60
             which = FLOAT_TYPE.get(self.opt.float_type, "finish")  # unknown code: P6's default
@@ -850,6 +865,23 @@ class _Run:
                 mine = self.rs[c] if typ in ("FS", "SS") else self.ef[c]
                 if ax.work(bound) >= ax.work(mine):
                     todo_.append(p)
+        # A level-of-effort activity is on the path when one of its links into a longest-path
+        # activity drives that activity's date (P6 20.12 export: LOE spanning two activities
+        # of the path, SS from the first, FF into the second, flagged). Its own dates come from
+        # its links, so the trace stops there.
+        for loe in self.loe_codes:
+            if self.status[loe] == "TK_Complete" or loe not in self.ef:
+                continue
+            for s_, typ, lag in self.loe_succs[loe]:
+                if s_ not in longest:
+                    continue
+                lx = self.lag_axis(loe, s_)
+                frm = self.ef[loe] if typ in ("FS", "FF") else self.rs[loe]
+                bound = self.shift(lx, frm, lag)
+                mine = self.rs[s_] if typ in ("FS", "SS") else self.ef[s_]
+                if self.cal_ax[s_].work(bound) >= self.cal_ax[s_].work(mine):
+                    longest.add(loe)
+                    break
         return longest
 
     # --- assignment dates --------------------------------------------------------------------
