@@ -1,4 +1,4 @@
-"""Critical path method, as Primavera P6 (Professional 24) schedules a project.
+"""Critical path method, as Primavera P6 (Professional 23.12 / 24) schedules a project.
 
 Every date is computed on the activity's own calendar to the minute (``TimeAxis``), with
 P6's conventions: a start is the beginning of a working period, a finish the end of one,
@@ -7,23 +7,27 @@ Tuesday 08:00.
 
 Forward pass (early dates), in topological order, for each open activity:
 
-- start  >= data date
+- start  >= data date; suspended work: start >= resume date
 - FS: start  >= pred finish + lag        SS: start  >= pred start + lag
 - FF: finish >= pred finish + lag        SF: finish >= pred start + lag
 - lag counted on the calendar the project names (successor by default, predecessor, 24 h,
   project default)
-- SS lag of a started predecessor, option "Calculate start-to-start lag from": Early Start
-  (default) = the predecessor's remaining early start + the lag not yet expired (expired =
-  working time from its actual start to the data date); Actual Start = its actual start +
-  the full lag
+- SS / SF lag of a started predecessor, option "Calculate start-to-start lag from": Early
+  Start (default) = the predecessor's remaining early start + the lag not yet expired
+  (expired = working time from its actual start to the data date); Actual Start = its
+  actual start + the full lag (a finished predecessor's too)
 - constraints: start on / on or after -> start >= date; finish on / on or after -> finish
-  >= date; mandatory start / finish pin the date whatever the logic
+  >= date; mandatory start / finish pin the date whatever the logic, except that the early
+  dates never fall before the data date; a constraint of the wrong kind on a milestone
+  (finish constraint on a start milestone) is ignored
 - in progress: actual start kept; the remaining duration starts at the data date, after
-  open predecessors too under Retained Logic (P6 default) and Actual Dates, ignoring them
-  under Progress Override; an expected finish (if the project uses them) sets the
-  remaining duration
+  open predecessors too under Retained Logic (P6 default) and Actual Dates; under Progress
+  Override its start is an actual, so FS / SS predecessors no longer bound it while FF / SF
+  predecessors still bound its finish
+- expected finish (option on): the early finish, or the early start when it falls before
+  it (remaining 0); an FF / SF bound later than that wins; ALAP ignores it (``expected_finish``)
 - finished, under Retained Logic: logic passes through it (out-of-sequence progress, see
-  pred_bounds); SF from started work binds nothing past the data date
+  ``pred_bounds``)
 - finish = start + remaining duration (minutes of the activity's calendar)
 - resource dependent: each driving assignment is scheduled on its resource's calendar
   (start + assignment lag, duration = remaining units / units per hour); the activity
@@ -33,27 +37,32 @@ Backward pass (late dates), in reverse order: the same relationships mirrored (a
 lag that has partly expired in the forward pass is shortened the same way), started
 from the project's "must finish by" date when it has one (else the latest early
 finish), open ends there too (or at their own early finish if the project makes open
-ends critical), and no late finish after it; finished activities pass late dates back
-under Retained Logic; start on / on or before -> late start <= date; finish on / on or before
--> late finish <= date; mandatory dates pinned (early dates not before the data date).
-Under Actual Dates, a started successor
-bounds its predecessors by its actual dates (out-of-sequence progress gives negative
-float, as Oracle warns).
+ends critical), and no late finish after it; a finished successor passes back the late
+date its own successors give it, less the full FS / FF lag or the unexpired SS / SF lag
+(nothing between two finished activities); under Progress Override FS / SS links into a
+started successor bind nothing (its start is an actual), FF / SF links still do; start on
+/ on or before -> late start <= date; finish on / on or before -> late finish <= date;
+mandatory dates pinned. Under Actual Dates, a started successor bounds its predecessors
+by its actual dates (out-of-sequence progress gives negative float, as Oracle warns).
 
 Float, in working hours of the activity's calendar: total = late - early finish (P6
-option "finish float", default), or start, or the smaller of the two; free = time to the
-earliest successor constraint. As-late-as-possible activities then move right by their
-free float. Level-of-effort activities run from the earliest date their start-type links
-give (SS / FS predecessors, SS / SF successors) to the latest their finish-type links give
-(FF / SF predecessors, FF / FS successors); they drive nothing.
+option "finish float", default), or start, or the smaller of the two (``FLOAT_TYPE``);
+free = time to the earliest successor constraint (under Progress Override, work under way
+runs past its own SS / SF links and past finished successors). As-late-as-possible
+activities then move right by their free float. Level-of-effort activities run from the
+earliest date their start-type links give (SS / FS predecessors, SS / SF successors) to
+the latest their finish-type links give (FF / SF predecessors, FF / FS successors), their
+late dates the same way from their links' late dates; they drive nothing.
 
-Validated against P6's own output: recalculating real P6 exports reproduces every stored
-early/late date and total/free float to the minute (Hotel, P6 6.0: 4,217 activities,
-25,302 values; Terminal, P6 5.0; both unstarted), and every stored assignment date
-(2,340 assignments, 9,360 dates). Progressed, resource-dependent and constrained
-networks, which no public P6 export covers, are compared with MPXJ's independent
-PrimaveraScheduler; the cases where the two differ are named in crosscheck.UNRESOLVED.
-See docs/cpm.md, tests/test_cpm.py and tests/test_crosscheck_mpxj.py.
+Validated against P6's own output, strongest source first: the P6 Professional 23.12.1
+held-out corpus (54,726 values on progressed, suspended, constrained, multi-calendar, LOE
+and resource-dependent work under every option: 99.5 % identical on task-dependent work
+without LOE, tests/test_p6_heldout.py, which names the corpus activity each rule above was
+taken from); four real exports whose every stored date the engine reproduces (Hotel P6
+6.0, Terminal P6 5.0, PV P6 25.12, XER-editor P6 20.12); MPXJ's independent
+PrimaveraScheduler as a hint, with the shapes P6 settled against it in
+crosscheck.P6_SETTLED and the still-open ones in crosscheck.UNRESOLVED. See docs/cpm.md
+and docs/review-2026-10-29.md.
 
 Not modelled (reported in ``warnings``): leveling, multiple float paths, relationships to
 projects not in the file.
@@ -538,10 +547,10 @@ class _Run:
         The expected finish stands in for "early start + remaining duration": the early
         finish is the expected finish, or the early start when the expected finish falls
         before it (remaining duration 0), on whatever date the data date, the predecessors
-        or a constraint give the start, a Mandatory Finish included (it only pins the late
-        dates, register R5). An FF / SF bound later than that finish wins instead, with the
-        file's remaining duration and the start placed back from it, as without an expected
-        finish. The remaining duration the backward pass uses follows the early dates.
+        or a constraint give the start. An FF / SF bound later than that finish wins
+        instead, with the file's remaining duration and the start placed back from it, as
+        without an expected finish. The remaining duration the backward pass uses follows
+        the early dates (``dur_override``).
 
         Measured but not understood: work under way under Progress Override with an FF / SF
         predecessor keeps its remaining duration when the expected finish falls before its
