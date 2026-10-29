@@ -17,7 +17,11 @@ Variables
 
 Volumes
     /data                    the exports
-    /var/lib/tailscale       the node's state, so it keeps its identity across restarts
+    /var/lib/tailscale       the node's state, so it keeps its identity across restarts. The
+                             state itself lives in the "node" subfolder, created by the
+                             container's own user: tailscaled chmods its state directory to
+                             0700, which fails on a bind mount owned by someone else (a NAS
+                             share) but not on a folder it created.
 
 Runs as PID 1 without a shell (distroless): starts the processes, restarts one that dies
 (5 s back-off), stops all of them on SIGTERM.
@@ -33,7 +37,7 @@ import time
 from pathlib import Path
 
 SOCK = "/tmp/tailscaled.sock"
-STATE = Path(os.environ.get("TS_STATE_DIR", "/var/lib/tailscale"))
+STATE = Path(os.environ.get("TS_STATE_DIR", "/var/lib/tailscale")) / "node"
 CADDYFILE = Path("/tmp/caddy/Caddyfile")
 TS = os.environ.get("TAILSCALE_BIN", "tailscale")
 TSD = os.environ.get("TAILSCALED_BIN", "tailscaled")
@@ -84,7 +88,11 @@ def tailscale_up(authkey: str, hostname: str) -> None:
         if ts("status", check=False).returncode in (0, 1):
             break
         time.sleep(0.5)
-    ts("up", "--authkey", authkey, "--hostname", hostname, "--advertise-tags=tag:xerscope", "--accept-routes=false")
+    up = ts("up", "--authkey", authkey, "--hostname", hostname, "--advertise-tags=tag:xerscope", "--accept-routes=false",
+            check=False)  # never raise: a CalledProcessError would print the auth key
+    if up.returncode != 0:
+        log(f"tailscale up failed: {(up.stderr or up.stdout).strip()}")
+        sys.exit(1)
     ts("funnel", "--bg", "8080")  # https://<hostname>.<tailnet>.ts.net -> Caddy
     status = ts("funnel", "status", check=False)
     log(status.stdout.strip() or status.stderr.strip())
