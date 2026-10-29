@@ -35,7 +35,8 @@ from the project's "must finish by" date when it has one (else the latest early
 finish), open ends there too (or at their own early finish if the project makes open
 ends critical), and no late finish after it; finished activities pass late dates back
 under Retained Logic; start on / on or before -> late start <= date; finish on / on or before
--> late finish <= date; mandatory dates pinned. Under Actual Dates, a started successor
+-> late finish <= date; mandatory dates pinned (early dates not before the data date).
+Under Actual Dates, a started successor
 bounds its predecessors by its actual dates (out-of-sequence progress gives negative
 float, as Oracle warns).
 
@@ -466,15 +467,21 @@ class _Run:
                     s_c.append(date)
                 elif START_LIKE.get(typ) == "finish":
                     f_c.append(date)
+            # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
+            # that unstarted work never starts before the data date (P6 23.12, corpus H3-04
+            # A1100, H2-06 A1130: the early dates move to the data date, the late dates stay)
             if pinned and pinned[0] == "start":
-                s_c, f_c = [pinned[1]], []
+                s_c, f_c = [max(pinned[1], dd)], []
             if c in self.rsrc_dep and k == "task":
                 start, fin = self.rsrc_early(c, s_c, f_c, self.extra.get(c, 0.0) * 60)
             else:
                 start, fin = _early(ax, k, d, s_c, f_c)
-            if pinned and pinned[0] == "finish":  # mandatory finish: the date, whatever the logic
+            if pinned and pinned[0] == "finish":
                 fin = ax.keep_or_previous(pinned[1])
                 start = ax.add(fin, -d, finish=False) if (k == "task" and d) else fin
+                if start < dd:
+                    start = ax.snap_start(dd)
+                    fin = ax.add(start, d, finish=True) if (k == "task" and d) else start
             if k == "task" and opt.use_expected_finish:
                 exp = R[c].get("expect_end_date", pd.NaT)
                 alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
@@ -647,6 +654,11 @@ class _Run:
                     l_f.append(date)
             if pinned:
                 l_s, l_f = ([pinned[1]], []) if pinned[0] == "start" else ([], [pinned[1]])
+                if pinned[0] == "finish" and c in self.dur_override:
+                    # an expected finish earlier than the Mandatory Finish is the late finish
+                    # too (corpus H22-06 A1120, 18 values; the activity's early finish is then
+                    # the expected finish)
+                    l_f = [min(pinned[1], self.ef[c])]
             self.ls[c], self.lf[c] = self.place_late(c, ax, k, d, l_s, l_f)
 
     # --- float, as late as possible ------------------------------------------------------------

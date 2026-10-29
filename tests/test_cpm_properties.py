@@ -203,10 +203,14 @@ def test_options_constraints_calendars(seed):
         # compared in working time: a start "on" Friday 17:00 shows as Monday 08:00, as in P6
         w = axes.of(act.at[c, "clndr_id"]).work
         d, start, fin, ls, lf = (w(x) for x in (pd.Timestamp(date), r["remaining_start"], r["ef"], r["ls"], r["lf"]))
+        # mandatory dates pin both passes; the early dates never fall before the data date
+        # (P6 23.12, corpus H3-04 A1100): work that would have to start before it starts
+        # at the data date and keeps its late dates pinned
+        dd = w(s.data_date)
         if typ == "CS_MANDSTART":
-            assert start == d and ls == d, (seed, c, typ)
+            assert ls == d and (start == d or (d < dd and start == dd)), (seed, c, typ)
         elif typ == "CS_MANDFIN":
-            assert fin == d and lf == d, (seed, c, typ)
+            assert lf == d and (fin == d or (fin > d and start == dd)), (seed, c, typ)
         elif typ in ("CS_MSOA", "CS_MSO"):
             assert start >= d, (seed, c, typ)
         elif typ in ("CS_MEOA", "CS_MEO"):

@@ -151,6 +151,15 @@ PINNED = {
     "R3 expected finish before the early start: remaining 0": [("H1", "H1-02", "A1170", "early_finish")],
     "R3 expected finish with an FF predecessor, later than its bound": [("H4", "H4-10", "A1040", "early_finish")],
     "R3 FF bound later than the expected finish wins, remaining kept": [("H24", "H24-07", "A1210", "early_start")],
+    "R5 Mandatory Finish before the data date: early dates at the data date, late pinned": [
+        ("H3", "H3-04", "A1100", "early_start"),
+        ("H3", "H3-04", "A1100", "late_finish"),
+    ],
+    "R5 Mandatory Start before the data date: early start at the data date": [("H2", "H2-06", "A1130", "early_start")],
+    "R5 Mandatory Start pins the early start over later logic": [("H2", "H2-07", "A1120", "early_start")],
+    "R5 expected finish earlier than the Mandatory Finish is the late finish": [
+        ("H22", "H22-06", "A1120", "late_finish")
+    ],
 }
 
 
