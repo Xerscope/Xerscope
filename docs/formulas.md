@@ -76,7 +76,7 @@ to 2 decimals. Pinned by `test_reference.py::test_percent_complete_matches_p6_ex
 
 | Target text | Comparator | Threshold | Metric unit |
 |---|---|---|---|
-| `<= 5%`, `>= 90%`, `<= 0%` | `<=`, `>=` | 5, 90, 0 | `%` only |
+| `< 5%`, `<= 5%`, `> 90%`, `>= 90%` | `<`, `<=`, `>`, `>=` | 5, 90 | `%` only |
 | `<= 0`, `<= 10` | `<=` | 0, 10 | `count` |
 | `>= 0.95` | `>=` | 0.95 | `ratio` |
 | `pass` | `==` | 1.0 | `pass/fail` (rule value 1.0 = passed, 0.0 = failed) |
@@ -104,25 +104,28 @@ xerlock's published counts on its sample file.
 ### 2.1 P6 Check Schedule (`standards/p6.toml`, standard id `P6`)
 
 Thresholds in hours as P6 compares them; 352 h is the TOML author's reading of
-44 days × 8 h. Targets are the TOML's values: Oracle documents no defaults and the
-P6 dialog's own values must be copied in for pass/fail to match P6.
+44 days × 8 h. Targets are the Check Schedule dialog defaults as the P6 EPPM 25 help
+states them (strict comparisons: "less than 5%", "greater than 90%", BEI "0.95 or
+greater"); the dialog's own values must be copied in for pass/fail to match a report.
+Constraint sets follow the P6 Professional help: hard = Mandatory Start, Start On,
+Mandatory Finish, Finish On; soft = On or Before / On or After, As Late As Possible.
 
 | Id | Name | Population | Found | Unit | Target | Source (TOML) | Tests (test_rules.py) |
 |---|---|---|---|---|---|---|---|
-| P6-01 | Logic | activities not complete | no predecessor or no successor among the project's own links; an external link counts as a link; started activities and start milestones pass the predecessor side, finish milestones the successor side | % | <= 5% | 46291: WBS summary and actual-finish removed; actual start or start milestone pass the predecessor check; finish milestones pass the successor check; external links pass | test_p6_logic_exemptions, test_external_successor_passes_p6_logic, test_start_milestone_without_successor_is_an_open_end_for_p6, test_link_to_an_activity_not_in_the_file_is_dropped |
-| P6-02 | Hard constraints | not complete, not LOE | `cstr_type` or `cstr_type2` in {CS_MANDSTART, CS_MANDFIN}; a start constraint (MSO, MSOA, MSOB, MANDSTART) on a started activity does not count | % | <= 5% | 46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started | test_constraint_sets_differ_between_p6_and_dcma |
-| P6-03 | Soft constraints | not complete, not LOE | `cstr_type` or `cstr_type2` in {CS_MSO, CS_MSOB, CS_MSOA, CS_MEO, CS_MEOB, CS_MEOA}, same started exemption | % | <= 5% | 46285: Start on / on or before / on or after, Finish on / on or before / on or after | test_constraint_sets_differ_between_p6_and_dcma |
-| P6-04 | Large durations | not complete, not milestone, not LOE | `remain_drtn_hr_cnt > 352` | % | <= 5% | 46282: WBS summary, actual-finish, milestones and LOE removed | test_large_duration_remaining_vs_original |
-| P6-05 | Long lags | links `not_both_complete` | `lag_hr > 352` | % | <= 5% | 46288: links between two actual-finished activities removed | test_lead_long_lag_and_fs_share |
-| P6-06 | Large float | not complete, not LOE | `total_float_hr_cnt > 352` | % | <= 5% | 46284: WBS summary, actual-finish and LOE removed | test_float_threshold_in_hours_vs_working_days |
-| P6-07 | Relationship types | links `not_both_complete` | value = `100 × FS links / links`; listed: non-FS links | % | >= 90% | 46287: actual = share of FS links in the subset | rule: test_lead_long_lag_and_fs_share (DCMA-04); population: test_link_populations_differ |
-| P6-08 | Lags | links `not_both_complete` | `lag_hr > 0` | % | <= 5% | 46289 | test_link_populations_differ, test_link_to_an_activity_not_in_the_file_is_dropped |
-| P6-09 | Negative lags | links `not_both_complete` | `lag_hr < 0` | % | <= 0% | 46290: links between two actual-finished activities removed | rule: test_lead_long_lag_and_fs_share (DCMA-02) |
-| P6-10 | Invalid progress dates | not LOE, not complete before the data date | forecast: not complete and (not started and forecast start < data date, or forecast finish < data date), forecast = `restart_date`/`reend_date` else early dates; actual: `act_start_date > data date` or `act_end_date > data date` | % | <= 0% | 46281 / 46280: WBS summary, LOE and activities finished before the data date removed | test_invalid_progress_dates |
-| P6-11 | Resource / cost | not milestone, not LOE (complete stay in) | no `TASKRSRC` row and no `PROJCOST` row | % | <= 0% | 46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts | test_resource_or_expense |
-| P6-12 | Late activities | not complete, not milestone, not LOE (activities without baseline stay in the denominator, never found) | `work_hours(bl_finish → finish) > 0` on the activity's current calendar; `finish_variance_wd` = that / `hours_per_day` | % | <= 5% | 46278: WBS summary, actual-finish, milestones and LOE removed; baseline finish variance < 0 (working time) | test_missed_tasks_and_late_activities, test_late_activities_use_working_time |
+| P6-01 | Logic | activities not complete | no predecessor or no successor among the project's own links; an external link counts as a link; started activities and start milestones pass the predecessor side, finish milestones the successor side | % | < 5% | 46291: WBS summary and actual-finish removed; actual start or start milestone pass the predecessor check; finish milestones pass the successor check; external links pass | test_p6_logic_exemptions, test_external_successor_passes_p6_logic, test_start_milestone_without_successor_is_an_open_end_for_p6, test_link_to_an_activity_not_in_the_file_is_dropped |
+| P6-02 | Hard constraints | not complete, not LOE | `cstr_type` or `cstr_type2` in {CS_MANDSTART, CS_MSO, CS_MANDFIN, CS_MEO}; a start constraint (MSO, MSOA, MSOB, MANDSTART) on a started activity does not count | % | < 1% | 46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started | test_constraint_sets_differ_between_p6_and_dcma |
+| P6-03 | Soft constraints | not complete, not LOE | `cstr_type` or `cstr_type2` in {CS_MSOB, CS_MSOA, CS_MEOB, CS_MEOA, CS_ALAP}, same started exemption | % | < 5% | 46285: Start on or before / on or after, Finish on or before / on or after, As late as possible | test_constraint_sets_differ_between_p6_and_dcma |
+| P6-04 | Large durations | not complete, not milestone, not LOE | `remain_drtn_hr_cnt > 352` | % | < 5% | 46282: WBS summary, actual-finish, milestones and LOE removed | test_large_duration_remaining_vs_original |
+| P6-05 | Long lags | links `not_both_complete` | `lag_hr > 352` | % | < 5% | 46288: links between two actual-finished activities removed | test_lead_long_lag_and_fs_share |
+| P6-06 | Large float | not complete, not LOE | `total_float_hr_cnt > 352` | % | < 1% | 46284: WBS summary, actual-finish and LOE removed | test_float_threshold_in_hours_vs_working_days |
+| P6-07 | Relationship types | links `not_both_complete` | value = `100 × FS links / links`; listed: non-FS links | % | > 90% | 46287: actual = share of FS links in the subset | rule: test_lead_long_lag_and_fs_share (DCMA-04); population: test_link_populations_differ |
+| P6-08 | Lags | links `not_both_complete` | `lag_hr > 0` | % | < 5% | 46289 | test_link_populations_differ, test_link_to_an_activity_not_in_the_file_is_dropped |
+| P6-09 | Negative lags | links `not_both_complete` | `lag_hr < 0` | % | < 1% | 46290: links between two actual-finished activities removed | rule: test_lead_long_lag_and_fs_share (DCMA-02) |
+| P6-10 | Invalid progress dates | not LOE, not complete before the data date | forecast: not complete and (not started and forecast start < data date, or forecast finish < data date), forecast = `restart_date`/`reend_date` else early dates; actual: `act_start_date > data date` or `act_end_date > data date` | % | < 1% | 46281 / 46280: WBS summary, LOE and activities finished before the data date removed | test_invalid_progress_dates |
+| P6-11 | Resource / cost | not milestone, not LOE (complete stay in) | no `TASKRSRC` row and no `PROJCOST` row | % | < 1% | 46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts | test_resource_or_expense |
+| P6-12 | Late activities | not complete, not milestone, not LOE (activities without baseline stay in the denominator, never found) | `work_hours(bl_finish → finish) > 0` on the activity's current calendar; `finish_variance_wd` = that / `hours_per_day` | % | < 5% | 46278: WBS summary, actual-finish, milestones and LOE removed; baseline finish variance < 0 (working time) | test_missed_tasks_and_late_activities, test_late_activities_use_working_time |
 | P6-13 | BEI | not LOE, not milestone; due = `bl_finish <= data date` or no `bl_finish` | value = complete activities in population / due; listed: due and not complete | ratio | >= 0.95 | 46277: WBS summary, milestones and LOE removed; no baseline finish = should have finished | test_bei_p6_counts_unbaselined_as_due_dcma_ignores_them, test_baseline_metrics_are_na_without_baseline |
-| P6-14 | Negative float | not complete, not LOE | `total_float_hr_cnt < 0` | % | <= 0% | 46283: WBS summary, actual-finish and LOE removed | test_float_threshold_in_hours_vs_working_days |
+| P6-14 | Negative float | not complete, not LOE | `total_float_hr_cnt < 0` | % | < 1% | 46283: WBS summary, actual-finish and LOE removed | test_float_threshold_in_hours_vs_working_days |
 
 Note: the `source` strings are Oracle help page ids (Schedule Check Report sections)
 as read from those pages by the TOML author; no P6 population above has been verified
@@ -356,7 +359,8 @@ Stated by the code or docs/backlog.md; nothing here is verified against P6 outpu
   has been compared (backlog). Open readings: completed activities kept in P6-11,
   no-baseline counted as due in P6-13, remaining duration in P6-04, LOE kept in P6-01,
   start constraints ignored once started.
-- 352 h assumes 8 h/day (p6.toml); P6 targets are the TOML's, not Oracle defaults.
+- 352 h assumes 8 h/day (p6.toml); P6 targets are the EPPM 25 help's dialog defaults,
+  not read from a Professional 24 dialog.
 - DECM readings not verified against the specification sheets: 06A205a counts LOE and
   ignores leads; 06A209a includes LOE; DCMA-11 keeps milestones, DCMA-14 drops them.
 - CPLI takes the schedule's total float, i.e. P6's distance to the Must Finish By date;
