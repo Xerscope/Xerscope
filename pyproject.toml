@@ -39,6 +39,7 @@ filterwarnings = ["ignore::DeprecationWarning:streamlit.*"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+extend-exclude = ["tests/reference/data"]  # third-party corpora, not ours to format
 
 [tool.ruff.lint]
 # pyflakes, pycodestyle, bugbear, imports, pyupgrade, simplify, comprehensions, return, pylint basics

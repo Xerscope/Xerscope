@@ -21,45 +21,70 @@ uv run xerscope recalc week42.xer --out recalc.csv   # field-by-field agreement 
 
 ## Validation
 
-Recalculating real P6 exports and comparing with what P6 stored, exact clock time
-required (`tests/test_cpm.py`):
+Three sources, strongest first. None of them is xerscope's own output.
+
+**1. P6.** Recalculating real P6 exports and comparing with what P6 stored, exact clock
+time required (`tests/test_cpm.py`):
 
 | File | Scheduled by | Activities | Values compared | Identical |
 |---|---|---|---|---|
 | Hotel Project | P6 6.0 | 4,217 (7,586 links: FS/SS/FF/SF; 11 calendars; holidays; ALAP; must finish by) | 25,302 | 25,302 |
 | Terminal Building | P6 5.0 | 66 (SNLT, 7-day calendar, must finish by) | 396 | 396 |
-| xerlock sample | P6-format, progressed | 24 (3 complete, 3 in progress, progress override) | 126 | 126 |
 | Hotel + Terminal assignments | P6 6.0 / 5.0 | 2,340 assignments (labour, nonlabor, material) | 9,360 | 9,360 |
-| Longest path flag | all three | 4,304 open activities | 4,304 | 4,304 |
+| Longest path flag | both | 4,283 open activities | 4,283 | 4,283 |
 
-Values = early start, early finish, late start, late finish, total float, free float of
-each open activity; for assignments, remaining early start / finish and remaining late
-start / finish (TASKRSRC `restart_date`, `reend_date`, `rem_late_*`); the longest path is
-P6's `driving_path_flag`. Plus xerlock's stated critical path test (MEP-020 +600 wd,
-finish 2026-09-08 → 2028-12-27) and CPL (1,080 h).
+Both projects are **unstarted and task dependent**: no public P6 export with progress or
+resource-dependent activities was found. No P6 Professional 24 file is at hand either;
+the engine follows P6 24's documentation, the files are older P6 versions.
 
-The engine is mutation-tested: plausible bugs injected one at a time (snapping, lag
-calendars, options, ALAP, time axis, SS expired lag, resource calendars, assignment lag
-and duration, Actual Dates, longest path). Each is caught, except swapping start float
-for finish float: the two coincide in this engine (see "Conventions" below).
+**2. A second engine: MPXJ's `PrimaveraScheduler`** (`tests/test_crosscheck_mpxj.py`,
+`xerscope.crosscheck.cpm_crosscheck`). Written independently by MPXJ's authors and tuned
+against P6 output; built from a pinned commit (`tests/reference/mpxj_cpm.py`) because the
+PyPI release predates its out-of-sequence fix (joniles/mpxj#972). It reproduces 99.96 %
+of Hotel and all of Terminal; every Hotel value it misses, xerscope gets right. On random
+networks, early / late dates, total and free float agree to the working minute:
 
-What the reference files exercise, and what only hand-built tests cover (built from
-Oracle's documented behaviour, not from P6 output):
-
-| Verified against P6 output | Hand tests only (Oracle's documented rule) |
+| Networks (seeded, random logic, lags and leads) | Result |
 |---|---|
-| FS, SS, FF, SF with lags | lag on successor / 24 h / project calendar (option read verified on MPXJ files) |
-| 11 calendars, holidays, working exceptions, lunch breaks | start on, finish on, start/finish on or after, finish on or before |
-| start on or before (SNLT) | mandatory start / finish |
-| as late as possible, chained | retained logic (out-of-sequence), expected finish, Actual Dates |
-| must finish by, open ends | SS lag from a started predecessor (Early Start / Actual Start), open ends critical |
-| progress override with actuals | level of effort |
-| start/finish milestones | resource-dependent activities on resource calendars |
-| assignment dates of task-dependent activities (units / units per hour) | assignment lag |
-| longest path | |
+| unstarted, FS/SS/FF/SF | identical (free float aside when a lead is involved) |
+| progress in logic sequence | identical outside the cases below |
+| out-of-sequence progress (Retained Logic) | identical outside the cases below |
+| resource dependent, resources on the activity calendar, unstarted and progressed | identical |
+| one constraint of each of the nine types | identical, except where MPXJ contradicts itself (below) |
+| the demo's eight weekly files | identical, same exceptions |
+| the hand cases of `test_cpm.py` MPXJ models | identical |
 
-If your files use something in the right column, `xerscope recalc` on them is the check:
-an exact match there is the same proof as for the left column.
+MPXJ only models P6's default options: Actual Dates, Progress Override, SS lag from
+actual start, open ends critical, ignoring other projects and non-driving assignments of
+resource-dependent activities have **no independent check**; their hand tests say so.
+
+**3. Named open questions.** Where the engines differ and no P6 file settles it, the case
+is listed in `crosscheck.UNRESOLVED` and reported, not silently blamed on either side:
+
+| Case | xerscope | MPXJ |
+|---|---|---|
+| FF / SF lag from a finished activity | expires from the actual date, as FS | counted from the data date (twice for FF) |
+| SF to or from progressed work | one rule (below) | a per-status case table |
+| lead from started or finished work | backward pass drops it (SS/SF) | differs by status |
+| FF / SS / SF from a finished activity into started work | carried date + unexpired lag | actual dates |
+| resource-dependent activity, resources on other calendars | each assignment starts on its resource calendar | starts on the activity calendar |
+| assignment lag on a resource-dependent activity | in the activity dates | left out |
+| free float with a lead, or of a mandatory-constrained activity | to the successor bound | 0 |
+| lag calendar not stated in the file | successor's (Oracle) | predecessor's |
+
+MPXJ's own output is discarded where it contradicts itself (`mpxj_inconsistent`): with
+Start On / Start On or After / Mandatory Start it keeps a stale early finish (finish
+before start), with Start On or Before / Mandatory Finish a stale late start, and a Start
+On or After on the same day as the logic start moves the start before what the logic
+allows. Each was checked by hand on the network it appeared in.
+
+**Mutation tests.** Plausible bugs injected one at a time (snapping, lag calendars,
+options, ALAP, time axis, SS expired lag, resource calendars, assignment lag and
+duration, Actual Dates, longest path) are each caught, except swapping start float for
+finish float: the two coincide in this engine (see "Conventions" below).
+
+To settle any row of the open-questions table for your own schedules: export a file that
+contains the case from P6 24 after F9 and run `xerscope recalc` on it.
 
 ## Time: `TimeAxis` (`xer/calendar.py`)
 
@@ -131,19 +156,28 @@ work before either.
   - *Actual Start*: successor start ≥ actual start + lag, i.e. the data date plus the
     remaining lag.
   - The two differ when the predecessor is itself held back (retained logic): Early Start
-    then pushes the successor further. SF links from a started predecessor follow the
-    same rule (convention, see below).
-  - Backward pass: the same shortened lag. With the full lag, a driving SS link from a
-    started activity left it negative float on an unconstrained network (fixed after the
-    property tests found it; Oracle documents the forward pass only).
+    then pushes the successor further.
+  - Backward pass: the same shortened lag (MPXJ does the same); a lead from started work
+    is dropped.
+- **SF from a started predecessor** to unstarted work binds nothing past the data date:
+  it ties the finish to the predecessor's start, an actual in the past (as MPXJ).
 - **Duration:** finish = start + remaining duration, in working minutes of the activity's
   calendar.
 - **In progress:** the actual start is kept. The remaining work starts at the data date:
   - **Retained Logic** (default) and **Actual Dates**: it also waits for unfinished
     predecessors;
   - **Progress Override:** it ignores them;
-  - **expected finish:** if the project uses them, it sets the remaining finish.
-- **Complete:** actual dates; they drive successors through their actual finish.
+  - **expected finish** (option "Use Expected Finish Dates"): the early finish is the
+    expected finish and the remaining duration is recomputed from it, for the backward
+    pass too; not for ALAP, nor with an FF / SF predecessor, nor before the early start
+    or the data date (as MPXJ).
+- **Complete:** shown with its actual dates. Under **Retained Logic** it passes logic
+  through, as P6 does (MPXJ, issue #972, checked against real P6 schedules): it carries to
+  its successors the date its own unfinished predecessors still impose (the data date if
+  none), plus the part of a positive lag not yet expired since its actual finish (FS, FF)
+  or start (SS, SF); a lead is dropped. With no out-of-sequence progress this is the same
+  as "actual finish + lag". Under Actual Dates and Progress Override the actual dates
+  drive and a finished predecessor no longer holds work in progress.
 - **Resource dependent** (`TT_Rsrc`, Oracle: "scheduled according to the calendars for
   the resources … the latest finish date of all driving resources is used for the early
   finish"): each driving assignment (`rollup_dates_flag`) starts at the logic's bound plus
@@ -160,6 +194,8 @@ work before either.
 | FF | finish ≤ succ late finish − lag |
 | SF | start ≤ succ late finish − lag |
 | no open successor | finish ≤ project "must finish by" if set, else the latest early finish; its own early finish if "make open-ended activities critical" |
+| any activity | finish ≤ the same project end: an activity whose successors only bound its start (SS, SF) would otherwise float past the end (MPXJ caps the same way; no P6 file has the case) |
+| finished successor (Retained Logic) | its carried late date: FS drops the lag, FF keeps it, SS / SF keep it unless the predecessor started |
 | Start on / Start on or before | start ≤ date |
 | Finish on / Finish on or before | finish ≤ date |
 | Mandatory | the date |
@@ -172,7 +208,9 @@ resource calendar the same way.
 
 - **Total float** = late − early finish, in working hours of the activity's calendar.
   It uses the project's float type: finish float (default), start float, or the smaller.
-- **Free float** = room to the earliest successor bound, using successors' early dates.
+- **Free float** = room to the earliest successor bound, using successors' early dates (a
+  finished successor sits at its carried date). It can exceed total float when the late
+  finish stops at the project end, as in MPXJ.
   For an open end, it runs to the project's early finish (not to "must finish by":
   Terminal shows 8 h of total float but 0 free float).
 - **As late as possible:** in reverse order, an ALAP activity moves right to use its free
@@ -222,12 +260,9 @@ P6 output confirms it:
 
 - **Late-start bound in non-working time** (e.g. via an SS lag on a 24 h calendar):
   written as the next period start, like every task start.
-- **Finished predecessor with a lag, successor in progress:** the lag is not re-applied
-  to the remaining work.
-- **SF link from a started predecessor:** treated like SS (expired lag subtracted under
-  Early Start). Oracle documents the option for SS only.
 - **Resource-dependent activity:** FF/SF bounds and the float are measured on the
-  activity's calendar; the start is the earliest driving assignment start.
+  activity's calendar; the start is the earliest driving assignment start (MPXJ agrees
+  when resources share the activity calendar; see the open questions otherwise).
 - **Start float vs finish float:** the engine keeps start = finish − duration on both
   passes, so the two are equal for task-dependent activities.
 - **LOE dates:** no reference file has an LOE, so the rule above is from Oracle's and
@@ -235,13 +270,16 @@ P6 output confirms it:
 
 ## Property tests
 
-`tests/test_cpm_properties.py` schedules 300 seeded random networks (all link types,
-leads and lags, progress, every P6 option, every constraint type, three calendars, LOE)
-and checks what any P6 recalculation must satisfy: each relationship holds on early and
-late dates; a task lasts its remaining duration early and late; total float = late −
-early finish; no negative float without constraints; zero float on the longest path when
-nothing dangles; constraints hold in working time; delaying any activity never brings the
-finish earlier.
+`tests/test_cpm_properties.py` schedules 260 seeded random networks (all link types,
+leads and lags, progress in logic sequence, every P6 option, every constraint type, three
+calendars, LOE) and checks what any recalculation must satisfy: each relationship holds
+on early and late dates; a task lasts its remaining duration early and late; total float
+= late − early finish; free float ≥ 0; no negative float without constraints; zero float
+on the longest path when nothing dangles; constraints hold in working time; with FS links
+only, delaying an activity never brings the finish earlier (with FF it can: a longer
+activity whose finish is fixed starts earlier and pulls its SS successors along).
+Out-of-sequence progress, which legitimately gives negative float, is left to the MPXJ
+comparison, which checks the values themselves, not only their consistency.
 
 ## Critical path test
 

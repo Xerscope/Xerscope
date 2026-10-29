@@ -1,7 +1,16 @@
+import os
+from pathlib import Path
+
 import pytest
 
 from xerscope.sample import generate
 from xerscope.store import SnapshotStore
+
+# MPXJ's scheduler built from its pinned commit (tests/reference/mpxj_cpm.py), first on the
+# classpath of whichever test starts the JVM.
+_MPXJ_CPM = sorted((Path(__file__).parent / "reference" / "data").glob("mpxj-cpm-*.jar"))
+if _MPXJ_CPM:
+    os.environ.setdefault("XERSCOPE_MPXJ_CPM_JAR", str(_MPXJ_CPM[-1]))
 
 
 @pytest.fixture(scope="session")

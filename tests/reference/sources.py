@@ -8,10 +8,19 @@ files are downloaded into tests/reference/data/ (git-ignored) by fetch.py. P6-Vi
 MPXJ_COMMIT = "8c4f6462e66dab196e92e32bcf4196586d33d740"  # joniles/mpxj
 XERLOCK_COMMIT = "dc27e4bc311233df1761162da243c4143901bb40"  # joaompfp/xerlock
 P6VIEWER_COMMIT = "c32dc4c46502adf8d8338ed1abac119aedf21f75"  # CodeVision3000/P6-Viewer (MIT)
+PV_COMMIT = "4d3bd1af536d4b6e30bc2595d920daae6381e914"  # usamajaved1305/20kw-rooftop-pv-schedule-and-shading
+XEREDITOR_COMMIT = "9cb4f23fdf53ff5c65fec0f5cfe97d6b11820a61"  # ASHspace/PrimeveraXEREditor
+# danafitkowski/cpp-cpm-engine (MIT): synthetic schedules scheduled by P6 Professional 23.12.1
+# under a published protocol, with P6's results read back from its database (p6_heldout.py)
+P6_HELDOUT_COMMIT = "313701d8b8c2ef4be60d7f6a61d1f91a1468a830"
+P6_HELDOUT_REPO = "https://github.com/danafitkowski/cpp-cpm-engine"
+P6_HELDOUT_SETS = [f"H{i}" for i in range(1, 31)]
 
 _MPXJ = f"https://raw.githubusercontent.com/joniles/mpxj/{MPXJ_COMMIT}/junit/data"
 _XERLOCK = f"https://raw.githubusercontent.com/joaompfp/xerlock/{XERLOCK_COMMIT}"
 _P6VIEWER = f"https://raw.githubusercontent.com/CodeVision3000/P6-Viewer/{P6VIEWER_COMMIT}/XER%20Files"
+_PV = f"https://raw.githubusercontent.com/usamajaved1305/20kw-rooftop-pv-schedule-and-shading/{PV_COMMIT}"
+_XEREDITOR = f"https://raw.githubusercontent.com/ASHspace/PrimeveraXEREditor/{XEREDITOR_COMMIT}"
 
 # local name -> (url, sha256)
 FILES: dict[str, tuple[str, str]] = {
@@ -56,6 +65,18 @@ FILES: dict[str, tuple[str, str]] = {
     "p6viewer/TERMINAL BUILDING-AIRPORT.xer": (
         f"{_P6VIEWER}/TERMINAL%20BUILDING-AIRPORT.xer",
         "a2f3b2469e26f19985ac801786c90edfb965a7bc194a6e57704aa845c5f8611f",
+    ),
+    # Real exports of recent P6 versions, scheduled by P6 (every early/late date and float
+    # stored). No licence file in either repository: downloaded at test time, never vendored.
+    # P6 25.12: 25 unstarted activities, FS/SS. P6 20.12: 52 activities, 10 level of effort
+    # (the only P6 output with LOE dates at hand), FS/SS/FF.
+    "pv/20-kW-residential-pv-p6.xer": (
+        f"{_PV}/primavera-p6/20-kW-residential-pv-p6.xer",
+        "1d3eb5c510a6c8affece174c1ecf29a125b053642a1109c2648207024ce76b1c",
+    ),
+    "xereditor/sample.xer": (
+        f"{_XEREDITOR}/src/test/java/resources/sample.xer",
+        "68ce5f0bb2b534d5ba192e3ad8241025d74ae45e94209f11731d42d32f18f82b",
     ),
     "xerlock/sample-schedule.json": (
         f"{_XERLOCK}/frontend/src/utils/fixtures/sample-schedule.json",

@@ -29,8 +29,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
-      - name: Reference XERs (pinned, checksum-verified)
-        run: uv run python tests/reference/fetch.py
+      - name: Reference XERs (pinned, checksum-verified) and the P6-scheduled corpus (pinned commit)
+        run: |
+          uv run python tests/reference/fetch.py
+          uv run python tests/reference/fetch_p6_heldout.py
       - name: Tests (parser, model, reference results, app pages)
         run: uv run pytest -rs
       - name: CLI smoke test
@@ -53,7 +55,8 @@ jobs:
       - run: uvx bandit -r src -ll  # medium and high severity only
 
   crosscheck:
-    # Independent reading with MPXJ (Java) on the reference files and the demo data.
+    # Independent reading with MPXJ (Java) on the reference files and the demo data, and the
+    # CPM against MPXJ's scheduler (built from a pinned commit: the PyPI release predates #972).
     strategy:
       fail-fast: false
       matrix:
@@ -72,5 +75,10 @@ jobs:
           python-version: "3.14"
       - run: uv sync --locked --extra crosscheck
       - run: uv run python tests/reference/fetch.py
+      - run: uv run python tests/reference/fetch_p6_heldout.py
       - run: uv run xerscope sample --out data/sample
       - run: uv run xerscope crosscheck tests/reference/data/mpxj tests/reference/data/xerlock data/sample
+      - name: MPXJ's CPM scheduler, pinned commit
+        run: uv run python tests/reference/mpxj_cpm.py
+      - name: CPM against MPXJ (P6 exports, random networks, hand cases, demo)
+        run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py

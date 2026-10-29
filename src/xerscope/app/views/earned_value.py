@@ -163,7 +163,9 @@ with st.expander(f"Earned hours by activity ({snap.data_date:%Y-%m-%d})"):
     ui.csv_button(e[cols], f"earned_{snap.data_date:%Y-%m-%d}.csv")
     fallback = sorted(e.loc[e["ev_technique"].isin(["wbs_milestones", "resource_curves"]), "task_code"])
     if fallback:
-        st.caption(f"EV technique not modelled (activity % complete used instead): {', '.join(fallback[:20])}")
+        st.caption(
+            f"EV technique not modelled (activity % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
+        )
     missing = sorted(set(snap.activities["task_code"]) - set(bl.frame.index))
     if missing:
-        st.caption(f"Not in the baseline (earn nothing): {', '.join(missing)}")
+        st.caption(f"Not in the baseline (earn nothing): {ui.md_text(', '.join(missing))}")

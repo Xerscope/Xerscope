@@ -5,7 +5,10 @@ date, a flat line is a stable forecast, a rising one a slipping milestone; a com
 milestone meets the diagonal (forecast = reporting date).
 
 PPC (Percent Plan Complete, Last Planner): of the activities the W-1 update forecast to
-finish before the W data date, the share that the W update shows complete.
+finish before the W data date, the share that the W update shows complete. In a file P6
+has recalculated no open activity finishes before its own data date, so these are the
+activities forecast to finish during the week [W-1, W); an unscheduled file with stale
+forecasts also counts its overdue work, which was due and is not done.
 
 Progress delta ("actual W - actual W-1"): per activity, % complete and earned hours
 gained during the week (budget hours of week W x change in % complete), rolled up by WBS.

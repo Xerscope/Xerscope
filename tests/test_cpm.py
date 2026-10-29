@@ -1,5 +1,14 @@
 """The CPM engine against P6: real exports to the minute, then each rule by hand.
 
+Sources of the expected values, strongest first:
+- P6 itself: the dates P6 stored in Hotel and Terminal (both unstarted, task dependent);
+- xerlock's sample: synthetic, its dates come from xerlock's own engine (another tool,
+  the only one here using Progress Override);
+- the hand cases: worked out from Oracle's documentation. Every one that MPXJ's
+  scheduler models is run through it in tests/test_crosscheck_mpxj.py; the others
+  (Actual Dates, Progress Override, SS lag from actual start, open ends critical) have
+  no independent check and say so.
+
 Hand cases use xerkit's calendars: C8 = Mon-Fri 08-12 / 13-17 with Good Friday
 (2026-04-03) off, C7D = 7 days 08-16. Data date Monday 2026-03-02 08:00.
 """
@@ -11,6 +20,7 @@ import pytest
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis.cpm import (
+    FIELDS,
     CycleError,
     compare_assignments,
     compare_with_stored,
@@ -37,15 +47,17 @@ def dates(s, code):
 # --- real P6 exports: every stored early/late date and float, exactly --------------------------
 
 REFERENCE = {  # file -> minimum number of stored values compared
-    "p6viewer/Hotel Project.xer": 25_000,
-    "p6viewer/TERMINAL BUILDING-AIRPORT.xer": 390,
-    "xerlock/sample-schedule.xer": 120,
+    "p6viewer/Hotel Project.xer": 25_000,  # P6 6.0
+    "p6viewer/TERMINAL BUILDING-AIRPORT.xer": 390,  # P6 5.0
+    "pv/20-kW-residential-pv-p6.xer": 150,  # P6 25.12
+    "xereditor/sample.xer": 250,  # P6 20.12 (plus 10 LOE, below)
+    "xerlock/sample-schedule.xer": 120,  # not P6: synthetic, xerlock's engine (Progress Override)
 }
 
 
 @pytest.mark.reference
 @pytest.mark.parametrize("name", REFERENCE)
-def test_recalculation_reproduces_p6_to_the_minute(name):
+def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
     if not (REF / name).exists():
         pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
     s = load_snapshot(REF / name)
@@ -57,7 +69,22 @@ def test_recalculation_reproduces_p6_to_the_minute(name):
 
 
 @pytest.mark.reference
-@pytest.mark.parametrize("name", REFERENCE)
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param(
+            n,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="P6 20.12 flags level-of-effort activities on the longest path; xerscope leaves LOE out "
+                "(open: see docs/cpm.md, Validation)",
+            ),
+        )
+        if n == "xereditor/sample.xer"
+        else n
+        for n in REFERENCE
+    ],
+)
 def test_longest_path_matches_p6s_flag(name):
     """Every open activity's computed longest-path membership = P6's driving_path_flag."""
     if not (REF / name).exists():
@@ -68,6 +95,20 @@ def test_longest_path_matches_p6s_flag(name):
     mine = schedule(s).frame.loc[open_.index, "longest_path"]
     assert open_["on_longest_path"].sum() > 0
     assert (mine == open_["on_longest_path"]).all()
+
+
+@pytest.mark.reference
+def test_level_of_effort_dates_reproduce_p6(require_reference):
+    """P6 20.12 stored the dates of 10 LOE activities (SS from a task, FF into the next):
+    start, finish, late dates and float all reproduced, the only P6 output with LOE at hand."""
+    s = load_snapshot(require_reference("xereditor/sample.xer"))
+    t = s.activities.set_index("task_code")
+    loe = t[t["is_loe"]]
+    assert len(loe) == 10
+    f = schedule(s).frame.loc[loe.index]
+    for mine, theirs in FIELDS:
+        got = f[mine] if mine in f else None
+        assert (got.to_numpy() == loe[theirs].to_numpy()).all(), (mine, got.head(3), loe[theirs].head(3))
 
 
 ASSIGNMENTS = {"p6viewer/Hotel Project.xer": 2278, "p6viewer/TERMINAL BUILDING-AIRPORT.xer": 62}
@@ -339,9 +380,21 @@ def test_expected_finish_sets_remaining_work():
     assert dates(snap(t, sched={"sched_use_expect_end_flag": "N"}), "A")[1] == T("2026-03-06 17:00")
 
 
-def test_completed_predecessor_uses_actual_finish():
-    s = snap([done("A", act_end_date="2026-03-03 17:00"), todo("B", **hours(8))], [("A", "B", "FS", 0)])
-    assert dates(s, "B")[0] == T("2026-03-04 08:00")  # an actual after the data date still drives
+@pytest.mark.parametrize(
+    "sched,start",
+    [
+        # Retained Logic: a finished activity passes on only what open work still imposes, so
+        # an actual finish after the data date (invalid progress) drives nothing. Same as
+        # MPXJ's PrimaveraScheduler (tests/test_crosscheck_mpxj.py).
+        ({}, "2026-03-02 08:00"),
+        # Actual Dates: the actual dates themselves drive. No independent engine models
+        # this option: xerscope's reading of Oracle's description, unconfirmed.
+        ({"sched_retained_logic": "N", "sched_progress_override": "N"}, "2026-03-04 08:00"),
+    ],
+)
+def test_actual_finish_after_the_data_date(sched, start):
+    s = snap([done("A", act_end_date="2026-03-03 17:00"), todo("B", **hours(8))], [("A", "B", "FS", 0)], sched=sched)
+    assert dates(s, "B")[0] == T(start)
 
 
 def test_level_of_effort_spans_its_drivers():
@@ -389,9 +442,13 @@ def test_convention_late_start_bound_on_a_weekend_shows_monday_morning():
     assert a[2] == T("2026-03-09 08:00") and a[4] == 40  # one working week of float
 
 
-def test_convention_finished_predecessor_no_longer_holds_remaining_work():
-    s = snap([done("A", act_end_date="2026-02-27 17:00"), active("B", remain_drtn_hr_cnt="8")], [("A", "B", "FS", 40)])
-    assert dates(s, "B")[0] == T("2026-03-02 08:00")  # lag not re-applied to work in progress
+@pytest.mark.parametrize("lag,start", [(40, "2026-03-09 08:00"), (8, "2026-03-03 08:00")])
+def test_out_of_sequence_work_waits_for_the_unexpired_lag(lag, start):
+    """B started before A finished + lag: under Retained Logic its remaining work waits for
+    the lag still to run after A's actual finish (Fri 17:00 -> data date Mon 08:00: none
+    expired). MPXJ's PrimaveraScheduler gives the same dates (case2 of the MPXJ crosscheck)."""
+    s = snap([done("A", act_end_date="2026-02-27 17:00"), active("B", remain_drtn_hr_cnt="8")], [("A", "B", "FS", lag)])
+    assert dates(s, "B")[0] == T(start)
 
 
 # --- P6 Professional 24 options -------------------------------------------------------------------
@@ -438,12 +495,18 @@ RSRCS = [
 
 
 def _asg(code, rsrc, qty, lag=0, driving="Y"):
+    """An unstarted assignment with every field P6 exports for one (budgeted = remaining,
+    1 unit per hour, lag both planned and remaining), so any reader sees the same thing."""
     return {
         "task_code": code,
         "rsrc_id": rsrc,
         "target_qty": str(qty),
         "remain_qty": str(qty),
+        "act_reg_qty": "0",
+        "act_ot_qty": "0",
+        "target_qty_per_hr": "1",
         "remain_qty_per_hr": "1",
+        "target_lag_drtn_hr_cnt": str(lag),
         "relag_drtn_hr_cnt": str(lag),
         "rollup_dates_flag": driving,
     }

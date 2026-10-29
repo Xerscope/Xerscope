@@ -716,7 +716,8 @@ def actuals_changed(ctx, field: str = "start") -> RuleOutput:
     """DECM 06A504a / 06A504b: actual start (or finish) different from the previous update's.
 
     X = activities whose actual date differs from (or was removed since) the one the
-    previous update reported; Y = activities with that actual date now. Needs the
+    previous update reported; Y = activities with that actual date in either update, so
+    a removed date counts on both sides and the share never exceeds 100 %. Needs the
     previous update (the weekly series, or two files).
     """
     col = {"start": "act_start_date", "finish": "act_end_date"}[field]
@@ -729,7 +730,8 @@ def actuals_changed(ctx, field: str = "start") -> RuleOutput:
     changed = [c for c in common if now.at[c, col] != before[c]]
     bad = now.loc[changed].reset_index()
     out = _act(bad, previous=[before[c] for c in changed], now=bad.get(col))
-    return RuleOutput(out, len(bad), int(now[col].notna().sum()))
+    dated = set(now.index[now[col].notna()]) | set(common)
+    return RuleOutput(out, len(bad), len(dated))
 
 
 @rule("progress_actuals", "%")
@@ -789,5 +791,9 @@ def riding_status_date(
     finish_ride = pop["is_started"] & pp["is_started"] & (rd_change <= remaining_tolerance_wd)
     hit = ((start_now & start_prev) | finish_ride).fillna(False).astype(bool)
     bad = pop[hit]
-    why = np.where(finish_ride[hit], "remaining duration unchanged", "start on the data date twice")
+    why = np.where(
+        finish_ride[hit],
+        "remaining duration unchanged",
+        f"start within {window_wd:g} wd of the data date in both updates",
+    )
     return RuleOutput(_act(bad, reason=why), len(bad), len(pop), note=f"vs update of {prev.data_date:%Y-%m-%d}")

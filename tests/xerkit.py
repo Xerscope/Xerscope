@@ -5,11 +5,20 @@ from __future__ import annotations
 from xerscope.xer import Snapshot, build_snapshot, parse_text
 
 DD = "2026-03-02 08:00"  # Monday
-MON_FRI_8H = (
-    "(0||CalendarData()((0||DaysOfWeek()((0||1()())"
-    + "".join(f"(0||{d}()((0||0(s|08:00|f|12:00)())(0||1(s|13:00|f|17:00)())))" for d in range(2, 7))
-    + "(0||7()())))(0||Exceptions()((0||0(d|46115)())))))"
-)  # 46115 = Fri 2026-04-03
+
+
+def clndr_data(days: range, periods: list[tuple[str, str]], holidays: tuple[int, ...] = ()) -> str:
+    """A P6 CALENDAR.clndr_data blob: working ``periods`` on ``days`` (1 = Sunday .. 7 = Saturday)."""
+    work = "".join(f"(0||{i}(s|{a}|f|{b})())" for i, (a, b) in enumerate(periods))
+    week = "".join(f"(0||{d}()({work if d in days else ''}))" for d in range(1, 8))
+    exc = "".join(f"(0||{i}(d|{h})())" for i, h in enumerate(holidays))
+    return f"(0||CalendarData()((0||DaysOfWeek()({week}))(0||Exceptions()({exc}))))"
+
+
+# Written out in full, so any reader (xerscope, MPXJ, P6) sees the same working time.
+MON_FRI_8H = clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], (46115,))  # 46115 = Fri 2026-04-03
+MON_FRI_10H = clndr_data(range(2, 7), [("08:00", "18:00")])
+SEVEN_DAYS_8H = clndr_data(range(1, 8), [("08:00", "16:00")])
 
 TASK_DEFAULTS = {
     "proj_id": "1",
@@ -38,10 +47,23 @@ TASK_DEFAULTS = {
 }
 
 
+# Tests name calendars and resources (C8, C7D, R1...); the file carries numeric ids, as P6
+# writes them (MPXJ, like P6's own import, reads these keys as integers).
+CALENDAR_IDS = {"C8": "8", "C10": "10", "C7D": "7"}
+
+
+def _key(col: str, v: object) -> object:
+    if col == "clndr_id" and v in CALENDAR_IDS:
+        return CALENDAR_IDS[v]
+    if col == "rsrc_id" and isinstance(v, str) and v[:1] == "R" and v[1:].isdigit():
+        return str(900 + int(v[1:]))
+    return v
+
+
 def _table(name: str, rows: list[dict]) -> list[str]:
     cols = list(dict.fromkeys(k for r in rows for k in r))
     return [f"%T\t{name}", "%F\t" + "\t".join(cols)] + [
-        "%R\t" + "\t".join(str(r.get(c, "")) for c in cols) for r in rows
+        "%R\t" + "\t".join(str(_key(c, r.get(c, ""))) for c in cols) for r in rows
     ]
 
 
@@ -88,8 +110,20 @@ def xer_text(
                 "week_hr_cnt": "40",
                 "clndr_data": MON_FRI_8H,
             },
-            {"clndr_id": "C10", "clndr_name": "Mon-Fri 10h", "day_hr_cnt": "10", "week_hr_cnt": "50", "clndr_data": ""},
-            {"clndr_id": "C7D", "clndr_name": "7 days 8h", "day_hr_cnt": "8", "week_hr_cnt": "56", "clndr_data": ""},
+            {
+                "clndr_id": "C10",
+                "clndr_name": "Mon-Fri 10h",
+                "day_hr_cnt": "10",
+                "week_hr_cnt": "50",
+                "clndr_data": MON_FRI_10H,
+            },
+            {
+                "clndr_id": "C7D",
+                "clndr_name": "7 days 8h",
+                "day_hr_cnt": "8",
+                "week_hr_cnt": "56",
+                "clndr_data": SEVEN_DAYS_8H,
+            },
         ],
     )
     lines += _table("PROJECT", [proj])

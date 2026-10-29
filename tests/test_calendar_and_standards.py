@@ -2,7 +2,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
-from xerkit import MON_FRI_8H
+from xerkit import CALENDAR_IDS, MON_FRI_8H
 
 from xerscope.analysis import builtin_standards, loads_standard, template_text
 from xerscope.xer.calendar import WorkCalendar, parse_clndr_data
@@ -121,7 +121,7 @@ def test_time_axis_values_survive_growing_backwards():
     from xerscope.xer.calendar import TimeAxis
 
     T = pd.Timestamp
-    ax = TimeAxis(snap([todo("A")]).calendar("C8"), date(2026, 3, 2), date(2026, 3, 31))
+    ax = TimeAxis(snap([todo("A")]).calendar(CALENDAR_IDS["C8"]), date(2026, 3, 2), date(2026, 3, 31))
     w = ax.work(T("2026-03-10 10:00"))
     assert ax.work(T("2025-01-06 08:00")) < 0  # the axis grew a year back
     assert ax.at(w, finish=True) == T("2026-03-10 10:00")

@@ -56,6 +56,7 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
     current: str | None = None
     version = export_date = None
     saw_header = False
+    orphans = 0  # %R rows outside any %T table
 
     # split("\n") rather than splitlines(): task names may contain characters
     # that splitlines() treats as line breaks (\x0b, \x1c,  ...).
@@ -68,6 +69,8 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
         if tag == "%R":
             if current is not None:
                 rows[current].append(parts[1:])
+            else:
+                orphans += 1
         elif tag == "%T":
             current = parts[1].strip() if len(parts) > 1 else None
             if current:
@@ -87,6 +90,10 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
 
     tables: dict[str, pd.DataFrame] = {}
     warnings: list[str] = []
+    if orphans:
+        warnings.append(f"{orphans} %R row(s) before any %T table line; skipped")
+    if "lossy" in encoding:
+        warnings.append("neither UTF-8 nor Windows-1252: undecodable bytes replaced, names may be garbled")
     for name, table_rows in rows.items():
         names = cols.get(name)
         if not names:

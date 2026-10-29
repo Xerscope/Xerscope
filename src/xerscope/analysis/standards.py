@@ -195,6 +195,8 @@ def discover_standards(*dirs: str | Path) -> tuple[dict[str, Standard], list[str
         for p in sorted(root.glob("*.toml")):
             try:
                 s = load_standard(p)
+                if s.id in found:
+                    errors.append(f"{p.name}: id {s.id!r} replaces the standard of that id ({found[s.id].name})")
                 found[s.id] = s
             except (ValueError, OSError) as exc:
                 errors.append(str(exc))

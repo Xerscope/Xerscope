@@ -499,3 +499,19 @@ def test_decm_milestone_needs_only_one_link_per_side():
     )
     r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
     assert "T" in codes(r) and "MS" not in codes(r)  # same SS-only successor: open for a task only
+
+
+def test_actuals_changed_counts_a_removed_date_on_both_sides():
+    """A loses its actual start, B's moves: 2 of the 2 activities dated in either update
+    (the share was 200 % when the denominator counted only today's dates)."""
+    from xerkit import active, todo
+
+    from xerscope.analysis import AnalysisContext
+    from xerscope.analysis.rules import RULES
+    from xerscope.store import SnapshotStore
+
+    a = snap([active("A"), active("B"), todo("C")])
+    b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-09 08:00")
+    store = SnapshotStore([a, b])
+    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start")
+    assert sorted(out.flagged["task_code"]) == ["A", "B"] and (out.numerator, out.denominator) == (2, 2)
