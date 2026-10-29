@@ -28,29 +28,29 @@ FLOORS = {
     "H5": 0.99,
     "H6": 0.99,
     "H7": 0.99,
-    "H8": 0.97,
-    "H9": 0.98,
-    "H10": 0.77,
-    "H11": 0.89,
-    "H12": 0.88,
-    "H13": 0.91,
-    "H14": 0.86,
-    "H15": 0.86,
-    "H16": 0.84,
-    "H17": 0.88,
-    "H18": 0.92,
-    "H19": 0.90,
-    "H20": 0.90,
-    "H21": 0.81,
-    "H22": 0.89,
-    "H23": 0.66,
-    "H24": 0.56,
-    "H25": 0.66,
-    "H26": 0.59,
-    "H27": 0.62,
-    "H28": 0.55,
-    "H29": 0.64,
-    "H30": 0.67,
+    "H8": 0.98,
+    "H9": 0.99,
+    "H10": 0.88,
+    "H11": 0.99,
+    "H12": 0.97,
+    "H13": 0.98,
+    "H14": 0.94,
+    "H15": 0.97,
+    "H16": 0.89,
+    "H17": 0.94,
+    "H18": 0.97,
+    "H19": 0.97,
+    "H20": 0.93,
+    "H21": 0.90,
+    "H22": 0.96,
+    "H23": 0.68,
+    "H24": 0.63,
+    "H25": 0.69,
+    "H26": 0.74,
+    "H27": 0.70,
+    "H28": 0.68,
+    "H29": 0.73,
+    "H30": 0.79,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -182,6 +182,32 @@ PINNED = {
     ],
     "progress override: an FF predecessor still bounds the finish of started work": [
         ("H1", "H1-11", "A1040", "early_finish")
+    ],
+    "progress override: an SS from a started predecessor is measured from the data date": [
+        ("H17", "H17-10", "A1270", "early_start")
+    ],
+    "resource dependent: the bound is taken on the activity calendar, the resource runs from there": [
+        ("H8", "H8-03", "A1240", "early_start"),
+        ("H8", "H8-03", "A1240", "early_finish"),
+    ],
+    "resource dependent: a finish bound is met from the activity's start, not tight": [
+        ("H10", "H10-02", "A1360", "early_finish")
+    ],
+    "resource dependent: the expected finish measures the remaining work on the resource calendar": [
+        ("H26", "H26-11", "A1090", "early_finish")
+    ],
+    "resource dependent: an expected finish before the start keeps the remaining duration": [
+        ("H14", "H14-05", "A1040", "early_finish")
+    ],
+    "resource dependent: late bounds on the activity calendar first, the resource back from them": [
+        ("H10", "H10-04", "A1220", "late_finish"),
+        ("H10", "H10-04", "A1220", "late_start"),
+        ("H8", "H8-11", "A1040", "late_finish"),
+        ("H9", "H9-08", "A1230", "late_finish"),
+    ],
+    "resource dependent: the Mandatory Finish stays the late finish under an earlier expected finish": [
+        ("H25", "H25-05", "A1150", "late_finish"),
+        ("H25", "H25-05", "A1150", "early_finish"),
     ],
 }
 

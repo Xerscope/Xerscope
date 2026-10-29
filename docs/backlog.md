@@ -23,13 +23,18 @@ is done, add one when a check or a recalculation disagrees with P6.
 
 Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
-- [ ] **Resource-dependent work**: 62 % of the corpus values. Start with assignment lag
-      placement and the finish on the resource calendar; the expected-finish rule there
-      still follows MPXJ's reading (`cpm.py forward`).
-- [ ] **Two rules observed, not explained** (`cpm.py expected_finish`, `successor_limits`):
-      started work under Progress Override with an FF/SF predecessor keeps its remaining
-      duration when the expected finish is earlier; the free float of started work under
-      Progress Override, with counter-examples H4-08 A1010, H12-07 A1120, H17-04 A1040.
+- [ ] **Resource-dependent work**: 77 % of the corpus values (`cpm.py rsrc_early`,
+      `place_late`). Still open: what a successor sees of an activity whose placement
+      was pushed by a finish bound (H14-02 A1220 wants its FF predecessor one hour
+      earlier than displayed; H10-10 A1140 a lead four days earlier); started
+      resource-dependent work under Retained Logic (late dates 60 %); the late start
+      bound's instant on the activity calendar (H22-03 A1070 against H13-10).
+- [ ] **Rules observed, not explained** (`cpm.py expected_finish`, `successor_limits`,
+      `backward`): started work under Progress Override with an FF/SF predecessor keeps
+      its remaining duration when the expected finish is earlier; the free float of
+      started work under Progress Override, with counter-examples H4-08 A1010, H12-07
+      A1120, H17-04 A1040; the Mandatory Finish of resource-dependent work stays its late
+      finish under an earlier expected finish (H25-05 A1150, 3 cases).
 - [ ] Open ends under "make open-ended activities critical" beside a constraint or ALAP
       (70 %); Mandatory Finish late dates a successor drives (H25-03 A1180 against
       H10-05 A1180); the LOE longest-path flag (`test_longest_path_matches_p6s_flag`,

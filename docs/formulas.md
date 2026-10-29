@@ -370,5 +370,5 @@ Stated by the code or docs/backlog.md; nothing here is verified against P6 outpu
 - WBS roll-up % complete mixes percent-complete types and is not a P6 field (wbs.py,
   backlog).
 - CPM not modelled: resource leveling, multiple float paths, relationships to projects
-  not in the file (cpm.py); resource-dependent work and two Progress Override rules still
-  differ from P6 23.12 on the held-out corpus (backlog).
+  not in the file (cpm.py); resource-dependent work (77 % of its corpus values) and two
+  Progress Override rules still differ from P6 23.12 on the held-out corpus (backlog).

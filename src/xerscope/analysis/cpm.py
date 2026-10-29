@@ -29,9 +29,10 @@ Forward pass (early dates), in topological order, for each open activity:
 - finished, under Retained Logic: logic passes through it (out-of-sequence progress, see
   ``pred_bounds``)
 - finish = start + remaining duration (minutes of the activity's calendar)
-- resource dependent: each driving assignment is scheduled on its resource's calendar
-  (start + assignment lag, duration = remaining units / units per hour); the activity
-  runs from the earliest assignment start to the latest assignment finish
+- resource dependent: the bound is taken on the activity's calendar, each driving
+  assignment is placed from it on its resource's calendar (+ assignment lag, duration =
+  remaining units / units per hour), the activity starts at the earliest assignment
+  start on its own calendar and the assignments run forward from there (``rsrc_early``)
 
 Backward pass (late dates), in reverse order: the same relationships mirrored (an SS/SF
 lag that has partly expired in the forward pass is shortened the same way), started
@@ -258,6 +259,7 @@ class _Run:
         self.tf: dict[str, float] = {}
         self.ff: dict[str, float] = {}
         self.a_early: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}  # taskrsrc_id -> start, finish
+        self.a_dur: dict[str, float] = {}  # taskrsrc_id -> remaining minutes as placed (expected finish)
         self.a_late: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
         # Retained Logic: finished activities pass logic through (see pred_bounds)
         self.retain = opt.progressed == "retained_logic"
@@ -448,7 +450,12 @@ class _Run:
         if self.status[p] == "TK_NotStart" or act is None or pd.isna(act):
             return self.rs[p], lag
         if self.status[p] == "TK_Active" and self.opt.lag_from_early_start and self.opt.progressed != "actual_dates":
-            return self.rs[p], self.unexpired(p, lx, lag)
+            # Progress Override: the remaining work of a started predecessor begins at the
+            # data date, and that is where the link is measured from, not from its remaining
+            # start on its own calendar (H17-10 A1270: a successor at the data date while
+            # the predecessor's remaining start is the next working day)
+            frm = self.dd if self.opt.progressed == "progress_override" else self.rs[p]
+            return frm, self.unexpired(p, lx, lag)
         return act, lag
 
     # --- forward pass --------------------------------------------------------------------------
@@ -500,10 +507,13 @@ class _Run:
             if pinned and pinned[0] == "start":
                 s_c, f_c = [max(pinned[1], dd)], []
             if c in self.rsrc_dep and k == "task":
-                start, fin = self.rsrc_early(c, s_c, f_c, self.extra.get(c, 0.0) * 60)
+                exp = R[c].get("expect_end_date", pd.NaT) if opt.use_expected_finish else pd.NaT
+                alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
+                exp = pd.Timestamp(exp) if pd.notna(exp) and not alap and exp >= dd else None
+                start, fin = self.rsrc_early(c, s_c, f_c, self.extra.get(c, 0.0) * 60, exp)
             else:
                 start, fin = _early(ax, k, d, s_c, f_c)
-            if pinned and pinned[0] == "finish":
+            if pinned and pinned[0] == "finish" and c not in self.dur_override:
                 fin = ax.keep_or_previous(pinned[1])
                 start = ax.add(fin, -d, finish=False) if (k == "task" and d) else fin
                 if start < dd:
@@ -517,11 +527,6 @@ class _Run:
                     start, fin = self.expected_finish(
                         c, ax, pd.Timestamp(exp), s_c, f_c, start, fin, use_logic, finish_linked
                     )
-                elif pd.notna(exp) and not alap and not finish_linked and exp >= start and exp >= dd:
-                    # resource-dependent work: MPXJ's reading; the task rule above measures
-                    # worse there on the corpus (open, see docs/backlog.md)
-                    fin = pd.Timestamp(exp)
-                    self.dur_override[c] = float(ax.between(start, fin))
             es[c], ef[c], rs[c] = (R[c].get("act_start_date") if started and k == "task" else start), fin, start
         self.open_ = [c for c in self.order if status[c] != "TK_Complete"]
         # Under Retained Logic a finished activity ends, for its successors, at its carried
@@ -556,22 +561,51 @@ class _Run:
         self.dur_override[c] = float(ax.between(s0, exp_fin))
         return s0, exp_fin
 
-    def rsrc_early(self, c, s_c, f_c, d_extra) -> tuple[pd.Timestamp, pd.Timestamp]:
-        """Resource dependent: each driving assignment on its resource calendar."""
-        lo = max(s_c)
+    def rsrc_early(self, c, s_c, f_c, d_extra, exp=None) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Resource dependent, as P6 23.12 places it (corpus H8-H30):
+
+        1. the lower bound is taken on the activity's own calendar (H8-03 A1240: data date
+           00:00, activity Mon-Thu from 07:00, resource every day from 06:00: starts 07:00);
+        2. each driving assignment is placed from there on its resource calendar, with its
+           lag, and pushed back behind a finish bound if one is later;
+        3. the activity starts at the earliest assignment start, on its own calendar, and
+           each assignment then runs forward from that start: a finish bound is met, not
+           tight (H10-02 A1360: an FF bound at Fri 18:00 on a Mon-Sat 08-16 resource,
+           placed Fri 08:00-16:00).
+
+        ``exp``: the expected finish when the option applies (see below).
+        """
+        ax = self.cal_ax[c]
+        lo = ax.snap_start(max(s_c))
         f_min = max(f_c) if f_c else None
-        starts, fins = [], []
+        starts, durs = [], {}
         for a in self.driving(c):
             d = a.dur_m + d_extra
             s0 = a.ax.snap_start(self.shift(a.ax, lo, a.lag_m))
+            if exp is not None and exp > s0 and (f_min is None or exp >= f_min):
+                # the expected finish sets the remaining work, measured on the resource
+                # calendar from this placement (H26-11 A1090: 35.5 h from Tue 06:00, then
+                # run from the activity's Tue 07:00 to Fri 06:30); an expected finish before
+                # the placement keeps the file's remaining duration (H14-05 A1040), and an
+                # FF / SF bound later than it wins, as for task-dependent work
+                d = float(a.ax.between(s0, exp))
+            durs[a.taskrsrc_id] = self.a_dur[a.taskrsrc_id] = d
             f0 = a.ax.add(s0, d, finish=True) if d else s0
             if f_min is not None and f0 < f_min:
                 f0 = a.ax.keep_or_next(f_min)
                 s0 = a.ax.add(f0, -d, finish=False) if d else f0
+            starts.append(self.shift(a.ax, s0, -a.lag_m))
+        start = ax.snap_start(min(starts))
+        fins = []
+        for a in self.driving(c):
+            d = durs[a.taskrsrc_id]
+            s0 = a.ax.snap_start(self.shift(a.ax, start, a.lag_m))
+            f0 = a.ax.add(s0, d, finish=True) if d else s0
             self.a_early[a.taskrsrc_id] = (s0, f0)
-            starts.append(s0)
             fins.append(f0)
-        return min(starts), max(fins)
+        if any(durs[a.taskrsrc_id] != a.dur_m + d_extra for a in self.driving(c)):
+            self.dur_override[c] = float(ax.between(start, max(fins)))  # the backward pass follows
+        return start, max(fins)
 
     # --- backward pass -------------------------------------------------------------------------
     def successor_limits(self, c, late: bool) -> tuple[list, list]:
@@ -651,11 +685,15 @@ class _Run:
     def place_late(self, c, ax, k, d, l_s, l_f) -> tuple[pd.Timestamp, pd.Timestamp]:
         if c not in self.rsrc_dep or k != "task":
             return _late(ax, k, d, l_s, l_f)
-        hi_f = min(l_f) if l_f else None
-        hi_s = min(l_s) if l_s else None
+        # Mirror of rsrc_early: the bounds are taken on the activity calendar first (H10-04
+        # A1220: a successor's late start Tue 08:00 is Mon 16:00 on a Mon-Sat 08-16 activity,
+        # the 24 h resource then runs back from there), then each driving assignment is
+        # placed on its resource calendar (H9-08 A1230: the resource's holiday moves it)
+        hi_f = ax.snap_finish(min(l_f)) if l_f else None
+        hi_s = ax.snap_start(min(l_s)) if l_s else None
         starts, fins = [], []
         for a in self.driving(c):
-            dd_ = a.dur_m + self.extra.get(c, 0.0) * 60
+            dd_ = self.a_dur.get(a.taskrsrc_id, a.dur_m + self.extra.get(c, 0.0) * 60)
             f0 = a.ax.snap_finish(hi_f) if hi_f is not None else None
             s0 = (a.ax.add(f0, -dd_, finish=False) if dd_ else f0) if f0 is not None else None
             if hi_s is not None:
@@ -701,9 +739,11 @@ class _Run:
                     l_f.append(date)
             if pinned:
                 l_s, l_f = ([pinned[1]], []) if pinned[0] == "start" else ([], [pinned[1]])
-                if pinned[0] == "finish" and c in self.dur_override:
+                if pinned[0] == "finish" and c in self.dur_override and c not in self.rsrc_dep:
                     # an expected finish earlier than the Mandatory Finish is the late finish
-                    # too (H22-06 A1120; the early finish is then the expected finish)
+                    # too (H22-06 A1120; the early finish is then the expected finish). Not
+                    # for resource-dependent work, whose late finish stays the Mandatory
+                    # Finish (H25-05 A1150; observed, not explained)
                     l_f = [min(pinned[1], self.ef[c])]
             self.ls[c], self.lf[c] = self.place_late(c, ax, k, d, l_s, l_f)
 

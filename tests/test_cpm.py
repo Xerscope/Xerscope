@@ -553,15 +553,20 @@ def test_task_dependent_activity_keeps_its_own_calendar():
     assert not schedule(s).frame.loc["A", "resource_dependent"]
 
 
-def test_resource_dependent_late_dates_use_the_resource_calendar():
+def test_resource_dependent_late_dates_bound_on_the_activity_calendar_first():
+    """The project ends Sunday 16:00 (B, on the 7-day calendar). The crane works Sundays,
+    but A's late finish is first taken on A's own calendar (C8, Mon-Fri): Friday 17:00,
+    which on the crane's calendar is Friday 16:00; the crane then runs back 52 h from
+    there. P6 23.12 corpus H8-11 A1040 (open end against the project finish, Thursday
+    23:00 on a Mon-Thu activity: late finish Thursday 17:30, the resource back from it)."""
     s = snap(
-        [todo("A", task_type="TT_Rsrc", **hours(56))],
+        [todo("A", task_type="TT_Rsrc", **hours(52)), todo("B", clndr_id="C7D", **hours(112))],
         resources=RSRCS,
-        assign=[_asg("A", "R7", 56)],
-        project={"plan_end_date": "2026-03-15 16:00"},
-    )  # Sunday 16:00: a crane working hour
+        assign=[_asg("A", "R7", 52)],
+    )
+    assert dates(s, "B")[1] == T("2026-03-15 16:00")  # Sunday: the project finish
     a = dates(s, "A")
-    assert (a[2], a[3]) == (T("2026-03-09 08:00"), T("2026-03-15 16:00"))
+    assert (a[2], a[3]) == (T("2026-03-07 12:00"), T("2026-03-13 16:00"))
 
 
 def test_task_dependent_assignment_lag_and_own_duration():

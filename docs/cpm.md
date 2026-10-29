@@ -35,9 +35,10 @@ level-of-effort and resource-dependent work, under every scheduling option.
 
 | Scope | Values | Identical to P6 |
 |---|---|---|
-| H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.5 % |
-| task-dependent work, all 30 sets | 41,868 | 85.0 % |
-| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 61.9 % |
+| H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.6 % |
+| task-dependent work, all 30 sets | 41,868 | 89.1 % |
+| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 77.2 % |
+| all | 54,726 | 86.3 % |
 
 `FLOORS` in the test holds each set's share and fails on any drop; `PINNED` names the
 corpus activity each rule of the engine was taken from, so a regression on one rule is
@@ -49,8 +50,11 @@ bound gives is written at the bound's instant; lags into a finished successor pa
 in full (FS / FF) or unexpired (SS / SF); under Progress Override the start of work under
 way is an actual (FS / SS links to and from it bind nothing, FF / SF links still do);
 suspended work resumes on its resume date; a constraint of the wrong kind on a milestone
-is ignored; LOE late dates follow their links' late dates. What is still open is in
-`docs/backlog.md`.
+is ignored; LOE late dates follow their links' late dates; under Progress Override an SS
+from a started predecessor is measured from the data date; resource-dependent work takes
+its bounds on the activity calendar and places each driving assignment from there (early
+and late), with the expected finish measured on the resource calendar. What is still
+open is in `docs/backlog.md`.
 
 **2. Real P6 exports** with stored dates, exact clock time required (`tests/test_cpm.py`):
 
@@ -80,7 +84,7 @@ itself (`mpxj_inconsistent`) its value is discarded. MPXJ models P6's default op
 | SF into progressed work, or from a finished activity | one rule (below) | a per-status case table |
 | lead from started or finished work | backward pass drops it (SS/SF) | differs by status |
 | FF / SS / SF from a finished activity into started work | carried date + unexpired lag | actual dates |
-| resource-dependent activity, resources on other calendars | each assignment starts on its resource calendar | starts on the activity calendar |
+| resource-dependent activity, resources on other calendars | bound on the activity calendar, each assignment from there on its resource calendar (corpus H8-03 A1240) | starts on the activity calendar |
 | assignment lag on a resource-dependent activity | in the activity dates | left out |
 | free float with a lead, or of a mandatory-constrained activity | to the successor bound | 0 |
 | lag calendar not stated in the file | successor's (Oracle) | predecessor's |
@@ -185,10 +189,16 @@ work before either.
   drive and a finished predecessor no longer holds work in progress.
 - **Resource dependent** (`TT_Rsrc`, Oracle: "scheduled according to the calendars for
   the resources … the latest finish date of all driving resources is used for the early
-  finish"): each driving assignment (`rollup_dates_flag`) starts at the logic's bound plus
-  its lag on its resource's calendar (`RSRC.clndr_id`) and lasts remaining units / units
-  per hour; the activity runs from the earliest assignment start to the latest finish.
-  Without a driving assignment with a rate it falls back to the activity calendar (warned).
+  finish"), as the corpus shows P6 23.12 placing it: the logic's bound is taken on the
+  activity's own calendar; each driving assignment (`rollup_dates_flag`) is placed from
+  there on its resource's calendar (`RSRC.clndr_id`), plus its lag, for remaining units /
+  units per hour, and pushed back behind a later finish bound; the activity starts at the
+  earliest assignment start, on its own calendar, and the assignments then run forward
+  from that start (a finish bound is met, not tight). An expected finish measures the
+  remaining work on the resource calendar from the first placement; one before the start
+  keeps the file's remaining duration. Without a driving assignment with a rate the
+  activity falls back to its own calendar (warned). Witnesses: H8-03 A1240, H10-02
+  A1360, H26-11 A1090, H14-05 A1040.
 
 **Backward pass (late dates)**, in reverse order:
 
@@ -206,8 +216,10 @@ work before either.
 | Mandatory | the date |
 | Actual Dates option | a started successor bounds its predecessors by its *actual* dates: out-of-sequence progress gives the predecessor negative float, growing each period it stays open (Oracle warns of exactly this) |
 
-Resource-dependent activities place each driving assignment's late finish on its
-resource calendar the same way.
+Resource-dependent activities mirror the forward pass: the late bounds are taken on the
+activity calendar first, then each driving assignment runs back on its resource calendar
+(H10-04 A1220, H8-11 A1040, H9-08 A1230); their late finish stays the Mandatory Finish
+under an earlier expected finish (H25-05 A1150, observed).
 
 **Float.**
 
