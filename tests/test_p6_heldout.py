@@ -173,6 +173,10 @@ PINNED = {
     ],
     "R4 late start from an SS bound is written at the bound's instant": [("H3", "H3-02", "A1240", "late_start")],
     "R9d a finish constraint on a start milestone is ignored": [("H6", "H6-03", "A1130", "late_finish")],
+    "R9f suspended work resumes on its resume date": [("H8", "H8-07", "A1020", "early_start")],
+    "R9g progress override: an SF from a started predecessor binds nothing": [
+        ("H10", "H10-02", "A1250", "early_finish")
+    ],
     "R9e SS lag from Actual Start: a finished predecessor's actual start, not its carry": [
         ("H6", "H6-07", "A1190", "early_start")
     ],

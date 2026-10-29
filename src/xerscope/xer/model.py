@@ -45,6 +45,8 @@ TASK_DATE_COLS = [
     "cstr_date2",
     "external_early_start_date",
     "external_late_end_date",
+    "suspend_date",
+    "resume_date",
 ]
 TASK_NUM_COLS = [
     "total_float_hr_cnt",

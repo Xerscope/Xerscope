@@ -241,7 +241,7 @@ class _Run:
         cols = [
             "task_type", "status_code", "clndr_id", "remain_drtn_hr_cnt", "act_start_date", "act_end_date",
             "cstr_type", "cstr_date", "cstr_type2", "cstr_date2", "expect_end_date",
-            "external_early_start_date", "external_late_end_date",
+            "external_early_start_date", "external_late_end_date", "resume_date",
         ]  # fmt: skip
         self.R = self.t[[c for c in cols if c in self.t]].to_dict("index")
         self.cal_ax = {c: self.axes.of(self.R[c]["clndr_id"]) for c in self.t.index}
@@ -420,6 +420,11 @@ class _Run:
             if typ in ("FS", "FF"):
                 out.append((end, self.shift(lx, self.ef[p], lag)))
             else:
+                if typ == "SF" and self.status[p] == "TK_Active" and self.opt.progressed == "progress_override":
+                    # Progress Override: the predecessor's start is an actual, an SF from it
+                    # binds nothing (corpus H10-02 A1250: +61 values); an SS still does,
+                    # through its unexpired lag (24 lost when dropped)
+                    continue
                 p_start, p_lag = self.start_link(p, lx, lag)
                 out.append((end, self.shift(lx, p_start, p_lag)))
         return out
@@ -466,6 +471,10 @@ class _Run:
             started = st == "TK_Active"
             k, d = self.kind(c), self.dur_min(c)
             s_c, f_c = [dd], []
+            resume = R[c].get("resume_date") if started else None
+            if resume is not None and pd.notna(resume):
+                # suspended work resumes on its resume date (corpus H8-07 A1020: +5,668 values)
+                s_c.append(max(dd, pd.Timestamp(resume)))
             # Progress Override: the start of work under way is an actual, so FS / SS
             # predecessors no longer bound it; FF / SF predecessors still bound its finish
             # (P6 23.12, corpus H1-11 A1040: +260 values). Mirrored in successor_limits.
