@@ -24,9 +24,14 @@ def _build(items: list[tuple[str, bytes]]) -> tuple[SnapshotStore | None, list[s
     snaps, errors = [], []
     for name, data in items:
         try:
-            snaps.append(_parse(name, data))
+            snap = _parse(name, data)
         except XerError as exc:
             errors.append(str(exc))
+            continue
+        if snap.data_date is None:
+            errors.append(f"{name}: no data date (PROJECT.last_recalc_date); the file is skipped")
+            continue
+        snaps.append(snap)
     return (SnapshotStore(snaps) if snaps else None), errors
 
 
@@ -109,11 +114,14 @@ def _baseline_picker(store: SnapshotStore) -> None:
     bl: Baseline | None | str = None
     if choice == BL_FILE:
         up = sb.file_uploader("Baseline .xer", type=["xer"], key="bl_upload")
-        if up is not None:
-            bl = Baseline.from_snapshot(_parse(up.name, up.getvalue()), basis)
-        elif env_path and Path(env_path).is_file():
-            p = Path(env_path)
-            bl = Baseline.from_snapshot(_parse(p.name, p.read_bytes()), basis)
+        source = (up.name, up.getvalue()) if up is not None else None
+        if source is None and env_path and Path(env_path).is_file():
+            source = (Path(env_path).name, Path(env_path).read_bytes())
+        if source is not None:
+            try:
+                bl = Baseline.from_snapshot(_parse(*source), basis)
+            except XerError as exc:
+                sb.error(f"Baseline not read: {exc}")
         else:
             sb.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
     elif choice == BL_PLANNED:

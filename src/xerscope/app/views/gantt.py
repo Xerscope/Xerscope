@@ -36,7 +36,7 @@ with left:
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        key="wbs_table",
+        key=f"wbs_table:{snap.source}",  # a new update gets a fresh selection: row positions differ
         width="stretch",
         height=min(33 * len(nodes) + 38, 420),
         column_config={
@@ -48,7 +48,7 @@ with left:
         },
     )
     rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
-    node = nodes.iloc[rows[0]] if rows else nodes.iloc[0]
+    node = nodes.iloc[rows[0]] if rows and rows[0] < len(nodes) else nodes.iloc[0]
 
 with right:
     st.markdown("**Filters**")

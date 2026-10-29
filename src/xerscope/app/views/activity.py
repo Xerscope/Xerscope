@@ -25,13 +25,13 @@ if len(store) - len(h):
 
 first, last = h.iloc[0], h.iloc[-1]
 cal = store.latest.calendar(last["clndr_id"] if isinstance(last["clndr_id"], str) else None)
-slip = cal.working_days(first["finish"], last["finish"]) if len(h) > 1 else None
+slip = cal.working_days(first["finish"], last["finish"]) if len(h) > 1 and h["finish"].notna().all() else None
 ui.kpis(
     [
         ("Status", last["status"]),
         (
             "Forecast finish",
-            f"{last['finish']:%d %b %Y}",
+            f"{last['finish']:%d %b %Y}" if pd.notna(last["finish"]) else "—",
             None if slip is None else f"{slip:+.1f} wd since first",
             None,
             "inverse",

@@ -9,6 +9,7 @@ services:
     environment:
       TS_AUTHKEY: tskey-auth-REPLACE-ME             # Tailscale admin > Settings > Keys, tag:xerscope
       TS_USERSPACE: "true"
+      TS_AUTH_ONCE: "true"                         # log in with the key once; later starts reuse the state
       TS_STATE_DIR: /var/lib/tailscale
       TS_SERVE_CONFIG: /config/serve.json
       TS_EXTRA_ARGS: --advertise-tags=tag:xerscope

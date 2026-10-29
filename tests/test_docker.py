@@ -34,6 +34,13 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "--advertise-routes" not in compose and "exit-node" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
+    # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
+    # rewrite the config, basic_auth included) must not exist, in any of the three Caddyfiles
+    for f in ["deploy/Caddyfile", "deploy/Caddyfile.nas", "deploy/remote/supervisor.py"]:
+        assert "admin off" in (ROOT / f).read_text(), f
+    assert 'TS_AUTH_ONCE: "true"' in compose  # a single-use key must not be replayed on restart
+    env = (ROOT / ".env.example").read_text()
+    assert "XERSCOPE_PASSWORD_HASH='$" in env  # unquoted, Compose interpolates the $ of a bcrypt hash
     serve = (ROOT / "deploy" / "tailscale-serve.json").read_text()
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
 
@@ -44,6 +51,7 @@ def test_nas_compose_pulls_the_published_image_and_publishes_nothing():
     assert (
         not re.search(r"^\s+ports:", compose, re.M)
         and 'TS_USERSPACE: "true"' in compose
+        and 'TS_AUTH_ONCE: "true"' in compose
         and "internal: true" in compose
     )
     wf = (ROOT / ".github" / "workflows" / "image.yml").read_text()

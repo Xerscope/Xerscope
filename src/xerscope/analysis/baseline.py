@@ -72,7 +72,7 @@ class Baseline:
     def planned(cls, snap: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
         a = snap.activities
         frame = _frame(a, a["target_start_date"], a["target_end_date"], ev_basis)
-        return cls(frame, "planned dates (target_*)", snap, ev_basis)
+        return cls(frame, f"planned dates (target_*) of {snap.label}", snap, ev_basis)
 
     @property
     def bac_hours(self) -> float:
