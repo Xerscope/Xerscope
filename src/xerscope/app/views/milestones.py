@@ -2,7 +2,7 @@ import streamlit as st
 
 from xerscope.analysis.progress import milestone_codes, milestone_slips, milestone_trend
 from xerscope.app import ui
-from xerscope.app.state import is_dark, require_store
+from xerscope.app.state import is_dark, memo, require_store
 from xerscope.viz.charts import SERIES, build_mta
 
 store = require_store()
@@ -32,7 +32,7 @@ if not picked:
 if len(store) < 2:
     st.info("The trend needs at least two updates.")
 
-trend = milestone_trend(store, picked)
+trend = memo(("mta", tuple(picked)), lambda: milestone_trend(store, picked))
 st.plotly_chart(build_mta(trend, all_ms + others, is_dark()), width="stretch")
 
 ui.section("Slippage", "Working days on each milestone's own calendar.")

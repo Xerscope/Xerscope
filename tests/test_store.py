@@ -51,3 +51,15 @@ def test_folder_scan_accepts_upper_case_extension(tmp_path):
     for name in ("b.XER", "a.xer", "c.txt"):
         (tmp_path / name).write_bytes(b"")
     assert [p.name for p in xer_files(tmp_path)] == ["a.xer", "b.XER"]
+
+
+def test_one_snapshot_per_data_date(store):
+    from dataclasses import replace
+
+    from xerscope.store import SnapshotStore
+
+    twin = replace(store.first, source="zz-again.xer")
+    s = SnapshotStore([twin, *store])
+    assert len(s) == 8 and s.first.source == store.first.source
+    first = store.first
+    assert s.warnings == [f"zz-again.xer: same data date as {first.source} ({first.data_date:%Y-%m-%d}), skipped"]

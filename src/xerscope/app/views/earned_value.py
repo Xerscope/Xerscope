@@ -131,7 +131,12 @@ ui.section(
 pct = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
 st.plotly_chart(
     build_scurve(
-        curve, series[series["data_date"] <= snap.data_date], forecast_curve(snap), snap.data_date, pct, is_dark()
+        curve,
+        series[series["data_date"] <= snap.data_date],
+        memo(("forecast", snap.source), lambda: forecast_curve(snap)),
+        snap.data_date,
+        pct,
+        is_dark(),
     ),
     width="stretch",
 )

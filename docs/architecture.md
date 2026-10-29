@@ -114,8 +114,11 @@ Outside `analysis/`:
 
 - **`gantt.py`:** status-coloured bars, comparison outlines, milestones, logic links, a
   data-date line and WBS summary bars (`wbs_rows`).
-- **`charts.py`:** S-curve, indices, MTA, PPC and metric trend. The palette is a fixed
-  categorical order, validated for colour-blind separation. There is one y-axis per chart.
+- **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
+  (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the
+  check-status colours in `app/ui.py` derive from them. The series palette is a fixed
+  categorical order, validated for colour-blind separation; status hues never decorate.
+  There is one y-axis per chart.
 
 ## 7. `app/`: Streamlit
 

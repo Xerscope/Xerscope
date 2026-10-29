@@ -45,22 +45,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 ## App
 
-- [ ] A file holding several projects: the biggest one is taken (one warning); the CLI
-      has `--project`, the sidebar has no selector. Stores mixing projects only warn.
-- [ ] Upload signature is name + size: a corrected file of the same size is ignored; the
-      baseline file is outside the signature; "Folder not found" keeps the old data;
-      duplicate data dates are merged with `.iloc[-1]` / `aggfunc="first"`
-      (`state.py`, `earned_value.py`, `health.py`).
-- [ ] No warning when the baseline is newer than the update.
-- [ ] `app/.streamlit/config.toml` applies through `xerscope app` only (`cwd`); a plain
-      `streamlit run` loses the theme and binds all interfaces. Move it or pass flags.
-- [ ] Recomputed on every interaction: `rollup`, `categorise`, `ppc_series`,
-      `milestone_trend`, `forecast_curve`, `export_tables`, the baseline file hash.
-- [ ] Colours live in four places and disagree (amber ×3, two blues; the series palette
-      uses the status green and red). Gantt height grows without bound (300 rows ≈ 9,000 px);
-      PPC bar labels overlap past ~30 weeks; search ignores accents.
-- [ ] `test_app.py` mostly asserts "renders": no test for the upload path, a baseline
-      file, one snapshot, switching updates with a WBS row selected.
+- [ ] Not reachable by AppTest: the upload path (`file_uploader`) and a WBS row selection
+      (`on_select`); both are checked by hand before a release.
+- [ ] Baseline file: the sidebar re-hashes its bytes on every rerun (`st.cache_data`);
+      noticeable above ~50 MB only.
 
 ## Deployment and CI
 

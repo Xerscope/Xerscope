@@ -6,7 +6,7 @@ import streamlit as st
 
 from xerscope.app import ui
 from xerscope.app.state import is_dark, require_store
-from xerscope.viz.charts import FONT, INK, SERIES, TICK
+from xerscope.viz.charts import FONT, INK, SERIES, STATUS, TICK
 
 store = require_store()
 ui.header(
@@ -96,7 +96,7 @@ with c2:
     )
     fig.add_hline(
         y=0,
-        line=dict(color=ink["critical"], width=1, dash="dot"),
+        line=dict(color=STATUS[mode]["critical"], width=1, dash="dot"),
         annotation_text="critical",
         annotation_position="bottom left",
     )

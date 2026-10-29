@@ -10,29 +10,22 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 
+# The app's colours, in one place. ACCENT is the theme's primaryColor
+# (app/.streamlit/config.toml). STATUS is reserved for meaning (critical / warning /
+# pass / complete, and the check statuses in app/ui.py) and never decorates; SERIES is
+# the categorical palette for lines and keeps clear of those hues.
+ACCENT = "#1f4e79"
 SERIES = {
-    "light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"],
-    "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
+    "light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"],
+    "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"],
+}
+STATUS = {
+    "light": {"critical": "#c0392b", "warning": "#b26a00", "good": "#2e7d32", "complete": "#9aa5b1"},
+    "dark": {"critical": "#d03b3b", "warning": "#fab219", "good": "#0ca30c", "complete": "#898781"},
 }
 INK = {
-    "light": {
-        "primary": "#1f2933",
-        "secondary": "#3e4c59",
-        "muted": "#7b8794",
-        "grid": "#e6e9ee",
-        "axis": "#c9d0d8",
-        "critical": "#c0392b",
-        "good": "#2e7d32",
-    },
-    "dark": {
-        "primary": "#f0efec",
-        "secondary": "#c3c2b7",
-        "muted": "#898781",
-        "grid": "#2c2c2a",
-        "axis": "#383835",
-        "critical": "#d03b3b",
-        "good": "#0ca30c",
-    },
+    "light": {"primary": "#1f2933", "secondary": "#3e4c59", "muted": "#7b8794", "grid": "#e6e9ee", "axis": "#c9d0d8"},
+    "dark": {"primary": "#f0efec", "secondary": "#c3c2b7", "muted": "#898781", "grid": "#2c2c2a", "axis": "#383835"},
 }
 
 
@@ -217,7 +210,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
     fig.add_hline(y=1.0, line=dict(color=ink["muted"], width=1))
     fig.add_hline(
         y=0.95,
-        line=dict(color=ink["critical"], width=1, dash="dot"),
+        line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
         annotation_text="0.95",
         annotation_position="bottom left",
     )
@@ -274,29 +267,32 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
 
 def build_ppc(ppc: pd.DataFrame, target: float = 80, dark: bool = False) -> go.Figure:
     c = SERIES[_mode(dark)]
-    ink = INK[_mode(dark)]
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
     text = [
         f"{v:.0f}% ({d}/{n})" if pd.notna(v) else "no commitment"
         for v, d, n in zip(p["ppc"], p["completed"], p["committed"], strict=True)
     ]
+    # bar labels shrink with the number of weeks (full past 20 bars overlap; the hover
+    # keeps the counts): "63%" up to 40 weeks, none beyond
+    short = ["" if n > 40 else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc"] for n in [len(p)]]
     fig = go.Figure(
         go.Bar(
             x=p["label"],
             y=p["ppc"].fillna(0),
-            text=text,
+            text=text if len(p) <= 20 else short,
+            customdata=text,
             textposition="outside",
             cliponaxis=False,
             marker=dict(color=c[0], cornerradius=4),
             width=0.6,
             name="PPC",
-            hovertemplate="Week to %{x}: %{text}<extra></extra>",
+            hovertemplate="Week to %{x}: %{customdata}<extra></extra>",
         )
     )
     fig.add_hline(
         y=target,
-        line=dict(color=ink["critical"], width=1, dash="dot"),
+        line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
         annotation_text=f"target {target:g}%",
         annotation_position="top right",
     )
@@ -314,7 +310,6 @@ def build_metric_trend(
     h: pd.DataFrame, name: str, threshold: float | None, threshold_label: str, unit: str, dark: bool = False
 ) -> go.Figure:
     c = SERIES[_mode(dark)]
-    ink = INK[_mode(dark)]
     fig = go.Figure(
         go.Scatter(
             x=h["data_date"],
@@ -330,7 +325,7 @@ def build_metric_trend(
     if threshold is not None and unit != "pass/fail":
         fig.add_hline(
             y=threshold,
-            line=dict(color=ink["critical"], width=1, dash="dot"),
+            line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
             annotation_text=f"target {threshold_label}",
             annotation_position="top left",
         )

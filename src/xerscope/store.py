@@ -79,14 +79,21 @@ def _sort_key(s: Snapshot):
 
 class SnapshotStore:
     def __init__(self, snapshots: Iterable[Snapshot]):
-        self._snaps: list[Snapshot] = sorted(snapshots, key=_sort_key)
-        self.warnings: list[str] = [w for s in self._snaps for w in s.warnings]
+        snaps = sorted(snapshots, key=_sort_key)
+        self.warnings: list[str] = [w for s in snaps for w in s.warnings]
+        # One update per data date: the weekly series, the earned-value and health
+        # histories are keyed on it. Of two files with the same data date the first by
+        # name is kept.
+        self._snaps: list[Snapshot] = []
+        for s in snaps:
+            kept = next((k for k in self._snaps if k.data_date == s.data_date), None)
+            if kept is not None and s.data_date is not None:
+                self.warnings.append(f"{s.source}: same data date as {kept.source} ({s.data_date:%Y-%m-%d}), skipped")
+            else:
+                self._snaps.append(s)
         codes = {s.project_code for s in self._snaps}
         if len(codes) > 1:
             self.warnings.append(f"snapshots mix several projects: {sorted(codes)}")
-        dates = pd.Series([s.data_date for s in self._snaps])
-        if dates.duplicated().any():
-            self.warnings.append("several snapshots share the same data date")
 
     # --- construction ----------------------------------------------------------
     @classmethod

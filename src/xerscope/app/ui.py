@@ -10,13 +10,22 @@ same card style, the same column names and number formats everywhere.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable, Sequence
 
 import pandas as pd
 import streamlit as st
 
+from xerscope.viz.charts import ACCENT, INK, STATUS
+
 # Status colours (text on white): red / amber / green are reserved for status.
-STATUS_COLOUR = {"pass": "#2E7D32", "fail": "#C0392B", "info": "#1F4E79", "n/a": "#7B8794", "error": "#B26A00"}
+STATUS_COLOUR = {
+    "pass": STATUS["light"]["good"],
+    "fail": STATUS["light"]["critical"],
+    "info": ACCENT,
+    "n/a": INK["light"]["muted"],
+    "error": STATUS["light"]["warning"],
+}
 STATUS_LABEL = {"pass": "Pass", "fail": "Fail", "info": "Info", "n/a": "N/A", "error": "Error"}
 
 # column -> (label, kind). kind: text | date | datetime | d1 | d2 | h0 | pct | signed | int | bool
@@ -258,3 +267,9 @@ def status_style(df: pd.DataFrame, column: str = "status"):
     out[column] = out[column].map(lambda s: STATUS_LABEL.get(s, s))
     reverse = {v: STATUS_COLOUR[k] for k, v in STATUS_LABEL.items()}
     return out.style.map(lambda v: f"color: {reverse.get(v, 'inherit')}; font-weight: 600", subset=[column])
+
+
+def fold(text) -> str:
+    """Lower-case without accents, for searching: fold("Béton") == "beton"."""
+    text = "" if pd.isna(text) else str(text)
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(ch))

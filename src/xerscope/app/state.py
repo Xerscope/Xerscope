@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -15,16 +16,16 @@ from xerscope.xer import Snapshot, XerError, build_snapshot, parse_bytes, xer_fi
 
 
 @st.cache_data(show_spinner=False, max_entries=512)
-def _parse(name: str, data: bytes) -> Snapshot:
+def _parse(name: str, data: bytes, project: str | None = None) -> Snapshot:
     # Cached on file content: re-opening the same week's export is free.
-    return build_snapshot(parse_bytes(data, source=name))
+    return build_snapshot(parse_bytes(data, source=name), project_code=project)
 
 
-def _build(items: list[tuple[str, bytes]]) -> tuple[SnapshotStore | None, list[str]]:
+def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
     snaps, errors = [], []
     for name, data in items:
         try:
-            snap = _parse(name, data)
+            snap = _parse(name, data, project)
         except XerError as exc:
             errors.append(str(exc))
             continue
@@ -46,15 +47,17 @@ def sidebar_loader() -> None:
     items: list[tuple[str, bytes]] | None = None
     signature: tuple = ()
     if uploads:
-        signature = ("upload",) + tuple(sorted((f.name, f.size) for f in uploads))
+        # keyed on content, so a corrected file of the same name and size is read again
+        signature = ("upload",) + tuple(sorted((f.name, hashlib.sha256(f.getvalue()).hexdigest()) for f in uploads))
         if signature != st.session_state.get("signature"):
             items = [(f.name, f.getvalue()) for f in uploads]
     elif folder:
         root = Path(folder).expanduser()
-        if not root.is_dir():
-            sb.error("Folder not found")
+        files = xer_files(root) if root.is_dir() else []
+        if not files:
+            sb.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
+            st.session_state.update(store=None, signature=(), errors=[])
             return
-        files = xer_files(root)
         signature = ("folder", str(root)) + tuple((p.name, p.stat().st_mtime_ns) for p in files)
         if signature != st.session_state.get("signature"):
             items = [(p.name, p.read_bytes()) for p in files]
@@ -62,11 +65,23 @@ def sidebar_loader() -> None:
     if items is not None:
         with st.spinner(f"Parsing {len(items)} file(s)…"):
             store, errors = _build(items)
-        st.session_state.update(store=store, signature=signature, errors=errors)
+        st.session_state.update(store=store, signature=signature, errors=errors, items=items)
     elif not uploads and not folder:
-        st.session_state.update(store=None, signature=(), errors=[])
+        st.session_state.update(store=None, signature=(), errors=[], items=None)
 
     store: SnapshotStore | None = st.session_state.get("store")
+    if store is not None:
+        # a file exported with several projects: the one with the most activities was
+        # taken; let the user pick another and read the files again for it
+        codes = sorted({c for snap in store for c in snap.projects_in_file})
+        if len(codes) > 1:
+            current = store.latest.project_code
+            idx = codes.index(current) if current in codes else 0
+            choice = sb.selectbox("Project", codes, index=idx, key="project")
+            if choice != current:
+                with st.spinner(f"Reading {choice}…"):
+                    store, errors = _build(st.session_state["items"], project=choice)
+                st.session_state.update(store=store, errors=errors)
     if store is not None:
         sb.caption(
             f"{store.latest.project_code} · {len(store)} snapshot(s) · "
@@ -131,6 +146,13 @@ def _baseline_picker(store: SnapshotStore) -> None:
     st.session_state["baseline"] = bl
     if isinstance(bl, Baseline):
         sb.caption(f"{bl.label} · {len(bl.frame)} activities · {bl.bac_hours:,.0f} labour h")
+        bl_dd, first_dd = bl.snapshot.data_date, store.first.data_date
+        if bl_dd is not None and first_dd is not None and bl_dd > first_dd:
+            sb.warning(
+                f"The baseline's data date ({bl_dd:%d %b %Y}) is after the first update's ({first_dd:%d %b %Y}): "
+                "BEI, missed tasks and PV before that date compare against a plan that did not exist yet.",
+                icon=":material/warning:",
+            )
 
 
 def baseline_for(snap: Snapshot) -> Baseline | None:
