@@ -119,7 +119,7 @@ is inferred from `day_hr_cnt` and `week_hr_cnt`.
 | When scheduling progressed activities use | `sched_retained_logic`, `sched_progress_override` (both `N` = Actual Dates) | Retained Logic |
 | Calculate start-to-start lag from | `sched_lag_early_start_flag` | Early Start |
 | Calendar for scheduling relationship lag | `sched_calendar_on_relationship_lag` | **Successor** activity calendar |
-| Compute total float as | `sched_float_type` | Finish float |
+| Compute total float as | `sched_float_type`: `FT_FF` finish float, `FT_SS` start float, `FT_Min` the smaller; `FT_Start`/`FT_Total` (imported codes) are reported as the finish float, as P6 23.12 does | Finish float |
 | Make open-ended activities critical | `sched_open_critical_flag` | no |
 | Use expected finish dates | `sched_use_expect_end_flag` | yes |
 | Must finish by | `PROJECT.plan_end_date` | none |

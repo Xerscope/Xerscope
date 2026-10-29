@@ -107,7 +107,7 @@ def test_level_of_effort_dates_reproduce_p6(require_reference):
     assert len(loe) == 10
     f = schedule(s).frame.loc[loe.index]
     for mine, theirs in FIELDS:
-        got = f[mine] if mine in f else None
+        got = f.get(mine)
         assert (got.to_numpy() == loe[theirs].to_numpy()).all(), (mine, got.head(3), loe[theirs].head(3))
 
 

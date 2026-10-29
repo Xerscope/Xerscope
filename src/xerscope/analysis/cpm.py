@@ -79,12 +79,23 @@ class CycleError(ValueError):
     pass
 
 
+# SCHEDOPTIONS.sched_float_type -> which float "Compute Total Float as" reports, measured
+# on the activity's calendar. P6's own dialog writes FT_FF (Finish Float = LF - EF), FT_SS
+# (Start Float = LS - ES) and FT_Min (the smaller). FT_Start and FT_Total only come from
+# imported files: P6 keeps the code and reports a start float it makes equal to the finish
+# float. Evidence, P6 23.12 held-out corpus H8-H30 on P6's own dates, resource-dependent
+# work (the only place the two floats differ): FT_FF = finish 1125/1125, FT_SS = start
+# 40/40, FT_Min = min 282/292, FT_Start = finish 390/461 (start 294). On task-dependent
+# work the late dates are placed by duration on the same calendar: both floats are equal.
+FLOAT_TYPE = {"FT_FF": "finish", "FT_SS": "start", "FT_Min": "min", "FT_Start": "finish", "FT_Total": "finish"}
+
+
 @dataclass(frozen=True)
 class Options:
     """P6 scheduling options (SCHEDOPTIONS / PROJECT) the computation depends on."""
 
     progressed: str = "retained_logic"  # "When scheduling progressed activities use"
-    float_type: str = "FT_FF"  # FT_FF finish float, FT_SF start float, else the smaller
+    float_type: str = "FT_FF"  # "Compute Total Float as": see FLOAT_TYPE
     lag_calendar: str = "rcal_Successor"  # Oracle: the successor's when none is selected
     open_critical: bool = False
     lag_from_early_start: bool = True  # SS lag of a started predecessor: "Early Start"
@@ -637,8 +648,8 @@ class _Run:
             self.ff[c] = max(0.0, min(gaps)) if gaps else max(0.0, ax.between(ef[c], self.finish) / 60)
             fin_f = ax.between(ef[c], lf[c]) / 60
             st_f = ax.between(rs[c], ls[c]) / 60
-            ft = self.opt.float_type
-            self.tf[c] = fin_f if ft == "FT_FF" else st_f if ft == "FT_SF" else min(fin_f, st_f)
+            which = FLOAT_TYPE.get(self.opt.float_type, "finish")  # unknown code: P6's default
+            self.tf[c] = fin_f if which == "finish" else st_f if which == "start" else min(fin_f, st_f)
 
     # --- level of effort: spans what drives it ------------------------------------------------
     def level_of_effort(self) -> None:

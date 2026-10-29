@@ -171,8 +171,8 @@ OPTIONS = [
     {"sched_retained_logic": "N", "sched_progress_override": "Y"},
     {"sched_retained_logic": "N", "sched_progress_override": "N"},
     {"sched_lag_early_start_flag": "N"},
-    {"sched_float_type": "FT_SF"},
-    {"sched_float_type": "FT_SmallestFloat", "sched_open_critical_flag": "Y"},
+    {"sched_float_type": "FT_SS"},
+    {"sched_float_type": "FT_Min", "sched_open_critical_flag": "Y"},
     {"sched_calendar_on_relationship_lag": "rcal_Predecessor"},
     {"sched_calendar_on_relationship_lag": "rcal_24Hour"},
 ]

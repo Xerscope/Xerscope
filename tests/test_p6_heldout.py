@@ -11,8 +11,10 @@ fails here, and a change that raises one should raise the floor. The aim is 1.0 
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 HELD_OUT = Path(__file__).parent / "reference" / "data" / "p6-heldout" / "validation" / "held-out"
@@ -50,6 +52,8 @@ FLOORS = {
     "H30": 0.57,
 }
 
+DATES = ["early_start", "early_finish", "late_start", "late_finish"]
+
 
 @pytest.fixture(scope="module")
 def corpus():
@@ -58,13 +62,82 @@ def corpus():
     return HELD_OUT
 
 
+@functools.cache
+def _score(name: str) -> pd.DataFrame:
+    from xerscope.crosscheck import p6_heldout_score
+
+    return p6_heldout_score(HELD_OUT / name)
+
+
 @pytest.mark.reference
 @pytest.mark.parametrize("name", list(FLOORS))
 def test_share_of_values_identical_to_p6_never_drops(corpus, name):
-    from xerscope.crosscheck import p6_heldout_score
-
-    d = p6_heldout_score(corpus / name)
+    d = _score(name)
     errors = d[d["field"] == "error"]
     assert errors.empty, errors[["case", "xerscope"]].to_string()
     rate = d["agree"].mean()
     assert rate >= FLOORS[name] - 1e-9, f"{name}: {rate:.4f} < floor {FLOORS[name]}"
+
+
+def _p6_results(set_dir: Path) -> pd.DataFrame:
+    res = pd.read_csv(set_dir / "p6-results.csv")
+    for c in DATES:
+        res[c] = pd.to_datetime(res[c])
+    return res
+
+
+@pytest.mark.reference
+def test_float_type_codes_read_as_p6_does(corpus):
+    """Which float P6 reports under each ``sched_float_type`` code, measured on P6's own
+    dates (nothing of xerscope's CPM is involved), on the resource-dependent work of
+    H8-H30, the only place start float and finish float differ. ``FT_FF`` is the finish
+    float, ``FT_SS`` (the code the Schedule Options dialog writes for "Start Float") the
+    start float, ``FT_Min`` the smaller; ``FT_Start``, an imported code P6 keeps, comes out
+    as the finish float most of the time. The engine's FLOAT_TYPE table must say the same."""
+    from xerscope.analysis.cpm import FLOAT_TYPE, _Axes, _date_range
+    from xerscope.xer import load_snapshot
+
+    hits: dict[str, dict[str, int]] = {}
+    for i in range(8, 31):
+        set_dir = corpus / f"H{i}"
+        for case, g in _p6_results(set_dir).groupby("case"):
+            snap = load_snapshot(set_dir / "cases" / f"{case}.xer")
+            code = (snap.options.get("sched") or {}).get("sched_float_type") or "FT_FF"
+            axes = _Axes(snap, *_date_range(snap))
+            t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+            for r in g.itertuples():
+                if r.task_code not in t.index or r.status == "TK_Complete":
+                    continue
+                if t.at[r.task_code, "task_type"] != "TT_Rsrc":
+                    continue
+                ax = axes.of(t.at[r.task_code, "clndr_id"])
+                fin = ax.between(r.early_finish, r.late_finish) / 60
+                st = ax.between(r.early_start, r.late_start) / 60
+                h = hits.setdefault(code, {"n": 0, "finish": 0, "start": 0, "min": 0})
+                h["n"] += 1
+                for name, v in (("finish", fin), ("start", st), ("min", min(fin, st))):
+                    h[name] += abs(v - float(r.total_float_hr)) < 0.01
+    share = {code: {k: v / h["n"] for k, v in h.items() if k != "n"} for code, h in hits.items()}
+    assert share["FT_FF"]["finish"] == 1.0, share["FT_FF"]
+    assert share["FT_SS"]["start"] == 1.0, share["FT_SS"]
+    assert share["FT_Min"]["min"] >= 0.96 and share["FT_Min"]["min"] == max(share["FT_Min"].values()), share["FT_Min"]
+    assert share["FT_Start"]["finish"] == max(share["FT_Start"].values()), share["FT_Start"]
+    for code, best in {"FT_FF": "finish", "FT_SS": "start", "FT_Min": "min", "FT_Start": "finish"}.items():
+        assert FLOAT_TYPE[code] == best
+
+
+@pytest.mark.reference
+def test_total_float_agrees_wherever_the_four_dates_do(corpus):
+    """An activity whose early and late dates are P6's has P6's total float too, under
+    FT_FF and FT_SS (the codes P6 itself writes). The float-type reading is then the only
+    thing between the dates and the float, and it must be right. (FT_Min, FT_Start and
+    FT_Total on resource-dependent work still differ in a few cases: register R7.)"""
+    d = pd.concat([_score(f"H{i}") for i in range(1, 31)], ignore_index=True)
+    d = d[d["field"] != "error"]
+    w = d.pivot_table(index=["set", "case", "task_code", "options"], columns="field", values="agree", aggfunc="first")
+    w = w.reset_index()
+    code = w["options"].str.split().str[1]
+    w = w[code.isin(["FT_FF", "FT_SS"]) & w[DATES].all(axis=1)]
+    assert len(w) > 2000
+    bad = w[~w["total_float_hr"].astype(bool)]
+    assert bad.empty, bad[["set", "case", "task_code", "options"]].to_string(index=False)
