@@ -869,8 +869,10 @@ def _early(ax: TimeAxis, kind: str, d: float, s_c: list, f_c: list) -> tuple[pd.
 def _late(ax: TimeAxis, kind: str, d: float, l_s: list, l_f: list) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Late start / finish from upper bounds, snapped the way P6 shows them.
 
-    - task: finishes at a period end (a successor starting 08:00 -> previous evening),
-      a start bound snaps to a period start
+    - task: finishes at a period end (a successor starting 08:00 -> previous evening);
+      a start bound (SS / SF successor, start constraint) is written at its own instant,
+      the previous period end when it falls in non-working time (P6 23.12, corpus H3-02
+      A1240: Fri 17:00, not Mon 07:00; the same working minute, +94 values)
     - start milestone: the bound as it is when working time or a period edge, else the
       previous working time (Hotel HCMEB4000: 16:00; xerlock MS-020: 08:00)
     - finish milestone: a period end
@@ -884,7 +886,7 @@ def _late(ax: TimeAxis, kind: str, d: float, l_s: list, l_f: list) -> tuple[pd.T
     fin = ax.snap_finish(min(l_f)) if l_f else None
     start = ax.add(fin, -d, finish=False) if fin is not None else None
     if l_s:
-        s_max = ax.snap_start(min(l_s))
+        s_max = ax.keep_or_previous(min(l_s))
         if start is None or s_max < start:
             start, fin = s_max, ax.add(s_max, d, finish=True)
     return start, fin

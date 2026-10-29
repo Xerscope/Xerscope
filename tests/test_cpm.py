@@ -438,10 +438,11 @@ def test_critical_path_test_shift_in_working_days():
 # --- conventions no reference file settles (documented in docs/cpm.md) ----------------------------
 
 
-def test_convention_late_start_bound_on_a_weekend_shows_monday_morning():
+def test_late_start_bound_in_non_working_time_shows_the_previous_period_end():
     # Project must finish by Tue 10 00:00 -> B late Mon 09 08:00-17:00; A (SS+8 elapsed h)
-    # must start by Mon 09 00:00, a Saturday-night-to-Monday gap: shown as Mon 08:00, the
-    # same working minute as Fri 17:00, written the way every task start is written.
+    # must start by Mon 09 00:00, a Saturday-night-to-Monday gap: P6 writes the bound's own
+    # instant, here the previous period end Fri 06 17:00, the same working minute as Mon
+    # 08:00 (P6 23.12 held-out corpus, H3-02 A1240 and 93 other values; register R4).
     s = snap(
         [todo("A", **hours(8)), todo("B", **hours(8))],
         [("A", "B", "SS", 8)],
@@ -450,7 +451,7 @@ def test_convention_late_start_bound_on_a_weekend_shows_monday_morning():
     )
     assert dates(s, "B")[2] == T("2026-03-09 08:00")
     a = dates(s, "A")
-    assert a[2] == T("2026-03-09 08:00") and a[4] == 40  # one working week of float
+    assert a[2] == T("2026-03-06 17:00") and a[4] == 40  # one working week of float
 
 
 @pytest.mark.parametrize("lag,start", [(40, "2026-03-09 08:00"), (8, "2026-03-03 08:00")])

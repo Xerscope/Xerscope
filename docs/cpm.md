@@ -248,6 +248,7 @@ Each rule below is pinned by a real file:
 | task finish | the end of a working period | all files |
 | early finish pushed by FF/SF/finish constraint into non-working time | the next working time | Hotel HCSWB3Z2190: 30 Oct 08:00 after the Eid holidays, not 24 Oct 16:00 |
 | late finish | a period end (a successor starting 08:00 → previous evening) | all files |
+| late start from a start bound (SS / SF successor, start constraint) | the bound's own instant, the previous period end when it falls in non-working time (Fri 17:00, not Mon 07:00) | P6 23.12 corpus, H3-02 A1240 and 93 other values, under every lag calendar |
 | start milestone, early | like a task start | xerlock MS-020: 08:00 the next morning |
 | start milestone, late | kept as is if on a period edge, else the previous working time | Hotel HCMEB4000 16:00; xerlock MS-020 08:00 |
 | finish milestone, early | kept as is if working time or a period edge, else next working time | Hotel: 16:00 right after its predecessor |
@@ -258,15 +259,13 @@ Each rule below is pinned by a real file:
 The engine makes a reasonable choice for each of these and tests it, but no available
 P6 output confirms it:
 
-- **Late-start bound in non-working time** (e.g. via an SS lag on a 24 h calendar):
-  written as the next period start, like every task start.
 - **Resource-dependent activity:** FF/SF bounds and the float are measured on the
   activity's calendar; the start is the earliest driving assignment start (MPXJ agrees
   when resources share the activity calendar; see the open questions otherwise).
 - **Start float vs finish float:** the engine keeps start = finish − duration on both
   passes, so the two are equal for task-dependent activities.
-- **LOE dates:** no reference file has an LOE, so the rule above is from Oracle's and
-  Boyle's descriptions, not from stored P6 dates. LOE are excluded from INT-01.
+- **LOE dates:** the rule above is from Oracle's and Boyle's descriptions; the P6 20.12
+  export (xereditor) confirms it on its 10 LOE. LOE are excluded from INT-01.
 
 ## Property tests
 
