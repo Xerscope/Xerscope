@@ -171,6 +171,9 @@ PINNED = {
     "R6 progress override: free float of started work runs past its SS links": [
         ("H2", "H2-04", "A1110", "free_float_hr")
     ],
+    "R9c progress override: an FF predecessor still bounds the finish of started work": [
+        ("H1", "H1-11", "A1040", "early_finish")
+    ],
 }
 
 

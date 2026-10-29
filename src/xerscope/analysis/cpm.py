@@ -366,12 +366,13 @@ class _Run:
                 out.append((typ, pd.Timestamp(date)))
         return out
 
-    def pred_bounds(self, c: str, started: bool) -> list[tuple[str, pd.Timestamp]]:
+    def pred_bounds(self, c: str, started: bool, finish_only: bool = False) -> list[tuple[str, pd.Timestamp]]:
         """Lower bounds the predecessors of ``c`` put on its start or its finish.
 
-        Returns ("start" | "finish", instant) pairs. A finished predecessor, under Retained
-        Logic, passes on what its own unfinished predecessors still impose (``carry``: the
-        data date when nothing does), plus the part of a positive lag not yet expired since
+        Returns ("start" | "finish", instant) pairs; ``finish_only`` keeps the FF / SF ones.
+        A finished predecessor, under Retained Logic, passes on what its own unfinished
+        predecessors still impose (``carry``: the data date when nothing does), plus the
+        part of a positive lag not yet expired since
         its actual finish (FS, FF) or start (SS, SF); a lead is dropped, and between two
         finished activities only the carried date passes. Without Retained Logic a finished
         predecessor bounds unstarted work by its actual dates + lag, and started work not at
@@ -385,6 +386,8 @@ class _Run:
         out = []
         for p, typ, lag in self.preds[c]:
             end = "start" if typ in ("FS", "SS") else "finish"
+            if finish_only and end == "start":
+                continue
             lx = self.lag_axis(p, c)
             if self.status[p] == "TK_Complete":
                 if self.retain:
@@ -399,8 +402,8 @@ class _Run:
                         rem = max(0.0, lag - max(0, lx.between(frm, self.dd)))
                     out.append((end, self.shift(lx, self.carry[p], rem)))
                     continue
-                if started:
-                    continue
+                if started and not finish_only:
+                    continue  # Progress Override: a finished FF / SF predecessor still bounds
             if typ in ("FS", "FF"):
                 out.append((end, self.shift(lx, self.ef[p], lag)))
             else:
@@ -450,8 +453,11 @@ class _Run:
             started = st == "TK_Active"
             k, d = self.kind(c), self.dur_min(c)
             s_c, f_c = [dd], []
+            # Progress Override: the start of work under way is an actual, so FS / SS
+            # predecessors no longer bound it; FF / SF predecessors still bound its finish
+            # (P6 23.12, corpus H1-11 A1040: +260 values). Mirrored in successor_limits.
             use_logic = not (started and opt.progressed == "progress_override")
-            for end, bound in self.pred_bounds(c, started) if use_logic else []:
+            for end, bound in self.pred_bounds(c, started, finish_only=not use_logic):
                 (s_c if end == "start" else f_c).append(bound)
             ext = R[c].get("external_early_start_date")
             if use_logic and opt.honor_external and ext is not None and pd.notna(ext):
@@ -517,7 +523,8 @@ class _Run:
 
         Measured but not understood: work under way under Progress Override with an FF / SF
         predecessor keeps its remaining duration when the expected finish falls before its
-        early start (35 of 36 corpus values).
+        early start, even when that predecessor's bound no longer binds (35 of 36 corpus
+        values; without the rule 35 lost, 2 won).
         """
         s0 = ax.snap_start(max(s_c)) if s_c else start
         if not use_logic and finish_linked and exp < s0:
