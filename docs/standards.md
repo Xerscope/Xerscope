@@ -110,7 +110,7 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 | 10 | Resources | duration but no resource or cost | 0 % |
 | 11 | Missed tasks | due by the data date (baseline), not finished or finished on a later date | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
-| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the schedule's float, 0 without a Must Finish By date | ≥ 0.95 |
+| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the schedule's float to the Must Finish By date (n/a without one) | ≥ 0.95 |
 | 14 | BEI | completed / due (baseline finish ≤ data date) | ≥ 0.95 |
 
 Calibrated on xerlock's published result for its sample schedule: all twelve stated

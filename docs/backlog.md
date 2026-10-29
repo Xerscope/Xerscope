@@ -39,9 +39,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 ## Checks and earned value
 
-- [ ] CPLI uses the schedule's total float, 0 without a Must Finish By date, so the index
-      is 1.0 by construction on such files (`rules.py cpli`; the note says so). Decide
-      whether to measure against the baseline finish instead, and cite the DCMA text.
+- [ ] CPLI is n/a without a Must Finish By date (DCMA's float is to the contract finish,
+      which P6 holds there). A project that keeps the contract date as a milestone or in
+      the baseline gets no index: a `finish_date` parameter would need the DCMA text to
+      allow it.
 
 ## App
 

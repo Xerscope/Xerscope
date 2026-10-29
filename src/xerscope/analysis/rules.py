@@ -488,24 +488,24 @@ def cpli(ctx) -> RuleOutput:
     """Critical Path Length Index = (CPL + TF) / CPL.
 
     CPL = working days from the data date to the forecast finish, TF = total float of the
-    activity that sets the finish, both on the project calendar. TF comes from the
-    schedule, so it measures the distance to the project's Must Finish By date: without
-    one P6 gives the last activity a float of 0 and the index is 1.0 by construction.
+    activity that sets the finish, both on the project calendar. TF is the schedule's:
+    P6 measures it against the project's Must Finish By date, the contract finish in
+    DCMA's terms. Without that date the last activity's float is 0 and the index 1.0
+    whatever the schedule, so the check is n/a until the date is set in P6.
     """
     s = ctx.snapshot
     end = _finish_driver(ctx)
     if end is None or s.data_date is None:
         return RuleOutput(note="no remaining work")
+    if s.options.get("must_finish_by") is None:
+        return RuleOutput(note="no Must Finish By date (P6: Project > Dates): the float would be 0 by construction")
     cal = s.calendar()
     cpl = cal.working_days(s.data_date, end["finish"])
     tf_hr = float(end["total_float_hr_cnt"]) if pd.notna(end["total_float_hr_cnt"]) else 0.0
     tf = tf_hr / cal.hours_per_day if cal.hours_per_day else 0.0
     if cpl <= 0:
         return RuleOutput(note="critical path length is 0")
-    note = f"CPL {cpl:g} wd to {end['task_code']}, total float {tf:g} wd"
-    if s.options.get("must_finish_by") is None:
-        note += "; no Must Finish By date: the float is 0 by construction"
-    return RuleOutput(value=(cpl + tf) / cpl, note=note)
+    return RuleOutput(value=(cpl + tf) / cpl, note=f"CPL {cpl:g} wd to {end['task_code']}, total float {tf:g} wd")
 
 
 @rule("critical_path_test", "pass/fail")

@@ -268,18 +268,28 @@ def test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay():
     assert r.status == "fail" and "Z" in r.note
 
 
+MFB = {"project": {"plan_end_date": "2026-03-25 17:00"}}  # Must Finish By: the float's reference
+
+
 def test_cpli_uses_the_finish_float():
     # Finish 2026-03-27 = 20 working days from Mon 2026-03-02; total float -16 h = -2 d.
     chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="-16")]
-    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert r.value == pytest.approx((20 - 2) / 20)
     assert r.status == "fail"
+
+
+def test_cpli_needs_a_must_finish_by_date():
+    """Without one P6 gives the last activity 0 float: 1.0 whatever the schedule, so n/a."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="0")]
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
+    assert r.status == "n/a" and "Must Finish By" in r.note
 
 
 def test_calendar_holiday_counts_in_cpl():
     # Same, finishing 2026-04-10: 30 weekdays minus Good Friday (calendar exception) = 29.
     chain = CHAIN[:2] + [dict(CHAIN[2], early_end_date="2026-04-10 17:00")]
-    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert "CPL 29 wd" in r.note
 
 

@@ -172,7 +172,7 @@ float and duration thresholds in working days of the activity's calendar.
 | DCMA-10 | Resources | not complete, not LOE, not milestone, `target_drtn_hr_cnt > 0` | no `TASKRSRC` row and no `PROJCOST` row | % | <= 0% | test_resource_or_expense |
 | DCMA-11 | Missed tasks | not LOE and `bl_finish <= data date` (milestones and complete stay in; no baseline finish = not due) | not complete, or `date(act_end_date) > date(bl_finish)` | % | <= 5% | test_missed_tasks_and_late_activities; Reference (TOML `source`: milestones kept, as in xerlock's results) |
 | DCMA-12 | Critical path test | see §2.5 | +600 wd | pass/fail | pass | test_critical_path_test_passes_on_clean_logic, test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay; test_reference: test_critical_path_test_delays_the_same_activity_as_xerlock; test_cpm: test_critical_path_test_lands_on_xerlocks_date, test_critical_path_test_shift_in_working_days; Reference |
-| DCMA-13 | CPLI | see §2.5 | `(CPL + TF) / CPL` | ratio | >= 0.95 | test_cpli_uses_the_finish_float, test_calendar_holiday_counts_in_cpl; test_reference: test_cpl_matches_xerlock_hand_calculation; Reference |
+| DCMA-13 | CPLI | see §2.5 | `(CPL + TF) / CPL` | ratio | >= 0.95 | test_cpli_uses_the_finish_float, test_cpli_needs_a_must_finish_by_date, test_calendar_holiday_counts_in_cpl; test_reference: test_cpl_matches_xerlock_hand_calculation; Reference |
 | DCMA-14 | BEI | not LOE, not milestone; due = `bl_finish <= data date` (no baseline finish = not due) | value = complete in population / due | ratio | >= 0.95 | test_bei_p6_counts_unbaselined_as_due_dcma_ignores_them (TOML `source`: milestones left out, xerlock's results pin the value) |
 
 ### 2.4 Integrity (`standards/integrity.toml`, standard id `INTEGRITY`)
@@ -190,9 +190,10 @@ Source string: "xerscope: analysis/cpm.py, validated against P6-scheduled export
 **CPLI.** `end` = the activity with the latest `finish` among not complete, not LOE
 activities (milestones included; ties: first row). `CPL = working_days(data date, end.finish)`
 on the project calendar. `TF = end.total_float_hr_cnt / project calendar hours_per_day`
-(blank float = 0). `CPLI = (CPL + TF) / CPL`; n/a when `CPL <= 0` or there is no open
-activity or data date. The note names the activity and says when
-`PROJECT.plan_end_date` (Must Finish By) is blank.
+(blank float = 0). `CPLI = (CPL + TF) / CPL`; n/a when `CPL <= 0`, when there is no open
+activity or data date, or when `PROJECT.plan_end_date` (Must Finish By) is blank: DCMA
+measures the float to the contract finish, P6 writes it only against that date, and
+without it the last activity's float is 0 and the index 1.0 whatever the schedule.
 
 **Critical path test.** `base` = recalculated schedule (cpm.py). Delayed activity =
 among not complete, not LOE, not milestone activities on the recalculated longest path,
@@ -358,8 +359,8 @@ Stated by the code or docs/backlog.md; nothing here is verified against P6 outpu
 - 352 h assumes 8 h/day (p6.toml); P6 targets are the TOML's, not Oracle defaults.
 - DECM readings not verified against the specification sheets: 06A205a counts LOE and
   ignores leads; 06A209a includes LOE; DCMA-11 keeps milestones, DCMA-14 drops them.
-- CPLI uses the schedule's total float: 0 without a Must Finish By date, so the index
-  is 1.0 by construction on such files (`rules.cpli`).
+- CPLI takes the schedule's total float, i.e. P6's distance to the Must Finish By date;
+  a contract finish kept elsewhere (a baseline, a contract milestone) is not read.
 - `cpli` reads the float of the latest-finishing open non-LOE activity, which may differ
   from `finish_date` (max over all activities); `critical_path_test` excludes milestones
   from the delayed candidates, `cpli` does not.

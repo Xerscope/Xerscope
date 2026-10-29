@@ -121,6 +121,7 @@ name = "CPLI"
 description = "Critical Path Length Index = (CPL + total float) / CPL"
 rule = "cpli"
 target = ">= 0.95"
+source = "DCMA 14-point #13: (critical path length + total float) / critical path length, float measured to the contract finish; P6 writes that float only against the Must Finish By date, so the check is n/a without one"
 
 [[metric]]
 id = "DCMA-14"
