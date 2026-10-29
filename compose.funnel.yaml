@@ -3,7 +3,7 @@
 # behind a username and password.
 #
 #   cp .env.example .env            # TS_AUTHKEY (tagged, ephemeral off), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH
-#   docker run --rm caddy:2.10.0 caddy hash-password --plaintext 'your password'   # -> the hash
+#   docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'your password'   # -> the hash
 #   docker compose -f compose.funnel.yaml up -d --build
 #   docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
 #
@@ -13,7 +13,7 @@
 #   "nodeAttrs": [{ "target": ["tag:xerscope"], "attr": ["funnel"] }]
 services:
   tailscale:
-    image: tailscale/tailscale:v1.84.0
+    image: tailscale/tailscale:v1.104.4
     hostname: xerscope                              # https://xerscope.<tailnet>.ts.net
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY}
@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.10.0
+    image: caddy:2.11.2
     network_mode: service:tailscale                 # listens on 127.0.0.1:8080 of that namespace only
     environment:
       XERSCOPE_USER: ${XERSCOPE_USER}

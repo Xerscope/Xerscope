@@ -63,7 +63,7 @@ private inside a private image.
 ## 3. Prepare the secrets (from your PC)
 
 ```bash
-docker run --rm caddy:2.10.0 caddy hash-password --plaintext 'a long passphrase'   # → $2a$14$...
+docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'a long passphrase'   # → $2a$14$...
 ```
 
 Tailscale admin console:

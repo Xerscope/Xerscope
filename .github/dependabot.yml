@@ -14,3 +14,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  - package-ecosystem: docker           # FROM lines in Dockerfile and Dockerfile.remote
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose   # image: lines (tailscale, caddy) in the compose stacks
+    directories: ["/", "/deploy"]
+    schedule:
+      interval: weekly

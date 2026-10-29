@@ -110,7 +110,7 @@ Tailscale's outbound connection. `tests/test_docker.py` pins those properties.
 
 ```bash
 cp .env.example .env                       # TS_AUTHKEY (tag:xerscope), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH
-docker run --rm caddy:2.10.0 caddy hash-password --plaintext 'your password'
+docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'your password'
 docker compose -f compose.funnel.yaml up -d --build
 docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
 ```
