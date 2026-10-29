@@ -1,8 +1,9 @@
-# Only pyproject.toml, uv.lock, README.md and src/ go into the image.
+# Only pyproject.toml, uv.lock, README.md, src/ and the remote supervisor go into the image.
 *
 !pyproject.toml
 !uv.lock
 !README.md
 !src/
+!deploy/remote/supervisor.py
 **/__pycache__
 **/*.pyc

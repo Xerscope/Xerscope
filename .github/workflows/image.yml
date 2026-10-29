@@ -21,6 +21,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false                  # one image failing must not cancel the other
       matrix:
         include:
           - image: xerscope
