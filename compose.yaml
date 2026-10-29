@@ -1,0 +1,27 @@
+# docker compose up -d   ->  http://localhost:8501
+#
+# Your weekly XER exports go in ./exports (read-only in the container). Optional:
+# ./exports/BL.xer as the baseline (uncomment XERSCOPE_BASELINE), ./standards for your
+# own TOML standards.
+services:
+  xerscope:
+    build: .
+    image: xerscope:latest
+    # Published on the host's loopback only: the schedules are not on the network.
+    # Exposing it (e.g. "8501:8501") is a deliberate choice; put authentication in front.
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./exports:/data:ro
+      # - ./standards:/standards:ro
+    environment:
+      XERSCOPE_DATA: /data
+      # XERSCOPE_BASELINE: /data/BL.xer
+      # XERSCOPE_STANDARDS: /standards
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/nonroot
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped

@@ -1,0 +1,29 @@
+# Integrity: is the file what P6 would calculate from its own logic?
+# Not a published standard: checks that make the other two trustworthy.
+
+[standard]
+id = "INTEGRITY"
+name = "Integrity"
+description = "Stored dates reproduce a recalculation; progress respects logic"
+source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports"
+
+[[metric]]
+id = "INT-01"
+name = "Schedule recalculated"
+description = "Open activities whose stored dates or total float differ from a recalculation"
+rule = "recalculated"
+target = "<= 0%"
+
+[[metric]]
+id = "INT-02"
+name = "Out-of-sequence progress"
+description = "Started before an FS predecessor finished or an SS predecessor started"
+rule = "out_of_sequence"
+target = "info"
+
+[[metric]]
+id = "INT-03"
+name = "Assignments recalculated"
+description = "Open resource assignments whose stored remaining early/late dates differ from a recalculation"
+rule = "assignments_recalculated"
+target = "<= 0%"

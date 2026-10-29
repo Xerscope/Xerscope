@@ -1,0 +1,50 @@
+[project]
+name = "xerscope"
+version = "0.1.0"
+description = "Weekly Primavera P6 XER schedule analysis and visualisation"
+readme = "README.md"
+requires-python = ">=3.11"
+# Floors = latest releases at the last audit (2026-10-28), so even an install that ignores
+# uv.lock cannot pull an older, vulnerable version. Bump them when you upgrade the lock.
+dependencies = [
+    "pandas>=3.1.0",
+    "plotly>=7.1.0",
+    "pyarrow>=26.0.0",
+    "streamlit>=1.66.1",
+]
+
+[project.optional-dependencies]
+# Differential check against MPXJ (independent Java reader); needs a JDK on PATH (21 or 25 LTS).
+crosscheck = ["mpxj>=16.10.0", "jpype1>=1.7.1"]
+
+[project.scripts]
+xerscope = "xerscope.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.2.0"]
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xerscope"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["reference: compares against third-party files with stated results (tests/reference)"]
+filterwarnings = ["ignore::DeprecationWarning:streamlit.*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, bugbear, imports, pyupgrade, simplify, comprehensions, return, pylint basics
+select = ["E", "F", "W", "B", "I", "UP", "SIM", "C4", "PIE", "RET", "PLE", "PLW", "PLR0124", "PLC0206"]
+# C408: dict(...) reads better in Plotly layouts. RET504/505: early returns kept for clarity.
+ignore = ["C408", "RET504", "RET505", "SIM108"]
+
+[tool.ruff.format]
+quote-style = "double"

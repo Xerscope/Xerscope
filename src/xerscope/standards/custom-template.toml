@@ -1,0 +1,153 @@
+# Your own scheduling standard. Copy this file, edit it, then either
+#   - drop it in a folder and run:  xerscope app --standards <folder>
+#   - or upload it on the Schedule health page.
+# List the rules and their parameters with:  xerscope standards --rules
+#
+# A metric = a rule + its parameters + a target. Targets: "<= 5%", ">= 90%", ">= 0.95",
+# "<= 0", "pass" (pass/fail rules) or "info" (no pass/fail).
+# unit (optional): "%" (found / total, default for most rules), "count" (found), "ratio".
+#
+# Populations (params.exclude), WBS summary rows are always excluded:
+#   complete, complete_before_data_date, started, loe, milestones, no_duration
+# Logic exemptions (pred_exempt / succ_exempt):
+#   started, start_milestone, finish_milestone, project_start, project_finish
+# Relationship populations (links): all, not_both_complete (P6), succ_incomplete (DCMA)
+# Constraint codes (types): CS_MSO, CS_MSOA, CS_MSOB, CS_MEO, CS_MEOA, CS_MEOB,
+#   CS_MANDSTART, CS_MANDFIN, CS_ALAP
+# group (optional): a section title, shown in the results table.
+# The built-in P6 / DCMA / DECM / INTEGRITY files use the same format: copy a metric from
+# them (e.g. DECM 06A204b "open_ends", P6 "dangling"), or see every rule below.
+
+[standard]
+id = "CUSTOM"
+name = "My standard"
+description = "Company scheduling standard"
+source = "Internal procedure XYZ rev. A"
+
+[[metric]]
+id = "CUS-01"
+name = "Open ends"
+rule = "missing_logic"
+target = "<= 2%"
+params = { exclude = ["complete", "loe"], pred_exempt = ["project_start"], succ_exempt = ["project_finish"], dangling = true }
+
+[[metric]]
+id = "CUS-02"
+name = "Leads"
+rule = "lag"
+unit = "count"
+target = "<= 0"
+params = { op = "<", value = 0, links = "succ_incomplete" }
+
+[[metric]]
+id = "CUS-03"
+name = "Lags over 10 days"
+rule = "lag"
+target = "<= 1%"
+params = { op = ">", value = 10, unit = "days", links = "succ_incomplete" }
+
+[[metric]]
+id = "CUS-04"
+name = "Finish-to-start share"
+rule = "relationship_type"
+target = ">= 85%"
+params = { type = "FS", links = "succ_incomplete" }
+
+[[metric]]
+id = "CUS-05"
+name = "Constraints"
+rule = "constraints"
+target = "<= 3%"
+params = { types = ["CS_MSO", "CS_MSOB", "CS_MEO", "CS_MEOB", "CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "CUS-06"
+name = "Float over 30 working days"
+rule = "float"
+target = "<= 10%"
+params = { op = ">", value = 30, unit = "days", exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "CUS-07"
+name = "Negative float"
+rule = "float"
+unit = "count"
+target = "<= 0"
+params = { op = "<", value = 0, unit = "days", exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "CUS-08"
+name = "Remaining duration over 20 working days"
+rule = "duration"
+target = "<= 5%"
+params = { field = "remaining", op = ">", value = 20, unit = "days", exclude = ["complete", "loe", "milestones"] }
+
+[[metric]]
+id = "CUS-09"
+name = "Invalid progress dates"
+rule = "invalid_dates"
+unit = "count"
+target = "<= 0"
+params = { kind = "both", exclude = ["loe"] }
+
+[[metric]]
+id = "CUS-10"
+name = "Unresourced activities"
+rule = "no_resource"
+target = "<= 0%"
+params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = false }
+
+[[metric]]
+id = "CUS-11"
+name = "Late vs baseline"
+rule = "late_vs_baseline"
+target = "<= 10%"
+params = { exclude = ["complete", "milestones", "loe"], tolerance_hours = 40 }
+
+[[metric]]
+id = "CUS-12"
+name = "BEI"
+rule = "bei"
+target = ">= 0.90"
+params = { exclude = ["loe", "milestones"], missing_baseline = "ignore" }
+
+[[metric]]
+id = "CUS-13"
+name = "Critical path test"
+rule = "critical_path_test"
+target = "pass"
+params = { delay_days = 600 }
+
+# --- more rules (uncomment to use) -------------------------------------------------------
+# [[metric]]
+# id = "CUS-14"
+# group = "Logic"
+# name = "Dangling finish"
+# rule = "dangling"                 # EPPM check, not in P6 Professional
+# target = "<= 5%"
+# params = { end = "finish", exclude = ["complete"] }
+#
+# [[metric]]
+# id = "CUS-15"
+# name = "Open starts / finishes (DECM)"
+# rule = "open_ends"
+# target = "<= 0%"
+# params = { exempt_ends = "baseline" }
+#
+# [[metric]]
+# id = "CUS-16"
+# name = "Out-of-sequence links"
+# rule = "out_of_sequence"
+# unit = "count"
+# target = "<= 0"
+# params = { method = "decm", exclude = [] }
+#
+# [[metric]]
+# id = "CUS-17"
+# name = "Recalculated"
+# rule = "recalculated"             # stored dates = a P6-style F9
+# target = "<= 0%"
+#
+# Also: lagged_activities, summary_logic, loe_successors, missing_baseline,
+# actuals_changed, progress_actuals, riding_status_date, assignments_recalculated
+# (xerscope standards --rules lists their parameters).

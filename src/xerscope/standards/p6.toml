@@ -1,0 +1,164 @@
+# Oracle Primavera P6 Professional 24 — Check Schedule (Tools > Check Schedule).
+#
+# The 14 checks, in the order and groups of the P6 Professional 24 User Guide ("Check
+# Schedule", F88968_01 page 101393). Dangling start / finish are not P6 Professional
+# checks (they exist in P6 EPPM only), so they are not here.
+# Populations, exclusions and denominators follow Oracle's help for each report section
+# (Schedule Check Report, pages 46277-46291). Every percentage is: items found / items in
+# the checked subset.
+#
+# Thresholds: P6 compares hours; 352 h (= 44 days x 8 h) is used for "x" below.
+# Targets: set in P6's Check Schedule dialog. Oracle does not document defaults: the values
+# below are common ones. Set them to what your dialog shows so pass/fail matches P6.
+
+[standard]
+id = "P6"
+name = "P6 Check Schedule"
+description = "Oracle Primavera P6 Professional 24 Check Schedule (14 checks)"
+source = "https://docs.oracle.com/cd/F88968_01/English/User_Guides/p6_pro_user/101393.htm"
+
+# --- Inflexibility and Inefficiency -------------------------------------------------------
+
+[[metric]]
+id = "P6-01"
+group = "Inflexibility and Inefficiency"
+name = "Logic"
+description = "Activities missing predecessors or successors"
+rule = "missing_logic"
+target = "<= 5%"
+source = "46291: WBS summary and actual-finish removed; actual start or start milestone pass the predecessor check; finish milestones pass the successor check; external links pass"
+params = { exclude = ["complete"], pred_exempt = ["started", "start_milestone"], succ_exempt = ["finish_milestone"], external_passes = true }
+
+[[metric]]
+id = "P6-02"
+group = "Inflexibility and Inefficiency"
+name = "Hard constraints"
+description = "Constraints that prevent activities being moved (Mandatory Start, Mandatory Finish)"
+rule = "constraints"
+target = "<= 5%"
+source = "46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"
+params = { types = ["CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe"], ignore_start_when_started = true }
+
+[[metric]]
+id = "P6-03"
+group = "Inflexibility and Inefficiency"
+name = "Soft constraints"
+description = "Constraints that do not prevent activities being moved"
+rule = "constraints"
+target = "<= 5%"
+source = "46285: Start on / on or before / on or after, Finish on / on or before / on or after"
+params = { types = ["CS_MSO", "CS_MSOB", "CS_MSOA", "CS_MEO", "CS_MEOB", "CS_MEOA"], exclude = ["complete", "loe"], ignore_start_when_started = true }
+
+[[metric]]
+id = "P6-04"
+group = "Inflexibility and Inefficiency"
+name = "Large durations"
+description = "Activities that have a remaining duration greater than 352 hours"
+rule = "duration"
+target = "<= 5%"
+source = "46282: WBS summary, actual-finish, milestones and LOE removed"
+params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "milestones", "loe"] }
+
+[[metric]]
+id = "P6-05"
+group = "Inflexibility and Inefficiency"
+name = "Long lags"
+description = "Relationships with a lag duration greater than 352 hours"
+rule = "lag"
+target = "<= 5%"
+source = "46288: links between two actual-finished activities removed"
+params = { op = ">", value = 352, unit = "hours", links = "not_both_complete" }
+
+[[metric]]
+id = "P6-06"
+group = "Inflexibility and Inefficiency"
+name = "Large float"
+description = "Activities with total float greater than 352 hours"
+rule = "float"
+target = "<= 5%"
+source = "46284: WBS summary, actual-finish and LOE removed"
+params = { op = ">", value = 352, unit = "hours", exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "P6-07"
+group = "Inflexibility and Inefficiency"
+name = "Relationship types"
+description = "The majority of relationships should be Finish to Start"
+rule = "relationship_type"
+target = ">= 90%"
+source = "46287: actual = share of FS links in the subset"
+params = { type = "FS", links = "not_both_complete" }
+
+[[metric]]
+id = "P6-08"
+group = "Inflexibility and Inefficiency"
+name = "Lags"
+description = "Relationships with a positive lag duration"
+rule = "lag"
+target = "<= 5%"
+source = "46289"
+params = { op = ">", value = 0, unit = "hours", links = "not_both_complete" }
+
+# --- Inaccuracy -----------------------------------------------------------------------------
+
+[[metric]]
+id = "P6-09"
+group = "Inaccuracy"
+name = "Negative lags"
+description = "Relationships with a lag duration of less than 0"
+rule = "lag"
+target = "<= 0%"
+source = "46290: links between two actual-finished activities removed"
+params = { op = "<", value = 0, unit = "hours", links = "not_both_complete" }
+
+[[metric]]
+id = "P6-10"
+group = "Inaccuracy"
+name = "Invalid progress dates"
+description = "Activities with invalid progress dates (forecast before, or actual after, the data date)"
+rule = "invalid_dates"
+target = "<= 0%"
+source = "46281 / 46280: WBS summary, LOE and activities finished before the data date removed"
+params = { kind = "both", exclude = ["loe", "complete_before_data_date"] }
+
+[[metric]]
+id = "P6-11"
+group = "Inaccuracy"
+name = "Resource / cost"
+description = "Activities that do not have an expense or a resource assigned"
+rule = "no_resource"
+target = "<= 0%"
+source = "46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts"
+params = { exclude = ["milestones", "loe"], expenses_count = true }
+
+# --- Lateness -----------------------------------------------------------------------------------
+
+[[metric]]
+id = "P6-12"
+group = "Lateness"
+name = "Late activities"
+description = "Activities scheduled to finish later than the project baseline"
+rule = "late_vs_baseline"
+target = "<= 5%"
+source = "46278: WBS summary, actual-finish, milestones and LOE removed; baseline finish variance < 0 (working time)"
+params = { exclude = ["complete", "milestones", "loe"] }
+
+[[metric]]
+id = "P6-13"
+group = "Lateness"
+name = "BEI"
+description = "Baseline Execution Index"
+rule = "bei"
+target = ">= 0.95"
+source = "46277: WBS summary, milestones and LOE removed; no baseline finish = should have finished"
+params = { exclude = ["loe", "milestones"], missing_baseline = "due" }
+
+[[metric]]
+id = "P6-14"
+group = "Lateness"
+name = "Negative float"
+description = "Activities with a total float less than 0"
+rule = "float"
+target = "<= 0%"
+source = "46283: WBS summary, actual-finish and LOE removed"
+params = { op = "<", value = 0, unit = "hours", exclude = ["complete", "loe"] }

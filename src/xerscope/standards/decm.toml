@@ -1,0 +1,179 @@
+# DCMA EVMS Compliance Metrics (DECM) — Guideline 6 (schedule), EVMS Test Metric
+# Specification v8.0 (21 Aug 2025), the version DCMA applies from FY2026.
+#
+# Only the automated tests an XER can answer. Not here: 06A301a (vertical traceability:
+# needs the parent/child baseline of a summary schedule), 06I101b and 06I201a (schedule
+# margin and schedule visibility tasks: need your coding convention for them).
+# 06A211a samples high-float activities for a documented rationale: xerscope lists them
+# (target "info"); the rationale review is yours.
+#
+# DECM vocabulary -> P6: status date = data date; incomplete = no actual finish;
+# summary task = WBS summary activity; hard constraints (Primavera) = Mandatory Start /
+# Mandatory Finish. "On or before the status date" (the end of the reported period) is
+# "before the data date" in P6, whose data date is the first instant of remaining work.
+# Each metric's source cites the specification sheet.
+
+[standard]
+id = "DECM"
+name = "DCMA DECM v8.0 (schedule)"
+description = "DCMA EVMS Compliance Metrics v8.0, Guideline 6 schedule tests"
+source = "https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm"
+
+[[metric]]
+id = "06A204b"
+group = "Logic"
+name = "Dangling logic"
+description = "Incomplete non-LOE tasks and milestones with an open start or finish"
+rule = "open_ends"
+target = "<= 0%"
+source = "06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no successor (milestone: none); earliest baseline start / latest baseline finish exempt"
+params = { exempt_ends = "baseline" }
+
+[[metric]]
+id = "06A205a"
+group = "Logic"
+name = "Lags"
+description = "Incomplete tasks and milestones with at least one lag in their predecessor logic"
+rule = "lagged_activities"
+target = "<= 10%"
+source = "06A205a: X/Y <= 10%"
+
+[[metric]]
+id = "06A208a"
+group = "Logic"
+name = "Summary tasks with logic"
+description = "WBS summary activities with a predecessor or successor"
+rule = "summary_logic"
+unit = "count"
+target = "<= 0"
+source = "06A208a: X = 0"
+
+[[metric]]
+id = "06A209a"
+group = "Constraints and float"
+name = "Hard constraints"
+description = "Incomplete tasks and milestones with a hard constraint (Mandatory Start / Finish)"
+rule = "constraints"
+target = "<= 0%"
+source = "06A209a: X/Y = 0%; Primavera P6 hard constraints = Mandatory Start, Mandatory Finish"
+params = { types = ["CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete"], ignore_start_when_started = false }
+
+[[metric]]
+id = "06A210a"
+group = "Logic"
+name = "LOE with discrete successors"
+description = "Incomplete LOE activities driving a discrete (non-LOE) activity"
+rule = "loe_successors"
+target = "<= 0%"
+source = "06A210a: X = 0"
+
+[[metric]]
+id = "06A211a"
+group = "Constraints and float"
+name = "High total float"
+description = "Incomplete non-LOE tasks and milestones with total float > 44 working days (to sample for rationale)"
+rule = "float"
+target = "info"
+source = "06A211a: the population DECM samples; X/Y <= 20% of the sample with inadequate rationale"
+params = { op = ">", value = 44, unit = "days", exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "06A212a"
+group = "Logic"
+name = "Out of sequence"
+description = "Relationships whose successor started or finishes before the logic allows"
+rule = "out_of_sequence"
+unit = "count"
+target = "<= 0"
+source = "06A212a: X = 0; FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) < P.FS"
+params = { method = "decm", exclude = [] }
+
+[[metric]]
+id = "06A401a"
+group = "Critical path"
+name = "Critical path test"
+description = "A delay on the critical path moves the project finish by the same amount"
+rule = "critical_path_test"
+target = "pass"
+source = "06A401a: the schedule's critical path is the longest path (constraint method)"
+params = { delay_days = 600 }
+
+[[metric]]
+id = "06A501a"
+group = "Baseline, forecast and actual dates"
+name = "Missing baseline dates"
+description = "Tasks and milestones without a baseline start or finish"
+rule = "missing_baseline"
+target = "<= 5%"
+source = "06A501a: X/Y <= 5%, summaries excluded"
+
+[[metric]]
+id = "06A504a"
+group = "Baseline, forecast and actual dates"
+name = "Actual starts changed"
+description = "Actual start different from the previous update's"
+rule = "actuals_changed"
+target = "<= 10%"
+source = "06A504a: X/Y <= 10%, Y = tasks with an actual start"
+params = { field = "start" }
+
+[[metric]]
+id = "06A504b"
+group = "Baseline, forecast and actual dates"
+name = "Actual finishes changed"
+description = "Actual finish different from the previous update's"
+rule = "actuals_changed"
+target = "<= 10%"
+source = "06A504b: X/Y <= 10%, Y = tasks with an actual finish"
+params = { field = "finish" }
+
+[[metric]]
+id = "06A505a"
+group = "Baseline, forecast and actual dates"
+name = "In progress without actual start"
+description = "Progress reported (% complete > 0) but no actual start"
+rule = "progress_actuals"
+target = "<= 5%"
+source = "06A505a: X/Y <= 5%"
+params = { kind = "in_progress" }
+
+[[metric]]
+id = "06A505b"
+group = "Baseline, forecast and actual dates"
+name = "Complete without actual finish"
+description = "100 % complete but no actual finish"
+rule = "progress_actuals"
+target = "<= 5%"
+source = "06A505b: X/Y <= 5%"
+params = { kind = "complete" }
+
+[[metric]]
+id = "06A506a"
+group = "Baseline, forecast and actual dates"
+name = "Actual dates after the status date"
+description = "Actual start or finish after the data date"
+rule = "invalid_dates"
+target = "<= 5%"
+source = "06A506a: X/Y <= 5%, Y = tasks with an actual start"
+params = { kind = "actual", exclude = [], denominator = "started" }
+
+[[metric]]
+id = "06A506b"
+group = "Baseline, forecast and actual dates"
+name = "Forecast dates before the status date"
+description = "Incomplete activities with a forecast start or finish before the data date"
+rule = "invalid_dates"
+unit = "count"
+target = "<= 0"
+source = "06A506b: X = 0, forecast on or before the status date (= before P6's data date)"
+params = { kind = "forecast", exclude = [], include_data_date = false }
+
+[[metric]]
+id = "06A506c"
+group = "Baseline, forecast and actual dates"
+name = "Riding the status date"
+description = "Forecasts that moved with the data date over two monthly updates"
+rule = "riding_status_date"
+target = "<= 1%"
+source = "06A506c: X/Y <= 1%; start within 3 wd of the status date in both updates, or remaining duration within +/- 2 wd"
+params = { window_wd = 3, remaining_tolerance_wd = 2, period_days = 28 }

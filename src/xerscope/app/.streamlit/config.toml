@@ -1,0 +1,46 @@
+[server]
+headless = true
+# Streamlit listens on every interface by default: anyone on the network could open your
+# schedules. Keep it local; use `xerscope app --host 0.0.0.0` only on purpose.
+address = "localhost"
+enableXsrfProtection = true
+enableCORS = true
+maxUploadSize = 200  # MB, per file
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+# Sober corporate theme: white page, light grey panels, one navy accent.
+# Red, amber and green are reserved for status (fail / warning / pass) and never decorate.
+[theme]
+base = "light"
+primaryColor = "#1F4E79"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F5F8"
+textColor = "#1F2933"
+linkColor = "#1F4E79"
+borderColor = "#D5DBE3"
+dataframeBorderColor = "#E3E7ED"
+dataframeHeaderBackgroundColor = "#F3F5F8"
+dataframeHeaderTextColor = "#3E4C59"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "4px"
+buttonRadius = "4px"
+baseFontSize = 15
+headingFontSizes = ["1.75rem", "1.3rem", "1.1rem", "1rem", "0.95rem", "0.9rem"]
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+metricValueFontSize = "1.55rem"
+metricValueFontWeight = 600
+paddingTop = "2.5rem"
+redColor = "#C0392B"
+greenColor = "#2E7D32"
+orangeColor = "#B26A00"
+blueColor = "#1F4E79"
+
+[theme.sidebar]
+backgroundColor = "#F7F8FA"
+secondaryBackgroundColor = "#FFFFFF"

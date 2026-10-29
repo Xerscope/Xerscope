@@ -1,0 +1,129 @@
+# DCMA 14-Point Schedule Assessment (DCMA, 2005; thresholds as commonly applied).
+#
+# Legacy: DCMA itself now assesses schedules with the DECM (decm.toml, v8.0). The
+# 14-Point remains the industry's common screen and what most tools report.
+#
+# Population: incomplete activities, excluding LOE (and WBS summary, always).
+# Relationships: those into incomplete work. Durations and float in working days.
+# Calibrated against xerlock's published DCMA result on its sample schedule
+# (tests/reference/expected.py): every count there is reproduced.
+
+[standard]
+id = "DCMA"
+name = "DCMA 14-Point"
+description = "DCMA 14-Point Schedule Assessment (legacy; DCMA now uses the DECM)"
+source = "DCMA 14-Point Assessment; xerlock sample results used for calibration"
+
+[[metric]]
+id = "DCMA-01"
+name = "Logic"
+description = "Open ends: missing predecessor or successor, or a dangling start/finish"
+rule = "missing_logic"
+target = "<= 5%"
+params = { exclude = ["complete", "loe"], pred_exempt = ["project_start"], succ_exempt = ["project_finish"], dangling = true }
+
+[[metric]]
+id = "DCMA-02"
+name = "Leads"
+description = "Relationships with a negative lag"
+rule = "lag"
+unit = "count"
+target = "<= 0"
+params = { op = "<", value = 0, links = "succ_incomplete" }
+
+[[metric]]
+id = "DCMA-03"
+name = "Lags"
+description = "Relationships with a positive lag"
+rule = "lag"
+target = "<= 5%"
+params = { op = ">", value = 0, links = "succ_incomplete" }
+
+[[metric]]
+id = "DCMA-04"
+name = "Relationship types"
+description = "Share of Finish-to-Start relationships"
+rule = "relationship_type"
+target = ">= 90%"
+params = { type = "FS", links = "succ_incomplete" }
+
+[[metric]]
+id = "DCMA-05"
+name = "Hard constraints"
+description = "Start/finish on, start/finish no later than, mandatory dates"
+rule = "constraints"
+target = "<= 5%"
+params = { types = ["CS_MSO", "CS_MSOB", "CS_MEO", "CS_MEOB", "CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe"], ignore_start_when_started = false }
+
+[[metric]]
+id = "DCMA-06"
+name = "High float"
+description = "Total float above 44 working days"
+rule = "float"
+target = "<= 5%"
+params = { op = ">", value = 44, unit = "days", exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "DCMA-07"
+name = "Negative float"
+description = "Total float below 0"
+rule = "float"
+unit = "count"
+target = "<= 0"
+params = { op = "<", value = 0, unit = "days", exclude = ["complete", "loe"] }
+
+[[metric]]
+id = "DCMA-08"
+name = "High duration"
+description = "Original duration above 44 working days"
+rule = "duration"
+target = "<= 5%"
+params = { field = "original", op = ">", value = 44, unit = "days", exclude = ["complete", "loe", "milestones"] }
+
+[[metric]]
+id = "DCMA-09"
+name = "Invalid dates"
+description = "Forecast before the data date, or actual after it"
+rule = "invalid_dates"
+unit = "count"
+target = "<= 0"
+params = { kind = "both", exclude = ["loe"] }
+
+[[metric]]
+id = "DCMA-10"
+name = "Resources"
+description = "Activities with a duration but no resource or cost"
+rule = "no_resource"
+target = "<= 0%"
+params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = true }
+
+[[metric]]
+id = "DCMA-11"
+name = "Missed tasks"
+description = "Due by the data date (baseline finish) but finished late or not finished"
+rule = "missed_tasks"
+target = "<= 5%"
+params = { exclude = ["loe"] }
+
+[[metric]]
+id = "DCMA-12"
+name = "Critical path test"
+description = "A delay on the critical path moves the finish by the same amount"
+rule = "critical_path_test"
+target = "pass"
+params = { delay_days = 600 }
+
+[[metric]]
+id = "DCMA-13"
+name = "CPLI"
+description = "Critical Path Length Index = (CPL + total float) / CPL"
+rule = "cpli"
+target = ">= 0.95"
+
+[[metric]]
+id = "DCMA-14"
+name = "BEI"
+description = "Activities completed / activities due by the data date (baseline)"
+rule = "bei"
+target = ">= 0.95"
+params = { exclude = ["loe", "milestones"], missing_baseline = "ignore" }
