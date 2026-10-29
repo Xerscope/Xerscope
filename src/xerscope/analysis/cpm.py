@@ -407,6 +407,12 @@ class _Run:
                         rem = 0.0
                     elif frm is not None and pd.notna(frm):
                         rem = max(0.0, lag - max(0, lx.between(frm, self.dd)))
+                    if typ == "SS" and not self.opt.lag_from_early_start and frm is not None and pd.notna(frm):
+                        # "Calculate start-to-start lag from Actual Start": from the finished
+                        # predecessor's actual start, whatever it still carries (corpus
+                        # H6-07 A1190, H7-06 A1100: +54 values)
+                        out.append((end, self.shift(lx, frm, lag)))
+                        continue
                     out.append((end, self.shift(lx, self.carry[p], rem)))
                     continue
                 if started and not finish_only:
