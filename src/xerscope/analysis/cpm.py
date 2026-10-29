@@ -553,6 +553,11 @@ class _Run:
         l_s, l_f = [], []
         for s, typ, link_lag in self.succs[c]:
             lag = link_lag
+            if late and self.opt.progressed == "progress_override" and status[s] == "TK_Active" and typ in ("FS", "SS"):
+                # Progress Override: a started successor's start is an actual, so a link to it
+                # binds no late date; links to its finish (FF, SF) still do (corpus H5-06
+                # A1030 vs H3-03 A1030: +406 values, 1 lost)
+                continue
             if (
                 late
                 and self.opt.progressed == "actual_dates"

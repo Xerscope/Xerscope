@@ -54,6 +54,17 @@ REFERENCE = {  # file -> minimum number of stored values compared
     "xerlock/sample-schedule.xer": 120,  # not P6: synthetic, xerlock's engine (Progress Override)
 }
 
+# Stored values another engine wrote and P6 23.12 contradicts (tests/test_p6_heldout.py):
+# xerscope follows P6, so these, and only these, may differ. xerlock binds the late dates of
+# EW-030 (under way) to its started FS successor; P6 does not (register R9b, H5-06 A1030).
+NOT_P6 = {
+    "xerlock/sample-schedule.xer": {
+        ("EW-030", "late_start_date"),
+        ("EW-030", "late_end_date"),
+        ("EW-030", "total_float_hr_cnt"),
+    }
+}
+
 
 @pytest.mark.reference
 @pytest.mark.parametrize("name", REFERENCE)
@@ -65,7 +76,7 @@ def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
     cmp = cmp[cmp["stored"].notna()]
     bad = cmp[~cmp["agree"]]
     assert len(cmp) >= REFERENCE[name]
-    assert bad.empty, bad.head(20).to_string()
+    assert set(zip(bad["task_code"], bad["field"], strict=True)) == NOT_P6.get(name, set()), bad.head(20).to_string()
 
 
 @pytest.mark.reference

@@ -163,6 +163,8 @@ PINNED = {
     "R9a FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
     "R9a SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
     "R9a lag between two finished activities does not pass back": [("H1", "H1-08", "A1050", "late_finish")],
+    "R9b progress override: FS into a started successor binds no late date": [("H5", "H5-06", "A1030", "late_finish")],
+    "R9b progress override: FF into a started successor still binds": [("H3", "H3-03", "A1030", "late_finish")],
 }
 
 
