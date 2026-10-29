@@ -746,7 +746,11 @@ class _Run:
         predecessors; SS, SF successors) give its start, finish-type ends (FF, SF
         predecessors; FF, FS successors) its finish. An FF predecessor and an FF successor to
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
-        It runs from the earliest start to the latest finish."""
+        It runs from the earliest start to the latest finish. Its late dates come the same
+        way from the late dates of the activities it is tied to, finished ones contributing
+        nothing; with no start-type link left the late start is the late finish. Float as
+        for any activity, free float 0 (P6 23.12 corpus, 271 LOE: +422 values).
+        """
         R, dd, es, ef, rs = self.R, self.dd, self.es, self.ef, self.rs
         for c in self.loe_codes:
             if self.status[c] == "TK_Complete":
@@ -765,8 +769,23 @@ class _Run:
             e0 = ax.snap_finish(max(ends)) if ends else (ax.snap_finish(self.finish) if self.finish is not None else s0)
             es[c], ef[c] = s0, max(e0, ax.snap_start(max(s0, dd)))
             rs[c] = ax.snap_start(dd) if active else s0
-            self.ls[c], self.lf[c] = rs[c], ef[c]
-            self.tf[c] = self.ff[c] = 0.0
+            lstarts, lends = [], []
+            for p, typ, lag in self.loe_preds[c]:
+                if self.status[p] != "TK_Complete":
+                    frm = self.ls[p] if typ in ("SS", "SF") else self.lf[p]
+                    (lstarts if typ in ("SS", "FS") else lends).append(self.shift(self.lag_axis(p, c), frm, lag))
+            for s_, typ, lag in self.loe_succs[c]:
+                if self.status[s_] != "TK_Complete":
+                    to = self.ls[s_] if typ in ("SS", "FS") else self.lf[s_]
+                    (lstarts if typ in ("SS", "SF") else lends).append(self.shift(self.lag_axis(c, s_), to, -lag))
+            open_end = ax.snap_finish(self.finish) if self.finish is not None else ef[c]
+            lf = ax.snap_finish(max(lends)) if lends else open_end
+            ls = ax.snap_start(min(lstarts)) if lstarts else lf
+            self.ls[c], self.lf[c] = ls, lf
+            fin_f, st_f = ax.between(ef[c], lf) / 60, ax.between(rs[c], ls) / 60
+            which = FLOAT_TYPE.get(self.opt.float_type, "finish")
+            self.tf[c] = fin_f if which == "finish" else st_f if which == "start" else min(fin_f, st_f)
+            self.ff[c] = 0.0
 
     # --- longest path ------------------------------------------------------------------------
     def longest_path(self) -> set[str]:
