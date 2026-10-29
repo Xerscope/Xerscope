@@ -60,6 +60,8 @@ def url_path() -> str:
     if not all(c.isalnum() or c in "-_" for c in p):
         log("XERSCOPE_PATH may only contain letters, digits, - and _")
         sys.exit(2)
+    if len(p) < 16:
+        log(f"XERSCOPE_PATH is {len(p)} characters: 16 or more keeps it out of reach of guessing")
     return "/" + p
 
 
@@ -96,7 +98,9 @@ def write_caddyfile() -> None:
         # default_bind keeps the listener on loopback; the site address stays ":8080" because
         # a host in it ("127.0.0.1:8080") also filters the Host header, and Funnel requests
         # arrive with Host: <node>.<tailnet>.ts.net (Caddy then answers nothing, status 0).
-        "{\n    admin off\n    auto_https off\n    default_bind 127.0.0.1\n}\n\n:8080 {\n"
+        # trusted_proxies: Funnel's X-Forwarded-For (the visitor) goes into the log, not 127.0.0.1
+        "{\n    admin off\n    auto_https off\n    default_bind 127.0.0.1\n"
+        "    servers {\n        trusted_proxies static private_ranges\n    }\n}\n\n:8080 {\n"
         f"    basic_auth {{\n        {user} {password_hash()}\n    }}\n"
         "    reverse_proxy 127.0.0.1:8501\n    log {\n        output stdout\n"
         # the Referer carries the full URL, i.e. XERSCOPE_PATH: keep it out of the logs
@@ -129,6 +133,9 @@ def tailscale_up(authkey: str, hostname: str) -> None:
     log(status.stdout.strip() or status.stderr.strip())
     if path:
         log(f"hand out the URL WITH its trailing slash: https://{hostname}.<tailnet>.ts.net{path}/")
+
+
+ALIVE = Path("/tmp/xerscope-remote.alive")  # touched every second while all three run (healthcheck)
 
 
 class Procs:
@@ -164,8 +171,34 @@ class Procs:
                 log(f"{name} exited with {code}; restarting in {wait:.0f} s")
                 time.sleep(wait)
                 self.start(name, self.specs[name])
+            reap_orphans()
             if self.stopping and all(p.poll() is not None for p in self.procs.values()):
                 return 0
+            if all(p.poll() is None for p in self.procs.values()):
+                ALIVE.touch()
+
+    def wait(self, timeout: float = 10) -> None:
+        """After stop(): give the children ``timeout`` seconds, then kill what is left."""
+        deadline = time.monotonic() + timeout
+        for name, p in self.procs.items():
+            try:
+                p.wait(timeout=max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                log(f"{name} ignored SIGTERM; killing it")
+                p.kill()
+                p.wait()
+
+
+def reap_orphans() -> None:
+    """PID 1 inherits every orphaned process; collect the ones that exited so they do not
+    stay as zombies. The supervisor's own children are polled before this runs."""
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
 
 
 def main() -> int:
@@ -180,11 +213,11 @@ def main() -> int:
         return run(procs, authkey, hostname)
     finally:
         procs.stop()  # whatever happened, no child outlives the supervisor
-        for p in procs.procs.values():
-            p.wait(timeout=10)
+        procs.wait()
 
 
 def run(procs: Procs, authkey: str, hostname: str) -> int:
+    os.environ.setdefault("TS_NO_LOGS_NO_SUPPORT", "true")  # no diagnostic logs to Tailscale
     procs.start(
         "tailscaled",
         # --statedir, not --state: it is also tailscaled's "var root", where the ts.net TLS
@@ -193,6 +226,8 @@ def run(procs: Procs, authkey: str, hostname: str) -> int:
         [TSD, "--tun=userspace-networking", f"--statedir={STATE}", f"--socket={SOCK}", "--port=0"],
     )
     tailscale_up(authkey, hostname)
+    if procs.stopping:  # SIGTERM arrived while tailscale was coming up
+        return 0
     # Streamlit itself, not the `xerscope app` wrapper: a wrapper would not pass SIGTERM on
     from xerscope.cli import APP_PATH
 

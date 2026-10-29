@@ -20,11 +20,11 @@ Needs Java, the ``crosscheck`` extra and the built scheduler; skipped otherwise.
 from __future__ import annotations
 
 import random
-import shutil
 from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import missing, mpxj_or_skip
 from test_cpm_properties import random_network
 from xerkit import active, done, todo, xer_text
 
@@ -34,16 +34,12 @@ LAG_PRED = {"sched_calendar_on_relationship_lag": "rcal_Predecessor"}
 
 @pytest.fixture(scope="module")
 def xc():
-    pytest.importorskip("jpype")
-    pytest.importorskip("mpxj")
-    if shutil.which("java") is None:
-        pytest.skip("no Java runtime")
+    mpxj_or_skip()
     from xerscope import crosscheck
 
     if "mpxj-cpm-" not in crosscheck.mpxj_scheduler_source():
-        pytest.skip(
-            f"MPXJ's scheduler not built, {crosscheck.mpxj_scheduler_source()} loaded: run tests/reference/mpxj_cpm.py"
-        )
+        loaded = crosscheck.mpxj_scheduler_source()
+        missing("mpxj", f"scheduler not built ({loaded} loaded): uv run python tests/reference/mpxj_cpm.py")
     return crosscheck
 
 

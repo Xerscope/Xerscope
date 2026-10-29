@@ -25,15 +25,39 @@ def store(sample_dir):
     return SnapshotStore.from_folder(sample_dir)
 
 
+REFERENCE_HINT = "uv run python tests/reference/fetch.py"
+P6_CORPUS_HINT = "uv run python tests/reference/fetch_p6_heldout.py"
+
+
+def missing(what: str, hint: str) -> None:
+    """Skip the test for want of ``what`` (reference, p6-corpus, mpxj); fail instead when
+    XERSCOPE_REQUIRE names it, so CI cannot pass by skipping its evidence."""
+    msg = f"{what} missing: {hint}"
+    if what in os.environ.get("XERSCOPE_REQUIRE", "").split(","):
+        pytest.fail(msg, pytrace=False)
+    pytest.skip(msg)
+
+
+def mpxj_or_skip():
+    """The MPXJ cross-check: jpype + mpxj installed, a Java runtime on PATH."""
+    import importlib.util
+    import shutil
+
+    for mod in ("jpype", "mpxj"):
+        if importlib.util.find_spec(mod) is None:
+            missing("mpxj", f"{mod} not installed: uv sync --extra crosscheck")
+    if shutil.which("java") is None:
+        missing("mpxj", "no Java runtime on PATH")
+
+
 @pytest.fixture
 def require_reference():
     """Path of a pinned third-party XER, or a skip with the fetch instruction."""
-    from pathlib import Path
 
     def get(name: str) -> Path:
         path = Path(__file__).parent / "reference" / "data" / name
         if not path.exists():
-            pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+            missing("reference", REFERENCE_HINT)
         return path
 
     return get

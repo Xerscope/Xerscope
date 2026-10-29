@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import P6_CORPUS_HINT, missing
 
 HELD_OUT = Path(__file__).parent / "reference" / "data" / "p6-heldout" / "validation" / "held-out"
 
@@ -58,7 +59,7 @@ DATES = ["early_start", "early_finish", "late_start", "late_finish"]
 @pytest.fixture(scope="module")
 def corpus():
     if not HELD_OUT.is_dir():
-        pytest.skip("P6 held-out corpus missing: uv run python tests/reference/fetch_p6_heldout.py")
+        missing("p6-corpus", P6_CORPUS_HINT)
     return HELD_OUT
 
 

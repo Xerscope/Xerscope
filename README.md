@@ -231,10 +231,15 @@ uv run pytest -rs                                 # corpus and MPXJ tests skip w
 The UI tests render every page headless (Streamlit AppTest), so they run the same on
 Windows. GitHub Actions (`.github/workflows/tests.yml`) runs:
 
-- the suite on Windows and Linux, Python 3.11, 3.13 and 3.14;
+- `ruff check` and `ruff format --check`;
+- the suite on Windows and Linux, Python 3.11, 3.13 and 3.14, with the reference files
+  and the P6 corpus required (`XERSCOPE_REQUIRE`: a test that would skip for want of
+  them fails instead; locally they skip);
 - an audit job (pip-audit on OSV and PyPI, plus bandit), also every Monday;
 - the MPXJ crosscheck on Java 21 and 25: reader comparison and the CPM against MPXJ's
-  scheduler.
+  scheduler;
+- both container images built on every push and pull request, the app image started and
+  queried, both scanned with Trivy.
 
 ## Architecture
 
@@ -279,7 +284,8 @@ and populations. Keeping one function and moving the differences into data:
 - **Network:** the app listens on localhost only; `--host 0.0.0.0` is the explicit opt-in.
 - **Dependencies:** minimum versions are pinned to releases audited clean (2026-10-28), so
   an install that ignores `uv.lock` cannot pull an older vulnerable version.
-- **CI:** actions are pinned by commit SHA; Dependabot proposes updates weekly.
+- **CI:** actions are pinned by commit SHA; Dependabot proposes updates weekly (Python,
+  actions, container images).
 
 ## Licence
 

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import REFERENCE_HINT, missing
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis.cpm import (
@@ -70,7 +71,7 @@ NOT_P6 = {
 @pytest.mark.parametrize("name", REFERENCE)
 def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
     if not (REF / name).exists():
-        pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+        missing("reference", REFERENCE_HINT)
     s = load_snapshot(REF / name)
     cmp = compare_with_stored(s)
     cmp = cmp[cmp["stored"].notna()]
@@ -99,7 +100,7 @@ def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
 def test_longest_path_matches_p6s_flag(name):
     """Every open activity's computed longest-path membership = P6's driving_path_flag."""
     if not (REF / name).exists():
-        pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+        missing("reference", REFERENCE_HINT)
     s = load_snapshot(REF / name)
     t = s.activities.set_index("task_code")
     open_ = t[~t["is_complete"]]
@@ -131,7 +132,7 @@ def test_assignment_dates_reproduce_p6(name):
     """TASKRSRC remaining early/late start and finish of every assignment, to the minute:
     activity dates + assignment lag, duration = remaining units / units per hour."""
     if not (REF / name).exists():
-        pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+        missing("reference", REFERENCE_HINT)
     cmp = compare_assignments(load_snapshot(REF / name))
     assert cmp["taskrsrc_id"].nunique() == ASSIGNMENTS[name]
     bad = cmp[~cmp["agree"]]
@@ -143,7 +144,7 @@ def test_critical_path_test_lands_on_xerlocks_date():
     """xerlock tests/test_cpm_sample.py: +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27."""
     name = "xerlock/sample-schedule.xer"
     if not (REF / name).exists():
-        pytest.skip("reference files missing")
+        missing("reference", REFERENCE_HINT)
     r = critical_path_test(load_snapshot(REF / name), 600)
     assert r.delayed == "MEP-020" and r.passed
     assert "2026-09-08 -> 2028-12-27" in r.note

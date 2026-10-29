@@ -52,19 +52,17 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 ## Deployment and CI
 
-- [ ] Verify on the NAS: `TS_AUTH_ONCE` across a restart; the Docker Hub login step
-      (`image.yml`: a step's own `env` is not visible to its `if`); the tailscale state
-      folder is a bind mount writable by uid 65532.
-- [ ] Brute force on basic auth: no rate limit; `XERSCOPE_PATH` exists in the remote image
-      only; Caddy logs 127.0.0.1 (no `trusted_proxies`).
-- [ ] Supervisor: `wait(timeout=10)` never kills; a SIGTERM during `tailscale up` still
-      starts the children; PID 1 reaps no orphans; the healthcheck ignores tailscaled.
-- [ ] Images pinned by tag, not digest; no dependabot `docker` ecosystem; no image scan;
-      sidecars without `read_only` / `cap_drop`; tailscaled logs leave the box
-      (`TS_NO_LOGS_NO_SUPPORT`).
-- [ ] CI: no `ruff check` / `format --check`; eight jobs refetch the corpora without a
-      cache; missing reference data skips tests instead of failing; no image built on
-      pull requests; `test_docker.py` greps text only.
+- [ ] Verify on the NAS, after the next pull: `TS_AUTH_ONCE` across a restart; the Docker
+      Hub login step now conditioned on a job-level secret; the tailscale state folder is
+      a bind mount writable by uid 65532; the hardened sidecars (`cap_drop`, Caddy
+      read-only) still start; the remote image's healthcheck (all three processes).
+- [ ] The password prompt has no rate limit (stock Caddy has no such module): a Caddy
+      build with `caddy-ratelimit`, or Tailscale Serve with a tailnet login once the viewer
+      can install Tailscale.
+- [ ] Base images pinned by tag, not digest: `docker buildx imagetools inspect` the four
+      of them and write the digests into the Dockerfiles once (Dependabot keeps them up).
+- [ ] The container job in CI starts the app image but opens no page: an AppTest-like
+      request through the published port would catch a broken runtime.
 
 ## Structure (only once the above is done, at constant output)
 

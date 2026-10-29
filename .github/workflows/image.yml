@@ -32,6 +32,9 @@ jobs:
   publish:
     if: github.repository == 'Xerscope/xerscope'
     runs-on: ubuntu-latest
+    env:
+      # at job level: a step's own `env` is not visible to its `if`
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     strategy:
       fail-fast: false                  # one image failing must not cancel the other
       matrix:
@@ -52,8 +55,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - if: env.DOCKERHUB_TOKEN != ''
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
