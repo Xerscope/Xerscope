@@ -12,25 +12,25 @@
 #
 # Pin the base images by digest in production (docker buildx imagetools inspect <image>).
 
-ARG UV_VERSION=0.11.32
-ARG PYTHON_VERSION=3.13
+ARG UV_VERSION=0.13.6
+ARG PYTHON_VERSION=3.14
 
-FROM ghcr.io/astral-sh/uv:${UV_VERSION}-bookworm-slim AS build
+FROM ghcr.io/astral-sh/uv:${UV_VERSION}-trixie-slim AS build
 ARG PYTHON_VERSION
 ENV UV_PYTHON_INSTALL_DIR=/python \
-    UV_PYTHON_PREFERENCE=only-managed \
-    UV_PROJECT_ENVIRONMENT=/app/.venv \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+  UV_PYTHON_PREFERENCE=only-managed \
+  UV_PROJECT_ENVIRONMENT=/app/.venv \
+  UV_COMPILE_BYTECODE=1 \
+  UV_LINK_MODE=copy
 RUN uv python install ${PYTHON_VERSION}
 WORKDIR /src
 # dependencies first: this layer is reused until uv.lock changes
 COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project --python ${PYTHON_VERSION}
+  uv sync --locked --no-dev --no-install-project --python ${PYTHON_VERSION}
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --python ${PYTHON_VERSION}
+  uv sync --locked --no-dev --no-editable --python ${PYTHON_VERSION}
 # an empty mount point for the exports, owned by the runtime user (distroless has no mkdir)
 RUN mkdir -p /data
 
@@ -39,16 +39,16 @@ COPY --from=build /python /python
 COPY --from=build /app/.venv /app/.venv
 COPY --from=build --chown=nonroot:nonroot /data /data
 ENV PATH=/app/.venv/bin:$PATH \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    XERSCOPE_DATA=/data \
-    STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+  PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONUNBUFFERED=1 \
+  XERSCOPE_DATA=/data \
+  STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
 USER nonroot
 WORKDIR /app
 EXPOSE 8501
 # Inside the container the app must listen on all interfaces to be reachable at all; what
 # reaches it is decided where the port is published (compose.yaml binds 127.0.0.1 only).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["/app/.venv/bin/python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4)"]
+  CMD ["/app/.venv/bin/python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4)"]
 ENTRYPOINT ["/app/.venv/bin/xerscope"]
 CMD ["app", "--host", "0.0.0.0", "--port", "8501"]
