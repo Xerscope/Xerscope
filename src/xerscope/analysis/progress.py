@@ -124,21 +124,30 @@ def progress_delta(prev: Snapshot, cur: Snapshot, baseline=None) -> pd.DataFrame
 
     a = prev.activities.drop_duplicates("task_code").set_index("task_code")
     b = cur.activities.drop_duplicates("task_code").set_index("task_code")
-    df = b[["task_name", "wbs_code", "wbs_l1", "status", "labor_budget_hr", "labor_actual_hr"]].copy()
-    df["pct_prev"] = a["pct_complete"].reindex(df.index).fillna(0.0)
-    df["pct_now"] = b["pct_complete"]
+    cols = ["task_name", "wbs_code", "wbs_l1", "status", "labor_budget_hr", "labor_actual_hr"]
+    # every activity of either update: one deleted since W-1 gives its earned hours back,
+    # so the week's figures still add up to the change in EV
+    ids = b.index.union(a.index, sort=False)
+    df = b[cols].reindex(ids)
+    gone = ~ids.isin(b.index)
+    if gone.any():
+        df.loc[gone, cols] = a.loc[ids[gone], cols].to_numpy()
+        df.loc[gone, "status"] = "deleted"
+    df["pct_prev"] = a["pct_complete"].reindex(ids).fillna(0.0)
+    df["pct_now"] = b["pct_complete"].reindex(ids).fillna(0.0)
     df["pct_delta"] = (df["pct_now"] - df["pct_prev"]).round(2)
     if baseline is None:
         df["earned_hr_week"] = df["labor_budget_hr"] * df["pct_delta"] / 100
     else:
-        bl_hr = baseline.frame["ev_labor_hr"].reindex(df.index).fillna(0.0)
-        gain = performance_pct(cur)["perf_pct"].reindex(df.index).fillna(0.0) - performance_pct(prev)[
-            "perf_pct"
-        ].reindex(df.index).fillna(0.0)
+        bl_hr = baseline.frame["ev_labor_hr"].reindex(ids).fillna(0.0)
+        gain = performance_pct(cur)["perf_pct"].reindex(ids).fillna(0.0) - performance_pct(prev)["perf_pct"].reindex(
+            ids
+        ).fillna(0.0)
         df["labor_budget_hr"] = bl_hr  # the weights EV uses
         df["earned_hr_week"] = bl_hr * gain / 100
-    df["actual_hr_week"] = df["labor_actual_hr"] - a["labor_actual_hr"].reindex(df.index).fillna(0.0)
-    df["new"] = ~df.index.isin(a.index)
+    df["actual_hr_week"] = b["labor_actual_hr"].reindex(ids).fillna(0.0) - a["labor_actual_hr"].reindex(ids).fillna(0.0)
+    df["new"] = ~ids.isin(a.index)
+    df["deleted"] = gone
     return df.reset_index()
 
 

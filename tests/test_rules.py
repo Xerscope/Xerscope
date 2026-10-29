@@ -77,6 +77,24 @@ def test_external_successor_passes_p6_logic():
     assert codes(r) == ["B"]  # A passes thanks to the external link; B has no successor
 
 
+def test_external_link_counts_only_when_the_option_says_so():
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("X9", "A", "FS", 0, "2")])
+    r = RULES["missing_logic"].fn(AnalysisContext(s), exclude=[], external_passes=False)
+    assert sorted(r.flagged["task_code"]) == ["A", "B"]  # A: the external link no longer counts
+
+
+def test_link_to_an_activity_not_in_the_file_is_dropped():
+    # TASKPRED names a predecessor id no TASK row has (an export of one project out of a
+    # linked set): the link is not logic P6 can schedule, so it counts for no check.
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("999", "A", "FS", 8)])
+    assert len(s.relationships) == 1
+    assert any("not in the file" in w for w in s.warnings)
+    assert codes(run(P6, "P6-01", s)) == ["A", "B"]  # A has no predecessor after all; B no successor
+    assert run(P6, "P6-08", s).denominator == 1  # the lagged ghost link is not in the population
+
+
 # --- relationships -------------------------------------------------------------------------
 
 LINKS = snap(
@@ -500,6 +518,22 @@ def test_decm_milestone_needs_only_one_link_per_side():
     )
     r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
     assert "T" in codes(r) and "MS" not in codes(r)  # same SS-only successor: open for a task only
+
+
+def test_decm_project_start_exemption_does_not_move_once_work_is_done():
+    # D (finished) is the project's first start in the baseline; B, next in line and
+    # without a predecessor, is an open start, not the project start.
+    s = snap(
+        [
+            done("D", target_start_date="2026-02-02 08:00", target_end_date="2026-02-06 17:00"),
+            todo("B", target_start_date="2026-02-09 08:00", target_end_date="2026-02-13 17:00"),
+            todo("C", target_start_date="2026-02-16 08:00", target_end_date="2026-02-20 17:00"),
+        ],
+        [("B", "C", "FS", 0)],
+    )
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    assert "B" in codes(r)  # open start
+    assert "C" not in codes(r)  # the last finish of the whole baseline: exempt
 
 
 def test_actuals_changed_counts_a_removed_date_on_both_sides():

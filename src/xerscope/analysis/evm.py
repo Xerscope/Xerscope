@@ -163,6 +163,7 @@ class EvPoint:
     etc_hr: float
     unbaselined: list[str]
     not_modelled: list[str] = field(default_factory=list)  # activities on a fallback technique
+    ac_unbaselined_hr: float = 0.0  # part of ac_hr spent on activities the baseline does not know
 
     @property
     def eac_hr(self) -> float:
@@ -174,7 +175,10 @@ class EvPoint:
 
     @property
     def productivity(self) -> float | None:
-        return self.ev_hr / self.ac_hr if self.ac_hr else None
+        """EV per hour spent on baselined work: EV only exists for baselined activities,
+        so hours spent on the others would make the ratio look worse than the work is."""
+        ac = self.ac_hr - self.ac_unbaselined_hr
+        return self.ev_hr / ac if ac else None
 
     def as_row(self) -> dict:
         def pct(v: float) -> float | None:
@@ -194,6 +198,7 @@ class EvPoint:
             "spi": self.spi,
             "productivity": self.productivity,
             "unbaselined": len(self.unbaselined),
+            "ac_unbaselined_hr": self.ac_unbaselined_hr,
         }
 
 
@@ -253,6 +258,7 @@ def ev_point(snap: Snapshot, baseline: Baseline, spread: _Spread | None = None) 
         float(a["labor_remaining_hr"].sum()),
         unbaselined,
         fallback,
+        ac_unbaselined_hr=float(a.loc[a["task_code"].isin(unbaselined), "labor_actual_hr"].sum()),
     )
 
 

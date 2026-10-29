@@ -108,7 +108,7 @@ with st.expander("How it is calculated", icon=":material/calculate:"):
             ("SV", "EV − PV", f"{ev:,.0f} − {pv:,.0f} = {row['sv_hr']:+,.0f} h"),
             ("ETC", "Σ remaining labour hours", f"{row['etc_hr']:,.0f} h"),
             ("EAC", "AC + ETC", f"{ac:,.0f} + {row['etc_hr']:,.0f} = {row['eac_hr']:,.0f} h"),
-            ("EV / AC", "Earned hours per hour spent", num(row["productivity"], "{:.2f}")),
+            ("EV / AC", "Earned hours per hour spent on baselined work", num(row["productivity"], "{:.2f}")),
         ],
         columns=["measure", "formula", "this update"],
     )

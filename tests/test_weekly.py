@@ -119,14 +119,16 @@ def test_ev_spi_and_unbaselined():
                 act_work_qty="30",
                 remain_work_qty="60",
             ),
-            todo("X", target_work_qty="40", remain_work_qty="40"),
+            active("X", target_work_qty="40", act_work_qty="10", remain_work_qty="40"),  # not in the baseline
         ],
         data_date="2026-03-04 08:00",
     )
     p = ev_point(now, bl)
-    assert (p.pv_hr, p.ev_hr, p.ac_hr, p.etc_hr) == (16, 20, 30, 100)
+    assert (p.pv_hr, p.ev_hr, p.ac_hr, p.etc_hr) == (16, 20, 40, 100)  # AC and ETC cover the whole scope
+    assert p.eac_hr == 140
     assert p.spi == pytest.approx(1.25)
-    assert p.productivity == pytest.approx(20 / 30)
+    assert p.productivity == pytest.approx(20 / 30)  # EV per hour spent on baselined work: X's 10 h left out
+    assert p.ac_unbaselined_hr == 10
     assert p.unbaselined == ["X"]
 
 
@@ -349,6 +351,23 @@ def test_progress_delta_with_a_baseline_adds_up_to_ev():
     d = progress_delta(W1, W2, bl).set_index("task_code")
     assert d.loc["B", "earned_hr_week"] == 150  # BL 300 h x 50 points
     assert d["earned_hr_week"].sum() == ev_point(W2, bl).ev_hr - ev_point(W1, bl).ev_hr
+    assert d.loc["DEL", "status"] == "deleted" and d.loc["DEL", "earned_hr_week"] == 0  # no progress to give back
+
+
+def test_progress_delta_gives_back_the_hours_of_a_deleted_activity():
+    # W1: D half done (50 of 100 h earned). W2: D is gone. The week's earned hours are -50,
+    # the change in EV; a frame built from W2 alone would say 0.
+    w1 = snap(
+        [active("D", target_work_qty="100", phys_complete_pct="50", complete_pct_type="CP_Phys"), todo("K")],
+        data_date="2026-03-02 08:00",
+    )
+    w2 = snap([todo("K")], data_date="2026-03-09 08:00")
+    bl = Baseline.from_snapshot(w1)
+    d = progress_delta(w1, w2, bl).set_index("task_code")
+    assert d.loc["D", "deleted"] and d.loc["D", "earned_hr_week"] == -50
+    assert d["earned_hr_week"].sum() == ev_point(w2, bl).ev_hr - ev_point(w1, bl).ev_hr == -50
+    # without a baseline the same, on W1's budget hours
+    assert progress_delta(w1, w2).set_index("task_code").loc["D", "earned_hr_week"] == -50
 
 
 @pytest.mark.parametrize(

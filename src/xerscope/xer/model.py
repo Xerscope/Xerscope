@@ -554,19 +554,24 @@ def build_snapshot(
         lag_hpd = rel["pred_task_id"].map(hpd_by_id)
         rel["lag_d"] = rel["lag_hr"] / lag_hpd.astype(float).fillna(settings.default_hours_per_day)
         rel["is_external"] = rel["pred_proj_id"].ne(pid) & rel["pred_proj_id"].ne("")
+        # A predecessor with no TASK row: a link to another project (P6 exports the link,
+        # not the other project's activities) or a corrupt link. Either way it is not logic
+        # that can be scheduled; the external ones still count as "has a predecessor" below.
+        ext_pred = set(rel.loc[rel["is_external"], "task_id"])
         lost = rel["succ_code"].isna() | rel["pred_code"].isna()
-        if lost.any():
+        if (lost & ~rel["is_external"]).any():
             warnings.append(
-                f"{raw.source}: {int(lost.sum())} relationship(s) to an activity not in the file; "
-                "ignored by the schedule and the checks"
+                f"{raw.source}: {int((lost & ~rel['is_external']).sum())} relationship(s) to an activity "
+                "not in the file; ignored by the schedule and the checks"
             )
+        rel = rel[~lost].copy()
     else:
         rel = pd.DataFrame(
             columns=["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
         )
+        ext_pred = set()
 
     # Links to other projects: P6's logic check lets them pass.
-    ext_pred = set(rel.loc[rel["is_external"].astype(bool), "task_id"]) if not rel.empty else set()
     all_rel = raw.table("TASKPRED")
     ext_succ: set = set()
     if not all_rel.empty and "proj_id" in all_rel.columns:

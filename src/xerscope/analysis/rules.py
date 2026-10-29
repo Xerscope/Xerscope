@@ -182,8 +182,9 @@ def missing_logic(
     """
     pop = activities(ctx, exclude)
     rel = ctx.snapshot.relationships
-    has_pred = pop["task_code"].isin(rel["succ_code"])
-    has_succ = pop["task_code"].isin(rel["pred_code"])
+    own = rel[~rel["is_external"].astype(bool)]  # links within the project; the others are optional
+    has_pred = pop["task_code"].isin(own["succ_code"])
+    has_succ = pop["task_code"].isin(own["pred_code"])
     if external_passes:
         has_pred |= pop["has_external_pred"]
         has_succ |= pop["has_external_succ"]
@@ -454,18 +455,25 @@ def _finish_driver(ctx) -> pd.Series | None:
 def cpli(ctx) -> RuleOutput:
     """Critical Path Length Index = (CPL + TF) / CPL.
 
-    CPL = working days from the data date to the forecast finish (project calendar);
-    TF = total float of the activity that sets the finish.
+    CPL = working days from the data date to the forecast finish, TF = total float of the
+    activity that sets the finish, both on the project calendar. TF comes from the
+    schedule, so it measures the distance to the project's Must Finish By date: without
+    one P6 gives the last activity a float of 0 and the index is 1.0 by construction.
     """
     s = ctx.snapshot
     end = _finish_driver(ctx)
     if end is None or s.data_date is None:
         return RuleOutput(note="no remaining work")
-    cpl = s.calendar().working_days(s.data_date, end["finish"])
-    tf = float(end["total_float_d"]) if pd.notna(end["total_float_d"]) else 0.0
+    cal = s.calendar()
+    cpl = cal.working_days(s.data_date, end["finish"])
+    tf_hr = float(end["total_float_hr_cnt"]) if pd.notna(end["total_float_hr_cnt"]) else 0.0
+    tf = tf_hr / cal.hours_per_day if cal.hours_per_day else 0.0
     if cpl <= 0:
         return RuleOutput(note="critical path length is 0")
-    return RuleOutput(value=(cpl + tf) / cpl, note=f"CPL {cpl:g} wd to {end['task_code']}, total float {tf:g} wd")
+    note = f"CPL {cpl:g} wd to {end['task_code']}, total float {tf:g} wd"
+    if s.options.get("must_finish_by") is None:
+        note += "; no Must Finish By date: the float is 0 by construction"
+    return RuleOutput(value=(cpl + tf) / cpl, note=note)
 
 
 @rule("critical_path_test", "pass/fail")
@@ -643,15 +651,21 @@ def open_ends(ctx, exempt_ends: str = "baseline") -> RuleOutput:
     open_finish = np.where(ms, ~has_s, ~finish_drives.astype(bool))
     note = ""
     if exempt_ends == "baseline":
+        # the project's first start and last finish are looked up over every activity,
+        # finished ones included: once the first activity is done, the next one in line
+        # is not the project start
         if ctx.baseline is not None:
             bl = ctx.baseline.frame
-            b_s, b_f = pop["task_code"].map(bl["bl_start"]), pop["task_code"].map(bl["bl_finish"])
+            all_s, all_f = bl["bl_start"], bl["bl_finish"]
+            b_s, b_f = pop["task_code"].map(all_s), pop["task_code"].map(all_f)
             note = "first/last by baseline dates"
         else:
+            t_all = ctx.snapshot.activities
+            all_s, all_f = t_all["target_start_date"], t_all["target_end_date"]
             b_s, b_f = pop["target_start_date"], pop["target_end_date"]
             note = "no baseline: first/last by planned dates"
-        open_start &= ~(b_s == b_s.min()).fillna(False).to_numpy(bool)
-        open_finish &= ~(b_f == b_f.max()).fillna(False).to_numpy(bool)
+        open_start &= ~(b_s == all_s.min()).fillna(False).to_numpy(bool)
+        open_finish &= ~(b_f == all_f.max()).fillna(False).to_numpy(bool)
     elif exempt_ends != "none":
         raise ValueError("open_ends.exempt_ends must be 'baseline' or 'none'")
     reason = np.where(

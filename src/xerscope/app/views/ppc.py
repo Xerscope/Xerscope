@@ -102,6 +102,7 @@ ui.table(
         "status",
         "wbs_l1",
         "new",
+        "deleted",
     ],
 )
 ui.csv_button(d, f"progress_{cur.data_date:%Y-%m-%d}.csv")
