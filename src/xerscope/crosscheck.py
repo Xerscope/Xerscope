@@ -177,7 +177,7 @@ UNRESOLVED = {
     "ff_sf_lag_from_finished": "FF / SF lag from a finished activity: MPXJ counts the lag from the data date "
     "(twice, for FF); xerscope lets it expire from the actual dates, as for FS",
     "sf_progressed": "SF into progressed work, or from a finished activity: MPXJ's case table differs by "
-    "status in ways not derived from a rule (SF from started into unstarted work agrees)",
+    "status in ways not derived from a rule",
     "lead_from_progressed": "a lead (negative lag) from finished work, or an FS / FF lead from started work "
     "(SS / SF leads from started work agree)",
     "finished_into_started": "an FF / SS / SF link from a finished activity into started work",
@@ -187,6 +187,27 @@ UNRESOLVED = {
     "free_float_lead": "free float of an activity with a lead to a successor",
     "free_float_mandatory": "free float of an activity with a mandatory constraint",
 }
+
+
+# Where the two engines differ and P6's output settled it against MPXJ (the P6 23.12 held-out
+# corpus, tests/test_p6_heldout.py). xerscope follows P6; a comparison that meets one of these
+# reports the difference as MPXJ's. MPXJ stays a hint everywhere else.
+P6_SETTLED = {
+    "sf_from_started": "SF from a started predecessor into unstarted work: MPXJ binds nothing past the data "
+    "date; P6 applies the link from the predecessor's remaining early start (corpus H1-08 A1240, +85 values "
+    "on H1-H7 when applied)",
+}
+
+
+def settled_patterns(snap) -> set[str]:
+    """Keys of P6_SETTLED present in ``snap``: MPXJ is known to differ from P6 there."""
+    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    st, r = t["status_code"], snap.relationships
+    p, s = r["pred_code"].map(st), r["succ_code"].map(st)
+    out = set()
+    if ((r["type"] == "SF") & (p == "TK_Active") & (s == "TK_NotStart")).any():
+        out.add("sf_from_started")
+    return out
 
 
 def unresolved_patterns(snap) -> set[str]:

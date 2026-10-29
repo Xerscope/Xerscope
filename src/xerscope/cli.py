@@ -319,12 +319,14 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
     import pandas as pd
 
     from .crosscheck import (
+        P6_SETTLED,
         UNRESOLVED,
         cpm_crosscheck,
         excused_row,
         mpxj_inconsistent,
         mpxj_scheduler_source,
         mpxj_unsupported,
+        settled_patterns,
         unresolved_patterns,
     )
     from .xer import load_snapshot
@@ -349,6 +351,8 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
         print(agg.to_string())
         for u in mpxj_unsupported(snap):
             print(f"  option MPXJ does not model: {u}")
+        for k in sorted(settled_patterns(snap)):
+            print(f"  MPXJ differs from P6 here: {P6_SETTLED[k]}")
         for k in sorted(unresolved_patterns(snap)):
             print(f"  open question present: {UNRESOLVED[k]}")
         broken = mpxj_inconsistent(snap, cmp)
@@ -356,7 +360,8 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
             print(f"  MPXJ contradicts itself on: {', '.join(sorted(broken)[:8])}")
         bad = ok[~ok["xs_mpxj_work"]]
         bad = bad[[excused_row(snap, c, f) is None for c, f in zip(bad["task_code"], bad["field"], strict=True)]]
-        if len(bad) and not unresolved_patterns(snap) and not broken and not mpxj_unsupported(snap):
+        explained = unresolved_patterns(snap) or settled_patterns(snap) or broken or mpxj_unsupported(snap)
+        if len(bad) and not explained:
             unexplained += len(bad)
             print(bad[["task_code", "field", "p6", "xerscope", "mpxj"]].head(args.show).to_string(index=False))
     if args.out:

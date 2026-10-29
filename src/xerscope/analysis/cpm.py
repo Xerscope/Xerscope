@@ -374,7 +374,10 @@ class _Run:
         its actual finish (FS, FF) or start (SS, SF); a lead is dropped, and between two
         finished activities only the carried date passes. Without Retained Logic a finished
         predecessor bounds unstarted work by its actual dates + lag, and started work not at
-        all. Out-of-sequence progress follows MPXJ's PrimaveraScheduler (its issue #972,
+        all. An SS or SF link from a started predecessor is measured from its remaining early
+        start (or its actual start, under the option) plus the unexpired lag: P6 23.12 applies
+        the SF case too (held-out corpus H1-08 A1240), where MPXJ's scheduler binds nothing.
+        Out-of-sequence progress otherwise follows MPXJ's PrimaveraScheduler (its issue #972,
         checked there against real P6 schedules); with no out-of-sequence progress both
         readings give the same dates.
         """
@@ -397,10 +400,6 @@ class _Run:
                     continue
                 if started:
                     continue
-            if typ == "SF" and self.status[p] == "TK_Active" and self.status[c] == "TK_NotStart":
-                # SF ties the finish to the predecessor's start, which is an actual in the past:
-                # nothing beyond the data date (MPXJ; the SS option does not apply to SF)
-                continue
             if typ in ("FS", "FF"):
                 out.append((end, self.shift(lx, self.ef[p], lag)))
             else:

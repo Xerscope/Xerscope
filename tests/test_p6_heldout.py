@@ -141,3 +141,22 @@ def test_total_float_agrees_wherever_the_four_dates_do(corpus):
     assert len(w) > 2000
     bad = w[~w["total_float_hr"].astype(bool)]
     assert bad.empty, bad[["set", "case", "task_code", "options"]].to_string(index=False)
+
+
+# One corpus activity per rule the engine took from P6 against MPXJ or its own earlier
+# reading (docs/review-2026-10-29.md, R1-R9): the value named must be P6's. The ratchet above
+# would absorb a regression on one activity; this names it.
+PINNED = {
+    "R2 SF from a started predecessor applies": [("H1", "H1-08", "A1240", "early_start")],
+}
+
+
+@pytest.mark.reference
+@pytest.mark.parametrize("rule", list(PINNED))
+def test_rule_reproduces_p6_on_its_corpus_witness(corpus, rule):
+    for set_name, case, code, field in PINNED[rule]:
+        d = _score(set_name)
+        row = d[(d["case"] == case) & (d["task_code"] == code) & (d["field"] == field)]
+        assert len(row) == 1, (case, code, field)
+        r = row.iloc[0]
+        assert r["agree"], f"{rule}: {case} {code} {field}: P6 {r['p6']}, xerscope {r['xerscope']}"
