@@ -134,8 +134,10 @@ uv run xerscope check exports/ --standard my-standard.toml --baseline BL.xer
 uv run xerscope app --data exports/ --standards folder-with-my-toml/
 ```
 
-A wrong rule, parameter, population keyword or target is rejected on load with the exact
-name, so a typo cannot silently change a result. `group` (optional) gives a section title.
+A wrong rule, parameter name or value (choice, number, flag, list of names), population
+keyword, unit or target is rejected on load with the exact name, so a typo cannot silently
+change a result. `group` (optional) gives a section title. The formula behind every
+metric is in [formulas.md](formulas.md).
 
 ## Out of scope for now (research notes, Oct 2026)
 

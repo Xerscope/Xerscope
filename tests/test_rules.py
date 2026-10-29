@@ -480,13 +480,16 @@ def test_decm_baseline_and_actual_dates():
 def test_decm_actuals_changed_needs_the_previous_update():
     from xerscope.store import SnapshotStore
 
-    w1 = snap([active("A"), done("B")])
-    w2 = snap([active("A", act_start_date="2026-02-24 08:00"), done("B")], data_date="2026-03-09 08:00")
+    # DECM compares status periods: the update 28 days earlier, not last week's
+    w1 = snap([active("A"), done("B")])  # data date 2 March
+    w2 = snap([active("A", act_start_date="2026-02-24 08:00"), done("B")], data_date="2026-03-30 08:00")
     store = SnapshotStore([w1, w2])
     r = run_metric(DECM["06A504a"], AnalysisContext(store[1], store))
     assert codes(r) == ["A"] and r.denominator == 2
     assert run_metric(DECM["06A504b"], AnalysisContext(store[1], store)).numerator == 0
     assert run_metric(DECM["06A504a"], AnalysisContext(w2)).status == "n/a"
+    week = snap([active("A", act_start_date="2026-02-24 08:00"), done("B")], data_date="2026-03-09 08:00")
+    assert run_metric(DECM["06A504a"], AnalysisContext(week, SnapshotStore([w1, week]))).status == "n/a"  # 7 days
 
 
 def test_decm_riding_the_status_date():
@@ -504,6 +507,49 @@ def test_decm_riding_the_status_date():
     store = SnapshotStore([m1, m2])
     r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
     assert codes(r) == ["R"] and r.denominator == 2
+
+
+def test_decm_riding_the_status_date_started_work():
+    from xerscope.store import SnapshotStore
+
+    # Started a month ago in both updates. S keeps 40 h remaining (5 wd) while the data date
+    # moved a month: its finish slid with the status date. M went from 40 h to 16 h: progress.
+    m1 = snap(
+        [
+            active("S", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="40"),
+            active("M", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="40"),
+        ]
+    )
+    m2 = snap(
+        [
+            active("S", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="40"),
+            active("M", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="16"),
+        ],
+        data_date="2026-04-06 08:00",
+    )
+    store = SnapshotStore([m1, m2])
+    r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
+    assert codes(r) == ["S"] and r.denominator == 2
+    assert r.flagged.set_index("task_code").at["S", "reason"] == "remaining duration unchanged"
+
+
+def test_decm_open_ends_on_a_progressed_schedule():
+    # D finished; S started with an FS predecessor and no successor: open finish (started
+    # tasks count); T not started, FF-only predecessor: open start. Z, the baseline's last
+    # finish, is exempt. The baseline here is the file's own current dates.
+    s = snap(
+        [
+            done("D"),
+            active("S", early_end_date="2026-03-13 17:00"),
+            todo("T", early_end_date="2026-03-13 17:00"),
+            todo("Z", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+        ],
+        [("D", "S", "FS", 0), ("D", "T", "FF", 0), ("T", "Z", "FS", 0)],
+    )
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    flagged = r.flagged.set_index("task_code")["reason"]
+    assert codes(r) == ["S", "T"] and r.denominator == 3  # D is complete: out of the population
+    assert flagged["S"].startswith("open finish") and flagged["T"].startswith("open start")
 
 
 def test_decm_milestone_needs_only_one_link_per_side():
@@ -548,5 +594,5 @@ def test_actuals_changed_counts_a_removed_date_on_both_sides():
     a = snap([active("A"), active("B"), todo("C")])
     b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-09 08:00")
     store = SnapshotStore([a, b])
-    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start")
+    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start", period_days=0)
     assert sorted(out.flagged["task_code"]) == ["A", "B"] and (out.numerator, out.denominator) == (2, 2)

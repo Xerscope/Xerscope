@@ -80,7 +80,10 @@ class Standard:
     path: str = ""
 
     def __getitem__(self, metric_id: str) -> Metric:
-        return next(m for m in self.metrics if m.id == metric_id)
+        for m in self.metrics:
+            if m.id == metric_id:
+                return m
+        raise KeyError(f"{self.id} has no metric {metric_id!r}")
 
 
 def parse_target(text: str | None, unit: str) -> tuple[str | None, float | None]:
@@ -120,6 +123,11 @@ def parse_standard(data: dict, path: str = "") -> Standard:
             unit = m.get("unit", rule.unit)
             if unit not in UNITS:
                 raise ValueError(f"unit {unit!r} not in {sorted(UNITS)}")
+            if unit != rule.unit and {unit, rule.unit} != {"%", "count"}:
+                raise ValueError(
+                    f"metric {m.get('id')!r}: unit {unit!r} does not fit rule {rule.name!r} ({rule.unit}); "
+                    "only % and count are interchangeable"
+                )
             comparator, threshold = parse_target(m.get("target"), unit)
             extra = set(m) - {"id", "name", "rule", "description", "params", "unit", "target", "source", "group"}
             if extra:

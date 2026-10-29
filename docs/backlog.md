@@ -12,8 +12,9 @@ is done, add one when a check or a recalculation disagrees with P6.
       `source` fields): completed activities kept in P6-11, no-baseline counted as due in
       P6-13, remaining duration in P6-04, LOE in P6-01, start constraints ignored once
       started, 352 h = 8 h/day.
-- [ ] **DECM**: the same for `decm.toml`. Open readings: 06A205a counts LOE and ignores
-      leads; 06A209a includes LOE; DCMA-11 keeps milestones, DCMA-14 drops them.
+- [ ] **DECM**: the same for `decm.toml`. Open readings, each stated in the TOML `source`:
+      06A205a counts LOE and ignores leads; 06A209a includes LOE; DCMA-11 keeps
+      milestones, DCMA-14 drops them.
 - [ ] **Weekly exports after F9**: `xerscope recalc` on them is the only check on
       progressed and resource-dependent work outside the synthetic corpus. Add a
       `--report` that groups the differences by shape (link type × status × option).
@@ -41,14 +42,6 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] CPLI uses the schedule's total float, 0 without a Must Finish By date, so the index
       is 1.0 by construction on such files (`rules.py cpli`; the note says so). Decide
       whether to measure against the baseline finish instead, and cite the DCMA text.
-- [ ] Standards validation is partial: `op`, `unit`, `kind`, `types`, numeric types and
-      the unit allowed per rule are only checked at run time (`rules.py Rule.validate`,
-      `standards.py`).
-- [ ] 06A504a/b compare week over week while DECM is monthly (`rules.py actuals_changed`);
-      the WBS % complete mixes % types and is not a P6 field (`wbs.py`); curve values are
-      labelled at 00:00 for a day's end (`evm.py pv_curve`, `forecast_curve`).
-- [ ] Untested: `ppc_series`, `evm_series`, `forecast_curve`, the started branch of
-      06A506c, 06A204b on a progressed schedule.
 
 ## App
 

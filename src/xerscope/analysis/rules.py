@@ -13,6 +13,7 @@ Populations always exclude WBS-summary rows (``Snapshot.activities``).
 from __future__ import annotations
 
 import inspect
+import typing
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 
 Unit = Literal["%", "ratio", "count", "days", "pass/fail"]
 Names = tuple[str, ...] | list[str]  # TOML gives lists, defaults are tuples
+Op = Literal["<", "<=", ">", ">="]
+LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
 
 ACTIVITY_COLS = [
     "task_code",
@@ -68,17 +71,38 @@ class Rule:
         return {k: p.default for k, p in list(sig.parameters.items())[1:]}
 
     def validate(self, params: dict) -> None:
+        """Every parameter of a TOML metric checked on load against the rule's signature:
+        name, choice (Literal), number, flag or list of names. A bad standard is refused
+        before any check runs."""
         unknown = set(params) - set(self.params)
         if unknown:
             raise ValueError(
                 f"rule {self.name!r} has no parameter(s) {sorted(unknown)}; allowed: {sorted(self.params)}"
             )
+        hints = typing.get_type_hints(self.fn)
+        for key, value in params.items():
+            hint = hints.get(key)
+            where = f"{self.name}.{key}"
+            if typing.get_origin(hint) is Literal:
+                choices = typing.get_args(hint)
+                if value not in choices:
+                    raise ValueError(f"{where}: {value!r} is not one of {list(choices)}")
+            elif hint is bool:
+                if not isinstance(value, bool):
+                    raise ValueError(f"{where}: expected true or false, got {value!r}")
+            elif hint in (float, int):
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f"{where}: expected a number, got {value!r}")
+            elif hint == Names:
+                if isinstance(value, str) or not all(isinstance(v, str) for v in value):
+                    raise ValueError(f"{where}: expected a list of names, got {value!r}")
         for key in ("exclude", "pred_exempt", "succ_exempt"):
             bad = set(params.get(key, [])) - ALLOWED[key]
             if bad:
                 raise ValueError(f"{self.name}.{key}: unknown value(s) {sorted(bad)}; allowed {sorted(ALLOWED[key])}")
-        if "links" in params and params["links"] not in LINK_POPULATIONS:
-            raise ValueError(f"{self.name}.links must be one of {sorted(LINK_POPULATIONS)}")
+        bad = set(params.get("types", [])) - set(CONSTRAINT)
+        if bad:
+            raise ValueError(f"{self.name}.types: unknown {sorted(bad)}; allowed {sorted(CONSTRAINT)}")
 
 
 RULES: dict[str, Rule] = {}
@@ -104,7 +128,6 @@ EXCLUDE = {
 }
 EXEMPT = {"started", "start_milestone", "finish_milestone", "project_start", "project_finish"}
 ALLOWED = {"exclude": set(EXCLUDE), "pred_exempt": EXEMPT, "succ_exempt": EXEMPT}
-LINK_POPULATIONS = {"all", "not_both_complete", "succ_incomplete"}
 
 
 def activities(ctx: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
@@ -229,7 +252,7 @@ def missing_logic(
 
 
 @rule("dangling", "%")
-def dangling(ctx, end: str = "finish", exclude: Names = ("complete",)) -> RuleOutput:
+def dangling(ctx, end: Literal["start", "finish"] = "finish", exclude: Names = ("complete",)) -> RuleOutput:
     """Activities with logic on one end that does not drive it.
 
     ``end = "start"``: has predecessors but none FS or SS (the start floats free).
@@ -253,7 +276,12 @@ def dangling(ctx, end: str = "finish", exclude: Names = ("complete",)) -> RuleOu
 
 @rule("lag", "%")
 def lag(
-    ctx, op: str = ">", value: float = 0, unit: str = "hours", links: str = "succ_incomplete", exclude_loe: bool = False
+    ctx,
+    op: Op = ">",
+    value: float = 0,
+    unit: Literal["hours", "days"] = "hours",
+    links: LinkPop = "succ_incomplete",
+    exclude_loe: bool = False,
 ) -> RuleOutput:
     """Relationships whose lag compares to ``value`` with ``op`` (<, >, <=, >=).
 
@@ -268,7 +296,9 @@ def lag(
 
 
 @rule("relationship_type", "%")
-def relationship_type(ctx, type: str = "FS", links: str = "succ_incomplete", exclude_loe: bool = False) -> RuleOutput:
+def relationship_type(
+    ctx, type: Literal["FS", "SS", "FF", "SF"] = "FS", links: LinkPop = "succ_incomplete", exclude_loe: bool = False
+) -> RuleOutput:
     """Share of relationships of ``type`` (value), listing the others."""
     r = link_population(ctx, links, exclude_loe)
     ok = r["type"] == type
@@ -285,9 +315,6 @@ def constraints(
     ctx, types: Names = (), exclude: Names = ("complete",), ignore_start_when_started: bool = True
 ) -> RuleOutput:
     """Activities with a primary or secondary constraint in ``types`` (P6 codes, e.g. CS_MANDSTART)."""
-    unknown = set(types) - set(CONSTRAINT)
-    if unknown:
-        raise ValueError(f"constraints.types: unknown {sorted(unknown)}; allowed {sorted(CONSTRAINT)}")
     pop = activities(ctx, exclude)
     hits = pd.Series(False, index=pop.index)
     for col in ("cstr_type", "cstr_type2"):
@@ -304,7 +331,7 @@ _OPS = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equ
 
 @rule("float", "%")
 def total_float(
-    ctx, op: str = ">", value: float = 44, unit: str = "days", exclude: Names = ("complete",)
+    ctx, op: Op = ">", value: float = 44, unit: Literal["hours", "days"] = "days", exclude: Names = ("complete",)
 ) -> RuleOutput:
     """Activities whose total float compares to ``value`` (hours as stored, or working days)."""
     pop = activities(ctx, exclude)
@@ -315,7 +342,12 @@ def total_float(
 
 @rule("duration", "%")
 def duration(
-    ctx, field: str = "original", op: str = ">", value: float = 44, unit: str = "days", exclude: Names = ("complete",)
+    ctx,
+    field: Literal["original", "remaining"] = "original",
+    op: Op = ">",
+    value: float = 44,
+    unit: Literal["hours", "days"] = "days",
+    exclude: Names = ("complete",),
 ) -> RuleOutput:
     """Activities whose ``original`` or ``remaining`` duration compares to ``value``."""
     pop = activities(ctx, exclude)
@@ -335,9 +367,9 @@ def duration(
 @rule("invalid_dates", "%")
 def invalid_dates(
     ctx,
-    kind: str = "both",
+    kind: Literal["forecast", "actual", "both"] = "both",
     exclude: Names = ("loe", "complete_before_data_date"),
-    denominator: str = "population",
+    denominator: Literal["population", "started"] = "population",
     include_data_date: bool = False,
 ) -> RuleOutput:
     """Progress dates on the wrong side of the data date.
@@ -419,7 +451,7 @@ def missed_tasks(ctx, exclude: Names = ("loe",)) -> RuleOutput:
 
 
 @rule("bei", "ratio", needs_baseline=True)
-def bei(ctx, exclude: Names = ("loe", "milestones"), missing_baseline: str = "due") -> RuleOutput:
+def bei(ctx, exclude: Names = ("loe", "milestones"), missing_baseline: Literal["due", "ignore"] = "due") -> RuleOutput:
     """Baseline Execution Index = activities completed / activities due by the data date.
 
     ``missing_baseline = "due"`` counts an activity with no baseline finish as due (P6);
@@ -524,7 +556,7 @@ def recalculated(
 
 
 @rule("out_of_sequence", "count")
-def out_of_sequence(ctx, exclude: Names = ("loe",), method: str = "actuals") -> RuleOutput:
+def out_of_sequence(ctx, exclude: Names = ("loe",), method: Literal["actuals", "decm"] = "actuals") -> RuleOutput:
     """Progress out of logic sequence.
 
     ``method = "actuals"``: started activities whose FS predecessor had not finished, or
@@ -626,7 +658,7 @@ def _incomplete(ctx, loe: bool) -> pd.DataFrame:
 
 
 @rule("open_ends", "%")
-def open_ends(ctx, exempt_ends: str = "baseline") -> RuleOutput:
+def open_ends(ctx, exempt_ends: Literal["baseline", "none"] = "baseline") -> RuleOutput:
     """DECM 06A204b dangling logic: incomplete non-LOE tasks and milestones with an open start or finish.
 
     Open start: a task whose predecessors are only FF / SF, or none; a milestone with no
@@ -683,11 +715,14 @@ def open_ends(ctx, exempt_ends: str = "baseline") -> RuleOutput:
 
 
 @rule("lagged_activities", "%")
-def lagged_activities(ctx, loe: bool = True) -> RuleOutput:
-    """DECM 06A205a: incomplete tasks and milestones with at least one lag in their predecessor logic."""
+def lagged_activities(ctx, loe: bool = True, sign: Literal["positive", "negative", "any"] = "positive") -> RuleOutput:
+    """DECM 06A205a: incomplete tasks and milestones with at least one lag (``sign``:
+    positive lags, negative = leads, or any non-zero lag) in their predecessor logic."""
     pop = _incomplete(ctx, loe)
     rel = ctx.snapshot.relationships
-    lagged = rel[rel["lag_hr"].fillna(0) > 0].groupby("succ_code")["pred_code"].agg(lambda x: ", ".join(sorted(x)))
+    lag_hr = rel["lag_hr"].fillna(0)
+    hit = {"positive": lag_hr > 0, "negative": lag_hr < 0, "any": lag_hr != 0}[sign]
+    lagged = rel[hit].groupby("succ_code")["pred_code"].agg(lambda x: ", ".join(sorted(x)))
     bad = pop[pop["task_code"].isin(lagged.index)]
     return RuleOutput(_act(bad, lagged_from=bad["task_code"].map(lagged)), len(bad), len(pop))
 
@@ -724,19 +759,35 @@ def missing_baseline(ctx) -> RuleOutput:
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 
+def _update_before(ctx, period_days: int):
+    """The latest update at least ``period_days`` older than the snapshot (0: the previous
+    one), or None. DECM compares status periods, which are monthly on most contracts."""
+    store, snap = ctx.store, ctx.snapshot
+    if period_days <= 0:
+        return ctx.previous
+    if store is None or snap.data_date is None:
+        return None
+    earlier = [
+        s for s in store if s.data_date is not None and s.data_date <= snap.data_date - pd.Timedelta(days=period_days)
+    ]
+    return earlier[-1] if earlier else None
+
+
 @rule("actuals_changed", "%")
-def actuals_changed(ctx, field: str = "start") -> RuleOutput:
-    """DECM 06A504a / 06A504b: actual start (or finish) different from the previous update's.
+def actuals_changed(ctx, field: Literal["start", "finish"] = "start", period_days: int = 28) -> RuleOutput:
+    """DECM 06A504a / 06A504b: actual start (or finish) different from the previous period's.
 
     X = activities whose actual date differs from (or was removed since) the one the
-    previous update reported; Y = activities with that actual date in either update, so
-    a removed date counts on both sides and the share never exceeds 100 %. Needs the
-    previous update (the weekly series, or two files).
+    update ``period_days`` earlier reported; Y = activities with that actual date in either
+    update, so a removed date counts on both sides and the share never exceeds 100 %.
+    ``period_days = 0`` compares with the previous update whatever its date.
     """
     col = {"start": "act_start_date", "finish": "act_end_date"}[field]
-    prev = ctx.previous
+    prev = _update_before(ctx, period_days)
     if prev is None:
-        return RuleOutput(note="needs the previous update")
+        return RuleOutput(
+            note="needs the previous update" if period_days <= 0 else f"needs an update {period_days} days older"
+        )
     now = ctx.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
     before = prev.activities.drop_duplicates("task_code").set_index("task_code")[col].dropna()
     common = before.index.intersection(now.index)
@@ -748,7 +799,7 @@ def actuals_changed(ctx, field: str = "start") -> RuleOutput:
 
 
 @rule("progress_actuals", "%")
-def progress_actuals(ctx, kind: str = "in_progress") -> RuleOutput:
+def progress_actuals(ctx, kind: Literal["in_progress", "complete"] = "in_progress") -> RuleOutput:
     """DECM 06A505a / 06A505b: progress without the matching actual date.
 
     ``in_progress``: % complete > 0 (or status in progress) but no actual start, of the
@@ -780,15 +831,9 @@ def riding_status_date(
     activities.
     """
     snap = ctx.snapshot
-    store = ctx.store
-    if store is None or snap.data_date is None:
-        return RuleOutput(note="needs the series of updates")
-    earlier = [
-        s for s in store if s.data_date is not None and s.data_date <= snap.data_date - pd.Timedelta(days=period_days)
-    ]
-    if not earlier:
+    prev = _update_before(ctx, period_days)
+    if prev is None:
         return RuleOutput(note=f"needs an update {period_days} days older")
-    prev = earlier[-1]
     pop = _incomplete(ctx, loe=False)
     p = prev.activities.drop_duplicates("task_code").set_index("task_code")
     pop = pop[pop["task_code"].isin(p.index)]

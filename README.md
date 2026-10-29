@@ -95,7 +95,9 @@ Tools › Check Schedule on the same file and baseline, then compare line by lin
 - **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
   diffs the counts against the ones typed from P6's summary (exit 1 on a difference).
 - **Definitions:** each check's population cites the Oracle help page it comes from. All
-  differences with DCMA and DECM are listed in [docs/standards.md](docs/standards.md).
+  differences with DCMA and DECM are listed in [docs/standards.md](docs/standards.md);
+  the formula behind every number the tool produces, with the test that pins it, is in
+  [docs/formulas.md](docs/formulas.md).
 
 `--standard DECM`, `--standard DCMA` or `--standard my.toml` work the same way. Given
 several files, `check` runs them as one series, so DECM's checks against the previous

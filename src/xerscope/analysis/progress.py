@@ -118,7 +118,8 @@ def progress_delta(prev: Snapshot, cur: Snapshot, baseline=None) -> pd.DataFrame
 
     With a ``baseline``, earned hours are the week's EV gain, as on the Earned value page:
     BL hours x change in Performance % Complete (WBS EV technique), so the weekly figures
-    add up to EV. Without, budget hours of W x change in % complete.
+    add up to EV. Without, budget hours of W (of W-1 for an activity deleted in W) x change
+    in % complete.
     """
     from .evm import performance_pct
 
