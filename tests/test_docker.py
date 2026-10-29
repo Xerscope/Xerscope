@@ -58,6 +58,7 @@ def test_remote_image_keeps_everything_on_the_container_loopback():
     assert "FROM tailscale/tailscale:" in df and "FROM caddy:" in df
     sup = (ROOT / "deploy" / "remote" / "supervisor.py").read_text()
     assert "--tun=userspace-networking" in sup and "--accept-routes=false" in sup
-    assert "default_bind 127.0.0.1" in sup and "http://127.0.0.1:8080" in sup
+    assert "default_bind 127.0.0.1" in sup and "\\n:8080 {" in sup  # loopback bind, any Host header
+    assert "127.0.0.1:8080 {" not in sup  # a host in the site address would reject Funnel's Host header
     assert '"--server.address", "127.0.0.1"' in sup and "reverse_proxy 127.0.0.1:8501" in sup
     assert "signal.SIGTERM" in sup and "finally:" in sup

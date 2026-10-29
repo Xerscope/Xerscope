@@ -6,7 +6,7 @@
     default_bind 127.0.0.1
 }
 
-http://127.0.0.1:8080 {
+:8080 {   # no host here: a host in the site address also filters the Host header
     basic_auth {
         quentin $2a$14$REPLACE-WITH-THE-HASH
     }

@@ -88,7 +88,10 @@ def write_caddyfile() -> None:
     user = os.environ.get("XERSCOPE_USER", "xerscope").strip() or "xerscope"
     CADDYFILE.parent.mkdir(parents=True, exist_ok=True)
     CADDYFILE.write_text(
-        "{\n    auto_https off\n    default_bind 127.0.0.1\n}\n\nhttp://127.0.0.1:8080 {\n"
+        # default_bind keeps the listener on loopback; the site address stays ":8080" because
+        # a host in it ("127.0.0.1:8080") also filters the Host header, and Funnel requests
+        # arrive with Host: <node>.<tailnet>.ts.net (Caddy then answers nothing, status 0).
+        "{\n    auto_https off\n    default_bind 127.0.0.1\n}\n\n:8080 {\n"
         f"    basic_auth {{\n        {user} {password_hash()}\n    }}\n"
         "    reverse_proxy 127.0.0.1:8501\n    log {\n        output stdout\n        format console\n    }\n}\n"
     )
