@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: ghcr.io/xerscope/xerscope:latest
+    image: mish1ma/xerscope:latest                 # Docker Hub (private): Container Manager logs in natively; ghcr.io/xerscope/xerscope is the same image
     environment:
       XERSCOPE_DATA: /data
     volumes:

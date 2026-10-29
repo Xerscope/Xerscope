@@ -139,8 +139,9 @@ pins those properties, and the stack was run end to end outside Docker (401 with
 credentials, 200 with, loopback listeners only, clean shutdown).
 
 **With Container Manager Projects (compose)** instead: `.github/workflows/image.yml`
-publishes `ghcr.io/xerscope/xerscope:latest` on every push to `main`, so the NAS
-only pulls. In File Station, create `docker/xerscope/` holding `deploy/compose.nas.yaml`,
+publishes `ghcr.io/xerscope/xerscope:latest` (and, with the Docker Hub secrets set,
+`mish1ma/xerscope:latest`, which Synology's Container Manager accepts) on every push to
+`main`, so the NAS only pulls. In File Station, create `docker/xerscope/` holding `deploy/compose.nas.yaml`,
 `deploy/tailscale-serve.json` and `deploy/Caddyfile.nas` renamed to `Caddyfile` with your
 hash written in (make it on any machine with Docker); then Container Manager > Project >
 Create from that folder. Put the exports in a shared folder (`/volume1/plannings` in the

@@ -80,7 +80,7 @@ File Station → `docker/xerscope/` (that is `/volume1/docker/xerscope/`):
 
 | File | From | Edit |
 |---|---|---|
-| `compose.yaml` | `deploy/compose.nas.yaml` | `TS_AUTHKEY`; keep `/volume1/plannings` or point it at the shared folder of the exports |
+| `compose.yaml` | `deploy/compose.nas.yaml` | `TS_AUTHKEY`; keep `/volume1/plannings` or point it at the shared folder of the exports. Image: `mish1ma/xerscope:latest` (Docker Hub, section 5) |
 | `Caddyfile` | `deploy/Caddyfile.nas` | user + bcrypt hash |
 | `tailscale-serve.json` | `deploy/tailscale-serve.json` | nothing |
 | `tailscale-state/` | — | create empty folder |
@@ -89,6 +89,29 @@ Exports: a shared folder (`plannings`), weekly `.xer` dropped through Synology D
 SMB. Mounted read-only: the app cannot alter or delete them.
 
 ## 5. Registry login in Container Manager
+
+**Tested on DSM 7.2: Container Manager rejects ghcr.io** ("returned bad result" on the
+Registry form and on Image → Add from URL, with a token that `docker login ghcr.io` accepts).
+So the app image is also published to **Docker Hub as a private repository**,
+`mish1ma/xerscope`, which Container Manager handles natively, and `compose.nas.yaml` pulls that one.
+
+One-time setup, from your PC:
+
+1. hub.docker.com → sign in as `mish1ma` → Create repository `xerscope`, **Private**
+   (the free plan includes one private repository; `xerscope-remote` stays on ghcr).
+2. hub.docker.com → Account settings → Personal access tokens → New: `github-actions`,
+   permissions **Read & Write** → copy it.
+3. github.com/Xerscope/xerscope → Settings → Secrets and variables → Actions → New repository
+   secret: `DOCKERHUB_USERNAME` = `mish1ma`, `DOCKERHUB_TOKEN` = the token.
+4. Actions → `image` → Run workflow. The `xerscope` job now pushes to both registries;
+   `docker pull mish1ma/xerscope:latest` from your PC confirms it.
+5. A second Docker Hub token for the NAS, **Read-only**, named `nas`.
+
+Container Manager → **Registry** → select **Docker Hub** → Settings → Edit → username
+`mish1ma`, password = the read-only token → OK → **Use**. (No URL to type: Docker Hub is
+the built-in entry.) Then Project → Create pulls `mish1ma/xerscope:latest` by itself.
+
+### If you still want ghcr.io
 
 Container Manager → **Registry** → Settings → **Add**:
 
