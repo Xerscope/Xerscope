@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .xer import Snapshot, load_snapshot
+from .xer import Snapshot, load_snapshot, xer_files
 from .xer.model import LABOR_COLS
 
 HISTORY_COLS = [
@@ -95,7 +95,7 @@ class SnapshotStore:
 
     @classmethod
     def from_folder(cls, folder: str | Path, pattern: str = "*.xer", project_code: str | None = None) -> SnapshotStore:
-        paths = sorted(Path(folder).glob(pattern))
+        paths = xer_files(folder) if pattern == "*.xer" else sorted(Path(folder).glob(pattern))
         if not paths:
             raise FileNotFoundError(f"no {pattern} files in {folder}")
         return cls.from_paths(paths, project_code)

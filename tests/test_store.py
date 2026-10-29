@@ -42,3 +42,12 @@ def test_export(store, tmp_path):
         "fact_assignment.parquet",
     }
     assert zip_tables(store, "csv")[:2] == b"PK"
+
+
+def test_folder_scan_accepts_upper_case_extension(tmp_path):
+    """P6 on some setups writes .XER; the app, the CLI and SnapshotStore must see those files."""
+    from xerscope.xer import xer_files
+
+    for name in ("b.XER", "a.xer", "c.txt"):
+        (tmp_path / name).write_bytes(b"")
+    assert [p.name for p in xer_files(tmp_path)] == ["a.xer", "b.XER"]

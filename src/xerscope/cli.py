@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from xerscope.xer import xer_files
+
 APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
 
 
@@ -16,7 +18,7 @@ def _expand(paths: list[str]) -> list[Path]:
     out: list[Path] = []
     for p in (Path(x).expanduser() for x in paths):
         if p.is_dir():
-            out += sorted(p.glob("*.xer"))
+            out += xer_files(p)
         elif p.is_file():
             out.append(p)
         else:

@@ -11,7 +11,7 @@ import streamlit as st
 from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
 from xerscope.store import SnapshotStore
-from xerscope.xer import Snapshot, XerError, build_snapshot, parse_bytes
+from xerscope.xer import Snapshot, XerError, build_snapshot, parse_bytes, xer_files
 
 
 @st.cache_data(show_spinner=False, max_entries=512)
@@ -49,7 +49,7 @@ def sidebar_loader() -> None:
         if not root.is_dir():
             sb.error("Folder not found")
             return
-        files = sorted(root.glob("*.xer"))
+        files = xer_files(root)
         signature = ("folder", str(root)) + tuple((p.name, p.stat().st_mtime_ns) for p in files)
         if signature != st.session_state.get("signature"):
             items = [(p.name, p.read_bytes()) for p in files]
