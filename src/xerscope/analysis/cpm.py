@@ -551,12 +551,19 @@ class _Run:
         """Latest start / finish ``c`` may have against its successors' late (or early) dates."""
         R, status = self.R, self.status
         l_s, l_f = [], []
+        po = self.opt.progressed == "progress_override"
         for s, typ, link_lag in self.succs[c]:
             lag = link_lag
-            if late and self.opt.progressed == "progress_override" and status[s] == "TK_Active" and typ in ("FS", "SS"):
+            if po and status[s] == "TK_Active" and typ in ("FS", "SS"):
                 # Progress Override: a started successor's start is an actual, so a link to it
                 # binds no late date; links to its finish (FF, SF) still do (corpus H5-06
                 # A1030 vs H3-03 A1030: +406 values, 1 lost)
+                continue
+            if not late and po and status[c] == "TK_Active" and (typ in ("SS", "SF") or status[s] == "TK_Complete"):
+                # ... and the free float of work under way runs past its own start-type links
+                # (its start is an actual too) and past finished successors, to whatever is
+                # left (corpus tally of one-successor activities; +116 values, 28 lost:
+                # register R6 keeps the counter-examples, H4-08 A1010, H12-07 A1120)
                 continue
             if (
                 late
