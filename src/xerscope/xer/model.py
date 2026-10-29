@@ -125,6 +125,16 @@ def _blank_to_na(s: pd.Series) -> pd.Series:
     return s.where(s.astype(str).str.strip() != "", None)
 
 
+def forecast_dates(t: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """P6's current forecast dates of a TASK frame: the remaining early dates (restart /
+    reend, what P6 shows and what leveling moves), the early dates when an exporter left
+    them blank. The one reading of "when is this scheduled" for the model and the checks."""
+    return (
+        t["restart_date"].combine_first(t["early_start_date"]),
+        t["reend_date"].combine_first(t["early_end_date"]),
+    )
+
+
 def to_datetime(s: pd.Series) -> pd.Series:
     # XER dates are "YYYY-MM-DD HH:MM"; ISO8601 also tolerates exporters adding seconds.
     return pd.to_datetime(_blank_to_na(s), format="ISO8601", errors="coerce")
@@ -485,20 +495,9 @@ def build_snapshot(
 
     # P6's Start / Finish columns (Oracle, "Dates Columns of the Activity Table"): the actual
     # date once there is one, else the remaining early date once scheduled, else planned.
-    # Remaining early = early unless the project was leveled; early is kept as a fallback
-    # for exporters that leave restart/reend blank.
-    t["start"] = (
-        t["act_start_date"]
-        .combine_first(t["restart_date"])
-        .combine_first(t["early_start_date"])
-        .combine_first(t["target_start_date"])
-    )
-    t["finish"] = (
-        t["act_end_date"]
-        .combine_first(t["reend_date"])
-        .combine_first(t["early_end_date"])
-        .combine_first(t["target_end_date"])
-    )
+    fc_start, fc_finish = forecast_dates(t)
+    t["start"] = t["act_start_date"].combine_first(fc_start).combine_first(t["target_start_date"])
+    t["finish"] = t["act_end_date"].combine_first(fc_finish).combine_first(t["target_end_date"])
 
     t["total_float_d"] = (t["total_float_hr_cnt"] / t["hours_per_day"]).where(~t["is_complete"])
     t["free_float_d"] = (t["free_float_hr_cnt"] / t["hours_per_day"]).where(~t["is_complete"])

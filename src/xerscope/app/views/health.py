@@ -38,7 +38,13 @@ if bl is None:
         icon=":material/info:",
     )
 
-results = run_standard(std, AnalysisContext(snap, store, bl))
+# memoised per (data set, standard, update, baseline): the DECM critical path test alone
+# takes ~2 s on a 4,000-activity file, and every widget change reruns the page (R14)
+_bl_key = st.session_state.get("bl_choice"), bl.label if bl else None
+results = memo(
+    ("health_results", repr(std), snap.source, str(snap.data_date), _bl_key),
+    lambda: run_standard(std, AnalysisContext(snap, store, bl)),
+)
 status = pd.Series([r.status for r in results])
 scored = int(status.isin(["pass", "fail"]).sum())
 ui.kpis(
@@ -180,8 +186,7 @@ for r, e in zip(results, explained, strict=True):
 # --- week over week -------------------------------------------------------------------------------
 if len(store) > 1:
     ui.section("Trend across updates", "The same check on every loaded update, against its target.")
-    bl_key = st.session_state.get("bl_choice"), bl.label if bl else None
-    hist = memo(("health", repr(std), bl_key), lambda: health_history(store, std, baseline_for))
+    hist = memo(("health", repr(std), _bl_key), lambda: health_history(store, std, baseline_for))
     metric_ids = [m.id for m in std.metrics]
     mid = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=lambda i: f"{i} · {std[i].name}")
     m = std[mid]
