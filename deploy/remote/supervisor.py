@@ -1,0 +1,165 @@
+"""xerscope-remote: one container, three processes, configured by environment variables.
+
+    tailscaled (userspace)  ->  tailscale funnel  ->  Caddy (:8080, basic auth)  ->  xerscope (:8501)
+
+Nothing is published on the host: tailscaled keeps an outbound connection to Tailscale,
+visitors reach https://<TS_HOSTNAME>.<tailnet>.ts.net through it, Caddy asks for a
+username and password, xerscope listens on the container's loopback only.
+
+Variables
+    TS_AUTHKEY               auth key of a tagged node (Funnel allowed for the tag in the ACL)
+    TS_HOSTNAME              node name, default "xerscope"
+    XERSCOPE_USER            login, default "xerscope"
+    XERSCOPE_PASSWORD_HASH   bcrypt hash (caddy hash-password), or
+    XERSCOPE_PASSWORD        the password itself, hashed at start (weaker: readable in the UI)
+    XERSCOPE_DATA            folder of XER exports, default /data (mount it read-only)
+    XERSCOPE_BASELINE        optional baseline XER
+
+Volumes
+    /data                    the exports
+    /var/lib/tailscale       the node's state, so it keeps its identity across restarts
+
+Runs as PID 1 without a shell (distroless): starts the processes, restarts one that dies
+(5 s back-off), stops all of them on SIGTERM.
+"""
+
+from __future__ import annotations
+
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SOCK = "/tmp/tailscaled.sock"
+STATE = Path(os.environ.get("TS_STATE_DIR", "/var/lib/tailscale"))
+CADDYFILE = Path("/tmp/caddy/Caddyfile")
+TS = os.environ.get("TAILSCALE_BIN", "tailscale")
+TSD = os.environ.get("TAILSCALED_BIN", "tailscaled")
+CADDY = os.environ.get("CADDY_BIN", "caddy")
+PYTHON = os.environ.get("XERSCOPE_PYTHON", sys.executable)
+
+
+def log(msg: str) -> None:
+    print(f"[remote] {msg}", flush=True)
+
+
+def need(name: str) -> str:
+    v = os.environ.get(name, "").strip()
+    if not v:
+        log(f"{name} is not set: see the image documentation")
+        sys.exit(2)
+    return v
+
+
+def password_hash() -> str:
+    h = os.environ.get("XERSCOPE_PASSWORD_HASH", "").strip()
+    if h:
+        return h
+    pw = need("XERSCOPE_PASSWORD")
+    if len(pw) < 12:
+        log("XERSCOPE_PASSWORD must be at least 12 characters")
+        sys.exit(2)
+    out = subprocess.run([CADDY, "hash-password", "--plaintext", pw], capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+def write_caddyfile() -> None:
+    user = os.environ.get("XERSCOPE_USER", "xerscope").strip() or "xerscope"
+    CADDYFILE.parent.mkdir(parents=True, exist_ok=True)
+    CADDYFILE.write_text(
+        "{\n    auto_https off\n    default_bind 127.0.0.1\n}\n\nhttp://127.0.0.1:8080 {\n"
+        f"    basic_auth {{\n        {user} {password_hash()}\n    }}\n"
+        "    reverse_proxy 127.0.0.1:8501\n    log {\n        output stdout\n        format console\n    }\n}\n"
+    )
+
+
+def ts(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run([TS, "--socket", SOCK, *args], capture_output=True, text=True, check=check)
+
+
+def tailscale_up(authkey: str, hostname: str) -> None:
+    for _ in range(60):  # tailscaled needs a moment to open its socket
+        if ts("status", check=False).returncode in (0, 1):
+            break
+        time.sleep(0.5)
+    ts("up", "--authkey", authkey, "--hostname", hostname, "--advertise-tags=tag:xerscope", "--accept-routes=false")
+    ts("funnel", "--bg", "8080")  # https://<hostname>.<tailnet>.ts.net -> Caddy
+    status = ts("funnel", "status", check=False)
+    log(status.stdout.strip() or status.stderr.strip())
+
+
+class Procs:
+    def __init__(self) -> None:
+        self.specs: dict[str, list[str]] = {}
+        self.procs: dict[str, subprocess.Popen] = {}
+        self.last: dict[str, float] = {}
+        self.stopping = False
+
+    def start(self, name: str, argv: list[str]) -> None:
+        self.specs[name] = argv
+        self.procs[name] = subprocess.Popen(argv)
+        self.last[name] = time.monotonic()
+        log(f"started {name} (pid {self.procs[name].pid})")
+
+    def stop(self, *_: object) -> None:
+        self.stopping = True
+        for name, p in self.procs.items():
+            if p.poll() is None:
+                log(f"stopping {name}")
+                p.terminate()
+
+    def watch(self) -> int:
+        while True:
+            time.sleep(1)
+            for name, p in list(self.procs.items()):
+                code = p.poll()
+                if code is None:
+                    continue
+                if self.stopping:
+                    continue
+                wait = max(0.0, 5 - (time.monotonic() - self.last[name]))
+                log(f"{name} exited with {code}; restarting in {wait:.0f} s")
+                time.sleep(wait)
+                self.start(name, self.specs[name])
+            if self.stopping and all(p.poll() is not None for p in self.procs.values()):
+                return 0
+
+
+def main() -> int:
+    authkey = need("TS_AUTHKEY")
+    hostname = os.environ.get("TS_HOSTNAME", "xerscope").strip() or "xerscope"
+    STATE.mkdir(parents=True, exist_ok=True)
+    write_caddyfile()
+    procs = Procs()
+    signal.signal(signal.SIGTERM, procs.stop)
+    signal.signal(signal.SIGINT, procs.stop)
+    try:
+        return run(procs, authkey, hostname)
+    finally:
+        procs.stop()  # whatever happened, no child outlives the supervisor
+        for p in procs.procs.values():
+            p.wait(timeout=10)
+
+
+def run(procs: Procs, authkey: str, hostname: str) -> int:
+    procs.start(
+        "tailscaled",
+        [TSD, "--tun=userspace-networking", f"--state={STATE}/tailscaled.state", f"--socket={SOCK}", "--port=0"],
+    )
+    tailscale_up(authkey, hostname)
+    # Streamlit itself, not the `xerscope app` wrapper: a wrapper would not pass SIGTERM on
+    from xerscope.cli import APP_PATH
+
+    os.environ.setdefault("XERSCOPE_DATA", "/data")
+    os.chdir(APP_PATH.parent)  # the packaged .streamlit/config.toml (theme, localhost) applies
+    app = [PYTHON, "-m", "streamlit", "run", str(APP_PATH), "--server.address", "127.0.0.1", "--server.port", "8501",
+           "--browser.gatherUsageStats", "false"]  # fmt: skip
+    procs.start("xerscope", app)
+    procs.start("caddy", [CADDY, "run", "--config", str(CADDYFILE), "--adapter", "caddyfile"])
+    return procs.watch()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

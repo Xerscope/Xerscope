@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1.7
+#
+# xerscope-remote: xerscope + Tailscale (userspace) + Caddy in ONE image, for a host where
+# the only possible action is "run an image" (a NAS without a terminal). Everything is
+# set through environment variables; see deploy/remote/supervisor.py.
+#
+#   docker build -f Dockerfile.remote -t mish1ma/xerscope-remote:latest .
+#   docker run -d --name xerscope-remote --read-only --tmpfs /tmp --tmpfs /home/nonroot \
+#     --cap-drop ALL --security-opt no-new-privileges:true \
+#     -e TS_AUTHKEY=tskey-auth-... -e XERSCOPE_USER=quentin -e XERSCOPE_PASSWORD_HASH='$2a$14$...' \
+#     -v /volume1/plannings:/data:ro -v xerscope-tailscale:/var/lib/tailscale \
+#     mish1ma/xerscope-remote:latest
+#
+# No port is published, tailscaled has no TUN device: the host network is untouched.
+# Tailscale and Caddy are taken from their official images (static Go binaries).
+
+ARG UV_VERSION=0.13.6
+ARG PYTHON_VERSION=3.14
+ARG TAILSCALE_VERSION=v1.84.0
+ARG CADDY_VERSION=2.10.0
+
+FROM ghcr.io/astral-sh/uv:${UV_VERSION}-trixie-slim AS build
+ARG PYTHON_VERSION
+ENV UV_PYTHON_INSTALL_DIR=/python \
+  UV_PYTHON_PREFERENCE=only-managed \
+  UV_PROJECT_ENVIRONMENT=/app/.venv \
+  UV_COMPILE_BYTECODE=1 \
+  UV_LINK_MODE=copy
+RUN uv python install ${PYTHON_VERSION}
+WORKDIR /src
+COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --locked --no-dev --no-install-project --python ${PYTHON_VERSION}
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --locked --no-dev --no-editable --python ${PYTHON_VERSION}
+RUN mkdir -p /data /var/lib/tailscale
+
+FROM tailscale/tailscale:${TAILSCALE_VERSION} AS tailscale
+FROM caddy:${CADDY_VERSION} AS caddy
+
+FROM gcr.io/distroless/cc-debian13:nonroot
+COPY --from=build /python /python
+COPY --from=build /app/.venv /app/.venv
+COPY --from=build --chown=nonroot:nonroot /data /data
+COPY --from=build --chown=nonroot:nonroot /var/lib/tailscale /var/lib/tailscale
+COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscale /usr/local/bin/
+COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
+COPY deploy/remote/supervisor.py /app/supervisor.py
+ENV PATH=/app/.venv/bin:/usr/local/bin:$PATH \
+  PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONUNBUFFERED=1 \
+  XDG_CONFIG_HOME=/tmp/caddy \
+  XDG_DATA_HOME=/tmp/caddy \
+  STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+USER nonroot
+WORKDIR /app
+VOLUME ["/var/lib/tailscale"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD ["/app/.venv/bin/python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4).read()"]
+ENTRYPOINT ["/app/.venv/bin/python", "/app/supervisor.py"]

@@ -100,6 +100,57 @@ several files, `check` runs them as one series, so DECM's checks against the pre
 update (actuals changed, riding the status date) work too.
 `xerscope standards --template my.toml` writes a commented template for your own standard.
 
+### Remote access without installing anything on the client (Tailscale Funnel + Caddy)
+
+`compose.funnel.yaml` publishes the app at `https://xerscope.<tailnet>.ts.net` for people
+who cannot run Tailscale themselves (a corporate laptop on its own VPN), behind a username
+and password checked by Caddy. The host network is untouched: tailscaled runs in userspace
+(no TUN device, no route, no DNS change), no port is published, and the only traffic is
+Tailscale's outbound connection. `tests/test_docker.py` pins those properties.
+
+```bash
+cp .env.example .env                       # TS_AUTHKEY (tag:xerscope), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH
+docker run --rm caddy:2.10.0 caddy hash-password --plaintext 'your password'
+docker compose -f compose.funnel.yaml up -d --build
+docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
+```
+
+**On a host that can only run an image** (a NAS with Container Manager and no terminal):
+`Dockerfile.remote` builds `xerscope-remote`, one image holding xerscope, Tailscale (userspace)
+and Caddy, driven by a small supervisor (`deploy/remote/supervisor.py`). Build and push it
+from any machine with Docker, then create one container in the NAS UI:
+
+```bash
+docker build -f Dockerfile.remote -t mish1ma/xerscope-remote:latest . && docker push mish1ma/xerscope-remote:latest
+```
+
+| In the Container Manager form | Value |
+|---|---|
+| Image | `mish1ma/xerscope-remote:latest` |
+| Environment | `TS_AUTHKEY` (tagged key), `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH` (`caddy hash-password`) or `XERSCOPE_PASSWORD` |
+| Volumes | `/volume1/plannings` → `/data` read-only; a folder or named volume → `/var/lib/tailscale` |
+| Ports | none |
+| Capabilities / privileged | none |
+
+Then open `https://xerscope.<tailnet>.ts.net`: the browser asks for the username and
+password. Inside the container Caddy and xerscope listen on 127.0.0.1 only, tailscaled has
+no TUN device, and the supervisor stops every process on SIGTERM; `tests/test_docker.py`
+pins those properties, and the stack was run end to end outside Docker (401 without
+credentials, 200 with, loopback listeners only, clean shutdown).
+
+**With Container Manager Projects (compose)** instead: `.github/workflows/image.yml`
+publishes `ghcr.io/quentingouttaya/xerscope:latest` on every push to `main`, so the NAS
+only pulls. In File Station, create `docker/xerscope/` holding `deploy/compose.nas.yaml`,
+`deploy/tailscale-serve.json` and `deploy/Caddyfile.nas` renamed to `Caddyfile` with your
+hash written in (make it on any machine with Docker); then Container Manager > Project >
+Create from that folder. Put the exports in a shared folder (`/volume1/plannings` in the
+file) and upload new weeks through Drive or SMB.
+
+Allow Funnel for the tag in the tailnet ACL (`"nodeAttrs": [{"target": ["tag:xerscope"],
+"attr": ["funnel"]}]`). A shared password is the weakest link of this setup: use a long
+one, change it when someone leaves, and prefer Cloudflare Access or an OIDC login if the
+audience grows.
+
 ## Pages
 
 | Page | What it shows |

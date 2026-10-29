@@ -1,0 +1,16 @@
+# Behind Tailscale Funnel: TLS is terminated by tailscaled, Caddy only authenticates and
+# proxies, on a port that exists solely inside the shared container network namespace.
+{
+    auto_https off
+}
+
+:8080 {
+    basic_auth {
+        {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
+    }
+    reverse_proxy xerscope:8501
+    log {
+        output stdout
+        format console
+    }
+}

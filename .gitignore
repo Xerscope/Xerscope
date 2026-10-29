@@ -5,3 +5,5 @@ data/
 export/
 *.egg-info/
 tests/reference/data/
+.env
+tailscale-state/
