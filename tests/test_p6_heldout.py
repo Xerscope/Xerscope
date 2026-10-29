@@ -131,7 +131,7 @@ def test_total_float_agrees_wherever_the_four_dates_do(corpus):
     """An activity whose early and late dates are P6's has P6's total float too, under
     FT_FF and FT_SS (the codes P6 itself writes). The float-type reading is then the only
     thing between the dates and the float, and it must be right. (FT_Min, FT_Start and
-    FT_Total on resource-dependent work still differ in a few cases: register R7.)"""
+    FT_Total on resource-dependent work still differ in a few cases: open, docs/backlog.md.)"""
     d = pd.concat([_score(f"H{i}") for i in range(1, 31)], ignore_index=True)
     d = d[d["field"] != "error"]
     w = d.pivot_table(index=["set", "case", "task_code", "options"], columns="field", values="agree", aggfunc="first")
@@ -144,48 +144,42 @@ def test_total_float_agrees_wherever_the_four_dates_do(corpus):
 
 
 # One corpus activity per rule the engine took from P6 against MPXJ or its own earlier
-# reading (docs/review-2026-10-29.md, R1-R9): the value named must be P6's. The ratchet above
+# reading: the value named must be P6's. The ratchet above
 # would absorb a regression on one activity; this names it.
 PINNED = {
-    "R2 SF from a started predecessor applies": [("H1", "H1-08", "A1240", "early_start")],
-    "R3 expected finish before the early start: remaining 0": [("H1", "H1-02", "A1170", "early_finish")],
-    "R3 expected finish with an FF predecessor, later than its bound": [("H4", "H4-10", "A1040", "early_finish")],
-    "R3 FF bound later than the expected finish wins, remaining kept": [("H24", "H24-07", "A1210", "early_start")],
-    "R5 Mandatory Finish before the data date: early dates at the data date, late pinned": [
+    "SF from a started predecessor applies": [("H1", "H1-08", "A1240", "early_start")],
+    "expected finish before the early start: remaining 0": [("H1", "H1-02", "A1170", "early_finish")],
+    "expected finish with an FF predecessor, later than its bound": [("H4", "H4-10", "A1040", "early_finish")],
+    "FF bound later than the expected finish wins, remaining kept": [("H24", "H24-07", "A1210", "early_start")],
+    "Mandatory Finish before the data date: early dates at the data date, late pinned": [
         ("H3", "H3-04", "A1100", "early_start"),
         ("H3", "H3-04", "A1100", "late_finish"),
     ],
-    "R5 Mandatory Start before the data date: early start at the data date": [("H2", "H2-06", "A1130", "early_start")],
-    "R5 Mandatory Start pins the early start over later logic": [("H2", "H2-07", "A1120", "early_start")],
-    "R5 expected finish earlier than the Mandatory Finish is the late finish": [
-        ("H22", "H22-06", "A1120", "late_finish")
-    ],
-    "R9a FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
-    "R9a SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
-    "R9a lag between two finished activities does not pass back": [("H1", "H1-08", "A1050", "late_finish")],
-    "R9b progress override: FS into a started successor binds no late date": [("H5", "H5-06", "A1030", "late_finish")],
-    "R9b progress override: FF into a started successor still binds": [("H3", "H3-03", "A1030", "late_finish")],
-    "R6 progress override: free float of started work runs past finished successors": [
+    "Mandatory Start before the data date: early start at the data date": [("H2", "H2-06", "A1130", "early_start")],
+    "Mandatory Start pins the early start over later logic": [("H2", "H2-07", "A1120", "early_start")],
+    "expected finish earlier than the Mandatory Finish is the late finish": [("H22", "H22-06", "A1120", "late_finish")],
+    "FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
+    "SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
+    "lag between two finished activities does not pass back": [("H1", "H1-08", "A1050", "late_finish")],
+    "progress override: FS into a started successor binds no late date": [("H5", "H5-06", "A1030", "late_finish")],
+    "progress override: FF into a started successor still binds": [("H3", "H3-03", "A1030", "late_finish")],
+    "progress override: free float of started work runs past finished successors": [
         ("H2", "H2-05", "A1030", "free_float_hr")
     ],
-    "R6 progress override: free float of started work runs past its SS links": [
-        ("H2", "H2-04", "A1110", "free_float_hr")
-    ],
-    "R4 late start from an SS bound is written at the bound's instant": [("H3", "H3-02", "A1240", "late_start")],
-    "R9d a finish constraint on a start milestone is ignored": [("H6", "H6-03", "A1130", "late_finish")],
-    "R9f suspended work resumes on its resume date": [("H8", "H8-07", "A1020", "early_start")],
-    "R8 LOE late dates from its links' late dates": [
+    "progress override: free float of started work runs past its SS links": [("H2", "H2-04", "A1110", "free_float_hr")],
+    "late start from an SS bound is written at the bound's instant": [("H3", "H3-02", "A1240", "late_start")],
+    "a finish constraint on a start milestone is ignored": [("H6", "H6-03", "A1130", "late_finish")],
+    "suspended work resumes on its resume date": [("H8", "H8-07", "A1020", "early_start")],
+    "LOE late dates from its links' late dates": [
         ("H8", "H8-01", "A1160", "late_finish"),
         ("H8", "H8-01", "A1160", "total_float_hr"),
         ("H10", "H10-11", "A1210", "late_start"),
     ],
-    "R9g progress override: an SF from a started predecessor binds nothing": [
-        ("H10", "H10-02", "A1250", "early_finish")
-    ],
-    "R9e SS lag from Actual Start: a finished predecessor's actual start, not its carry": [
+    "progress override: an SF from a started predecessor binds nothing": [("H10", "H10-02", "A1250", "early_finish")],
+    "SS lag from Actual Start: a finished predecessor's actual start, not its carry": [
         ("H6", "H6-07", "A1190", "early_start")
     ],
-    "R9c progress override: an FF predecessor still bounds the finish of started work": [
+    "progress override: an FF predecessor still bounds the finish of started work": [
         ("H1", "H1-11", "A1040", "early_finish")
     ],
 }

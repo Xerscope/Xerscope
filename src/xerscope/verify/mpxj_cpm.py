@@ -48,14 +48,13 @@ UNRESOLVED = {
 # reports the difference as MPXJ's. MPXJ stays a hint everywhere else.
 P6_SETTLED = {
     "sf_from_started": "SF from a started predecessor into unstarted work: MPXJ binds nothing past the data "
-    "date; P6 applies the link from the predecessor's remaining early start (corpus H1-08 A1240, +85 values "
-    "on H1-H7 when applied)",
+    "date; P6 applies the link from the predecessor's remaining early start (corpus H1-08 A1240)",
     "lag_to_finished_successor": "lag on a link into a finished successor under Retained Logic: MPXJ drops an FS lag "
     "in the backward pass; P6 passes the full FS / FF lag back, the unexpired SS / SF lag, and nothing between "
-    "two finished activities (corpus, +121 values)",
+    "two finished activities (corpus H1-08 A1020, A1050)",
     "expected_finish_edge": "an expected finish before the early start or on work with an FF / SF predecessor: "
-    "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win (corpus, "
-    "300 activities with an expected finish)",
+    "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win "
+    "(corpus H1-02 A1170, H4-10 A1040)",
 }
 
 
