@@ -476,14 +476,16 @@ class _Run:
                 fin = ax.keep_or_previous(pinned[1])
                 start = ax.add(fin, -d, finish=False) if (k == "task" and d) else fin
             if k == "task" and opt.use_expected_finish:
-                # Oracle: P6 sets the early finish to the expected finish and computes the
-                # remaining duration from it, which the backward pass then uses. Applied as
-                # MPXJ's PrimaveraScheduler does: not ALAP, no FF / SF predecessor (they
-                # override it), on or after the early start and the data date.
                 exp = R[c].get("expect_end_date", pd.NaT)
                 alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
                 finish_linked = any(typ in ("FF", "SF") for _, typ, _ in self.preds[c])
-                if pd.notna(exp) and not alap and not finish_linked and exp >= start and exp >= dd:
+                if pd.notna(exp) and not alap and c not in self.rsrc_dep:
+                    start, fin = self.expected_finish(
+                        c, ax, pd.Timestamp(exp), s_c, f_c, start, fin, use_logic, finish_linked
+                    )
+                elif pd.notna(exp) and not alap and not finish_linked and exp >= start and exp >= dd:
+                    # resource-dependent work: MPXJ's reading, the only one measured better
+                    # than P6's task rule on the corpus so far (register R7)
                     fin = pd.Timestamp(exp)
                     self.dur_override[c] = float(ax.between(start, fin))
             es[c], ef[c], rs[c] = (R[c].get("act_start_date") if started and k == "task" else start), fin, start
@@ -493,6 +495,32 @@ class _Run:
         self.finish = max(
             (self.carry.get(c, ef[c]) if status[c] == "TK_Complete" else ef[c] for c in self.nodes), default=None
         )
+
+    def expected_finish(self, c, ax, exp, s_c, f_c, start, fin, use_logic, finish_linked):
+        """Early dates of task-dependent work with an expected finish, as P6 23.12 places them
+        (held-out corpus, 300 activities with an expected finish, every status and option).
+
+        The expected finish stands in for "early start + remaining duration": the early
+        finish is the expected finish, or the early start when the expected finish falls
+        before it (remaining duration 0), on whatever date the data date, the predecessors
+        or a constraint give the start, a Mandatory Finish included (it only pins the late
+        dates, register R5). An FF / SF bound later than that finish wins instead, with the
+        file's remaining duration and the start placed back from it, as without an expected
+        finish. The remaining duration the backward pass uses follows the early dates.
+
+        Measured but not understood: work under way under Progress Override with an FF / SF
+        predecessor keeps its remaining duration when the expected finish falls before its
+        early start (35 of 36 corpus values).
+        """
+        s0 = ax.snap_start(max(s_c)) if s_c else start
+        if not use_logic and finish_linked and exp < s0:
+            return start, fin
+        exp_fin = max(exp, s0)
+        f_min = ax.keep_or_next(max(f_c)) if f_c else None
+        if f_min is not None and exp_fin < f_min:
+            return start, fin
+        self.dur_override[c] = float(ax.between(s0, exp_fin))
+        return s0, exp_fin
 
     def rsrc_early(self, c, s_c, f_c, d_extra) -> tuple[pd.Timestamp, pd.Timestamp]:
         """Resource dependent: each driving assignment on its resource calendar."""

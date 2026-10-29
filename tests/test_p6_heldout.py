@@ -148,6 +148,9 @@ def test_total_float_agrees_wherever_the_four_dates_do(corpus):
 # would absorb a regression on one activity; this names it.
 PINNED = {
     "R2 SF from a started predecessor applies": [("H1", "H1-08", "A1240", "early_start")],
+    "R3 expected finish before the early start: remaining 0": [("H1", "H1-02", "A1170", "early_finish")],
+    "R3 expected finish with an FF predecessor, later than its bound": [("H4", "H4-10", "A1040", "early_finish")],
+    "R3 FF bound later than the expected finish wins, remaining kept": [("H24", "H24-07", "A1210", "early_start")],
 }
 
 

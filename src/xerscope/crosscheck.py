@@ -196,6 +196,9 @@ P6_SETTLED = {
     "sf_from_started": "SF from a started predecessor into unstarted work: MPXJ binds nothing past the data "
     "date; P6 applies the link from the predecessor's remaining early start (corpus H1-08 A1240, +85 values "
     "on H1-H7 when applied)",
+    "expected_finish_edge": "an expected finish before the early start or on work with an FF / SF predecessor: "
+    "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win (corpus, "
+    "300 activities with an expected finish)",
 }
 
 
@@ -207,6 +210,13 @@ def settled_patterns(snap) -> set[str]:
     out = set()
     if ((r["type"] == "SF") & (p == "TK_Active") & (s == "TK_NotStart")).any():
         out.add("sf_from_started")
+    if (snap.options.get("sched") or {}).get("sched_use_expect_end_flag", "Y") != "N" and "expect_end_date" in t:
+        exp = t["expect_end_date"]
+        has = exp.notna() & (t["task_type"] == "TT_Task") & (t["status_code"] != "TK_Complete")
+        linked = t.index.isin(r.loc[r["type"].isin(["FF", "SF"]), "succ_code"])
+        before_dd = (exp < snap.data_date) if snap.data_date is not None else False
+        if (has & (linked | before_dd)).any():
+            out.add("expected_finish_edge")
     return out
 
 
