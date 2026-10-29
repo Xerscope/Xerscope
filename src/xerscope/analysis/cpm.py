@@ -359,10 +359,17 @@ class _Run:
         return [a for a in self.asg[c] if a.driving and a.dur_m is not None]
 
     def constraints(self, c) -> list[tuple[str, pd.Timestamp]]:
+        """Dated constraints of ``c`` P6 schedules with. A finish constraint on a start
+        milestone, or a start constraint on a finish milestone (P6's own dialog refuses
+        them; an import keeps them), is ignored: corpus H6-03 A1130, +114 values."""
         out = []
+        k = self.kind(c)
         for ct, cd in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
             typ, date = self.R[c].get(ct), self.R[c].get(cd)
             if typ and isinstance(typ, str) and typ != "CS_ALAP" and pd.notna(date):
+                side = START_LIKE.get(typ) or LATE_LIKE.get(typ) or MANDATORY.get(typ)
+                if (k == "start_ms" and side == "finish") or (k == "finish_ms" and side == "start"):
+                    continue
                 out.append((typ, pd.Timestamp(date)))
         return out
 

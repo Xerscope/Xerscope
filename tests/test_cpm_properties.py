@@ -27,7 +27,7 @@ import pandas as pd
 import pytest
 from xerkit import CALENDAR_IDS, snap
 
-from xerscope.analysis.cpm import _Axes, _date_range, schedule
+from xerscope.analysis.cpm import LATE_LIKE, MANDATORY, START_LIKE, _Axes, _date_range, schedule
 
 TYPES = ["FS", "FS", "FS", "SS", "FF", "SF"]
 SEEDS = range(60)
@@ -199,6 +199,12 @@ def test_options_constraints_calendars(seed):
     for c, r in f[f["status_code"] == "TK_NotStart"].iterrows():
         typ, date = act.at[c, "cstr_type"], act.at[c, "cstr_date"]
         if act.at[c, "task_type"] == "TT_LOE" or not isinstance(typ, str) or not typ:
+            continue
+        # P6 ignores a finish constraint on a start milestone and a start constraint on a
+        # finish milestone (held-out corpus H6-03 A1130; its dialog refuses them)
+        tt = act.at[c, "task_type"]
+        side = START_LIKE.get(typ) or LATE_LIKE.get(typ) or MANDATORY.get(typ)
+        if (tt == "TT_Mile" and side == "finish") or (tt == "TT_FinMile" and side == "start"):
             continue
         # compared in working time: a start "on" Friday 17:00 shows as Monday 08:00, as in P6
         w = axes.of(act.at[c, "clndr_id"]).work
