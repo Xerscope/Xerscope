@@ -154,7 +154,10 @@ def main() -> int:
 def run(procs: Procs, authkey: str, hostname: str) -> int:
     procs.start(
         "tailscaled",
-        [TSD, "--tun=userspace-networking", f"--state={STATE}/tailscaled.state", f"--socket={SOCK}", "--port=0"],
+        # --statedir, not --state: it is also tailscaled's "var root", where the ts.net TLS
+        # certificate for Funnel is kept. With --state alone every Funnel handshake fails with
+        # "no TailscaleVarRoot" and the public name never resolves.
+        [TSD, "--tun=userspace-networking", f"--statedir={STATE}", f"--socket={SOCK}", "--port=0"],
     )
     tailscale_up(authkey, hostname)
     # Streamlit itself, not the `xerscope app` wrapper: a wrapper would not pass SIGTERM on
