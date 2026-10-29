@@ -14,7 +14,7 @@ def test_compose_publishes_on_loopback_only():
 
 def test_image_runs_as_nonroot_from_the_lockfile():
     df = (ROOT / "Dockerfile").read_text()
-    assert "distroless/cc-debian12:nonroot" in df and "USER nonroot" in df
+    assert "distroless/cc-debian13:nonroot" in df and "USER nonroot" in df
     assert df.count("uv sync --locked --no-dev") == 2
 
 

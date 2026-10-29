@@ -5,8 +5,8 @@
 #   docker build -t xerscope .
 #   docker compose up            # http://localhost:8501, exports read from ./exports
 #
-# Build stage: uv installs a managed CPython 3.13 (python-build-standalone, needs only
-# glibc) and the locked dependencies into /app/.venv. Runtime stage: distroless "cc"
+# Build stage: uv installs a managed CPython (PYTHON_VERSION, python-build-standalone, needs
+# only glibc) and the locked dependencies into /app/.venv. Runtime stage: distroless "cc"
 # (glibc + libstdc++ for pyarrow, no shell, no package manager), non-root user. The
 # interpreter and the venv are copied at the same paths, so the venv's links still resolve.
 #
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # an empty mount point for the exports, owned by the runtime user (distroless has no mkdir)
 RUN mkdir -p /data
 
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian13:nonroot
 COPY --from=build /python /python
 COPY --from=build /app/.venv /app/.venv
 COPY --from=build --chown=nonroot:nonroot /data /data
@@ -48,6 +48,7 @@ WORKDIR /app
 EXPOSE 8501
 # Inside the container the app must listen on all interfaces to be reachable at all; what
 # reaches it is decided where the port is published (compose.yaml binds 127.0.0.1 only).
+# Runtime on the same Debian release as the build stage (trixie = Debian 13).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["/app/.venv/bin/python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4)"]
 ENTRYPOINT ["/app/.venv/bin/xerscope"]

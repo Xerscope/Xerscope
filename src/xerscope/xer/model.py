@@ -553,6 +553,12 @@ def build_snapshot(
         lag_hpd = rel["pred_task_id"].map(hpd_by_id)
         rel["lag_d"] = rel["lag_hr"] / lag_hpd.astype(float).fillna(settings.default_hours_per_day)
         rel["is_external"] = rel["pred_proj_id"].ne(pid) & rel["pred_proj_id"].ne("")
+        lost = rel["succ_code"].isna() | rel["pred_code"].isna()
+        if lost.any():
+            warnings.append(
+                f"{raw.source}: {int(lost.sum())} relationship(s) to an activity not in the file; "
+                "ignored by the schedule and the checks"
+            )
     else:
         rel = pd.DataFrame(
             columns=["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]

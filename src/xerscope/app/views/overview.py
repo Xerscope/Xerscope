@@ -19,22 +19,27 @@ ui.header(
     lead=f"{len(store)} weekly update(s) loaded, {store.first.data_date:%d %b %Y} → {latest.data_date:%d %b %Y}.",
 )
 
-shift = last["finish_shift_d"]
-total = (latest.finish_date - store.first.finish_date).total_seconds() / 86400 if len(store) > 1 else None
+shift = last["finish_shift_wd"]
+first_finish = store.first.finish_date
+total = (
+    latest.calendar().working_days(first_finish, latest.finish_date)
+    if len(store) > 1 and first_finish is not None and latest.finish_date is not None
+    else None
+)
 ui.kpis(
     [
         (
             "Forecast finish",
             f"{latest.finish_date:%d %b %Y}" if latest.finish_date is not None else "–",
-            None if pd.isna(shift) else f"{shift:+g} d vs previous update",
+            None if pd.isna(shift) else f"{shift:+g} wd vs previous update",
             "Latest early finish of the project",
             "inverse",
         ),
         (
             "Shift since first update",
-            "–" if total is None else f"{total:+.0f} d",
+            "–" if total is None else f"{total:+.1f} wd",
             None,
-            "Forecast finish now minus the forecast in the first loaded update (calendar days)",
+            "Forecast finish now minus the forecast in the first loaded update (working days, project calendar)",
         ),
         (
             "Activities complete",

@@ -24,14 +24,15 @@ if len(store) - len(h):
     st.caption(f"Present in {len(h)} of {len(store)} updates (added or deleted along the way).")
 
 first, last = h.iloc[0], h.iloc[-1]
-slip = (last["finish"] - first["finish"]).total_seconds() / 86400 if len(h) > 1 else None
+cal = store.latest.calendar(last["clndr_id"] if isinstance(last["clndr_id"], str) else None)
+slip = cal.working_days(first["finish"], last["finish"]) if len(h) > 1 else None
 ui.kpis(
     [
         ("Status", last["status"]),
         (
             "Forecast finish",
             f"{last['finish']:%d %b %Y}",
-            None if slip is None else f"{slip:+.0f} d since first",
+            None if slip is None else f"{slip:+.1f} wd since first",
             None,
             "inverse",
         ),

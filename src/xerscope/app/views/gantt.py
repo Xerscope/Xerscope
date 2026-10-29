@@ -123,6 +123,7 @@ st.plotly_chart(
         show_links=show_links,
         dark=is_dark(),
         summaries=summaries,
+        snapshot=snap,
         row_order=order,
     ),
     width="stretch",

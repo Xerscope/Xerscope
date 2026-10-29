@@ -122,12 +122,12 @@ read and test, not a second implementation.
 | Command | Does |
 |---|---|
 | `app` | launches the UI on localhost (`--data`, `--baseline`, `--standards`, `--host`) |
-| `check` | runs a standard on files and prints the P6-style summary (`--out` CSV) |
+| `check` | runs a standard on files and prints the P6-style summary (`--out` CSV, `--fail-on fail` for CI) |
 | `recalc` | reschedules and compares with stored dates (`--out` CSV) |
 | `changelog` | changes between two files |
 | `standards` | lists standards and rules, or writes the template |
 | `export` | Power BI tables |
-| `crosscheck` | compares the reading with MPXJ (Java) |
+| `crosscheck` | compares the reading with MPXJ (Java); `--cpm` compares the recalculation with MPXJ's scheduler |
 | `info` | one line per snapshot |
 | `sample` | generates the demo series |
 
@@ -135,12 +135,14 @@ read and test, not a second implementation.
 
 | File | What it pins |
 |---|---|
-| `xerkit.py` | builds tiny XERs in code, so each expected number is countable by hand |
+| `xerkit.py` | builds tiny XERs in code (numeric ids, full calendars, as P6 writes them), so each expected number is countable by hand and any reader sees the same file |
 | `test_cpm.py` | real P6 files to the minute (dates, floats, longest path, assignments); each rule of the engine by hand |
+| `test_crosscheck_mpxj.py` | the CPM against MPXJ's independent scheduler: P6 files three ways, random networks of every kind, the hand cases, the demo; open questions named in `crosscheck.UNRESOLVED` |
+| `test_cpm_properties.py` | invariants on seeded random networks |
 | `test_rules.py` | each check, especially where P6 and DCMA differ |
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ crosscheck |
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA, CLI |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
 | `test_app.py` | every page renders headless, key options work |
-| `reference/` | pinned third-party files (commit + SHA-256), downloaded by `fetch.py` |
+| `reference/` | pinned third-party files (commit + SHA-256), downloaded by `fetch.py`; MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |

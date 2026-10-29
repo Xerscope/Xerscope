@@ -1,14 +1,22 @@
 """CPM invariants on random schedules (seeded, so a failure always reproduces).
 
 No P6 output exists for these networks, so they check what any P6 recalculation must
-satisfy whatever the network:
+satisfy whatever the network. The dates themselves are compared with an independent
+engine, MPXJ's PrimaveraScheduler, in tests/test_crosscheck_mpxj.py.
 
-- every relationship holds on the early dates and on the late dates
+Progress here follows the logic (no started activity with an unfinished predecessor):
+out-of-sequence progress legitimately gives negative float and is left to the MPXJ
+comparison.
+
+- every relationship holds on the early dates and on the late dates (an SF from started
+  work binds nothing past the data date)
 - an unstarted task lasts its remaining duration, early and late
-- total float = late finish - early finish (P6 default "finish float")
+- total float = late finish - early finish (P6 default "finish float"); free float >= 0
+  (it can exceed total float: late dates stop at the project finish, free float runs to
+  the successors, in P6 as in MPXJ)
 - unconstrained, one calendar, Retained Logic: no negative float; with FS links only and
   no leads (nothing dangling past the end) the longest path has zero float
-- delaying any activity never brings the project finish earlier
+- with FS links only, delaying any activity never brings the project finish earlier
 """
 
 from __future__ import annotations
@@ -17,7 +25,7 @@ import random
 
 import pandas as pd
 import pytest
-from xerkit import snap
+from xerkit import CALENDAR_IDS, snap
 
 from xerscope.analysis.cpm import _Axes, _date_range, schedule
 
@@ -25,7 +33,9 @@ TYPES = ["FS", "FS", "FS", "SS", "FF", "SF"]
 SEEDS = range(60)
 
 
-def random_network(seed: int, n: int = 14, progress: bool = True, types=TYPES, lags=(0, 0, 0, 8, 16, -8)):
+def random_network(
+    seed: int, n: int = 14, progress: bool = True, types=TYPES, lags=(0, 0, 0, 8, 16, -8), in_sequence: bool = False
+):
     rnd = random.Random(seed)
     codes = [f"A{i:02d}" for i in range(n)]
     tasks, links = [], []
@@ -52,20 +62,32 @@ def random_network(seed: int, n: int = 14, progress: bool = True, types=TYPES, l
     for j in range(1, n):  # a DAG: links only go forward in the list
         for i in rnd.sample(range(j), k=min(j, rnd.choice([1, 1, 2, 3]))):
             links.append((codes[i], codes[j], rnd.choice(types), rnd.choice(lags)))
+    if in_sequence:  # nothing started while one of its predecessors is unfinished
+        status = {t["task_code"]: t.get("status_code", "TK_NotStart") for t in tasks}
+        preds: dict[str, list[str]] = {}
+        for p, s, *_ in links:
+            preds.setdefault(s, []).append(p)
+        for t in tasks:
+            c = t["task_code"]
+            if status[c] != "TK_NotStart" and any(status[p] != "TK_Complete" for p in preds.get(c, [])):
+                for k in ("status_code", "act_start_date", "act_end_date"):
+                    t.pop(k, None)
+                t["remain_drtn_hr_cnt"] = t["target_drtn_hr_cnt"]
+                status[c] = "TK_NotStart"
     return tasks, links
 
 
 def _check(seed: int, progress: bool, fs_only: bool = False):
     # FS only and no lead: no dangling end, no successor allowed before its predecessor's end
     tasks, links = (
-        random_network(seed, progress=progress, types=["FS"], lags=(0, 0, 8, 16))
+        random_network(seed, progress=progress, types=["FS"], lags=(0, 0, 8, 16), in_sequence=True)
         if fs_only
-        else random_network(seed, progress=progress)
+        else random_network(seed, progress=progress, in_sequence=True)
     )
     s = snap(tasks, links)
     sch = schedule(s)
     f = sch.frame
-    ax = _Axes(s, *_date_range(s)).of("C8")
+    ax = _Axes(s, *_date_range(s)).of(CALENDAR_IDS["C8"])
     w = ax.work
     st = f["status_code"]
     open_ = f[st != "TK_Complete"]
@@ -82,7 +104,7 @@ def _check(seed: int, progress: bool, fs_only: bool = False):
             assert w(r["lf"]) - w(r["ls"]) == pytest.approx(d), (seed, c, "late duration")
         assert r["tf_hr"] == pytest.approx((w(r["lf"]) - w(r["ef"])) / 60), (seed, c, "total float")
         assert r["tf_hr"] >= 0, (seed, c, "negative float without constraints")
-        assert r["ff_hr"] >= 0 and r["ff_hr"] <= r["tf_hr"] + 1e-9, (seed, c, "free float")
+        assert r["ff_hr"] >= 0, (seed, c, "free float")
     lp = open_[open_["longest_path"]]
     assert len(lp), (seed, "no longest path")
     if fs_only:  # an SS/SF-only successor leaves the finish dangling: float past the end, as P6
@@ -94,6 +116,8 @@ def _check(seed: int, progress: bool, fs_only: bool = False):
             continue
         if st[c] == "TK_Active" and typ in ("FS", "SS"):
             continue  # started: its start is its actual start
+        if typ == "SF" and st[p] == "TK_Active" and st[c] == "TK_NotStart":
+            continue  # tied to the predecessor's actual start, in the past
         lag_m = lag * 60
         if st[p] == "TK_Active" and typ in ("SS", "SF") and lag_m > 0:
             lag_m = max(0, lag_m - ax.between(act.at[p, "act_start_date"], dd))
@@ -106,8 +130,10 @@ def _check(seed: int, progress: bool, fs_only: bool = False):
             lto = {"ef": "lf", "remaining_start": "ls"}[to]
             assert w(C[lto]) >= w(P[lfrm]) + lag_m - 1e-6, (seed, p, c, typ, lag, "late")
 
-    # delaying any open activity never brings the finish earlier
-    for c in open_.index[:: max(1, len(open_) // 4)]:
+    # delaying any open activity never brings the finish earlier, with FS links: with FF a
+    # longer activity whose finish is fixed starts earlier and pulls its SS successors
+    # along (the classic CPM "reverse logic" effect, in P6 too)
+    for c in open_.index[:: max(1, len(open_) // 4)] if fs_only else []:
         assert schedule(s, extra_hours={c: 24}).finish >= sch.finish, (seed, c)
     return sch
 

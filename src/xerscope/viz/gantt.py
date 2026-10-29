@@ -75,11 +75,14 @@ def build_gantt(
     settings: Settings = DEFAULT_SETTINGS,
     summaries: pd.DataFrame | None = None,
     row_order: list[str] | None = None,
+    snapshot=None,
 ) -> go.Figure:
     """Rows are drawn top to bottom in the order of ``tasks`` (sort before calling).
 
     ``summaries`` (columns row, start, finish, pct_complete, activities) adds WBS summary
     bars; ``row_order`` then interleaves them with the activity rows (see wbs_rows).
+    ``snapshot`` (the Snapshot ``tasks`` come from) gives the finish shift in working days
+    of each activity's calendar; without it the hover says calendar days.
     """
     pal = PALETTE["dark" if dark else "light"]
     t = tasks.copy()
@@ -93,10 +96,13 @@ def build_gantt(
     if compare is not None and not compare.empty:
         cmp = compare.set_index("task_code")[["start", "finish"]]
         cf = t["task_code"].map(cmp["finish"])
-        shift = (t["finish"] - cf).dt.total_seconds() / 86400
+        if snapshot is not None:
+            shift, unit = snapshot.working_days(t["clndr_id"], cf, t["finish"]), "wd"
+        else:
+            shift, unit = (t["finish"] - cf).dt.total_seconds() / 86400, "cal. d"
         shift_txt = np.where(
             shift.notna(),
-            "<br>Finish vs " + compare_label + ": " + shift.round(1).map("{:+g} d".format, na_action="ignore"),
+            "<br>Finish vs " + compare_label + ": " + shift.round(1).map(("{:+g} " + unit).format, na_action="ignore"),
             np.where(cf.isna(), "<br>Not in " + compare_label, ""),
         )
         shift_txt = pd.Series(shift_txt, index=t.index)
@@ -289,7 +295,7 @@ def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
     """Forecast project finish per weekly update: the single most-watched planning trend."""
     pal = PALETTE["dark" if dark else "light"]
     s = summary.dropna(subset=["data_date", "forecast_finish"])
-    shift = s["finish_shift_d"].map(lambda v: "" if pd.isna(v) else f" ({v:+g} d)")
+    shift = s["finish_shift_wd"].map(lambda v: "" if pd.isna(v) else f" ({v:+g} wd)")
     fig = go.Figure(
         go.Scatter(
             x=s["data_date"],

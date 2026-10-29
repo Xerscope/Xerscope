@@ -96,3 +96,17 @@ def test_app_stays_on_localhost_and_uses_the_packaged_theme(monkeypatch, sample_
     assert cmd[cmd.index("--server.address") + 1] == "localhost"
     assert (seen["cwd"] / ".streamlit" / "config.toml").is_file()
     assert seen["env"]["XERSCOPE_DATA"] == str(sample_dir.resolve())
+
+
+def test_check_exit_code_follows_fail_on(capsys, sample_dir):
+    assert cli.main(["check", str(sample_dir), "--standard", "P6"]) == 0  # reports only, by default
+    assert cli.main(["check", str(sample_dir), "--standard", "P6", "--fail-on", "fail"]) == 1  # the demo misses some
+    assert cli.main(["check", str(sample_dir), "--standard", "P6", "--fail-on", "error"]) == 0  # every rule ran
+    capsys.readouterr()
+
+
+def test_paths_with_nothing_to_read_stop_with_a_message(tmp_path):
+    with pytest.raises(SystemExit, match="no .xer file"):
+        cli.main(["check", str(tmp_path)])
+    with pytest.raises(SystemExit, match="no such file"):
+        cli.main(["info", str(tmp_path / "missing.xer")])

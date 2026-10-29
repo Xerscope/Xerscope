@@ -187,5 +187,10 @@ class SnapshotStore:
                 }
             )
         df = pd.DataFrame(rows)
-        df["finish_shift_d"] = (df["forecast_finish"].diff().dt.total_seconds() / 86400).round(1)
+        # working days on the newer update's project calendar, like every other "wd" figure
+        shifts = [None]
+        for prev, cur in zip(self._snaps, self._snaps[1:], strict=False):
+            a, b = prev.finish_date, cur.finish_date
+            shifts.append(None if a is None or b is None else round(cur.calendar().working_days(a, b), 1))
+        df["finish_shift_wd"] = pd.Series(shifts, dtype=float)
         return df

@@ -91,7 +91,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "data_date": ("Data date", "date"),
     "source": ("File", "text"),
     "forecast_finish": ("Forecast finish", "datetime"),
-    "finish_shift_d": ("Finish shift (d)", "signed"),
+    "finish_shift_wd": ("Finish shift (wd)", "signed"),
     "activities": ("Activities", "int"),
     "complete": ("Complete", "int"),
     "in_progress": ("In progress", "int"),
@@ -131,16 +131,25 @@ COLUMNS: dict[str, tuple[str, str]] = {
 HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not shown
 
 
+_MD_SPECIAL = str.maketrans({c: "\\" + c for c in "\\`*_{}[]()#+-.!|<>~$"})
+
+
+def md_text(value: object) -> str:
+    """Text from a schedule file, shown literally inside Markdown: no link, image, emphasis
+    or LaTeX ($...$) can come from an activity name or code."""
+    return str(value).translate(_MD_SPECIAL)
+
+
 def header(title: str, store=None, snap=None, baseline=None, lead: str = "") -> None:
     """Page title, then one context line: project · data date · baseline, then an optional lead."""
     st.title(title)
     bits = []
     if store is not None:
-        bits.append(f"**{store.latest.project_code}** {store.latest.project_name}")
+        bits.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
     if snap is not None:
         bits.append(f"Data date **{snap.data_date:%d %b %Y}**")
     if baseline is not None:
-        bits.append(f"Baseline **{baseline.label}**")
+        bits.append(f"Baseline **{md_text(baseline.label)}**")
     if bits:
         st.markdown(" · ".join(bits))
     if lead:

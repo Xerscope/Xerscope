@@ -154,7 +154,7 @@ for r, e in zip(results, explained, strict=True):
                 st.markdown("**Population**")
                 st.markdown("\n".join(f"- {line}" for line in e.population))
             if r.note and r.note not in e.formula:
-                st.markdown(f"**Note** · {r.note}")
+                st.markdown(f"**Note** · {ui.md_text(r.note)}")
         with right:
             st.markdown("**Method**")
             st.caption(e.method.replace("``", "`"))
@@ -204,7 +204,7 @@ if bl is not None:
     if missing:
         st.caption(
             f"{len(missing)} activities are not in the baseline: "
-            f"{', '.join(missing[:10])}{'…' if len(missing) > 10 else ''}"
+            f"{ui.md_text(', '.join(missing[:10]))}{'…' if len(missing) > 10 else ''}"
         )
 
 # --- your own standard ----------------------------------------------------------------------------

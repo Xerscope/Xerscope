@@ -27,7 +27,7 @@ mkdir -p exports && cp ~/exports/projet/*.xer exports/   # your weekly XERs (rea
 docker compose up -d --build                              # http://localhost:8501
 ```
 
-- **Image:** uv builds from `uv.lock` (CPython 3.13 managed by uv), the runtime is
+- **Image:** uv builds from `uv.lock` (CPython 3.14 managed by uv), the runtime is
   distroless `cc-debian12:nonroot`: no shell, no package manager, non-root user.
 - **Network:** the app listens on all interfaces *inside* the container, and compose
   publishes it on `127.0.0.1` only, so the schedules stay off the network as with
@@ -138,8 +138,11 @@ update (actuals changed, riding the status date) work too.
 - **EV:** baseline labour units × Performance % Complete, by the WBS's EV technique
   (activity % complete, 0/100, 50/50, custom %). Activities not in the baseline earn
   nothing and are listed. AC is the actual hours; EAC = AC + remaining.
-- **PPC commitments:** activities that update W-1 forecast to finish before W's data date.
-  An activity deleted in W counts as scope change, not as a miss.
+- **PPC commitments:** activities that update W-1 forecast to finish before W's data date
+  (in a recalculated file, those forecast to finish during the week). An activity deleted
+  in W counts as scope change, not as a miss.
+- **Day units:** every "wd" is working days, on the activity's calendar for an activity
+  and on the project calendar for the project finish; calendar days are labelled "cal. d".
 
 ## Validation
 
@@ -150,13 +153,15 @@ Expected values come from someone other than xerscope wherever possible:
 | MPXJ test exports (real P6 8.2 / 8.4 / 20.12) | lag-calendar option per file; % complete for duration, physical and units types |
 | xerlock sample + its parsed fixture | every activity's dates, float, durations, % complete, critical and longest path; all relationships (345/345) |
 | xerlock DCMA results | all 12 stated DCMA values, critical path test activity and shift, CPL 1080 h |
-| P6-scheduled exports (Hotel P6 6.0, Terminal P6 5.0) and xerlock's progressed sample | CPM recalculation: every early/late date, total and free float, exact clock time (25,302 + 396 + 126 values); every longest-path flag (4,304) |
+| P6-scheduled exports (Hotel P6 6.0, Terminal P6 5.0, both unstarted) | CPM recalculation: every early/late date, total and free float, exact clock time (25,302 + 396 values); every longest-path flag (4,283) |
+| xerlock's sample (synthetic, xerlock's own engine, Progress Override) | the same 126 values: agreement with another tool, not with P6 |
+| MPXJ's PrimaveraScheduler, a second CPM engine (`tests/test_crosscheck_mpxj.py`) | 275 random networks (unstarted, progressed in and out of sequence, resource dependent, nine constraint types), the hand cases and the demo: same dates and floats to the working minute, except named open questions ([docs/cpm.md](docs/cpm.md#validation)) |
 | Hotel and Terminal TASKRSRC | every assignment's remaining early/late start and finish (2,340 assignments, 9,360 dates) |
 | xerlock critical path test | +600 wd on MEP-020 moves the finish 2026-09-08 → 2028-12-27 |
 | MPXJ as independent reader | `xerscope crosscheck` on any file (55,685/55,685 fields on the P6 exports, 680/680 on the others) |
-| 300 seeded random networks (`tests/test_cpm_properties.py`) | CPM invariants every P6 recalculation satisfies: links hold early and late, durations, float = LF − EF, no negative float unconstrained, constraints, monotone finish |
+| 260 seeded random networks (`tests/test_cpm_properties.py`) | CPM invariants: links hold early and late, durations, float = LF − EF, no negative float unconstrained with in-sequence progress, constraints, monotone finish with FS links |
 | Hand-built schedules (`tests/xerkit.py`) | every rule, each P6 / DCMA / DECM difference, Oracle's documented options (SS lag, Actual Dates, lag calendar default, resource-dependent activities), calendars, PV, EV techniques, PPC, changelog, WBS roll-ups |
-| Demo series | each finding the generator plants is found, in the week it appears |
+| Demo series | each finding the generator plants is found, in the week it appears. Its stored dates are written by xerscope's CPM, so on their own they prove nothing: MPXJ recomputes them independently (test above) |
 
 The suite is mutation-tested. Plausible bugs were injected one at a time: 21 in the
 checks (populations, exemptions, units, calendar mapping, PV spreading, weighting…), 20
@@ -168,14 +173,20 @@ overlaps, parser rows, no data date). Every one
 makes it fail except one: swapping start float for finish float, which coincide in this
 engine (see docs/cpm.md).
 
-No public P6 file comes with an official P6 Check Schedule report. Run
-`xerscope check` next to P6 on your own files; any gap is a definition to fix in the TOML.
+What is **not** established: no public P6 export has progress, resource-dependent
+activities or P6 Professional 24 behind it, and none comes with a P6 Check Schedule
+report. Progressed and resource-loaded rules rest on Oracle's documentation and on MPXJ;
+their open questions are listed in docs/cpm.md. Run `xerscope recalc` and
+`xerscope check` next to P6 on your own files: a recalculation that matches P6 there is
+the proof for your schedules, and any gap names a rule to fix.
 
 ## Tests
 
 ```bash
-uv run python tests/reference/fetch.py   # pinned third-party XERs (checksum-verified)
-uv run pytest -rs                        # 501 tests: parser, CPM (+ 266 property tests), rules, reference, CLI, UI
+uv run python tests/reference/fetch.py      # pinned third-party XERs (checksum-verified)
+uv sync --extra crosscheck                  # MPXJ + jpype, needs a JDK (javac) for the next line
+uv run python tests/reference/mpxj_cpm.py   # MPXJ's scheduler at a pinned commit (CPM crosscheck)
+uv run pytest -rs                           # 533 tests; the MPXJ ones skip without Java
 ```
 
 The UI tests render every page headless (Streamlit AppTest), so they run the same on
@@ -183,7 +194,8 @@ Windows. GitHub Actions (`.github/workflows/tests.yml`) runs:
 
 - the suite on Windows and Linux, Python 3.11, 3.13 and 3.14;
 - an audit job (pip-audit on OSV and PyPI, plus bandit), also every Monday;
-- the MPXJ crosscheck on Java 21 and 25.
+- the MPXJ crosscheck on Java 21 and 25: reader comparison and the CPM against MPXJ's
+  scheduler.
 
 ## Architecture
 

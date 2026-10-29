@@ -38,6 +38,13 @@ PROJ_ID = "4501"
 PROJ_CODE = "PRJ-ALPHA"
 PROJ_NAME = "Usine de traitement – Phase 1"  # en dash + accent: exercises cp1252
 CLNDR_ID = "601"
+# every day 08:00-16:00, written in full (P6 exports always carry the blob; without it each
+# reader would guess the working week its own way)
+CLNDR_DATA = (
+    "(0||CalendarData()((0||DaysOfWeek()("
+    + "".join(f"(0||{d}()((0||0(s|08:00|f|16:00)())))" for d in range(1, 8))
+    + "))(0||Exceptions()())))"
+)
 START = date(2026, 8, 31)
 
 WBS = [  # wbs_id, short name, name, parent, proj_node_flag
@@ -595,8 +602,25 @@ def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
                     "week_hr_cnt",
                     "month_hr_cnt",
                     "year_hr_cnt",
+                    "clndr_data",
                 ],
-                [[CLNDR_ID, "Y", "7 jours / 8 h", "", "", "CA_Base", HPD, HPD * 7, HPD * 30, HPD * 365]],
+                [[CLNDR_ID, "Y", "7 jours / 8 h", "", "", "CA_Base", HPD, HPD * 7, HPD * 30, HPD * 365, CLNDR_DATA]],
+            ),
+            # P6's default scheduling options, written out so every reader applies the same
+            "SCHEDOPTIONS": (
+                [
+                    "schedoptions_id",
+                    "proj_id",
+                    "sched_retained_logic",
+                    "sched_progress_override",
+                    "sched_lag_early_start_flag",
+                    "sched_open_critical_flag",
+                    "sched_float_type",
+                    "sched_calendar_on_relationship_lag",
+                    "sched_use_expect_end_flag",
+                    "sched_outer_depend_type",
+                ],
+                [["1", PROJ_ID, "Y", "N", "Y", "N", "FT_FF", "rcal_Predecessor", "Y", "SD_Both"]],
             ),
             "PROJWBS": (
                 ["wbs_id", "proj_id", "seq_num", "proj_node_flag", "wbs_short_name", "wbs_name", "parent_wbs_id"],
