@@ -158,6 +158,12 @@ change the tag, Build again. `sha-<short>` tags exist for every `main` build too
 
 ## 8. Security checklist
 
+Internet scanners find every new `*.ts.net` name within seconds (the certificate is in the
+public CT logs) and probe `/`, `/.env`, `/wp-admin`... Basic auth answers 401; to keep them
+out of the container entirely, set `XERSCOPE_PATH=/<random>` on the remote image: Funnel
+then publishes only that prefix and Tailscale answers 404 to the rest. The URL to hand out
+becomes `https://xerscope.<tailnet>.ts.net/<random>`.
+
 - [ ] Package private; repo private; token = `read:packages` only, rotated at expiry.
 - [ ] Tailscale key: tagged, non-ephemeral, single-use; delete it from the admin console once the node is up.
 - [ ] `compose.yaml` on the NAS holds the key and the bcrypt hash: the `docker` share must not be readable by other NAS users.
