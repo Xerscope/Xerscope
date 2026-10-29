@@ -683,7 +683,8 @@ class _Run:
                 l_s.append(self.shift(lx, s_fin, -s_lag))
         return l_s, l_f
 
-    def place_late(self, c, ax, k, d, l_s, l_f) -> tuple[pd.Timestamp, pd.Timestamp]:
+    def place_late(self, c, ax, k, d, l_s, l_f, alap: bool = False) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Latest start and finish within the bounds; ``alap`` when placing early dates."""
         if c not in self.rsrc_dep or k != "task":
             return _late(ax, k, d, l_s, l_f)
         # Mirror of rsrc_early: the bounds are taken on the activity calendar first (H10-04
@@ -692,7 +693,7 @@ class _Run:
         # placed on its resource calendar (H9-08 A1230: the resource's holiday moves it)
         hi_f = ax.snap_finish(min(l_f)) if l_f else None
         hi_s = ax.snap_start(min(l_s)) if l_s else None
-        starts, fins = [], []
+        starts, fins, driven = [], [], False
         for a in self.driving(c):
             dd_ = self.a_dur.get(a.taskrsrc_id, a.dur_m + self.extra.get(c, 0.0) * 60)
             f0 = a.ax.snap_finish(hi_f) if hi_f is not None else None
@@ -701,10 +702,16 @@ class _Run:
                 cand = a.ax.snap_start(self.shift(a.ax, hi_s, a.lag_m))
                 if s0 is None or cand < s0:
                     s0, f0 = cand, a.ax.add(cand, dd_, finish=True) if dd_ else cand
+                    driven = driven or a.lag_m == 0
             self.a_late[a.taskrsrc_id] = (s0, f0)
             starts.append(self.shift(a.ax, s0, -a.lag_m))
             fins.append(f0)
-        return min(starts), max(fins)
+        start = min(starts)
+        if driven and start == hi_s and not alap:
+            # written at the bound's instant, as a late date from an SS bound is on
+            # task-dependent work (H26-04 A1440: late start Wed 16:00, not Thu 08:00)
+            start = ax.keep_or_previous(min(l_s))
+        return start, max(fins)
 
     def backward(self) -> None:
         opt, status = self.opt, self.status
@@ -736,21 +743,32 @@ class _Run:
                 l_f.append(pd.Timestamp(ext))
                 self.external.add(c)
             pinned = None
+            c_s, c_f = [], []  # bounds the constraints themselves give
             for typ, date in self.constraints(c):
                 if typ in MANDATORY:
                     pinned = (MANDATORY[typ], date)
                 elif LATE_LIKE.get(typ) == "start" and status[c] != "TK_Active":
-                    l_s.append(date)
+                    c_s.append(date)
                 elif LATE_LIKE.get(typ) == "finish":
-                    l_f.append(date)
+                    c_f.append(date)
+            succ_s, succ_f = list(l_s), list(l_f)  # the successors' bounds alone
+            l_s, l_f = l_s + c_s, l_f + c_f
             if pinned:
-                l_s, l_f = ([pinned[1]], []) if pinned[0] == "start" else ([], [pinned[1]])
-                if pinned[0] == "finish" and c in self.dur_override and c not in self.rsrc_dep:
-                    # an expected finish earlier than the Mandatory Finish is the late finish
-                    # too (H22-06 A1120; the early finish is then the expected finish). Not
-                    # for resource-dependent work, whose late finish stays the Mandatory
-                    # Finish (H25-05 A1150; observed, not explained)
-                    l_f = [min(pinned[1], self.ef[c])]
+                # a second constraint of the same end tighter than the mandatory date still
+                # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
+                # Finish is the late finish)
+                if pinned[0] == "start":
+                    l_s, l_f = [min([pinned[1]] + c_s)], []
+                else:
+                    l_s, l_f = [], [min([pinned[1]] + c_f)]
+                if pinned[0] == "finish" and c in self.dur_override:
+                    # With an expected finish earlier than the Mandatory Finish the date no
+                    # longer pins: the successors' bounds drive the late dates, capped by the
+                    # expected finish on task-dependent work (H22-06 A1120, H23-03 A1210,
+                    # H23-07 A1110) and by the mandatory date itself on resource-dependent
+                    # work (H25-05 A1150; observed, not explained)
+                    cap = pinned[1] if c in self.rsrc_dep else min(pinned[1], self.ef[c])
+                    l_s, l_f = succ_s, succ_f + [cap]
             self.ls[c], self.lf[c] = self.place_late(c, ax, k, d, l_s, l_f)
 
     # --- float, as late as possible ------------------------------------------------------------
@@ -769,7 +787,7 @@ class _Run:
                 if not e_s and not e_f:
                     e_f = [self.finish]
                 keep = dict(self.a_late)
-                new_s, new_f = self.place_late(c, ax, k, d, e_s, e_f)
+                new_s, new_f = self.place_late(c, ax, k, d, e_s, e_f, alap=True)
                 if new_f > ef[c]:
                     ef[c], rs[c] = new_f, new_s
                     if self.status[c] == "TK_NotStart":
@@ -799,8 +817,9 @@ class _Run:
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
         It runs from the earliest start to the latest finish. Its late dates come the same
         way from the late dates of the activities it is tied to, finished ones contributing
-        nothing; with no start-type link left the late start is the late finish. Float as
-        for any activity, free float 0 (H8-01 A1160, H10-11 A1210).
+        nothing; with no start-type link left, or one later than the late finish, the late
+        start is the late finish. Float as for any activity, free float 0 (H8-01 A1160,
+        H10-11 A1210).
         """
         R, dd, es, ef, rs = self.R, self.dd, self.es, self.ef, self.rs
         for c in self.loe_codes:
@@ -810,8 +829,13 @@ class _Run:
             ax = self.cal_ax[c]
             starts, ends = [], []
             for p, typ, lag in self.loe_preds[c]:
-                frm = rs[p] if typ in ("SS", "SF") else ef[p]
-                (starts if typ in ("SS", "FS") else ends).append(self.shift(self.lag_axis(p, c), frm, lag))
+                lx = self.lag_axis(p, c)
+                if typ in ("SS", "SF") and self.status[p] == "TK_Active":
+                    # from the data date plus the unexpired lag (H10-01 A1300, H12-08 A1290)
+                    frm, run = dd, self.unexpired(p, lx, lag)
+                else:
+                    frm, run = (rs[p] if typ in ("SS", "SF") else ef[p]), lag
+                (starts if typ in ("SS", "FS") else ends).append(self.shift(lx, frm, run))
             for s_, typ, lag in self.loe_succs[c]:
                 to = rs[s_] if typ in ("SS", "FS") else ef[s_]
                 (starts if typ in ("SS", "SF") else ends).append(self.shift(self.lag_axis(c, s_), to, -lag))
@@ -831,7 +855,7 @@ class _Run:
                     (lstarts if typ in ("SS", "SF") else lends).append(self.shift(self.lag_axis(c, s_), to, -lag))
             open_end = ax.snap_finish(self.finish) if self.finish is not None else ef[c]
             lf = ax.snap_finish(max(lends)) if lends else open_end
-            ls = ax.snap_start(min(lstarts)) if lstarts else lf
+            ls = min(ax.snap_start(min(lstarts)), lf) if lstarts else lf  # never after the late finish (H10-01 A1300)
             self.ls[c], self.lf[c] = ls, lf
             fin_f, st_f = ax.between(ef[c], lf) / 60, ax.between(rs[c], ls) / 60
             which = FLOAT_TYPE.get(self.opt.float_type, "finish")

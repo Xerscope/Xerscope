@@ -204,7 +204,7 @@ open questions: [docs/cpm.md](docs/cpm.md#validation), [docs/backlog.md](docs/ba
 
 | What | Against | Result |
 |---|---|---|
-| CPM: early / late dates, floats | P6 Professional 23.12.1 held-out corpus (cpp-cpm-engine, MIT: 360 synthetic schedules scheduled by P6, results read from its database), `tests/test_p6_heldout.py` | 99.9 % identical on task-dependent work without LOE, 90 % on all task-dependent work, 79 % on resource-dependent work (88 % of all 54,726 values); a floor per set, one pinned witness per rule |
+| CPM: early / late dates, floats | P6 Professional 23.12.1 held-out corpus (cpp-cpm-engine, MIT: 360 synthetic schedules scheduled by P6, results read from its database), `tests/test_p6_heldout.py` | 99.9 % identical on task-dependent work without LOE, 92 % on all task-dependent work, 81 % on resource-dependent work (89 % of all 54,726 values); a floor per set, one pinned witness per rule |
 | CPM, assignments, longest path | real P6 exports with stored dates (Hotel 6.0, Terminal 5.0, PV 25.12, XER-editor 20.12), `tests/test_cpm.py` | every value identical, to the minute |
 | CPM | MPXJ's PrimaveraScheduler, a second engine, `tests/test_crosscheck_mpxj.py` | identical on random networks and the demo outside the named open cases |
 | Reading of the XER tables | MPXJ as an independent reader, `xerscope crosscheck` | identical on every reference file |

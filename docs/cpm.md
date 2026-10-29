@@ -36,9 +36,9 @@ level-of-effort and resource-dependent work, under every scheduling option.
 | Scope | Values | Identical to P6 |
 |---|---|---|
 | H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.9 % |
-| task-dependent work, all 30 sets | 41,868 | 90.5 % |
-| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 79.3 % |
-| all | 54,726 | 87.9 % |
+| task-dependent work, all 30 sets | 41,868 | 91.5 % |
+| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 81.0 % |
+| all | 54,726 | 89.0 % |
 
 `FLOORS` in the test holds each set's share and fails on any drop; `PINNED` names the
 corpus activity each rule of the engine was taken from, so a regression on one rule is
@@ -57,7 +57,9 @@ and late), with the expected finish measured on the resource calendar; "make ope
 activities critical" never puts a late finish past the Must Finish By and counts any
 successor row (finished, WBS summary) as a successor; As Late As Possible moves the
 remaining work of started activities; an activity whose expected finish applies has no
-free float. What is still open is in `docs/backlog.md`.
+free float; a second constraint tighter than a mandatory date still holds; an LOE's
+start-type link from a started predecessor is measured from the data date and its late
+start never passes its late finish. What is still open is in `docs/backlog.md`.
 
 **2. Real P6 exports** with stored dates, exact clock time required (`tests/test_cpm.py`):
 
@@ -216,13 +218,14 @@ work before either.
 | finished successor (Retained Logic) | its carried late date: FS drops the lag, FF keeps it, SS / SF keep it unless the predecessor started |
 | Start on / Start on or before | start ≤ date |
 | Finish on / Finish on or before | finish ≤ date |
-| Mandatory | the date |
+| Mandatory | the date; a second constraint of the same end that is tighter still holds (H23-08 A1220); with an expected finish earlier than a Mandatory Finish the date no longer pins: the successors drive, capped by the expected finish (H23-03 A1210) or, on resource-dependent work, by the mandatory date (H25-05 A1150) |
 | Actual Dates option | a started successor bounds its predecessors by its *actual* dates: out-of-sequence progress gives the predecessor negative float, growing each period it stays open (Oracle warns of exactly this) |
 
 Resource-dependent activities mirror the forward pass: the late bounds are taken on the
 activity calendar first, then each driving assignment runs back on its resource calendar
-(H10-04 A1220, H8-11 A1040, H9-08 A1230); their late finish stays the Mandatory Finish
-under an earlier expected finish (H25-05 A1150, observed).
+(H10-04 A1220, H8-11 A1040, H9-08 A1230); a late start an SS bound drives is written at
+the bound's instant, as on task-dependent work (H26-04 A1440); their late finish stays
+capped by the Mandatory Finish under an earlier expected finish (H25-05 A1150, observed).
 
 **Float.**
 
@@ -257,7 +260,9 @@ Exactly what P6 stored on 2,340 Hotel and Terminal assignments.
 (SS / FS predecessors, SS / SF successors) give its start, the earliest of them;
 finish-type ends (FF / SF predecessors, FF / FS successors) its finish, the latest. An FF
 predecessor and an FF successor to the same activity give the same finish, as Boyle shows
-in P6 ("Constructing LOE activities in Primavera P6"). It drives nothing.
+in P6 ("Constructing LOE activities in Primavera P6"). A start-type link from a started
+predecessor is measured from the data date plus the unexpired lag (H10-01 A1300); the
+late start never passes the late finish (same case). It drives nothing.
 
 **No data date.** P6 always stores one. A file without a data date and a planned start
 is scheduled from the earliest activity date it carries, with a warning.

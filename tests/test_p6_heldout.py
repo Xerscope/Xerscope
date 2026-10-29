@@ -30,12 +30,12 @@ FLOORS = {
     "H7": 1.00,
     "H8": 0.98,
     "H9": 0.99,
-    "H10": 0.88,
+    "H10": 0.89,
     "H11": 0.99,
     "H12": 0.98,
-    "H13": 0.98,
+    "H13": 0.99,
     "H14": 0.95,
-    "H15": 0.97,
+    "H15": 0.98,
     "H16": 0.89,
     "H17": 0.95,
     "H18": 0.97,
@@ -43,14 +43,14 @@ FLOORS = {
     "H20": 0.94,
     "H21": 0.99,
     "H22": 0.99,
-    "H23": 0.73,
-    "H24": 0.67,
-    "H25": 0.73,
-    "H26": 0.76,
-    "H27": 0.74,
-    "H28": 0.71,
-    "H29": 0.74,
-    "H30": 0.82,
+    "H23": 0.75,
+    "H24": 0.71,
+    "H25": 0.74,
+    "H26": 0.78,
+    "H27": 0.76,
+    "H28": 0.74,
+    "H29": 0.76,
+    "H30": 0.85,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -158,7 +158,11 @@ PINNED = {
     ],
     "Mandatory Start before the data date: early start at the data date": [("H2", "H2-06", "A1130", "early_start")],
     "Mandatory Start pins the early start over later logic": [("H2", "H2-07", "A1120", "early_start")],
-    "expected finish earlier than the Mandatory Finish is the late finish": [("H22", "H22-06", "A1120", "late_finish")],
+    "expected finish earlier than the Mandatory Finish: successors drive, the expected finish caps": [
+        ("H22", "H22-06", "A1120", "late_finish"),
+        ("H23", "H23-03", "A1210", "late_finish"),
+        ("H23", "H23-07", "A1110", "late_finish"),
+    ],
     "FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
     "SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
     "lag between two finished activities does not pass back": [("H1", "H1-08", "A1050", "late_finish")],
@@ -205,7 +209,7 @@ PINNED = {
         ("H8", "H8-11", "A1040", "late_finish"),
         ("H9", "H9-08", "A1230", "late_finish"),
     ],
-    "resource dependent: the Mandatory Finish stays the late finish under an earlier expected finish": [
+    "resource dependent: the Mandatory Finish caps the late finish under an earlier expected finish": [
         ("H25", "H25-05", "A1150", "late_finish"),
         ("H25", "H25-05", "A1150", "early_finish"),
     ],
@@ -223,6 +227,15 @@ PINNED = {
     "no free float where the expected finish applies": [
         ("H1", "H1-08", "A1090", "free_float_hr"),
         ("H5", "H5-01", "A1120", "free_float_hr"),
+    ],
+    "a second constraint tighter than the mandatory date still holds": [("H23", "H23-08", "A1220", "late_finish")],
+    "LOE: a start-type link from a started predecessor is measured from the data date": [
+        ("H10", "H10-01", "A1300", "early_start"),
+        ("H12", "H12-08", "A1290", "early_start"),
+    ],
+    "LOE: the late start never passes the late finish": [("H10", "H10-01", "A1300", "late_start")],
+    "resource dependent: a late start from an SS bound is written at the bound's instant": [
+        ("H26", "H26-04", "A1440", "late_start")
     ],
 }
 

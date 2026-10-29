@@ -23,7 +23,7 @@ is done, add one when a check or a recalculation disagrees with P6.
 
 Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
-- [ ] **Resource-dependent work**: 79 % of the corpus values (`cpm.py rsrc_early`,
+- [ ] **Resource-dependent work**: 81 % of the corpus values (`cpm.py rsrc_early`,
       `place_late`). Still open: what a successor sees of an activity whose placement
       was pushed by a finish bound (H14-02 A1220 wants its FF predecessor one hour
       earlier than displayed; H10-10 A1140 a lead four days earlier); started
@@ -34,8 +34,9 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       predecessor keeps its remaining duration when the expected finish is earlier; the
       free float of started work under Progress Override, with counter-examples H4-08
       A1010, H12-07 A1120, H17-04 A1040; no free float where the expected finish applies
-      (265 of 265); the Mandatory Finish of resource-dependent work stays its late finish
-      under an earlier expected finish (H25-05 A1150, 3 cases).
+      (265 of 265); under an expected finish earlier than a Mandatory Finish the
+      successors drive the late dates, capped by the expected finish on task-dependent
+      work but by the mandatory date on resource-dependent work (H25-05 A1150, 3 cases).
 - [ ] **Mandatory dates and the late dates**: pinned in both passes here, and that is
       right in most of the corpus, but P6 lets successors drive the late dates of some
       unstarted Mandatory Start / Finish activities (H12-09 A1330 under Progress
