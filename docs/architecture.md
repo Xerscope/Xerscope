@@ -107,6 +107,7 @@ Outside `analysis/`:
 | `p6_corpus.py` | P6 Professional 23.12.1's own output on the held-out corpus (`p6_heldout_score`) | the oracle for the CPM: every rule the engine takes from it is pinned by a corpus activity in `tests/test_p6_heldout.py` |
 | `mpxj_cpm.py` | MPXJ's PrimaveraScheduler (`mpxj_schedule`, `cpm_crosscheck`) | a second engine, a hint only: `P6_SETTLED` lists the shapes P6 settled against it, `UNRESOLVED` the open ones, `mpxj_inconsistent` its self-contradictions |
 | `mpxj_reader.py` | MPXJ as a reader (`compare_file`, `compare_paths`) | the XER tables read two ways |
+| `shapes.py` | the file's own stored dates (`difference_report`) | `xerscope recalc --report`: differences grouped by activity shape (status · type · constraint · links · option), so one week's differences point at one rule |
 
 `crosscheck.py` re-exports all of it; the CLI and the tests import from there.
 

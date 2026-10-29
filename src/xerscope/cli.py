@@ -211,6 +211,13 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
             bad = stored[~stored["agree"]]
             if len(bad):
                 print(bad.head(args.show).to_string(index=False))
+            if args.report and len(bad):
+                from .verify.shapes import difference_report
+
+                rep = difference_report(snap, cmp)
+                rep["share"] = rep["share"].map("{:.0%}".format)
+                print("\n  differences by activity shape (status · type · constraint · links · option):")
+                print(rep.to_string(index=False))
         a_cmp = compare_assignments(snap, sched)
         a_cmp = a_cmp[a_cmp["stored"].notna()]
         if len(a_cmp):
@@ -437,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("paths", nargs="+")
     r.add_argument("--project")
     r.add_argument("--out", help="write the recalculated dates and float to this CSV")
+    r.add_argument("--report", action="store_true", help="group the differences by activity shape")
     r.add_argument("--show", type=int, default=20, help="differences to print")
     r.set_defaults(fn=_cmd_recalc)
 

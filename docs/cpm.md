@@ -17,6 +17,7 @@ It serves:
 
 ```bash
 uv run xerscope recalc week42.xer --out recalc.csv   # field-by-field agreement + all dates
+uv run xerscope recalc week42.xer --report            # differences grouped by activity shape
 ```
 
 ## Validation
@@ -86,6 +87,9 @@ itself (`mpxj_inconsistent`) its value is discarded. MPXJ models P6's default op
 
 To check the engine on your own schedules: export a file after F9 in P6 and run
 `xerscope recalc` on it; every stored date and float is compared to the minute.
+`--report` groups the differences by the shape of the activity (status, type, constraint,
+link kinds, lag, progressed-activities option): one shape with every value wrong is one
+rule to fix, with the stored dates as the answer.
 
 ## Time: `TimeAxis` (`xer/calendar.py`)
 

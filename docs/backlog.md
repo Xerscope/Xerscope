@@ -15,9 +15,9 @@ is done, add one when a check or a recalculation disagrees with P6.
 - [ ] **DECM**: the same for `decm.toml`. Open readings, each stated in the TOML `source`:
       06A205a counts LOE and ignores leads; 06A209a includes LOE; DCMA-11 keeps
       milestones, DCMA-14 drops them.
-- [ ] **Weekly exports after F9**: `xerscope recalc` on them is the only check on
-      progressed and resource-dependent work outside the synthetic corpus. Add a
-      `--report` that groups the differences by shape (link type × status × option).
+- [ ] **Weekly exports after F9**: `xerscope recalc --report` on them is the only check on
+      progressed and resource-dependent work outside the synthetic corpus; each shape it
+      lists with differences is a rule to settle, with the P6 dates as the answer.
 
 ## CPM: where the engine still differs from P6 23.12
 
