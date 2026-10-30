@@ -1,5 +1,8 @@
 # Behind Tailscale Funnel: TLS is terminated by tailscaled, Caddy only authenticates and
 # proxies, on a port that exists solely inside the shared container network namespace.
+# XERSCOPE_PATH is the secret URL prefix (no slashes): the app lives at /<prefix>/, every
+# other path answers 404 before authentication. Scanners find every *.ts.net name within
+# seconds from the public certificate logs; the prefix keeps them off the login prompt.
 {
     admin off
     auto_https off
@@ -10,15 +13,23 @@
 }
 
 :8080 {   # no host here: a host in the site address also filters the Host header
-    basic_auth {
-        {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
+    redir /{$XERSCOPE_PATH} /{$XERSCOPE_PATH}/ 308   # the page's relative asset URLs need the trailing slash
+    handle_path /{$XERSCOPE_PATH}/* {              # strips the prefix: Streamlit keeps serving "/"
+        basic_auth {
+            {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
+        }
+        reverse_proxy xerscope:8501
     }
-    reverse_proxy xerscope:8501
+    handle {
+        respond 404
+    }
     log {
         output stdout
         format filter {
             wrap console
             request>headers>Referer delete   # the Referer holds the full URL, i.e. the secret prefix
+            request>uri replace REDACTED     # so does the request line
+            resp_headers>Location delete     # and the redirect to the trailing slash
         }
     }
 }

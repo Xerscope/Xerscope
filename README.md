@@ -112,18 +112,18 @@ username and password checked by Caddy. The host network is untouched: tailscale
 userspace (no TUN device, no route, no DNS change), no port is published, and the only
 traffic is Tailscale's outbound connection. `tests/test_docker.py` pins those properties.
 The app image comes from `.github/workflows/image.yml` (`ghcr.io/xerscope/xerscope:latest`,
-a public package, pulled without login) so the host only pulls; the four secrets are
+a public package, pulled without login) so the host only pulls; the five settings are
 environment variables, never written in the files.
 
 ```bash
-cd deploy && cp .env.example .env          # TS_AUTHKEY (tag:xerscope), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH, XERSCOPE_EXPORTS
+cd deploy && cp .env.example .env          # TS_AUTHKEY (tag:xerscope), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH, XERSCOPE_PATH, XERSCOPE_EXPORTS
 docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your password'
 docker compose up -d
 docker compose exec tailscale tailscale funnel status
 ```
 
 **On a NAS (Synology Container Manager, Projects):** copy the `deploy/` folder to
-`docker/xerscope/` in File Station, type the four variables in the project's Environment
+`docker/xerscope/` in File Station, type the five variables in the project's Environment
 tab, Project > Create. Put the exports in a shared folder (`XERSCOPE_EXPORTS=/volume1/<shared-folder>`)
 and upload new weeks through Drive or SMB. Step by step for DSM 7.4, checks and
 troubleshooting: [docs/deploy.md](docs/deploy.md).

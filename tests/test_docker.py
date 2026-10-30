@@ -44,13 +44,15 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "XERSCOPE_PASSWORD_HASH='$" in env  # unquoted, Compose interpolates the $ of a bcrypt hash
     serve = (ROOT / "deploy" / "tailscale-serve.json").read_text()
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
-    assert '"/<random>"' in serve  # the prefix is a placeholder to replace, never a real value
+    assert '"/"' in serve  # the secret prefix is Caddy's job (XERSCOPE_PATH), serve.json is not edited
+    assert "handle_path /{$XERSCOPE_PATH}/*" in caddy and "respond 404" in caddy  # 404 before auth elsewhere
+    assert "request>uri replace" in caddy and "resp_headers>Location delete" in caddy  # no prefix in the log
 
 
 def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_environment():
     compose = (ROOT / "deploy" / "compose.yaml").read_text()
     assert "build:" not in compose and "image: ghcr.io/xerscope/xerscope:" in compose  # no Dockerfile on a NAS
-    for var in ("TS_AUTHKEY", "XERSCOPE_USER", "XERSCOPE_PASSWORD_HASH", "XERSCOPE_EXPORTS"):
+    for var in ("TS_AUTHKEY", "XERSCOPE_USER", "XERSCOPE_PASSWORD_HASH", "XERSCOPE_PATH", "XERSCOPE_EXPORTS"):
         assert "${" + var in compose, var  # no secret written in the file
     assert not re.search(r"tskey-auth-[A-Za-z0-9]|\$2a\$", compose)
     wf = (ROOT / ".github" / "workflows" / "image.yml").read_text()

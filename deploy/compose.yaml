@@ -5,16 +5,16 @@
 # PC:   cp .env.example .env, fill it in, then from this folder:
 #         docker compose up -d
 #         docker compose exec tailscale tailscale funnel status
-# NAS:  Container Manager > Project > Create from a copy of this folder; the four variables
+# NAS:  Container Manager > Project > Create from a copy of this folder; the five variables
 #       go in the project's Environment tab (or in a .env file next to this one).
 #
 # Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
-#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_EXPORTS
-#   (the folder of the .xer files, e.g. /volume1/<shared-folder>).
-# Secret URL prefix: tailscale-serve.json ships with the placeholder "/<random>" as the
-# handler key; put a generated value there (openssl rand -hex 12) before starting. Tailscale
-# answers 404 outside that prefix (scanners find every *.ts.net name within seconds) and
-# strips it before proxying, so Caddy and Streamlit keep serving "/": set nothing else.
+#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
+#   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
+#   the .xer files, e.g. /volume1/<shared-folder>). Nothing in this folder is edited.
+# The app answers at https://xerscope.<tailnet>.ts.net/<XERSCOPE_PATH>/ only: Caddy strips
+# the prefix and returns 404 for every other path before authentication (scanners find every
+# *.ts.net name within seconds from the public certificate logs). Streamlit serves "/".
 # Nothing touches the host network: tailscaled runs in userspace (no TUN device, no route,
 # no DNS change), no port is published, the only outbound traffic is Tailscale's own.
 # Funnel must be allowed for the node's tag in the tailnet ACL:
@@ -26,7 +26,7 @@ services:
     image: tailscale/tailscale:v1.104.4
     hostname: xerscope                              # https://xerscope.<tailnet>.ts.net
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_AUTHKEY: ${TS_AUTHKEY:?tagged Tailscale auth key}
       TS_USERSPACE: "true"
       TS_AUTH_ONCE: "true"                         # log in with the key once; later starts reuse the state
       TS_STATE_DIR: /var/lib/tailscale
@@ -45,8 +45,9 @@ services:
     image: caddy:2.11.6
     network_mode: service:tailscale                 # listens on 127.0.0.1:8080 of that namespace only
     environment:
-      XERSCOPE_USER: ${XERSCOPE_USER}
-      XERSCOPE_PASSWORD_HASH: ${XERSCOPE_PASSWORD_HASH}
+      XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}
+      XERSCOPE_PASSWORD_HASH: ${XERSCOPE_PASSWORD_HASH:?bcrypt hash from caddy hash-password}
+      XERSCOPE_PATH: ${XERSCOPE_PATH:?secret URL prefix, e.g. openssl rand -hex 12}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on: [tailscale]
