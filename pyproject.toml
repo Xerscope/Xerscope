@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Weekly Primavera P6 XER schedule analysis and visualisation"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 # Floors = latest releases at the last audit (2026-10-28), so even an install that ignores
 # uv.lock cannot pull an older, vulnerable version. Bump them when you upgrade the lock.
 dependencies = [

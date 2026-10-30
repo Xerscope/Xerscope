@@ -292,3 +292,7 @@ and populations. Keeping one function and moving the differences into data:
 - **Dependencies:** minimum versions are pinned to releases audited clean (2026-10-28), so
   an install that ignores `uv.lock` cannot pull an older vulnerable version.
 - **CI:** actions are pinned by commit SHA; Dependabot proposes updates weekly.
+
+## Licence
+
+Apache License 2.0 — see [LICENSE](LICENSE).
