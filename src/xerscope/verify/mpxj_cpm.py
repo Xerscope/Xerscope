@@ -18,7 +18,7 @@ from .mpxj_reader import _read_project, _start_jvm
 # MPXJ (16.x) ships a CPM scheduler for P6 projects, written independently of xerscope and
 # tuned by its authors against P6 output. It honours a subset of P6's scheduling options;
 # a file using another one cannot be compared, and ``mpxj_unsupported`` says why. Known
-# MPXJ's self-contradictions are detected by ``mpxj_inconsistent`` so a disagreement is never
+# self-contradictions of MPXJ are detected by ``mpxj_inconsistent`` so a disagreement is never
 # silently blamed on either engine.
 
 CPM_FIELDS = ("es", "ef", "ls", "lf", "tf_hr", "ff_hr")

@@ -39,7 +39,7 @@ if bl is None:
     )
 
 # memoised per (data set, standard, update, baseline): the DECM critical path test alone
-# takes ~2 s on a 4,000-activity file, and every widget change reruns the page (R14)
+# takes ~2 s on a 4,000-activity file, and every widget change reruns the page
 _bl_key = st.session_state.get("bl_choice"), bl.label if bl else None
 results = memo(
     ("health_results", repr(std), snap.source, str(snap.data_date), _bl_key),

@@ -622,10 +622,10 @@ class _Run:
                 # against H3-03 A1030)
                 continue
             if not late and po and status[c] == "TK_Active" and (typ in ("SS", "SF") or status[s] == "TK_Complete"):
-                # ... and the free float of work under way runs past its own start-type links
-                # (its start is an actual too) and past finished successors, to whatever is
-                # left (H2-05 A1030, H2-04 A1110; counter-examples H4-08 A1010, H12-07 A1120
-                # are open, see docs/backlog.md)
+                # Progress Override again: the free float of work under way runs past its own
+                # start-type links (its start is an actual too) and past finished successors,
+                # to whatever is left (H2-05 A1030, H2-04 A1110; counter-examples H4-08
+                # A1010, H12-07 A1120 are open, see docs/backlog.md)
                 continue
             if (
                 late

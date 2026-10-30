@@ -389,7 +389,7 @@ def invalid_dates(
         raise ValueError("invalid_dates.denominator must be 'population' or 'started'")
     before = np.less_equal if include_data_date else np.less
     open_ = ~pop["is_complete"]
-    early_s, early_f = forecast_dates(pop)  # the same reading as the model's Start / Finish (R10)
+    early_s, early_f = forecast_dates(pop)  # the same reading as the model's Start / Finish
     fc = open_ & (((~pop["is_started"]) & before(early_s, dd)) | before(early_f, dd))
     ac = (pop["act_start_date"] > dd) | (pop["act_end_date"] > dd)
     fc, ac = fc.fillna(False).astype(bool), ac.fillna(False).astype(bool)
