@@ -6,7 +6,8 @@
 #         docker compose up -d
 #         docker compose exec tailscale tailscale funnel status
 # NAS:  Container Manager > Project > Create from a copy of this folder; the five variables
-#       go in the project's Environment tab (or in a .env file next to this one).
+#       go in a .env file next to this one (Container Manager's Environment fields do not
+#       feed the ${...} interpolation below; Compose reads .env by itself).
 #
 # Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
 #   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
@@ -61,7 +62,8 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: ghcr.io/xerscope/xerscope:latest        # built by .github/workflows/image.yml; public package, no login
+    image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
+                                                    # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
     environment:
       XERSCOPE_DATA: /data
       # XERSCOPE_BASELINE: /data/BL.xer
