@@ -123,9 +123,9 @@ jobs:
         run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py
 
   container:
-    # Both images build, the app image answers on its health endpoint with the demo data
-    # mounted, and Trivy scans both: on main, the Monday run and by hand (two image builds
-    # are the most expensive job here; image.yml publishes from main only).
+    # The image builds, answers on its health endpoint with the demo data mounted, and
+    # Trivy scans it: on main, the Monday run and by hand (the image build is the most
+    # expensive job here; image.yml publishes from main only).
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -140,13 +140,6 @@ jobs:
           load: true
           tags: xerscope:ci
           cache-from: type=gha,scope=xerscope
-      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        with:
-          context: .
-          file: Dockerfile.remote
-          load: true
-          tags: xerscope-remote:ci
-          cache-from: type=gha,scope=xerscope-remote
       - name: The app image starts, serves on 8501 and reads a mounted folder
         # distroless: no shell in the image; the demo set is written to a volume by the
         # image itself (its /data belongs to the runtime user)
@@ -162,21 +155,10 @@ jobs:
           docker exec app /app/.venv/bin/xerscope info /data/sample | grep -q data_date
           docker logs app
           docker rm -f app
-      - name: The remote image carries its three programs
-        run: |
-          docker run --rm --entrypoint /app/.venv/bin/xerscope xerscope-remote:ci --help >/dev/null
-          docker run --rm --entrypoint /usr/local/bin/caddy xerscope-remote:ci version
-          docker run --rm --entrypoint /usr/local/bin/tailscale xerscope-remote:ci version
-      - name: Known vulnerabilities in the images (OS packages and Python wheels), fixed ones only
+      - name: Known vulnerabilities in the image (OS packages and Python wheels), fixed ones only
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: xerscope:ci
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: xerscope-remote:ci
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"

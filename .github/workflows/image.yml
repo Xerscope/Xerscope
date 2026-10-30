@@ -3,12 +3,11 @@ name: image
 # Builds the container image and publishes it to GitHub's registry, so a machine without a
 # terminal (a NAS running Container Manager) only pulls it:
 #   ghcr.io/xerscope/xerscope:latest            every push to main   (Dockerfile)
-#   ghcr.io/xerscope/xerscope-remote:latest     same, all-in-one     (Dockerfile.remote)
 #   ghcr.io/xerscope/xerscope:v1.2.3            every tag v*; plus a sha-<short> tag each build
 # The owner is lowercased by metadata-action (ghcr.io requires it). A package takes the
 # repository's visibility; a public one pulls without a token.
-# The app image also goes to Docker Hub, because Synology Container Manager logs in to
-# Docker Hub natively and rejected ghcr.io logins (docs/deploy.md). That leg needs the
+# The image also goes to Docker Hub when wanted (a Container Manager that cannot pull
+# from ghcr.io, docs/deploy.md). That leg needs the
 # repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (hub.docker.com > Account
 # settings > Personal access tokens, Read & Write) and the repository variable
 # DOCKERHUB_IMAGE_OWNER (the Docker Hub account the image is named after; a variable, not a
@@ -35,15 +34,6 @@ jobs:
     env:
       # at job level: a step's own `env` is not visible to its `if`
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-    strategy:
-      fail-fast: false                  # one image failing must not cancel the other
-      matrix:
-        include:
-          - image: xerscope
-            dockerfile: Dockerfile
-          - image: xerscope-remote
-            dockerfile: Dockerfile.remote     # Docker Hub only with the repository variable DOCKERHUB_REMOTE=true
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,8 +53,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-            name=docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }},enable=${{ secrets.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE_OWNER != '' && (matrix.image == 'xerscope' || vars.DOCKERHUB_REMOTE == 'true') }}
+            ghcr.io/${{ github.repository_owner }}/xerscope
+            name=docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/xerscope,enable=${{ secrets.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE_OWNER != '' }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
@@ -72,9 +62,9 @@ jobs:
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=xerscope
+          cache-to: type=gha,mode=max,scope=xerscope

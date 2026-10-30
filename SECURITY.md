@@ -8,7 +8,7 @@ within a week.
 
 In scope: the parser and the analyses (a crafted `.xer` must not do more than fail to
 load), the web app's defaults (`localhost` only, XSRF on, telemetry off), the container
-images (non-root, read-only root filesystem, no published port) and the remote stack in
+image (non-root, read-only root filesystem, no published port) and the remote stack in
 `deploy/` (Tailscale Funnel, Caddy basic auth, the secret URL prefix).
 
 Out of scope: the security of a deployment that changes those defaults, the Tailscale and

@@ -169,5 +169,5 @@ Outside `analysis/`:
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
 | `test_app.py` | every page renders headless, key options work |
 | `test_parser.py`, `test_model.py`, `test_store.py` | format edge cases, P6 meaning of each column, the weekly series |
-| `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfiles / supervisor keep loopback-only, non-root, no published port |
+| `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfile / Caddyfiles keep loopback-only, non-root, no published port |
 | `reference/` | pinned third-party files (`sources.py`: commit + SHA-256, downloaded by `fetch.py`; the held-out corpus by `fetch_p6_heldout.py`), their stated results (`expected.py`); MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |
