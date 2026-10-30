@@ -73,4 +73,7 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    for f in ["compose.yaml", "deploy/compose.yaml"]:  # the app's writable dirs belong to its user, not root
+        app = (ROOT / f).read_text()
+        assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app, f
     assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c

@@ -71,9 +71,9 @@ services:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # read for Everyone on a NAS: the app runs as uid 65532
     networks: [internal]                            # nothing published: reachable from Caddy only
     read_only: true
-    tmpfs:
-      - /tmp
-      - /home/nonroot
+    tmpfs:                                          # owned by the image's user (nonroot, 65532): some Docker
+      - /tmp:uid=65532,gid=65532,mode=1777          # builds (Synology's) mount a bare tmpfs root-only, and
+      - /home/nonroot:uid=65532,gid=65532,mode=700  # Streamlit then fails reading ~/.streamlit/secrets.toml
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
