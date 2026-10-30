@@ -24,7 +24,7 @@ Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 | no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.yaml`, three official images |
 | registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
 | env vars typed in the container form (key, prefix, hash) | a **`.env`** file next to `compose.yaml` (key, login, hash, prefix, exports folder), read by Compose for its `${...}` interpolation; no other file is edited |
-| node state in a `tailscale-state/` shared folder | a Docker volume `xerscope_tailscale-state`, created by the project; the old node is replaced by a new one (new key) |
+| node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
 Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
 in `deploy/`), and the app container runs read-only, non-root, on an internal network with
