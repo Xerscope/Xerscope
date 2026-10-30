@@ -18,7 +18,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-  - package-ecosystem: docker-compose   # image: lines (tailscale, caddy) in the compose stacks
-    directories: ["/", "/deploy"]
+  - package-ecosystem: docker-compose   # image: lines (tailscale, caddy) in the Funnel stack
+    directory: /deploy
     schedule:
       interval: weekly

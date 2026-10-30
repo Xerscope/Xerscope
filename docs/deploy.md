@@ -21,9 +21,9 @@ Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 
 | DSM ≤ 7.1, package *Docker* | DSM 7.2+, package *Container Manager* |
 |---|---|
-| no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.nas.yaml`, three official images |
+| no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.yaml`, three official images |
 | registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
-| env vars typed in the container form (key, prefix, hash) | secrets live in files next to the compose: `compose.yaml` (key), `Caddyfile` (hash), `tailscale-serve.json` (prefix) |
+| env vars typed in the container form (key, prefix, hash) | the project's **Environment** tab (key, login, hash, exports folder), interpolated by Compose; nothing written in the files. The prefix stays in `tailscale-serve.json` |
 | node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
 Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
@@ -52,7 +52,7 @@ no route to the internet.
 
 ## 3. Secrets (from your PC)
 
-Password hash — the Caddyfile holds a bcrypt hash, never the password:
+Password hash — Caddy gets a bcrypt hash, never the password:
 
 ```bash
 docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your passphrase'   # → $2a$14$...
@@ -74,25 +74,25 @@ Tailscale admin console:
   yes, Tags: `tag:xerscope`**. Non-ephemeral so the node (and its URL) survives restarts.
 - DNS → MagicDNS and HTTPS certificates **on**.
 
-A key or a prefix pasted anywhere else than the NAS files (chat, ticket, screenshot) is
-burned: revoke the key, change the prefix.
+A key or a prefix pasted anywhere else than the NAS (chat, ticket, screenshot) is burned:
+revoke the key, change the prefix.
 
 ## 4. Files on the NAS
 
-File Station → `docker/xerscope/` (`/volume1/docker/xerscope/`), four entries:
+File Station → `docker/xerscope/` (`/volume1/docker/xerscope/`) = a copy of the `deploy/`
+folder of the repository:
 
-| On the NAS | From `deploy/` | Edit |
-|---|---|---|
-| `compose.yaml` | `compose.nas.yaml` | `TS_AUTHKEY`; the `/volume1/<shared-folder>` line (§5) |
-| `Caddyfile` | `Caddyfile.nas` | `<login>` and the `$2a$14$...` hash |
-| `tailscale-serve.json` | `tailscale-serve.json` | handler key `"/"` → `"/<random>"` (keep the leading slash, no trailing one) |
-| `tailscale-state/` | — | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
+| On the NAS | Edit |
+|---|---|
+| `compose.yaml` | nothing |
+| `Caddyfile` | nothing (login and hash come from the environment) |
+| `tailscale-serve.json` | handler key `"/"` → `"/<random>"` (keep the leading slash, no trailing one) |
+| `tailscale-state/` | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
 
+`.env.example` is for a PC; on the NAS the values go in the project's Environment tab (§6).
 `docker` is a shared folder: restrict it to your DSM account (Control Panel → Shared
-Folder → Permissions), the key and the hash are in clear in there.
-
-The three files are typed as they are: Compose does not interpolate `$` in the Caddyfile,
-and the hash is not in `compose.yaml`.
+Folder → Permissions). DSM stores the project's variables in clear too, readable by any
+DSM administrator — same confidentiality as the folder, not a vault.
 
 ## 5. The exports folder
 
@@ -116,7 +116,17 @@ Container Manager → **Project** → **Create**:
 
 - Project name: `xerscope`
 - Path: `/docker/xerscope`
-- Source: *Use existing docker-compose.yml* (it finds `compose.yaml`) → Next → Next → Done.
+- Source: *Use existing docker-compose.yml* (it finds `compose.yaml`) → Next.
+- **Environment** (the same four lines as `deploy/.env.example`):
+
+  | Variable | Value |
+  |---|---|
+  | `TS_AUTHKEY` | the tagged key (any value when the node state is migrated: `TS_AUTH_ONCE` skips it) |
+  | `XERSCOPE_USER` | the login |
+  | `XERSCOPE_PASSWORD_HASH` | the `$2a$14$...` hash, pasted as is (the form does not interpolate `$`) |
+  | `XERSCOPE_EXPORTS` | `/volume1/<shared-folder>`, exact case |
+
+  → Next → Done.
 
 Container Manager pulls the three images (the ghcr pull needs no registry entry) and starts
 the stack. Expected after ~40 s, in Container → each container → Log:
@@ -143,7 +153,7 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 |---|---|
 | new app build | Container → Image → `ghcr.io/xerscope/xerscope` → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
 | pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
-| new password | new hash in `Caddyfile` → Action → **Stop**, **Build** (Caddy reads the file at start) |
+| new password or login | Project → Action → Edit → Environment → new value → Build (Caddy reads them at start) |
 | new prefix | edit `tailscale-serve.json` → Stop, Build; the old URL goes 404 at once |
 | new Tailscale key | only after deleting `tailscale-state/` content (new node, same hostname: the admin console shows the old one offline, delete it) |
 
@@ -171,7 +181,7 @@ Same image, same digest-equivalent content: the workflow pushes one build to bot
 
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; delete it from the admin console once the node is up (`TS_AUTH_ONCE` means it is never replayed).
-- [ ] `docker` shared folder readable by your account only (key + hash in clear).
+- [ ] `docker` shared folder and the project's Environment readable by your account only (key + hash in clear in DSM's project store).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
 - [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and drops the Referer (it would hold the prefix).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
@@ -188,7 +198,7 @@ Same image, same digest-equivalent content: the workflow pushes one build to bot
 | `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
 | 404 on the full URL | handler key ≠ URL path, or missing trailing slash | key `"/<random>"`, URL `/<random>/` |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
-| 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, paste as is in the Caddyfile |
-| app lists no file | wrong folder path/case, or permission | §5 |
+| 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, paste as is in the Environment tab (quoted in a `.env`) |
+| app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | page after upload disappears on restart | upload lands in the container's tmpfs | drop files in the shared folder instead |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |

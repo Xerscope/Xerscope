@@ -26,38 +26,32 @@ def test_build_context_holds_only_the_package():
 
 def test_funnel_stack_publishes_nothing_on_the_host():
     """Tailscale userspace + Caddy auth + xerscope on an internal network: no host port, no TUN."""
-    compose = (ROOT / "compose.funnel.yaml").read_text()
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
     assert not re.search(r"^\s+ports:", compose, re.M) and "network_mode: host" not in compose
     assert 'TS_USERSPACE: "true"' in compose and "internal: true" in compose
     assert "networks: [egress, internal]" in compose  # tailscaled needs a route out; the app has none
     assert "network_mode: service:tailscale" in compose  # Caddy shares the Tailscale namespace
     assert "--advertise-routes" not in compose and "exit-node" not in compose
-    for name in ("Caddyfile", "Caddyfile.nas"):
-        caddy = (ROOT / "deploy" / name).read_text()
-        assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
-        assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
-    nas = (ROOT / "deploy" / "compose.nas.yaml").read_text()
-    assert "STREAMLIT_SERVER_BASE_URL_PATH" not in nas  # Funnel strips the secret prefix: the app stays at "/"
-    # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
-    # rewrite the config, basic_auth included) must not exist, in either Caddyfile
-    for f in ["deploy/Caddyfile", "deploy/Caddyfile.nas"]:
-        assert "admin off" in (ROOT / f).read_text(), f
+    assert "STREAMLIT_SERVER_BASE_URL_PATH" not in compose  # Funnel strips the secret prefix: the app stays at "/"
     assert 'TS_AUTH_ONCE: "true"' in compose  # a single-use key must not be replayed on restart
-    env = (ROOT / ".env.example").read_text()
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
+    assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
+    # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
+    # rewrite the config, basic_auth included) must not exist
+    assert "admin off" in caddy
+    env = (ROOT / "deploy" / ".env.example").read_text()
     assert "XERSCOPE_PASSWORD_HASH='$" in env  # unquoted, Compose interpolates the $ of a bcrypt hash
     serve = (ROOT / "deploy" / "tailscale-serve.json").read_text()
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
 
 
-def test_nas_compose_pulls_the_published_image_and_publishes_nothing():
-    compose = (ROOT / "deploy" / "compose.nas.yaml").read_text()
-    assert "build:" not in compose and re.search(r"image: \S+/xerscope:", compose)
-    assert (
-        not re.search(r"^\s+ports:", compose, re.M)
-        and 'TS_USERSPACE: "true"' in compose
-        and 'TS_AUTH_ONCE: "true"' in compose
-        and "internal: true" in compose
-    )
+def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_environment():
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "build:" not in compose and "image: ghcr.io/xerscope/xerscope:" in compose  # no Dockerfile on a NAS
+    for var in ("TS_AUTHKEY", "XERSCOPE_USER", "XERSCOPE_PASSWORD_HASH", "XERSCOPE_EXPORTS"):
+        assert "${" + var in compose, var  # no secret written in the file
+    assert not re.search(r"tskey-auth-[A-Za-z0-9]|\$2a\$", compose)
     wf = (ROOT / ".github" / "workflows" / "image.yml").read_text()
     assert "packages: write" in wf and "ghcr.io" in wf and "push: true" in wf
 
@@ -73,7 +67,6 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 
 
 def test_sidecars_hardened():
-    for f in ["compose.funnel.yaml", "deploy/compose.nas.yaml"]:
-        c = (ROOT / f).read_text()
-        assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3, f
-        assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c, f
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c
