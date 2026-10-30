@@ -22,7 +22,12 @@ ENV UV_PYTHON_INSTALL_DIR=/python \
   UV_PROJECT_ENVIRONMENT=/app/.venv \
   UV_COMPILE_BYTECODE=1 \
   UV_LINK_MODE=copy
-RUN uv python install ${PYTHON_VERSION}
+RUN uv python install ${PYTHON_VERSION} \
+  # the managed CPython ships pip, never run here (uv builds the venv, distroless has no
+  # shell); its vendored msgpack, urllib3 and pkg_resources are what Trivy flags
+  && rm -rf /python/cpython-*/lib/python3*/site-packages/pip \
+    /python/cpython-*/lib/python3*/site-packages/pip-*.dist-info \
+    /python/cpython-*/bin/pip*
 WORKDIR /src
 # dependencies first: this layer is reused until uv.lock changes
 COPY pyproject.toml uv.lock README.md ./
