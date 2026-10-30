@@ -37,8 +37,12 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "networks: [egress, internal]" in compose  # tailscaled needs a route out; the app has none
     assert "network_mode: service:tailscale" in compose  # Caddy shares the Tailscale namespace
     assert "--advertise-routes" not in compose and "exit-node" not in compose
-    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
-    assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
+    for name in ("Caddyfile", "Caddyfile.nas"):
+        caddy = (ROOT / "deploy" / name).read_text()
+        assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
+        assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
+    nas = (ROOT / "deploy" / "compose.nas.yaml").read_text()
+    assert "STREAMLIT_SERVER_BASE_URL_PATH" not in nas  # Funnel strips the secret prefix: the app stays at "/"
     # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
     # rewrite the config, basic_auth included) must not exist, in any of the three Caddyfiles
     for f in ["deploy/Caddyfile", "deploy/Caddyfile.nas", "deploy/remote/supervisor.py"]:

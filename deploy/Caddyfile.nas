@@ -1,10 +1,13 @@
 # Copy of deploy/Caddyfile with the credentials written in, for a NAS with no terminal.
 # Make the hash on any machine with Docker:
-#   docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'your password'
+#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your password'
 {
     admin off
     auto_https off
     default_bind 127.0.0.1
+    servers {
+        trusted_proxies static private_ranges   # tailscaled proxies from 127.0.0.1: log the visitor's IP
+    }
 }
 
 :8080 {   # no host here: a host in the site address also filters the Host header

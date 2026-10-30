@@ -1,4 +1,4 @@
-# Deployment guide: GHCR → Synology DS918+ (Container Manager, no terminal)
+# Deployment guide: GHCR → Synology (Container Manager, no terminal)
 
 Target: one person, outside the home network, on a corporate laptop that cannot install
 anything, reaches `https://xerscope.<tailnet>.ts.net` behind a password. The NAS keeps
@@ -11,7 +11,7 @@ GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope (+ a Docker Hub mir
       ┌─────────────────── project "xerscope" ───────────────────┐
       │ tailscale (userspace) ◀── Funnel ◀── visitor's browser   │
       │   └─ caddy :8080 (basic_auth) ──▶ xerscope :8501         │
-      │                                 └─ /volume1/plannings:ro │
+      │                              └─ /volume1/<shared-folder>:ro │
       └────────────────────────────────────────────────────────────┘
 ```
 
@@ -61,7 +61,7 @@ commit that built it (`sha-<short>` tag + OCI labels).
 ## 3. Prepare the secrets (from your PC)
 
 ```bash
-docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'a long passphrase'   # → $2a$14$...
+docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'a long passphrase'   # → $2a$14$...
 ```
 
 Tailscale admin console:
@@ -78,22 +78,23 @@ File Station → `docker/xerscope/` (that is `/volume1/docker/xerscope/`):
 
 | File | From | Edit |
 |---|---|---|
-| `compose.yaml` | `deploy/compose.nas.yaml` | `TS_AUTHKEY`; keep `/volume1/plannings` or point it at the shared folder of the exports. Image: `mish1ma/xerscope:latest` (Docker Hub, section 5) |
+| `compose.yaml` | `deploy/compose.nas.yaml` | `TS_AUTHKEY`; the shared folder of the exports in place of `/volume1/<shared-folder>`. Image: `ghcr.io/xerscope/xerscope:latest` (public, no login; Docker Hub mirror in section 5) |
 | `Caddyfile` | `deploy/Caddyfile.nas` | user + bcrypt hash |
 | `tailscale-serve.json` | `deploy/tailscale-serve.json` | nothing |
 | `tailscale-state/` | — | create empty folder |
 
-Exports: a shared folder (`plannings`), weekly `.xer` dropped through Synology Drive or
+Exports: a shared folder of your choice, weekly `.xer` dropped through Synology Drive or
 SMB. Mounted read-only: the app cannot alter or delete them.
 
 ## 5. Registry login in Container Manager
 
-**Tested 2026-10 on DSM 7.2, with the package still private: Container Manager rejected
-ghcr.io** ("returned bad result" on the Registry form and on Image → Add from URL, with a
-token that `docker login ghcr.io` accepts). A public package needs no login, so try
-**Image → Add → Add from URL → `https://ghcr.io/xerscope/xerscope`** first. If the UI still
-refuses, the app image is mirrored on **Docker Hub** (`mish1ma/xerscope`, the project's
-account), which Container Manager handles natively; `compose.nas.yaml` pulls that one.
+The package is public: `compose.nas.yaml` pulls `ghcr.io/xerscope/xerscope:latest` with no
+registry entry and no login. (Check once on GitHub → organization → Packages that the
+package shows *Public*: a package created while the repository was private stays private.)
+Tested 2026-10 on DSM 7.2 with the package still private: Container Manager rejected every
+ghcr.io login ("returned bad result"), with a token `docker login ghcr.io` accepts. If a
+private package or a fork puts you back there, the app image is mirrored on **Docker Hub**
+(`mish1ma/xerscope`), which Container Manager handles natively: put that name in the compose.
 
 To publish your own mirror from a fork:
 
@@ -157,22 +158,28 @@ change the tag, Build again. `sha-<short>` tags exist for every `main` build too
 
 ## 8. Security checklist
 
+Coming from the single-container image (section 10): its node state sits in
+`tailscale-state/node/`, the official `tailscale` image reads the root of the folder. Stop the
+remote container, move the files of `node/` one level up, start the project: same node, same
+name, same certificate. Never run both with the same state folder. Starting from an empty
+folder instead creates a new machine: delete the old one in the Tailscale admin console first,
+or the new node is named `xerscope-1` and the URL changes.
+
 Internet scanners find every new `*.ts.net` name within seconds (the certificate is in the
 public CT logs) and probe `/`, `/.env`, `/wp-admin`... Basic auth answers 401; to keep them
-out of the container entirely, set `XERSCOPE_PATH=/<random>` on the remote image: Funnel
-then publishes only that prefix and Tailscale answers 404 to the rest. The URL to hand out
-becomes `https://xerscope.<tailnet>.ts.net/<random>/` — trailing slash included, the page's
-relative asset URLs need it. Tailscale strips the prefix before proxying, so Caddy and the app
-keep seeing `/`.
+out of the container entirely, publish a secret prefix only: `XERSCOPE_PATH=/<random>` on
+the remote image, or on the compose stacks the handler key of `tailscale-serve.json` changed
+from `"/"` to `"/<random>"`. Funnel then publishes only that prefix and Tailscale answers 404
+to the rest. The URL to hand out becomes `https://xerscope.<tailnet>.ts.net/<random>/` —
+trailing slash included, the page's relative asset URLs need it. Tailscale strips the prefix
+before proxying, so Caddy and the app keep seeing `/`: nothing to set on Streamlit.
 
 - [ ] Private package or fork: pull token = `read:packages` only, rotated at expiry.
 - [ ] Tailscale key: tagged, non-ephemeral, single-use; delete it from the admin console once the node is up.
 - [ ] `compose.yaml` on the NAS holds the key and the bcrypt hash: the `docker` share must not be readable by other NAS users.
 - [ ] No `ports:` anywhere. Two networks: `egress` (plain bridge, tailscale only, outbound) and `internal` (no gateway: xerscope cannot reach the internet, the NAS LAN cannot reach xerscope).
 - [ ] Basic auth is one shared password → change it when the viewer changes; move to Tailscale Serve + a Tailscale login (no Funnel) the day the viewer can install Tailscale, or to Cloudflare Access.
-- [ ] No rate limit on the password prompt (stock Caddy has none): the bcrypt cost (14) and `XERSCOPE_PATH` (16+ characters) are what stands between a scanner and a guess. A password of 20+ random characters makes the guess hopeless.
-- [ ] Caddy logs the visitor's IP (Funnel's `X-Forwarded-For`, trusted from loopback) and the path to stdout (Container Manager → container → Log): review them from time to time.
-- [ ] Sidecars run with `cap_drop: [ALL]` and `no-new-privileges`; Caddy's filesystem is read-only; tailscaled sends no diagnostic logs (`TS_NO_LOGS_NO_SUPPORT`). The images are pinned by tag; Dependabot proposes the bumps, CI scans both xerscope images with Trivy on every push.
+- [ ] Caddy logs the visitor's IP (`trusted_proxies static private_ranges`: the request comes from tailscaled on loopback) and the path to stdout (Container Manager → container → Log): review them from time to time.
 
 ## 9. Troubleshooting
 
@@ -185,13 +192,13 @@ keep seeing `/`.
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, re-issue a tagged key, delete `tailscale-state/`, Build |
 | 404 on `https://xerscope.<tailnet>.ts.net` | serve.json not mounted, or Caddy down | `tailscale` log → `Serve config loaded`; `caddy` log |
 | 502 | xerscope not healthy yet, or `/data` unreadable | wait 40 s; xerscope log |
-| `xerscope-remote` unhealthy, app answers | one of tailscaled / Caddy died and is restarting (the healthcheck wants all three alive) | container log: `[remote] ... exited with` |
 | Streamlit shows nothing after upload | upload goes to the container's tmpfs, lost on restart | drop files in the shared folder instead |
 
 ## 10. Alternative: single container (`xerscope-remote`)
 
-If Projects/compose is not available on the NAS, `ghcr.io/xerscope/xerscope-remote:latest`
-bundles the three processes (see `Dockerfile.remote`, `deploy/remote/supervisor.py`).
+If Projects/compose is not available on the NAS (the old *Docker* package, DSM 7.1 and
+earlier), `ghcr.io/xerscope/xerscope-remote:latest` bundles the three processes (see
+`Dockerfile.remote`, `deploy/remote/supervisor.py`).
 Container Manager → Image → Add from URL → Run → set the environment variables
 (`TS_AUTHKEY`, `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH`), the two volumes, no port.
 Same ACL, same checks. The compose form is preferred: three official images, each
