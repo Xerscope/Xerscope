@@ -9,9 +9,10 @@ is done, add one when a check or a recalculation disagrees with P6.
 - [ ] **P6 Check Schedule report** (P6 Professional 24) on one real file, with that file's
       F9 export, under `tests/reference/`; one assertion per count. Today every P6 check
       population is one reading of Oracle's help pages (`src/xerscope/standards/p6.toml`
-      `source` fields): completed activities kept in P6-11, no-baseline counted as due in
-      P6-13, remaining duration in P6-04, LOE in P6-01, start constraints ignored once
-      started, 352 h = 8 h/day.
+      `source` fields, P6 Professional 24 dialog help 101248 first): LOE in P6-01,
+      completed activities in P6-12, BEI due counted in the baseline (P6-13), remaining
+      early start for in-progress work (P6-10), milestones in P6-04's denominator,
+      352 h = 8 h/day.
 - [ ] **DECM**: the same for `decm.toml`. Open readings, each stated in the TOML `source`:
       06A205a counts LOE and ignores leads; 06A209a includes LOE; DCMA-11 keeps
       milestones, DCMA-14 drops them.

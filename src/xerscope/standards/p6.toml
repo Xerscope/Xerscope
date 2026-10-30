@@ -3,9 +3,10 @@
 # The 14 checks, in the order and groups of the P6 Professional 24 User Guide ("Check
 # Schedule", F88968_01 page 101393). Dangling start / finish are not P6 Professional
 # checks (they exist in P6 EPPM only), so they are not here.
-# Populations, exclusions and denominators follow Oracle's help for each report section
-# (Schedule Check Report, pages 46277-46291). Every percentage is: items found / items in
-# the checked subset.
+# Populations follow the P6 Professional 24 help of the Check Schedule dialog
+# (https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm); where it is silent,
+# Oracle's help for each section of the Schedule Check Report (P6 EPPM, pages 46277-46291).
+# Every percentage is: items found / items in the checked subset.
 #
 # Thresholds: P6 compares hours; 352 h (= 44 days x 8 h) is used for "x" below.
 # Targets: the defaults of the Check Schedule dialog as documented for P6 EPPM 25
@@ -62,8 +63,8 @@ name = "Large durations"
 description = "Activities that have a remaining duration greater than 352 hours"
 rule = "duration"
 target = "< 5%"
-source = "46282: WBS summary, actual-finish, milestones and LOE removed"
-params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "milestones", "loe"] }
+source = "101248 (P6 Professional 24 help, Check Schedule dialog): completed, WBS summary and LOE activities not included (milestones stay in; EPPM's 46282 also removes them)"
+params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "loe"] }
 
 [[metric]]
 id = "P6-05"
@@ -124,8 +125,8 @@ name = "Invalid progress dates"
 description = "Activities with invalid progress dates (forecast before, or actual after, the data date)"
 rule = "invalid_dates"
 target = "< 1%"
-source = "46281 / 46280: WBS summary, LOE and activities finished before the data date removed"
-params = { kind = "both", exclude = ["loe", "complete_before_data_date"] }
+source = "101248: not started, start before the data date; in progress, remaining early start before it or actual start after it; completed, actual finish after it. Completed before the data date, WBS summary and LOE not included"
+params = { kind = "both", exclude = ["loe", "complete_before_data_date"], in_progress = "start" }
 
 [[metric]]
 id = "P6-11"
@@ -146,8 +147,8 @@ name = "Late activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "late_vs_baseline"
 target = "< 5%"
-source = "46278: WBS summary, actual-finish, milestones and LOE removed; baseline finish variance < 0 (working time)"
-params = { exclude = ["complete", "milestones", "loe"] }
+source = "101248: milestones, WBS summary and LOE not included (completed stay in); no baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
+params = { exclude = ["milestones", "loe"], no_baseline = "planned" }
 
 [[metric]]
 id = "P6-13"
@@ -156,8 +157,8 @@ name = "BEI"
 description = "Baseline Execution Index"
 rule = "bei"
 target = ">= 0.95"
-source = "46277: WBS summary, milestones and LOE removed; no baseline finish = should have finished"
-params = { exclude = ["loe", "milestones"], missing_baseline = "due" }
+source = "101248: completed activities of the open project / baseline activities finishing before its data date; milestones, WBS summary and LOE not included on either side (EPPM's 46277 instead counts an activity with no baseline finish as due)"
+params = { exclude = ["loe", "milestones"], due_from = "baseline" }
 
 [[metric]]
 id = "P6-14"

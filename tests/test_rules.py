@@ -168,6 +168,7 @@ def test_large_duration_remaining_vs_original():
         ]
     )
     assert codes(run(P6, "P6-04", s)) == ["B"]  # remaining > 352 h
+    assert run(P6, "P6-04", s).denominator == 3  # Pro 24 help (101248): milestones stay in
     assert codes(run(DCMA, "DCMA-08", s)) == ["A", "B"]  # original > 44 d
 
 
@@ -178,15 +179,17 @@ def test_invalid_progress_dates():
     s = snap(
         [
             todo("EARLY", early_start_date="2026-02-27 08:00"),
-            active("RUN", early_end_date="2026-02-27 17:00"),
+            active("RUN", restart_date="2026-02-26 08:00", reend_date="2026-02-27 17:00"),
+            active("LATE", restart_date="2026-02-27 08:00", reend_date="2026-03-05 17:00"),  # not re-scheduled
             done("FUT", act_end_date="2026-03-04 17:00"),
             done("OK"),
             todo("FINE"),
         ]
     )
-    assert codes(run(P6, "P6-10", s)) == ["EARLY", "FUT", "RUN"]  # Pro 24: one check, both sides
-    assert run(P6, "P6-10", s).denominator == 4  # OK finished before the data date: removed
-    assert run(DCMA, "DCMA-09", s).numerator == 3
+    # Pro 24 help (101248): in progress = remaining early start before the data date
+    assert codes(run(P6, "P6-10", s)) == ["EARLY", "FUT", "LATE", "RUN"]
+    assert run(P6, "P6-10", s).denominator == 5  # OK finished before the data date: removed
+    assert run(DCMA, "DCMA-09", s).numerator == 3  # DCMA reads the remaining finish: LATE passes
 
 
 def test_resource_or_expense():
@@ -220,10 +223,15 @@ NOW = snap(
 )  # not in the baseline
 
 
-def test_bei_p6_counts_unbaselined_as_due_dcma_ignores_them():
+def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     bl = Baseline.from_snapshot(BL)
     p6 = run(P6, "P6-13", NOW, bl)
-    assert (p6.numerator, p6.denominator) == (2, 4)  # A, B done / A, B, C + NEW (no baseline)
+    # Pro 24 help (101248): baseline activities finishing before the data date; NEW is not one
+    assert (p6.numerator, p6.denominator) == (2, 3)  # A, B done / A, B, C
+    gone = snap([done("A", act_end_date="2026-02-26 17:00"), todo("D", early_end_date="2026-04-29 17:00")])
+    r = run(P6, "P6-13", gone, bl)
+    assert (r.numerator, r.denominator) == (1, 3)  # B and C deleted since the baseline: still due
+    assert "2 of them no longer in the schedule" in r.note
     dcma = run(DCMA, "DCMA-14", NOW, bl)
     assert (dcma.numerator, dcma.denominator) == (2, 3)
     assert dcma.value == pytest.approx(2 / 3)
@@ -232,7 +240,17 @@ def test_bei_p6_counts_unbaselined_as_due_dcma_ignores_them():
 def test_missed_tasks_and_late_activities():
     bl = Baseline.from_snapshot(BL)
     assert codes(run(DCMA, "DCMA-11", NOW, bl)) == ["B", "C"]
-    assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # D finishes earlier; NEW has no baseline
+    assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # B: Sat 17:00 vs Fri 17:00, no working time
+    # Pro 24 help (101248): completed activities stay in; no baseline -> against the planned finish
+    now = snap(
+        [
+            done("A", act_end_date="2026-03-02 17:00"),  # a working day after its baseline finish
+            todo("NEW", early_end_date="2026-03-10 17:00", target_end_date="2026-03-09 17:00"),
+            todo("NEW2", early_end_date="2026-03-10 17:00", target_end_date="2026-03-10 17:00"),
+        ]
+    )
+    r = run(P6, "P6-12", now, bl)
+    assert codes(r) == ["A", "NEW"] and r.denominator == 3
 
 
 def test_baseline_metrics_are_na_without_baseline():

@@ -140,11 +140,17 @@ def _population(rule: str, p: dict) -> list[str]:
     if rule == "relationship_type":
         out.append(f"Counts relationships of type {p.get('type', 'FS')}; the list shows the others.")
     if rule == "bei":
-        rule_text = "counted as due" if p.get("missing_baseline", "due") == "due" else "left out"
-        out.append(
-            f"Activities without a baseline finish are {rule_text}. "
-            "Completed = all completed activities in the population, early ones included."
-        )
+        if p.get("due_from") == "baseline":
+            due_text = (
+                "Due = baseline activities finishing on or before the data date, counted in the "
+                "baseline: an activity added since is never due, one deleted since still is."
+            )
+        else:
+            rule_text = "counted as due" if p.get("missing_baseline", "due") == "due" else "left out"
+            due_text = f"Activities without a baseline finish are {rule_text}."
+        out.append(due_text + " Completed = all completed activities in the population, early ones included.")
+    if rule == "invalid_dates" and p.get("in_progress") == "start":
+        out.append("An in-progress activity is flagged when its remaining early start is before the data date.")
     if rule == "missed_tasks":
         out.append(
             "Due = baseline finish on or before the data date. Missed = not finished, "
@@ -152,6 +158,8 @@ def _population(rule: str, p: dict) -> list[str]:
         )
     if rule == "late_vs_baseline":
         out.append("Variance is working time on the activity's calendar, as P6's Finish Variance.")
+        if p.get("no_baseline") == "planned":
+            out.append("An activity with no baseline finish is late when its finish is later than its planned finish.")
     return out
 
 
