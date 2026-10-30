@@ -272,6 +272,14 @@ def test_external_late_finish_bounds_the_late_dates():
     assert dates(s, "A")[3:5] == (T("2026-03-02 17:00"), 0)  # not the project finish (Fri 17:00)
 
 
+def test_predecessor_in_another_project_of_the_file_is_not_the_local_namesake():
+    # Project 2's A1000 (task_id 1, finished) drives B; this project also has an A1000, 200 h.
+    tasks = [done("A1000", proj_id="2"), todo("A1000", **hours(200)), todo("B", **hours(8))]
+    s = snap(tasks, [("1", "B", "FS", 0, "2")])
+    assert list(s.relationships["pred_code"]) == ["[ext]1"]
+    assert dates(s, "B")[:2] == (T("2026-03-02 08:00"), T("2026-03-02 17:00"))  # not after the local A1000
+
+
 def test_multiple_float_paths_are_reported_not_computed():
     s = snap([todo("A", **hours(8))], sched={"enable_multiple_longest_path_calc": "Y"})
     assert any("multiple float paths" in w for w in schedule(s).warnings)
