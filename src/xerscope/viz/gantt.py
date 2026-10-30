@@ -102,7 +102,10 @@ def build_gantt(
             shift, unit = (t["finish"] - cf).dt.total_seconds() / 86400, "cal. d"
         shift_txt = np.where(
             shift.notna(),
-            "<br>Finish vs " + compare_label + ": " + shift.round(1).map(("{:+g} " + unit).format, na_action="ignore"),
+            "<br>Finish vs "
+            + compare_label
+            + ": "
+            + shift.round(1).map(("{:+g} " + unit).format, na_action="ignore").astype(object),
             np.where(cf.isna(), "<br>Not in " + compare_label, ""),
         )
         shift_txt = pd.Series(shift_txt, index=t.index)

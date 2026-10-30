@@ -78,3 +78,13 @@ def test_gantt_figure(store):
 def test_finish_trend(store):
     fig = build_finish_trend(store.summary)
     assert len(fig.data[0].x) == len(store)
+
+
+def test_gantt_compare_with_no_common_tasks(store):
+    """Comparison that shares no task code (another project): every finish shift is NaN and
+    the hover text must still build (an all-NaN mapped Series is float64; str + float64 raises)."""
+    s = store.latest
+    other = store.first.activities.copy()
+    other["task_code"] = "ZZ-" + other["task_code"].astype(str)
+    fig = build_gantt(s.activities, data_date=s.data_date, compare=other, compare_label="other")
+    assert fig.data
