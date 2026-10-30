@@ -34,6 +34,8 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "--advertise-routes" not in compose and "exit-node" not in compose
     assert "STREAMLIT_SERVER_BASE_URL_PATH" not in compose  # Funnel strips the secret prefix: the app stays at "/"
     assert 'TS_AUTH_ONCE: "true"' in compose  # a single-use key must not be replayed on restart
+    # the node state is a named volume: root without DAC_OVERRIDE cannot write a host folder owned by a NAS user
+    assert "- tailscale-state:/var/lib/tailscale" in compose and "./tailscale-state" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
     assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
