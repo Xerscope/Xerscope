@@ -43,6 +43,11 @@ services:
     image: xerscope:latest
     environment:
       XERSCOPE_DATA: /data
+      # Secret URL prefix (same idea as XERSCOPE_PATH on the remote image): set the SAME
+      # value here and as the handler key in tailscale-serve.json ("/" -> "/<path>"), and
+      # Funnel publishes only https://<host>.<tailnet>.ts.net/<path>; Tailscale answers 404
+      # to everything else before it reaches these containers.
+      # STREAMLIT_SERVER_BASE_URL_PATH: /REPLACE-WITH-24-RANDOM-CHARS
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
       - ./exports:/data:ro                          # on a NAS: /volume1/plannings:/data:ro

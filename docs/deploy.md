@@ -162,9 +162,9 @@ Internet scanners find every new `*.ts.net` name within seconds (the certificate
 public CT logs) and probe `/`, `/.env`, `/wp-admin`... Basic auth answers 401; to keep them
 out of the container entirely, set `XERSCOPE_PATH=/<random>` on the remote image: Funnel
 then publishes only that prefix and Tailscale answers 404 to the rest. The URL to hand out
-becomes `https://xerscope.<tailnet>.ts.net/<random>/` — trailing slash included, the page's
-relative asset URLs need it. Tailscale strips the prefix before proxying, so Caddy and the app
-keep seeing `/`.
+becomes `https://xerscope.<tailnet>.ts.net/<random>`. On the compose stacks the same thing is
+two edits: the handler key in `tailscale-serve.json` (`"/"` → `"/<random>"`) and
+`STREAMLIT_SERVER_BASE_URL_PATH: /<random>` on the `xerscope` service.
 
 - [ ] Package private; repo private; token = `read:packages` only, rotated at expiry.
 - [ ] Tailscale key: tagged, non-ephemeral, single-use; delete it from the admin console once the node is up.
