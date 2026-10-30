@@ -23,7 +23,7 @@ Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 |---|---|
 | no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.yaml`, three official images |
 | registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
-| env vars typed in the container form (key, prefix, hash) | the project's **Environment** tab (key, login, hash, prefix, exports folder), interpolated by Compose; no file in the folder is edited |
+| env vars typed in the container form (key, prefix, hash) | a **`.env`** file next to `compose.yaml` (key, login, hash, prefix, exports folder), read by Compose for its `${...}` interpolation; no other file is edited |
 | node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
 Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
@@ -90,7 +90,9 @@ folder of the repository:
 | `tailscale-serve.json` | nothing |
 | `tailscale-state/` | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
 
-`.env.example` is for a PC; on the NAS the values go in the project's Environment tab (§6).
+Add a `.env` from `.env.example` with the five values (§6). Container Manager's Environment
+fields at project creation do not feed the compose file's `${...}` interpolation: left empty,
+the build stops with `error while interpolating services.tailscale...`.
 `docker` is a shared folder: restrict it to your DSM account (Control Panel → Shared
 Folder → Permissions). DSM stores the project's variables in clear too, readable by any
 DSM administrator — same confidentiality as the folder, not a vault.
@@ -113,22 +115,24 @@ Coming from the earlier all-in-one container: stop and delete it first, then in
 `tailscale-state/` move the content of `node/` one level up (`tailscaled.state`, …) and
 remove `node/`. Same node, same URL. Never run both with the same state folder.
 
-Container Manager → **Project** → **Create**:
+First the **`.env`** in `docker/xerscope/`, next to `compose.yaml`: the five lines of
+`deploy/.env.example`, made on a PC and uploaded (Notepad → Save as → type "All files",
+name `".env"` with the quotes). A missing value stops the build with its name.
+
+```
+TS_AUTHKEY=tskey-auth-...              # any value when the node state is migrated: TS_AUTH_ONCE skips it
+XERSCOPE_USER=<login>
+XERSCOPE_PASSWORD_HASH='$2a$14$...'     # single quotes: unquoted, Compose reads the $ as variables
+XERSCOPE_PATH=<random>                 # no slashes
+XERSCOPE_EXPORTS=/volume1/<shared-folder>   # exact case
+```
+
+Then Container Manager → **Project** → **Create**:
 
 - Project name: `xerscope`
 - Path: `/docker/xerscope`
-- Source: *Use existing docker-compose.yml* (it finds `compose.yaml`) → Next.
-- **Environment** (the same five lines as `deploy/.env.example`; a missing one stops the build with its name):
-
-  | Variable | Value |
-  |---|---|
-  | `TS_AUTHKEY` | the tagged key (any value when the node state is migrated: `TS_AUTH_ONCE` skips it) |
-  | `XERSCOPE_USER` | the login |
-  | `XERSCOPE_PASSWORD_HASH` | the `$2a$14$...` hash, pasted as is (the form does not interpolate `$`) |
-  | `XERSCOPE_PATH` | `<random>`, no slashes |
-  | `XERSCOPE_EXPORTS` | `/volume1/<shared-folder>`, exact case |
-
-  → Next → Done.
+- Source: *Use existing docker-compose.yml* (it finds `compose.yaml`) → Next → Next → Done.
+  Leave the Environment fields empty: they do not reach the compose file's `${...}`.
 
 Container Manager pulls the three images (the ghcr pull needs no registry entry) and starts
 the stack. Expected after ~40 s, in Container → each container → Log:
@@ -153,37 +157,44 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 
 | Want | Do |
 |---|---|
-| new app build | Container → Image → `ghcr.io/xerscope/xerscope` → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
+| new app build | Container → Image → the app image (`ghcr.io/xerscope/xerscope` or the Docker Hub copy) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
 | pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
-| new password or login | Project → Action → Edit → Environment → new value → Build (Caddy reads them at start) |
-| new prefix | Environment → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
+| new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
+| new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only after deleting `tailscale-state/` content (new node, same hostname: the admin console shows the old one offline, delete it) |
 
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
 pins in `compose.yaml` on the NAS, Build.
 
-## 8. If Container Manager will not pull from ghcr.io
+## 8. Private image: Docker Hub
 
-Project → Build fails with `pull access denied` or `bad result` on a **public** package
-means the DSM proxy or an old Container Manager still mishandles ghcr. The workflow also
-publishes the app image to Docker Hub, which Container Manager handles natively:
+A private ghcr package needs a GitHub token on the NAS, which Container Manager does not
+handle. Keep the image private on Docker Hub instead, where Container Manager logs in
+natively:
 
-1. GitHub → repository → Settings → Secrets and variables → Actions:
-   secrets `DOCKERHUB_USERNAME` (`<docker-hub-login>`), `DOCKERHUB_TOKEN` (hub.docker.com →
-   Account settings → Personal access tokens, **Read & Write**); variable
-   `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow.
-2. In `compose.yaml` on the NAS: `image: <docker-hub-login>/xerscope:latest`. A public Docker
-   Hub repository pulls anonymously too; a private one takes Container Manager → Registry →
-   Docker Hub → Settings → Edit → login + a **read-only** token → Use.
-3. Build.
+1. hub.docker.com → Create repository `xerscope`, **Private** (the free plan includes one).
+   Account settings → Personal access tokens: one **Read & Write** for GitHub, one
+   **Read-only** for the NAS.
+2. GitHub → repository → Settings → Secrets and variables → Actions: secrets
+   `DOCKERHUB_USERNAME` (`<docker-hub-login>`) and `DOCKERHUB_TOKEN` (the Read & Write one);
+   variable `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow;
+   the run pushes to both registries.
+3. NAS: Container Manager → Registry → Docker Hub → Settings → Edit → login + the read-only
+   token → **Use**.
+4. `.env`: `XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest` (nothing to edit in
+   `compose.yaml`). Build.
 
-Same image, same digest-equivalent content: the workflow pushes one build to both names.
+If Build still answers `pull access denied`, the project's pull does not use the registry
+login: pull once from Container Manager → Registry (search the image) or Image → Add, then
+Build; Compose starts from the local image without pulling again.
+
+The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 
 ## 9. Security checklist
 
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; delete it from the admin console once the node is up (`TS_AUTH_ONCE` means it is never replayed).
-- [ ] `docker` shared folder and the project's Environment readable by your account only (key + hash in clear in DSM's project store).
+- [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
 - [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and redacts the request line, Referer and redirect (they hold the prefix).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
@@ -193,14 +204,14 @@ Same image, same digest-equivalent content: the workflow pushes one build to bot
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Build: `pull access denied` on ghcr | package private, or Container Manager and ghcr | §2 step 2; else §8 |
+| Build: `unauthorized` / `pull access denied` on ghcr | the package is private | make it public (§2 step 2), or use the private Docker Hub copy (§8) |
 | `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `image` run for that tag |
 | tailscale log `permission denied` `/var/lib/tailscale` | `tailscale-state/` not writable by the container's user | §4 permission on the folder |
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, empty `tailscale-state/`, Build |
 | `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
 | 404 on the full URL | URL ≠ `XERSCOPE_PATH`, or a slash inside the variable | value without slashes, URL `/<random>/` (`/<random>` alone redirects there) |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
-| 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, paste as is in the Environment tab (quoted in a `.env`) |
+| 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | page after upload disappears on restart | upload lands in the container's tmpfs | drop files in the shared folder instead |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |
