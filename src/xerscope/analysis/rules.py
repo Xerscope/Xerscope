@@ -131,10 +131,13 @@ ALLOWED = {"exclude": set(EXCLUDE), "pred_exempt": EXEMPT, "succ_exempt": EXEMPT
 
 
 def activities(ctx: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
-    t = ctx.snapshot.activities
+    return _without(ctx.snapshot.activities, ctx.snapshot.data_date, exclude)
+
+
+def _without(t: pd.DataFrame, dd, exclude: list[str]) -> pd.DataFrame:
     mask = pd.Series(False, index=t.index)
     for key in exclude:
-        mask |= EXCLUDE[key](t, ctx.snapshot.data_date).fillna(False).astype(bool)
+        mask |= EXCLUDE[key](t, dd).fillna(False).astype(bool)
     return t[~mask]
 
 
@@ -371,11 +374,13 @@ def invalid_dates(
     exclude: Names = ("loe", "complete_before_data_date"),
     denominator: Literal["population", "started"] = "population",
     include_data_date: bool = False,
+    in_progress: Literal["finish", "start"] = "finish",
 ) -> RuleOutput:
     """Progress dates on the wrong side of the data date.
 
     ``forecast``: incomplete activity scheduled before the data date (not-started start or
-    finish, in-progress remaining finish). ``actual``: actual start or finish after it.
+    finish; in-progress remaining finish, or remaining start with ``in_progress = "start"``,
+    P6 Professional's reading). ``actual``: actual start or finish after it.
     ``denominator``: the population, or ``started`` (activities with an actual start, as
     DECM 06A506a). ``include_data_date`` also flags a forecast exactly on the data date:
     off by default, because P6's data date is the first instant of remaining work (DECM's
@@ -387,10 +392,15 @@ def invalid_dates(
         return RuleOutput(note="no data date")
     if denominator not in ("population", "started"):
         raise ValueError("invalid_dates.denominator must be 'population' or 'started'")
+    if in_progress not in ("finish", "start"):
+        raise ValueError("invalid_dates.in_progress must be 'finish' or 'start'")
     before = np.less_equal if include_data_date else np.less
     open_ = ~pop["is_complete"]
     early_s, early_f = forecast_dates(pop)  # the same reading as the model's Start / Finish
-    fc = open_ & (((~pop["is_started"]) & before(early_s, dd)) | before(early_f, dd))
+    if in_progress == "start":
+        fc = open_ & before(early_s, dd)  # a finish before the data date has its start before it too
+    else:
+        fc = open_ & (((~pop["is_started"]) & before(early_s, dd)) | before(early_f, dd))
     ac = (pop["act_start_date"] > dd) | (pop["act_end_date"] > dd)
     fc, ac = fc.fillna(False).astype(bool), ac.fillna(False).astype(bool)
     hit = {"forecast": fc, "actual": ac, "both": fc | ac}[kind]
@@ -422,13 +432,24 @@ def _with_baseline(ctx, pop: pd.DataFrame) -> pd.DataFrame:
 
 
 @rule("late_vs_baseline", "%", needs_baseline=True)
-def late_vs_baseline(ctx, exclude: Names = ("complete", "milestones", "loe"), tolerance_hours: float = 0) -> RuleOutput:
+def late_vs_baseline(
+    ctx,
+    exclude: Names = ("complete", "milestones", "loe"),
+    tolerance_hours: float = 0,
+    no_baseline: Literal["pass", "planned"] = "pass",
+) -> RuleOutput:
     """Activities forecast to finish later than their baseline finish.
 
     P6's finish variance is working time on the activity's calendar, so a finish at
     17:00 against a baseline of 08:00 the next working morning is not late.
+    ``no_baseline``: an activity with no baseline finish passes, or (``"planned"``, P6
+    Professional) is late when its finish is later than its planned finish.
     """
+    if no_baseline not in ("pass", "planned"):
+        raise ValueError("late_vs_baseline.no_baseline must be 'pass' or 'planned'")
     pop = _with_baseline(ctx, activities(ctx, exclude))
+    if no_baseline == "planned":
+        pop["bl_finish"] = pop["bl_finish"].combine_first(pop["target_end_date"])
     var_h = ctx.snapshot.work_hours(pop["clndr_id"], pop["bl_finish"], pop["finish"])
     late = var_h > tolerance_hours
     bad = pop[late.fillna(False).astype(bool)]
@@ -451,15 +472,39 @@ def missed_tasks(ctx, exclude: Names = ("loe",)) -> RuleOutput:
 
 
 @rule("bei", "ratio", needs_baseline=True)
-def bei(ctx, exclude: Names = ("loe", "milestones"), missing_baseline: Literal["due", "ignore"] = "due") -> RuleOutput:
+def bei(
+    ctx,
+    exclude: Names = ("loe", "milestones"),
+    missing_baseline: Literal["due", "ignore"] = "due",
+    due_from: Literal["snapshot", "baseline"] = "snapshot",
+) -> RuleOutput:
     """Baseline Execution Index = activities completed / activities due by the data date.
 
-    ``missing_baseline = "due"`` counts an activity with no baseline finish as due (P6);
-    ``"ignore"`` leaves it out.
+    ``missing_baseline = "due"`` counts an activity with no baseline finish as due (P6
+    EPPM); ``"ignore"`` leaves it out. ``due_from = "baseline"`` (P6 Professional) counts
+    the due activities in the baseline itself, ``exclude`` applied there: an activity
+    added since is never due, one deleted since still is; ``missing_baseline`` is unused.
     """
     dd = ctx.snapshot.data_date
     pop = _with_baseline(ctx, activities(ctx, exclude))
     done = int(pop["is_complete"].sum())
+    if due_from == "baseline":
+        bl = ctx.baseline
+        kept = (
+            bl.frame
+            if bl.snapshot is None
+            else bl.frame[bl.frame.index.isin(_without(bl.snapshot.activities, dd, exclude)["task_code"])]
+        )
+        due_codes = set(kept.index[kept["bl_finish"] <= dd])
+        late = pop[pop["task_code"].isin(due_codes) & ~pop["is_complete"]]
+        gone = len(due_codes - set(ctx.snapshot.activities["task_code"]))
+        note = f"{done} completed / {len(due_codes)} due in the baseline" + (
+            f"; {gone} of them no longer in the schedule" if gone else ""
+        )
+        n = len(due_codes)
+        return RuleOutput(_act(late, bl_finish=late["bl_finish"]), done, n, done / n if n else None, note)
+    if due_from != "snapshot":
+        raise ValueError("bei.due_from must be 'snapshot' or 'baseline'")
     due_mask = pop["bl_finish"] <= dd
     if missing_baseline == "due":
         due_mask |= pop["bl_finish"].isna()
