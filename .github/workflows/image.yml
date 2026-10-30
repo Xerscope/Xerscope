@@ -5,12 +5,15 @@ name: image
 #   ghcr.io/xerscope/xerscope:latest            every push to main   (Dockerfile)
 #   ghcr.io/xerscope/xerscope-remote:latest     same, all-in-one     (Dockerfile.remote)
 #   ghcr.io/xerscope/xerscope:v1.2.3            every tag v*; plus a sha-<short> tag each build
-# The owner is lowercased by metadata-action (ghcr.io requires it). Both packages are
-# private because the repository is: pulling needs a token with read:packages (docs/deploy.md).
-# The app image also goes to Docker Hub as mish1ma/xerscope (private repository), because
-# Synology Container Manager logs in to Docker Hub natively and rejects ghcr.io. Needs the
+# The owner is lowercased by metadata-action (ghcr.io requires it). A package takes the
+# repository's visibility; a public one pulls without a token.
+# The app image also goes to Docker Hub, because Synology Container Manager logs in to
+# Docker Hub natively and rejected ghcr.io logins (docs/deploy.md). That leg needs the
 # repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (hub.docker.com > Account
-# settings > Personal access tokens, Read & Write); the push is skipped when they are absent.
+# settings > Personal access tokens, Read & Write) and the repository variable
+# DOCKERHUB_IMAGE_OWNER (the Docker Hub account the image is named after; a variable, not a
+# secret, so the image name is not masked in the logs); skipped when any is absent.
+# Nothing is published from a fork: the job runs only in this repository.
 on:
   push:
     branches: [main]
@@ -27,6 +30,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.repository == 'Xerscope/xerscope'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false                  # one image failing must not cancel the other
@@ -34,10 +38,8 @@ jobs:
         include:
           - image: xerscope
             dockerfile: Dockerfile
-            dockerhub: mish1ma/xerscope
           - image: xerscope-remote
-            dockerfile: Dockerfile.remote
-            dockerhub: mish1ma/xerscope-remote   # pushed only if DOCKERHUB_REMOTE=true (free plan: 1 private repo)
+            dockerfile: Dockerfile.remote     # Docker Hub only with the repository variable DOCKERHUB_REMOTE=true
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,7 +63,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-            name=docker.io/${{ matrix.dockerhub }},enable=${{ secrets.DOCKERHUB_TOKEN != '' && (matrix.image == 'xerscope' || vars.DOCKERHUB_REMOTE == 'true') }}
+            name=docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }},enable=${{ secrets.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE_OWNER != '' && (matrix.image == 'xerscope' || vars.DOCKERHUB_REMOTE == 'true') }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}

@@ -37,7 +37,7 @@ Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, 
 | Lag | `lag_hr` as stored; `lag_d` on the predecessor's calendar (Oracle's conversion rule) |
 | Critical | project definition: total float ≤ `critical_drtn_hr_cnt`, or longest path |
 | % complete | by `complete_pct_type`: physical, duration, units |
-| Best dates | `start` / `finish` = actual > early > remaining > planned |
+| Best dates | `start` / `finish` = actual > remaining early (`restart_date` / `reend_date`) > early > planned |
 | Forecast finish | latest activity finish (`scd_end_date` can be stale: kept, with a warning) |
 | Labour hours | TASK budgeted/actual/remaining labour units (nonlabor in `nonlabor_*_qty`), else assignments by resource type |
 | Assignments | `assignments` = TASKRSRC typed: resource type (TASKRSRC, else RSRC; `role` for role-only), name, resource calendar, driving flag, units, rates, lags, dates |
@@ -79,6 +79,7 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique) |
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = Last Planner (W-1 commitments, W outcome) |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
+| `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source | read-only account of a result, shown under every check in the app |
 
 Standards are data in `standards/*.toml`:
 
@@ -91,6 +92,17 @@ Standards are data in `standards/*.toml`:
 Why rules plus TOML: P6's "Large Float" and DCMA-06 are one function (`float`) with
 different units and populations. A difference between standards is a parameter you can
 read and test, not a second implementation.
+
+Outside `analysis/`:
+
+- `config.py`: `Settings`, the few tunable defaults no standard owns (hours per day when a
+  calendar is missing, critical and near-critical float for the Gantt colours).
+- `crosscheck.py`: the three independent comparisons: MPXJ as a second reader
+  (`compare_paths`, with `UNRESOLVED` naming the known reading differences), MPXJ's
+  scheduler as a second CPM engine (`cpm_crosscheck`), and the P6-scheduled held-out corpus
+  (`p6_heldout_score`). Needs Java through the `crosscheck` extra.
+- `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
+- `sample.py`: the demo series generator, with the findings it plants week by week.
 
 ## 6. `viz/`: figures
 
@@ -122,12 +134,12 @@ read and test, not a second implementation.
 | Command | Does |
 |---|---|
 | `app` | launches the UI on localhost (`--data`, `--baseline`, `--standards`, `--host`) |
-| `check` | runs a standard on files and prints the P6-style summary (`--out` CSV, `--fail-on fail` for CI) |
+| `check` | runs a standard on files and prints the P6-style summary (`--baseline` or `--planned-baseline`, `--out` CSV, `--flagged DIR` for the items behind each count, `--expect CSV` to diff against a P6 Check Schedule summary, `--fail-on fail` for CI) |
 | `recalc` | reschedules and compares with stored dates (`--out` CSV) |
 | `changelog` | changes between two files |
 | `standards` | lists standards and rules, or writes the template |
 | `export` | Power BI tables |
-| `crosscheck` | compares the reading with MPXJ (Java); `--cpm` compares the recalculation with MPXJ's scheduler |
+| `crosscheck` | compares the reading with MPXJ (Java); `--cpm` compares the recalculation with MPXJ's scheduler; `--p6` scores the held-out corpus against P6's own results |
 | `info` | one line per snapshot |
 | `sample` | generates the demo series |
 
@@ -145,4 +157,7 @@ read and test, not a second implementation.
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
 | `test_app.py` | every page renders headless, key options work |
-| `reference/` | pinned third-party files (commit + SHA-256), downloaded by `fetch.py`; MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |
+| `test_p6_heldout.py` | share of values identical to P6 23.12 per held-out set never drops below `FLOORS` |
+| `test_parser.py`, `test_model.py`, `test_store.py` | format edge cases, P6 meaning of each column, the weekly series |
+| `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfiles / supervisor keep loopback-only, non-root, no published port |
+| `reference/` | pinned third-party files (`sources.py`: commit + SHA-256, downloaded by `fetch.py`; the held-out corpus by `fetch_p6_heldout.py`), their stated results (`expected.py`); MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |

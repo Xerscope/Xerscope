@@ -4,12 +4,12 @@
 # the only possible action is "run an image" (a NAS without a terminal). Everything is
 # set through environment variables; see deploy/remote/supervisor.py.
 #
-#   docker build -f Dockerfile.remote -t ghcr.io/xerscope/xerscope-remote:latest .
+#   docker build -f Dockerfile.remote -t ghcr.io/<you>/xerscope-remote:latest .
 #   docker run -d --name xerscope-remote --read-only --tmpfs /tmp --tmpfs /home/nonroot \
 #     --cap-drop ALL --security-opt no-new-privileges:true \
-#     -e TS_AUTHKEY=tskey-auth-... -e XERSCOPE_USER=quentin -e XERSCOPE_PASSWORD_HASH='$2a$14$...' \
+#     -e TS_AUTHKEY=tskey-auth-... -e XERSCOPE_USER=<login> -e XERSCOPE_PASSWORD_HASH='$2a$14$...' \
 #     -v /volume1/plannings:/data:ro -v xerscope-tailscale:/var/lib/tailscale \
-#     ghcr.io/xerscope/xerscope-remote:latest
+#     ghcr.io/<you>/xerscope-remote:latest
 #
 # No port is published, tailscaled has no TUN device: the host network is untouched.
 # Tailscale and Caddy are taken from their official images (static Go binaries).

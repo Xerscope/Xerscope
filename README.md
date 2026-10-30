@@ -28,7 +28,7 @@ docker compose up -d --build                              # http://localhost:850
 ```
 
 - **Image:** uv builds from `uv.lock` (CPython 3.14 managed by uv), the runtime is
-  distroless `cc-debian12:nonroot`: no shell, no package manager, non-root user.
+  distroless `cc-debian13:nonroot`: no shell, no package manager, non-root user.
 - **Network:** the app listens on all interfaces *inside* the container, and compose
   publishes it on `127.0.0.1` only, so the schedules stay off the network as with
   `xerscope app`. Publishing it wider is a deliberate change to `compose.yaml`; put
@@ -123,7 +123,7 @@ and Caddy, driven by a small supervisor (`deploy/remote/supervisor.py`). Build a
 from any machine with Docker, then create one container in the NAS UI:
 
 ```bash
-docker build -f Dockerfile.remote -t ghcr.io/xerscope/xerscope-remote:latest . && docker push ghcr.io/xerscope/xerscope-remote:latest
+docker build -f Dockerfile.remote -t ghcr.io/<you>/xerscope-remote:latest . && docker push ghcr.io/<you>/xerscope-remote:latest
 ```
 
 | In the Container Manager form | Value |
@@ -137,8 +137,7 @@ docker build -f Dockerfile.remote -t ghcr.io/xerscope/xerscope-remote:latest . &
 Then open `https://xerscope.<tailnet>.ts.net`: the browser asks for the username and
 password. Inside the container Caddy and xerscope listen on 127.0.0.1 only, tailscaled has
 no TUN device, and the supervisor stops every process on SIGTERM; `tests/test_docker.py`
-pins those properties, and the stack was run end to end outside Docker (401 without
-credentials, 200 with, loopback listeners only, clean shutdown).
+pins those properties.
 
 **With Container Manager Projects (compose)** instead: `.github/workflows/image.yml`
 publishes `ghcr.io/xerscope/xerscope:latest` (and, with the Docker Hub secrets set,
@@ -206,27 +205,36 @@ Expected values come from someone other than xerscope wherever possible:
 | Reference | Checked |
 |---|---|
 | MPXJ test exports (real P6 8.2 / 8.4 / 20.12) | lag-calendar option per file; % complete for duration, physical and units types |
-| xerlock sample + its parsed fixture | every activity's dates, float, durations, % complete, critical and longest path; all relationships (345/345) |
+| xerlock sample + its parsed fixture | every activity's dates, float, durations, % complete, critical and longest path; all 29 relationships |
 | xerlock DCMA results | all 12 stated DCMA values, critical path test activity and shift, CPL 1080 h |
 | P6-scheduled exports (Hotel P6 6.0, Terminal P6 5.0, both unstarted) | CPM recalculation: every early/late date, total and free float, exact clock time (25,302 + 396 values); every longest-path flag (4,283) |
 | xerlock's sample (synthetic, xerlock's own engine, Progress Override) | the same 126 values: agreement with another tool, not with P6 |
 | MPXJ's PrimaveraScheduler, a second CPM engine (`tests/test_crosscheck_mpxj.py`) | 275 random networks (unstarted, progressed in and out of sequence, resource dependent, nine constraint types), the hand cases and the demo: same dates and floats to the working minute, except named open questions ([docs/cpm.md](docs/cpm.md#validation)) |
 | Hotel and Terminal TASKRSRC | every assignment's remaining early/late start and finish (2,340 assignments, 9,360 dates) |
 | xerlock critical path test | +600 wd on MEP-020 moves the finish 2026-09-08 → 2028-12-27 |
-| MPXJ as independent reader | `xerscope crosscheck` on any file (55,685/55,685 fields on the P6 exports, 680/680 on the others) |
+| MPXJ as independent reader | `xerscope crosscheck` on any file (55,685/55,685 fields on the P6 exports, 1,538/1,538 on the nine other files) |
 | 260 seeded random networks (`tests/test_cpm_properties.py`) | CPM invariants: links hold early and late, durations, float = LF − EF, no negative float unconstrained with in-sequence progress, constraints, monotone finish with FS links |
 | Hand-built schedules (`tests/xerkit.py`) | every rule, each P6 / DCMA / DECM difference, Oracle's documented options (SS lag, Actual Dates, lag calendar default, resource-dependent activities), calendars, PV, EV techniques, PPC, changelog, WBS roll-ups |
 | Demo series | each finding the generator plants is found, in the week it appears. Its stored dates are written by xerscope's CPM, so on their own they prove nothing: MPXJ recomputes them independently (test above) |
+
+Reference data, downloaded at test time and never redistributed (`tests/reference/sources.py`):
+Hotel and Terminal from [CodeVision3000/P6-Viewer](https://github.com/CodeVision3000/P6-Viewer)
+(MIT); the P6 23.12-scheduled held-out corpus from
+[danafitkowski/cpp-cpm-engine](https://github.com/danafitkowski/cpp-cpm-engine) (MIT); the
+sample and DCMA results of [joaompfp/xerlock](https://github.com/joaompfp/xerlock) (AGPL-3.0);
+the test exports of [joniles/mpxj](https://github.com/joniles/mpxj) (LGPL-2.1); two further
+real exports from public repositories without a licence file.
 
 The suite is mutation-tested. Plausible bugs were injected one at a time: 21 in the
 checks (populations, exemptions, units, calendar mapping, PV spreading, weighting…), 20
 in the CPM (snapping, lag calendars, options, ALAP, time axis) and 14 in the P6 Pro 24 /
 DECM / resource work (expired SS lag, resource calendars, assignment lag and rate, Actual
 Dates, longest path, EV techniques, PV ramp, DECM exemptions, axis anchoring), plus 8 on
-the corrective pass (backward SS lag, LOE ends, Start/Finish columns, EV basis, calendar
-overlaps, parser rows, no data date). Every one
-makes it fail except one: swapping start float for finish float, which coincide in this
-engine (see docs/cpm.md).
+later fixes (backward SS lag, LOE ends, Start/Finish columns, EV basis, calendar overlaps,
+parser rows, no data date). Every one makes it fail except one: swapping start float for
+finish float, which coincide in this engine (see docs/cpm.md). The injected changes are
+not kept in the tree; the counts are the record of that exercise, not something a
+reader can rerun.
 
 What is **not** established: no public P6 export has progress, resource-dependent
 activities or P6 Professional 24 behind it, and none comes with a P6 Check Schedule
@@ -241,7 +249,7 @@ the proof for your schedules, and any gap names a rule to fix.
 uv run python tests/reference/fetch.py      # pinned third-party XERs (checksum-verified)
 uv sync --extra crosscheck                  # MPXJ + jpype, needs a JDK (javac) for the next line
 uv run python tests/reference/mpxj_cpm.py   # MPXJ's scheduler at a pinned commit (CPM crosscheck)
-uv run pytest -rs                           # 533 tests; the MPXJ ones skip without Java
+uv run pytest -rs                           # the MPXJ tests skip without Java
 ```
 
 The UI tests render every page headless (Streamlit AppTest), so they run the same on
@@ -276,6 +284,8 @@ src/xerscope/
 ├── standards/*.toml     p6 (Pro 24), decm (v8.0), dcma (14-point), integrity, custom-template
 ├── viz/                 Plotly: Gantt (+ WBS bars), S-curve, indices, MTA, PPC
 ├── app/                 Streamlit, one file per page; ui.py = shared look; .streamlit/ = theme
+├── config.py            tunable defaults no standard owns (hours/day fallback, critical float)
+├── crosscheck.py        MPXJ as second reader and second CPM engine; P6 held-out corpus score
 ├── export.py            Power BI star schema
 ├── sample.py            demo generator with planted findings
 └── cli.py               xerscope {app,info,check,recalc,standards,changelog,export,crosscheck,sample}

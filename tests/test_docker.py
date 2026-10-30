@@ -40,7 +40,7 @@ def test_funnel_stack_publishes_nothing_on_the_host():
 
 def test_nas_compose_pulls_the_published_image_and_publishes_nothing():
     compose = (ROOT / "deploy" / "compose.nas.yaml").read_text()
-    assert "build:" not in compose and "image: mish1ma/xerscope:" in compose
+    assert "build:" not in compose and re.search(r"image: \S+/xerscope:", compose)
     assert (
         not re.search(r"^\s+ports:", compose, re.M)
         and 'TS_USERSPACE: "true"' in compose

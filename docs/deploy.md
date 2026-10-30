@@ -5,8 +5,8 @@ anything, reaches `https://xerscope.<tailnet>.ts.net` behind a password. The NAS
 its configuration; nothing is published on its ports.
 
 ```
-GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope (private)
-                                   │ pull (PAT read:packages)
+GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope (+ a Docker Hub mirror)
+                                   │ pull
                               DS918+ Container Manager
       ┌─────────────────── project "xerscope" ───────────────────┐
       │ tailscale (userspace) ◀── Funnel ◀── visitor's browser   │
@@ -21,35 +21,33 @@ GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope (private)
 |---|---|---|
 | Image name | `mish1ma/xerscope` | `ghcr.io/xerscope/xerscope` (owner **lowercase**, even though the org is `Xerscope`) |
 | Who pushes | you, `docker push` | the `image` workflow, with the job's own `GITHUB_TOKEN` (`packages: write`). You never push by hand. |
-| Visibility | per repo | per **package**; defaults to the repo's visibility → private here |
-| Pull auth | Docker Hub login | GitHub login + a **personal access token (classic)** with scope `read:packages`. Password/login does not work on `ghcr.io`. |
+| Visibility | per repo | per **package**; defaults to the repo's visibility (public: anyone pulls, no login) |
+| Pull auth | Docker Hub login (public images: none) | public package: none. Private package or fork: GitHub login + a **personal access token (classic)** with scope `read:packages`; the account password does not work on `ghcr.io`. |
 | Where to look | hub.docker.com | `github.com/orgs/Xerscope/packages` (org packages) and the "Packages" box on the repo page |
 
-Rationale: no separate account, no rate limit on pulls for the org, the image is linked to
-the commit that built it (`sha-<short>` tag + OCI labels), and the private repo's code stays
-private inside a private image.
+Rationale: no separate account, no rate limit on pulls, and the image is linked to the
+commit that built it (`sha-<short>` tag + OCI labels).
 
 ## 2. Pre-flight checks (do once, from your PC)
 
 1. **The workflow published something.** Actions → `image` → last run on `main` is green,
    two jobs (`xerscope`, `xerscope-remote`). Then the org package list shows both.
-2. **The package is linked to the repo and private.** Package page → "Package settings":
-   source repository = `Xerscope/xerscope`, visibility = private. If it says "public",
-   change it: the image contains the source.
-3. **Make a pull token.** GitHub → Settings → Developer settings → Personal access tokens →
-   *Tokens (classic)* → scope **`read:packages` only**, expiry 90 days. Note the date.
-   (Fine-grained tokens: not reliably accepted by `ghcr.io` for pulls; stay on classic.)
+2. **The package is linked to the repo.** Package page → "Package settings": source
+   repository = `Xerscope/xerscope`; visibility follows the repository (public).
+3. **Private package or fork only — make a pull token.** GitHub → Settings → Developer
+   settings → Personal access tokens → *Tokens (classic)* → scope **`read:packages` only**,
+   expiry 90 days. (Fine-grained tokens: not reliably accepted by `ghcr.io` for pulls.)
+   Then `echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-login> --password-stdin`.
 4. **Pull from a machine that is not the CI.**
 
    ```bash
-   echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-login> --password-stdin
    docker pull ghcr.io/xerscope/xerscope:latest
    docker run --rm ghcr.io/xerscope/xerscope:latest --help          # distroless: no shell, only the CLI
    docker run --rm -v "$PWD/exports:/data:ro" ghcr.io/xerscope/xerscope:latest check /data --standard P6
    ```
 
-   If `docker pull` says `denied`: wrong scope, expired token, or the org blocks
-   personal tokens (Org settings → Third-party access → Personal access tokens).
+   `denied` on a private package: wrong scope, expired token, or the org blocks personal
+   tokens (Org settings → Third-party access → Personal access tokens).
 5. **Know which build you pulled.**
 
    ```bash
@@ -90,28 +88,29 @@ SMB. Mounted read-only: the app cannot alter or delete them.
 
 ## 5. Registry login in Container Manager
 
-**Tested on DSM 7.2: Container Manager rejects ghcr.io** ("returned bad result" on the
-Registry form and on Image → Add from URL, with a token that `docker login ghcr.io` accepts).
-So the app image is also published to **Docker Hub as a private repository**,
-`mish1ma/xerscope`, which Container Manager handles natively, and `compose.nas.yaml` pulls that one.
+**Tested 2026-10 on DSM 7.2, with the package still private: Container Manager rejected
+ghcr.io** ("returned bad result" on the Registry form and on Image → Add from URL, with a
+token that `docker login ghcr.io` accepts). A public package needs no login, so try
+**Image → Add → Add from URL → `https://ghcr.io/xerscope/xerscope`** first. If the UI still
+refuses, the app image is mirrored on **Docker Hub** (`mish1ma/xerscope`, the project's
+account), which Container Manager handles natively; `compose.nas.yaml` pulls that one.
 
-One-time setup, from your PC:
+To publish your own mirror from a fork:
 
-1. hub.docker.com → sign in as `mish1ma` → Create repository `xerscope`, **Private**
-   (the free plan includes one private repository; `xerscope-remote` stays on ghcr).
+1. hub.docker.com → Create repository `xerscope`.
 2. hub.docker.com → Account settings → Personal access tokens → New: `github-actions`,
    permissions **Read & Write** → copy it.
-3. github.com/Xerscope/xerscope → Settings → Secrets and variables → Actions → New repository
-   secret: `DOCKERHUB_USERNAME` = `mish1ma`, `DOCKERHUB_TOKEN` = the token.
-4. Actions → `image` → Run workflow. The `xerscope` job now pushes to both registries;
-   `docker pull mish1ma/xerscope:latest` from your PC confirms it.
-5. A second Docker Hub token for the NAS, **Read-only**, named `nas`.
+3. GitHub → the fork → Settings → Secrets and variables → Actions: secrets
+   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, variable `DOCKERHUB_IMAGE_OWNER` = your
+   Docker Hub account (and `DOCKERHUB_REMOTE` = `true` for the remote image too).
+4. Actions → `image` → Run workflow; `docker pull <you>/xerscope:latest` confirms it.
+5. For a private mirror, a second Docker Hub token for the NAS, **Read-only**.
 
-Container Manager → **Registry** → select **Docker Hub** → Settings → Edit → username
-`mish1ma`, password = the read-only token → OK → **Use**. (No URL to type: Docker Hub is
-the built-in entry.) Then Project → Create pulls `mish1ma/xerscope:latest` by itself.
+Container Manager → **Registry** → select **Docker Hub** → Settings → Edit → username and
+the read-only token (public mirror: nothing to enter) → **Use**. Then Project → Create pulls
+the image by itself.
 
-### If you still want ghcr.io
+### ghcr.io with a private package
 
 Container Manager → **Registry** → Settings → **Add**:
 
@@ -166,7 +165,7 @@ becomes `https://xerscope.<tailnet>.ts.net/<random>/` — trailing slash include
 relative asset URLs need it. Tailscale strips the prefix before proxying, so Caddy and the app
 keep seeing `/`.
 
-- [ ] Package private; repo private; token = `read:packages` only, rotated at expiry.
+- [ ] Private package or fork: pull token = `read:packages` only, rotated at expiry.
 - [ ] Tailscale key: tagged, non-ephemeral, single-use; delete it from the admin console once the node is up.
 - [ ] `compose.yaml` on the NAS holds the key and the bcrypt hash: the `docker` share must not be readable by other NAS users.
 - [ ] No `ports:` anywhere. Two networks: `egress` (plain bridge, tailscale only, outbound) and `internal` (no gateway: xerscope cannot reach the internet, the NAS LAN cannot reach xerscope).
@@ -177,7 +176,7 @@ keep seeing `/`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `pull access denied` / `unauthorized` | not logged in on ghcr, wrong scope, expired token | Registry → re-add with a fresh classic token `read:packages` |
+| `pull access denied` / `unauthorized` | private package: not logged in on ghcr, wrong scope, expired token | Registry → re-add with a fresh classic token `read:packages` |
 | `manifest unknown` | tag typo, or the workflow didn't run for that tag | check Actions; owner is lowercase `xerscope` |
 | `no matching manifest for linux/arm64` | not this NAS (amd64) — another one | add `platforms: linux/amd64,linux/arm64` + `docker/setup-qemu-action` to the workflow |
 | container `xerscope` restarts, log empty | read-only FS without `tmpfs` | keep `/tmp` and `/home/nonroot` in `tmpfs:` |

@@ -8,7 +8,7 @@
 
 :8080 {   # no host here: a host in the site address also filters the Host header
     basic_auth {
-        quentin $2a$14$REPLACE-WITH-THE-HASH
+        <login> $2a$14$REPLACE-WITH-THE-HASH
     }
     reverse_proxy xerscope:8501
     log {
