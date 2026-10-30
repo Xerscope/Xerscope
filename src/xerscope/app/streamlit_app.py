@@ -1,4 +1,9 @@
-"""Entry point: ``uv run xerscope app`` (or ``streamlit run`` this file)."""
+"""Entry point: ``uv run xerscope app``.
+
+``xerscope app`` runs Streamlit from this folder so ``.streamlit/config.toml`` (theme,
+localhost binding) applies. A plain ``streamlit run`` from elsewhere reads no config:
+the theme is lost and Streamlit listens on every interface.
+"""
 
 import sys
 from pathlib import Path

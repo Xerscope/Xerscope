@@ -211,6 +211,13 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
             bad = stored[~stored["agree"]]
             if len(bad):
                 print(bad.head(args.show).to_string(index=False))
+            if args.report and len(bad):
+                from .verify.shapes import difference_report
+
+                rep = difference_report(snap, cmp)
+                rep["share"] = rep["share"].map("{:.0%}".format)
+                print("\n  differences by activity shape (status · type · constraint · links · option):")
+                print(rep.to_string(index=False))
         a_cmp = compare_assignments(snap, sched)
         a_cmp = a_cmp[a_cmp["stored"].notna()]
         if len(a_cmp):
@@ -319,12 +326,14 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
     import pandas as pd
 
     from .crosscheck import (
+        P6_SETTLED,
         UNRESOLVED,
         cpm_crosscheck,
         excused_row,
         mpxj_inconsistent,
         mpxj_scheduler_source,
         mpxj_unsupported,
+        settled_patterns,
         unresolved_patterns,
     )
     from .xer import load_snapshot
@@ -349,6 +358,8 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
         print(agg.to_string())
         for u in mpxj_unsupported(snap):
             print(f"  option MPXJ does not model: {u}")
+        for k in sorted(settled_patterns(snap)):
+            print(f"  MPXJ differs from P6 here: {P6_SETTLED[k]}")
         for k in sorted(unresolved_patterns(snap)):
             print(f"  open question present: {UNRESOLVED[k]}")
         broken = mpxj_inconsistent(snap, cmp)
@@ -356,7 +367,8 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
             print(f"  MPXJ contradicts itself on: {', '.join(sorted(broken)[:8])}")
         bad = ok[~ok["xs_mpxj_work"]]
         bad = bad[[excused_row(snap, c, f) is None for c, f in zip(bad["task_code"], bad["field"], strict=True)]]
-        if len(bad) and not unresolved_patterns(snap) and not broken and not mpxj_unsupported(snap):
+        explained = unresolved_patterns(snap) or settled_patterns(snap) or broken or mpxj_unsupported(snap)
+        if len(bad) and not explained:
             unexplained += len(bad)
             print(bad[["task_code", "field", "p6", "xerscope", "mpxj"]].head(args.show).to_string(index=False))
     if args.out:
@@ -432,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("paths", nargs="+")
     r.add_argument("--project")
     r.add_argument("--out", help="write the recalculated dates and float to this CSV")
+    r.add_argument("--report", action="store_true", help="group the differences by activity shape")
     r.add_argument("--show", type=int, default=20, help="differences to print")
     r.set_defaults(fn=_cmd_recalc)
 

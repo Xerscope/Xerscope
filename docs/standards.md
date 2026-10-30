@@ -110,7 +110,7 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 | 10 | Resources | duration but no resource or cost | 0 % |
 | 11 | Missed tasks | due by the data date (baseline), not finished or finished on a later date | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
-| 13 | CPLI | (CPL + TF) / CPL, CPL in working hours to the finish | ≥ 0.95 |
+| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the schedule's float to the Must Finish By date (n/a without one) | ≥ 0.95 |
 | 14 | BEI | completed / due (baseline finish ≤ data date) | ≥ 0.95 |
 
 Calibrated on xerlock's published result for its sample schedule: all twelve stated
@@ -134,8 +134,10 @@ uv run xerscope check exports/ --standard my-standard.toml --baseline BL.xer
 uv run xerscope app --data exports/ --standards folder-with-my-toml/
 ```
 
-A wrong rule, parameter, population keyword or target is rejected on load with the exact
-name, so a typo cannot silently change a result. `group` (optional) gives a section title.
+A wrong rule, parameter name or value (choice, number, flag, list of names), population
+keyword, unit or target is rejected on load with the exact name, so a typo cannot silently
+change a result. `group` (optional) gives a section title. The formula behind every
+metric is in [formulas.md](formulas.md).
 
 ## Out of scope for now (research notes, Oct 2026)
 

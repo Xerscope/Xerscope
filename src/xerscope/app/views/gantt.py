@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, compare_picker, is_dark, require_store, snapshot_picker
+from xerscope.app.state import baseline_for, compare_picker, is_dark, memo, require_store, snapshot_picker
 from xerscope.viz import build_gantt, categorise, wbs_rows
 
 store = require_store()
@@ -25,7 +25,9 @@ with top:
         "comparison you pick, so slippage shows as the bar leaving its outline.",
     )
 
-nodes = rollup(snap, bl)
+nodes = memo(
+    ("rollup", snap.source, st.session_state.get("bl_choice"), bl.label if bl else None), lambda: rollup(snap, bl)
+)
 kpis = st.container()  # filled once the WBS selection is known
 
 left, right = st.columns([1.5, 1], gap="large")
@@ -36,7 +38,7 @@ with left:
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        key="wbs_table",
+        key=f"wbs_table:{snap.source}",  # a new update gets a fresh selection: row positions differ
         width="stretch",
         height=min(33 * len(nodes) + 38, 420),
         column_config={
@@ -48,7 +50,7 @@ with left:
         },
     )
     rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
-    node = nodes.iloc[rows[0]] if rows else nodes.iloc[0]
+    node = nodes.iloc[rows[0]] if rows and rows[0] < len(nodes) else nodes.iloc[0]
 
 with right:
     st.markdown("**Filters**")
@@ -59,7 +61,7 @@ with right:
     group = o1.toggle("Group by WBS", value=True)
     show_links = o2.toggle("Logic links", value=False)
     hide_loe = o1.toggle("Hide LOE", value=True)
-    max_rows = o2.number_input("Max rows", 20, 2000, 300, step=20)
+    max_rows = o2.number_input("Max rows", 20, 1000, 150, step=10)
 
 keep = subtree_ids(nodes, node["wbs_id"])
 tasks = snap.activities.copy()
@@ -92,11 +94,10 @@ if cats:
 if hide_loe:
     tasks = tasks[~tasks["is_loe"]]
 if search:
-    s = search.lower()
-    tasks = tasks[
-        tasks["task_code"].str.lower().str.contains(s, regex=False)
-        | tasks["task_name"].str.lower().str.contains(s, regex=False)
-    ]
+    # accent-insensitive: "beton" finds "Béton"
+    s = ui.fold(search)
+    hit = tasks[["task_code", "task_name"]].apply(lambda col: col.map(ui.fold).str.contains(s, regex=False))
+    tasks = tasks[hit.any(axis=1)]
 tasks = tasks.sort_values(["wbs_sort", "start"], na_position="last")
 if len(tasks) > max_rows:
     st.caption(f"Showing the first {max_rows} of {len(tasks)} activities: filter or pick a WBS node.")

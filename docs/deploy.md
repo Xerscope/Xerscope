@@ -170,7 +170,9 @@ keep seeing `/`.
 - [ ] `compose.yaml` on the NAS holds the key and the bcrypt hash: the `docker` share must not be readable by other NAS users.
 - [ ] No `ports:` anywhere. Two networks: `egress` (plain bridge, tailscale only, outbound) and `internal` (no gateway: xerscope cannot reach the internet, the NAS LAN cannot reach xerscope).
 - [ ] Basic auth is one shared password → change it when the viewer changes; move to Tailscale Serve + a Tailscale login (no Funnel) the day the viewer can install Tailscale, or to Cloudflare Access.
-- [ ] Caddy logs IP + path to stdout (Container Manager → container → Log): review them from time to time.
+- [ ] No rate limit on the password prompt (stock Caddy has none): the bcrypt cost (14) and `XERSCOPE_PATH` (16+ characters) are what stands between a scanner and a guess. A password of 20+ random characters makes the guess hopeless.
+- [ ] Caddy logs the visitor's IP (Funnel's `X-Forwarded-For`, trusted from loopback) and the path to stdout (Container Manager → container → Log): review them from time to time.
+- [ ] Sidecars run with `cap_drop: [ALL]` and `no-new-privileges`; Caddy's filesystem is read-only; tailscaled sends no diagnostic logs (`TS_NO_LOGS_NO_SUPPORT`). The images are pinned by tag; Dependabot proposes the bumps, CI scans both xerscope images with Trivy on every push.
 
 ## 9. Troubleshooting
 
@@ -183,6 +185,7 @@ keep seeing `/`.
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, re-issue a tagged key, delete `tailscale-state/`, Build |
 | 404 on `https://xerscope.<tailnet>.ts.net` | serve.json not mounted, or Caddy down | `tailscale` log → `Serve config loaded`; `caddy` log |
 | 502 | xerscope not healthy yet, or `/data` unreadable | wait 40 s; xerscope log |
+| `xerscope-remote` unhealthy, app answers | one of tailscaled / Caddy died and is restarting (the healthcheck wants all three alive) | container log: `[remote] ... exited with` |
 | Streamlit shows nothing after upload | upload goes to the container's tmpfs, lost on restart | drop files in the shared folder instead |
 
 ## 10. Alternative: single container (`xerscope-remote`)

@@ -98,11 +98,10 @@ if cats:
 if kinds:
     view = view[view["change"].isin(kinds)]
 if search:
-    s = search.lower()
+    s = ui.fold(search)
     view = view[
         view[["task_code", "task_name", "wbs_code", "field"]]
-        .astype(str)
-        .apply(lambda col: col.str.lower().str.contains(s, regex=False))
+        .apply(lambda col: col.map(ui.fold).str.contains(s, regex=False))
         .any(axis=1)
     ]
 st.caption(f"{len(view):,} change(s) shown")

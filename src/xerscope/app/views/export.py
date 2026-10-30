@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import require_store
+from xerscope.app.state import memo, require_store
 from xerscope.export import export_tables, zip_tables
 
 store = require_store()
@@ -14,7 +14,7 @@ ui.header(
     "to follow an activity across weeks. Parquet keeps column types; CSV opens anywhere.",
 )
 
-tables = export_tables(store)
+tables = memo(("export",), lambda: export_tables(store))
 ui.table(
     pd.DataFrame([{"table": k, "rows": len(v), "columns": len(v.columns)} for k, v in tables.items()]),
     overrides={

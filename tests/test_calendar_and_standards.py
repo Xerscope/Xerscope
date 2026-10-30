@@ -78,8 +78,14 @@ HEAD = '[standard]\nid = "X"\nname = "X"\n'
         ('rule = "float"\nparams = { exclude = ["finished"] }', "unknown value(s) ['finished']"),
         ('rule = "float"\ntarget = "about 5"', "write e.g."),
         ('rule = "cpli"\ntarget = "<= 5%"', "is a percentage but the metric unit is 'ratio'"),
-        ('rule = "lag"\nparams = { links = "some" }', "links must be one of"),
+        ('rule = "lag"\nparams = { links = "some" }', "lag.links: 'some' is not one of"),
         ('rule = "float"\ncolour = "red"', "unknown key(s) ['colour']"),
+        ('rule = "float"\nparams = { op = "=>" }', "float.op: '=>' is not one of"),
+        ('rule = "float"\nparams = { value = "352" }', "float.value: expected a number"),
+        ('rule = "float"\nparams = { exclude = "complete" }', "float.exclude: expected a list of names"),
+        ('rule = "lag"\nparams = { exclude_loe = "yes" }', "lag.exclude_loe: expected true or false"),
+        ('rule = "constraints"\nparams = { types = ["CS_MANDATORY"] }', "constraints.types: unknown"),
+        ('rule = "bei"\nunit = "count"\ntarget = "<= 5"', "unit 'count' does not fit rule 'bei'"),
     ],
 )
 def test_invalid_standard_fails_loudly(metric, error):

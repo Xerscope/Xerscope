@@ -1,4 +1,4 @@
-"""Critical path method, as Primavera P6 (Professional 24) schedules a project.
+"""Critical path method, as Primavera P6 (Professional 23.12 / 24) schedules a project.
 
 Every date is computed on the activity's own calendar to the minute (``TimeAxis``), with
 P6's conventions: a start is the beginning of a working period, a finish the end of one,
@@ -7,52 +7,59 @@ Tuesday 08:00.
 
 Forward pass (early dates), in topological order, for each open activity:
 
-- start  >= data date
+- start  >= data date; suspended work: start >= resume date
 - FS: start  >= pred finish + lag        SS: start  >= pred start + lag
 - FF: finish >= pred finish + lag        SF: finish >= pred start + lag
 - lag counted on the calendar the project names (successor by default, predecessor, 24 h,
   project default)
-- SS lag of a started predecessor, option "Calculate start-to-start lag from": Early Start
-  (default) = the predecessor's remaining early start + the lag not yet expired (expired =
-  working time from its actual start to the data date); Actual Start = its actual start +
-  the full lag
+- SS / SF lag of a started predecessor, option "Calculate start-to-start lag from": Early
+  Start (default) = the predecessor's remaining early start + the lag not yet expired
+  (expired = working time from its actual start to the data date); Actual Start = its
+  actual start + the full lag (a finished predecessor's too)
 - constraints: start on / on or after -> start >= date; finish on / on or after -> finish
-  >= date; mandatory start / finish pin the date whatever the logic
+  >= date; mandatory start / finish pin the date whatever the logic, except that the early
+  dates never fall before the data date; a constraint of the wrong kind on a milestone
+  (finish constraint on a start milestone) is ignored
 - in progress: actual start kept; the remaining duration starts at the data date, after
-  open predecessors too under Retained Logic (P6 default) and Actual Dates, ignoring them
-  under Progress Override; an expected finish (if the project uses them) sets the
-  remaining duration
+  open predecessors too under Retained Logic (P6 default) and Actual Dates; under Progress
+  Override its start is an actual, so FS / SS predecessors no longer bound it while FF / SF
+  predecessors still bound its finish
+- expected finish (option on): the early finish, or the early start when it falls before
+  it (remaining 0); an FF / SF bound later than that wins; ALAP ignores it (``expected_finish``)
 - finished, under Retained Logic: logic passes through it (out-of-sequence progress, see
-  pred_bounds); SF from started work binds nothing past the data date
+  ``pred_bounds``)
 - finish = start + remaining duration (minutes of the activity's calendar)
-- resource dependent: each driving assignment is scheduled on its resource's calendar
-  (start + assignment lag, duration = remaining units / units per hour); the activity
-  runs from the earliest assignment start to the latest assignment finish
+- resource dependent: the bound is taken on the activity's calendar, each driving
+  assignment is placed from it on its resource's calendar (+ assignment lag, duration =
+  remaining units / units per hour), the activity starts at the earliest assignment
+  start on its own calendar and the assignments run forward from there (``rsrc_early``)
 
 Backward pass (late dates), in reverse order: the same relationships mirrored (an SS/SF
 lag that has partly expired in the forward pass is shortened the same way), started
 from the project's "must finish by" date when it has one (else the latest early
 finish), open ends there too (or at their own early finish if the project makes open
-ends critical), and no late finish after it; finished activities pass late dates back
-under Retained Logic; start on / on or before -> late start <= date; finish on / on or before
--> late finish <= date; mandatory dates pinned. Under Actual Dates, a started successor
-bounds its predecessors by its actual dates (out-of-sequence progress gives negative
-float, as Oracle warns).
+ends critical), and no late finish after it; a finished successor passes back the late
+date its own successors give it, less the full FS / FF lag or the unexpired SS / SF lag
+(nothing between two finished activities); under Progress Override FS / SS links into a
+started successor bind nothing (its start is an actual), FF / SF links still do; start on
+/ on or before -> late start <= date; finish on / on or before -> late finish <= date;
+mandatory dates pinned. Under Actual Dates, a started successor bounds its predecessors
+by its actual dates (out-of-sequence progress gives negative float, as Oracle warns).
 
 Float, in working hours of the activity's calendar: total = late - early finish (P6
-option "finish float", default), or start, or the smaller of the two; free = time to the
-earliest successor constraint. As-late-as-possible activities then move right by their
-free float. Level-of-effort activities run from the earliest date their start-type links
-give (SS / FS predecessors, SS / SF successors) to the latest their finish-type links give
-(FF / SF predecessors, FF / FS successors); they drive nothing.
+option "finish float", default), or start, or the smaller of the two (``FLOAT_TYPE``);
+free = time to the earliest successor constraint (under Progress Override, work under way
+runs past its own SS / SF links and past finished successors). As-late-as-possible
+activities then move right by their free float. Level-of-effort activities run from the
+earliest date their start-type links give (SS / FS predecessors, SS / SF successors) to
+the latest their finish-type links give (FF / SF predecessors, FF / FS successors), their
+late dates the same way from their links' late dates; they drive nothing.
 
-Validated against P6's own output: recalculating real P6 exports reproduces every stored
-early/late date and total/free float to the minute (Hotel, P6 6.0: 4,217 activities,
-25,302 values; Terminal, P6 5.0; both unstarted), and every stored assignment date
-(2,340 assignments, 9,360 dates). Progressed, resource-dependent and constrained
-networks, which no public P6 export covers, are compared with MPXJ's independent
-PrimaveraScheduler; the cases where the two differ are named in crosscheck.UNRESOLVED.
-See docs/cpm.md, tests/test_cpm.py and tests/test_crosscheck_mpxj.py.
+Validated against P6's own output: the P6 Professional 23.12.1 held-out corpus
+(tests/test_p6_heldout.py, which names the corpus activity each rule above was taken from)
+and four real exports whose every stored date the engine reproduces (tests/test_cpm.py).
+MPXJ's PrimaveraScheduler is a second opinion only (crosscheck.P6_SETTLED, UNRESOLVED).
+See docs/cpm.md.
 
 Not modelled (reported in ``warnings``): leveling, multiple float paths, relationships to
 projects not in the file.
@@ -79,12 +86,21 @@ class CycleError(ValueError):
     pass
 
 
+# SCHEDOPTIONS.sched_float_type -> which float "Compute Total Float as" reports, on the
+# activity's calendar. P6's dialog writes FT_FF (Finish Float = LF - EF), FT_SS (Start
+# Float = LS - ES) and FT_Min (the smaller). FT_Start and FT_Total only come from imported
+# files: P6 keeps the code and reports the finish float. Only resource-dependent work
+# tells the two floats apart; on task-dependent work the late dates are placed by
+# duration on the same calendar, so they are equal (test_float_type_codes_read_as_p6_does).
+FLOAT_TYPE = {"FT_FF": "finish", "FT_SS": "start", "FT_Min": "min", "FT_Start": "finish", "FT_Total": "finish"}
+
+
 @dataclass(frozen=True)
 class Options:
     """P6 scheduling options (SCHEDOPTIONS / PROJECT) the computation depends on."""
 
     progressed: str = "retained_logic"  # "When scheduling progressed activities use"
-    float_type: str = "FT_FF"  # FT_FF finish float, FT_SF start float, else the smaller
+    float_type: str = "FT_FF"  # "Compute Total Float as": see FLOAT_TYPE
     lag_calendar: str = "rcal_Successor"  # Oracle: the successor's when none is selected
     open_critical: bool = False
     lag_from_early_start: bool = True  # SS lag of a started predecessor: "Early Start"
@@ -229,7 +245,7 @@ class _Run:
         cols = [
             "task_type", "status_code", "clndr_id", "remain_drtn_hr_cnt", "act_start_date", "act_end_date",
             "cstr_type", "cstr_date", "cstr_type2", "cstr_date2", "expect_end_date",
-            "external_early_start_date", "external_late_end_date",
+            "external_early_start_date", "external_late_end_date", "resume_date",
         ]  # fmt: skip
         self.R = self.t[[c for c in cols if c in self.t]].to_dict("index")
         self.cal_ax = {c: self.axes.of(self.R[c]["clndr_id"]) for c in self.t.index}
@@ -243,6 +259,7 @@ class _Run:
         self.tf: dict[str, float] = {}
         self.ff: dict[str, float] = {}
         self.a_early: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}  # taskrsrc_id -> start, finish
+        self.a_dur: dict[str, float] = {}  # taskrsrc_id -> remaining minutes as placed (expected finish)
         self.a_late: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
         # Retained Logic: finished activities pass logic through (see pred_bounds)
         self.retain = opt.progressed == "retained_logic"
@@ -265,6 +282,7 @@ class _Run:
         self.loe_preds: dict[str, list] = defaultdict(list)
         self.loe_succs: dict[str, list] = defaultdict(list)
         rel = self.snap.relationships[["pred_code", "succ_code", "type", "lag_hr"]]
+        self.linked_on = set(rel["pred_code"])  # has a successor of any kind (LOE, WBS summary included)
         for p, s, typ, lag in rel.itertuples(index=False):
             lag_m = float(lag or 0) * 60
             if p in node_set and s in node_set:
@@ -347,29 +365,40 @@ class _Run:
         return [a for a in self.asg[c] if a.driving and a.dur_m is not None]
 
     def constraints(self, c) -> list[tuple[str, pd.Timestamp]]:
+        """Dated constraints of ``c`` P6 schedules with. A finish constraint on a start
+        milestone, or a start constraint on a finish milestone (P6's own dialog refuses
+        them; an import keeps them), is ignored (P6 23.12 corpus, H6-03 A1130)."""
         out = []
+        k = self.kind(c)
         for ct, cd in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
             typ, date = self.R[c].get(ct), self.R[c].get(cd)
             if typ and isinstance(typ, str) and typ != "CS_ALAP" and pd.notna(date):
+                side = START_LIKE.get(typ) or LATE_LIKE.get(typ) or MANDATORY.get(typ)
+                if (k == "start_ms" and side == "finish") or (k == "finish_ms" and side == "start"):
+                    continue
                 out.append((typ, pd.Timestamp(date)))
         return out
 
-    def pred_bounds(self, c: str, started: bool) -> list[tuple[str, pd.Timestamp]]:
+    def pred_bounds(self, c: str, started: bool, finish_only: bool = False) -> list[tuple[str, pd.Timestamp]]:
         """Lower bounds the predecessors of ``c`` put on its start or its finish.
 
-        Returns ("start" | "finish", instant) pairs. A finished predecessor, under Retained
-        Logic, passes on what its own unfinished predecessors still impose (``carry``: the
-        data date when nothing does), plus the part of a positive lag not yet expired since
+        Returns ("start" | "finish", instant) pairs; ``finish_only`` keeps the FF / SF ones.
+        A finished predecessor, under Retained Logic, passes on what its own unfinished
+        predecessors still impose (``carry``: the data date when nothing does), plus the
+        part of a positive lag not yet expired since
         its actual finish (FS, FF) or start (SS, SF); a lead is dropped, and between two
         finished activities only the carried date passes. Without Retained Logic a finished
         predecessor bounds unstarted work by its actual dates + lag, and started work not at
-        all. Out-of-sequence progress follows MPXJ's PrimaveraScheduler (its issue #972,
-        checked there against real P6 schedules); with no out-of-sequence progress both
-        readings give the same dates.
+        all. An SS or SF link from a started predecessor is measured from its remaining early
+        start (or its actual start, under the option) plus the unexpired lag; SF included
+        (P6 23.12 corpus, H1-08 A1240). Out-of-sequence progress otherwise follows MPXJ's
+        PrimaveraScheduler (its issue #972, checked there against real P6 schedules).
         """
         out = []
         for p, typ, lag in self.preds[c]:
             end = "start" if typ in ("FS", "SS") else "finish"
+            if finish_only and end == "start":
+                continue
             lx = self.lag_axis(p, c)
             if self.status[p] == "TK_Complete":
                 if self.retain:
@@ -382,17 +411,22 @@ class _Run:
                         rem = 0.0
                     elif frm is not None and pd.notna(frm):
                         rem = max(0.0, lag - max(0, lx.between(frm, self.dd)))
+                    if typ == "SS" and not self.opt.lag_from_early_start and frm is not None and pd.notna(frm):
+                        # "Calculate start-to-start lag from Actual Start": from the finished
+                        # predecessor's actual start, whatever it still carries (H6-07 A1190)
+                        out.append((end, self.shift(lx, frm, lag)))
+                        continue
                     out.append((end, self.shift(lx, self.carry[p], rem)))
                     continue
-                if started:
-                    continue
-            if typ == "SF" and self.status[p] == "TK_Active" and self.status[c] == "TK_NotStart":
-                # SF ties the finish to the predecessor's start, which is an actual in the past:
-                # nothing beyond the data date (MPXJ; the SS option does not apply to SF)
-                continue
+                if started and not finish_only:
+                    continue  # Progress Override: a finished FF / SF predecessor still bounds
             if typ in ("FS", "FF"):
                 out.append((end, self.shift(lx, self.ef[p], lag)))
             else:
+                if typ == "SF" and self.status[p] == "TK_Active" and self.opt.progressed == "progress_override":
+                    # Progress Override: the predecessor's start is an actual, an SF from it
+                    # binds nothing (H10-02 A1250); an SS still does, through its unexpired lag
+                    continue
                 p_start, p_lag = self.start_link(p, lx, lag)
                 out.append((end, self.shift(lx, p_start, p_lag)))
         return out
@@ -417,7 +451,12 @@ class _Run:
         if self.status[p] == "TK_NotStart" or act is None or pd.isna(act):
             return self.rs[p], lag
         if self.status[p] == "TK_Active" and self.opt.lag_from_early_start and self.opt.progressed != "actual_dates":
-            return self.rs[p], self.unexpired(p, lx, lag)
+            # Progress Override: the remaining work of a started predecessor begins at the
+            # data date, and that is where the link is measured from, not from its remaining
+            # start on its own calendar (H17-10 A1270: a successor at the data date while
+            # the predecessor's remaining start is the next working day)
+            frm = self.dd if self.opt.progressed == "progress_override" else self.rs[p]
+            return frm, self.unexpired(p, lx, lag)
         return act, lag
 
     # --- forward pass --------------------------------------------------------------------------
@@ -439,8 +478,15 @@ class _Run:
             started = st == "TK_Active"
             k, d = self.kind(c), self.dur_min(c)
             s_c, f_c = [dd], []
+            resume = R[c].get("resume_date") if started else None
+            if resume is not None and pd.notna(resume):
+                # suspended work resumes on its resume date (H8-07 A1020)
+                s_c.append(max(dd, pd.Timestamp(resume)))
+            # Progress Override: the start of work under way is an actual, so FS / SS
+            # predecessors no longer bound it; FF / SF predecessors still bound its finish
+            # (H1-11 A1040). Mirrored in successor_limits.
             use_logic = not (started and opt.progressed == "progress_override")
-            for end, bound in self.pred_bounds(c, started) if use_logic else []:
+            for end, bound in self.pred_bounds(c, started, finish_only=not use_logic):
                 (s_c if end == "start" else f_c).append(bound)
             ext = R[c].get("external_early_start_date")
             if use_logic and opt.honor_external and ext is not None and pd.notna(ext):
@@ -456,26 +502,32 @@ class _Run:
                     s_c.append(date)
                 elif START_LIKE.get(typ) == "finish":
                     f_c.append(date)
+            # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
+            # that unstarted work never starts before the data date (H3-04 A1100, H2-06
+            # A1130: the early dates move to the data date, the late dates stay)
             if pinned and pinned[0] == "start":
-                s_c, f_c = [pinned[1]], []
+                s_c, f_c = [max(pinned[1], dd)], []
             if c in self.rsrc_dep and k == "task":
-                start, fin = self.rsrc_early(c, s_c, f_c, self.extra.get(c, 0.0) * 60)
+                exp = R[c].get("expect_end_date", pd.NaT) if opt.use_expected_finish else pd.NaT
+                alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
+                exp = pd.Timestamp(exp) if pd.notna(exp) and not alap and exp >= dd else None
+                start, fin = self.rsrc_early(c, s_c, f_c, self.extra.get(c, 0.0) * 60, exp)
             else:
                 start, fin = _early(ax, k, d, s_c, f_c)
-            if pinned and pinned[0] == "finish":  # mandatory finish: the date, whatever the logic
+            if pinned and pinned[0] == "finish" and c not in self.dur_override:
                 fin = ax.keep_or_previous(pinned[1])
                 start = ax.add(fin, -d, finish=False) if (k == "task" and d) else fin
+                if start < dd:
+                    start = ax.snap_start(dd)
+                    fin = ax.add(start, d, finish=True) if (k == "task" and d) else start
             if k == "task" and opt.use_expected_finish:
-                # Oracle: P6 sets the early finish to the expected finish and computes the
-                # remaining duration from it, which the backward pass then uses. Applied as
-                # MPXJ's PrimaveraScheduler does: not ALAP, no FF / SF predecessor (they
-                # override it), on or after the early start and the data date.
                 exp = R[c].get("expect_end_date", pd.NaT)
                 alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
                 finish_linked = any(typ in ("FF", "SF") for _, typ, _ in self.preds[c])
-                if pd.notna(exp) and not alap and not finish_linked and exp >= start and exp >= dd:
-                    fin = pd.Timestamp(exp)
-                    self.dur_override[c] = float(ax.between(start, fin))
+                if pd.notna(exp) and not alap and c not in self.rsrc_dep:
+                    start, fin = self.expected_finish(
+                        c, ax, pd.Timestamp(exp), s_c, f_c, start, fin, use_logic, finish_linked
+                    )
             es[c], ef[c], rs[c] = (R[c].get("act_start_date") if started and k == "task" else start), fin, start
         self.open_ = [c for c in self.order if status[c] != "TK_Complete"]
         # Under Retained Logic a finished activity ends, for its successors, at its carried
@@ -484,30 +536,97 @@ class _Run:
             (self.carry.get(c, ef[c]) if status[c] == "TK_Complete" else ef[c] for c in self.nodes), default=None
         )
 
-    def rsrc_early(self, c, s_c, f_c, d_extra) -> tuple[pd.Timestamp, pd.Timestamp]:
-        """Resource dependent: each driving assignment on its resource calendar."""
-        lo = max(s_c)
+    def expected_finish(self, c, ax, exp, s_c, f_c, start, fin, use_logic, finish_linked):
+        """Early dates of task-dependent work with an expected finish, as P6 23.12 places them
+        (corpus witnesses: H1-02 A1170, H4-10 A1040, H24-07 A1210).
+
+        The expected finish stands in for "early start + remaining duration": the early
+        finish is the expected finish, or the early start when the expected finish falls
+        before it (remaining duration 0), on whatever date the data date, the predecessors
+        or a constraint give the start. An FF / SF bound later than that finish wins
+        instead, with the file's remaining duration and the start placed back from it, as
+        without an expected finish. The remaining duration the backward pass uses follows
+        the early dates (``dur_override``).
+
+        Observed, not explained: work under way under Progress Override with an FF / SF
+        predecessor keeps its remaining duration when the expected finish falls before its
+        early start, even when that predecessor's bound no longer binds.
+        """
+        s0 = ax.snap_start(max(s_c)) if s_c else start
+        if not use_logic and finish_linked and exp < s0:
+            return start, fin
+        exp_fin = max(exp, s0)
+        f_min = ax.keep_or_next(max(f_c)) if f_c else None
+        if f_min is not None and exp_fin < f_min:
+            return start, fin
+        self.dur_override[c] = float(ax.between(s0, exp_fin))
+        return s0, exp_fin
+
+    def rsrc_early(self, c, s_c, f_c, d_extra, exp=None) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Resource dependent, as P6 23.12 places it (corpus H8-H30):
+
+        1. the lower bound is taken on the activity's own calendar (H8-03 A1240: data date
+           00:00, activity Mon-Thu from 07:00, resource every day from 06:00: starts 07:00);
+        2. each driving assignment is placed from there on its resource calendar, with its
+           lag, and pushed back behind a finish bound if one is later;
+        3. the activity starts at the earliest assignment start, on its own calendar, and
+           each assignment then runs forward from that start: a finish bound is met, not
+           tight (H10-02 A1360: an FF bound at Fri 18:00 on a Mon-Sat 08-16 resource,
+           placed Fri 08:00-16:00).
+
+        ``exp``: the expected finish when the option applies (see below).
+        """
+        ax = self.cal_ax[c]
+        lo = ax.snap_start(max(s_c))
         f_min = max(f_c) if f_c else None
-        starts, fins = [], []
+        starts, durs = [], {}
         for a in self.driving(c):
             d = a.dur_m + d_extra
             s0 = a.ax.snap_start(self.shift(a.ax, lo, a.lag_m))
+            if exp is not None and exp > s0 and (f_min is None or exp >= f_min):
+                # the expected finish sets the remaining work, measured on the resource
+                # calendar from this placement (H26-11 A1090: 35.5 h from Tue 06:00, then
+                # run from the activity's Tue 07:00 to Fri 06:30); an expected finish before
+                # the placement keeps the file's remaining duration (H14-05 A1040), and an
+                # FF / SF bound later than it wins, as for task-dependent work
+                d = float(a.ax.between(s0, exp))
+            durs[a.taskrsrc_id] = self.a_dur[a.taskrsrc_id] = d
             f0 = a.ax.add(s0, d, finish=True) if d else s0
             if f_min is not None and f0 < f_min:
                 f0 = a.ax.keep_or_next(f_min)
                 s0 = a.ax.add(f0, -d, finish=False) if d else f0
+            starts.append(self.shift(a.ax, s0, -a.lag_m))
+        start = ax.snap_start(min(starts))
+        fins = []
+        for a in self.driving(c):
+            d = durs[a.taskrsrc_id]
+            s0 = a.ax.snap_start(self.shift(a.ax, start, a.lag_m))
+            f0 = a.ax.add(s0, d, finish=True) if d else s0
             self.a_early[a.taskrsrc_id] = (s0, f0)
-            starts.append(s0)
             fins.append(f0)
-        return min(starts), max(fins)
+        if any(durs[a.taskrsrc_id] != a.dur_m + d_extra for a in self.driving(c)):
+            self.dur_override[c] = float(ax.between(start, max(fins)))  # the backward pass follows
+        return start, max(fins)
 
     # --- backward pass -------------------------------------------------------------------------
     def successor_limits(self, c, late: bool) -> tuple[list, list]:
         """Latest start / finish ``c`` may have against its successors' late (or early) dates."""
         R, status = self.R, self.status
         l_s, l_f = [], []
+        po = self.opt.progressed == "progress_override"
         for s, typ, link_lag in self.succs[c]:
             lag = link_lag
+            if po and status[s] == "TK_Active" and typ in ("FS", "SS"):
+                # Progress Override: a started successor's start is an actual, so a link to it
+                # binds no late date; links to its finish (FF, SF) still do (H5-06 A1030
+                # against H3-03 A1030)
+                continue
+            if not late and po and status[c] == "TK_Active" and (typ in ("SS", "SF") or status[s] == "TK_Complete"):
+                # Progress Override again: the free float of work under way runs past its own
+                # start-type links (its start is an actual too) and past finished successors,
+                # to whatever is left (H2-05 A1030, H2-04 A1110; counter-examples H4-08
+                # A1010, H12-07 A1120 are open, see docs/backlog.md)
+                continue
             if (
                 late
                 and self.opt.progressed == "actual_dates"
@@ -523,12 +642,20 @@ class _Run:
             elif status[s] == "TK_Complete":
                 if late and self.retain:
                     # Retained Logic: a finished successor passes back the late date its own
-                    # successors give it (MPXJ, as P6 per its issue #972: a lead to it is dropped)
-                    # (an FS lag is dropped, an FF lag kept, SS / SF keep theirs unless this
-                    # side started: MPXJ's case table)
+                    # successors give it, less this link's lag: in full for FS / FF (it runs
+                    # from a finish still to come: H1-08 A1020), the part not yet expired
+                    # since the actual start for SS / SF (H6-07 A1030), a lead from started
+                    # work not at all; between two finished activities only the carried date
+                    # passes (H1-08 A1050). MPXJ drops the FS lag; P6 does not.
                     lc = self.lcarry[s]
-                    keep = typ == "FF" or (typ != "FS" and status[c] == "TK_NotStart")
-                    bound = self.shift(self.lag_axis(c, s), lc, -lag) if keep else lc
+                    if status[c] == "TK_Complete":
+                        bound = lc
+                    else:
+                        lx = self.lag_axis(c, s)
+                        use = self.unexpired(c, lx, lag) if typ in ("SS", "SF") else lag
+                        if typ in ("SS", "SF") and lag < 0 and status[c] == "TK_Active":
+                            use = 0.0
+                        bound = self.shift(lx, lc, -use)
                     (l_f if typ in ("FS", "FF") else l_s).append(bound)
                 continue
             else:
@@ -556,24 +683,35 @@ class _Run:
                 l_s.append(self.shift(lx, s_fin, -s_lag))
         return l_s, l_f
 
-    def place_late(self, c, ax, k, d, l_s, l_f) -> tuple[pd.Timestamp, pd.Timestamp]:
+    def place_late(self, c, ax, k, d, l_s, l_f, alap: bool = False) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Latest start and finish within the bounds; ``alap`` when placing early dates."""
         if c not in self.rsrc_dep or k != "task":
             return _late(ax, k, d, l_s, l_f)
-        hi_f = min(l_f) if l_f else None
-        hi_s = min(l_s) if l_s else None
-        starts, fins = [], []
+        # Mirror of rsrc_early: the bounds are taken on the activity calendar first (H10-04
+        # A1220: a successor's late start Tue 08:00 is Mon 16:00 on a Mon-Sat 08-16 activity,
+        # the 24 h resource then runs back from there), then each driving assignment is
+        # placed on its resource calendar (H9-08 A1230: the resource's holiday moves it)
+        hi_f = ax.snap_finish(min(l_f)) if l_f else None
+        hi_s = ax.snap_start(min(l_s)) if l_s else None
+        starts, fins, driven = [], [], False
         for a in self.driving(c):
-            dd_ = a.dur_m + self.extra.get(c, 0.0) * 60
+            dd_ = self.a_dur.get(a.taskrsrc_id, a.dur_m + self.extra.get(c, 0.0) * 60)
             f0 = a.ax.snap_finish(hi_f) if hi_f is not None else None
             s0 = (a.ax.add(f0, -dd_, finish=False) if dd_ else f0) if f0 is not None else None
             if hi_s is not None:
                 cand = a.ax.snap_start(self.shift(a.ax, hi_s, a.lag_m))
                 if s0 is None or cand < s0:
                     s0, f0 = cand, a.ax.add(cand, dd_, finish=True) if dd_ else cand
+                    driven = driven or a.lag_m == 0
             self.a_late[a.taskrsrc_id] = (s0, f0)
             starts.append(self.shift(a.ax, s0, -a.lag_m))
             fins.append(f0)
-        return min(starts), max(fins)
+        start = min(starts)
+        if driven and start == hi_s and not alap:
+            # written at the bound's instant, as a late date from an SS bound is on
+            # task-dependent work (H26-04 A1440: late start Wed 16:00, not Thu 08:00)
+            start = ax.keep_or_previous(min(l_s))
+        return start, max(fins)
 
     def backward(self) -> None:
         opt, status = self.opt, self.status
@@ -588,7 +726,12 @@ class _Run:
             k, d = self.kind(c), self.dur_min(c)
             l_s, l_f = self.successor_limits(c, late=True)
             if not l_s and not l_f:
-                l_f.append(self.ef[c] if opt.open_critical else end_anchor)
+                # "Make open-ended activities critical": the late finish of an activity
+                # without any successor link is its early finish, never past the project's
+                # Must Finish By (H25-05 A1380); one whose successors bind nothing (finished,
+                # a WBS summary) is not open-ended and ends at the project's end (H27-04 A1390)
+                open_end = c not in self.linked_on
+                l_f.append(min(self.ef[c], end_anchor) if opt.open_critical and open_end else end_anchor)
             else:
                 # No late finish after the project's: an activity whose successors only bound
                 # its start (SS, SF) would otherwise float past the end, and so would its
@@ -600,15 +743,32 @@ class _Run:
                 l_f.append(pd.Timestamp(ext))
                 self.external.add(c)
             pinned = None
+            c_s, c_f = [], []  # bounds the constraints themselves give
             for typ, date in self.constraints(c):
                 if typ in MANDATORY:
                     pinned = (MANDATORY[typ], date)
                 elif LATE_LIKE.get(typ) == "start" and status[c] != "TK_Active":
-                    l_s.append(date)
+                    c_s.append(date)
                 elif LATE_LIKE.get(typ) == "finish":
-                    l_f.append(date)
+                    c_f.append(date)
+            succ_s, succ_f = list(l_s), list(l_f)  # the successors' bounds alone
+            l_s, l_f = l_s + c_s, l_f + c_f
             if pinned:
-                l_s, l_f = ([pinned[1]], []) if pinned[0] == "start" else ([], [pinned[1]])
+                # a second constraint of the same end tighter than the mandatory date still
+                # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
+                # Finish is the late finish)
+                if pinned[0] == "start":
+                    l_s, l_f = [min([pinned[1]] + c_s)], []
+                else:
+                    l_s, l_f = [], [min([pinned[1]] + c_f)]
+                if pinned[0] == "finish" and c in self.dur_override:
+                    # With an expected finish earlier than the Mandatory Finish the date no
+                    # longer pins: the successors' bounds drive the late dates, capped by the
+                    # expected finish on task-dependent work (H22-06 A1120, H23-03 A1210,
+                    # H23-07 A1110) and by the mandatory date itself on resource-dependent
+                    # work (H25-05 A1150; observed, not explained)
+                    cap = pinned[1] if c in self.rsrc_dep else min(pinned[1], self.ef[c])
+                    l_s, l_f = succ_s, succ_f + [cap]
             self.ls[c], self.lf[c] = self.place_late(c, ax, k, d, l_s, l_f)
 
     # --- float, as late as possible ------------------------------------------------------------
@@ -619,15 +779,19 @@ class _Run:
         for c in reversed(self.open_):
             ax = self.cal_ax[c]
             k, d = self.kind(c), self.dur_min(c)
-            alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2")) and self.status[c] == "TK_NotStart"
+            # As Late As Possible moves the remaining work of started activities too
+            # (H27-05 A1170: in progress, remaining 3 h, placed at its late dates)
+            alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
             e_s, e_f = self.successor_limits(c, late=False)
             if alap:
                 if not e_s and not e_f:
                     e_f = [self.finish]
                 keep = dict(self.a_late)
-                new_s, new_f = self.place_late(c, ax, k, d, e_s, e_f)
+                new_s, new_f = self.place_late(c, ax, k, d, e_s, e_f, alap=True)
                 if new_f > ef[c]:
-                    es[c], ef[c], rs[c] = new_s, new_f, new_s
+                    ef[c], rs[c] = new_f, new_s
+                    if self.status[c] == "TK_NotStart":
+                        es[c] = new_s
                     for a in self.driving(c) if c in self.rsrc_dep else []:
                         self.a_early[a.taskrsrc_id] = self.a_late[a.taskrsrc_id]
                 self.a_late.clear()
@@ -635,10 +799,15 @@ class _Run:
             gaps = [ax.between(ef[c], x) / 60 for x in e_f] + [ax.between(rs[c], x) / 60 for x in e_s]
             # open end: free float runs to the project's early finish, not to "must finish by"
             self.ff[c] = max(0.0, min(gaps)) if gaps else max(0.0, ax.between(ef[c], self.finish) / 60)
+            if c in self.dur_override:
+                # an activity whose expected finish applies has no free float in P6, whatever
+                # its successors' early dates (corpus: 265 of 265 such values; H1-08 A1090,
+                # H5-01 A1120). Observed, not explained.
+                self.ff[c] = 0.0
             fin_f = ax.between(ef[c], lf[c]) / 60
             st_f = ax.between(rs[c], ls[c]) / 60
-            ft = self.opt.float_type
-            self.tf[c] = fin_f if ft == "FT_FF" else st_f if ft == "FT_SF" else min(fin_f, st_f)
+            which = FLOAT_TYPE.get(self.opt.float_type, "finish")  # unknown code: P6's default
+            self.tf[c] = fin_f if which == "finish" else st_f if which == "start" else min(fin_f, st_f)
 
     # --- level of effort: spans what drives it ------------------------------------------------
     def level_of_effort(self) -> None:
@@ -646,7 +815,12 @@ class _Run:
         predecessors; SS, SF successors) give its start, finish-type ends (FF, SF
         predecessors; FF, FS successors) its finish. An FF predecessor and an FF successor to
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
-        It runs from the earliest start to the latest finish."""
+        It runs from the earliest start to the latest finish. Its late dates come the same
+        way from the late dates of the activities it is tied to, finished ones contributing
+        nothing; with no start-type link left, or one later than the late finish, the late
+        start is the late finish. Float as for any activity, free float 0 (H8-01 A1160,
+        H10-11 A1210).
+        """
         R, dd, es, ef, rs = self.R, self.dd, self.es, self.ef, self.rs
         for c in self.loe_codes:
             if self.status[c] == "TK_Complete":
@@ -655,8 +829,13 @@ class _Run:
             ax = self.cal_ax[c]
             starts, ends = [], []
             for p, typ, lag in self.loe_preds[c]:
-                frm = rs[p] if typ in ("SS", "SF") else ef[p]
-                (starts if typ in ("SS", "FS") else ends).append(self.shift(self.lag_axis(p, c), frm, lag))
+                lx = self.lag_axis(p, c)
+                if typ in ("SS", "SF") and self.status[p] == "TK_Active":
+                    # from the data date plus the unexpired lag (H10-01 A1300, H12-08 A1290)
+                    frm, run = dd, self.unexpired(p, lx, lag)
+                else:
+                    frm, run = (rs[p] if typ in ("SS", "SF") else ef[p]), lag
+                (starts if typ in ("SS", "FS") else ends).append(self.shift(lx, frm, run))
             for s_, typ, lag in self.loe_succs[c]:
                 to = rs[s_] if typ in ("SS", "FS") else ef[s_]
                 (starts if typ in ("SS", "SF") else ends).append(self.shift(self.lag_axis(c, s_), to, -lag))
@@ -665,8 +844,23 @@ class _Run:
             e0 = ax.snap_finish(max(ends)) if ends else (ax.snap_finish(self.finish) if self.finish is not None else s0)
             es[c], ef[c] = s0, max(e0, ax.snap_start(max(s0, dd)))
             rs[c] = ax.snap_start(dd) if active else s0
-            self.ls[c], self.lf[c] = rs[c], ef[c]
-            self.tf[c] = self.ff[c] = 0.0
+            lstarts, lends = [], []
+            for p, typ, lag in self.loe_preds[c]:
+                if self.status[p] != "TK_Complete":
+                    frm = self.ls[p] if typ in ("SS", "SF") else self.lf[p]
+                    (lstarts if typ in ("SS", "FS") else lends).append(self.shift(self.lag_axis(p, c), frm, lag))
+            for s_, typ, lag in self.loe_succs[c]:
+                if self.status[s_] != "TK_Complete":
+                    to = self.ls[s_] if typ in ("SS", "FS") else self.lf[s_]
+                    (lstarts if typ in ("SS", "SF") else lends).append(self.shift(self.lag_axis(c, s_), to, -lag))
+            open_end = ax.snap_finish(self.finish) if self.finish is not None else ef[c]
+            lf = ax.snap_finish(max(lends)) if lends else open_end
+            ls = min(ax.snap_start(min(lstarts)), lf) if lstarts else lf  # never after the late finish (H10-01 A1300)
+            self.ls[c], self.lf[c] = ls, lf
+            fin_f, st_f = ax.between(ef[c], lf) / 60, ax.between(rs[c], ls) / 60
+            which = FLOAT_TYPE.get(self.opt.float_type, "finish")
+            self.tf[c] = fin_f if which == "finish" else st_f if which == "start" else min(fin_f, st_f)
+            self.ff[c] = 0.0
 
     # --- longest path ------------------------------------------------------------------------
     def longest_path(self) -> set[str]:
@@ -695,6 +889,23 @@ class _Run:
                 mine = self.rs[c] if typ in ("FS", "SS") else self.ef[c]
                 if ax.work(bound) >= ax.work(mine):
                     todo_.append(p)
+        # A level-of-effort activity is on the path when one of its links into a longest-path
+        # activity drives that activity's date (P6 20.12 export: LOE spanning two activities
+        # of the path, SS from the first, FF into the second, flagged). Its own dates come from
+        # its links, so the trace stops there.
+        for loe in self.loe_codes:
+            if self.status[loe] == "TK_Complete" or loe not in self.ef:
+                continue
+            for s_, typ, lag in self.loe_succs[loe]:
+                if s_ not in longest:
+                    continue
+                lx = self.lag_axis(loe, s_)
+                frm = self.ef[loe] if typ in ("FS", "FF") else self.rs[loe]
+                bound = self.shift(lx, frm, lag)
+                mine = self.rs[s_] if typ in ("FS", "SS") else self.ef[s_]
+                if self.cal_ax[s_].work(bound) >= self.cal_ax[s_].work(mine):
+                    longest.add(loe)
+                    break
         return longest
 
     # --- assignment dates --------------------------------------------------------------------
@@ -791,8 +1002,10 @@ def _early(ax: TimeAxis, kind: str, d: float, s_c: list, f_c: list) -> tuple[pd.
 def _late(ax: TimeAxis, kind: str, d: float, l_s: list, l_f: list) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Late start / finish from upper bounds, snapped the way P6 shows them.
 
-    - task: finishes at a period end (a successor starting 08:00 -> previous evening),
-      a start bound snaps to a period start
+    - task: finishes at a period end (a successor starting 08:00 -> previous evening);
+      a start bound (SS / SF successor, start constraint) is written at its own instant,
+      the previous period end when it falls in non-working time (H3-02 A1240: Fri 17:00,
+      not Mon 07:00; the same working minute)
     - start milestone: the bound as it is when working time or a period edge, else the
       previous working time (Hotel HCMEB4000: 16:00; xerlock MS-020: 08:00)
     - finish milestone: a period end
@@ -806,7 +1019,7 @@ def _late(ax: TimeAxis, kind: str, d: float, l_s: list, l_f: list) -> tuple[pd.T
     fin = ax.snap_finish(min(l_f)) if l_f else None
     start = ax.add(fin, -d, finish=False) if fin is not None else None
     if l_s:
-        s_max = ax.snap_start(min(l_s))
+        s_max = ax.keep_or_previous(min(l_s))
         if start is None or s_max < start:
             start, fin = s_max, ax.add(s_max, d, finish=True)
     return start, fin

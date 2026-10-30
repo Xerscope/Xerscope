@@ -154,6 +154,8 @@ class WorkCalendar:
     week: tuple[Intervals, ...]  # Monday .. Sunday
     exceptions: dict[date, Intervals] = field(default_factory=dict, hash=False, compare=False)
     from_data: bool = True  # False = workweek guessed from the day/week hour counts
+    # the calendar's own TimeAxis, built on first use (a cache, not part of the value)
+    _axis: TimeAxis | None = field(default=None, init=False, repr=False, hash=False, compare=False)
 
     @classmethod
     def from_row(cls, row: pd.Series, default_hpd: float = 8.0) -> WorkCalendar:
@@ -193,13 +195,18 @@ class WorkCalendar:
         return _hours(self.periods(d))
 
     def axis(self) -> TimeAxis:
-        """This calendar's TimeAxis, built once and grown on demand: one arithmetic for all."""
-        ax = self.__dict__.get("_axis")
-        if ax is None:
-            today = date.today()
-            ax = TimeAxis(self, today - timedelta(days=3 * 366), today + timedelta(days=3 * 366))
+        """This calendar's TimeAxis, built once and grown on demand: one arithmetic for all.
+
+        The window starts around the first exception date, else around a fixed origin, and
+        grows to whatever dates are asked of it: results never depend on the day the axis
+        was built (``work_hours`` returns differences). The frozen dataclass keeps the cache
+        in a declared field, set once through ``object.__setattr__``.
+        """
+        if self._axis is None:
+            origin = min(self.exceptions) if self.exceptions else date(2020, 1, 1)
+            ax = TimeAxis(self, origin - timedelta(days=366), origin + timedelta(days=3 * 366))
             object.__setattr__(self, "_axis", ax)
-        return ax
+        return self._axis
 
     def work_hours(self, a: pd.Timestamp, b: pd.Timestamp) -> float:
         """Working hours from ``a`` to ``b`` (negative if ``b`` is earlier), to the minute."""

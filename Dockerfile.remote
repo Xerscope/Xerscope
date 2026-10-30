@@ -57,5 +57,5 @@ USER nonroot
 WORKDIR /app
 VOLUME ["/var/lib/tailscale"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD ["/app/.venv/bin/python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4).read()"]
+  CMD ["/app/.venv/bin/python", "-c", "import os, time, urllib.request as u; u.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4).read(); assert time.time() - os.stat('/tmp/xerscope-remote.alive').st_mtime < 30, 'a process is down'"]
 ENTRYPOINT ["/app/.venv/bin/python", "/app/supervisor.py"]

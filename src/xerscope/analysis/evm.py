@@ -1,6 +1,8 @@
 """Earned value in labour hours, computed the way P6 computes its labour-unit EV fields.
 
-- BAC = baseline budgeted labour units (TASK.target_work_qty of the baseline XER).
+- BAC = the baseline's labour units on the EV basis chosen (P6 Admin Preferences, Earned
+  Value): budgeted units by default, at-completion units (actual + remaining) under
+  "at completion".
 - PV = BL labour units x Schedule % Complete. Oracle: Schedule % Complete is the share of
   the activity's baseline duration elapsed at the data date (0 before the baseline start,
   100 after the baseline finish), so PV grows linearly in *working time* of the
@@ -12,8 +14,10 @@
   are not modelled: they fall back to activity % complete and are reported.
 - Activities not in the baseline earn nothing (listed); activities deleted since earn
   nothing either.
-- AC = actual labour units; ETC = remaining labour units; EAC = AC + ETC.
-- SPI = EV / PV, SV = EV - PV; productivity = EV / AC (earned per hour spent).
+- AC = actual labour units and ETC = remaining labour units of every activity in the
+  update, baselined or not; EAC = AC + ETC.
+- SPI = EV / PV, SV = EV - PV; EV / AC is measured on baselined work only (EV exists
+  for nothing else), the hours spent outside the baseline being reported apart.
 """
 
 from __future__ import annotations
@@ -163,6 +167,7 @@ class EvPoint:
     etc_hr: float
     unbaselined: list[str]
     not_modelled: list[str] = field(default_factory=list)  # activities on a fallback technique
+    ac_unbaselined_hr: float = 0.0  # part of ac_hr spent on activities the baseline does not know
 
     @property
     def eac_hr(self) -> float:
@@ -174,7 +179,10 @@ class EvPoint:
 
     @property
     def productivity(self) -> float | None:
-        return self.ev_hr / self.ac_hr if self.ac_hr else None
+        """EV per hour spent on baselined work: EV only exists for baselined activities,
+        so hours spent on the others would make the ratio look worse than the work is."""
+        ac = self.ac_hr - self.ac_unbaselined_hr
+        return self.ev_hr / ac if ac else None
 
     def as_row(self) -> dict:
         def pct(v: float) -> float | None:
@@ -194,6 +202,7 @@ class EvPoint:
             "spi": self.spi,
             "productivity": self.productivity,
             "unbaselined": len(self.unbaselined),
+            "ac_unbaselined_hr": self.ac_unbaselined_hr,
         }
 
 
@@ -253,6 +262,7 @@ def ev_point(snap: Snapshot, baseline: Baseline, spread: _Spread | None = None) 
         float(a["labor_remaining_hr"].sum()),
         unbaselined,
         fallback,
+        ac_unbaselined_hr=float(a.loc[a["task_code"].isin(unbaselined), "labor_actual_hr"].sum()),
     )
 
 
@@ -262,7 +272,9 @@ def evm_series(store: SnapshotStore, baseline: Baseline) -> pd.DataFrame:
 
 
 def forecast_curve(snap: Snapshot) -> pd.DataFrame:
-    """Cumulative hours from AC at the data date, remaining hours spread (working time) to each finish."""
+    """Cumulative hours, one row per day from the data date's day to the last finish: AC
+    plus the remaining hours of open work spread over working time to each activity's
+    finish. As in ``pv_curve``, a row names a day and holds the cumulative at its end."""
     a = snap.activities
     open_ = a[~a["is_complete"]].copy()
     dd = snap.data_date
@@ -273,9 +285,9 @@ def forecast_curve(snap: Snapshot) -> pd.DataFrame:
     open_["fc_finish"] = open_["finish"].where(open_["finish"] > open_["fc_start"], open_["fc_start"])
     f = open_[(open_["labor_remaining_hr"] > 0) & open_["fc_finish"].notna()]
     if f.empty:
-        return pd.DataFrame({"date": [dd], "fc_cum_hr": [ac]})
+        return pd.DataFrame({"date": [dd.normalize()], "fc_cum_hr": [ac]})
     days = pd.date_range(dd.normalize(), f["fc_finish"].max().normalize(), freq="D")
     cum = ac + _Spread.build(snap, f, "labor_remaining_hr", "fc_start", "fc_finish", "clndr_id").at(
         days + pd.Timedelta(days=1)
     )
-    return pd.DataFrame({"date": [dd, *days], "fc_cum_hr": [ac, *cum]})
+    return pd.DataFrame({"date": days, "fc_cum_hr": cum})

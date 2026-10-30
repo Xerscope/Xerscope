@@ -77,6 +77,24 @@ def test_external_successor_passes_p6_logic():
     assert codes(r) == ["B"]  # A passes thanks to the external link; B has no successor
 
 
+def test_external_link_counts_only_when_the_option_says_so():
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("X9", "A", "FS", 0, "2")])
+    r = RULES["missing_logic"].fn(AnalysisContext(s), exclude=[], external_passes=False)
+    assert sorted(r.flagged["task_code"]) == ["A", "B"]  # A: the external link no longer counts
+
+
+def test_link_to_an_activity_not_in_the_file_is_dropped():
+    # TASKPRED names a predecessor id no TASK row has (an export of one project out of a
+    # linked set): the link is not logic P6 can schedule, so it counts for no check.
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("999", "A", "FS", 8)])
+    assert len(s.relationships) == 1
+    assert any("not in the file" in w for w in s.warnings)
+    assert codes(run(P6, "P6-01", s)) == ["A", "B"]  # A has no predecessor after all; B no successor
+    assert run(P6, "P6-08", s).denominator == 1  # the lagged ghost link is not in the population
+
+
 # --- relationships -------------------------------------------------------------------------
 
 LINKS = snap(
@@ -250,18 +268,28 @@ def test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay():
     assert r.status == "fail" and "Z" in r.note
 
 
+MFB = {"project": {"plan_end_date": "2026-03-25 17:00"}}  # Must Finish By: the float's reference
+
+
 def test_cpli_uses_the_finish_float():
     # Finish 2026-03-27 = 20 working days from Mon 2026-03-02; total float -16 h = -2 d.
     chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="-16")]
-    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert r.value == pytest.approx((20 - 2) / 20)
     assert r.status == "fail"
+
+
+def test_cpli_needs_a_must_finish_by_date():
+    """Without one P6 gives the last activity 0 float: 1.0 whatever the schedule, so n/a."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="0")]
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
+    assert r.status == "n/a" and "Must Finish By" in r.note
 
 
 def test_calendar_holiday_counts_in_cpl():
     # Same, finishing 2026-04-10: 30 weekdays minus Good Friday (calendar exception) = 29.
     chain = CHAIN[:2] + [dict(CHAIN[2], early_end_date="2026-04-10 17:00")]
-    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert "CPL 29 wd" in r.note
 
 
@@ -462,13 +490,16 @@ def test_decm_baseline_and_actual_dates():
 def test_decm_actuals_changed_needs_the_previous_update():
     from xerscope.store import SnapshotStore
 
-    w1 = snap([active("A"), done("B")])
-    w2 = snap([active("A", act_start_date="2026-02-24 08:00"), done("B")], data_date="2026-03-09 08:00")
+    # DECM compares status periods: the update 28 days earlier, not last week's
+    w1 = snap([active("A"), done("B")])  # data date 2 March
+    w2 = snap([active("A", act_start_date="2026-02-24 08:00"), done("B")], data_date="2026-03-30 08:00")
     store = SnapshotStore([w1, w2])
     r = run_metric(DECM["06A504a"], AnalysisContext(store[1], store))
     assert codes(r) == ["A"] and r.denominator == 2
     assert run_metric(DECM["06A504b"], AnalysisContext(store[1], store)).numerator == 0
     assert run_metric(DECM["06A504a"], AnalysisContext(w2)).status == "n/a"
+    week = snap([active("A", act_start_date="2026-02-24 08:00"), done("B")], data_date="2026-03-09 08:00")
+    assert run_metric(DECM["06A504a"], AnalysisContext(week, SnapshotStore([w1, week]))).status == "n/a"  # 7 days
 
 
 def test_decm_riding_the_status_date():
@@ -488,6 +519,49 @@ def test_decm_riding_the_status_date():
     assert codes(r) == ["R"] and r.denominator == 2
 
 
+def test_decm_riding_the_status_date_started_work():
+    from xerscope.store import SnapshotStore
+
+    # Started a month ago in both updates. S keeps 40 h remaining (5 wd) while the data date
+    # moved a month: its finish slid with the status date. M went from 40 h to 16 h: progress.
+    m1 = snap(
+        [
+            active("S", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="40"),
+            active("M", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="40"),
+        ]
+    )
+    m2 = snap(
+        [
+            active("S", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="40"),
+            active("M", act_start_date="2026-02-23 08:00", remain_drtn_hr_cnt="16"),
+        ],
+        data_date="2026-04-06 08:00",
+    )
+    store = SnapshotStore([m1, m2])
+    r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
+    assert codes(r) == ["S"] and r.denominator == 2
+    assert r.flagged.set_index("task_code").at["S", "reason"] == "remaining duration unchanged"
+
+
+def test_decm_open_ends_on_a_progressed_schedule():
+    # D finished; S started with an FS predecessor and no successor: open finish (started
+    # tasks count); T not started, FF-only predecessor: open start. Z, the baseline's last
+    # finish, is exempt. The baseline here is the file's own current dates.
+    s = snap(
+        [
+            done("D"),
+            active("S", early_end_date="2026-03-13 17:00"),
+            todo("T", early_end_date="2026-03-13 17:00"),
+            todo("Z", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+        ],
+        [("D", "S", "FS", 0), ("D", "T", "FF", 0), ("T", "Z", "FS", 0)],
+    )
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    flagged = r.flagged.set_index("task_code")["reason"]
+    assert codes(r) == ["S", "T"] and r.denominator == 3  # D is complete: out of the population
+    assert flagged["S"].startswith("open finish") and flagged["T"].startswith("open start")
+
+
 def test_decm_milestone_needs_only_one_link_per_side():
     s = snap(
         [
@@ -502,6 +576,22 @@ def test_decm_milestone_needs_only_one_link_per_side():
     assert "T" in codes(r) and "MS" not in codes(r)  # same SS-only successor: open for a task only
 
 
+def test_decm_project_start_exemption_does_not_move_once_work_is_done():
+    # D (finished) is the project's first start in the baseline; B, next in line and
+    # without a predecessor, is an open start, not the project start.
+    s = snap(
+        [
+            done("D", target_start_date="2026-02-02 08:00", target_end_date="2026-02-06 17:00"),
+            todo("B", target_start_date="2026-02-09 08:00", target_end_date="2026-02-13 17:00"),
+            todo("C", target_start_date="2026-02-16 08:00", target_end_date="2026-02-20 17:00"),
+        ],
+        [("B", "C", "FS", 0)],
+    )
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    assert "B" in codes(r)  # open start
+    assert "C" not in codes(r)  # the last finish of the whole baseline: exempt
+
+
 def test_actuals_changed_counts_a_removed_date_on_both_sides():
     """A loses its actual start, B's moves: 2 of the 2 activities dated in either update
     (the share was 200 % when the denominator counted only today's dates)."""
@@ -514,5 +604,5 @@ def test_actuals_changed_counts_a_removed_date_on_both_sides():
     a = snap([active("A"), active("B"), todo("C")])
     b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-09 08:00")
     store = SnapshotStore([a, b])
-    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start")
+    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start", period_days=0)
     assert sorted(out.flagged["task_code"]) == ["A", "B"] and (out.numerator, out.denominator) == (2, 2)

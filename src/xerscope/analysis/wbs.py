@@ -1,7 +1,9 @@
 """WBS tree with roll-ups: every node summarises all activities below it.
 
 % complete is weighted by budgeted labour hours, falling back to original duration for
-nodes without hours (``weight`` column says which was used).
+nodes without hours (``weight`` column says which was used). It is xerscope's measure, not
+a P6 field: each activity contributes its own % complete whatever its % complete type
+(duration, physical, units), so the roll-up mixes those types as P6's WBS summary bars do.
 """
 
 from __future__ import annotations

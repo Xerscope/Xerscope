@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import mpxj_or_skip
 from reference import expected as E
 from reference.sources import FILES
 
@@ -179,12 +180,7 @@ def test_cpl_matches_xerlock_hand_calculation(xl):
 
 
 def test_mpxj_reads_every_reference_file_like_xerscope():
-    pytest.importorskip("jpype")
-    pytest.importorskip("mpxj")
-    import shutil
-
-    if shutil.which("java") is None:
-        pytest.skip("no Java runtime")
+    mpxj_or_skip()
     from xerscope.crosscheck import compare_paths
 
     df = compare_paths(sorted(DATA.glob("*/*.xer")))

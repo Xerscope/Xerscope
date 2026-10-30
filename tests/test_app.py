@@ -104,3 +104,57 @@ def test_empty_state_explains_what_to_do(monkeypatch):
     at = AppTest.from_file(APP, default_timeout=60).run()
     _ok(at)
     assert any("xerscope sample" in i.value for i in at.info)
+
+
+def _run(data_dir, monkeypatch, baseline=None):
+    monkeypatch.setenv("XERSCOPE_DATA", str(data_dir))
+    if baseline is None:
+        monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    else:
+        monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline))
+    return AppTest.from_file(APP, default_timeout=120).run()
+
+
+def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):
+    """Series pages (PPC, trend, earned value) need two updates; with one they say so."""
+    first = sorted(sample_dir.glob("*.xer"))[0]
+    (tmp_path / first.name).write_bytes(first.read_bytes())
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    for page in PAGES:
+        at.switch_page(page).run()
+        _ok(at)
+
+
+def test_baseline_file_from_env_and_its_date_check(sample_dir, tmp_path, monkeypatch):
+    files = sorted(sample_dir.glob("*.xer"))
+    for f in files[:3]:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
+    # the first export as the baseline: read, named in the sidebar, no warning
+    at = _run(tmp_path, monkeypatch, baseline=files[0])
+    _ok(at)
+    assert at.sidebar.selectbox(key="bl_choice").value == "Separate baseline file"
+    assert any(files[0].stem in c.value and "labour h" in c.value for c in at.sidebar.caption)
+    assert not at.sidebar.warning
+    # the last export as the baseline: newer than every loaded update
+    at = _run(tmp_path, monkeypatch, baseline=files[-1])
+    _ok(at)
+    assert any("after the first update" in w.value for w in at.sidebar.warning)
+
+
+def test_same_data_date_twice_is_one_update(sample_dir, tmp_path, monkeypatch):
+    files = sorted(sample_dir.glob("*.xer"))
+    for f in files[:2]:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
+    (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    assert any("2 snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert any("same data date" in w.value for w in at.warning)
+
+
+def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
+    at = _run(sample_dir / "missing", monkeypatch)
+    _ok(at)
+    assert any("Folder not found" in e.value for e in at.sidebar.error)
+    assert any("xerscope sample" in i.value for i in at.info)
