@@ -44,6 +44,7 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "XERSCOPE_PASSWORD_HASH='$" in env  # unquoted, Compose interpolates the $ of a bcrypt hash
     serve = (ROOT / "deploy" / "tailscale-serve.json").read_text()
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
+    assert '"/<random>"' in serve  # the prefix is a placeholder to replace, never a real value
 
 
 def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_environment():

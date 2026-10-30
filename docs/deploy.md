@@ -86,7 +86,7 @@ folder of the repository:
 |---|---|
 | `compose.yaml` | nothing |
 | `Caddyfile` | nothing (login and hash come from the environment) |
-| `tailscale-serve.json` | handler key `"/"` → `"/<random>"` (keep the leading slash, no trailing one) |
+| `tailscale-serve.json` | the placeholder `"/<random>"` → your generated prefix (keep the leading slash, no trailing one). Left as is, the stack starts but the URL is unusable |
 | `tailscale-state/` | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
 
 `.env.example` is for a PC; on the NAS the values go in the project's Environment tab (§6).

@@ -11,9 +11,10 @@
 # Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
 #   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_EXPORTS
 #   (the folder of the .xer files, e.g. /volume1/<shared-folder>).
-# Secret URL prefix (optional): change the handler key in tailscale-serve.json from "/"
-# to "/<random>". Tailscale strips the prefix before proxying, so Caddy and Streamlit keep
-# serving "/": set nothing else.
+# Secret URL prefix: tailscale-serve.json ships with the placeholder "/<random>" as the
+# handler key; put a generated value there (openssl rand -hex 12) before starting. Tailscale
+# answers 404 outside that prefix (scanners find every *.ts.net name within seconds) and
+# strips it before proxying, so Caddy and Streamlit keep serving "/": set nothing else.
 # Nothing touches the host network: tailscaled runs in userspace (no TUN device, no route,
 # no DNS change), no port is published, the only outbound traffic is Tailscale's own.
 # Funnel must be allowed for the node's tag in the tailnet ACL:
