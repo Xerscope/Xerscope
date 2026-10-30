@@ -125,8 +125,10 @@ jobs:
         run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py
 
   container:
-    # Both images build on every push and pull request (image.yml publishes from main only),
-    # and the app image answers on its health endpoint with the demo data mounted.
+    # Both images build, the app image answers on its health endpoint with the demo data
+    # mounted, and Trivy scans both: on main, the Monday run and by hand (two image builds
+    # are the most expensive job here; image.yml publishes from main only).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

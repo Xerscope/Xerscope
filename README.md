@@ -238,7 +238,7 @@ Windows. GitHub Actions (`.github/workflows/tests.yml`) runs:
 - an audit job (pip-audit on OSV and PyPI, plus bandit), also every Monday;
 - the MPXJ crosscheck on Java 21 and 25: reader comparison and the CPM against MPXJ's
   scheduler;
-- both container images built on every push and pull request, the app image started and
+- both container images built on pushes to `main` and on the Monday run, the app image started and
   queried, both scanned with Trivy.
 
 ## Architecture
