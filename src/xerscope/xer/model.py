@@ -554,6 +554,10 @@ def build_snapshot(
         lag_hpd = rel["pred_task_id"].map(hpd_by_id)
         rel["lag_d"] = rel["lag_hr"] / lag_hpd.astype(float).fillna(settings.default_hours_per_day)
         rel["is_external"] = rel["pred_proj_id"].ne(pid) & rel["pred_proj_id"].ne("")
+        # A predecessor in another project of the same file is named as in external_links:
+        # its own Activity ID may also exist here, and would read as a link from that one.
+        ext_in_file = rel["is_external"] & rel["pred_code"].notna()
+        rel.loc[ext_in_file, "pred_code"] = "[ext]" + rel.loc[ext_in_file, "pred_task_id"].astype(str)
         # A predecessor with no TASK row: a link to another project (P6 exports the link,
         # not the other project's activities) or a corrupt link. Either way it is not logic
         # that can be scheduled; the external ones still count as "has a predecessor" below.
