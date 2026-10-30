@@ -51,7 +51,8 @@ def test_funnel_stack_publishes_nothing_on_the_host():
 
 def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_environment():
     compose = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert "build:" not in compose and "image: ghcr.io/xerscope/xerscope:" in compose  # no Dockerfile on a NAS
+    assert "build:" not in compose  # no Dockerfile on a NAS: the image is pulled
+    assert "image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:" in compose
     for var in ("TS_AUTHKEY", "XERSCOPE_USER", "XERSCOPE_PASSWORD_HASH", "XERSCOPE_PATH", "XERSCOPE_EXPORTS"):
         assert "${" + var in compose, var  # no secret written in the file
     assert not re.search(r"tskey-auth-[A-Za-z0-9]|\$2a\$", compose)

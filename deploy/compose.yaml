@@ -62,7 +62,8 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: ghcr.io/xerscope/xerscope:latest        # built by .github/workflows/image.yml; public package, no login
+    image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
+                                                    # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
     environment:
       XERSCOPE_DATA: /data
       # XERSCOPE_BASELINE: /data/BL.xer

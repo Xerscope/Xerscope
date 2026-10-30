@@ -157,7 +157,7 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 
 | Want | Do |
 |---|---|
-| new app build | Container → Image → `ghcr.io/xerscope/xerscope` → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
+| new app build | Container → Image → the app image (`ghcr.io/xerscope/xerscope` or the Docker Hub copy) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
 | pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
@@ -166,22 +166,29 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
 pins in `compose.yaml` on the NAS, Build.
 
-## 8. If Container Manager will not pull from ghcr.io
+## 8. Private image: Docker Hub
 
-Project → Build fails with `pull access denied` or `bad result` on a **public** package
-means the DSM proxy or an old Container Manager still mishandles ghcr. The workflow also
-publishes the app image to Docker Hub, which Container Manager handles natively:
+A private ghcr package needs a GitHub token on the NAS, which Container Manager does not
+handle. Keep the image private on Docker Hub instead, where Container Manager logs in
+natively:
 
-1. GitHub → repository → Settings → Secrets and variables → Actions:
-   secrets `DOCKERHUB_USERNAME` (`<docker-hub-login>`), `DOCKERHUB_TOKEN` (hub.docker.com →
-   Account settings → Personal access tokens, **Read & Write**); variable
-   `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow.
-2. In `compose.yaml` on the NAS: `image: <docker-hub-login>/xerscope:latest`. A public Docker
-   Hub repository pulls anonymously too; a private one takes Container Manager → Registry →
-   Docker Hub → Settings → Edit → login + a **read-only** token → Use.
-3. Build.
+1. hub.docker.com → Create repository `xerscope`, **Private** (the free plan includes one).
+   Account settings → Personal access tokens: one **Read & Write** for GitHub, one
+   **Read-only** for the NAS.
+2. GitHub → repository → Settings → Secrets and variables → Actions: secrets
+   `DOCKERHUB_USERNAME` (`<docker-hub-login>`) and `DOCKERHUB_TOKEN` (the Read & Write one);
+   variable `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow;
+   the run pushes to both registries.
+3. NAS: Container Manager → Registry → Docker Hub → Settings → Edit → login + the read-only
+   token → **Use**.
+4. `.env`: `XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest` (nothing to edit in
+   `compose.yaml`). Build.
 
-Same image, same digest-equivalent content: the workflow pushes one build to both names.
+If Build still answers `pull access denied`, the project's pull does not use the registry
+login: pull once from Container Manager → Registry (search the image) or Image → Add, then
+Build; Compose starts from the local image without pulling again.
+
+The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 
 ## 9. Security checklist
 
@@ -197,7 +204,7 @@ Same image, same digest-equivalent content: the workflow pushes one build to bot
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Build: `pull access denied` on ghcr | package private, or Container Manager and ghcr | §2 step 2; else §8 |
+| Build: `unauthorized` / `pull access denied` on ghcr | the package is private | make it public (§2 step 2), or use the private Docker Hub copy (§8) |
 | `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `image` run for that tag |
 | tailscale log `permission denied` `/var/lib/tailscale` | `tailscale-state/` not writable by the container's user | §4 permission on the folder |
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, empty `tailscale-state/`, Build |
