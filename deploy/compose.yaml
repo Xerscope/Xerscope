@@ -6,7 +6,8 @@
 #         docker compose up -d
 #         docker compose exec tailscale tailscale funnel status
 # NAS:  Container Manager > Project > Create from a copy of this folder; the five variables
-#       go in the project's Environment tab (or in a .env file next to this one).
+#       go in a .env file next to this one (Container Manager's Environment fields do not
+#       feed the ${...} interpolation below; Compose reads .env by itself).
 #
 # Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
 #   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the

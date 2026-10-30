@@ -123,8 +123,8 @@ docker compose exec tailscale tailscale funnel status
 ```
 
 **On a NAS (Synology Container Manager, Projects):** copy the `deploy/` folder to
-`docker/xerscope/` in File Station, type the five variables in the project's Environment
-tab, Project > Create. Put the exports in a shared folder (`XERSCOPE_EXPORTS=/volume1/<shared-folder>`)
+`docker/xerscope/` in File Station, add a `.env` with the five variables next to
+`compose.yaml` (from `deploy/.env.example`), then Project > Create from that folder. Put the exports in a shared folder (`XERSCOPE_EXPORTS=/volume1/<shared-folder>`)
 and upload new weeks through Drive or SMB. Step by step for DSM 7.4, checks and
 troubleshooting: [docs/deploy.md](docs/deploy.md).
 
