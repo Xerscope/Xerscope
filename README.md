@@ -119,26 +119,7 @@ docker compose -f compose.funnel.yaml up -d --build
 docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
 ```
 
-**On a host that can only run an image** (a NAS with Container Manager and no terminal):
-`Dockerfile.remote` builds `xerscope-remote`, one image holding xerscope, Tailscale (userspace)
-and Caddy, driven by a small supervisor (`deploy/remote/supervisor.py`). CI publishes it
-on every push to `main` (`.github/workflows/image.yml`); see `docs/deploy.md` for the
-registry login, then create one container in the NAS UI:
-
-| In the Container Manager form | Value |
-|---|---|
-| Image | `ghcr.io/xerscope/xerscope-remote:latest` |
-| Environment | `TS_AUTHKEY` (tagged key), `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH` (`caddy hash-password`) or `XERSCOPE_PASSWORD` |
-| Volumes | the exports' shared folder → `/data` read-only; a folder or named volume → `/var/lib/tailscale` |
-| Ports | none |
-| Capabilities / privileged | none |
-
-Then open `https://xerscope.<tailnet>.ts.net`: the browser asks for the username and
-password. Inside the container Caddy and xerscope listen on 127.0.0.1 only, tailscaled has
-no TUN device, and the supervisor stops every process on SIGTERM; `tests/test_docker.py`
-pins those properties.
-
-**With Container Manager Projects (compose)** instead: `.github/workflows/image.yml`
+**On a NAS (Synology Container Manager, Projects):** `.github/workflows/image.yml`
 publishes `ghcr.io/xerscope/xerscope:latest` (a public package, pulled without login; with
 the Docker Hub secrets set, a mirror under your Docker Hub account too) on every push to
 `main`, so the NAS only pulls. In File Station, create `docker/xerscope/` holding `deploy/compose.nas.yaml`,

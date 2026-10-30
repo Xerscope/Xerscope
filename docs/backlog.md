@@ -66,7 +66,7 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Verify on the NAS, after the next pull: `TS_AUTH_ONCE` across a restart; the Docker
       Hub login step now conditioned on a job-level secret; the tailscale state folder is
       a bind mount writable by uid 65532; the hardened sidecars (`cap_drop`, Caddy
-      read-only) still start; the remote image's healthcheck (all three processes).
+      read-only) still start.
 - [ ] The password prompt has no rate limit (stock Caddy has no such module): a Caddy
       build with `caddy-ratelimit`, or Tailscale Serve with a tailnet login once the viewer
       can install Tailscale.

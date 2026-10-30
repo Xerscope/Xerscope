@@ -14,16 +14,16 @@ GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest (public pack
       └──────────────────────────────────────────────────────────────────┘
 ```
 
-Three containers from three images; the app image is the only one built here. The older
-single-container form (`xerscope-remote`) is kept for a NAS without Projects, see §9.
+Three containers from three images; the app image is the only one built here. Container
+Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 
 ## 1. What DSM 7.4 changes
 
 | DSM ≤ 7.1, package *Docker* | DSM 7.2+, package *Container Manager* |
 |---|---|
-| no Compose UI → one container `xerscope-remote` (tailscaled + Caddy + Streamlit under one supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.nas.yaml`, three official images |
+| no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.nas.yaml`, three official images |
 | registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
-| env vars typed in the container form (`TS_AUTHKEY`, `XERSCOPE_PATH`, the hash) | secrets live in files next to the compose: `compose.yaml` (key), `Caddyfile` (hash), `tailscale-serve.json` (prefix) |
+| env vars typed in the container form (key, prefix, hash) | secrets live in files next to the compose: `compose.yaml` (key), `Caddyfile` (hash), `tailscale-serve.json` (prefix) |
 | node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
 Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
@@ -32,8 +32,8 @@ no route to the internet.
 
 ## 2. Pre-flight (from your PC, once)
 
-1. **Image published.** GitHub → Actions → `image` → last run on `main` green, both jobs
-   (`xerscope`, `xerscope-remote`). Package list: `github.com/orgs/Xerscope/packages`.
+1. **Image published.** GitHub → Actions → `image` → last run on `main` green. Package
+   list: `github.com/orgs/Xerscope/packages`.
 2. **Package public.** Package `xerscope` → Package settings → Danger zone → visibility
    **Public**. A public image pulls anonymously; the repository is public, the image adds
    nothing to what is already readable. (A private package would need a classic PAT
@@ -108,7 +108,7 @@ The case of the folder name matters inside the container: `/volume1/Planning` an
 
 ## 6. Create the project
 
-Coming from the `xerscope-remote` container: stop and delete it first, then in
+Coming from the earlier all-in-one container: stop and delete it first, then in
 `tailscale-state/` move the content of `node/` one level up (`tailscaled.state`, …) and
 remove `node/`. Same node, same URL. Never run both with the same state folder.
 
@@ -167,17 +167,7 @@ publishes the app image to Docker Hub, which Container Manager handles natively:
 
 Same image, same digest-equivalent content: the workflow pushes one build to both names.
 
-## 9. NAS without Projects (`xerscope-remote`)
-
-`ghcr.io/xerscope/xerscope-remote:latest` bundles the three processes under one supervisor
-(`Dockerfile.remote`, `deploy/remote/supervisor.py`). Container → Image → Add from URL →
-Run: environment `TS_AUTHKEY`, `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH`, optional
-`XERSCOPE_PATH=/<random>`; volumes `tailscale-state` → `/var/lib/tailscale` and the exports
-folder → `/data` read-only; no port. Same ACL, same checks. Its node state goes to
-`tailscale-state/node/` (the folder's root is not writable to it on DSM). Prefer the
-project form whenever Projects exists: three official images, each updated on its own.
-
-## 10. Security checklist
+## 9. Security checklist
 
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; delete it from the admin console once the node is up (`TS_AUTH_ONCE` means it is never replayed).
@@ -187,7 +177,7 @@ project form whenever Projects exists: three official images, each updated on it
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
-## 11. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
