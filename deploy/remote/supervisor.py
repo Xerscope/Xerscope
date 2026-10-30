@@ -14,8 +14,8 @@ Variables
     XERSCOPE_PASSWORD        the password itself, hashed at start (weaker: readable in the UI)
     XERSCOPE_DATA            folder of XER exports, default /data (mount it read-only)
     XERSCOPE_BASELINE        optional baseline XER
-    XERSCOPE_PATH            optional secret URL prefix, e.g. /k7Qx2mPz: Funnel then exposes only
-                             https://<host>.<tailnet>.ts.net/k7Qx2mPz/ (keep the trailing slash:
+    XERSCOPE_PATH            optional secret URL prefix, e.g. /<random>: Funnel then exposes only
+                             https://<host>.<tailnet>.ts.net/<random>/ (keep the trailing slash:
                              the page's relative asset URLs must resolve under the prefix) and
                              Tailscale answers 404 to everything else before it reaches the
                              container (internet scanners probe "/", "/.env", "/wp-admin"...).
