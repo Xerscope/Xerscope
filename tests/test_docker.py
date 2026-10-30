@@ -34,6 +34,8 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "--advertise-routes" not in compose and "exit-node" not in compose
     assert "STREAMLIT_SERVER_BASE_URL_PATH" not in compose  # Funnel strips the secret prefix: the app stays at "/"
     assert 'TS_AUTH_ONCE: "true"' in compose  # a single-use key must not be replayed on restart
+    # the node state is a named volume: root without DAC_OVERRIDE cannot write a host folder owned by a NAS user
+    assert "- tailscale-state:/var/lib/tailscale" in compose and "./tailscale-state" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
     assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
@@ -73,4 +75,7 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    for f in ["compose.yaml", "deploy/compose.yaml"]:  # the app's writable dirs belong to its user, not root
+        app = (ROOT / f).read_text()
+        assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app, f
     assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c
