@@ -23,7 +23,7 @@ Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 |---|---|
 | no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.yaml`, three official images |
 | registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
-| env vars typed in the container form (key, prefix, hash) | the project's **Environment** tab (key, login, hash, exports folder), interpolated by Compose; nothing written in the files. The prefix stays in `tailscale-serve.json` |
+| env vars typed in the container form (key, prefix, hash) | the project's **Environment** tab (key, login, hash, prefix, exports folder), interpolated by Compose; no file in the folder is edited |
 | node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
 Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
@@ -61,9 +61,10 @@ docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your passphrase'  
 Use a long passphrase (24+ characters, generated; a password manager or
 `openssl rand -base64 24`). Note it: a bcrypt hash cannot be reversed.
 
-Secret URL prefix — `openssl rand -hex 12` → `<random>` (24 hex chars). Internet scanners
-find every new `*.ts.net` name within seconds (the certificate is in the public CT logs);
-with a prefix, Tailscale answers 404 to everything else and the request never reaches Caddy.
+Secret URL prefix — `openssl rand -hex 12` → `<random>` (24 hex chars, 96 bits). Internet
+scanners find every new `*.ts.net` name within seconds (the certificate is in the public CT
+logs); Caddy answers 404 to every path outside `/<random>/` before the password prompt, and
+its log never holds the prefix (request line, Referer and redirect are redacted).
 
 Tailscale admin console:
 
@@ -86,7 +87,7 @@ folder of the repository:
 |---|---|
 | `compose.yaml` | nothing |
 | `Caddyfile` | nothing (login and hash come from the environment) |
-| `tailscale-serve.json` | handler key `"/"` → `"/<random>"` (keep the leading slash, no trailing one) |
+| `tailscale-serve.json` | nothing |
 | `tailscale-state/` | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
 
 `.env.example` is for a PC; on the NAS the values go in the project's Environment tab (§6).
@@ -117,13 +118,14 @@ Container Manager → **Project** → **Create**:
 - Project name: `xerscope`
 - Path: `/docker/xerscope`
 - Source: *Use existing docker-compose.yml* (it finds `compose.yaml`) → Next.
-- **Environment** (the same four lines as `deploy/.env.example`):
+- **Environment** (the same five lines as `deploy/.env.example`; a missing one stops the build with its name):
 
   | Variable | Value |
   |---|---|
   | `TS_AUTHKEY` | the tagged key (any value when the node state is migrated: `TS_AUTH_ONCE` skips it) |
   | `XERSCOPE_USER` | the login |
   | `XERSCOPE_PASSWORD_HASH` | the `$2a$14$...` hash, pasted as is (the form does not interpolate `$`) |
+  | `XERSCOPE_PATH` | `<random>`, no slashes |
   | `XERSCOPE_EXPORTS` | `/volume1/<shared-folder>`, exact case |
 
   → Next → Done.
@@ -154,7 +156,7 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 | new app build | Container → Image → `ghcr.io/xerscope/xerscope` → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
 | pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
 | new password or login | Project → Action → Edit → Environment → new value → Build (Caddy reads them at start) |
-| new prefix | edit `tailscale-serve.json` → Stop, Build; the old URL goes 404 at once |
+| new prefix | Environment → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only after deleting `tailscale-state/` content (new node, same hostname: the admin console shows the old one offline, delete it) |
 
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
@@ -183,7 +185,7 @@ Same image, same digest-equivalent content: the workflow pushes one build to bot
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; delete it from the admin console once the node is up (`TS_AUTH_ONCE` means it is never replayed).
 - [ ] `docker` shared folder and the project's Environment readable by your account only (key + hash in clear in DSM's project store).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
-- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and drops the Referer (it would hold the prefix).
+- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and redacts the request line, Referer and redirect (they hold the prefix).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
@@ -196,7 +198,7 @@ Same image, same digest-equivalent content: the workflow pushes one build to bot
 | tailscale log `permission denied` `/var/lib/tailscale` | `tailscale-state/` not writable by the container's user | §4 permission on the folder |
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, empty `tailscale-state/`, Build |
 | `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
-| 404 on the full URL | handler key ≠ URL path, or missing trailing slash | key `"/<random>"`, URL `/<random>/` |
+| 404 on the full URL | URL ≠ `XERSCOPE_PATH`, or a slash inside the variable | value without slashes, URL `/<random>/` (`/<random>` alone redirects there) |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, paste as is in the Environment tab (quoted in a `.env`) |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
