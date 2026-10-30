@@ -44,7 +44,7 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: ghcr.io/xerscope/xerscope:latest        # public package, no login; mish1ma/xerscope is the same image on Docker Hub
+    image: ghcr.io/xerscope/xerscope:latest        # public package, no login; the Docker Hub mirror works too, see docs/deploy.md §8
     environment:
       XERSCOPE_DATA: /data
     volumes:
