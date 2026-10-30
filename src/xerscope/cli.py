@@ -108,10 +108,17 @@ def _cmd_check(args: argparse.Namespace) -> int:
     for snap in store:
         path = Path(snap.source)
         base = bl or (Baseline.planned(snap) if args.planned_baseline else None)
-        df = results_frame(run_standard(std, AnalysisContext(snap, store, baseline=base)))
+        results = run_standard(std, AnalysisContext(snap, store, baseline=base))
+        df = results_frame(results)
         df.insert(0, "file", path.name)
         df.insert(1, "data_date", snap.data_date)
         frames.append(df)
+        if args.flagged:  # the items behind each count, to diff against P6's own lists
+            out_dir = Path(args.flagged)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for r in results:
+                if not r.flagged.empty:
+                    r.flagged.to_csv(out_dir / f"{path.stem}_{r.metric.id}.csv", index=False, encoding="utf-8-sig")
         print(
             f"\n{std.name} · {path.name} · data date {_when(snap.data_date)}"
             f" · baseline {base.label if base else 'none'}"
@@ -122,6 +129,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
     if args.out:
         results.to_csv(args.out, index=False, encoding="utf-8-sig")
         print(f"\nwritten {args.out}")
+    if args.expect and _expect_differs(results, args.expect):
+        return 1
     # --fail-on: let a CI job or a script stop on a schedule that misses the standard
     bad = {"fail": {"fail", "error"}, "error": {"error"}, "none": set()}[args.fail_on]
     hits = results[results["status"].isin(bad)]
@@ -129,6 +138,31 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(f"\n{len(hits)} result(s) with status {'/'.join(sorted(bad))}", file=sys.stderr)
         return 1
     return 0
+
+
+def _expect_differs(results, expect_csv: str) -> bool:
+    """Compare found / total with the counts typed from a P6 Check Schedule summary.
+
+    The CSV has columns id, found, total, and file when several files were checked (the
+    file name without its folder). Prints every expected line as expected / got."""
+    import pandas as pd
+
+    exp = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    missing = {"id", "found", "total"} - set(exp.columns)
+    if missing:
+        sys.exit(f"{expect_csv}: columns {', '.join(sorted(missing))} missing")
+    keys = ["file", "id"] if "file" in exp.columns else ["id"]
+    if "file" not in exp.columns and results["file"].nunique() > 1:
+        sys.exit(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
+    got = results[keys + ["check", "found", "total"]]
+    m = exp.merge(got, on=keys, how="left", suffixes=("_exp", ""))
+    m["match"] = (m["found_exp"] == m["found"]) & (m["total_exp"] == m["total"])
+    cols = keys + ["check", "found_exp", "found", "total_exp", "total", "match"]
+    print(f"\nExpected (from {expect_csv}) vs xerscope:")
+    print(m[cols].to_string(index=False))
+    bad = int((~m["match"].fillna(False)).sum())
+    print(f"\n{bad} difference(s)" if bad else "\nall counts match", file=sys.stderr if bad else sys.stdout)
+    return bad > 0
 
 
 def _cmd_standards(args: argparse.Namespace) -> int:
@@ -369,6 +403,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     k.add_argument("--project")
     k.add_argument("--out", help="write all results to this CSV")
+    k.add_argument("--flagged", metavar="DIR", help="write the items found by each check, one CSV per file and check")
+    k.add_argument(
+        "--expect",
+        metavar="CSV",
+        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on a difference",
+    )
     k.add_argument(
         "--fail-on",
         choices=["none", "fail", "error"],

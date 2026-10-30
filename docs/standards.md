@@ -16,7 +16,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI | incomplete activities, LOE excluded | incomplete (no actual finish) tasks and milestones; LOE per metric |
 | Relationships checked | all except links between two finished activities | links into incomplete work | links into incomplete work |
 | Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones the successor check, external links pass | open ends + dangling start/finish; only the project start and finish are exempt | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
-| Hard constraints | Mandatory Start, Mandatory Finish | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
+| Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > 352 h, milestones excluded | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships, actual else forecast dates, X = 0 |
@@ -33,25 +33,35 @@ so they are not in this standard; the `dangling` rule stays available for your o
 Subsets from Oracle's help for each section of the Schedule Check Report (pages
 46277–46291). Every percentage = items found / items in the checked subset.
 
-| ID | Group | Check | Subset (Oracle) | Default target here |
+| ID | Group | Check | Subset (Oracle) | Default target (P6 dialog) |
 |---|---|---|---|---|
-| P6-01 | Inflexibility and Inefficiency | Logic | WBS summary, actual finish removed; exemptions above | ≤ 5 % |
-| P6-02 | | Hard constraints | WBS, actual finish, LOE removed; start constraints ignored once started | ≤ 5 % |
-| P6-03 | | Soft constraints | idem | ≤ 5 % |
-| P6-04 | | Large durations (remaining > 352 h) | + milestones removed | ≤ 5 % |
-| P6-05 | | Long lags (> 352 h) | links, both-finished removed | ≤ 5 % |
-| P6-06 | | Large float (> 352 h) | WBS, actual finish, LOE removed | ≤ 5 % |
-| P6-07 | | Relationship types (FS share) | links, both-finished removed | ≥ 90 % |
-| P6-08 | | Lags | idem | ≤ 5 % |
-| P6-09 | Inaccuracy | Negative lags | idem | ≤ 0 % |
-| P6-10 | | Invalid progress dates (forecast before / actual after the data date) | WBS, LOE, finished-before-data-date removed | ≤ 0 % |
-| P6-11 | | Resource / cost | WBS, milestones, LOE removed (completed stay in); a role assignment counts | ≤ 0 % |
-| P6-12 | Lateness | Late activities (finish variance < 0, working time) | WBS, actual finish, milestones, LOE removed | ≤ 5 % |
+| P6-01 | Inflexibility and Inefficiency | Logic | WBS summary, actual finish removed; exemptions above | < 5 % |
+| P6-02 | | Hard constraints (Mandatory Start/Finish, Start On, Finish On) | WBS, actual finish, LOE removed; start constraints ignored once started | < 1 % |
+| P6-03 | | Soft constraints (On or Before/After, As Late As Possible) | idem | < 5 % |
+| P6-04 | | Large durations (remaining > 352 h) | + milestones removed | < 5 % |
+| P6-05 | | Long lags (> 352 h) | links, both-finished removed | < 5 % |
+| P6-06 | | Large float (> 352 h) | WBS, actual finish, LOE removed | < 1 % |
+| P6-07 | | Relationship types (FS share) | links, both-finished removed | > 90 % |
+| P6-08 | | Lags | idem | < 5 % |
+| P6-09 | Inaccuracy | Negative lags | idem | < 1 % |
+| P6-10 | | Invalid progress dates (forecast before / actual after the data date) | WBS, LOE, finished-before-data-date removed | < 1 % |
+| P6-11 | | Resource / cost | WBS, milestones, LOE removed (completed stay in); a role assignment counts | < 1 % |
+| P6-12 | Lateness | Late activities (finish variance < 0, working time) | WBS, actual finish, milestones, LOE removed | < 5 % |
 | P6-13 | | BEI | completed / due by data date; no baseline finish = due | ≥ 0.95 |
-| P6-14 | | Negative float | WBS, actual finish, LOE removed | ≤ 0 % |
+| P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
 
-**Targets are set in P6's Check Schedule dialog and Oracle does not document defaults.**
-Edit `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
+**Targets** are those of the Check Schedule dialog as the P6 EPPM 25 help prints them
+([91574](https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm): "should be less than 5 %",
+"less than 1 %", "greater than 90 %", BEI "0.95 or greater"); the P6 Professional help does not
+print them. Edit `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
+
+### Comparing with a P6 Check Schedule report
+
+`xerscope check file.xer --standard P6 --baseline BL.xer --flagged out/` writes one CSV per
+check with the activities (or relationships) found, to diff against the report's lists.
+`--expect report.csv` compares the counts: a CSV with columns `id,found,total` (plus `file`
+when several files are checked) typed from the report's summary; every line is printed as
+expected / got and the command exits 1 on any difference.
 
 ## DCMA DECM v8.0, Guideline 6 (schedule)
 

@@ -90,8 +90,10 @@ Tools › Check Schedule on the same file and baseline, then compare line by lin
 
 - **Checks:** the 14 of P6 Professional 24, in its order and groups (dangling start /
   finish are EPPM-only, not in this list).
-- **Targets:** P6 targets are set in its dialog and Oracle does not document defaults. Copy
-  `src/xerscope/standards/p6.toml` and set them to yours.
+- **Targets:** the dialog's documented defaults (< 5 %, < 1 % for the inaccuracy checks, FS
+  > 90 %, BEI ≥ 0.95). Copy `src/xerscope/standards/p6.toml` and set them to yours.
+- **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
+  diffs the counts against the ones typed from P6's summary (exit 1 on a difference).
 - **Definitions:** each check's population cites the Oracle help page it comes from. All
   differences with DCMA and DECM are listed in [docs/standards.md](docs/standards.md).
 

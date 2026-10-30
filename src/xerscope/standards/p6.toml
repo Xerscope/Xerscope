@@ -8,8 +8,14 @@
 # the checked subset.
 #
 # Thresholds: P6 compares hours; 352 h (= 44 days x 8 h) is used for "x" below.
-# Targets: set in P6's Check Schedule dialog. Oracle does not document defaults: the values
-# below are common ones. Set them to what your dialog shows so pass/fail matches P6.
+# Targets: the defaults of the Check Schedule dialog as documented for P6 EPPM 25
+# (https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm: "should be less than 5%", "less
+# than 1%", "greater than 90%", BEI "0.95 or greater"); the P6 Professional help does not print
+# them. Set them to what your dialog shows so pass/fail matches your report.
+# Constraint sets: P6 Professional help, Check Schedule dialog
+# (https://docs.oracle.com/cd/G18296_01/client_help/en_US/101248.htm): hard = Mandatory Start,
+# Start On, Mandatory Finish, Finish On; soft = Start/Finish On or Before/After, As Late As
+# Possible. (P6 EPPM counts only the two Mandatory constraints as hard.)
 
 [standard]
 id = "P6"
@@ -25,7 +31,7 @@ group = "Inflexibility and Inefficiency"
 name = "Logic"
 description = "Activities missing predecessors or successors"
 rule = "missing_logic"
-target = "<= 5%"
+target = "< 5%"
 source = "46291: WBS summary and actual-finish removed; actual start or start milestone pass the predecessor check; finish milestones pass the successor check; external links pass"
 params = { exclude = ["complete"], pred_exempt = ["started", "start_milestone"], succ_exempt = ["finish_milestone"], external_passes = true }
 
@@ -33,11 +39,11 @@ params = { exclude = ["complete"], pred_exempt = ["started", "start_milestone"],
 id = "P6-02"
 group = "Inflexibility and Inefficiency"
 name = "Hard constraints"
-description = "Constraints that prevent activities being moved (Mandatory Start, Mandatory Finish)"
+description = "Constraints that prevent activities being moved (Mandatory Start, Start On, Mandatory Finish, Finish On)"
 rule = "constraints"
-target = "<= 5%"
+target = "< 1%"
 source = "46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"
-params = { types = ["CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe"], ignore_start_when_started = true }
+params = { types = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"], exclude = ["complete", "loe"], ignore_start_when_started = true }
 
 [[metric]]
 id = "P6-03"
@@ -45,9 +51,9 @@ group = "Inflexibility and Inefficiency"
 name = "Soft constraints"
 description = "Constraints that do not prevent activities being moved"
 rule = "constraints"
-target = "<= 5%"
-source = "46285: Start on / on or before / on or after, Finish on / on or before / on or after"
-params = { types = ["CS_MSO", "CS_MSOB", "CS_MSOA", "CS_MEO", "CS_MEOB", "CS_MEOA"], exclude = ["complete", "loe"], ignore_start_when_started = true }
+target = "< 5%"
+source = "46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"
+params = { types = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"], exclude = ["complete", "loe"], ignore_start_when_started = true }
 
 [[metric]]
 id = "P6-04"
@@ -55,7 +61,7 @@ group = "Inflexibility and Inefficiency"
 name = "Large durations"
 description = "Activities that have a remaining duration greater than 352 hours"
 rule = "duration"
-target = "<= 5%"
+target = "< 5%"
 source = "46282: WBS summary, actual-finish, milestones and LOE removed"
 params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "milestones", "loe"] }
 
@@ -65,7 +71,7 @@ group = "Inflexibility and Inefficiency"
 name = "Long lags"
 description = "Relationships with a lag duration greater than 352 hours"
 rule = "lag"
-target = "<= 5%"
+target = "< 5%"
 source = "46288: links between two actual-finished activities removed"
 params = { op = ">", value = 352, unit = "hours", links = "not_both_complete" }
 
@@ -75,7 +81,7 @@ group = "Inflexibility and Inefficiency"
 name = "Large float"
 description = "Activities with total float greater than 352 hours"
 rule = "float"
-target = "<= 5%"
+target = "< 1%"
 source = "46284: WBS summary, actual-finish and LOE removed"
 params = { op = ">", value = 352, unit = "hours", exclude = ["complete", "loe"] }
 
@@ -85,7 +91,7 @@ group = "Inflexibility and Inefficiency"
 name = "Relationship types"
 description = "The majority of relationships should be Finish to Start"
 rule = "relationship_type"
-target = ">= 90%"
+target = "> 90%"
 source = "46287: actual = share of FS links in the subset"
 params = { type = "FS", links = "not_both_complete" }
 
@@ -95,7 +101,7 @@ group = "Inflexibility and Inefficiency"
 name = "Lags"
 description = "Relationships with a positive lag duration"
 rule = "lag"
-target = "<= 5%"
+target = "< 5%"
 source = "46289"
 params = { op = ">", value = 0, unit = "hours", links = "not_both_complete" }
 
@@ -107,7 +113,7 @@ group = "Inaccuracy"
 name = "Negative lags"
 description = "Relationships with a lag duration of less than 0"
 rule = "lag"
-target = "<= 0%"
+target = "< 1%"
 source = "46290: links between two actual-finished activities removed"
 params = { op = "<", value = 0, unit = "hours", links = "not_both_complete" }
 
@@ -117,7 +123,7 @@ group = "Inaccuracy"
 name = "Invalid progress dates"
 description = "Activities with invalid progress dates (forecast before, or actual after, the data date)"
 rule = "invalid_dates"
-target = "<= 0%"
+target = "< 1%"
 source = "46281 / 46280: WBS summary, LOE and activities finished before the data date removed"
 params = { kind = "both", exclude = ["loe", "complete_before_data_date"] }
 
@@ -127,7 +133,7 @@ group = "Inaccuracy"
 name = "Resource / cost"
 description = "Activities that do not have an expense or a resource assigned"
 rule = "no_resource"
-target = "<= 0%"
+target = "< 1%"
 source = "46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts"
 params = { exclude = ["milestones", "loe"], expenses_count = true }
 
@@ -139,7 +145,7 @@ group = "Lateness"
 name = "Late activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "late_vs_baseline"
-target = "<= 5%"
+target = "< 5%"
 source = "46278: WBS summary, actual-finish, milestones and LOE removed; baseline finish variance < 0 (working time)"
 params = { exclude = ["complete", "milestones", "loe"] }
 
@@ -159,6 +165,6 @@ group = "Lateness"
 name = "Negative float"
 description = "Activities with a total float less than 0"
 rule = "float"
-target = "<= 0%"
+target = "< 1%"
 source = "46283: WBS summary, actual-finish and LOE removed"
 params = { op = "<", value = 0, unit = "hours", exclude = ["complete", "loe"] }

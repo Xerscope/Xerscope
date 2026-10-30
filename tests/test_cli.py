@@ -30,6 +30,25 @@ def test_check_every_standard(capsys, sample_dir, tmp_path, std):
     assert "baseline planned dates" in out
 
 
+def test_check_flagged_and_expect(capsys, sample_dir, tmp_path):
+    """--flagged writes the items behind each count; --expect compares counts typed from a P6
+    Check Schedule summary and fails the command on a difference."""
+    first = sorted(sample_dir.glob("*.xer"))[0]
+    dest = tmp_path / "out.csv"
+    run(capsys, "check", first, "--standard", "P6", "--flagged", tmp_path / "flagged", "--out", dest)
+    df = pd.read_csv(dest, keep_default_na=False)
+    listed = {p.stem.rsplit("_", 1)[1] for p in (tmp_path / "flagged").glob("*.csv")}
+    assert listed == {r.id for r in df.itertuples() if r.found not in ("", "<NA>", "0")}
+    row = df[df["id"] == "P6-01"].iloc[0]
+    good = tmp_path / "expect.csv"
+    good.write_text(f"id,found,total\nP6-01,{row['found']},{row['total']}\n")
+    assert "all counts match" in run(capsys, "check", first, "--standard", "P6", "--expect", good)
+    bad = tmp_path / "wrong.csv"
+    bad.write_text(f"id,found,total\nP6-01,{int(row['found']) + 1},{row['total']}\n")
+    assert cli.main(["check", str(first), "--standard", "P6", "--expect", str(bad)]) == 1
+    assert "1 difference(s)" in capsys.readouterr().err
+
+
 def test_check_with_baseline_file(capsys, sample_dir):
     first = sorted(sample_dir.glob("*.xer"))[0]
     out = run(capsys, "check", sample_dir, "--standard", "P6", "--baseline", first)

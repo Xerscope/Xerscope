@@ -120,8 +120,9 @@ def test_constraint_sets_differ_between_p6_and_dcma():
             todo("SEC", cstr_type2="CS_MANDSTART", cstr_date2="2026-04-01 08:00"),
         ]
     )
-    assert codes(run(P6, "P6-02", s)) == ["MF", "SEC"]  # mandatory only, secondary counts
-    assert codes(run(P6, "P6-03", s)) == ["LB", "MS"]  # ST: start constraint ignored once started
+    # P6 Professional: Start On / Finish On are hard; secondary counts; ST: start constraint ignored once started
+    assert codes(run(P6, "P6-02", s)) == ["MF", "MS", "SEC"]
+    assert codes(run(P6, "P6-03", s)) == ["LB"]
     assert codes(run(DCMA, "DCMA-05", s)) == ["LB", "MF", "MS", "SEC"]
 
 
