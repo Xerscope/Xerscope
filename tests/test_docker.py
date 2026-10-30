@@ -79,3 +79,9 @@ def test_sidecars_hardened():
         app = (ROOT / f).read_text()
         assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app, f
     assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c
+
+
+def test_runtime_image_carries_no_pip():
+    """pip in the managed CPython is never run and its vendored packages carry CVEs."""
+    df = (ROOT / "Dockerfile").read_text()
+    assert "site-packages/pip " in df and "site-packages/pip-*.dist-info" in df and "bin/pip*" in df
