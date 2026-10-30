@@ -88,7 +88,6 @@ folder of the repository:
 | `compose.yaml` | nothing |
 | `Caddyfile` | nothing (login and hash come from the environment) |
 | `tailscale-serve.json` | nothing |
-| `tailscale-state/` | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
 
 Add a `.env` from `.env.example` with the five values (§6). Container Manager's Environment
 fields at project creation do not feed the compose file's `${...}` interpolation: left empty,
@@ -111,16 +110,16 @@ The case of the folder name matters inside the container: `/volume1/Planning` an
 
 ## 6. Create the project
 
-Coming from the earlier all-in-one container: stop and delete it first, then in
-`tailscale-state/` move the content of `node/` one level up (`tailscaled.state`, …) and
-remove `node/`. Same node, same URL. Never run both with the same state folder.
+Coming from the earlier all-in-one container: stop and delete it first, and delete its
+machine in the Tailscale admin console. This project starts a new node in its own Docker
+volume, with a new key; the hostname, and so the URL, stay the same.
 
 First the **`.env`** in `docker/xerscope/`, next to `compose.yaml`: the five lines of
 `deploy/.env.example`, made on a PC and uploaded (Notepad → Save as → type "All files",
 name `".env"` with the quotes). A missing value stops the build with its name.
 
 ```
-TS_AUTHKEY=tskey-auth-...              # any value when the node state is migrated: TS_AUTH_ONCE skips it
+TS_AUTHKEY=tskey-auth-...              # read on the first start only (TS_AUTH_ONCE); the node then lives in the volume
 XERSCOPE_USER=<login>
 XERSCOPE_PASSWORD_HASH='$2a$14$...'     # single quotes: unquoted, Compose reads the $ as variables
 XERSCOPE_PATH=<random>                 # no slashes
@@ -161,7 +160,7 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 | pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
-| new Tailscale key | only after deleting `tailscale-state/` content (new node, same hostname: the admin console shows the old one offline, delete it) |
+| new Tailscale key | only for a new node: Project → Stop, Container Manager → Volume → delete `xerscope_tailscale-state`, new key in `.env`, Build; delete the old machine in the admin console |
 
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
 pins in `compose.yaml` on the NAS, Build.
@@ -206,8 +205,8 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 |---|---|---|
 | Build: `unauthorized` / `pull access denied` on ghcr | the package is private | make it public (§2 step 2), or use the private Docker Hub copy (§8) |
 | `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `image` run for that tag |
-| tailscale log `permission denied` `/var/lib/tailscale` | `tailscale-state/` not writable by the container's user | §4 permission on the folder |
-| `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, empty `tailscale-state/`, Build |
+| tailscale log `permission denied` `/var/lib/tailscale`, then `state "NoState", waiting` in a loop | the state is a host folder (an older compose): root without capabilities cannot write there | use the named volume of `deploy/compose.yaml` |
+| `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, delete the `xerscope_tailscale-state` volume, Build |
 | `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
 | 404 on the full URL | URL ≠ `XERSCOPE_PATH`, or a slash inside the variable | value without slashes, URL `/<random>/` (`/<random>` alone redirects there) |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
