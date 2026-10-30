@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import REFERENCE_HINT, missing
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis.cpm import (
@@ -54,41 +55,39 @@ REFERENCE = {  # file -> minimum number of stored values compared
     "xerlock/sample-schedule.xer": 120,  # not P6: synthetic, xerlock's engine (Progress Override)
 }
 
+# Stored values another engine wrote and P6 23.12 contradicts (tests/test_p6_heldout.py):
+# xerscope follows P6, so these, and only these, may differ. xerlock binds the late dates of
+# EW-030 (under way) to its started FS successor; P6 does not (register R9b, H5-06 A1030).
+NOT_P6 = {
+    "xerlock/sample-schedule.xer": {
+        ("EW-030", "late_start_date"),
+        ("EW-030", "late_end_date"),
+        ("EW-030", "total_float_hr_cnt"),
+    }
+}
+
 
 @pytest.mark.reference
 @pytest.mark.parametrize("name", REFERENCE)
 def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
     if not (REF / name).exists():
-        pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+        missing("reference", REFERENCE_HINT)
     s = load_snapshot(REF / name)
     cmp = compare_with_stored(s)
     cmp = cmp[cmp["stored"].notna()]
     bad = cmp[~cmp["agree"]]
     assert len(cmp) >= REFERENCE[name]
-    assert bad.empty, bad.head(20).to_string()
+    assert set(zip(bad["task_code"], bad["field"], strict=True)) == NOT_P6.get(name, set()), bad.head(20).to_string()
 
 
 @pytest.mark.reference
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param(
-            n,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="P6 20.12 flags level-of-effort activities on the longest path; xerscope leaves LOE out "
-                "(open: see docs/cpm.md, Validation)",
-            ),
-        )
-        if n == "xereditor/sample.xer"
-        else n
-        for n in REFERENCE
-    ],
-)
+@pytest.mark.parametrize("name", REFERENCE)
 def test_longest_path_matches_p6s_flag(name):
-    """Every open activity's computed longest-path membership = P6's driving_path_flag."""
+    """Every open activity's computed longest-path membership = P6's driving_path_flag,
+    level-of-effort activities included (P6 20.12 flags the ten LOEs of the xereditor
+    sample, each spanning two activities of the path)."""
     if not (REF / name).exists():
-        pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+        missing("reference", REFERENCE_HINT)
     s = load_snapshot(REF / name)
     t = s.activities.set_index("task_code")
     open_ = t[~t["is_complete"]]
@@ -107,7 +106,7 @@ def test_level_of_effort_dates_reproduce_p6(require_reference):
     assert len(loe) == 10
     f = schedule(s).frame.loc[loe.index]
     for mine, theirs in FIELDS:
-        got = f[mine] if mine in f else None
+        got = f.get(mine)
         assert (got.to_numpy() == loe[theirs].to_numpy()).all(), (mine, got.head(3), loe[theirs].head(3))
 
 
@@ -120,7 +119,7 @@ def test_assignment_dates_reproduce_p6(name):
     """TASKRSRC remaining early/late start and finish of every assignment, to the minute:
     activity dates + assignment lag, duration = remaining units / units per hour."""
     if not (REF / name).exists():
-        pytest.skip("reference files missing: uv run python tests/reference/fetch.py")
+        missing("reference", REFERENCE_HINT)
     cmp = compare_assignments(load_snapshot(REF / name))
     assert cmp["taskrsrc_id"].nunique() == ASSIGNMENTS[name]
     bad = cmp[~cmp["agree"]]
@@ -132,7 +131,7 @@ def test_critical_path_test_lands_on_xerlocks_date():
     """xerlock tests/test_cpm_sample.py: +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27."""
     name = "xerlock/sample-schedule.xer"
     if not (REF / name).exists():
-        pytest.skip("reference files missing")
+        missing("reference", REFERENCE_HINT)
     r = critical_path_test(load_snapshot(REF / name), 600)
     assert r.delayed == "MEP-020" and r.passed
     assert "2026-09-08 -> 2028-12-27" in r.note
@@ -427,10 +426,11 @@ def test_critical_path_test_shift_in_working_days():
 # --- conventions no reference file settles (documented in docs/cpm.md) ----------------------------
 
 
-def test_convention_late_start_bound_on_a_weekend_shows_monday_morning():
+def test_late_start_bound_in_non_working_time_shows_the_previous_period_end():
     # Project must finish by Tue 10 00:00 -> B late Mon 09 08:00-17:00; A (SS+8 elapsed h)
-    # must start by Mon 09 00:00, a Saturday-night-to-Monday gap: shown as Mon 08:00, the
-    # same working minute as Fri 17:00, written the way every task start is written.
+    # must start by Mon 09 00:00, a Saturday-night-to-Monday gap: P6 writes the bound's own
+    # instant, here the previous period end Fri 06 17:00, the same working minute as Mon
+    # 08:00 (P6 23.12 held-out corpus, H3-02 A1240 and 93 other values; register R4).
     s = snap(
         [todo("A", **hours(8)), todo("B", **hours(8))],
         [("A", "B", "SS", 8)],
@@ -439,7 +439,7 @@ def test_convention_late_start_bound_on_a_weekend_shows_monday_morning():
     )
     assert dates(s, "B")[2] == T("2026-03-09 08:00")
     a = dates(s, "A")
-    assert a[2] == T("2026-03-09 08:00") and a[4] == 40  # one working week of float
+    assert a[2] == T("2026-03-06 17:00") and a[4] == 40  # one working week of float
 
 
 @pytest.mark.parametrize("lag,start", [(40, "2026-03-09 08:00"), (8, "2026-03-03 08:00")])
@@ -540,15 +540,20 @@ def test_task_dependent_activity_keeps_its_own_calendar():
     assert not schedule(s).frame.loc["A", "resource_dependent"]
 
 
-def test_resource_dependent_late_dates_use_the_resource_calendar():
+def test_resource_dependent_late_dates_bound_on_the_activity_calendar_first():
+    """The project ends Sunday 16:00 (B, on the 7-day calendar). The crane works Sundays,
+    but A's late finish is first taken on A's own calendar (C8, Mon-Fri): Friday 17:00,
+    which on the crane's calendar is Friday 16:00; the crane then runs back 52 h from
+    there. P6 23.12 corpus H8-11 A1040 (open end against the project finish, Thursday
+    23:00 on a Mon-Thu activity: late finish Thursday 17:30, the resource back from it)."""
     s = snap(
-        [todo("A", task_type="TT_Rsrc", **hours(56))],
+        [todo("A", task_type="TT_Rsrc", **hours(52)), todo("B", clndr_id="C7D", **hours(112))],
         resources=RSRCS,
-        assign=[_asg("A", "R7", 56)],
-        project={"plan_end_date": "2026-03-15 16:00"},
-    )  # Sunday 16:00: a crane working hour
+        assign=[_asg("A", "R7", 52)],
+    )
+    assert dates(s, "B")[1] == T("2026-03-15 16:00")  # Sunday: the project finish
     a = dates(s, "A")
-    assert (a[2], a[3]) == (T("2026-03-09 08:00"), T("2026-03-15 16:00"))
+    assert (a[2], a[3]) == (T("2026-03-07 12:00"), T("2026-03-13 16:00"))
 
 
 def test_task_dependent_assignment_lag_and_own_duration():

@@ -36,7 +36,8 @@ name = "Lags"
 description = "Incomplete tasks and milestones with at least one lag in their predecessor logic"
 rule = "lagged_activities"
 target = "<= 10%"
-source = "06A205a: X/Y <= 10%"
+source = "06A205a: X/Y <= 10%; the sheet does not say whether LOE count or whether leads (negative lags) do: LOE kept, positive lags only"
+params = { loe = true, sign = "positive" }
 
 [[metric]]
 id = "06A208a"
@@ -55,7 +56,7 @@ name = "Hard constraints"
 description = "Incomplete tasks and milestones with a hard constraint (Mandatory Start / Finish)"
 rule = "constraints"
 target = "<= 0%"
-source = "06A209a: X/Y = 0%; Primavera P6 hard constraints = Mandatory Start, Mandatory Finish"
+source = "06A209a: X/Y = 0%; Primavera P6 hard constraints = Mandatory Start, Mandatory Finish; the sheet does not say whether LOE count: kept"
 params = { types = ["CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete"], ignore_start_when_started = false }
 
 [[metric]]
@@ -114,8 +115,8 @@ name = "Actual starts changed"
 description = "Actual start different from the previous update's"
 rule = "actuals_changed"
 target = "<= 10%"
-source = "06A504a: X/Y <= 10%, Y = tasks with an actual start"
-params = { field = "start" }
+source = "06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28 days) earlier"
+params = { field = "start", period_days = 28 }
 
 [[metric]]
 id = "06A504b"
@@ -124,8 +125,8 @@ name = "Actual finishes changed"
 description = "Actual finish different from the previous update's"
 rule = "actuals_changed"
 target = "<= 10%"
-source = "06A504b: X/Y <= 10%, Y = tasks with an actual finish"
-params = { field = "finish" }
+source = "06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period (28 days) earlier"
+params = { field = "finish", period_days = 28 }
 
 [[metric]]
 id = "06A505a"

@@ -6,8 +6,24 @@ from xerkit import active, done, snap, todo
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.changelog import changelog, summary
-from xerscope.analysis.evm import earned, ev_point, ev_technique, pv_at, pv_curve, schedule_pct
-from xerscope.analysis.progress import committed, milestone_slips, milestone_trend, progress_delta, rollup_delta
+from xerscope.analysis.evm import (
+    earned,
+    ev_point,
+    ev_technique,
+    evm_series,
+    forecast_curve,
+    pv_at,
+    pv_curve,
+    schedule_pct,
+)
+from xerscope.analysis.progress import (
+    committed,
+    milestone_slips,
+    milestone_trend,
+    ppc_series,
+    progress_delta,
+    rollup_delta,
+)
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.store import SnapshotStore
 
@@ -119,14 +135,16 @@ def test_ev_spi_and_unbaselined():
                 act_work_qty="30",
                 remain_work_qty="60",
             ),
-            todo("X", target_work_qty="40", remain_work_qty="40"),
+            active("X", target_work_qty="40", act_work_qty="10", remain_work_qty="40"),  # not in the baseline
         ],
         data_date="2026-03-04 08:00",
     )
     p = ev_point(now, bl)
-    assert (p.pv_hr, p.ev_hr, p.ac_hr, p.etc_hr) == (16, 20, 30, 100)
+    assert (p.pv_hr, p.ev_hr, p.ac_hr, p.etc_hr) == (16, 20, 40, 100)  # AC and ETC cover the whole scope
+    assert p.eac_hr == 140
     assert p.spi == pytest.approx(1.25)
-    assert p.productivity == pytest.approx(20 / 30)
+    assert p.productivity == pytest.approx(20 / 30)  # EV per hour spent on baselined work: X's 10 h left out
+    assert p.ac_unbaselined_hr == 10
     assert p.unbaselined == ["X"]
 
 
@@ -212,6 +230,52 @@ def test_ppc_counts_only_commitments_still_in_the_update():
     assert sorted(c["task_code"]) == ["A", "B", "DEL"]  # C was due after the W2 data date
     kept = c[c["in_update"]]
     assert kept["completed"].sum() / len(kept) == 0.5
+
+
+def test_ppc_series_one_row_per_week():
+    from xerscope.store import SnapshotStore
+
+    s = ppc_series(SnapshotStore([W1, W2]))
+    assert len(s) == 1
+    row = s.iloc[0]
+    # W1 forecast A, B and DEL to finish before W2's data date; DEL is gone (scope change,
+    # not a missed commitment), A finished, B did not: 1 of 2
+    assert (row["committed"], row["completed"], row["ppc"]) == (2, 1, 50.0)
+    assert row["week_start"] == W1.data_date and row["data_date"] == W2.data_date
+
+
+def test_evm_series_one_point_per_update_against_one_baseline():
+    from xerscope.store import SnapshotStore
+
+    bl = Baseline.from_snapshot(W1)
+    s = evm_series(SnapshotStore([W1, W2]), bl)
+    assert list(s["data_date"]) == [W1.data_date, W2.data_date]
+    assert s["bac_hr"].nunique() == 1  # the baseline does not move
+    assert s["ev_hr"].iloc[0] == 0 and s["ev_hr"].iloc[1] == 100 + 150  # A done (100 h), B half (300 h)
+
+
+def test_forecast_curve_starts_at_ac_and_ends_at_eac():
+    # 80 h remaining on A over 2026-03-02 08:00 -> 03-13 17:00 (10 working days), 20 h spent:
+    # one row per day from the data date's day, 8 h per working day on top of AC, ending at AC + 80
+    s = snap(
+        [
+            active(
+                "A",
+                early_start_date="2026-03-02 08:00",
+                early_end_date="2026-03-13 17:00",
+                target_work_qty="100",
+                act_work_qty="20",
+                remain_work_qty="80",
+            )
+        ],
+        data_date="2026-03-02 08:00",
+    )
+    c = forecast_curve(s)
+    assert c["date"].is_monotonic_increasing and c["date"].iloc[0] == s.data_date.normalize()
+    assert c["fc_cum_hr"].iloc[-1] == pytest.approx(100)
+    by_day = c.set_index("date")["fc_cum_hr"]
+    assert by_day["2026-03-02"] == pytest.approx(28)  # end of the first working day
+    assert by_day["2026-03-07"] == by_day["2026-03-06"]  # Saturday: nothing spread
 
 
 def test_progress_delta_weighted_by_hours():
@@ -349,6 +413,23 @@ def test_progress_delta_with_a_baseline_adds_up_to_ev():
     d = progress_delta(W1, W2, bl).set_index("task_code")
     assert d.loc["B", "earned_hr_week"] == 150  # BL 300 h x 50 points
     assert d["earned_hr_week"].sum() == ev_point(W2, bl).ev_hr - ev_point(W1, bl).ev_hr
+    assert d.loc["DEL", "status"] == "deleted" and d.loc["DEL", "earned_hr_week"] == 0  # no progress to give back
+
+
+def test_progress_delta_gives_back_the_hours_of_a_deleted_activity():
+    # W1: D half done (50 of 100 h earned). W2: D is gone. The week's earned hours are -50,
+    # the change in EV; a frame built from W2 alone would say 0.
+    w1 = snap(
+        [active("D", target_work_qty="100", phys_complete_pct="50", complete_pct_type="CP_Phys"), todo("K")],
+        data_date="2026-03-02 08:00",
+    )
+    w2 = snap([todo("K")], data_date="2026-03-09 08:00")
+    bl = Baseline.from_snapshot(w1)
+    d = progress_delta(w1, w2, bl).set_index("task_code")
+    assert d.loc["D", "deleted"] and d.loc["D", "earned_hr_week"] == -50
+    assert d["earned_hr_week"].sum() == ev_point(w2, bl).ev_hr - ev_point(w1, bl).ev_hr == -50
+    # without a baseline the same, on W1's budget hours
+    assert progress_delta(w1, w2).set_index("task_code").loc["D", "earned_hr_week"] == -50
 
 
 @pytest.mark.parametrize(

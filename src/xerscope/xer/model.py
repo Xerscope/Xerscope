@@ -45,6 +45,8 @@ TASK_DATE_COLS = [
     "cstr_date2",
     "external_early_start_date",
     "external_late_end_date",
+    "suspend_date",
+    "resume_date",
 ]
 TASK_NUM_COLS = [
     "total_float_hr_cnt",
@@ -121,6 +123,16 @@ CONSTRAINT = {
 
 def _blank_to_na(s: pd.Series) -> pd.Series:
     return s.where(s.astype(str).str.strip() != "", None)
+
+
+def forecast_dates(t: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """P6's current forecast dates of a TASK frame: the remaining early dates (restart /
+    reend, what P6 shows and what leveling moves), the early dates when an exporter left
+    them blank. The one reading of "when is this scheduled" for the model and the checks."""
+    return (
+        t["restart_date"].combine_first(t["early_start_date"]),
+        t["reend_date"].combine_first(t["early_end_date"]),
+    )
 
 
 def to_datetime(s: pd.Series) -> pd.Series:
@@ -483,20 +495,9 @@ def build_snapshot(
 
     # P6's Start / Finish columns (Oracle, "Dates Columns of the Activity Table"): the actual
     # date once there is one, else the remaining early date once scheduled, else planned.
-    # Remaining early = early unless the project was leveled; early is kept as a fallback
-    # for exporters that leave restart/reend blank.
-    t["start"] = (
-        t["act_start_date"]
-        .combine_first(t["restart_date"])
-        .combine_first(t["early_start_date"])
-        .combine_first(t["target_start_date"])
-    )
-    t["finish"] = (
-        t["act_end_date"]
-        .combine_first(t["reend_date"])
-        .combine_first(t["early_end_date"])
-        .combine_first(t["target_end_date"])
-    )
+    fc_start, fc_finish = forecast_dates(t)
+    t["start"] = t["act_start_date"].combine_first(fc_start).combine_first(t["target_start_date"])
+    t["finish"] = t["act_end_date"].combine_first(fc_finish).combine_first(t["target_end_date"])
 
     t["total_float_d"] = (t["total_float_hr_cnt"] / t["hours_per_day"]).where(~t["is_complete"])
     t["free_float_d"] = (t["free_float_hr_cnt"] / t["hours_per_day"]).where(~t["is_complete"])
@@ -553,19 +554,24 @@ def build_snapshot(
         lag_hpd = rel["pred_task_id"].map(hpd_by_id)
         rel["lag_d"] = rel["lag_hr"] / lag_hpd.astype(float).fillna(settings.default_hours_per_day)
         rel["is_external"] = rel["pred_proj_id"].ne(pid) & rel["pred_proj_id"].ne("")
+        # A predecessor with no TASK row: a link to another project (P6 exports the link,
+        # not the other project's activities) or a corrupt link. Either way it is not logic
+        # that can be scheduled; the external ones still count as "has a predecessor" below.
+        ext_pred = set(rel.loc[rel["is_external"], "task_id"])
         lost = rel["succ_code"].isna() | rel["pred_code"].isna()
-        if lost.any():
+        if (lost & ~rel["is_external"]).any():
             warnings.append(
-                f"{raw.source}: {int(lost.sum())} relationship(s) to an activity not in the file; "
-                "ignored by the schedule and the checks"
+                f"{raw.source}: {int((lost & ~rel['is_external']).sum())} relationship(s) to an activity "
+                "not in the file; ignored by the schedule and the checks"
             )
+        rel = rel[~lost].copy()
     else:
         rel = pd.DataFrame(
             columns=["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
         )
+        ext_pred = set()
 
     # Links to other projects: P6's logic check lets them pass.
-    ext_pred = set(rel.loc[rel["is_external"].astype(bool), "task_id"]) if not rel.empty else set()
     all_rel = raw.table("TASKPRED")
     ext_succ: set = set()
     if not all_rel.empty and "proj_id" in all_rel.columns:

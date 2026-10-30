@@ -108,7 +108,7 @@ with st.expander("How it is calculated", icon=":material/calculate:"):
             ("SV", "EV − PV", f"{ev:,.0f} − {pv:,.0f} = {row['sv_hr']:+,.0f} h"),
             ("ETC", "Σ remaining labour hours", f"{row['etc_hr']:,.0f} h"),
             ("EAC", "AC + ETC", f"{ac:,.0f} + {row['etc_hr']:,.0f} = {row['eac_hr']:,.0f} h"),
-            ("EV / AC", "Earned hours per hour spent", num(row["productivity"], "{:.2f}")),
+            ("EV / AC", "Earned hours per hour spent on baselined work", num(row["productivity"], "{:.2f}")),
         ],
         columns=["measure", "formula", "this update"],
     )
@@ -131,7 +131,12 @@ ui.section(
 pct = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
 st.plotly_chart(
     build_scurve(
-        curve, series[series["data_date"] <= snap.data_date], forecast_curve(snap), snap.data_date, pct, is_dark()
+        curve,
+        series[series["data_date"] <= snap.data_date],
+        memo(("forecast", snap.source), lambda: forecast_curve(snap)),
+        snap.data_date,
+        pct,
+        is_dark(),
     ),
     width="stretch",
 )

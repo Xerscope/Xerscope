@@ -1,6 +1,7 @@
 # Behind Tailscale Funnel: TLS is terminated by tailscaled, Caddy only authenticates and
 # proxies, on a port that exists solely inside the shared container network namespace.
 {
+    admin off
     auto_https off
     default_bind 127.0.0.1
 }

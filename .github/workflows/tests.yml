@@ -22,7 +22,22 @@ permissions:
 
 # Actions are pinned to a commit SHA (a tag can be moved by whoever controls the repo);
 # Dependabot (.github/dependabot.yml) proposes the updates.
+#
+# XERSCOPE_REQUIRE names the evidence a job must have (tests/conftest.py `missing`): a test
+# that would skip for want of it fails instead, so a job cannot go green by skipping the
+# reference files, the P6 corpus or the MPXJ cross-check.
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked
+      - run: uvx ruff check src tests
+      - run: uvx ruff format --check src tests
+
   test:
     strategy:
       fail-fast: false
@@ -31,6 +46,8 @@ jobs:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["windows-latest", "ubuntu-latest"]' || '["ubuntu-latest"]') }}
         python: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["3.11", "3.13", "3.14"]' || '["3.11", "3.14"]') }}
     runs-on: ${{ matrix.os }}
+    env:
+      XERSCOPE_REQUIRE: reference,p6-corpus
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,11 +56,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
+      - name: Reference data cache (keyed on the pinned commits and checksums)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: tests/reference/data
+          key: reference-${{ hashFiles('tests/reference/sources.py', 'tests/reference/fetch.py', 'tests/reference/fetch_p6_heldout.py') }}
       - name: Reference XERs (pinned, checksum-verified) and the P6-scheduled corpus (pinned commit)
         run: |
           uv run python tests/reference/fetch.py
           uv run python tests/reference/fetch_p6_heldout.py
-      - name: Tests (parser, model, reference results, app pages)
+      - name: Tests (parser, model, CPM against P6, checks, app pages)
         run: uv run pytest -rs
       - name: CLI smoke test
         run: |
@@ -72,6 +94,8 @@ jobs:
       matrix:
         java: ["21", "25"]  # both current LTS releases
     runs-on: windows-latest
+    env:
+      XERSCOPE_REQUIRE: reference,p6-corpus,mpxj
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,11 +108,75 @@ jobs:
         with:
           python-version: "3.14"
       - run: uv sync --locked --extra crosscheck
+      - name: Reference data cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: tests/reference/data
+          key: reference-${{ hashFiles('tests/reference/sources.py', 'tests/reference/fetch.py', 'tests/reference/fetch_p6_heldout.py') }}
       - run: uv run python tests/reference/fetch.py
       - run: uv run python tests/reference/fetch_p6_heldout.py
       - run: uv run xerscope sample --out data/sample
       - run: uv run xerscope crosscheck tests/reference/data/mpxj tests/reference/data/xerlock data/sample
-      - name: MPXJ's CPM scheduler, pinned commit
-        run: uv run python tests/reference/mpxj_cpm.py
+      - name: MPXJ's CPM scheduler, pinned commit, rebuilt so a restored jar never targets another Java
+        run: uv run python tests/reference/mpxj_cpm.py --force
       - name: CPM against MPXJ (P6 exports, random networks, hand cases, demo)
         run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py
+
+  container:
+    # Both images build, the app image answers on its health endpoint with the demo data
+    # mounted, and Trivy scans both: on main, the Monday run and by hand (two image builds
+    # are the most expensive job here; image.yml publishes from main only).
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: xerscope:ci
+          cache-from: type=gha,scope=xerscope
+      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: Dockerfile.remote
+          load: true
+          tags: xerscope-remote:ci
+          cache-from: type=gha,scope=xerscope-remote
+      - name: The app image starts, serves on 8501 and reads a mounted folder
+        # distroless: no shell in the image; the demo set is written to a volume by the
+        # image itself (its /data belongs to the runtime user)
+        run: |
+          docker volume create exports
+          docker run --rm -v exports:/data xerscope:ci sample --out /data/sample
+          docker run -d --name app -p 127.0.0.1:8501:8501 -v exports:/data:ro -e XERSCOPE_DATA=/data/sample xerscope:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8501/_stcore/health && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8501/_stcore/health | grep -q ok
+          docker exec app /app/.venv/bin/xerscope info /data/sample | grep -q data_date
+          docker logs app
+          docker rm -f app
+      - name: The remote image carries its three programs
+        run: |
+          docker run --rm --entrypoint /app/.venv/bin/xerscope xerscope-remote:ci --help >/dev/null
+          docker run --rm --entrypoint /usr/local/bin/caddy xerscope-remote:ci version
+          docker run --rm --entrypoint /usr/local/bin/tailscale xerscope-remote:ci version
+      - name: Known vulnerabilities in the images (OS packages and Python wheels), fixed ones only
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: xerscope:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: xerscope-remote:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

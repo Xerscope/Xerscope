@@ -15,29 +15,20 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from ..config import DEFAULT_SETTINGS, Settings
-from .charts import FONT, TICK
+from .charts import FONT, INK, SERIES, STATUS, TICK
 
 PALETTE = {
-    "light": {
-        "Critical": "#c0392b",
-        "Near critical": "#e09b00",
-        "Normal": "#2a78d6",
-        "Complete": "#9aa5b1",
-        "ghost": "#3e4c59",
-        "ink": "#3e4c59",
-        "grid": "#e6e9ee",
-        "link": "#c9d0d8",
-    },
-    "dark": {
-        "Critical": "#d03b3b",
-        "Near critical": "#fab219",
-        "Normal": "#3987e5",
-        "Complete": "#898781",
-        "ghost": "#c3c2b7",
-        "ink": "#c3c2b7",
-        "grid": "#2c2c2a",
-        "link": "#52514e",
-    },
+    mode: {
+        "Critical": STATUS[mode]["critical"],
+        "Near critical": STATUS[mode]["warning"],
+        "Normal": SERIES[mode][0],
+        "Complete": STATUS[mode]["complete"],
+        "ghost": INK[mode]["secondary"],
+        "ink": INK[mode]["secondary"],
+        "grid": INK[mode]["grid"],
+        "link": INK[mode]["axis"],
+    }
+    for mode in ("light", "dark")
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
 MIN_BAR_MS = 4 * 3600 * 1000  # keep 1-hour tasks visible
@@ -277,7 +268,7 @@ def build_gantt(
 
     fig.update_layout(
         barmode="overlay",
-        height=max(360, 30 * len(rows) + 150),
+        height=min(max(360, 26 * len(rows) + 150), 4000),  # past ~150 rows: filter, or zoom
         margin=dict(l=10, r=20, t=90, b=10),
         # legend pinned to the figure's top edge; the date axis sits between it and the bars
         legend=dict(orientation="h", yref="container", y=0.995, yanchor="top", x=0, xanchor="left", font=FONT),

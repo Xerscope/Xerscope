@@ -10,7 +10,9 @@ No answer here comes from xerscope itself. Three sources, in order of authority:
    give the same dates, total and free float, to the working minute.
 3. Where the two differ and no P6 file settles it, the case is named in
    ``crosscheck.UNRESOLVED`` (or MPXJ's own output is self-contradictory,
-   ``crosscheck.mpxj_inconsistent``). Any other difference fails.
+   ``crosscheck.mpxj_inconsistent``). Where P6's held-out corpus settled it against MPXJ
+   (``crosscheck.P6_SETTLED``), xerscope follows P6 and the difference is MPXJ's. Any
+   other difference fails. P6 outranks MPXJ: tests/test_p6_heldout.py is the oracle.
 
 Needs Java, the ``crosscheck`` extra and the built scheduler; skipped otherwise.
 """
@@ -18,11 +20,11 @@ Needs Java, the ``crosscheck`` extra and the built scheduler; skipped otherwise.
 from __future__ import annotations
 
 import random
-import shutil
 from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import missing, mpxj_or_skip
 from test_cpm_properties import random_network
 from xerkit import active, done, todo, xer_text
 
@@ -32,16 +34,12 @@ LAG_PRED = {"sched_calendar_on_relationship_lag": "rcal_Predecessor"}
 
 @pytest.fixture(scope="module")
 def xc():
-    pytest.importorskip("jpype")
-    pytest.importorskip("mpxj")
-    if shutil.which("java") is None:
-        pytest.skip("no Java runtime")
+    mpxj_or_skip()
     from xerscope import crosscheck
 
     if "mpxj-cpm-" not in crosscheck.mpxj_scheduler_source():
-        pytest.skip(
-            f"MPXJ's scheduler not built, {crosscheck.mpxj_scheduler_source()} loaded: run tests/reference/mpxj_cpm.py"
-        )
+        loaded = crosscheck.mpxj_scheduler_source()
+        missing("mpxj", f"scheduler not built ({loaded} loaded): uv run python tests/reference/mpxj_cpm.py")
     return crosscheck
 
 
@@ -58,7 +56,7 @@ def compare(xc, tmp_path, name, *args, **kw):
 def unexplained(xc, snap, cmp) -> pd.DataFrame:
     """Differences no UNRESOLVED case or MPXJ inconsistency accounts for."""
     bad = cmp[cmp["comparable"] & ~cmp["xs_mpxj_work"]]
-    if bad.empty or xc.unresolved_patterns(snap):
+    if bad.empty or xc.unresolved_patterns(snap) or xc.settled_patterns(snap):
         return bad.iloc[0:0]
     bad = bad[[xc.excused_row(snap, c, f) is None for c, f in zip(bad["task_code"], bad["field"], strict=True)]]
     if bad.empty or xc.mpxj_inconsistent(snap, cmp):
@@ -234,8 +232,9 @@ HAND = {
         [done("A"), active("B"), todo("C")],
         [("A", "B", "FS", 0), ("B", "C", "SS", 16)],
     ),
-    # B started, then held back by A (Retained Logic): the SF to C still binds nothing past
-    # the data date, it hangs on B's actual start
+    # B started, then held back by A (Retained Logic). MPXJ binds C to nothing past the data
+    # date; P6 applies the SF from B's remaining early start (P6_SETTLED "sf_from_started"),
+    # so the two differ here by design and the case checks that the difference is reported
     "sf from started work held back": (
         [
             todo("A", **h(40)),
@@ -285,6 +284,9 @@ def test_hand_cases_agree_with_mpxj(xc, tmp_path, name):
     bad = unexplained(xc, snap, cmp)
     assert bad.empty, bad[["task_code", "field", "xerscope", "mpxj"]].to_string()
     assert cmp["comparable"].sum() >= 6
+    if name == "sf from started work held back":
+        assert xc.settled_patterns(snap) == {"sf_from_started"}
+        assert not cmp.loc[cmp["task_code"] == "C", "xs_mpxj_work"].all()  # P6's reading, not MPXJ's
 
 
 # --- 4. the demo: its stored dates are xerscope's own, so MPXJ checks them --------------------

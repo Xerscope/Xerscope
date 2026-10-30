@@ -97,19 +97,29 @@ Outside `analysis/`:
 
 - `config.py`: `Settings`, the few tunable defaults no standard owns (hours per day when a
   calendar is missing, critical and near-critical float for the Gantt colours).
-- `crosscheck.py`: the three independent comparisons: MPXJ as a second reader
-  (`compare_paths`, with `UNRESOLVED` naming the known reading differences), MPXJ's
-  scheduler as a second CPM engine (`cpm_crosscheck`), and the P6-scheduled held-out corpus
-  (`p6_heldout_score`). Needs Java through the `crosscheck` extra.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
 - `sample.py`: the demo series generator, with the findings it plants week by week.
+
+### `verify/`: independent checks, strongest source first
+
+| Module | Source | Role |
+|---|---|---|
+| `p6_corpus.py` | P6 Professional 23.12.1's own output on the held-out corpus (`p6_heldout_score`) | the oracle for the CPM: every rule the engine takes from it is pinned by a corpus activity in `tests/test_p6_heldout.py` |
+| `mpxj_cpm.py` | MPXJ's PrimaveraScheduler (`mpxj_schedule`, `cpm_crosscheck`) | a second engine, a hint only: `P6_SETTLED` lists the shapes P6 settled against it, `UNRESOLVED` the open ones, `mpxj_inconsistent` its self-contradictions |
+| `mpxj_reader.py` | MPXJ as a reader (`compare_file`, `compare_paths`) | the XER tables read two ways |
+| `shapes.py` | the file's own stored dates (`difference_report`) | `xerscope recalc --report`: differences grouped by activity shape (status · type · constraint · links · option), so one week's differences point at one rule |
+
+`crosscheck.py` re-exports all of it; the CLI and the tests import from there.
 
 ## 6. `viz/`: figures
 
 - **`gantt.py`:** status-coloured bars, comparison outlines, milestones, logic links, a
   data-date line and WBS summary bars (`wbs_rows`).
-- **`charts.py`:** S-curve, indices, MTA, PPC and metric trend. The palette is a fixed
-  categorical order, validated for colour-blind separation. There is one y-axis per chart.
+- **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
+  (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the
+  check-status colours in `app/ui.py` derive from them. The series palette is a fixed
+  categorical order, validated for colour-blind separation; status hues never decorate.
+  There is one y-axis per chart.
 
 ## 7. `app/`: Streamlit
 
@@ -139,7 +149,7 @@ Outside `analysis/`:
 | `changelog` | changes between two files |
 | `standards` | lists standards and rules, or writes the template |
 | `export` | Power BI tables |
-| `crosscheck` | compares the reading with MPXJ (Java); `--cpm` compares the recalculation with MPXJ's scheduler; `--p6` scores the held-out corpus against P6's own results |
+| `crosscheck` | compares the reading with MPXJ (Java); `--cpm` the recalculation with MPXJ's scheduler and the stored dates; `--p6` with P6's held-out corpus |
 | `info` | one line per snapshot |
 | `sample` | generates the demo series |
 
@@ -149,7 +159,8 @@ Outside `analysis/`:
 |---|---|
 | `xerkit.py` | builds tiny XERs in code (numeric ids, full calendars, as P6 writes them), so each expected number is countable by hand and any reader sees the same file |
 | `test_cpm.py` | real P6 files to the minute (dates, floats, longest path, assignments); each rule of the engine by hand |
-| `test_crosscheck_mpxj.py` | the CPM against MPXJ's independent scheduler: P6 files three ways, random networks of every kind, the hand cases, the demo; open questions named in `crosscheck.UNRESOLVED` |
+| `test_p6_heldout.py` | the CPM against P6 23.12's held-out corpus: a floor per set that never drops, one pinned witness activity per rule, the float-type codes read on P6's own dates |
+| `test_crosscheck_mpxj.py` | the CPM against MPXJ's independent scheduler: P6 files three ways, random networks of every kind, the hand cases, the demo; open questions named in `crosscheck.UNRESOLVED`, P6-settled shapes in `P6_SETTLED` |
 | `test_cpm_properties.py` | invariants on seeded random networks |
 | `test_rules.py` | each check, especially where P6 and DCMA differ |
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ crosscheck |
@@ -157,7 +168,6 @@ Outside `analysis/`:
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
 | `test_app.py` | every page renders headless, key options work |
-| `test_p6_heldout.py` | share of values identical to P6 23.12 per held-out set never drops below `FLOORS` |
 | `test_parser.py`, `test_model.py`, `test_store.py` | format edge cases, P6 meaning of each column, the weekly series |
 | `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfiles / supervisor keep loopback-only, non-root, no published port |
 | `reference/` | pinned third-party files (`sources.py`: commit + SHA-256, downloaded by `fetch.py`; the held-out corpus by `fetch_p6_heldout.py`), their stated results (`expected.py`); MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |

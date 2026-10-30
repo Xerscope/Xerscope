@@ -27,7 +27,7 @@ import pandas as pd
 import pytest
 from xerkit import CALENDAR_IDS, snap
 
-from xerscope.analysis.cpm import _Axes, _date_range, schedule
+from xerscope.analysis.cpm import LATE_LIKE, MANDATORY, START_LIKE, _Axes, _date_range, schedule
 
 TYPES = ["FS", "FS", "FS", "SS", "FF", "SF"]
 SEEDS = range(60)
@@ -171,8 +171,8 @@ OPTIONS = [
     {"sched_retained_logic": "N", "sched_progress_override": "Y"},
     {"sched_retained_logic": "N", "sched_progress_override": "N"},
     {"sched_lag_early_start_flag": "N"},
-    {"sched_float_type": "FT_SF"},
-    {"sched_float_type": "FT_SmallestFloat", "sched_open_critical_flag": "Y"},
+    {"sched_float_type": "FT_SS"},
+    {"sched_float_type": "FT_Min", "sched_open_critical_flag": "Y"},
     {"sched_calendar_on_relationship_lag": "rcal_Predecessor"},
     {"sched_calendar_on_relationship_lag": "rcal_24Hour"},
 ]
@@ -200,13 +200,23 @@ def test_options_constraints_calendars(seed):
         typ, date = act.at[c, "cstr_type"], act.at[c, "cstr_date"]
         if act.at[c, "task_type"] == "TT_LOE" or not isinstance(typ, str) or not typ:
             continue
+        # P6 ignores a finish constraint on a start milestone and a start constraint on a
+        # finish milestone (held-out corpus H6-03 A1130; its dialog refuses them)
+        tt = act.at[c, "task_type"]
+        side = START_LIKE.get(typ) or LATE_LIKE.get(typ) or MANDATORY.get(typ)
+        if (tt == "TT_Mile" and side == "finish") or (tt == "TT_FinMile" and side == "start"):
+            continue
         # compared in working time: a start "on" Friday 17:00 shows as Monday 08:00, as in P6
         w = axes.of(act.at[c, "clndr_id"]).work
         d, start, fin, ls, lf = (w(x) for x in (pd.Timestamp(date), r["remaining_start"], r["ef"], r["ls"], r["lf"]))
+        # mandatory dates pin both passes; the early dates never fall before the data date
+        # (P6 23.12, corpus H3-04 A1100): work that would have to start before it starts
+        # at the data date and keeps its late dates pinned
+        dd = w(s.data_date)
         if typ == "CS_MANDSTART":
-            assert start == d and ls == d, (seed, c, typ)
+            assert ls == d and (start == d or (d < dd and start == dd)), (seed, c, typ)
         elif typ == "CS_MANDFIN":
-            assert fin == d and lf == d, (seed, c, typ)
+            assert lf == d and (fin == d or (fin > d and start == dd)), (seed, c, typ)
         elif typ in ("CS_MSOA", "CS_MSO"):
             assert start >= d, (seed, c, typ)
         elif typ in ("CS_MEOA", "CS_MEO"):

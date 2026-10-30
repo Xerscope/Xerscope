@@ -19,6 +19,7 @@ from pathlib import Path
 
 MPXJ_CPM_COMMIT = "8c4f6462e66dab196e92e32bcf4196586d33d740"  # joniles/mpxj master, 2026-10-28
 REPO = "https://github.com/joniles/mpxj"
+JAVA_RELEASE = "21"  # oldest Java the crosscheck job runs: the jar then loads on every LTS it tests
 JAR = Path(__file__).parent / "data" / f"mpxj-cpm-{MPXJ_CPM_COMMIT[:7]}.jar"
 
 
@@ -52,7 +53,8 @@ def build(force: bool = False) -> Path:
         classes = Path(tmp) / "classes"
         sep = ";" if sys.platform == "win32" else ":"
         cp = sep.join(str(j) for j in sorted(_mpxj_lib().glob("*.jar")))
-        subprocess.run(["javac", "-nowarn", "-d", str(classes), "-cp", cp, *map(str, files)], check=True)
+        javac = ["javac", "--release", JAVA_RELEASE, "-nowarn", "-d", str(classes), "-cp", cp]
+        subprocess.run([*javac, *map(str, files)], check=True)
         JAR.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(JAR, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(classes.rglob("*.class")):

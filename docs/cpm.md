@@ -17,74 +17,88 @@ It serves:
 
 ```bash
 uv run xerscope recalc week42.xer --out recalc.csv   # field-by-field agreement + all dates
+uv run xerscope recalc week42.xer --report            # differences grouped by activity shape
 ```
 
 ## Validation
 
-Three sources, strongest first. None of them is xerscope's own output.
+Three sources, strongest first. None of them is xerscope's own output. Where two
+disagree, P6 wins and the difference is recorded against the other.
 
-**1. P6.** Recalculating real P6 exports and comparing with what P6 stored, exact clock
-time required (`tests/test_cpm.py`):
+**1. P6 Professional 23.12.1: the held-out corpus** (danafitkowski/cpp-cpm-engine, MIT;
+fetched at test time by `tests/reference/fetch_p6_heldout.py`, scored by
+`tests/test_p6_heldout.py` and `xerscope crosscheck --p6`). 360 synthetic schedules,
+frozen before P6 saw them, imported into P6, scheduled with F9, early / late dates and
+floats read back from P6's database: progressed (in and out of sequence, suspended),
+constrained (every type, mandatory dates, expected finishes), multi-calendar,
+level-of-effort and resource-dependent work, under every scheduling option.
 
-| File | Scheduled by | Activities | Values compared | Identical |
+| Scope | Values | Identical to P6 |
+|---|---|---|
+| H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.9 % |
+| task-dependent work, all 30 sets | 41,868 | 91.5 % |
+| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 81.0 % |
+| all | 54,726 | 89.0 % |
+
+`FLOORS` in the test holds each set's share and fails on any drop; `PINNED` names the
+corpus activity each rule of the engine was taken from, so a regression on one rule is
+named rather than averaged away. Rules taken from the corpus: float-type codes; an SF
+link from a started predecessor applies; the expected finish stands in for start +
+remaining (remaining 0 when it falls before the start, a later FF / SF bound wins);
+mandatory dates never put early dates before the data date; the late start an SS / SF
+bound gives is written at the bound's instant; lags into a finished successor pass back
+in full (FS / FF) or unexpired (SS / SF); under Progress Override the start of work under
+way is an actual (FS / SS links to and from it bind nothing, FF / SF links still do);
+suspended work resumes on its resume date; a constraint of the wrong kind on a milestone
+is ignored; LOE late dates follow their links' late dates; under Progress Override an SS
+from a started predecessor is measured from the data date; resource-dependent work takes
+its bounds on the activity calendar and places each driving assignment from there (early
+and late), with the expected finish measured on the resource calendar; "make open-ended
+activities critical" never puts a late finish past the Must Finish By and counts any
+successor row (finished, WBS summary) as a successor; As Late As Possible moves the
+remaining work of started activities; an activity whose expected finish applies has no
+free float; a second constraint tighter than a mandatory date still holds; an LOE's
+start-type link from a started predecessor is measured from the data date and its late
+start never passes its late finish. What is still open is in `docs/backlog.md`.
+
+**2. Real P6 exports** with stored dates, exact clock time required (`tests/test_cpm.py`):
+
+| File | Scheduled by | Activities | Values | Identical |
 |---|---|---|---|---|
-| Hotel Project | P6 6.0 | 4,217 (7,586 links: FS/SS/FF/SF; 11 calendars; holidays; ALAP; must finish by) | 25,302 | 25,302 |
-| Terminal Building | P6 5.0 | 66 (SNLT, 7-day calendar, must finish by) | 396 | 396 |
-| Hotel + Terminal assignments | P6 6.0 / 5.0 | 2,340 assignments (labour, nonlabor, material) | 9,360 | 9,360 |
-| Longest path flag | both | 4,283 open activities | 4,283 | 4,283 |
+| Hotel Project | P6 6.0 | 4,217 (7,586 links; 11 calendars; holidays; ALAP; must finish by) | 25,302 | all |
+| Terminal Building | P6 5.0 | 66 (SNLT, 7-day calendar, must finish by) | 396 | all |
+| 20 kW PV plant | P6 25.12 | 25 | 150 | all |
+| XER editor sample | P6 20.12 | 52, 10 of them level of effort | 252 | all |
+| Hotel + Terminal assignments | P6 6.0 / 5.0 | 2,340 assignments | 9,360 | all |
+| Longest path flag | Hotel, Terminal, PV, XER editor sample (LOE included) | 4,360 open activities | 4,360 | all |
 
-Both projects are **unstarted and task dependent**: no public P6 export with progress or
-resource-dependent activities was found. No P6 Professional 24 file is at hand either;
-the engine follows P6 24's documentation, the files are older P6 versions.
+All four are unstarted; the corpus covers what they do not. No P6 Professional 24 file is
+public: 23.12 and 25.12 bracket it.
 
-**2. A second engine: MPXJ's `PrimaveraScheduler`** (`tests/test_crosscheck_mpxj.py`,
-`xerscope.crosscheck.cpm_crosscheck`). Written independently by MPXJ's authors and tuned
-against P6 output; built from a pinned commit (`tests/reference/mpxj_cpm.py`) because the
-PyPI release predates its out-of-sequence fix (joniles/mpxj#972). It reproduces 99.96 %
-of Hotel and all of Terminal; every Hotel value it misses, xerscope gets right. On random
-networks, early / late dates, total and free float agree to the working minute:
+**3. MPXJ's `PrimaveraScheduler`**, a second engine written independently and tuned by
+its authors against P6 (`tests/test_crosscheck_mpxj.py`, built from a pinned commit by
+`tests/reference/mpxj_cpm.py`). It reproduces 99.96 % of Hotel and all of Terminal; on
+random networks of every kind the two engines agree to the working minute outside the
+cases named in `crosscheck.UNRESOLVED` (no P6 output settles them yet) and
+`crosscheck.P6_SETTLED` (the corpus settled them against MPXJ). Where MPXJ contradicts
+itself (`mpxj_inconsistent`) its value is discarded. MPXJ models P6's default options only.
 
-| Networks (seeded, random logic, lags and leads) | Result |
-|---|---|
-| unstarted, FS/SS/FF/SF | identical (free float aside when a lead is involved) |
-| progress in logic sequence | identical outside the cases below |
-| out-of-sequence progress (Retained Logic) | identical outside the cases below |
-| resource dependent, resources on the activity calendar, unstarted and progressed | identical |
-| one constraint of each of the nine types | identical, except where MPXJ contradicts itself (below) |
-| the demo's eight weekly files | identical, same exceptions |
-| the hand cases of `test_cpm.py` MPXJ models | identical |
-
-MPXJ only models P6's default options: Actual Dates, Progress Override, SS lag from
-actual start, open ends critical, ignoring other projects and non-driving assignments of
-resource-dependent activities have **no independent check**; their hand tests say so.
-
-**3. Named open questions.** Where the engines differ and no P6 file settles it, the case
-is listed in `crosscheck.UNRESOLVED` and reported, not silently blamed on either side:
-
-| Case | xerscope | MPXJ |
+| Open case (UNRESOLVED) | xerscope | MPXJ |
 |---|---|---|
 | FF / SF lag from a finished activity | expires from the actual date, as FS | counted from the data date (twice for FF) |
-| SF to or from progressed work | one rule (below) | a per-status case table |
+| SF into progressed work, or from a finished activity | one rule (below) | a per-status case table |
 | lead from started or finished work | backward pass drops it (SS/SF) | differs by status |
 | FF / SS / SF from a finished activity into started work | carried date + unexpired lag | actual dates |
-| resource-dependent activity, resources on other calendars | each assignment starts on its resource calendar | starts on the activity calendar |
+| resource-dependent activity, resources on other calendars | bound on the activity calendar, each assignment from there on its resource calendar (corpus H8-03 A1240) | starts on the activity calendar |
 | assignment lag on a resource-dependent activity | in the activity dates | left out |
 | free float with a lead, or of a mandatory-constrained activity | to the successor bound | 0 |
 | lag calendar not stated in the file | successor's (Oracle) | predecessor's |
 
-MPXJ's own output is discarded where it contradicts itself (`mpxj_inconsistent`): with
-Start On / Start On or After / Mandatory Start it keeps a stale early finish (finish
-before start), with Start On or Before / Mandatory Finish a stale late start, and a Start
-On or After on the same day as the logic start moves the start before what the logic
-allows. Each was checked by hand on the network it appeared in.
-
-**Mutation tests.** Plausible bugs injected one at a time (snapping, lag calendars,
-options, ALAP, time axis, SS expired lag, resource calendars, assignment lag and
-duration, Actual Dates, longest path) are each caught, except swapping start float for
-finish float: the two coincide in this engine (see "Conventions" below).
-
-To settle any row of the open-questions table for your own schedules: export a file that
-contains the case from P6 24 after F9 and run `xerscope recalc` on it.
+To check the engine on your own schedules: export a file after F9 in P6 and run
+`xerscope recalc` on it; every stored date and float is compared to the minute.
+`--report` groups the differences by the shape of the activity (status, type, constraint,
+link kinds, lag, progressed-activities option): one shape with every value wrong is one
+rule to fix, with the stored dates as the answer.
 
 ## Time: `TimeAxis` (`xer/calendar.py`)
 
@@ -119,7 +133,7 @@ is inferred from `day_hr_cnt` and `week_hr_cnt`.
 | When scheduling progressed activities use | `sched_retained_logic`, `sched_progress_override` (both `N` = Actual Dates) | Retained Logic |
 | Calculate start-to-start lag from | `sched_lag_early_start_flag` | Early Start |
 | Calendar for scheduling relationship lag | `sched_calendar_on_relationship_lag` | **Successor** activity calendar |
-| Compute total float as | `sched_float_type` | Finish float |
+| Compute total float as | `sched_float_type`: `FT_FF` finish float, `FT_SS` start float, `FT_Min` the smaller; `FT_Start`/`FT_Total` (imported codes) are reported as the finish float, as P6 23.12 does | Finish float |
 | Make open-ended activities critical | `sched_open_critical_flag` | no |
 | Use expected finish dates | `sched_use_expect_end_flag` | yes |
 | Must finish by | `PROJECT.plan_end_date` | none |
@@ -180,10 +194,16 @@ work before either.
   drive and a finished predecessor no longer holds work in progress.
 - **Resource dependent** (`TT_Rsrc`, Oracle: "scheduled according to the calendars for
   the resources … the latest finish date of all driving resources is used for the early
-  finish"): each driving assignment (`rollup_dates_flag`) starts at the logic's bound plus
-  its lag on its resource's calendar (`RSRC.clndr_id`) and lasts remaining units / units
-  per hour; the activity runs from the earliest assignment start to the latest finish.
-  Without a driving assignment with a rate it falls back to the activity calendar (warned).
+  finish"), as the corpus shows P6 23.12 placing it: the logic's bound is taken on the
+  activity's own calendar; each driving assignment (`rollup_dates_flag`) is placed from
+  there on its resource's calendar (`RSRC.clndr_id`), plus its lag, for remaining units /
+  units per hour, and pushed back behind a later finish bound; the activity starts at the
+  earliest assignment start, on its own calendar, and the assignments then run forward
+  from that start (a finish bound is met, not tight). An expected finish measures the
+  remaining work on the resource calendar from the first placement; one before the start
+  keeps the file's remaining duration. Without a driving assignment with a rate the
+  activity falls back to its own calendar (warned). Witnesses: H8-03 A1240, H10-02
+  A1360, H26-11 A1090, H14-05 A1040.
 
 **Backward pass (late dates)**, in reverse order:
 
@@ -193,16 +213,19 @@ work before either.
 | SS | start ≤ succ late start − lag |
 | FF | finish ≤ succ late finish − lag |
 | SF | start ≤ succ late finish − lag |
-| no open successor | finish ≤ project "must finish by" if set, else the latest early finish; its own early finish if "make open-ended activities critical" |
+| no open successor | finish ≤ project "must finish by" if set, else the latest early finish; with "make open-ended activities critical", an activity without any successor row ends at its own early finish, never past the Must Finish By (H25-05 A1380); one whose successors bind nothing (finished, WBS summary) is not open-ended (H27-04 A1390) |
 | any activity | finish ≤ the same project end: an activity whose successors only bound its start (SS, SF) would otherwise float past the end (MPXJ caps the same way; no P6 file has the case) |
 | finished successor (Retained Logic) | its carried late date: FS drops the lag, FF keeps it, SS / SF keep it unless the predecessor started |
 | Start on / Start on or before | start ≤ date |
 | Finish on / Finish on or before | finish ≤ date |
-| Mandatory | the date |
+| Mandatory | the date; a second constraint of the same end that is tighter still holds (H23-08 A1220); with an expected finish earlier than a Mandatory Finish the date no longer pins: the successors drive, capped by the expected finish (H23-03 A1210) or, on resource-dependent work, by the mandatory date (H25-05 A1150) |
 | Actual Dates option | a started successor bounds its predecessors by its *actual* dates: out-of-sequence progress gives the predecessor negative float, growing each period it stays open (Oracle warns of exactly this) |
 
-Resource-dependent activities place each driving assignment's late finish on its
-resource calendar the same way.
+Resource-dependent activities mirror the forward pass: the late bounds are taken on the
+activity calendar first, then each driving assignment runs back on its resource calendar
+(H10-04 A1220, H8-11 A1040, H9-08 A1230); a late start an SS bound drives is written at
+the bound's instant, as on task-dependent work (H26-04 A1440); their late finish stays
+capped by the Mandatory Finish under an earlier expected finish (H25-05 A1150, observed).
 
 **Float.**
 
@@ -212,15 +235,21 @@ resource calendar the same way.
   finished successor sits at its carried date). It can exceed total float when the late
   finish stops at the project end, as in MPXJ.
   For an open end, it runs to the project's early finish (not to "must finish by":
-  Terminal shows 8 h of total float but 0 free float).
+  Terminal shows 8 h of total float but 0 free float). An activity whose expected finish
+  applies has none, whatever its successors' dates (corpus, 265 of 265 such values:
+  H1-08 A1090, H5-01 A1120; observed, not explained).
 - **As late as possible:** in reverse order, an ALAP activity moves right to use its free
-  float, against its successors' already moved dates. Free float is measured after that,
-  as P6 shows it: Hotel's chained ALAP activities pin this.
+  float, against its successors' already moved dates; the remaining work of a started
+  ALAP activity moves the same way (H27-05 A1170). Free float is measured after that, as
+  P6 shows it: Hotel's chained ALAP activities pin this.
 
 **Longest path** (Oracle: "activities that have an early finish equal to the latest
 calculated early finish for the project and tracing all driving relationships for those
 activities back"): from the open activities finishing last, walk back through every
-relationship whose bound equals the successor's start (FS/SS) or finish (FF/SF).
+relationship whose bound equals the successor's start (FS/SS) or finish (FF/SF). A
+level-of-effort activity is on the path when one of its links into a path activity
+drives that activity's date (the P6 20.12 export flags its ten LOEs, each spanning two
+activities of the path); the trace stops at the LOE, whose own dates come from its links.
 
 **Assignments.** Task dependent: remaining start = the activity's remaining start +
 assignment lag, finish = start + remaining units / units per hour (else the activity's
@@ -231,7 +260,9 @@ Exactly what P6 stored on 2,340 Hotel and Terminal assignments.
 (SS / FS predecessors, SS / SF successors) give its start, the earliest of them;
 finish-type ends (FF / SF predecessors, FF / FS successors) its finish, the latest. An FF
 predecessor and an FF successor to the same activity give the same finish, as Boyle shows
-in P6 ("Constructing LOE activities in Primavera P6"). It drives nothing.
+in P6 ("Constructing LOE activities in Primavera P6"). A start-type link from a started
+predecessor is measured from the data date plus the unexpired lag (H10-01 A1300); the
+late start never passes the late finish (same case). It drives nothing.
 
 **No data date.** P6 always stores one. A file without a data date and a planned start
 is scheduled from the earliest activity date it carries, with a warning.
@@ -248,6 +279,7 @@ Each rule below is pinned by a real file:
 | task finish | the end of a working period | all files |
 | early finish pushed by FF/SF/finish constraint into non-working time | the next working time | Hotel HCSWB3Z2190: 30 Oct 08:00 after the Eid holidays, not 24 Oct 16:00 |
 | late finish | a period end (a successor starting 08:00 → previous evening) | all files |
+| late start from a start bound (SS / SF successor, start constraint) | the bound's own instant, the previous period end when it falls in non-working time (Fri 17:00, not Mon 07:00) | P6 23.12 corpus, H3-02 A1240 and 93 other values, under every lag calendar |
 | start milestone, early | like a task start | xerlock MS-020: 08:00 the next morning |
 | start milestone, late | kept as is if on a period edge, else the previous working time | Hotel HCMEB4000 16:00; xerlock MS-020 08:00 |
 | finish milestone, early | kept as is if working time or a period edge, else next working time | Hotel: 16:00 right after its predecessor |
@@ -255,18 +287,14 @@ Each rule below is pinned by a real file:
 
 ## Conventions no reference file settles
 
-The engine makes a reasonable choice for each of these and tests it, but no available
-P6 output confirms it:
-
-- **Late-start bound in non-working time** (e.g. via an SS lag on a 24 h calendar):
-  written as the next period start, like every task start.
-- **Resource-dependent activity:** FF/SF bounds and the float are measured on the
-  activity's calendar; the start is the earliest driving assignment start (MPXJ agrees
-  when resources share the activity calendar; see the open questions otherwise).
-- **Start float vs finish float:** the engine keeps start = finish − duration on both
-  passes, so the two are equal for task-dependent activities.
-- **LOE dates:** no reference file has an LOE, so the rule above is from Oracle's and
-  Boyle's descriptions, not from stored P6 dates. LOE are excluded from INT-01.
+- **Resource-dependent activity:** bounds are taken on the activity's calendar, the
+  float is measured on it; each assignment is placed on its resource calendar from the
+  activity's start. The corpus agrees with 79 % of the values; this is the engine's
+  largest open area (docs/backlog.md).
+- **Start float vs finish float:** equal on task-dependent work (in P6 too); they differ
+  on resource-dependent work only, where the float-type option decides.
+- **LOE dates:** Oracle's and Boyle's descriptions, confirmed by the P6 20.12 export for
+  early dates and by the corpus for late dates and float. LOE are excluded from INT-01.
 
 ## Property tests
 

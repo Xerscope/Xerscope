@@ -3,7 +3,8 @@
 # Legacy: DCMA itself now assesses schedules with the DECM (decm.toml, v8.0). The
 # 14-Point remains the industry's common screen and what most tools report.
 #
-# Population: incomplete activities, excluding LOE (and WBS summary, always).
+# Population: incomplete activities, excluding LOE (and WBS summary, always), except the
+# checks that need finished work: invalid dates (09), missed tasks (11) and BEI (14).
 # Relationships: those into incomplete work. Durations and float in working days.
 # Calibrated against xerlock's published DCMA result on its sample schedule
 # (tests/reference/expected.py): every count there is reproduced.
@@ -103,6 +104,7 @@ name = "Missed tasks"
 description = "Due by the data date (baseline finish) but finished late or not finished"
 rule = "missed_tasks"
 target = "<= 5%"
+source = "DCMA 14-point #11: tasks due by the status date per the baseline; milestones kept here (they carry a baseline finish), as in xerlock's results the test pins"
 params = { exclude = ["loe"] }
 
 [[metric]]
@@ -119,6 +121,7 @@ name = "CPLI"
 description = "Critical Path Length Index = (CPL + total float) / CPL"
 rule = "cpli"
 target = ">= 0.95"
+source = "DCMA 14-point #13: (critical path length + total float) / critical path length, float measured to the contract finish; P6 writes that float only against the Must Finish By date, so the check is n/a without one"
 
 [[metric]]
 id = "DCMA-14"
@@ -126,4 +129,5 @@ name = "BEI"
 description = "Activities completed / activities due by the data date (baseline)"
 rule = "bei"
 target = ">= 0.95"
+source = "DCMA 14-point #14: tasks completed / tasks baselined to finish by the status date; milestones left out here, an activity without a baseline finish is neither; xerlock's results pin the value"
 params = { exclude = ["loe", "milestones"], missing_baseline = "ignore" }

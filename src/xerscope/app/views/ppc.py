@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.progress import committed, ppc_series, progress_delta, rollup_delta
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, is_dark, require_store
+from xerscope.app.state import baseline_for, is_dark, memo, require_store
 from xerscope.viz.charts import build_ppc
 
 store = require_store()
@@ -30,7 +30,7 @@ with top:
         "the share that update W shows complete. Weekly progress = actual in W minus actual in W−1.",
     )
 
-ppc = ppc_series(store, with_ms)
+ppc = memo(("ppc", with_ms), lambda: ppc_series(store, with_ms))
 ui.section("Percent plan complete by week")
 st.plotly_chart(build_ppc(ppc, target, is_dark()), width="stretch")
 
@@ -102,6 +102,7 @@ ui.table(
         "status",
         "wbs_l1",
         "new",
+        "deleted",
     ],
 )
 ui.csv_button(d, f"progress_{cur.data_date:%Y-%m-%d}.csv")
