@@ -1,16 +1,25 @@
 # Remote access through Tailscale Funnel + Caddy, for people who cannot install Tailscale
-# (a corporate laptop on its own VPN): https://<hostname>.<tailnet>.ts.net from any browser,
-# behind a username and password.
+# (a corporate laptop on its own VPN): https://xerscope.<tailnet>.ts.net/<random>/ from any
+# browser, behind a username and password. One stack for a PC and for a NAS.
 #
-#   cp .env.example .env            # TS_AUTHKEY (tagged, ephemeral off), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH
-#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your password'   # -> the hash
-#   docker compose -f compose.funnel.yaml up -d --build
-#   docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
+# PC:   cp .env.example .env, fill it in, then from this folder:
+#         docker compose up -d
+#         docker compose exec tailscale tailscale funnel status
+# NAS:  Container Manager > Project > Create from a copy of this folder; the four variables
+#       go in the project's Environment tab (or in a .env file next to this one).
 #
+# Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
+#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_EXPORTS
+#   (the folder of the .xer files, e.g. /volume1/<shared-folder>).
+# Secret URL prefix (optional): change the handler key in tailscale-serve.json from "/"
+# to "/<random>". Tailscale strips the prefix before proxying, so Caddy and Streamlit keep
+# serving "/": set nothing else.
 # Nothing touches the host network: tailscaled runs in userspace (no TUN device, no route,
 # no DNS change), no port is published, the only outbound traffic is Tailscale's own.
 # Funnel must be allowed for the node's tag in the tailnet ACL:
 #   "nodeAttrs": [{ "target": ["tag:xerscope"], "attr": ["funnel"] }]
+# tailscaled reads its state from the root of tailscale-state/ (a state kept in a node/
+# subfolder by an earlier setup is moved one level up first; one tailscaled per state).
 services:
   tailscale:
     image: tailscale/tailscale:v1.104.4
@@ -24,8 +33,8 @@ services:
       TS_EXTRA_ARGS: --advertise-tags=tag:xerscope
       TS_NO_LOGS_NO_SUPPORT: "true"                # no diagnostic logs sent to Tailscale
     volumes:
-      - ./tailscale-state:/var/lib/tailscale
-      - ./deploy/tailscale-serve.json:/config/serve.json:ro
+      - ./tailscale-state:/var/lib/tailscale        # create it empty, writable by the container's user
+      - ./tailscale-serve.json:/config/serve.json:ro
     networks: [egress, internal]                    # egress: outbound to Tailscale only (nothing published)
     cap_drop: [ALL]                                 # userspace networking needs no capability
     security_opt: ["no-new-privileges:true"]
@@ -38,7 +47,7 @@ services:
       XERSCOPE_USER: ${XERSCOPE_USER}
       XERSCOPE_PASSWORD_HASH: ${XERSCOPE_PASSWORD_HASH}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on: [tailscale]
     read_only: true
     tmpfs:
@@ -50,13 +59,12 @@ services:
     restart: unless-stopped
 
   xerscope:
-    build: .
-    image: xerscope:latest
+    image: ghcr.io/xerscope/xerscope:latest        # built by .github/workflows/image.yml; public package, no login
     environment:
       XERSCOPE_DATA: /data
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
-      - ./exports:/data:ro                          # on a NAS: /volume1/<shared-folder>:/data:ro
+      - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # read for Everyone on a NAS: the app runs as uid 65532
     networks: [internal]                            # nothing published: reachable from Caddy only
     read_only: true
     tmpfs:
