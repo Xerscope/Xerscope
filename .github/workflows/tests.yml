@@ -108,19 +108,17 @@ jobs:
         with:
           python-version: "3.14"
       - run: uv sync --locked --extra crosscheck
-      - name: Reference data cache (the MPXJ scheduler jar is built per Java version, not cached)
+      - name: Reference data cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: |
-            tests/reference/data
-            !tests/reference/data/mpxj-cpm-*.jar
+          path: tests/reference/data
           key: reference-${{ hashFiles('tests/reference/sources.py', 'tests/reference/fetch.py', 'tests/reference/fetch_p6_heldout.py') }}
       - run: uv run python tests/reference/fetch.py
       - run: uv run python tests/reference/fetch_p6_heldout.py
       - run: uv run xerscope sample --out data/sample
       - run: uv run xerscope crosscheck tests/reference/data/mpxj tests/reference/data/xerlock data/sample
-      - name: MPXJ's CPM scheduler, pinned commit
-        run: uv run python tests/reference/mpxj_cpm.py
+      - name: MPXJ's CPM scheduler, pinned commit, rebuilt so a restored jar never targets another Java
+        run: uv run python tests/reference/mpxj_cpm.py --force
       - name: CPM against MPXJ (P6 exports, random networks, hand cases, demo)
         run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py
 
