@@ -1,198 +1,204 @@
-# Deployment guide: GHCR → Synology DS918+ (Container Manager, no terminal)
+# Deployment guide: Synology DS918+, DSM 7.4, Container Manager (Projects)
 
-Target: one person, outside the home network, on a corporate laptop that cannot install
-anything, reaches `https://xerscope.<tailnet>.ts.net` behind a password. The NAS keeps
-its configuration; nothing is published on its ports.
+Target: one person outside the home network, on a laptop that can install nothing, reaches
+`https://xerscope.<tailnet>.ts.net/<random>/` behind a password. The NAS publishes no port;
+everything goes out through Tailscale Funnel.
 
 ```
-GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope (+ a Docker Hub mirror)
-                                   │ pull
-                              DS918+ Container Manager
-      ┌─────────────────── project "xerscope" ───────────────────┐
-      │ tailscale (userspace) ◀── Funnel ◀── visitor's browser   │
-      │   └─ caddy :8080 (basic_auth) ──▶ xerscope :8501         │
-      │                                 └─ /volume1/plannings:ro │
-      └────────────────────────────────────────────────────────────┘
+GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest (public package, no login)
+                                   │ pull (Container Manager > Project)
+      ┌─────────────── project "xerscope" on the DS918+ ───────────────┐
+      │ tailscale (userspace, Funnel) ◀─── https ─── visitor's browser │
+      │   └─ caddy :8080 on 127.0.0.1 (basic_auth) ──▶ xerscope :8501   │
+      │                                     └─ /volume1/<shared-folder>:ro │
+      └──────────────────────────────────────────────────────────────────┘
 ```
 
-## 1. GHCR in five facts (vs Docker Hub)
+Three containers from three images; the app image is the only one built here. The older
+single-container form (`xerscope-remote`) is kept for a NAS without Projects, see §9.
 
-| | Docker Hub | GHCR |
-|---|---|---|
-| Image name | `mish1ma/xerscope` | `ghcr.io/xerscope/xerscope` (owner **lowercase**, even though the org is `Xerscope`) |
-| Who pushes | you, `docker push` | the `image` workflow, with the job's own `GITHUB_TOKEN` (`packages: write`). You never push by hand. |
-| Visibility | per repo | per **package**; defaults to the repo's visibility (public: anyone pulls, no login) |
-| Pull auth | Docker Hub login (public images: none) | public package: none. Private package or fork: GitHub login + a **personal access token (classic)** with scope `read:packages`; the account password does not work on `ghcr.io`. |
-| Where to look | hub.docker.com | `github.com/orgs/Xerscope/packages` (org packages) and the "Packages" box on the repo page |
+## 1. What DSM 7.4 changes
 
-Rationale: no separate account, no rate limit on pulls, and the image is linked to the
-commit that built it (`sha-<short>` tag + OCI labels).
+| DSM ≤ 7.1, package *Docker* | DSM 7.2+, package *Container Manager* |
+|---|---|
+| no Compose UI → one container `xerscope-remote` (tailscaled + Caddy + Streamlit under one supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.nas.yaml`, three official images |
+| registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
+| env vars typed in the container form (`TS_AUTHKEY`, `XERSCOPE_PATH`, the hash) | secrets live in files next to the compose: `compose.yaml` (key), `Caddyfile` (hash), `tailscale-serve.json` (prefix) |
+| node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
-## 2. Pre-flight checks (do once, from your PC)
+Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
+in `deploy/`), and the app container runs read-only, non-root, on an internal network with
+no route to the internet.
 
-1. **The workflow published something.** Actions → `image` → last run on `main` is green,
-   two jobs (`xerscope`, `xerscope-remote`). Then the org package list shows both.
-2. **The package is linked to the repo.** Package page → "Package settings": source
-   repository = `Xerscope/xerscope`; visibility follows the repository (public).
-3. **Private package or fork only — make a pull token.** GitHub → Settings → Developer
-   settings → Personal access tokens → *Tokens (classic)* → scope **`read:packages` only**,
-   expiry 90 days. (Fine-grained tokens: not reliably accepted by `ghcr.io` for pulls.)
-   Then `echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-login> --password-stdin`.
-4. **Pull from a machine that is not the CI.**
+## 2. Pre-flight (from your PC, once)
+
+1. **Image published.** GitHub → Actions → `image` → last run on `main` green, both jobs
+   (`xerscope`, `xerscope-remote`). Package list: `github.com/orgs/Xerscope/packages`.
+2. **Package public.** Package `xerscope` → Package settings → Danger zone → visibility
+   **Public**. A public image pulls anonymously; the repository is public, the image adds
+   nothing to what is already readable. (A private package would need a classic PAT
+   `read:packages`, and Container Manager cannot log in to `ghcr.io` — use the Docker Hub
+   mirror instead, §8.)
+3. **Pull it somewhere that is not the CI.**
 
    ```bash
    docker pull ghcr.io/xerscope/xerscope:latest
    docker run --rm ghcr.io/xerscope/xerscope:latest --help          # distroless: no shell, only the CLI
-   docker run --rm -v "$PWD/exports:/data:ro" ghcr.io/xerscope/xerscope:latest check /data --standard P6
-   ```
-
-   `denied` on a private package: wrong scope, expired token, or the org blocks personal
-   tokens (Org settings → Third-party access → Personal access tokens).
-5. **Know which build you pulled.**
-
-   ```bash
    docker inspect ghcr.io/xerscope/xerscope:latest \
      --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'   # = commit sha
-   docker buildx imagetools inspect ghcr.io/xerscope/xerscope:latest           # digest, platform (amd64 only)
    ```
 
-   The DS918+ is x86-64: `linux/amd64` is enough. Don't add arm64 unless you target another NAS.
+   The DS918+ is x86-64: `linux/amd64` only, which is what the workflow builds.
 
-## 3. Prepare the secrets (from your PC)
+## 3. Secrets (from your PC)
+
+Password hash — the Caddyfile holds a bcrypt hash, never the password:
 
 ```bash
-docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'a long passphrase'   # → $2a$14$...
+docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your passphrase'   # → $2a$14$...
 ```
+
+Use a long passphrase (24+ characters, generated; a password manager or
+`openssl rand -base64 24`). Note it: a bcrypt hash cannot be reversed.
+
+Secret URL prefix — `openssl rand -hex 12` → `<random>` (24 hex chars). Internet scanners
+find every new `*.ts.net` name within seconds (the certificate is in the public CT logs);
+with a prefix, Tailscale answers 404 to everything else and the request never reaches Caddy.
 
 Tailscale admin console:
 
-- ACL: tag owner `"tag:xerscope": ["autogroup:admin"]` and
+- Access controls:
+  `"tagOwners": { "tag:xerscope": ["autogroup:admin"] }` and
   `"nodeAttrs": [{ "target": ["tag:xerscope"], "attr": ["funnel"] }]`.
-- Settings → Keys → **Reusable: no, Ephemeral: no, Pre-authorized: yes, Tag: `tag:xerscope`**.
-  Non-ephemeral so the node survives container restarts (its state lives in `./tailscale-state`).
-- DNS → MagicDNS + HTTPS certificates must be on (Funnel needs the `*.ts.net` cert).
+- Settings → Keys → Generate auth key: **Reusable: no, Ephemeral: no, Pre-authorized:
+  yes, Tags: `tag:xerscope`**. Non-ephemeral so the node (and its URL) survives restarts.
+- DNS → MagicDNS and HTTPS certificates **on**.
+
+A key or a prefix pasted anywhere else than the NAS files (chat, ticket, screenshot) is
+burned: revoke the key, change the prefix.
 
 ## 4. Files on the NAS
 
-File Station → `docker/xerscope/` (that is `/volume1/docker/xerscope/`):
+File Station → `docker/xerscope/` (`/volume1/docker/xerscope/`), four entries:
 
-| File | From | Edit |
+| On the NAS | From `deploy/` | Edit |
 |---|---|---|
-| `compose.yaml` | `deploy/compose.nas.yaml` | `TS_AUTHKEY`; keep `/volume1/plannings` or point it at the shared folder of the exports. Image: `mish1ma/xerscope:latest` (Docker Hub, section 5) |
-| `Caddyfile` | `deploy/Caddyfile.nas` | user + bcrypt hash |
-| `tailscale-serve.json` | `deploy/tailscale-serve.json` | nothing |
-| `tailscale-state/` | — | create empty folder |
+| `compose.yaml` | `compose.nas.yaml` | `TS_AUTHKEY`; the `/volume1/<shared-folder>` line (§5) |
+| `Caddyfile` | `Caddyfile.nas` | `<login>` and the `$2a$14$...` hash |
+| `tailscale-serve.json` | `tailscale-serve.json` | handler key `"/"` → `"/<random>"` (keep the leading slash, no trailing one) |
+| `tailscale-state/` | — | empty folder; Properties → Permission → *Everyone* read/write (tailscaled runs non-root) |
 
-Exports: a shared folder (`plannings`), weekly `.xer` dropped through Synology Drive or
-SMB. Mounted read-only: the app cannot alter or delete them.
+`docker` is a shared folder: restrict it to your DSM account (Control Panel → Shared
+Folder → Permissions), the key and the hash are in clear in there.
 
-## 5. Registry login in Container Manager
+The three files are typed as they are: Compose does not interpolate `$` in the Caddyfile,
+and the hash is not in `compose.yaml`.
 
-**Tested 2026-10 on DSM 7.2, with the package still private: Container Manager rejected
-ghcr.io** ("returned bad result" on the Registry form and on Image → Add from URL, with a
-token that `docker login ghcr.io` accepts). A public package needs no login, so try
-**Image → Add → Add from URL → `https://ghcr.io/xerscope/xerscope`** first. If the UI still
-refuses, the app image is mirrored on **Docker Hub** (`mish1ma/xerscope`, the project's
-account), which Container Manager handles natively; `compose.nas.yaml` pulls that one.
+## 5. The exports folder
 
-To publish your own mirror from a fork:
+A shared folder (for example `planning`), weekly `.xer` dropped by Synology Drive or
+SMB; sub-folders are read too. Mounted read-only: the app cannot alter or delete anything.
+The container runs as uid 65532 (`nonroot`), which is nobody on the NAS: the folder needs
+read for *Everyone* (File Station → Properties → Permission → Advanced; or Control Panel →
+Shared Folder → Permissions → "Everyone" read). Without it the page shows no file and the
+log says `Permission denied`.
 
-1. hub.docker.com → Create repository `xerscope`.
-2. hub.docker.com → Account settings → Personal access tokens → New: `github-actions`,
-   permissions **Read & Write** → copy it.
-3. GitHub → the fork → Settings → Secrets and variables → Actions: secrets
-   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, variable `DOCKERHUB_IMAGE_OWNER` = your
-   Docker Hub account (and `DOCKERHUB_REMOTE` = `true` for the remote image too).
-4. Actions → `image` → Run workflow; `docker pull <you>/xerscope:latest` confirms it.
-5. For a private mirror, a second Docker Hub token for the NAS, **Read-only**.
-
-Container Manager → **Registry** → select **Docker Hub** → Settings → Edit → username and
-the read-only token (public mirror: nothing to enter) → **Use**. Then Project → Create pulls
-the image by itself.
-
-### ghcr.io with a private package
-
-Container Manager → **Registry** → Settings → **Add**:
-
-| Field | Value |
-|---|---|
-| Registry name | `ghcr` |
-| Registry URL | `https://ghcr.io` |
-| Username | your GitHub login |
-| Password | the `read:packages` token |
-
-Select it with **Use**. Then Registry → search `xerscope/xerscope` won't work (GHCR has no
-search API): go to **Image → Add → From URL** and enter
-`ghcr.io/xerscope/xerscope:latest` — or just create the project, Compose pulls it.
+The case of the folder name matters inside the container: `/volume1/Planning` and
+`/volume1/planning` are two different paths. Copy it from File Station.
 
 ## 6. Create the project
 
-Container Manager → **Project** → Create → "Create docker-compose.yml from existing
-path" → `/docker/xerscope` → Next → Build. Expected: three containers up, `xerscope`
-shows *healthy* after ~30 s (`/_stcore/health`).
+Coming from the `xerscope-remote` container: stop and delete it first, then in
+`tailscale-state/` move the content of `node/` one level up (`tailscaled.state`, …) and
+remove `node/`. Same node, same URL. Never run both with the same state folder.
 
-Checks, in order:
+Container Manager → **Project** → **Create**:
 
-1. `xerscope` log: `You can now view your Streamlit app` — if `Permission denied` on
-   `/data`, the shared folder's permissions exclude "Everyone/others" read; the container
-   runs as uid 65532 (`nonroot`), so give the folder read for *Everyone* or `chown` via
-   File Station → Properties → Permission.
-2. `tailscale` log: `Serve config loaded`, no `funnel: not permitted` (ACL step missed).
-   Admin console → Machines → `xerscope` listed, tag shown, "Funnel" badge on.
-3. From your phone on mobile data: `https://xerscope.<tailnet>.ts.net` → 401 prompt →
-   credentials → the app. On the NAS, Network → nothing new on ports 80/443/8501
-   (`docker` bridge only).
+- Project name: `xerscope`
+- Path: `/docker/xerscope`
+- Source: *Use existing docker-compose.yml* (it finds `compose.yaml`) → Next → Next → Done.
 
-## 7. Update to a new build
+Container Manager pulls the three images (the ghcr pull needs no registry entry) and starts
+the stack. Expected after ~40 s, in Container → each container → Log:
 
-Nothing auto-updates (no Watchtower, by design: an update must be a decision).
+1. `xerscope`: `You can now view your Streamlit app`. The `/_stcore/health` check turns
+   the container *Healthy*.
+2. `tailscale`: `Serve config loaded`, then `funnel` lines. No `funnel: not permitted` (ACL
+   step missed) and no `permission denied` on `/var/lib/tailscale` (§4 folder permission).
+   Admin console → Machines → `xerscope`, tag `xerscope`, Funnel badge.
+3. `caddy`: `serving initial configuration`. Nothing listening on the NAS: Control Panel
+   → Terminal/Network show no 8080/8501; the project's networks are Docker bridges only.
+4. From a phone on mobile data: `https://xerscope.<tailnet>.ts.net/<random>/` — trailing
+   slash included (the page's relative asset URLs need it) → browser password prompt →
+   the app. The same name without the prefix must answer 404.
 
-1. Image → `ghcr.io/xerscope/xerscope` → **Update** (Action → Update), or re-add from URL.
-2. Project → xerscope → **Action → Build** (recreates the containers from the new image;
-   `tailscale-state` keeps the node identity, the URL does not change).
+First certificate: Tailscale asks Let's Encrypt on the first HTTPS request, up to a
+minute of `connection reset` before the page comes up.
 
-Prefer a tag you chose over `latest` once this is in use: push a git tag `v0.1.0`, the
-workflow publishes `ghcr.io/xerscope/xerscope:0.1.0`; put that in `compose.yaml`. Rollback =
-change the tag, Build again. `sha-<short>` tags exist for every `main` build too.
+## 7. Update, rollback, change a secret
 
-## 8. Security checklist
+Nothing auto-updates: an update is a decision. Project → `xerscope` → **Action**:
 
-Internet scanners find every new `*.ts.net` name within seconds (the certificate is in the
-public CT logs) and probe `/`, `/.env`, `/wp-admin`... Basic auth answers 401; to keep them
-out of the container entirely, set `XERSCOPE_PATH=/<random>` on the remote image: Funnel
-then publishes only that prefix and Tailscale answers 404 to the rest. The URL to hand out
-becomes `https://xerscope.<tailnet>.ts.net/<random>/` — trailing slash included, the page's
-relative asset URLs need it. Tailscale strips the prefix before proxying, so Caddy and the app
-keep seeing `/`.
+| Want | Do |
+|---|---|
+| new app build | Container → Image → `ghcr.io/xerscope/xerscope` → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
+| pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
+| new password | new hash in `Caddyfile` → Action → **Stop**, **Build** (Caddy reads the file at start) |
+| new prefix | edit `tailscale-serve.json` → Stop, Build; the old URL goes 404 at once |
+| new Tailscale key | only after deleting `tailscale-state/` content (new node, same hostname: the admin console shows the old one offline, delete it) |
 
-- [ ] Private package or fork: pull token = `read:packages` only, rotated at expiry.
-- [ ] Tailscale key: tagged, non-ephemeral, single-use; delete it from the admin console once the node is up.
-- [ ] `compose.yaml` on the NAS holds the key and the bcrypt hash: the `docker` share must not be readable by other NAS users.
-- [ ] No `ports:` anywhere. Two networks: `egress` (plain bridge, tailscale only, outbound) and `internal` (no gateway: xerscope cannot reach the internet, the NAS LAN cannot reach xerscope).
-- [ ] Basic auth is one shared password → change it when the viewer changes; move to Tailscale Serve + a Tailscale login (no Funnel) the day the viewer can install Tailscale, or to Cloudflare Access.
-- [ ] No rate limit on the password prompt (stock Caddy has none): the bcrypt cost (14) and `XERSCOPE_PATH` (16+ characters) are what stands between a scanner and a guess. A password of 20+ random characters makes the guess hopeless.
-- [ ] Caddy logs the visitor's IP (Funnel's `X-Forwarded-For`, trusted from loopback) and the path to stdout (Container Manager → container → Log): review them from time to time.
-- [ ] Sidecars run with `cap_drop: [ALL]` and `no-new-privileges`; Caddy's filesystem is read-only; tailscaled sends no diagnostic logs (`TS_NO_LOGS_NO_SUPPORT`). The images are pinned by tag; Dependabot proposes the bumps, CI scans both xerscope images with Trivy on every push.
+Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
+pins in `compose.yaml` on the NAS, Build.
 
-## 9. Troubleshooting
+## 8. If Container Manager will not pull from ghcr.io
+
+Project → Build fails with `pull access denied` or `bad result` on a **public** package
+means the DSM proxy or an old Container Manager still mishandles ghcr. The workflow also
+publishes the app image to Docker Hub, which Container Manager handles natively:
+
+1. GitHub → repository → Settings → Secrets and variables → Actions:
+   secrets `DOCKERHUB_USERNAME` (`<docker-hub-login>`), `DOCKERHUB_TOKEN` (hub.docker.com →
+   Account settings → Personal access tokens, **Read & Write**); variable
+   `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow.
+2. In `compose.yaml` on the NAS: `image: <docker-hub-login>/xerscope:latest`. A public Docker
+   Hub repository pulls anonymously too; a private one takes Container Manager → Registry →
+   Docker Hub → Settings → Edit → login + a **read-only** token → Use.
+3. Build.
+
+Same image, same digest-equivalent content: the workflow pushes one build to both names.
+
+## 9. NAS without Projects (`xerscope-remote`)
+
+`ghcr.io/xerscope/xerscope-remote:latest` bundles the three processes under one supervisor
+(`Dockerfile.remote`, `deploy/remote/supervisor.py`). Container → Image → Add from URL →
+Run: environment `TS_AUTHKEY`, `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH`, optional
+`XERSCOPE_PATH=/<random>`; volumes `tailscale-state` → `/var/lib/tailscale` and the exports
+folder → `/data` read-only; no port. Same ACL, same checks. Its node state goes to
+`tailscale-state/node/` (the folder's root is not writable to it on DSM). Prefer the
+project form whenever Projects exists: three official images, each updated on its own.
+
+## 10. Security checklist
+
+- [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
+- [ ] Tailscale key: tagged, single-use, non-ephemeral; delete it from the admin console once the node is up (`TS_AUTH_ONCE` means it is never replayed).
+- [ ] `docker` shared folder readable by your account only (key + hash in clear).
+- [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
+- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and drops the Referer (it would hold the prefix).
+- [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
+- [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
+
+## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `pull access denied` / `unauthorized` | private package: not logged in on ghcr, wrong scope, expired token | Registry → re-add with a fresh classic token `read:packages` |
-| `manifest unknown` | tag typo, or the workflow didn't run for that tag | check Actions; owner is lowercase `xerscope` |
-| `no matching manifest for linux/arm64` | not this NAS (amd64) — another one | add `platforms: linux/amd64,linux/arm64` + `docker/setup-qemu-action` to the workflow |
-| container `xerscope` restarts, log empty | read-only FS without `tmpfs` | keep `/tmp` and `/home/nonroot` in `tmpfs:` |
-| `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, re-issue a tagged key, delete `tailscale-state/`, Build |
-| 404 on `https://xerscope.<tailnet>.ts.net` | serve.json not mounted, or Caddy down | `tailscale` log → `Serve config loaded`; `caddy` log |
-| 502 | xerscope not healthy yet, or `/data` unreadable | wait 40 s; xerscope log |
-| `xerscope-remote` unhealthy, app answers | one of tailscaled / Caddy died and is restarting (the healthcheck wants all three alive) | container log: `[remote] ... exited with` |
-| Streamlit shows nothing after upload | upload goes to the container's tmpfs, lost on restart | drop files in the shared folder instead |
-
-## 10. Alternative: single container (`xerscope-remote`)
-
-If Projects/compose is not available on the NAS, `ghcr.io/xerscope/xerscope-remote:latest`
-bundles the three processes (see `Dockerfile.remote`, `deploy/remote/supervisor.py`).
-Container Manager → Image → Add from URL → Run → set the environment variables
-(`TS_AUTHKEY`, `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH`), the two volumes, no port.
-Same ACL, same checks. The compose form is preferred: three official images, each
-updatable separately, and Caddy/Tailscale not rebuilt when the app changes.
+| Build: `pull access denied` on ghcr | package private, or Container Manager and ghcr | §2 step 2; else §8 |
+| `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `image` run for that tag |
+| tailscale log `permission denied` `/var/lib/tailscale` | `tailscale-state/` not writable by the container's user | §4 permission on the folder |
+| `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, empty `tailscale-state/`, Build |
+| `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
+| 404 on the full URL | handler key ≠ URL path, or missing trailing slash | key `"/<random>"`, URL `/<random>/` |
+| 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
+| 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, paste as is in the Caddyfile |
+| app lists no file | wrong folder path/case, or permission | §5 |
+| page after upload disappears on restart | upload lands in the container's tmpfs | drop files in the shared folder instead |
+| old node still listed in the admin console | state folder emptied | delete the stale machine there |

@@ -4,6 +4,9 @@
     admin off
     auto_https off
     default_bind 127.0.0.1
+    servers {
+        trusted_proxies static private_ranges   # tailscaled proxies from 127.0.0.1: log the visitor's IP
+    }
 }
 
 :8080 {   # no host here: a host in the site address also filters the Host header

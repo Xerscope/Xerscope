@@ -8,7 +8,7 @@
 #   docker run -d --name xerscope-remote --read-only --tmpfs /tmp --tmpfs /home/nonroot \
 #     --cap-drop ALL --security-opt no-new-privileges:true \
 #     -e TS_AUTHKEY=tskey-auth-... -e XERSCOPE_USER=<login> -e XERSCOPE_PASSWORD_HASH='$2a$14$...' \
-#     -v /volume1/plannings:/data:ro -v xerscope-tailscale:/var/lib/tailscale \
+#     -v /volume1/<shared-folder>:/data:ro -v xerscope-tailscale:/var/lib/tailscale \
 #     ghcr.io/<you>/xerscope-remote:latest
 #
 # No port is published, tailscaled has no TUN device: the host network is untouched.
@@ -17,7 +17,7 @@
 ARG UV_VERSION=0.13.6
 ARG PYTHON_VERSION=3.14
 ARG TAILSCALE_VERSION=v1.104.4
-ARG CADDY_VERSION=2.11.2
+ARG CADDY_VERSION=2.11.6
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION}-trixie-slim AS build
 ARG PYTHON_VERSION
