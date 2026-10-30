@@ -1,11 +1,20 @@
 name: tests
 
+# Minutes are the scarce resource on a private repository (Windows counts double):
+#   pull requests and main  -> Linux only, two Pythons (oldest and newest supported)
+#   Monday run and manual   -> the full matrix, Windows included
+# A new push to the same branch cancels the run still going for the previous one.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
   schedule:
     - cron: "17 5 * * 1"  # every Monday: catches newly published CVEs without a push
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Least privilege: the jobs only read the repo.
 permissions:
@@ -18,8 +27,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        python: ["3.11", "3.13", "3.14"]
+        # full matrix on the Monday run and by hand; Linux + oldest/newest Python otherwise
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["windows-latest", "ubuntu-latest"]' || '["ubuntu-latest"]') }}
+        python: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["3.11", "3.13", "3.14"]' || '["3.11", "3.14"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
