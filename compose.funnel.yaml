@@ -3,7 +3,7 @@
 # behind a username and password.
 #
 #   cp .env.example .env            # TS_AUTHKEY (tagged, ephemeral off), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH
-#   docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'your password'   # -> the hash
+#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your password'   # -> the hash
 #   docker compose -f compose.funnel.yaml up -d --build
 #   docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
 #
@@ -56,7 +56,7 @@ services:
       XERSCOPE_DATA: /data
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
-      - ./exports:/data:ro                          # on a NAS: /volume1/plannings:/data:ro
+      - ./exports:/data:ro                          # on a NAS: /volume1/<shared-folder>:/data:ro
     networks: [internal]                            # nothing published: reachable from Caddy only
     read_only: true
     tmpfs:

@@ -1,7 +1,13 @@
-# Synology Container Manager (no terminal): Projects > Create > paste this file.
-# Before that, in File Station, put next to it: Caddyfile (with your password hash inside)
-# and tailscale-serve.json, both from the deploy/ folder of the repository.
+# Synology Container Manager with Projects (DSM 7.2+): Project > Create > from this folder.
+# Before that, in File Station, put next to it: Caddyfile (with your password hash inside),
+# tailscale-serve.json and an empty tailscale-state/ folder, all from deploy/.
 # The image is built by GitHub Actions (.github/workflows/image.yml): nothing to build here.
+# Secret URL prefix (optional, same effect as XERSCOPE_PATH on the remote image): change
+# the handler key in tailscale-serve.json from "/" to "/<random>". Tailscale strips the
+# prefix before proxying, so Caddy and Streamlit keep serving "/": set nothing else.
+# Coming from the remote image: its node state is in tailscale-state/node/; the official
+# tailscale image reads the root of the folder. Stop the remote container, move the files
+# of node/ one level up, then start this project. Never run both with the same state.
 services:
   tailscale:
     image: tailscale/tailscale:v1.104.4
@@ -38,11 +44,11 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: mish1ma/xerscope:latest                 # Docker Hub (private): Container Manager logs in natively; ghcr.io/xerscope/xerscope is the same image
+    image: ghcr.io/xerscope/xerscope:latest        # public package, no login; the Docker Hub mirror works too, see docs/deploy.md §8
     environment:
       XERSCOPE_DATA: /data
     volumes:
-      - /volume1/plannings:/data:ro                 # the shared folder your XER exports go to
+      - /volume1/<shared-folder>:/data:ro           # the shared folder your XER exports go to (read for Everyone: the app runs as uid 65532)
     networks: [internal]
     read_only: true
     tmpfs:

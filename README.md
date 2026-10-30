@@ -114,7 +114,7 @@ Tailscale's outbound connection. `tests/test_docker.py` pins those properties.
 
 ```bash
 cp .env.example .env                       # TS_AUTHKEY (tag:xerscope), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH
-docker run --rm caddy:2.11.2 caddy hash-password --plaintext 'your password'
+docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your password'
 docker compose -f compose.funnel.yaml up -d --build
 docker compose -f compose.funnel.yaml exec tailscale tailscale funnel status
 ```
@@ -129,7 +129,7 @@ registry login, then create one container in the NAS UI:
 |---|---|
 | Image | `ghcr.io/xerscope/xerscope-remote:latest` |
 | Environment | `TS_AUTHKEY` (tagged key), `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH` (`caddy hash-password`) or `XERSCOPE_PASSWORD` |
-| Volumes | `/volume1/plannings` → `/data` read-only; a folder or named volume → `/var/lib/tailscale` |
+| Volumes | the exports' shared folder → `/data` read-only; a folder or named volume → `/var/lib/tailscale` |
 | Ports | none |
 | Capabilities / privileged | none |
 
@@ -139,13 +139,13 @@ no TUN device, and the supervisor stops every process on SIGTERM; `tests/test_do
 pins those properties.
 
 **With Container Manager Projects (compose)** instead: `.github/workflows/image.yml`
-publishes `ghcr.io/xerscope/xerscope:latest` (and, with the Docker Hub secrets set,
-`mish1ma/xerscope:latest`, which Synology's Container Manager accepts) on every push to
+publishes `ghcr.io/xerscope/xerscope:latest` (a public package, pulled without login; with
+the Docker Hub secrets set, a mirror under your Docker Hub account too) on every push to
 `main`, so the NAS only pulls. In File Station, create `docker/xerscope/` holding `deploy/compose.nas.yaml`,
 `deploy/tailscale-serve.json` and `deploy/Caddyfile.nas` renamed to `Caddyfile` with your
 hash written in (make it on any machine with Docker); then Container Manager > Project >
-Create from that folder. Put the exports in a shared folder (`/volume1/plannings` in the
-file) and upload new weeks through Drive or SMB. Step by step, registry login and checks:
+Create from that folder. Put the exports in a shared folder (`/volume1/<shared-folder>` in
+the file) and upload new weeks through Drive or SMB. Step by step for DSM 7.4, migration from the single container, checks:
 [docs/deploy.md](docs/deploy.md).
 
 Allow Funnel for the tag in the tailnet ACL (`"nodeAttrs": [{"target": ["tag:xerscope"],
