@@ -71,6 +71,12 @@ Tailscale admin console:
 - Access controls:
   `"tagOwners": { "tag:xerscope": ["autogroup:admin"] }` and
   `"nodeAttrs": [{ "target": ["tag:xerscope"], "attr": ["funnel"] }]`.
+  The default policy rule (source `*`, in `acls` or `grants`) lets tagged nodes reach every device of the tailnet: a
+  compromised `xerscope` container would reach your PC. Narrow its source to user devices,
+  which excludes tagged nodes:
+  `"grants": [{ "src": ["autogroup:member"], "dst": ["*"], "ip": ["*"] }]`.
+  Funnel does not depend on grants. Machines → `xerscope` → Access then lists no
+  destination.
 - Settings → Keys → Generate auth key: **Reusable: no, Ephemeral: no, Pre-authorized:
   yes, Tags: `tag:xerscope`**. Non-ephemeral so the node (and its URL) survives restarts.
 - DNS → MagicDNS and HTTPS certificates **on**.
@@ -119,7 +125,7 @@ First the **`.env`** in `docker/xerscope/`, next to `compose.yaml`: the five lin
 name `".env"` with the quotes). A missing value stops the build with its name.
 
 ```
-TS_AUTHKEY=tskey-auth-...              # read on the first start only (TS_AUTH_ONCE); the node then lives in the volume
+TS_AUTHKEY=tskey-auth-...              # first start only (TS_AUTH_ONCE): once the node is up, delete this line and the key in the admin console
 XERSCOPE_USER=<login>
 XERSCOPE_PASSWORD_HASH='$2a$14$...'     # single quotes: unquoted, Compose reads the $ as variables
 XERSCOPE_PATH=<random>                 # no slashes
@@ -157,7 +163,7 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 | Want | Do |
 |---|---|
 | new app build | Container → Image → the app image (`ghcr.io/xerscope/xerscope` or the Docker Hub copy) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
-| pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put that tag in `compose.yaml`, Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
+| pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put it in `.env` (`XERSCOPE_IMAGE=<image>:0.1.0`), Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only for a new node: Project → Stop, Container Manager → Volume → delete `xerscope_tailscale-state`, new key in `.env`, Build; delete the old machine in the admin console |
@@ -165,7 +171,11 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
 pins in `compose.yaml` on the NAS, Build.
 
-## 8. Private image: Docker Hub
+## 8. Image on Docker Hub
+
+A **public** Docker Hub repository pulls without a registry login: steps 1 and 2 below, skip
+step 3. Anyone holding the Read & Write token can push a `latest` the NAS would pull at
+the next Update, so pin `XERSCOPE_IMAGE` to a `sha-<short>` tag (§7).
 
 A private ghcr package needs a GitHub token on the NAS, which Container Manager does not
 handle. Keep the image private on Docker Hub instead, where Container Manager logs in
@@ -192,10 +202,12 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 ## 9. Security checklist
 
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
-- [ ] Tailscale key: tagged, single-use, non-ephemeral; delete it from the admin console once the node is up (`TS_AUTH_ONCE` means it is never replayed).
+- [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env` (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume).
+- [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
+- [ ] App image pinned to a `sha-<short>` or version tag, not `latest` (§7).
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
-- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and redacts the request line, Referer and redirect (they hold the prefix).
+- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and redacts the request line, Referer and redirect (they hold the prefix), in the access log and in the error log (global `log` block).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
@@ -203,12 +215,13 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Build: `unauthorized` / `pull access denied` on ghcr | the package is private | make it public (§2 step 2), or use the private Docker Hub copy (§8) |
+| Build: `unauthorized` / `pull access denied` on ghcr | the package is private | make it public (§2 step 2), or use the Docker Hub copy (§8) |
 | `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `image` run for that tag |
 | tailscale log `permission denied` `/var/lib/tailscale`, then `state "NoState", waiting` in a loop | the state is a host folder (an older compose): root without capabilities cannot write there | use the named volume of `deploy/compose.yaml` |
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, delete the `xerscope_tailscale-state` volume, Build |
 | `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
 | 404 on the full URL | URL ≠ `XERSCOPE_PATH`, or a slash inside the variable | value without slashes, URL `/<random>/` (`/<random>` alone redirects there) |
+| 502, Caddy log `dial tcp <ip>:8501: connection refused` with the app *Healthy* | Caddy resolves `xerscope` to the tailscale container (its hostname, in the `/etc/hosts` of the namespace Caddy shares) | upstream `app:8501`, the app's network alias, as in `deploy/` (check: caddy → Terminal → `getent hosts app`) |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
