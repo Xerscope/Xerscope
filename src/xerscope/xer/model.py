@@ -233,6 +233,102 @@ def _taskpred_table(raw: RawXer, task_all: pd.DataFrame, warnings: list[str]) ->
     return rel
 
 
+# Snapshot column contract: the minimum every frame carries (the code reads these by name).
+# The frames may hold more (raw XER columns); build_snapshot fails fast if one goes missing.
+TASK_COLS = [
+    # identity
+    "task_id",
+    "task_code",
+    "task_name",
+    "task_type",
+    "wbs_id",
+    "wbs_code",
+    "wbs_l1",
+    "wbs_sort",
+    "clndr_id",
+    "hours_per_day",
+    "is_wbs_summary",
+    # P6 stored values
+    "status_code",
+    "complete_pct_type",
+    "ev_compute_type",
+    "ev_user_pct",
+    "cstr_type",
+    "cstr_date",
+    "cstr_type2",
+    "cstr_date2",
+    "total_float_hr_cnt",
+    "free_float_hr_cnt",
+    "target_drtn_hr_cnt",
+    "remain_drtn_hr_cnt",
+    "early_start_date",
+    "early_end_date",
+    "late_start_date",
+    "late_end_date",
+    "act_start_date",
+    "act_end_date",
+    "target_start_date",
+    "target_end_date",
+    "restart_date",
+    "reend_date",
+    # derived flags
+    "status",
+    "type",
+    "is_complete",
+    "is_started",
+    "is_milestone",
+    "is_start_milestone",
+    "is_loe",
+    "is_critical",
+    "on_longest_path",
+    "has_hard_constraint",
+    "constraint",
+    "has_resource",
+    "has_expense",
+    "has_external_pred",
+    "has_external_succ",
+    # working days
+    "start",
+    "finish",
+    "total_float_d",
+    "free_float_d",
+    "remaining_d",
+    "original_d",
+    "pct_complete",
+]
+REL_COLS_MODEL = ["pred_code", "succ_code", "type", "lag_hr", "lag_d", "is_external"]
+ASSIGNMENT_COLS_MODEL = [
+    "taskrsrc_id",
+    "task_id",
+    "task_code",
+    "role_id",
+    "rsrc_id",
+    "rsrc_short_name",
+    "rsrc_name",
+    "rsrc_type",
+    "driving",
+    "target_qty",
+    "act_qty",
+    "remain_qty",
+    "restart_date",
+    "reend_date",
+    "act_start_date",
+    "act_end_date",
+]
+
+
+def _check_snapshot_columns(snap: Snapshot) -> None:
+    """Raise XerError when a built frame lacks a declared column (a model change dropped it)."""
+    for name, declared, frame in (
+        ("tasks", [*TASK_COLS, *LABOR_COLS], snap.tasks),
+        ("relationships", REL_COLS_MODEL, snap.relationships),
+        ("assignments", ASSIGNMENT_COLS_MODEL, snap.assignments),
+    ):
+        missing = [c for c in declared if c not in frame.columns]
+        if missing:
+            raise XerError(f"{snap.source}: snapshot.{name} lacks declared columns {missing}")
+
+
 @dataclass
 class Snapshot:
     source: str
@@ -735,7 +831,7 @@ def build_snapshot(
             f"latest activity finish {finish:%Y-%m-%d}; using the activities"
         )
 
-    return Snapshot(
+    snap = Snapshot(
         source=raw.source,
         project_id=pid,
         project_code=prow["proj_short_name"],
@@ -759,3 +855,5 @@ def build_snapshot(
         project_clndr_id=str(prow["clndr_id"] or ""),
         expenses=cost.reset_index(drop=True),
     )
+    _check_snapshot_columns(snap)
+    return snap
