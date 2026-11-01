@@ -7,7 +7,8 @@
 # checks that need finished work: invalid dates (09), missed tasks (11) and BEI (14).
 # Relationships: those into incomplete work. Durations and float in working days.
 # Calibrated against xerlock's published DCMA result on its sample schedule
-# (tests/reference/expected.py): every count there is reproduced.
+# (tests/reference/expected.py): every count there is reproduced except where the pamphlet
+# differs from xerlock (DCMA-05 excludes milestones, PAM 200.1 section 4.0; noted there).
 
 [standard]
 id = "DCMA"
@@ -54,7 +55,8 @@ name = "Hard constraints"
 description = "Start/finish on, start/finish no later than, mandatory dates"
 rule = "constraints"
 target = "<= 5%"
-params = { types = ["CS_MSO", "CS_MSOB", "CS_MEO", "CS_MEOB", "CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe"], ignore_start_when_started = false }
+params = { types = ["CS_MSO", "CS_MSOB", "CS_MEO", "CS_MEOB", "CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe", "milestones"], ignore_start_when_started = false }
+source = "DCMA-EA PAM 200.1 §4.5 (and §4.0: milestones excluded); MSO = Start On / Mandatory Start, MFO = Finish On / Mandatory Finish, SNLT = Start On or Before, FNLT = Finish On or Before"
 
 [[metric]]
 id = "DCMA-06"

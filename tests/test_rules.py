@@ -137,6 +137,36 @@ def test_constraint_sets_differ_between_p6_and_dcma():
     assert codes(run(DCMA, "DCMA-05", s)) == ["LB", "MF", "MS", "SEC"]
 
 
+def test_dcma_05_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.5: "Divide the total number of hard constraints by the number of
+    incomplete tasks."
+
+    Hard constraints are MFO, MSO, SNLT and FNLT (a secondary constraint counts, a started task is
+    not exempt); soft ones (SNET, FNET, ASAP) are not. 4.0 excludes completed tasks, LOE,
+    subprojects and milestones: MSF, a finish milestone with FNLT, is out of numerator and population.
+    """
+    s = snap(
+        [
+            todo("MS", cstr_type="CS_MSO", cstr_date="2026-04-01 08:00"),
+            todo("MF", cstr_type="CS_MANDFIN", cstr_date="2026-04-01 17:00"),
+            todo("LB", cstr_type="CS_MEOB", cstr_date="2026-04-01 17:00"),
+            todo("SEC", cstr_type2="CS_MANDSTART", cstr_date2="2026-04-01 08:00"),
+            active("STB", cstr_type="CS_MSOB", cstr_date="2026-03-09 08:00"),
+            active("ST", cstr_type="CS_MSOA", cstr_date="2026-02-23 08:00"),
+            todo(
+                "MSF",
+                task_type="TT_FinMile",
+                target_drtn_hr_cnt="0",
+                cstr_type="CS_MEOB",
+                cstr_date="2026-04-01 17:00",
+            ),
+        ]
+    )
+    r = run(DCMA, "DCMA-05", s)
+    assert codes(r) == ["LB", "MF", "MS", "SEC", "STB"]
+    assert (r.numerator, r.denominator) == (5, 6)
+
+
 def test_float_threshold_in_hours_vs_working_days():
     # 10 h/day calendar: 400 h = 40 working days. P6 (> 352 h) flags it, DCMA (> 44 d) does not.
     s = snap(
