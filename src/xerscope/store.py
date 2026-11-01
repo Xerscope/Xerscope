@@ -144,7 +144,7 @@ class SnapshotStore:
         frames = []
         for i, s in enumerate(self._snaps):
             df = getattr(s, attr)
-            df = df[[c for c in cols if c in df.columns]].copy()
+            df = df[cols].copy()
             df.insert(0, "snapshot_idx", i)
             df.insert(1, "data_date", s.data_date)
             frames.append(df)
@@ -156,7 +156,7 @@ class SnapshotStore:
         frames = []
         for i, s in enumerate(self._snaps):
             df = s.activities
-            df = df[[c for c in HISTORY_COLS if c in df.columns]].copy()
+            df = df[HISTORY_COLS].copy()
             df.insert(0, "snapshot_idx", i)
             df.insert(1, "data_date", s.data_date)
             frames.append(df)

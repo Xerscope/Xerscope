@@ -48,6 +48,12 @@ Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, 
 
 `Snapshot.activities` excludes WBS summary rows: every count and chart uses it.
 
+**Snapshot contract.** `model.py` declares the minimum columns of each frame: `TASK_COLS` plus
+`LABOR_COLS` for `tasks`, `REL_COLS_MODEL` for `relationships`, `ASSIGNMENT_COLS_MODEL` for
+`assignments`. `build_snapshot` raises `XerError` if one is missing, and the store's
+`HISTORY_COLS`, `REL_COLS` and `ASSIGNMENT_COLS` must be subsets (checked in `tests/test_store.py`).
+The frames may carry more (raw XER columns); the lists are a floor, not a filter.
+
 ## 3. `xer/calendar.py`: working time
 
 - **`WorkCalendar`:** working periods per weekday plus dated exceptions, parsed from the

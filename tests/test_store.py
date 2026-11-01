@@ -67,7 +67,14 @@ def test_one_snapshot_per_data_date(store):
 
 def test_store_column_lists_exist_in_snapshot_frames(store):
     from xerscope import store as store_mod
+    from xerscope.xer import model
 
+    for cols, declared in (
+        (store_mod.HISTORY_COLS, [*model.TASK_COLS, *model.LABOR_COLS]),
+        (store_mod.REL_COLS, model.REL_COLS_MODEL),
+        (store_mod.ASSIGNMENT_COLS, model.ASSIGNMENT_COLS_MODEL),
+    ):
+        assert set(cols) <= set(declared), set(cols) - set(declared)
     s = store.latest
     for cols, frame in (
         (store_mod.HISTORY_COLS, s.activities),
