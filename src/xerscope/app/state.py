@@ -12,13 +12,16 @@ import streamlit as st
 from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
 from xerscope.store import SnapshotStore
-from xerscope.xer import Snapshot, XerError, build_snapshot, parse_bytes, xer_files
+from xerscope.xer import XER_SUFFIXES, Snapshot, XerError, load_snapshot, xer_files
+
+# Streamlit wants extensions without the dot.
+UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
 
 
 @st.cache_data(show_spinner=False, max_entries=512)
 def _parse(name: str, data: bytes, project: str | None = None) -> Snapshot:
     # Cached on file content: re-opening the same week's export is free.
-    return build_snapshot(parse_bytes(data, source=name), project_code=project)
+    return load_snapshot(data, project_code=project, name=name)
 
 
 def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
@@ -39,7 +42,7 @@ def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[
 def sidebar_loader() -> None:
     sb = st.sidebar
     sb.subheader("Weekly XER exports")
-    uploads = sb.file_uploader("Upload .xer files", type=["xer"], accept_multiple_files=True)
+    uploads = sb.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
     folder = sb.text_input(
         "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
     )
@@ -128,7 +131,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
     )
     bl: Baseline | None | str = None
     if choice == BL_FILE:
-        up = sb.file_uploader("Baseline .xer", type=["xer"], key="bl_upload")
+        up = sb.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
         source = (up.name, up.getvalue()) if up is not None else None
         if source is None and env_path and Path(env_path).is_file():
             source = (Path(env_path).name, Path(env_path).read_bytes())
