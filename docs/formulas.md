@@ -99,7 +99,8 @@ only when the numerator is 0.
 Column key: **Population** = rows the rule examines (denominator unless stated);
 **Found** = rows counted in the numerator. All activity populations exclude WBS summary
 rows. "Reference" = `test_reference.py::test_dcma_matches_stated_result[<id>]` against
-xerlock's published counts on its sample file.
+`tests/reference/expected.py` (the pamphlet's counts on xerlock's sample file; xerlock's own
+value is noted where it differs).
 
 ### 2.1 P6 Check Schedule (`standards/p6.toml`, standard id `P6`)
 
@@ -165,7 +166,7 @@ float and duration thresholds in working days of the activity's calendar.
 
 | Id | Name | Population | Found | Unit | Target | Tests |
 |---|---|---|---|---|---|---|
-| DCMA-01 | Logic | not complete, not LOE, not milestone (PAM 200.1 §4.0) | no predecessor or no successor (external links count); no project start/finish exemption, no dangling case (§4.1) | % | <= 5% | test_rules: test_dcma_logic_counts_dangling_and_exempts_only_project_ends, test_dangling_start_and_finish_rule; Reference (xerlock 2, pamphlet 0) |
+| DCMA-01 | Logic | not complete, not LOE, not milestone (PAM 200.1 §4.0) | no predecessor or no successor (external links count); no project start/finish exemption, no dangling case (§4.1) | % | <= 5% | test_rules: test_dcma_01_follows_pam_200_1, test_missing_logic_keeps_exemptions_and_dangling_for_custom_standards; Reference (xerlock 2, pamphlet 0) |
 | DCMA-02 | Leads | links `succ_incomplete`, successor not LOE, not milestone (PAM 200.1 §4.0) | `lag_hr < 0` | count | <= 0 | test_lead_long_lag_and_fs_share; Reference |
 | DCMA-03 | Lags | links `succ_incomplete`, successor not LOE, not milestone (PAM 200.1 §4.0) | `lag_hr > 0` | % | <= 5% | test_link_populations_differ; Reference |
 | DCMA-04 | Relationship types | links `succ_incomplete`, successor not LOE, not milestone (PAM 200.1 §4.0) | value = `100 × FS / links` | % | >= 90% | test_lead_long_lag_and_fs_share; Reference |
@@ -175,10 +176,10 @@ float and duration thresholds in working days of the activity's calendar.
 | DCMA-08 | High duration | not complete, not LOE, not milestone | baseline duration (`bl_duration_hr` / the activity's `hours_per_day`) > 44; n/a without a baseline; an activity absent from the baseline is not flagged (PAM 200.1 §4.8) | % | <= 5% | test_dcma_08_uses_the_baseline_duration_not_the_re_estimated_one, test_large_duration_remaining_vs_original; Reference |
 | DCMA-09 | Invalid dates | not LOE (complete stay in) | as P6-10 (forecast before or actual after the data date) | count | <= 0 | test_invalid_progress_dates; Reference |
 | DCMA-10 | Resources | not complete, not LOE, not milestone, `target_drtn_hr_cnt > 0` | no `TASKRSRC` row and no `PROJCOST` row | % | <= 0% (PAM 200.1 §4.10) | test_resource_or_expense |
-| DCMA-11 | Missed tasks | not LOE, not milestone; due = `bl_start` and `bl_finish` present and `bl_finish <= data date` (completed stay in) | `date(finish) > date(bl_finish)`, finish = actual else forecast | % | <= 5% | PAM 200.1 §4.11, §4.0 | test_dcma_11_follows_pam_200_1, test_missed_tasks_and_late_activities; Reference (xerlock 4, pamphlet 3) |
+| DCMA-11 | Missed tasks | not LOE, not milestone; due = `bl_start` and `bl_finish` present and `bl_finish <= data date` (completed stay in) | `date(finish) > date(bl_finish)`, finish = actual else forecast | % | <= 5% | test_dcma_11_follows_pam_200_1 (PAM 200.1 §4.11, §4.0), test_missed_tasks_and_late_activities; Reference (xerlock 4, pamphlet 3) |
 | DCMA-12 | Critical path test | see §2.5 | +600 wd (DECM 06A401a's value; PAM 200.1 §4.12 gives none) | pass/fail | pass | test_critical_path_test_passes_on_clean_logic, test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay; test_reference: test_critical_path_test_delays_the_same_activity_as_xerlock; test_cpm: test_critical_path_test_lands_on_xerlocks_date, test_critical_path_test_shift_in_working_days; Reference |
 | DCMA-13 | CPLI | see §2.5 | `(CPL + TF) / CPL` (PAM 200.1 §3.1.2.3; n/a without a Must Finish By date) | ratio | >= 0.95 | test_cpli_uses_the_finish_float, test_cpli_needs_a_must_finish_by_date, test_calendar_holiday_counts_in_cpl; test_reference: test_cpl_matches_xerlock_hand_calculation; Reference |
-| DCMA-14 | BEI | not LOE, not milestone; due = `bl_finish <= data date` (no baseline finish = not due) | value = complete in population / due | ratio | >= 0.95 | test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule (PAM 200.1 §3.1.2.4; milestones left out) |
+| DCMA-14 | BEI | not LOE, not milestone; due = `bl_finish <= data date` (no baseline finish = due, PAM 200.1 §3.1.2.4) | value = complete in population / due | ratio | >= 0.95 | test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule (PAM 200.1 §3.1.2.4; milestones left out) |
 
 ### 2.4 Integrity (`standards/integrity.toml`, standard id `INTEGRITY`)
 
@@ -366,8 +367,7 @@ Stated by the code or docs/backlog.md; no P6 Check Schedule or DECM output has b
   not read from a Professional 24 dialog.
 - DECM: the specification sheets (index in docs/standards.md, Sources) have been read.
   The 06A205a and 06A209a sheets name no LOE exclusion, so LOE stays in, as coded. Where a sheet contradicts a
-  rule, or leaves a reading open (06A205a leads, 06A506b "on or before", DCMA-11 / 14
-  milestones), the items are listed in docs/backlog.md, "DECM conformance"; the formulas
+  rule, or leaves a reading open (06A205a leads, 06A506b "on or before"), the items are listed in docs/backlog.md, "DECM conformance"; the formulas
   above are what the code does, not what the sheets say, for those.
 - CPLI takes the schedule's total float, i.e. P6's distance to the Must Finish By date;
   a contract finish kept elsewhere (a baseline, a contract milestone) is not read.

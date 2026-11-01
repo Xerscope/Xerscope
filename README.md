@@ -188,7 +188,7 @@ open questions: [docs/cpm.md](docs/cpm.md#validation), [docs/backlog.md](docs/ba
 | CPM, assignments, longest path | real P6 exports with stored dates (Hotel 6.0, Terminal 5.0, PV 25.12, XER-editor 20.12), `tests/test_cpm.py` | every value identical, to the minute |
 | CPM | MPXJ's PrimaveraScheduler, a second engine, `tests/test_crosscheck_mpxj.py` | identical on random networks and the demo outside the named open cases |
 | Reading of the XER tables | MPXJ as an independent reader, `xerscope crosscheck` | identical on every reference file |
-| Checks (P6, DECM, DCMA), EV, PPC, changelog | hand-built schedules (`tests/xerkit.py`), xerlock's stated DCMA results | counted by hand; **no P6 Check Schedule report or DECM output confirms the populations yet** |
+| Checks (P6, DECM, DCMA), EV, PPC, changelog | hand-built schedules (`tests/xerkit.py`), xerlock's sample file, with the pamphlet's DCMA counts (`tests/reference/expected.py`) | counted by hand; **no P6 Check Schedule report or DECM output confirms the populations yet** |
 | Invariants | 260 seeded random networks, `tests/test_cpm_properties.py` | links hold in both passes, float = LF − EF, constraints |
 | Demo series | its planted findings | found in the week they appear; its dates are xerscope's own, checked by MPXJ |
 
