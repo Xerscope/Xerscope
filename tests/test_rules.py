@@ -6,7 +6,7 @@ or exemption would silently shift a result.
 
 import pandas as pd
 import pytest
-from rulekit import STANDARDS, codes, run
+from rulekit import STANDARDS, codes, links, run
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
@@ -477,7 +477,7 @@ def test_decm_out_of_sequence_counts_relationships():
     s.tasks.loc[s.tasks["task_code"] == "D", "start"] = pd.Timestamp("2026-03-13 09:00")  # overlap via the lead
     s.tasks.loc[s.tasks["task_code"] == "C", "finish"] = pd.Timestamp("2026-03-13 17:00")
     r = run(DECM, "06A212a", s)
-    assert sorted(zip(r.flagged["pred_code"], r.flagged["succ_code"], strict=True)) == [("A", "B"), ("C", "D")]
+    assert links(r) == [("A", "B"), ("C", "D")]
     assert r.status == "fail"
 
 

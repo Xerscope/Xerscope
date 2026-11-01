@@ -7,7 +7,7 @@ Overlaps tests/test_rules.py on purpose: here each test is one sentence of the s
 """
 
 import pytest
-from rulekit import STANDARDS, codes, counts, run
+from rulekit import STANDARDS, codes, counts, links, run
 from xerkit import DD, active, done, snap, todo
 
 from xerscope.analysis import Baseline
@@ -15,6 +15,7 @@ from xerscope.analysis import Baseline
 P6 = STANDARDS["P6"]
 DCMA = STANDARDS["DCMA"]
 
+BL_BEFORE_DD = "2026-02-20 17:00"  # a baseline finish ten days before the data date (2026-03-02)
 LARGE_H = 44 * 8  # P6 "x" threshold: 44 working days on the 8 h calendar (p6.toml)
 
 
@@ -193,12 +194,7 @@ def test_p6_03_counts_each_soft_constraint_type():
 # --- 6. link populations ------------------------------------------------------------------------
 
 
-def links(r):
-    """Flagged relationships of a link rule as sorted (pred_code, succ_code) pairs."""
-    return sorted(zip(r.flagged["pred_code"], r.flagged["succ_code"], strict=True))
-
-
-def test_p6_07_numerator_is_the_finish_to_start_links_and_the_flagged_one_is_the_other():
+def test_p6_07_numerator_counts_finish_to_start_links_and_flags_the_others():
     """'Specify the target for the acceptable percentage of relationships that must have a relationship type
     of Finish to Start.' (Relationship Types, 101248)"""
     s = snap(
@@ -225,7 +221,7 @@ def test_p6_05_done_to_done_link_with_a_long_lag_is_outside_the_denominator():
     """'Relationships between completed activities are not included in this analysis.' (Long Lags, 101248)"""
     s = snap(
         [done("D1"), done("D2"), todo("T1")],
-        [("D1", "D2", "FS", 400), ("D2", "T1", "FS", 0)],
+        [("D1", "D2", "FS", LARGE_H + 48), ("D2", "T1", "FS", 0)],  # 400 h lag, over the threshold
     )
     r = run(P6, "P6-05", s)
     assert counts(r) == (0, 1)
@@ -234,8 +230,8 @@ def test_p6_05_done_to_done_link_with_a_long_lag_is_outside_the_denominator():
 
 # --- 7. invalid progress dates ------------------------------------------------------------------
 
-AFTER_DD = "2026-03-03 08:00"
-BEFORE_DD = "2026-02-27 08:00"
+AFTER_DD = "2026-03-03 08:00"  # the day after the data date (DD is Monday 2026-03-02)
+BEFORE_DD = "2026-02-27 08:00"  # the working day before the data date (Friday)
 
 
 def test_p6_10_actual_start_after_the_data_date_on_an_in_progress_activity_is_invalid():
@@ -248,16 +244,18 @@ def test_p6_10_actual_start_after_the_data_date_on_an_in_progress_activity_is_in
 
 
 def test_p6_10_completed_with_actual_finish_exactly_on_the_data_date_stays_in_and_is_not_invalid():
-    """'Completed activities with an actual finish earlier than the data date, WBS summary activities, and
-    Level of Effort activities are not included in this analysis.' (Invalid Progress Dates, 101248)"""
+    """'Invalid dates for completed activities are actual finish dates later than the data date.' and
+    'Completed activities with an actual finish earlier than the data date' are not included in this analysis.
+    (Invalid Progress Dates, 101248)"""
     s = snap([done("ON", act_end_date=DD), done("BEFORE"), done("AFTER", act_end_date=AFTER_DD)])
     r = run(P6, "P6-10", s)
     assert counts(r) == (1, 2)  # BEFORE is excluded; ON stays in
     assert codes(r) == ["AFTER"]
 
 
-def test_p6_10_not_started_start_on_the_data_date_is_valid_earlier_is_invalid_and_loe_is_excluded():
-    """'Invalid dates for not started activities are start dates earlier than the data date.'
+def test_p6_10_not_started_start_before_the_data_date_is_invalid_loe_and_wbs_are_excluded():
+    """'Invalid dates for not started activities are start dates earlier than the data date.' and
+    'WBS summary activities, and Level of Effort activities are not included in this analysis.'
     (Invalid Progress Dates, 101248)"""
     s = snap(
         [
@@ -296,14 +294,14 @@ def test_p6_11_a_role_only_or_an_expense_only_activity_passes_and_nothing_assign
 def test_p6_13_bei_is_completed_over_baseline_activities_finishing_before_the_data_date():
     """'...the number of completed activities in the project against the number of baseline activities
     calculated to finish before the open project's data date.' (BEI, 101248)"""
-    baseline = Baseline.from_snapshot(
-        snap([todo("A", early_end_date="2026-02-20 17:00"), todo("B", early_end_date="2026-03-13 17:00")])
-    )
+    # A finishes before the data date; B keeps xerkit's default early end (2026-03-13), after it
+    baseline = Baseline.from_snapshot(snap([todo("A", early_end_date=BL_BEFORE_DD), todo("B")]))
     current = snap([done("A"), done("B")])
     r = run(P6, "P6-13", current, baseline)
     assert counts(r) == (2, 1)
     assert r.value == 2.0
     assert r.status == "pass"
+    assert r.note == "2 completed / 1 due in the baseline"
 
 
 def test_p6_13_a_baseline_milestone_finishing_before_the_data_date_is_not_due():
@@ -313,8 +311,8 @@ def test_p6_13_a_baseline_milestone_finishing_before_the_data_date_is_not_due():
     baseline = Baseline.from_snapshot(
         snap(
             [
-                todo("A", early_end_date="2026-02-20 17:00"),
-                todo("MS", task_type="TT_FinMile", target_drtn_hr_cnt="0", early_end_date="2026-02-20 17:00"),
+                todo("A", early_end_date=BL_BEFORE_DD),
+                todo("MS", task_type="TT_FinMile", target_drtn_hr_cnt="0", early_end_date=BL_BEFORE_DD),
             ]
         )
     )
@@ -322,3 +320,4 @@ def test_p6_13_a_baseline_milestone_finishing_before_the_data_date_is_not_due():
     r = run(P6, "P6-13", current, baseline)
     assert counts(r) == (1, 1)
     assert r.value == 1.0
+    assert codes(r) == []

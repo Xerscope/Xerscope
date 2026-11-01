@@ -13,5 +13,12 @@ def codes(r):
     return sorted(r.flagged["task_code"]) if "task_code" in r.flagged else []
 
 
+def links(r):
+    """Flagged relationships of a link rule as sorted (pred_code, succ_code) pairs."""
+    if "pred_code" not in r.flagged:
+        return []
+    return sorted(zip(r.flagged["pred_code"], r.flagged["succ_code"], strict=True))
+
+
 def counts(r):
     return (r.numerator, r.denominator)
