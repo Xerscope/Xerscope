@@ -60,3 +60,14 @@ def test_relationship_checks_say_relationships(results):
     lags = next(r for r in results if r.metric.id == "P6-08")
     e = explain(lags)
     assert e.subject == "relationships" and "relationships checked" in e.formula
+
+
+def test_explain_tables_match_registry():
+    from xerscope.analysis.explain import EXCLUDE_TEXT, EXEMPT_TEXT, WORDING
+    from xerscope.analysis.rules import EXCLUDE, EXEMPT, RULES
+
+    # cpli (ratio) and critical_path_test (pass/fail) have no numerator/denominator/flagged
+    # list to word; explain() falls back to WORDING.get(..., defaults) for them.
+    assert set(WORDING) == set(RULES) - {"cpli", "critical_path_test"}
+    assert set(EXCLUDE_TEXT) == set(EXCLUDE)
+    assert set(EXEMPT_TEXT) == set(EXEMPT)

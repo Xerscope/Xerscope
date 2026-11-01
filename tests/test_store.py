@@ -63,3 +63,15 @@ def test_one_snapshot_per_data_date(store):
     assert len(s) == 8 and s.first.source == store.first.source
     first = store.first
     assert s.warnings == [f"zz-again.xer: same data date as {first.source} ({first.data_date:%Y-%m-%d}), skipped"]
+
+
+def test_store_column_lists_exist_in_snapshot_frames(store):
+    from xerscope import store as store_mod
+
+    s = store.latest
+    for cols, frame in (
+        (store_mod.HISTORY_COLS, s.activities),
+        (store_mod.REL_COLS, s.relationships),
+        (store_mod.ASSIGNMENT_COLS, s.assignments),
+    ):
+        assert set(cols) <= set(frame.columns), set(cols) - set(frame.columns)
