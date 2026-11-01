@@ -168,3 +168,11 @@ def rollup_delta(delta: pd.DataFrame, by: str = "wbs_l1") -> pd.DataFrame:
     total["progress_pts"] = 100 * total["earned_hr_week"] / total["budget_hr"] if total["budget_hr"] else np.nan
     out.loc["Project"] = total
     return out.reset_index().rename(columns={"index": by})
+
+
+def finish_shift_since_first(store: SnapshotStore) -> float | None:
+    """Working days (project calendar) the forecast finish moved since the first update; None if unknown."""
+    first, latest = store.first.finish_date, store.latest.finish_date
+    if len(store) < 2 or first is None or latest is None:
+        return None
+    return store.latest.calendar().working_days(first, latest)

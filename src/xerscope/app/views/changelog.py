@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis.changelog import changelog, summary
+from xerscope.analysis.changelog import category_totals, changelog, summary, weekly_change_counts, weekly_change_matrix
 from xerscope.app import ui
 from xerscope.app.state import memo, require_store
 
@@ -72,15 +72,9 @@ ui.kpis(
 )
 
 ui.section("Changes by category")
-by_cat = counts.groupby("category", observed=True)["count"].sum().rename("total").reset_index()
+by_cat = category_totals(counts)
 ui.table(
-    by_cat.merge(
-        counts.groupby("category", observed=True)["change"]
-        .apply(lambda s: ", ".join(sorted(s)))
-        .rename("kinds")
-        .reset_index(),
-        on="category",
-    ),
+    by_cat,
     overrides={
         "total": st.column_config.NumberColumn("Changes", format="%d"),
         "kinds": st.column_config.TextColumn("Kinds of change", width="large"),
@@ -109,20 +103,6 @@ ui.table(view, max_height=640)
 ui.csv_button(log, f"changelog_{old.data_date:%Y-%m-%d}_{new.data_date:%Y-%m-%d}.csv", "Download changelog (CSV)")
 
 with st.expander("Every week, side by side"):
-
-    def weekly():
-        frames = []
-        for i in range(1, len(store)):
-            c = summary(changelog(store[i - 1], store[i]))
-            c["week"] = f"{store[i].data_date:%Y-%m-%d}"
-            frames.append(c)
-        return pd.concat(frames, ignore_index=True)
-
-    w = memo(("changelog_weekly",), weekly)
-    wide = (
-        w.pivot_table(index=["category", "change"], columns="week", values="count", aggfunc="sum", observed=True)
-        .fillna(0)
-        .astype(int)
-        .reset_index()
-    )
+    w = memo(("changelog_weekly",), lambda: weekly_change_counts(store))
+    wide = weekly_change_matrix(w)
     ui.table(wide, max_height=640)

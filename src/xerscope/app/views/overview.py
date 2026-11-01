@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
 from xerscope.app.state import is_dark, require_store
 from xerscope.viz import build_finish_trend
@@ -20,12 +21,7 @@ ui.header(
 )
 
 shift = last["finish_shift_wd"]
-first_finish = store.first.finish_date
-total = (
-    latest.calendar().working_days(first_finish, latest.finish_date)
-    if len(store) > 1 and first_finish is not None and latest.finish_date is not None
-    else None
-)
+total = finish_shift_since_first(store)
 ui.kpis(
     [
         (

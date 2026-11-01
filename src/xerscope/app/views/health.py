@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, health_history, loads_standard, run_standard, template_text
+from xerscope.analysis.checks import health_wide
 from xerscope.analysis.explain import explain, fmt_value, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
@@ -194,14 +195,14 @@ if len(store) > 1:
         build_metric_trend(hist[hist["id"] == mid], m.name, m.threshold, m.threshold_label, m.unit, is_dark()),
         width="stretch",
     )
-    wide = hist.pivot_table(index="id", columns="data_date", values="actual", aggfunc="first").reindex(metric_ids)
-    wide.columns = [f"{c:%Y-%m-%d}" for c in wide.columns]
-    wide.insert(0, "check", [std[i].name for i in wide.index])
+    wide = health_wide(hist, std)
     with st.expander("All checks, all updates"):
         ui.table(
-            wide.reset_index(),
+            wide,
             max_height=640,
-            overrides={c: st.column_config.NumberColumn(c, format="%.2f") for c in wide.columns[1:]},
+            overrides={
+                c: st.column_config.NumberColumn(c, format="%.2f") for c in wide.columns[2:]
+            },  # dates follow the id and check columns
         )
 
 if bl is not None:
