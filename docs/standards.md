@@ -115,7 +115,7 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 | 5 | Hard constraints | MSO, MFO, SNLT, FNLT, mandatory | ≤ 5 % |
 | 6 | High float | > 44 wd | ≤ 5 % |
 | 7 | Negative float | < 0 | 0 |
-| 8 | High duration | original > 44 wd | ≤ 5 % |
+| 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
 | 9 | Invalid dates | forecast before / actual after data date | 0 |
 | 10 | Resources | duration but no resource or cost | 0 % |
 | 11 | Missed tasks | due by the data date (baseline), not finished or finished on a later date | ≤ 5 % |

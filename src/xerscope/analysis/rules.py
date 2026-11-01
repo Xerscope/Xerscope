@@ -358,21 +358,34 @@ def total_float(
 @rule("duration", "%")
 def duration(
     ctx,
-    field: Literal["original", "remaining"] = "original",
+    field: Literal["original", "remaining", "baseline"] = "original",
     op: Op = ">",
     value: float = 44,
     unit: Literal["hours", "days"] = "days",
     exclude: Names = ("complete",),
 ) -> RuleOutput:
-    """Activities whose ``original`` or ``remaining`` duration compares to ``value``."""
+    """Activities whose ``original``, ``remaining`` or ``baseline`` duration compares to ``value``.
+
+    ``baseline`` (DCMA-EA PAM 200.1 4.8) is the baseline's planned duration, matched by Activity ID. In
+    days it is divided by the activity's current hours per day (the baseline calendar is not used). An
+    activity absent from the baseline has no baseline duration, so it is never flagged but stays in the
+    denominator. Without a baseline the rule has no value (n/a).
+    """
     pop = activities(ctx, exclude)
-    col = {
-        ("original", "hours"): "target_drtn_hr_cnt",
-        ("remaining", "hours"): "remain_drtn_hr_cnt",
-        ("original", "days"): "original_d",
-        ("remaining", "days"): "remaining_d",
-    }[(field, unit)]
-    bad = pop[_OPS[op](pop[col], value).fillna(False).astype(bool)]
+    if field == "baseline":
+        if ctx.baseline is None:
+            return RuleOutput(note="needs a baseline")
+        hours = pop["task_code"].map(ctx.baseline.frame["bl_duration_hr"])
+        measure = hours if unit == "hours" else hours / pop["hours_per_day"]
+    else:
+        col = {
+            ("original", "hours"): "target_drtn_hr_cnt",
+            ("remaining", "hours"): "remain_drtn_hr_cnt",
+            ("original", "days"): "original_d",
+            ("remaining", "days"): "remaining_d",
+        }[(field, unit)]
+        measure = pop[col]
+    bad = pop[_OPS[op](measure, value).fillna(False).astype(bool)]
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 

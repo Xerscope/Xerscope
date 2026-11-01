@@ -298,7 +298,33 @@ def test_large_duration_remaining_vs_original():
     )
     assert codes(run(P6, "P6-04", s)) == ["B"]  # remaining > 352 h
     assert run(P6, "P6-04", s).denominator == 2  # milestone out: Ten Six P6 r22.12 report, EPPM 46282 (101248 silent)
-    assert codes(run(DCMA, "DCMA-08", s)) == ["A", "B"]  # original > 44 d
+    assert codes(run(DCMA, "DCMA-08", s, Baseline.planned(s))) == ["A", "B"]  # baseline > 44 d
+
+
+BL8 = snap(
+    [todo("A", target_drtn_hr_cnt="800"), todo("B", target_drtn_hr_cnt="360"), todo("C", target_drtn_hr_cnt="352")]
+)
+
+
+def test_dcma_08_uses_the_baseline_duration_not_the_re_estimated_one():
+    """PAM 200.1 4.8: baseline duration > 44 wd. A was re-estimated to 50 d (still flagged: baseline 100 d);
+    B shrank to 10 d (flagged: baseline 45 d); C is 44 d (not above). NEWD (800 h) is not in the baseline: it
+    has no baseline duration so it is not flagged, but it stays in the denominator (incomplete, not excluded).
+    The milestone is excluded. Without a baseline the check is n/a."""
+    s = snap(
+        [
+            active("A", target_drtn_hr_cnt="400"),
+            todo("B", target_drtn_hr_cnt="80"),
+            todo("C", target_drtn_hr_cnt="352"),
+            todo("M", task_type="TT_FinMile", target_drtn_hr_cnt="0"),
+            todo("NEWD", target_drtn_hr_cnt="800"),
+        ]
+    )
+    r = run(DCMA, "DCMA-08", s, Baseline.from_snapshot(BL8))
+    assert codes(r) == ["A", "B"]
+    assert counts(r) == (2, 4)
+    n = run(DCMA, "DCMA-08", s)
+    assert (n.status, n.numerator, n.note) == ("n/a", None, "needs a baseline")
 
 
 # --- progress, resources --------------------------------------------------------------------
