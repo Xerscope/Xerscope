@@ -101,10 +101,12 @@ class SnapshotStore:
         return cls(load_snapshot(p, project_code) for p in paths)
 
     @classmethod
-    def from_folder(cls, folder: str | Path, pattern: str = "*.xer", project_code: str | None = None) -> SnapshotStore:
-        paths = xer_files(folder) if pattern == "*.xer" else sorted(Path(folder).glob(pattern))
+    def from_folder(
+        cls, folder: str | Path, pattern: str | None = None, project_code: str | None = None
+    ) -> SnapshotStore:
+        paths = xer_files(folder) if pattern is None else sorted(Path(folder).glob(pattern))
         if not paths:
-            raise FileNotFoundError(f"no {pattern} files in {folder}")
+            raise FileNotFoundError(f"no {pattern or '.xer'} files in {folder}")
         return cls.from_paths(paths, project_code)
 
     # --- access ----------------------------------------------------------------

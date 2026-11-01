@@ -1,4 +1,7 @@
+import pytest
+
 from xerscope.export import write_tables, zip_tables
+from xerscope.xer import load_snapshot, xer_files
 
 
 def test_sorted_by_data_date(store):
@@ -53,6 +56,14 @@ def test_folder_scan_accepts_upper_case_extension(tmp_path):
     assert [p.name for p in xer_files(tmp_path)] == ["a.xer", "b.XER"]
 
 
+def test_load_snapshot_from_bytes_equals_from_path(sample_dir):
+
+    path = xer_files(sample_dir)[0]
+    a, b = load_snapshot(path), load_snapshot(path.read_bytes(), name=path.name)
+    assert len(a.tasks) == len(b.tasks)
+    assert a.data_date == b.data_date
+
+
 def test_one_snapshot_per_data_date(store):
     from dataclasses import replace
 
@@ -82,3 +93,8 @@ def test_store_column_lists_exist_in_snapshot_frames(store):
         (store_mod.ASSIGNMENT_COLS, s.assignments),
     ):
         assert set(cols) <= set(frame.columns), set(cols) - set(frame.columns)
+
+
+def test_load_snapshot_from_bytes_needs_a_name():
+    with pytest.raises(ValueError, match="file name"):
+        load_snapshot(b"ERMHDR\t24.12")
