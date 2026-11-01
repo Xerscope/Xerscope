@@ -13,12 +13,36 @@ is done, add one when a check or a recalculation disagrees with P6.
       completed activities in P6-12, BEI due counted in the baseline (P6-13), remaining
       early start for in-progress work (P6-10), milestones in P6-04's denominator,
       352 h = 8 h/day.
-- [ ] **DECM**: the same for `decm.toml`. Open readings, each stated in the TOML `source`:
-      06A205a counts LOE and ignores leads; 06A209a includes LOE; DCMA-11 keeps
-      milestones, DCMA-14 drops them.
+- [ ] **DECM**: a DECM output on one real file, for `decm.toml`. The v8.0 sheets are read
+      (docs/standards.md, Sources); what they leave open or contradict is under
+      "DECM conformance" below.
 - [ ] **Weekly exports after F9**: `xerscope recalc --report` on them is the only check on
       progressed and resource-dependent work outside the synthetic corpus; each shape it
       lists with differences is a rule to settle, with the P6 dates as the answer.
+
+## DECM conformance
+
+Where the official sheet (index in docs/standards.md, Sources) contradicts the current
+rule; none is fixed. Settled by the sheets: 06A205a and 06A209a include LOE, as coded.
+
+- [ ] **06A212a**: the sheet's population is FS links with an incomplete predecessor; the
+      code uses an incomplete successor (`decm.toml`, `rules.py`).
+- [ ] **06A401a**: the sheet compares the constraint-method critical path with the
+      contractor's critical path; the code runs the delay-injection test (`cpm.py`
+      `critical_path_test`).
+- [ ] **06A504a / b**: the sheet's denominator is the activities with an actual date in
+      the previous month's IMS; the code uses the union of both months.
+- [ ] **06A505a**: the sheet's "in progress" is EV % > 0 and < 100, and X also counts an
+      actual finish; the code takes started or % > 0, actual start only.
+- [ ] **06A506c**: the sheet does not exclude LOE; the code does.
+- [ ] **06A210a**: exemption for LOE whose only successors are end-item deliverables or
+      contract completion; not modelled.
+- [ ] **DCMA-08**: the Deltek text (Acumen DCMA 14-Point descriptions) says baseline
+      duration and a baseline start in the detail planning period; the code uses the
+      current original duration.
+- Still open, the sheets do not settle them: 06A205a leads (negative lags); 06A506b "on or
+  before" against "before" (the sheet uses both); DCMA-11 / DCMA-14 milestones (Deltek:
+  most metrics look only at activities baselined with a duration > 0 d, except CPT and BEI).
 
 ## CPM: where the engine still differs from P6 23.12
 
@@ -55,6 +79,21 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       the baseline gets no index: a `finish_date` parameter would need the DCMA text to
       allow it.
 
+- [ ] **Earned value against Oracle P6** (pages under docs.oracle.com/cd/F88968_01/client_help/en_US/):
+      - PV: P6 computes it per resource assignment with a date ratio; the code per activity,
+        in working time (`evm.py`).
+      - Manual future-period buckets are not modelled.
+      - BAC and AC are labour hours only.
+      - Resource curves are treated as a technique (`EvPoint.not_modelled`); curves under
+        Units are not reported.
+      - The ETC technique "PF x (BAC - EV)" is ignored (EAC = AC + remaining).
+      - 0/100 and 50/50 with a non-physical % complete are untested.
+      - The quote for the EV-basis Admin Preference ("When calculating earned value from a
+        baseline use") is unverified.
+- [ ] **Bug**: DECM 06A212a raises TypeError when no incomplete activity has a successor
+      (seen on the four one-activity MPXJ calendar files; frozen as "error" in
+      `tests/golden/standards.json`). Fix it and regenerate the golden.
+
 ## App
 
 - [ ] Not reachable by AppTest: the upload path (`file_uploader`) and a WBS row selection
@@ -78,9 +117,16 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 ## Structure (only once the above is done, at constant output)
 
+- [ ] Complexity hotspots still above 10: `build_snapshot` 30, `changelog` 23,
+      `parse_text` 17, `build_gantt` 16, `explain._population` 15, `sidebar_loader` 14,
+      `Rule.validate` 14, `parse_standard` 12, `column_config` 12. CPM internals and
+      `sample.py` are left as they are.
+- [ ] Duplications: the `task_code` index idiom (~34 places; one `Snapshot.by_code`); the
+      hours-per-day lookup (x3); three changelog row builders; two text searches in views.
+- [ ] Computations still inside `app/views` (changelog, health, ppc, gantt): pure
+      functions per page would be testable without AppTest. One cache policy
+      (`st.cache_data` for parsing, `memo` for analyses).
 - [ ] `cpm.py`: the status × link × lag × option cases are spread over four methods; a
       table read by both passes would make each cell a test.
-- [ ] Views build frames inline; pure functions per page would be testable without
-      AppTest. One cache policy (`st.cache_data` for parsing, `memo` for analyses).
 - [ ] `tests/test_p6_heldout.py` is four of the suite's seven minutes: score the sets in
       parallel.
