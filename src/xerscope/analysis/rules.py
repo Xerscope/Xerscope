@@ -64,6 +64,9 @@ class Rule:
     unit: Unit
     doc: str
     needs_baseline: bool = False
+    wording: tuple[str, str, str] | None = None  # numerator word, denominator word, flagged title
+    links: bool = False  # counts relationships, not activities
+    notes: Callable[[dict], list[str]] | None = None  # rule-specific population sentences
 
     @property
     def params(self) -> dict[str, object]:
@@ -109,9 +112,16 @@ class Rule:
 RULES: dict[str, Rule] = {}
 
 
-def rule(name: str, unit: Unit, needs_baseline: bool = False):
+def rule(
+    name: str,
+    unit: Unit,
+    needs_baseline: bool = False,
+    wording: tuple[str, str, str] | None = None,
+    links: bool = False,
+    notes: Callable[[dict], list[str]] | None = None,
+):
     def deco(fn):
-        RULES[name] = Rule(name, fn, unit, inspect.getdoc(fn) or "", needs_baseline)
+        RULES[name] = Rule(name, fn, unit, inspect.getdoc(fn) or "", needs_baseline, wording, links, notes)
         return fn
 
     return deco
@@ -225,7 +235,7 @@ def _exempt_masks(pop: pd.DataFrame, start_ids: set[str], finish_ids: set[str]) 
 # --- logic -------------------------------------------------------------------------------
 
 
-@rule("missing_logic", "%")
+@rule("missing_logic", "%", wording=("open-ended", "checked", "Missing a predecessor or a successor"))
 def missing_logic(
     ctx,
     exclude: Names = ("complete",),
@@ -282,7 +292,7 @@ def missing_logic(
     return RuleOutput(_act(bad, reason=reason[reason != ""]), len(bad), len(pop))
 
 
-@rule("dangling", "%")
+@rule("dangling", "%", wording=("dangling", "checked", "Logic that does not drive the activity"))
 def dangling(ctx, end: Literal["start", "finish"] = "finish", exclude: Names = ("complete",)) -> RuleOutput:
     """Activities with logic on one end that does not drive it.
 
@@ -305,7 +315,7 @@ def dangling(ctx, end: Literal["start", "finish"] = "finish", exclude: Names = (
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 
-@rule("lag", "%")
+@rule("lag", "%", wording=("flagged", "relationships checked", "Relationships with the lag in question"), links=True)
 def lag(
     ctx,
     op: Op = ">",
@@ -327,7 +337,17 @@ def lag(
     return RuleOutput(_lnk(bad), len(bad), len(r))
 
 
-@rule("relationship_type", "%")
+def _relationship_type_notes(p: dict) -> list[str]:
+    return [f"Counts relationships of type {p.get('type', 'FS')}; the list shows the others."]
+
+
+@rule(
+    "relationship_type",
+    "%",
+    wording=("of the required type", "relationships checked", "Relationships of another type"),
+    links=True,
+    notes=_relationship_type_notes,
+)
 def relationship_type(
     ctx,
     type: Literal["FS", "SS", "FF", "SF"] = "FS",
@@ -346,7 +366,7 @@ def relationship_type(
 # --- constraints, float, duration ----------------------------------------------------------
 
 
-@rule("constraints", "%")
+@rule("constraints", "%", wording=("constrained", "checked", "Constrained activities"))
 def constraints(
     ctx, types: Names = (), exclude: Names = ("complete",), ignore_start_when_started: bool = True
 ) -> RuleOutput:
@@ -365,7 +385,7 @@ def constraints(
 _OPS = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
 
 
-@rule("float", "%")
+@rule("float", "%", wording=("flagged", "checked", "Activities outside the float limit"))
 def total_float(
     ctx, op: Op = ">", value: float = 44, unit: Literal["hours", "days"] = "days", exclude: Names = ("complete",)
 ) -> RuleOutput:
@@ -376,7 +396,7 @@ def total_float(
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 
-@rule("duration", "%")
+@rule("duration", "%", wording=("flagged", "checked", "Activities outside the duration limit"))
 def duration(
     ctx,
     field: Literal["original", "remaining", "baseline"] = "original",
@@ -413,7 +433,18 @@ def duration(
 # --- progress --------------------------------------------------------------------------
 
 
-@rule("invalid_dates", "%")
+def _invalid_dates_notes(p: dict) -> list[str]:
+    if p.get("in_progress") == "start":
+        return ["An in-progress activity is flagged when its remaining early start is before the data date."]
+    return []
+
+
+@rule(
+    "invalid_dates",
+    "%",
+    wording=("with invalid dates", "checked", "Progress dates on the wrong side of the data date"),
+    notes=_invalid_dates_notes,
+)
 def invalid_dates(
     ctx,
     kind: Literal["forecast", "actual", "both"] = "both",
@@ -460,7 +491,7 @@ def invalid_dates(
     return RuleOutput(_act(bad, reason=pd.Series(reason, index=pop.index)[hit]), len(bad), total)
 
 
-@rule("no_resource", "%")
+@rule("no_resource", "%", wording=("without resources", "checked", "Activities with no resource assignment"))
 def no_resource(ctx, exclude: Names = ("complete", "loe", "milestones"), expenses_count: bool = True) -> RuleOutput:
     """Activities with no resource assignment (and, if ``expenses_count``, no expense)."""
     pop = activities(ctx, exclude)
@@ -477,7 +508,20 @@ def _with_baseline(ctx, pop: pd.DataFrame) -> pd.DataFrame:
     return pop.join(bl[["bl_start", "bl_finish"]], on="task_code")
 
 
-@rule("late_vs_baseline", "%", needs_baseline=True)
+def _late_vs_baseline_notes(p: dict) -> list[str]:
+    out = ["Variance is working time on the activity's calendar, as P6's Finish Variance."]
+    if p.get("no_baseline") == "planned":
+        out.append("An activity with no baseline finish is late when its finish is later than its planned finish.")
+    return out
+
+
+@rule(
+    "late_vs_baseline",
+    "%",
+    needs_baseline=True,
+    wording=("late", "checked", "Forecast to finish after their baseline finish"),
+    notes=_late_vs_baseline_notes,
+)
 def late_vs_baseline(
     ctx,
     exclude: Names = ("complete", "milestones", "loe"),
@@ -503,7 +547,20 @@ def late_vs_baseline(
     return RuleOutput(_act(bad, bl_finish=bad["bl_finish"], finish_variance_wd=var_d), len(bad), len(pop))
 
 
-@rule("missed_tasks", "%", needs_baseline=True)
+def _missed_tasks_notes(p: dict) -> list[str]:
+    return [
+        "Due = baseline start and finish set, baseline finish on or before the data date. "
+        "Missed = actual (else forecast) finish on a later day than the baseline finish."
+    ]
+
+
+@rule(
+    "missed_tasks",
+    "%",
+    needs_baseline=True,
+    wording=("missed", "due by the data date", "Due by the data date and not finished on time"),
+    notes=_missed_tasks_notes,
+)
 def missed_tasks(ctx, exclude: Names = ("loe", "milestones")) -> RuleOutput:
     """DCMA-EA PAM 200.1 4.11: of the tasks due by the data date, those finishing after their baseline finish.
 
@@ -523,7 +580,25 @@ def missed_tasks(ctx, exclude: Names = ("loe", "milestones")) -> RuleOutput:
     return RuleOutput(_act(bad, bl_finish=bad["bl_finish"]), len(bad), len(due))
 
 
-@rule("bei", "ratio", needs_baseline=True)
+def _bei_notes(p: dict) -> list[str]:
+    if p.get("due_from") == "baseline":
+        due_text = (
+            "Due = baseline activities finishing on or before the data date, counted in the "
+            "baseline: an activity added since is never due, one deleted since still is."
+        )
+    else:
+        rule_text = "counted as due" if p.get("missing_baseline", "due") == "due" else "left out"
+        due_text = f"Activities without a baseline finish are {rule_text}."
+    return [due_text + " Completed = all completed activities in the population, early ones included."]
+
+
+@rule(
+    "bei",
+    "ratio",
+    needs_baseline=True,
+    wording=("completed", "due by the data date", "Due by the data date but not completed"),
+    notes=_bei_notes,
+)
 def bei(
     ctx,
     exclude: Names = ("loe", "milestones"),
@@ -625,7 +700,7 @@ def critical_path_test(ctx, delay_days: float = 600) -> RuleOutput:
 # --- integrity: is the file what P6 would calculate? ------------------------------------------
 
 
-@rule("recalculated", "%")
+@rule("recalculated", "%", wording=("different", "open activities", "Stored dates differ from the recalculation"))
 def recalculated(
     ctx,
     fields: Names = ("early_start_date", "early_end_date", "late_start_date", "late_end_date", "total_float_hr_cnt"),
@@ -660,7 +735,7 @@ def recalculated(
     )
 
 
-@rule("out_of_sequence", "count")
+@rule("out_of_sequence", "count", wording=("out of sequence", "", "Progressed out of logic sequence"))
 def out_of_sequence(ctx, exclude: Names = ("loe",), method: Literal["actuals", "decm"] = "actuals") -> RuleOutput:
     """Progress out of logic sequence.
 
@@ -711,7 +786,11 @@ def out_of_sequence(ctx, exclude: Names = ("loe",), method: Literal["actuals", "
     return RuleOutput(_act(bad, ahead_of=[", ".join(ahead[c]) for c in bad["task_code"]]), len(bad), len(started))
 
 
-@rule("assignments_recalculated", "%")
+@rule(
+    "assignments_recalculated",
+    "%",
+    wording=("different", "open assignments", "Assignment dates differ from the recalculation"),
+)
 def assignments_recalculated(ctx) -> RuleOutput:
     """Open resource assignments whose stored remaining early/late dates differ from a recalculation.
 
@@ -764,7 +843,11 @@ def _incomplete(ctx, loe: bool) -> pd.DataFrame:
     return pop if loe else pop[~pop["is_loe"]]
 
 
-@rule("open_ends", "%")
+@rule(
+    "open_ends",
+    "%",
+    wording=("with an open start or finish", "incomplete tasks and milestones", "Open start or open finish"),
+)
 def open_ends(ctx, exempt_ends: Literal["baseline", "none"] = "baseline") -> RuleOutput:
     """DECM 06A204b dangling logic: incomplete non-LOE tasks and milestones with an open start or finish.
 
@@ -821,7 +904,11 @@ def open_ends(ctx, exempt_ends: Literal["baseline", "none"] = "baseline") -> Rul
     return RuleOutput(_act(bad, reason=reason[hit]), len(bad), len(pop), note=note)
 
 
-@rule("lagged_activities", "%")
+@rule(
+    "lagged_activities",
+    "%",
+    wording=("with a lag", "incomplete tasks and milestones", "Activities with a lag on a predecessor"),
+)
 def lagged_activities(ctx, loe: bool = True, sign: Literal["positive", "negative", "any"] = "positive") -> RuleOutput:
     """DECM 06A205a: incomplete tasks and milestones with at least one lag (``sign``:
     positive lags, negative = leads, or any non-zero lag) in their predecessor logic."""
@@ -834,7 +921,7 @@ def lagged_activities(ctx, loe: bool = True, sign: Literal["positive", "negative
     return RuleOutput(_act(bad, lagged_from=bad["task_code"].map(lagged)), len(bad), len(pop))
 
 
-@rule("summary_logic", "count")
+@rule("summary_logic", "count", wording=("with logic", "", "Summary activities carrying logic"))
 def summary_logic(ctx) -> RuleOutput:
     """DECM 06A208a: summary activities (P6 WBS summary) with a predecessor or successor."""
     t = ctx.snapshot.tasks
@@ -844,7 +931,7 @@ def summary_logic(ctx) -> RuleOutput:
     return RuleOutput(_act(bad), len(bad), len(summ))
 
 
-@rule("loe_successors", "%")
+@rule("loe_successors", "%", wording=("with a discrete successor", "incomplete LOE", "LOE driving discrete work"))
 def loe_successors(ctx) -> RuleOutput:
     """DECM 06A210a: incomplete LOE activities with a discrete (non-LOE) successor."""
     t = ctx.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
@@ -858,7 +945,12 @@ def loe_successors(ctx) -> RuleOutput:
     return RuleOutput(_act(bad, drives=bad["task_code"].map(succ)), len(bad), len(pop))
 
 
-@rule("missing_baseline", "%", needs_baseline=True)
+@rule(
+    "missing_baseline",
+    "%",
+    needs_baseline=True,
+    wording=("without baseline dates", "tasks and milestones", "Missing a baseline start or finish"),
+)
 def missing_baseline(ctx) -> RuleOutput:
     """DECM 06A501a: tasks and milestones without a baseline start or finish (summaries excluded)."""
     pop = _with_baseline(ctx, ctx.snapshot.activities)
@@ -880,7 +972,11 @@ def _update_before(ctx, period_days: int):
     return earlier[-1] if earlier else None
 
 
-@rule("actuals_changed", "%")
+@rule(
+    "actuals_changed",
+    "%",
+    wording=("changed", "with that actual date", "Actual date changed since the previous update"),
+)
 def actuals_changed(ctx, field: Literal["start", "finish"] = "start", period_days: int = 28) -> RuleOutput:
     """DECM 06A504a / 06A504b: actual start (or finish) different from the previous period's.
 
@@ -905,7 +1001,11 @@ def actuals_changed(ctx, field: Literal["start", "finish"] = "start", period_day
     return RuleOutput(out, len(bad), len(dated))
 
 
-@rule("progress_actuals", "%")
+@rule(
+    "progress_actuals",
+    "%",
+    wording=("without the actual date", "showing that progress", "Progress without the matching actual"),
+)
 def progress_actuals(ctx, kind: Literal["in_progress", "complete"] = "in_progress") -> RuleOutput:
     """DECM 06A505a / 06A505b: progress without the matching actual date.
 
@@ -925,7 +1025,7 @@ def progress_actuals(ctx, kind: Literal["in_progress", "complete"] = "in_progres
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 
-@rule("riding_status_date", "%")
+@rule("riding_status_date", "%", wording=("riding the status date", "checked", "Forecasts riding the status date"))
 def riding_status_date(
     ctx, window_wd: float = 3, remaining_tolerance_wd: float = 2, period_days: int = 28
 ) -> RuleOutput:
