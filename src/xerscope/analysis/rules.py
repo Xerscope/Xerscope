@@ -67,6 +67,7 @@ class Rule:
     wording: tuple[str, str, str] | None = None  # numerator word, denominator word, flagged title
     links: bool = False  # counts relationships, not activities
     notes: Callable[[dict], list[str]] | None = None  # rule-specific population sentences
+    measure: str = "value"  # what op/value compare, formatted with the effective params
 
     @property
     def params(self) -> dict[str, object]:
@@ -119,9 +120,11 @@ def rule(
     wording: tuple[str, str, str] | None = None,
     links: bool = False,
     notes: Callable[[dict], list[str]] | None = None,
+    measure: str = "value",
 ):
     def deco(fn):
-        RULES[name] = Rule(name, fn, unit, inspect.getdoc(fn) or "", needs_baseline, wording, links, notes)
+        doc = inspect.getdoc(fn) or ""
+        RULES[name] = Rule(name, fn, unit, doc, needs_baseline, wording, links, notes, measure)
         return fn
 
     return deco
@@ -315,7 +318,13 @@ def dangling(ctx, end: Literal["start", "finish"] = "finish", exclude: Names = (
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 
-@rule("lag", "%", wording=("flagged", "relationships checked", "Relationships with the lag in question"), links=True)
+@rule(
+    "lag",
+    "%",
+    wording=("flagged", "relationships checked", "Relationships with the lag in question"),
+    links=True,
+    measure="lag",
+)
 def lag(
     ctx,
     op: Op = ">",
@@ -385,7 +394,7 @@ def constraints(
 _OPS = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
 
 
-@rule("float", "%", wording=("flagged", "checked", "Activities outside the float limit"))
+@rule("float", "%", wording=("flagged", "checked", "Activities outside the float limit"), measure="total float")
 def total_float(
     ctx, op: Op = ">", value: float = 44, unit: Literal["hours", "days"] = "days", exclude: Names = ("complete",)
 ) -> RuleOutput:
@@ -396,7 +405,9 @@ def total_float(
     return RuleOutput(_act(bad), len(bad), len(pop))
 
 
-@rule("duration", "%", wording=("flagged", "checked", "Activities outside the duration limit"))
+@rule(
+    "duration", "%", wording=("flagged", "checked", "Activities outside the duration limit"), measure="{field} duration"
+)
 def duration(
     ctx,
     field: Literal["original", "remaining", "baseline"] = "original",

@@ -99,9 +99,7 @@ def _scope_lines(rule: Rule, p: dict) -> list[str]:
 def _flag_line(rule: Rule, p: dict) -> list[str]:
     if "op" not in p or "value" not in p:
         return []
-    what = {"lag": "lag", "float": "total float", "duration": f"{p.get('field', 'original')} duration"}.get(
-        rule.name, "value"
-    )
+    what = rule.measure.format(**p)
     unit = p.get("unit", "")
     return [f"Flagged when {what} {OP_TEXT.get(p['op'], p['op'])} {p['value']:g} {unit}".rstrip() + "."]
 
