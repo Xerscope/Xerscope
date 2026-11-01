@@ -11,7 +11,7 @@
 # Relationships: those into incomplete, non-LOE, non-milestone work. Durations and float in working days.
 # Inputs are weekly XERs: there is no detail planning period or rolling wave window (DCMA-08).
 # xerlock's published result on its sample schedule is a comparison, not the authority; where
-# the pamphlet differs from it (DCMA-01, 04, 05, 11) the difference is noted in
+# the pamphlet differs from it (DCMA-01, 04, 05, 11, 13) the difference is noted in
 # tests/reference/expected.py.
 
 [standard]

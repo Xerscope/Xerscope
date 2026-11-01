@@ -133,7 +133,8 @@ Differences with xerlock's published result on its sample schedule (the pamphlet
 `tests/reference/expected.py`, `tests/test_reference.py`): DCMA-01 0 (xerlock 2: SS-only
 dangling finishes, finish milestone exempted), DCMA-04 23/25 (xerlock 25/27: links into
 milestones counted), DCMA-05 1 (xerlock 2: a milestone counted), DCMA-11 3 (xerlock 4: a
-milestone counted). The other stated values, the critical path test (MEP-020, +600 wd; the
+milestone counted), DCMA-13 n/a (xerlock 1.0: the file has no Must Finish By date, so
+the float to the contract finish is unknown). The other stated values, the critical path test (MEP-020, +600 wd; the
 600 is DECM 06A401a's, the pamphlet gives none) and CPL (1080 h) reproduce.
 
 ## Integrity
