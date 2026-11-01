@@ -13,7 +13,7 @@ code is right and this document is wrong.
 | Data date | `PROJECT.last_recalc_date`; blank: `PROJECT.plan_start_date`; both blank: none | Rules that need it return n/a or error |
 | Activity ID | `TASK.task_code` | `task_id` is used only to resolve links inside one file; duplicates keep the first row in joins |
 | Activities | `TASK` rows of the project with `task_type != TT_WBS` (`Snapshot.activities`) | WBS summary rows are excluded from every population and count |
-| Relationships | `TASKPRED` rows of the project whose predecessor and successor both have a `TASK` row in the file | Others are dropped (a warning when the predecessor is not in another project); `is_external` = predecessor in another project; `has_external_pred` / `has_external_succ` flag activities linked to other projects |
+| Relationships | `TASKPRED` rows of the project whose predecessor and successor both have a `TASK` row in the file | Others are dropped (a warning when the predecessor is not in another project); `is_external` = predecessor in another project; a predecessor that is a `TASK` row of another project of the file is named `[ext]{task_id}` in `pred_code` (as in `Snapshot.external_links`), so it is never taken for the local activity with the same Activity ID; `has_external_pred` / `has_external_succ` flag activities linked to other projects |
 | Hours per day (`hours_per_day`) | `CALENDAR.day_hr_cnt` of the activity's calendar; 0 or missing: 8 (`config.Settings.default_hours_per_day`) | |
 | Start / Finish (`start`, `finish`) | actual date, else `restart_date` / `reend_date`, else `early_start_date` / `early_end_date`, else `target_start_date` / `target_end_date` | P6's Start / Finish columns |
 | Forecast finish (`finish_date`) | max `finish` over activities (WBS summary excluded) | `PROJECT.scd_end_date` is kept as `scheduled_finish` only |
@@ -354,16 +354,20 @@ minute shown at a different clock time). Pinned by test_cpm.py (see §2.4) and
 
 ## 7. Known limits
 
-Stated by the code or docs/backlog.md; nothing here is verified against P6 output.
+Stated by the code or docs/backlog.md; no P6 Check Schedule or DECM output has been compared.
 
 - P6 populations are a reading of the P6 Professional 24 dialog help (101248), else of
   the EPPM report pages; no P6 Check Schedule report has been compared (backlog). Open
-  readings: LOE kept in P6-01 (101248 is silent on LOE there); "remaining early finish" of a completed activity without baseline read as its
-  actual finish in P6-12; a baseline activity whose finish is blank is never due in P6-13.
+  readings: LOE kept in P6-01 (101248 is silent on LOE there); "remaining early finish"
+  of a completed activity without baseline read as its actual finish in P6-12; a baseline
+  activity whose finish is blank is never due in P6-13.
 - 352 h assumes 8 h/day (p6.toml); P6 targets are the EPPM 25 help's dialog defaults,
   not read from a Professional 24 dialog.
-- DECM readings not verified against the specification sheets: 06A205a counts LOE and
-  ignores leads; 06A209a includes LOE; DCMA-11 keeps milestones, DCMA-14 drops them.
+- DECM: the specification sheets (index in docs/standards.md, Sources) have been read.
+  Settled by them: 06A205a and 06A209a include LOE, as coded. Where a sheet contradicts a
+  rule, or leaves a reading open (06A205a leads, 06A506b "on or before", DCMA-11 / 14
+  milestones), the items are listed in docs/backlog.md, "DECM conformance"; the formulas
+  above are what the code does, not what the sheets say, for those.
 - CPLI takes the schedule's total float, i.e. P6's distance to the Must Finish By date;
   a contract finish kept elsewhere (a baseline, a contract milestone) is not read.
 - `cpli` reads the float of the latest-finishing open non-LOE activity, which may differ

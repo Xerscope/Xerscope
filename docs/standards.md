@@ -36,8 +36,9 @@ late activities, counts an activity with no baseline finish as due in BEI, and r
 remaining finish of in-progress work for invalid dates.
 Dangling start / dangling finish are not P6 Professional checks (they exist in P6 EPPM),
 so they are not in this standard; the `dangling` rule stays available for your own.
-Subsets from Oracle's help for each section of the Schedule Check Report (pages
-46277–46291). Every percentage = items found / items in the checked subset.
+The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
+the report section (pages 46277–46291). Every percentage = items found / items in the
+checked subset.
 
 | ID | Group | Check | Subset (Oracle) | Default target (P6 dialog) |
 |---|---|---|---|---|
@@ -157,7 +158,8 @@ metric is in [formulas.md](formulas.md).
 ## Sources
 
 - [Oracle P6 Professional 24 User Guide: Check Schedule](https://docs.oracle.com/cd/F88968_01/English/User_Guides/p6_pro_user/101393.htm)
-- [Oracle P6 Professional 24 help: Check Schedule dialog box](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)
+- [Oracle P6 Professional 24 client help 101248: Check Schedule dialog box](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)
+  (the source of the P6 populations, parameters `in_progress`, `no_baseline`, `due_from`)
 - [Oracle P6 Professional 24: Schedule Options, General tab](https://docs.oracle.com/cd/F88968_01/client_help/en_US/general_tab_-_schedule_options_dialog_box.htm)
 - [Oracle P6 help: Report tab of the Check Schedule dialog (section index)](https://docs.oracle.com/cd/G18294_01/p6help/en/101231.htm)
 - [Oracle P6 help: Logic section](https://docs.oracle.com/cd/G18294_01/p6help/en/46291.htm),
@@ -168,7 +170,7 @@ metric is in [formulas.md](formulas.md).
 - [Oracle P6 help: About activity types](https://docs.oracle.com/cd/G18294_01/p6help/en/43407.htm)
 - [Oracle P6 EPPM user guide: early and late dates, resource-dependent activities](https://docs.oracle.com/cd/F37125_01/English/User_Guides/p6_eppm_user/98346.htm)
 - [Oracle P6 Professional: Earned Value admin preferences](https://docs.oracle.com/cd/F37128_01/client_help/en_US/earned_value_tab_-_admin_preferences_dialog_box.htm)
-- [DECM v8.0 schedule test specifications (SSI index of the DCMA sheets)](https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm):
+- [DECM v8.0 sheets index (SSI): schedule test specifications](https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm):
   [06A204b](https://ssitools.com/helpandsuport/DECM/06A204b.pdf),
   [06A205a](https://ssitools.com/helpandsuport/DECM/06A205a.pdf),
   [06A209a](https://ssitools.com/helpandsuport/DECM/06A209a.pdf),
@@ -180,7 +182,7 @@ metric is in [formulas.md](formulas.md).
 - [DCMA EVMS Center](https://www.dcma.mil/HQ/EVMS/)
 - [Ten Six: options for scheduling progressed activities in P6](https://tensix.com/options-for-scheduling-progressed-activities-in-p6/)
 - [Ten Six: using the P6 Check Schedule tool](https://tensix.com/using-the-p6-check-schedule-tool/)
-- [DCMA 14-Point Assessment metric descriptions (Deltek Acumen help)](https://help.deltek.com/Product/Acumen/8.11/GA/DCMA%2014%20Point%20Assessment%20Metric%20Descriptions.html)
+- [Deltek Acumen: DCMA 14-Point Assessment metric descriptions](https://help.deltek.com/Product/Acumen/8.11/GA/DCMA%2014%20Point%20Assessment%20Metric%20Descriptions.html)
 - [GAO-16-89G Schedule Assessment Guide](https://www.gao.gov/products/gao-16-89g)
 - [NDIA PASEG v6.0](https://www.humphreys-assoc.com/?p=13023)
 - [xerlock (reference results)](https://github.com/joaompfp/xerlock)

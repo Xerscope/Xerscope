@@ -208,6 +208,22 @@ uv run python tests/reference/mpxj_cpm.py         # MPXJ's scheduler at a pinned
 uv run pytest -rs                                 # corpus and MPXJ tests skip when their data is missing
 ```
 
+Three test files pin the checks, each in its own way:
+
+- `tests/test_characterization.py` (characterization, or golden, test): every metric of
+  every built-in standard is run on the demo series (no baseline, planned-dates baseline,
+  first update as baseline) and on the pinned third-party files, and its status, counts,
+  value and flagged Activity IDs are compared with `tests/golden/standards.json`
+  (sections `demo`, `demo-planned`, `demo-first-as-baseline`, `reference`; no activity
+  names). A refactor must change no number. After an intended change, run
+  `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`: it rewrites the
+  file and always fails by design, so a rewrite is never green; review the diff, then
+  rerun without the variable.
+- `tests/test_p6_check_schedule.py`: the P6 Check Schedule rules, one quoted sentence of
+  Oracle's P6 Professional 24 help per test.
+- `tests/test_rules.py`: each check by hand, especially where P6 and DCMA differ.
+  `tests/rulekit.py` holds the helpers the two rule test files share.
+
 The UI tests render every page headless (Streamlit AppTest), so they run the same on
 Windows. GitHub Actions (`.github/workflows/tests.yml`) runs:
 
@@ -246,6 +262,7 @@ src/xerscope/
 ├── viz/                 Plotly: Gantt (+ WBS bars), S-curve, indices, MTA, PPC
 ├── app/                 Streamlit, one file per page; ui.py = shared look; .streamlit/ = theme
 ├── config.py            tunable defaults no standard owns (hours/day fallback, critical float)
+├── verify/              independent checks: P6 held-out corpus, MPXJ scheduler and reader, difference shapes
 ├── crosscheck.py        MPXJ as second reader and second CPM engine; P6 held-out corpus score
 ├── export.py            Power BI star schema
 ├── sample.py            demo generator with planted findings
