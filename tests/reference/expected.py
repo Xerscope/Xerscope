@@ -74,7 +74,10 @@ DCMA = {
     "DCMA-02": {"numerator": 0},
     "DCMA-03": {"numerator": 4},
     "DCMA-04": {"numerator": 25, "denominator": 27},  # 25 FS + 2 SS into incomplete work
-    "DCMA-05": {"numerator": 2},  # CX-040, MS-030: CS_MEOB (finish on or before)
+    "DCMA-05": {
+        "numerator": 1,  # CX-040: CS_MEOB (finish on or before)
+        "note": "xerlock: 2 (counts the milestone MS-030; PAM 200.1 4.0 excludes milestones)",
+    },
     "DCMA-06": {"numerator": 5},
     "DCMA-07": {"numerator": 0},
     "DCMA-08": {"numerator": 2},  # MEP-010, MEP-020
