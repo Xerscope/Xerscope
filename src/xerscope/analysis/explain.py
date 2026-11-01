@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from ..xer.model import CONSTRAINT
 from .checks import CheckResult
-from .rules import EXCLUDE, EXEMPT, RULES
+from .rules import EXCLUDE, EXEMPT, RULES, Rule
 
 LINKS_TEXT = {
     "all": "all relationships",
@@ -27,34 +27,6 @@ LINKS_TEXT = {
     "succ_incomplete": "relationships into an incomplete successor",
 }
 OP_TEXT = {"<=": "≤", ">=": "≥", "==": "=", "<": "<", ">": ">"}
-
-# rule -> (what the numerator counts, what the denominator counts, what the flagged list holds)
-WORDING: dict[str, tuple[str, str, str]] = {
-    "relationship_type": ("of the required type", "relationships checked", "Relationships of another type"),
-    "bei": ("completed", "due by the data date", "Due by the data date but not completed"),
-    "missed_tasks": ("missed", "due by the data date", "Due by the data date and not finished on time"),
-    "late_vs_baseline": ("late", "checked", "Forecast to finish after their baseline finish"),
-    "missing_logic": ("open-ended", "checked", "Missing a predecessor or a successor"),
-    "open_ends": ("with an open start or finish", "incomplete tasks and milestones", "Open start or open finish"),
-    "constraints": ("constrained", "checked", "Constrained activities"),
-    "float": ("flagged", "checked", "Activities outside the float limit"),
-    "duration": ("flagged", "checked", "Activities outside the duration limit"),
-    "lag": ("flagged", "relationships checked", "Relationships with the lag in question"),
-    "invalid_dates": ("with invalid dates", "checked", "Progress dates on the wrong side of the data date"),
-    "no_resource": ("without resources", "checked", "Activities with no resource assignment"),
-    "recalculated": ("different", "open activities", "Stored dates differ from the recalculation"),
-    "assignments_recalculated": ("different", "open assignments", "Assignment dates differ from the recalculation"),
-    "out_of_sequence": ("out of sequence", "", "Progressed out of logic sequence"),
-    "lagged_activities": ("with a lag", "incomplete tasks and milestones", "Activities with a lag on a predecessor"),
-    "summary_logic": ("with logic", "", "Summary activities carrying logic"),
-    "loe_successors": ("with a discrete successor", "incomplete LOE", "LOE driving discrete work"),
-    "missing_baseline": ("without baseline dates", "tasks and milestones", "Missing a baseline start or finish"),
-    "actuals_changed": ("changed", "with that actual date", "Actual date changed since the previous update"),
-    "progress_actuals": ("without the actual date", "showing that progress", "Progress without the matching actual"),
-    "riding_status_date": ("riding the status date", "checked", "Forecasts riding the status date"),
-    "dangling": ("dangling", "checked", "Logic that does not drive the activity"),
-}
-LINK_RULES = {"lag", "relationship_type"}
 
 
 @dataclass
@@ -102,15 +74,15 @@ def _show(value) -> str:
     return str(value)
 
 
-def _exclude_line(rule: str, exclude: list[str]) -> str:
+def _exclude_line(links: bool, exclude: list[str]) -> str:
     what = ", ".join((EXCLUDE[k][0] if k in EXCLUDE else k) for k in exclude)
-    return f"Relationships whose successor is excluded: {what}." if rule in LINK_RULES else f"Excludes: {what}."
+    return f"Relationships whose successor is excluded: {what}." if links else f"Excludes: {what}."
 
 
-def _population(rule: str, p: dict) -> list[str]:
+def _scope_lines(rule: Rule, p: dict) -> list[str]:
     out = []
     if p.get("exclude"):
-        out.append(_exclude_line(rule, p["exclude"]))
+        out.append(_exclude_line(rule.links, p["exclude"]))
     if p.get("pred_exempt"):
         out.append("No predecessor required for: " + ", ".join(EXEMPT.get(k, k) for k in p["pred_exempt"]) + ".")
     if p.get("succ_exempt"):
@@ -121,36 +93,54 @@ def _population(rule: str, p: dict) -> list[str]:
         out.append("Relationships to or from level-of-effort activities are left out.")
     if p.get("types"):
         out.append("Constraint types: " + ", ".join(CONSTRAINT.get(c, c) for c in p["types"]) + ".")
-    if "op" in p and "value" in p:
-        what = {"lag": "lag", "float": "total float", "duration": f"{p.get('field', 'original')} duration"}.get(
-            rule, "value"
-        )
-        unit = p.get("unit", "")
-        out.append(f"Flagged when {what} {OP_TEXT.get(p['op'], p['op'])} {p['value']:g} {unit}".rstrip() + ".")
-    if rule == "relationship_type":
-        out.append(f"Counts relationships of type {p.get('type', 'FS')}; the list shows the others.")
-    if rule == "bei":
-        if p.get("due_from") == "baseline":
-            due_text = (
-                "Due = baseline activities finishing on or before the data date, counted in the "
-                "baseline: an activity added since is never due, one deleted since still is."
-            )
-        else:
-            rule_text = "counted as due" if p.get("missing_baseline", "due") == "due" else "left out"
-            due_text = f"Activities without a baseline finish are {rule_text}."
-        out.append(due_text + " Completed = all completed activities in the population, early ones included.")
-    if rule == "invalid_dates" and p.get("in_progress") == "start":
-        out.append("An in-progress activity is flagged when its remaining early start is before the data date.")
-    if rule == "missed_tasks":
-        out.append(
-            "Due = baseline start and finish set, baseline finish on or before the data date. "
-            "Missed = actual (else forecast) finish on a later day than the baseline finish."
-        )
-    if rule == "late_vs_baseline":
-        out.append("Variance is working time on the activity's calendar, as P6's Finish Variance.")
-        if p.get("no_baseline") == "planned":
-            out.append("An activity with no baseline finish is late when its finish is later than its planned finish.")
     return out
+
+
+def _flag_line(rule: Rule, p: dict) -> list[str]:
+    if "op" not in p or "value" not in p:
+        return []
+    what = {"lag": "lag", "float": "total float", "duration": f"{p.get('field', 'original')} duration"}.get(
+        rule.name, "value"
+    )
+    unit = p.get("unit", "")
+    return [f"Flagged when {what} {OP_TEXT.get(p['op'], p['op'])} {p['value']:g} {unit}".rstrip() + "."]
+
+
+def _population(rule: Rule, p: dict) -> list[str]:
+    return _scope_lines(rule, p) + _flag_line(rule, p) + (rule.notes(p) if rule.notes else [])
+
+
+def _formula(result: CheckResult, subject: str, words: tuple[str, str]) -> str:
+    m = result.metric
+    num_word, den_word = words
+    n, d, v = result.numerator, result.denominator, result.value
+    if result.status in ("n/a", "error"):
+        return result.note or "not computed"
+    if m.unit == "%" and n is not None and d:
+        return f"{n} {num_word} / {d} {den_word} = {fmt_value(v, '%')}"
+    if m.unit == "ratio" and n is not None and d:
+        return f"{n} {num_word} / {d} {den_word} = {fmt_value(v, 'ratio')}"
+    if m.unit == "count":
+        k = n if n is not None else 0
+        return f"{k} {noun(subject, k)} {num_word}"
+    return result.note or fmt_value(v, m.unit)
+
+
+def _verdict(result: CheckResult) -> str:
+    m = result.metric
+    target = _target(m)
+    shown = fmt_value(result.value, m.unit)
+    if m.unit == "pass/fail" and result.status in ("pass", "fail"):
+        return "Passed." if result.status == "pass" else "Failed."
+    if result.status == "pass":
+        return f"{shown} meets the target {target}."
+    if result.status == "fail":
+        return f"{shown} misses the target {target}."
+    if result.status == "info":
+        return "Reported for review: this standard sets no pass/fail target."
+    if result.status == "n/a":
+        return "Not applicable: " + (result.note or "nothing to check") + "."
+    return "The rule raised an error: " + result.note
 
 
 def explain(result: CheckResult) -> Explanation:
@@ -158,46 +148,18 @@ def explain(result: CheckResult) -> Explanation:
     rule = RULES[m.rule]
     effective = {**rule.params, **m.params}
     parameters = [(k, _show(v), "standard" if k in m.params else "default") for k, v in effective.items()]
-    num_word, den_word, flagged_word = WORDING.get(m.rule, ("flagged", "checked", "Flagged items"))
-    links = m.rule in LINK_RULES or "pred_code" in result.flagged.columns
+    num_word, den_word, flagged_word = rule.wording or ("flagged", "checked", "Flagged items")
+    links = rule.links or "pred_code" in result.flagged.columns
     subject = "relationships" if links else "activities"
     if links and den_word == "checked":
         den_word = "relationships checked"
 
-    n, d, v = result.numerator, result.denominator, result.value
-    if result.status in ("n/a", "error"):
-        formula = result.note or "not computed"
-    elif m.unit == "%" and n is not None and d:
-        formula = f"{n} {num_word} / {d} {den_word} = {fmt_value(v, '%')}"
-    elif m.unit == "ratio" and n is not None and d:
-        formula = f"{n} {num_word} / {d} {den_word} = {fmt_value(v, 'ratio')}"
-    elif m.unit == "count":
-        k = n if n is not None else 0
-        formula = f"{k} {noun(subject, k)} {num_word}"
-    else:
-        formula = result.note or fmt_value(v, m.unit)
-
-    target = _target(m)
-    shown = fmt_value(v, m.unit)
-    if m.unit == "pass/fail" and result.status in ("pass", "fail"):
-        verdict = "Passed." if result.status == "pass" else "Failed."
-    elif result.status == "pass":
-        verdict = f"{shown} meets the target {target}."
-    elif result.status == "fail":
-        verdict = f"{shown} misses the target {target}."
-    elif result.status == "info":
-        verdict = "Reported for review: this standard sets no pass/fail target."
-    elif result.status == "n/a":
-        verdict = "Not applicable: " + (result.note or "nothing to check") + "."
-    else:
-        verdict = "The rule raised an error: " + result.note
-
     return Explanation(
         measured=m.description,
-        formula=formula,
-        verdict=verdict,
+        formula=_formula(result, subject, (num_word, den_word)),
+        verdict=_verdict(result),
         method=rule.doc,
-        population=_population(m.rule, effective),
+        population=_population(rule, effective),
         parameters=parameters,
         flagged_label=flagged_word,
         subject=subject,

@@ -51,8 +51,9 @@ def test_parameters_show_standard_and_defaults(results):
 
 def test_link_rules_word_exclusions_on_the_successor():
     from xerscope.analysis.explain import _population
+    from xerscope.analysis.rules import RULES
 
-    lines = _population("lag", {"exclude": ["loe", "milestones"], "links": "succ_incomplete"})
+    lines = _population(RULES["lag"], {"exclude": ["loe", "milestones"], "links": "succ_incomplete"})
     assert "Relationships whose successor is excluded: level of effort, milestones." in lines
 
 
@@ -63,12 +64,11 @@ def test_relationship_checks_say_relationships(results):
 
 
 def test_explain_tables_match_registry():
-    from xerscope.analysis.explain import WORDING
     from xerscope.analysis.rules import EXCLUDE, EXEMPT, RULES
 
     # cpli (ratio) and critical_path_test (pass/fail) have no numerator/denominator/flagged
-    # list to word; explain() falls back to WORDING.get(..., defaults) for them.
-    assert set(WORDING) == set(RULES) - {"cpli", "critical_path_test"}
+    # list to word; explain() falls back to defaults for them.
+    assert {n for n, r in RULES.items() if r.wording} == set(RULES) - {"cpli", "critical_path_test"}
     # the vocabularies carry their own labels: every key has one, so explain never falls back to the key
     assert all(label and callable(pred) for label, pred in EXCLUDE.values())
     assert all(EXEMPT.values())
