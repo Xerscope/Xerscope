@@ -1,8 +1,10 @@
+import contextlib
+
 import pandas as pd
 import pytest
-from xerkit import active, snap, todo
+from xerkit import active, snap, todo, xer_text
 
-from xerscope.xer import build_snapshot, parse_text
+from xerscope.xer import XerError, build_snapshot, parse_text
 
 
 def test_snapshot_identity(store):
@@ -177,3 +179,83 @@ def test_parser_reports_rows_longer_than_their_header():
     raw = parse_text("ERMHDR\t23.12\n%T\tX\n%F\ta\tb\n%R\t1\t2\textra\n%R\t3\n", source="t.xer")
     assert raw.tables["X"].values.tolist() == [["1", "2"], ["3", ""]]
     assert any("more fields" in w for w in raw.warnings)
+
+
+# --- minimal XERs: columns missing from a table ------------------------------------
+
+
+def drop_column(text: str, table: str, column: str) -> str:
+    """Remove one column from one table of an XER text (its %F field and every %R value)."""
+    out, in_table, idx = [], False, -1
+    for line in text.split("\n"):
+        parts = line.split("\t")
+        if parts[0] == "%T":
+            in_table = parts[1] == table
+        elif in_table and parts[0] == "%F":
+            idx = parts.index(column) if column in parts else -1
+            if idx >= 0:
+                del parts[idx]
+        elif in_table and parts[0] == "%R" and idx >= 0:
+            del parts[idx]
+        out.append("\t".join(parts))
+    return "\n".join(out)
+
+
+def _linked_text() -> str:
+    return xer_text([active("A"), active("B"), active("C")], [("A", "B", "FS", 8), ("B", "C", "SS", 16)])
+
+
+def _rels(s):
+    return s.relationships[["pred_code", "succ_code", "type", "lag_hr", "is_external"]].values.tolist()
+
+
+@pytest.mark.parametrize("column", ["proj_id", "pred_proj_id"])
+def test_taskpred_without_project_column_is_derived(column):
+    full = build_snapshot(parse_text(_linked_text(), source="t.xer"))
+    s = build_snapshot(parse_text(drop_column(_linked_text(), "TASKPRED", column), source="t.xer"))
+    assert _rels(s) == _rels(full) and len(s.relationships) == 2
+    assert any(f"TASKPRED.{column} missing" in w for w in s.warnings)
+
+
+def test_task_without_proj_id_takes_the_only_project():
+    s = build_snapshot(parse_text(drop_column(_linked_text(), "TASK", "proj_id"), source="t.xer"))
+    assert len(s.activities) == 3 and len(s.relationships) == 2
+    assert any("TASK.proj_id missing" in w for w in s.warnings)
+
+
+def test_task_without_proj_id_and_several_projects_raises():
+    text = _linked_text().replace("%T\tTASK\n", "%T\tPROJECT\n%F\tproj_id\n%R\t2\n%T\tTASK\n", 1)
+    with pytest.raises(XerError, match=r"t\.xer.*TASK.*proj_id"):
+        build_snapshot(parse_text(drop_column(text, "TASK", "proj_id"), source="t.xer"))
+
+
+def test_task_without_task_code_raises_xer_error():
+    with pytest.raises(XerError, match="table TASK has no column task_code"):
+        build_snapshot(parse_text(drop_column(_linked_text(), "TASK", "task_code"), source="t.xer"))
+
+
+@pytest.mark.parametrize(
+    ("table", "column"),
+    [
+        ("TASK", "task_id"),
+        ("TASK", "task_code"),
+        ("TASK", "proj_id"),
+        ("TASK", "status_code"),
+        ("TASKPRED", "task_id"),
+        ("TASKPRED", "pred_task_id"),
+        ("TASKPRED", "proj_id"),
+        ("TASKPRED", "pred_proj_id"),
+        ("PROJECT", "proj_id"),
+        ("PROJECT", "proj_short_name"),
+        ("CALENDAR", "clndr_id"),
+        ("PROJWBS", "proj_id"),
+    ],
+)
+def test_missing_column_never_leaks_a_key_error(table, column):
+    text = xer_text(
+        [active("A"), active("B")],
+        [("A", "B", "FS", 0)],
+        wbs=[{"wbs_id": "10", "proj_id": "1", "wbs_short_name": "W", "wbs_name": "W", "proj_node_flag": "Y"}],
+    )
+    with contextlib.suppress(XerError):  # a clear XerError is fine, a KeyError is not
+        build_snapshot(parse_text(drop_column(text, table, column), source="t.xer"))
