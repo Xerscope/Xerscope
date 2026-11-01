@@ -493,6 +493,8 @@ def missed_tasks(ctx, exclude: Names = ("loe", "milestones")) -> RuleOutput:
     an actual on a non-working day is still late.
     """
     dd = ctx.snapshot.data_date
+    if dd is None:
+        return RuleOutput(note="no data date")
     pop = _with_baseline(ctx, activities(ctx, exclude))
     due = pop[pop["bl_start"].notna() & (pop["bl_finish"] <= dd)]
     late = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
@@ -515,6 +517,8 @@ def bei(
     added since is never due, one deleted since still is; ``missing_baseline`` is unused.
     """
     dd = ctx.snapshot.data_date
+    if dd is None:
+        return RuleOutput(note="no data date")
     pop = _with_baseline(ctx, activities(ctx, exclude))
     done = int(pop["is_complete"].sum())
     if due_from == "baseline":
@@ -553,7 +557,7 @@ def bei(
 
 def _finish_driver(ctx) -> pd.Series | None:
     t = ctx.snapshot.activities
-    open_ = t[~t["is_complete"] & ~t["is_loe"]]
+    open_ = t[~t["is_complete"] & ~t["is_loe"] & t["finish"].notna()]
     return None if open_.empty else open_.loc[open_["finish"].idxmax()]
 
 
@@ -569,7 +573,9 @@ def cpli(ctx) -> RuleOutput:
     """
     s = ctx.snapshot
     end = _finish_driver(ctx)
-    if end is None or s.data_date is None:
+    if s.data_date is None:
+        return RuleOutput(note="no data date")
+    if end is None:
         return RuleOutput(note="no remaining work")
     if s.options.get("must_finish_by") is None:
         return RuleOutput(note="no Must Finish By date (P6: Project > Dates): the float would be 0 by construction")
@@ -587,6 +593,10 @@ def critical_path_test(ctx, delay_days: float = 600) -> RuleOutput:
     """Add ``delay_days`` to the first open critical activity; the finish must slip as much."""
     from .cpm import critical_path_test as run
 
+    if ctx.snapshot.data_date is None:
+        return RuleOutput(note="no data date")
+    if _finish_driver(ctx) is None:
+        return RuleOutput(note="no remaining work")
     res = run(ctx.snapshot, delay_days)
     return RuleOutput(value=1.0 if res.passed else 0.0, note=res.note, flagged=pd.DataFrame(res.blocking))
 
@@ -648,6 +658,8 @@ def out_of_sequence(ctx, exclude: Names = ("loe",), method: Literal["actuals", "
     if method == "decm":
         succ = pop[~pop["is_complete"]].drop_duplicates("task_code").set_index("task_code")
         r = rel[rel["succ_code"].isin(succ.index) & rel["pred_code"].isin(t.index)].copy()
+        if succ.empty:
+            return RuleOutput(_lnk(r), 0, 0)
         p_s, p_f = r["pred_code"].map(t["start"]), r["pred_code"].map(t["finish"])
         s_s, s_f = r["succ_code"].map(succ["start"]), r["succ_code"].map(succ["finish"])
         cond = np.select(

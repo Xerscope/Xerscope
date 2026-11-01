@@ -835,3 +835,26 @@ def test_actuals_changed_counts_a_removed_date_on_both_sides():
     store = SnapshotStore([a, b])
     out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start", period_days=0)
     assert sorted(out.flagged["task_code"]) == ["A", "B"] and (out.numerator, out.denominator) == (2, 2)
+
+
+# --- no data date ------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("std", "metric"), [(P6, "P6-13"), (DCMA, "DCMA-11"), (DCMA, "DCMA-12"), (DCMA, "DCMA-13"), (DCMA, "DCMA-14")]
+)
+def test_data_date_checks_are_na_without_a_data_date(std, metric):
+    s = snap(
+        [done("A"), active("B"), todo("C", early_end_date="2026-03-20 17:00")],
+        [("A", "B", "FS", 0), ("B", "C", "FS", 0)],
+        project={"last_recalc_date": "", "plan_start_date": ""},
+    )
+    assert s.data_date is None
+    r = run(std, metric, s, Baseline.planned(s))
+    assert r.status == "n/a" and "data date" in r.note
+
+
+def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
+    s = snap([done("A"), done("B")], [("A", "B", "FS", 0)])
+    r = run(DECM, "06A212a", s)
+    assert r.status != "error" and r.numerator == 0
