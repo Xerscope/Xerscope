@@ -6,20 +6,13 @@ or exemption would silently shift a result.
 
 import pandas as pd
 import pytest
+from rulekit import STANDARDS, codes, run
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
 
-P6 = builtin_standards()["P6"]
-DCMA = builtin_standards()["DCMA"]
-
-
-def run(std, metric_id, s, baseline=None):
-    return run_metric(std[metric_id], AnalysisContext(s, baseline=baseline))
-
-
-def codes(r):
-    return sorted(r.flagged["task_code"]) if "task_code" in r.flagged else []
+P6 = STANDARDS["P6"]
+DCMA = STANDARDS["DCMA"]
 
 
 # --- logic --------------------------------------------------------------------------------
