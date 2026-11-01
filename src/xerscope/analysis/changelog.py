@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from ..store import SnapshotStore
 from ..xer import Snapshot
 
 CATEGORIES = [
@@ -317,3 +318,30 @@ def summary(log: pd.DataFrame) -> pd.DataFrame:
     """Count of changes per category and kind (project rows excluded)."""
     x = log[log["category"] != "Project"]
     return x.groupby(["category", "change"], observed=True).size().rename("count").reset_index()
+
+
+def category_totals(counts: pd.DataFrame) -> pd.DataFrame:
+    """Per category: total number of changes and the sorted kinds of change seen (from :func:`summary`)."""
+    totals = counts.groupby("category", observed=True)["count"].sum().rename("total").reset_index()
+    kinds = counts.groupby("category", observed=True)["change"].apply(lambda s: ", ".join(sorted(s))).rename("kinds")
+    return totals.merge(kinds.reset_index(), on="category")
+
+
+def weekly_change_counts(store: SnapshotStore) -> pd.DataFrame:
+    """:func:`summary` of every consecutive pair of updates, tagged with the newer data date as ``week``."""
+    frames = []
+    for i in range(1, len(store)):
+        c = summary(changelog(store[i - 1], store[i]))
+        c["week"] = f"{store[i].data_date:%Y-%m-%d}"
+        frames.append(c)
+    return pd.concat(frames, ignore_index=True)
+
+
+def weekly_change_matrix(weekly: pd.DataFrame) -> pd.DataFrame:
+    """Counts per (category, change) as rows and one column per week, from :func:`weekly_change_counts`."""
+    return (
+        weekly.pivot_table(index=["category", "change"], columns="week", values="count", aggfunc="sum", observed=True)
+        .fillna(0)
+        .astype(int)
+        .reset_index()
+    )

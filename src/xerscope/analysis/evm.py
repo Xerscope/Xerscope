@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -31,6 +32,8 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from ..xer.calendar import TimeAxis
 from .baseline import Baseline
+from .checks import AnalysisContext, run_metric
+from .standards import Metric
 
 
 def ev_technique(code: object) -> str:
@@ -291,3 +294,24 @@ def forecast_curve(snap: Snapshot) -> pd.DataFrame:
         days + pd.Timedelta(days=1)
     )
     return pd.DataFrame({"date": days, "fc_cum_hr": cum})
+
+
+def bei_series(
+    store: SnapshotStore, bei_metrics: Mapping[str, Metric], baseline_for: Callable[[Snapshot], Baseline | None]
+) -> pd.DataFrame:
+    """Baseline Execution Index of every update under the P6 and DCMA definitions.
+
+    ``bei_metrics`` holds the ``bei`` metric of the "P6" and "DCMA" standards; ``baseline_for``
+    gives each snapshot its own baseline. Columns: data_date, bei_p6, bei_dcma.
+    """
+    rows = []
+    for s in store:
+        ctx = AnalysisContext(s, baseline=baseline_for(s))
+        rows.append(
+            {
+                "data_date": s.data_date,
+                "bei_p6": run_metric(bei_metrics["P6"], ctx).value,
+                "bei_dcma": run_metric(bei_metrics["DCMA"], ctx).value,
+            }
+        )
+    return pd.DataFrame(rows)

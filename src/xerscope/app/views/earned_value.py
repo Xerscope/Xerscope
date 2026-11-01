@@ -1,9 +1,9 @@
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import AnalysisContext, builtin_standards, run_metric
+from xerscope.analysis import builtin_standards
 from xerscope.analysis.baseline import EV_BASES
-from xerscope.analysis.evm import earned, evm_series, forecast_curve, pv_curve
+from xerscope.analysis.evm import bei_series, earned, evm_series, forecast_curve, pv_curve
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, is_dark, memo, require_store, snapshot_picker
 from xerscope.viz.charts import build_index_trend, build_scurve
@@ -38,21 +38,7 @@ std = builtin_standards()
 BEI = {k: next(m for m in std[k].metrics if m.rule == "bei") for k in ("P6", "DCMA")}
 
 
-def bei_series():
-    rows = []
-    for s in store:
-        b = baseline_for(s)
-        rows.append(
-            {
-                "data_date": s.data_date,
-                "bei_p6": run_metric(BEI["P6"], AnalysisContext(s, baseline=b)).value,
-                "bei_dcma": run_metric(BEI["DCMA"], AnalysisContext(s, baseline=b)).value,
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-series = series.merge(memo(key + ("bei",), bei_series), on="data_date", how="left")
+series = series.merge(memo(key + ("bei",), lambda: bei_series(store, BEI, baseline_for)), on="data_date", how="left")
 row = series[series["data_date"] == snap.data_date].iloc[-1]
 prev = series[series["data_date"] < snap.data_date].tail(1)
 

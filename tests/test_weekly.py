@@ -469,3 +469,68 @@ def test_ev_basis_follows_p6_admin_preference(basis, hours, first_day):
 def test_ev_basis_rejects_unknown_values():
     with pytest.raises(ValueError):
         Baseline.from_snapshot(snap([todo("A")]), ev_basis="planned")
+
+
+# --- pure computations formerly inside the Streamlit pages (pinned from the page output) -------------
+
+
+def test_bei_series_one_row_per_update_p6_and_dcma(store):
+    from xerscope.analysis import builtin_standards
+    from xerscope.analysis.evm import bei_series
+
+    std = builtin_standards()
+    bei = {k: next(m for m in std[k].metrics if m.rule == "bei") for k in ("P6", "DCMA")}
+    out = bei_series(store, bei, Baseline.planned)
+    assert list(out.columns) == ["data_date", "bei_p6", "bei_dcma"]
+    assert out["data_date"].tolist() == [s.data_date for s in store]
+    assert out["bei_p6"].dtype == out["bei_dcma"].dtype == "float64"
+    assert pd.isna(out["bei_p6"].iloc[0])
+    assert out["bei_p6"].iloc[1:].tolist() == pytest.approx([1, 1, 1, 0.75, 2 / 3, 5 / 7, 0.75])
+    assert out["bei_dcma"].iloc[1:].tolist() == pytest.approx(out["bei_p6"].iloc[1:].tolist())
+
+
+def test_health_wide_has_one_row_per_check_and_one_column_per_update(store):
+    from xerscope.analysis import builtin_standards, health_history
+    from xerscope.analysis.checks import health_wide
+
+    std = builtin_standards()["P6"]
+    wide = health_wide(health_history(store, std, Baseline.planned), std)
+    assert list(wide.columns) == ["id", "check", *(f"{s.data_date:%Y-%m-%d}" for s in store)]
+    assert wide["id"].tolist() == [m.id for m in std.metrics]
+    assert wide["check"].iloc[:4].tolist() == ["Logic", "Hard constraints", "Soft constraints", "Large durations"]
+    assert wide.iloc[:4, 2].tolist() == pytest.approx([6.896552, 0, 7.142857, 4.166667])
+    assert wide.shape == (14, 10)
+    assert (wide.dtypes.iloc[2:] == "float64").all()
+
+
+def test_category_totals_sums_counts_and_lists_kinds(store):
+    from xerscope.analysis.changelog import category_totals
+
+    out = category_totals(summary(changelog(store[0], store[1])))
+    assert out["category"].astype(str).tolist() == ["Progress", "Dates", "Float"]
+    assert out["total"].tolist() == [9, 50, 1]
+    assert out["total"].dtype == "int64"
+    assert out["kinds"].tolist() == [
+        "% complete, finished, started",
+        "finish moved, start moved",
+        "total float changed",
+    ]
+
+
+def test_weekly_change_matrix_counts_per_category_kind_and_week(store):
+    from xerscope.analysis.changelog import weekly_change_counts, weekly_change_matrix
+
+    matrix = weekly_change_matrix(weekly_change_counts(store))
+    assert list(matrix.columns) == ["category", "change", *(f"{s.data_date:%Y-%m-%d}" for s in list(store)[1:])]
+    assert matrix.shape == (13, 9)
+    assert matrix.iloc[0][["category", "change"]].astype(str).tolist() == ["Scope", "added"]
+    assert matrix.iloc[0, 2:].tolist() == [0, 0, 0, 1, 0, 0, 0]
+    assert (matrix.dtypes.iloc[2:] == "int64").all()
+    assert int(matrix.iloc[:, 2:].to_numpy().sum()) == 365
+
+
+def test_forecast_finish_shift_since_first_update_in_working_days(store):
+    from xerscope.analysis.progress import finish_shift_since_first
+
+    assert finish_shift_since_first(store) == 15.0
+    assert finish_shift_since_first(SnapshotStore([store.first])) is None

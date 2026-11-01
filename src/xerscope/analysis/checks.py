@@ -121,3 +121,15 @@ def health_history(
     df = pd.DataFrame(rows)
     df[["found", "total"]] = df[["found", "total"]].astype("Int64")
     return df
+
+
+def health_wide(history: pd.DataFrame, standard: Standard) -> pd.DataFrame:
+    """Check results as a table: one row per check, one column per update (``YYYY-MM-DD``).
+
+    ``history`` is the long frame from :func:`health_history`; rows follow the standard's order.
+    """
+    ids = [m.id for m in standard.metrics]
+    wide = history.pivot_table(index="id", columns="data_date", values="actual", aggfunc="first").reindex(ids)
+    wide.columns = [f"{c:%Y-%m-%d}" for c in wide.columns]
+    wide.insert(0, "check", [standard[i].name for i in wide.index])
+    return wide.reset_index()
