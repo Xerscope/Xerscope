@@ -100,7 +100,7 @@ def rollup(snap: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame:
     )
     r["weight"] = np.where(use_hr, "hours", "duration")
     # project calendar: a WBS node has no calendar of its own
-    r["finish_var_wd"] = snap.working_days(pd.Series("", index=r.index), r["bl_finish"], r["finish"]).round(1)
+    r["finish_variance_wd"] = snap.working_days(pd.Series("", index=r.index), r["bl_finish"], r["finish"]).round(1)
     r = r.drop(columns=["_pct_hr", "_pct_d", "_w_d"])
     out = tr.join(r, on="wbs_id", how="left")
     out[["activities", "complete", "critical"]] = out[["activities", "complete", "critical"]].fillna(0).astype(int)

@@ -21,7 +21,7 @@ with top:
         lead="Labour hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )
-if bl is None or bl.snapshot is None:
+if bl is None:
     st.info("Choose a baseline in the sidebar (a loaded snapshot or a separate BL file).")
     st.stop()
 if bl.bac_hours <= 0:

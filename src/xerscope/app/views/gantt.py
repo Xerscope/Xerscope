@@ -34,7 +34,7 @@ left, right = st.columns([1.5, 1], gap="large")
 with left:
     st.markdown("**WBS** · select a row to focus the Gantt")
     event = st.dataframe(
-        nodes[["label", "pct_complete", "finish_var_wd"]],
+        nodes[["label", "pct_complete", "finish_variance_wd"]],
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -44,7 +44,7 @@ with left:
         column_config={
             "label": st.column_config.TextColumn("WBS", width="medium"),
             "pct_complete": st.column_config.ProgressColumn("% complete", min_value=0, max_value=100, format="%.0f %%"),
-            "finish_var_wd": st.column_config.NumberColumn(
+            "finish_variance_wd": st.column_config.NumberColumn(
                 "Δ BL (wd)", format="%+.0f", help="Finish shift against the baseline, working days"
             ),
         },
@@ -78,7 +78,7 @@ with kpis:
             (
                 "Forecast finish",
                 f"{node['finish']:%d %b %Y}" if pd.notna(node["finish"]) else "–",
-                None if pd.isna(node["finish_var_wd"]) else f"{node['finish_var_wd']:+.1f} wd vs BL",
+                None if pd.isna(node["finish_variance_wd"]) else f"{node['finish_variance_wd']:+.1f} wd vs BL",
                 None,
                 "inverse",
             ),
