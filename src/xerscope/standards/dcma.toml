@@ -8,7 +8,7 @@
 # Relationships: those into incomplete work. Durations and float in working days.
 # Calibrated against xerlock's published DCMA result on its sample schedule
 # (tests/reference/expected.py): every count there is reproduced except where the pamphlet
-# differs from xerlock (DCMA-05 excludes milestones, PAM 200.1 section 4.0; noted there).
+# differs from xerlock (DCMA-05, 06 and 07 exclude milestones, PAM 200.1 section 4.0; noted there).
 
 [standard]
 id = "DCMA"
@@ -64,7 +64,8 @@ name = "High float"
 description = "Total float above 44 working days"
 rule = "float"
 target = "<= 5%"
-params = { op = ">", value = 44, unit = "days", exclude = ["complete", "loe"] }
+params = { op = ">", value = 44, unit = "days", exclude = ["complete", "loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months); §4.0: milestones excluded"
 
 [[metric]]
 id = "DCMA-07"
@@ -73,7 +74,8 @@ description = "Total float below 0"
 rule = "float"
 unit = "count"
 target = "<= 0"
-params = { op = "<", value = 0, unit = "days", exclude = ["complete", "loe"] }
+params = { op = "<", value = 0, unit = "days", exclude = ["complete", "loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 working days; §4.0: milestones excluded"
 
 [[metric]]
 id = "DCMA-08"

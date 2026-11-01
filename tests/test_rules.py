@@ -182,6 +182,30 @@ def test_float_threshold_in_hours_vs_working_days():
     assert codes(run(P6, "P6-14", s)) == ["N"]
 
 
+def test_dcma_06_07_follow_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.6: "An incomplete task with total float greater than 44 working
+    days (2 months) is counted in this metric." 4.7: "An incomplete task with total float less than 0
+    working days is included in this metric."
+
+    4.0 excludes completed tasks, LOE, subprojects and milestones: the milestones MH (high float) and
+    MN (negative float) are out of numerator and population. Float is in the task's calendar days.
+    """
+    s = snap(
+        [
+            todo("A", clndr_id="C10", total_float_hr_cnt="400"),  # 40 d
+            todo("B", total_float_hr_cnt="353"),  # 44.1 d
+            todo("C", total_float_hr_cnt="352"),  # 44 d
+            todo("N", total_float_hr_cnt="-8"),
+            todo("MH", task_type="TT_FinMile", target_drtn_hr_cnt="0", total_float_hr_cnt="400"),
+            todo("MN", task_type="TT_FinMile", target_drtn_hr_cnt="0", total_float_hr_cnt="-8"),
+        ]
+    )
+    high = run(DCMA, "DCMA-06", s)
+    assert (codes(high), high.denominator) == (["B"], 4)
+    neg = run(DCMA, "DCMA-07", s)
+    assert (codes(neg), neg.denominator) == (["N"], 4)
+
+
 def test_large_duration_remaining_vs_original():
     s = snap(
         [
