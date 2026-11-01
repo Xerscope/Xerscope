@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from ..xer.model import CONSTRAINT, START_CONSTRAINTS, forecast_dates
+from .baseline import Baseline
 
 if TYPE_CHECKING:
     from .checks import AnalysisContext
@@ -55,6 +56,9 @@ class RuleOutput:
     denominator: int | None = None
     value: float | None = None  # set by ratio / pass-fail rules; % and counts are derived
     note: str = ""
+
+
+_OPS = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
 
 
 @dataclass(frozen=True)
@@ -341,8 +345,7 @@ def lag(
     """
     r = link_population(ctx, links, exclude_loe, exclude)
     col = {"hours": "lag_hr", "days": "lag_d"}[unit]
-    ops = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
-    bad = r[ops[op](r[col].fillna(0), value)]
+    bad = r[_OPS[op](r[col].fillna(0), value)]
     return RuleOutput(_lnk(bad), len(bad), len(r))
 
 
@@ -389,9 +392,6 @@ def constraints(
         hits |= c
     bad = pop[hits]
     return RuleOutput(_act(bad, constraint2=bad["cstr_type2"].map(CONSTRAINT)), len(bad), len(pop))
-
-
-_OPS = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
 
 
 @rule("float", "%", wording=("flagged", "checked", "Activities outside the float limit"), measure="total float")
@@ -630,11 +630,7 @@ def bei(
     done = int(pop["is_complete"].sum())
     if due_from == "baseline":
         bl = ctx.baseline
-        kept = (
-            bl.frame
-            if bl.snapshot is None
-            else bl.frame[bl.frame.index.isin(_without(bl.snapshot.activities, dd, exclude)["task_code"])]
-        )
+        kept = bl.frame[bl.frame.index.isin(_without(bl.snapshot.activities, dd, exclude)["task_code"])]
         due_codes = set(kept.index[kept["bl_finish"] <= dd])
         late = pop[pop["task_code"].isin(due_codes) & ~pop["is_complete"]]
         gone = len(due_codes - set(ctx.snapshot.activities["task_code"]))
@@ -887,16 +883,12 @@ def open_ends(ctx, exempt_ends: Literal["baseline", "none"] = "baseline") -> Rul
         # the project's first start and last finish are looked up over every activity,
         # finished ones included: once the first activity is done, the next one in line
         # is not the project start
-        if ctx.baseline is not None:
-            bl = ctx.baseline.frame
-            all_s, all_f = bl["bl_start"], bl["bl_finish"]
-            b_s, b_f = pop["task_code"].map(all_s), pop["task_code"].map(all_f)
-            note = "first/last by baseline dates"
-        else:
-            t_all = ctx.snapshot.activities
-            all_s, all_f = t_all["target_start_date"], t_all["target_end_date"]
-            b_s, b_f = pop["target_start_date"], pop["target_end_date"]
-            note = "no baseline: first/last by planned dates"
+        bl = (ctx.baseline or Baseline.planned(ctx.snapshot)).frame
+        all_s, all_f = bl["bl_start"], bl["bl_finish"]
+        b_s, b_f = pop["task_code"].map(all_s), pop["task_code"].map(all_f)
+        note = (
+            "first/last by baseline dates" if ctx.baseline is not None else "no baseline: first/last by planned dates"
+        )
         open_start &= ~(b_s == all_s.min()).fillna(False).to_numpy(bool)
         open_finish &= ~(b_f == all_f.max()).fillna(False).to_numpy(bool)
     elif exempt_ends != "none":

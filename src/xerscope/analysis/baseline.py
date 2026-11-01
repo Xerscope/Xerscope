@@ -60,7 +60,7 @@ def _frame(a: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) 
 class Baseline:
     frame: pd.DataFrame  # index task_code, columns COLS
     label: str
-    snapshot: Snapshot | None = None  # source file, for its calendars (PV spreading)
+    snapshot: Snapshot  # source file, for its calendars (PV spreading)
     ev_basis: str = DEFAULT_EV_BASIS
 
     @classmethod

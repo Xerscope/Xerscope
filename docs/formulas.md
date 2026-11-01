@@ -296,7 +296,7 @@ complete / activities, 1)`. Pinned by test_store.py::test_summary_tracks_slip.
 budget hours > 0 (`weight = hours`), else `Σ original_d × pct_complete / Σ original_d`
 (`weight = duration`); `critical` = not complete and critical; `min_float_d`;
 `start = min start`, `finish = max finish`, `bl_finish = max bl_finish`;
-`finish_var_wd = round(working_days(bl_finish, finish), 1)` on the project calendar;
+`finish_variance_wd = round(working_days(bl_finish, finish), 1)` on the project calendar;
 `budget_hr`, `actual_hr`, `remaining_hr` sums. Pinned by
 test_wbs_rollup_hours_weighting_and_tree.
 
