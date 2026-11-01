@@ -498,24 +498,10 @@ def _assignments(raw: RawXer, pid: str, t: pd.DataFrame) -> pd.DataFrame:
     return asg[cols].reset_index(drop=True)
 
 
-def build_snapshot(
-    raw: RawXer,
-    project_code: str | None = None,
-    settings: Settings = DEFAULT_SETTINGS,
-) -> Snapshot:
-    """Turn a parsed XER into a typed Snapshot for one project.
-
-    If the file contains several projects, ``project_code`` selects one; otherwise the
-    project with the most activities is used and a warning is recorded.
-    """
-    proj = raw.table("PROJECT")
-    if proj.empty or raw.table("TASK").empty:
-        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
-    _require(proj, raw.source, "PROJECT", ["proj_id"])
-    warnings = list(raw.warnings)
-    task_all = _task_table(raw, proj, warnings)
-    rel_all = _taskpred_table(raw, task_all, warnings)
-
+def _select_project(
+    raw: RawXer, proj: pd.DataFrame, task_all: pd.DataFrame, project_code: str | None, warnings: list[str]
+) -> tuple[pd.Series, list[str]]:
+    """The PROJECT row to build the snapshot for, and the codes of every project that owns activities."""
     counts = task_all["proj_id"].value_counts()
     proj = _ensure_cols(
         proj[proj["proj_id"].isin(counts.index)].copy(),
@@ -533,75 +519,84 @@ def build_snapshot(
     if proj.empty:
         raise XerError(f"{raw.source}: no project owns any activity")
     codes = proj["proj_short_name"].tolist()
-
     if project_code:
         sel = proj[proj["proj_short_name"] == project_code]
         if sel.empty:
             raise XerError(f"{raw.source}: project {project_code!r} not found (has {codes})")
-        prow = sel.iloc[0]
-    else:
-        proj["_n"] = proj["proj_id"].map(counts)
-        prow = proj.sort_values("_n", ascending=False).iloc[0]
-        if len(proj) > 1:
-            warnings.append(f"{raw.source}: {len(proj)} projects in file, using {prow['proj_short_name']}")
+        return sel.iloc[0], codes
+    proj["_n"] = proj["proj_id"].map(counts)
+    prow = proj.sort_values("_n", ascending=False).iloc[0]
+    if len(proj) > 1:
+        warnings.append(f"{raw.source}: {len(proj)} projects in file, using {prow['proj_short_name']}")
+    return prow, codes
 
-    pid = prow["proj_id"]
+
+def _project_dates(
+    raw: RawXer, prow: pd.Series, warnings: list[str]
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    """(planned start, data date); the data date falls back to the planned start."""
     planned_start = _parse_date(prow["plan_start_date"])
     data_date = _parse_date(prow["last_recalc_date"]) or planned_start
     if data_date is None:
         warnings.append(f"{raw.source}: no data date (last_recalc_date / plan_start_date blank)")
+    return planned_start, data_date
 
-    # Calendars -> hours per working day
+
+def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
+    """CALENDAR table, hours per working day by calendar id, and the parsed work calendars."""
     cal = raw.table("CALENDAR")
-    if not cal.empty:
-        _require(cal, raw.source, "CALENDAR", ["clndr_id"])
-        cal = _ensure_cols(cal.copy(), ["clndr_name", "day_hr_cnt", "week_hr_cnt", "clndr_data"])
-        cal["day_hr_cnt"] = to_number(cal["day_hr_cnt"])
-        hpd = cal.set_index("clndr_id")["day_hr_cnt"]
-        work_cals = {
-            str(r["clndr_id"]): WorkCalendar.from_row(r, settings.default_hours_per_day) for _, r in cal.iterrows()
-        }
-        cal = cal.drop(columns=["clndr_data"])  # parsed above; the blob is large
-    else:
-        hpd = pd.Series(dtype=float)
-        work_cals = {}
+    if cal.empty:
+        return cal, pd.Series(dtype=float), {}
+    _require(cal, raw.source, "CALENDAR", ["clndr_id"])
+    cal = _ensure_cols(cal.copy(), ["clndr_name", "day_hr_cnt", "week_hr_cnt", "clndr_data"])
+    cal["day_hr_cnt"] = to_number(cal["day_hr_cnt"])
+    hpd = cal.set_index("clndr_id")["day_hr_cnt"]
+    work_cals = {
+        str(r["clndr_id"]): WorkCalendar.from_row(r, settings.default_hours_per_day) for _, r in cal.iterrows()
+    }
+    return cal.drop(columns=["clndr_data"]), hpd, work_cals  # parsed above; the blob is large
 
-    wbs, project_name = _wbs_frame(raw, pid)
 
-    # P6 scheduling options that change how stored numbers must be read
-    sched = raw.table("SCHEDOPTIONS")
+def _schedule_row(sched: pd.DataFrame, pid: str) -> dict[str, str]:
+    if sched.empty:
+        return {}
+    rows = sched[sched["proj_id"] == pid] if "proj_id" in sched.columns else sched
+    return rows.iloc[0].to_dict() if not rows.empty else {}
+
+
+def _lag_calendar(sched_row: dict[str, str]) -> str:
     # Oracle (P6 Professional 24, Schedule Options > General): "If you do not select a
     # calendar, Successor Activity Calendar is used to calculate lag."
-    lag_cal = "rcal_Successor"
-    sched_row: dict[str, str] = {}
-    if not sched.empty:
-        rows = sched[sched["proj_id"] == pid] if "proj_id" in sched.columns else sched
-        sched_row = rows.iloc[0].to_dict() if not rows.empty else {}
-        if sched_row.get("sched_calendar_on_relationship_lag") in LAG_CALENDARS:
-            lag_cal = sched_row["sched_calendar_on_relationship_lag"]
+    chosen = sched_row.get("sched_calendar_on_relationship_lag")
+    return chosen if chosen in LAG_CALENDARS else "rcal_Successor"
+
+
+def _progress_mode(sched_row: dict[str, str]) -> str:
     # Retained logic / progress override / actual dates: SCHEDOPTIONS stores two flags;
     # both "N" is Actual Dates (read the same way by MPXJ's TableProjectReader).
     rl, po = sched_row.get("sched_retained_logic", ""), sched_row.get("sched_progress_override", "")
-    progressed = (
-        "progress_override"
-        if po == "Y" and rl != "Y"
-        else "actual_dates"
-        if rl == "N" and po == "N"
-        else "retained_logic"
-    )
-    crit_type = prow["critical_path_type"] or "CT_TotFloat"
+    if po == "Y" and rl != "Y":
+        return "progress_override"
+    return "actual_dates" if rl == "N" and po == "N" else "retained_logic"
+
+
+def _scheduling_options(raw: RawXer, prow: pd.Series, pid: str) -> dict:
+    """P6 scheduling options that change how stored numbers must be read."""
+    sched = raw.table("SCHEDOPTIONS")
+    sched_row = _schedule_row(sched, pid)
     crit_hrs = to_number(pd.Series([prow["critical_drtn_hr_cnt"]])).iloc[0]
-    options = {
-        "lag_calendar": lag_cal,
-        "progressed": progressed,
-        "critical_path_type": crit_type,
+    return {
+        "lag_calendar": _lag_calendar(sched_row),
+        "progressed": _progress_mode(sched_row),
+        "critical_path_type": prow["critical_path_type"] or "CT_TotFloat",
         "critical_float_hr": None if pd.isna(crit_hrs) else float(crit_hrs),
         "has_schedoptions": not sched.empty,
         "sched": sched_row,  # the raw SCHEDOPTIONS row: read by analysis.cpm
         "must_finish_by": _parse_date(prow["plan_end_date"]),
     }
 
-    # --- tasks ---------------------------------------------------------------
+
+def _typed_tasks(task_all: pd.DataFrame, pid: str) -> pd.DataFrame:
     t = _ensure_cols(
         task_all[task_all["proj_id"] == pid].copy(),
         [
@@ -622,7 +617,10 @@ def build_snapshot(
         t[c] = to_datetime(t[c])
     for c in TASK_NUM_COLS:
         t[c] = to_number(t[c])
+    return t
 
+
+def _classify_tasks(t: pd.DataFrame, hpd: pd.Series, settings: Settings, source: str, warnings: list[str]) -> None:
     t["hours_per_day"] = t["clndr_id"].map(hpd).astype(float).replace(0, np.nan).fillna(settings.default_hours_per_day)
     t["status"] = t["status_code"].map(STATUS).fillna(t["status_code"])
     t["type"] = t["task_type"].map(TASK_TYPE).fillna(t["task_type"])
@@ -631,10 +629,12 @@ def build_snapshot(
     t["is_start_milestone"] = t["task_type"].isin(START_MILESTONES)
     t["is_milestone"] = t["is_start_milestone"] | (t["task_type"] == "TT_FinMile")
     if (t["task_type"] == "TT_StartMile").any():
-        warnings.append(f"{raw.source}: non-standard task_type TT_StartMile read as a start milestone")
+        warnings.append(f"{source}: non-standard task_type TT_StartMile read as a start milestone")
     t["is_loe"] = t["task_type"] == "TT_LOE"
     t["is_wbs_summary"] = t["task_type"] == "TT_WBS"
 
+
+def _dates_floats_durations(t: pd.DataFrame) -> None:
     # P6's Start / Finish columns (Oracle, "Dates Columns of the Activity Table"): the actual
     # date once there is one, else the remaining early date once scheduled, else planned.
     fc_start, fc_finish = forecast_dates(t)
@@ -645,9 +645,12 @@ def build_snapshot(
     t["free_float_d"] = (t["free_float_hr_cnt"] / t["hours_per_day"]).where(~t["is_complete"])
     t["remaining_d"] = t["remain_drtn_hr_cnt"] / t["hours_per_day"]
     t["original_d"] = t["target_drtn_hr_cnt"] / t["hours_per_day"]
+
+
+def _flag_critical(t: pd.DataFrame, options: dict, settings: Settings) -> None:
     t["on_longest_path"] = t["driving_path_flag"] == "Y"
     # Critical as P6 defines it for this project: longest path, or total float <= threshold.
-    if crit_type == "CT_DrivPath":
+    if options["critical_path_type"] == "CT_DrivPath":
         crit = t["on_longest_path"]
     elif options["critical_float_hr"] is not None:
         crit = t["total_float_hr_cnt"] <= options["critical_float_hr"]
@@ -656,150 +659,203 @@ def build_snapshot(
     # LOE is included, as in P6's own Critical flag (DCMA populations exclude LOE separately).
     t["is_critical"] = ~t["is_complete"] & ~t["is_wbs_summary"] & crit.fillna(False)
 
+
+def _attach_wbs(t: pd.DataFrame, wbs: pd.DataFrame) -> pd.DataFrame:
+    wbs_cols = ["wbs_code", "wbs_l1", "wbs_sort", "ev_compute_type", "ev_user_pct"]
+    if wbs.empty:
+        t[wbs_cols] = ""
+    else:
+        # EV technique: set per WBS element in P6 (Earned Value settings of the WBS)
+        t = t.merge(wbs[["wbs_id", *wbs_cols]], on="wbs_id", how="left")
+    t[wbs_cols] = t[wbs_cols].fillna("")
+    return t
+
+
+def _task_frame(
+    task_all: pd.DataFrame,
+    pid: str,
+    hpd: pd.Series,
+    wbs: pd.DataFrame,
+    options: dict,
+    settings: Settings,
+    source: str,
+    warnings: list[str],
+) -> pd.DataFrame:
+    """The project's activities, typed, with the derived columns every analysis reads."""
+    t = _typed_tasks(task_all, pid)
+    _classify_tasks(t, hpd, settings, source, warnings)
+    _dates_floats_durations(t)
+    _flag_critical(t, options, settings)
     t["pct_complete"] = percent_complete(t)
     t["has_hard_constraint"] = t["cstr_type"].isin(HARD_CONSTRAINTS) | t["cstr_type2"].isin(HARD_CONSTRAINTS)
-
-    if not wbs.empty:
-        # EV technique: set per WBS element in P6 (Earned Value settings of the WBS)
-        t = t.merge(
-            wbs[["wbs_id", "wbs_code", "wbs_l1", "wbs_sort", "ev_compute_type", "ev_user_pct"]], on="wbs_id", how="left"
-        )
-    else:
-        t["wbs_code"] = t["wbs_l1"] = t["wbs_sort"] = t["ev_compute_type"] = t["ev_user_pct"] = ""
-    cols = ["wbs_code", "wbs_l1", "wbs_sort", "ev_compute_type", "ev_user_pct"]
-    t[cols] = t[cols].fillna("")
-
+    t = _attach_wbs(t, wbs)
     dupes = t["task_code"][t["task_code"].duplicated()].unique()
     if len(dupes):
-        warnings.append(f"{raw.source}: duplicate activity IDs {list(dupes)[:5]}; history joins may be wrong")
+        warnings.append(f"{source}: duplicate activity IDs {list(dupes)[:5]}; history joins may be wrong")
+    return t
 
-    # --- relationships ---------------------------------------------------------
-    rel = rel_all
-    if not rel.empty:
-        rel = _ensure_cols(rel[rel["proj_id"] == pid].copy(), ["pred_proj_id", "pred_type", "lag_hr_cnt"])
-        all_tasks = _ensure_cols(task_all.copy(), ["clndr_id"])
-        code_by_id = all_tasks.set_index("task_id")["task_code"]
-        hpd_by_id = (
-            all_tasks.set_index("task_id")["clndr_id"]
-            .map(hpd)
-            .astype(float)
-            .replace(0, np.nan)
-            .fillna(settings.default_hours_per_day)
-        )
-        rel["succ_code"] = rel["task_id"].map(code_by_id)
-        rel["pred_code"] = rel["pred_task_id"].map(code_by_id)
-        rel["type"] = rel["pred_type"].map(REL_TYPE).fillna(rel["pred_type"])
-        rel["lag_hr"] = to_number(rel["lag_hr_cnt"]).fillna(0.0)
-        # Lag hours -> days. Oracle: "Lag entered in a unit other than hours is converted
-        # to hours based on the predecessor activity's calendar", whatever calendar the lag
-        # is then scheduled on (that one is the CPM's business, analysis/cpm.py).
-        lag_hpd = rel["pred_task_id"].map(hpd_by_id)
-        rel["lag_d"] = rel["lag_hr"] / lag_hpd.astype(float).fillna(settings.default_hours_per_day)
-        rel["is_external"] = rel["pred_proj_id"].ne(pid) & rel["pred_proj_id"].ne("")
-        # A predecessor in another project of the same file is named as in external_links:
-        # its own Activity ID may also exist here, and would read as a link from that one.
-        ext_in_file = rel["is_external"] & rel["pred_code"].notna()
-        rel.loc[ext_in_file, "pred_code"] = "[ext]" + rel.loc[ext_in_file, "pred_task_id"].astype(str)
-        # A predecessor with no TASK row: a link to another project (P6 exports the link,
-        # not the other project's activities) or a corrupt link. Either way it is not logic
-        # that can be scheduled; the external ones still count as "has a predecessor" below.
-        ext_pred = set(rel.loc[rel["is_external"], "task_id"])
-        lost = rel["succ_code"].isna() | rel["pred_code"].isna()
-        if (lost & ~rel["is_external"]).any():
-            warnings.append(
-                f"{raw.source}: {int((lost & ~rel['is_external']).sum())} relationship(s) to an activity "
-                "not in the file; ignored by the schedule and the checks"
-            )
-        rel = rel[~lost].copy()
-    else:
-        rel = pd.DataFrame(
-            columns=["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
-        )
-        ext_pred = set()
 
-    # Links to other projects: P6's logic check lets them pass.
-    all_rel = rel_all
-    ext_succ: set = set()
-    if not all_rel.empty and "proj_id" in all_rel.columns:
-        ext_succ = set(
-            all_rel.loc[(all_rel["proj_id"] != pid) & all_rel["pred_task_id"].isin(t["task_id"]), "pred_task_id"]
+def _typed_relationships(
+    rel_all: pd.DataFrame, task_all: pd.DataFrame, pid: str, hpd: pd.Series, settings: Settings
+) -> pd.DataFrame:
+    rel = _ensure_cols(rel_all[rel_all["proj_id"] == pid].copy(), ["pred_proj_id", "pred_type", "lag_hr_cnt"])
+    all_tasks = _ensure_cols(task_all.copy(), ["clndr_id"])
+    code_by_id = all_tasks.set_index("task_id")["task_code"]
+    hpd_by_id = (
+        all_tasks.set_index("task_id")["clndr_id"]
+        .map(hpd)
+        .astype(float)
+        .replace(0, np.nan)
+        .fillna(settings.default_hours_per_day)
+    )
+    rel["succ_code"] = rel["task_id"].map(code_by_id)
+    rel["pred_code"] = rel["pred_task_id"].map(code_by_id)
+    rel["type"] = rel["pred_type"].map(REL_TYPE).fillna(rel["pred_type"])
+    rel["lag_hr"] = to_number(rel["lag_hr_cnt"]).fillna(0.0)
+    # Lag hours -> days. Oracle: "Lag entered in a unit other than hours is converted
+    # to hours based on the predecessor activity's calendar", whatever calendar the lag
+    # is then scheduled on (that one is the CPM's business, analysis/cpm.py).
+    lag_hpd = rel["pred_task_id"].map(hpd_by_id)
+    rel["lag_d"] = rel["lag_hr"] / lag_hpd.astype(float).fillna(settings.default_hours_per_day)
+    rel["is_external"] = rel["pred_proj_id"].ne(pid) & rel["pred_proj_id"].ne("")
+    # A predecessor in another project of the same file is named as in external_links:
+    # its own Activity ID may also exist here, and would read as a link from that one.
+    ext_in_file = rel["is_external"] & rel["pred_code"].notna()
+    rel.loc[ext_in_file, "pred_code"] = "[ext]" + rel.loc[ext_in_file, "pred_task_id"].astype(str)
+    return rel
+
+
+def _drop_lost_links(rel: pd.DataFrame, source: str, warnings: list[str]) -> pd.DataFrame:
+    """Drop links whose activity has no TASK row.
+
+    A predecessor with no TASK row is a link to another project (P6 exports the link, not
+    the other project's activities) or a corrupt link. Either way it is not logic that can
+    be scheduled; only the corrupt ones are reported.
+    """
+    lost = rel["succ_code"].isna() | rel["pred_code"].isna()
+    if (lost & ~rel["is_external"]).any():
+        warnings.append(
+            f"{source}: {int((lost & ~rel['is_external']).sum())} relationship(s) to an activity "
+            "not in the file; ignored by the schedule and the checks"
         )
+    return rel[~lost].copy()
+
+
+def _relationships(
+    rel_all: pd.DataFrame,
+    task_all: pd.DataFrame,
+    pid: str,
+    hpd: pd.Series,
+    settings: Settings,
+    source: str,
+    warnings: list[str],
+) -> tuple[pd.DataFrame, set]:
+    """The project's schedulable relationships, and the successors that also have an external predecessor."""
+    if rel_all.empty:
+        columns = ["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
+        return pd.DataFrame(columns=columns), set()
+    rel = _typed_relationships(rel_all, task_all, pid, hpd, settings)
+    ext_pred = set(rel.loc[rel["is_external"], "task_id"])  # counted before the unschedulable links go
+    return _drop_lost_links(rel, source, warnings), ext_pred
+
+
+def _links_from_this_project(rel_all: pd.DataFrame, t: pd.DataFrame, pid: str) -> pd.DataFrame:
+    """Relationships of other projects whose predecessor is one of this project's activities."""
+    if rel_all.empty or "proj_id" not in rel_all.columns:
+        return pd.DataFrame(columns=["task_id", "pred_task_id", "pred_type", "lag_hr_cnt"])
+    return rel_all[(rel_all["proj_id"] != pid) & rel_all["pred_task_id"].isin(t["task_id"])]
+
+
+def _flag_external_links(t: pd.DataFrame, links_out: pd.DataFrame, ext_pred: set) -> None:
+    """Links to other projects: P6's logic check lets them pass."""
     t["has_external_pred"] = t["task_id"].isin(ext_pred)
-    t["has_external_succ"] = t["task_id"].isin(ext_succ)
-    # Their counterparts in other projects, with the dates P6 stored for them: the CPM
-    # uses them as fixed dates, as P6 does when relationships to other projects count.
-    ext_links = pd.DataFrame(columns=["pred_code", "succ_code", "type", "lag_hr", "direction"])
-    ext_tasks = pd.DataFrame()
-    if not all_rel.empty and "proj_id" in all_rel.columns:
-        ar = _ensure_cols(all_rel.copy(), ["pred_proj_id", "pred_type", "lag_hr_cnt"])
-        out_ = ar[(ar["proj_id"] != pid) & ar["pred_task_id"].isin(t["task_id"])]
-        in_ = rel[rel["is_external"].astype(bool)] if not rel.empty else rel
-        other_ids = set(out_["task_id"]) | set(in_["pred_task_id"] if not in_.empty else [])
-        if other_ids:
-            ot = _ensure_cols(
-                task_all[task_all["task_id"].isin(other_ids)].copy(),
-                ["task_code", "status_code", "clndr_id"] + TASK_DATE_COLS,
-            )
-            for c in TASK_DATE_COLS:
-                ot[c] = to_datetime(ot[c])
-            ot["task_code"] = ot["task_id"].map(lambda i: f"[ext]{i}")
-            ext_tasks = ot
-            ext_code = ot.set_index("task_id")["task_code"]
-            own_code = t.set_index("task_id")["task_code"]
-            ext_links = pd.concat(
-                [
-                    pd.DataFrame(
-                        {
-                            "pred_code": in_["pred_task_id"].map(ext_code),
-                            "succ_code": in_["succ_code"],
-                            "type": in_["type"],
-                            "lag_hr": in_["lag_hr"],
-                            "direction": "in",
-                        }
-                    ),
-                    pd.DataFrame(
-                        {
-                            "pred_code": out_["pred_task_id"].map(own_code),
-                            "succ_code": out_["task_id"].map(ext_code),
-                            "type": out_["pred_type"].map(REL_TYPE),
-                            "lag_hr": to_number(out_["lag_hr_cnt"]).fillna(0.0),
-                            "direction": "out",
-                        }
-                    ),
-                ],
-                ignore_index=True,
-            ).dropna(subset=["pred_code", "succ_code"])
+    t["has_external_succ"] = t["task_id"].isin(set(links_out["pred_task_id"]))
 
-    # --- resource assignments, labour hours, expenses ------------------------------
-    asg = _assignments(raw, pid, t)
-    t["has_resource"] = t["task_id"].isin(asg["task_id"])
 
-    # Labour hours: P6 keeps the activity totals on TASK (Budgeted / Actual / Remaining
-    # Labor Units; nonlabor in *_equip_qty). Older or partial exports only have the
-    # assignments: sum them by resource type (roles count as labour, as in P6).
+def _external_tasks(task_all: pd.DataFrame, ids: set) -> pd.DataFrame:
+    ot = _ensure_cols(
+        task_all[task_all["task_id"].isin(ids)].copy(), ["task_code", "status_code", "clndr_id"] + TASK_DATE_COLS
+    )
+    for c in TASK_DATE_COLS:
+        ot[c] = to_datetime(ot[c])
+    ot["task_code"] = ot["task_id"].map(lambda i: f"[ext]{i}")
+    return ot
+
+
+def _external_links(
+    rel: pd.DataFrame, links_out: pd.DataFrame, task_all: pd.DataFrame, t: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Counterparts in other projects, with the dates P6 stored for them, and the links to them.
+
+    The CPM uses them as fixed dates, as P6 does when relationships to other projects count.
+    """
+    out_ = _ensure_cols(links_out.copy(), ["pred_type", "lag_hr_cnt"])
+    in_ = rel[rel["is_external"].astype(bool)]
+    other_ids = set(out_["task_id"]) | set(in_["pred_task_id"])
+    if not other_ids:
+        return pd.DataFrame(), pd.DataFrame(columns=["pred_code", "succ_code", "type", "lag_hr", "direction"])
+    ext_tasks = _external_tasks(task_all, other_ids)
+    ext_code = ext_tasks.set_index("task_id")["task_code"]
+    own_code = t.set_index("task_id")["task_code"]
+    inbound = pd.DataFrame(
+        {
+            "pred_code": in_["pred_task_id"].map(ext_code),
+            "succ_code": in_["succ_code"],
+            "type": in_["type"],
+            "lag_hr": in_["lag_hr"],
+            "direction": "in",
+        }
+    )
+    outbound = pd.DataFrame(
+        {
+            "pred_code": out_["pred_task_id"].map(own_code),
+            "succ_code": out_["task_id"].map(ext_code),
+            "type": out_["pred_type"].map(REL_TYPE),
+            "lag_hr": to_number(out_["lag_hr_cnt"]).fillna(0.0),
+            "direction": "out",
+        }
+    )
+    ext_links = pd.concat([inbound, outbound], ignore_index=True).dropna(subset=["pred_code", "succ_code"])
+    return ext_tasks, ext_links
+
+
+def _labor_from_task(t: pd.DataFrame) -> None:
+    t["labor_budget_hr"] = t["target_work_qty"].fillna(0.0)
+    t["labor_actual_hr"] = t["act_work_qty"].fillna(0.0)
+    t["labor_remaining_hr"] = t["remain_work_qty"].fillna(0.0)
+    t["nonlabor_budget_qty"] = t["target_equip_qty"].fillna(0.0)
+    t["nonlabor_actual_qty"] = t["act_equip_qty"].fillna(0.0)
+    t["nonlabor_remaining_qty"] = t["remain_equip_qty"].fillna(0.0)
+
+
+def _labor_from_assignments(t: pd.DataFrame, asg: pd.DataFrame) -> None:
+    for prefix, kinds in (("labor", ("RT_Labor", "role", "")), ("nonlabor", ("RT_Equip",))):
+        g = asg[asg["rsrc_type"].isin(kinds)].groupby("task_id")
+        unit = "hr" if prefix == "labor" else "qty"
+        t[f"{prefix}_budget_{unit}"] = t["task_id"].map(g["target_qty"].sum()).fillna(0.0)
+        t[f"{prefix}_actual_{unit}"] = t["task_id"].map(g["act_qty"].sum()).fillna(0.0)
+        t[f"{prefix}_remaining_{unit}"] = t["task_id"].map(g["remain_qty"].sum()).fillna(0.0)
+
+
+def _labor_hours(t: pd.DataFrame, asg: pd.DataFrame) -> str:
+    """Add the labour / nonlabor columns to ``t`` and return where they came from.
+
+    P6 keeps the activity totals on TASK (Budgeted / Actual / Remaining Labor Units;
+    nonlabor in *_equip_qty). Older or partial exports only have the assignments: sum them
+    by resource type (roles count as labour, as in P6).
+    """
     if t["target_work_qty"].notna().any():
-        t["labor_budget_hr"] = t["target_work_qty"].fillna(0.0)
-        t["labor_actual_hr"] = t["act_work_qty"].fillna(0.0)
-        t["labor_remaining_hr"] = t["remain_work_qty"].fillna(0.0)
-        t["nonlabor_budget_qty"] = t["target_equip_qty"].fillna(0.0)
-        t["nonlabor_actual_qty"] = t["act_equip_qty"].fillna(0.0)
-        t["nonlabor_remaining_qty"] = t["remain_equip_qty"].fillna(0.0)
-        labor_source = "TASK"
-    elif not asg.empty:
-        for prefix, kinds in (("labor", ("RT_Labor", "role", "")), ("nonlabor", ("RT_Equip",))):
-            part = asg[asg["rsrc_type"].isin(kinds)]
-            g = part.groupby("task_id")
-            unit = "hr" if prefix == "labor" else "qty"
-            t[f"{prefix}_budget_{unit}"] = t["task_id"].map(g["target_qty"].sum()).fillna(0.0)
-            t[f"{prefix}_actual_{unit}"] = t["task_id"].map(g["act_qty"].sum()).fillna(0.0)
-            t[f"{prefix}_remaining_{unit}"] = t["task_id"].map(g["remain_qty"].sum()).fillna(0.0)
-        labor_source = "TASKRSRC"
-    else:
-        for c in LABOR_COLS:
-            t[c] = 0.0
-        labor_source = "none"
-    options["labor_source"] = labor_source
+        _labor_from_task(t)
+        return "TASK"
+    if not asg.empty:
+        _labor_from_assignments(t, asg)
+        return "TASKRSRC"
+    for c in LABOR_COLS:
+        t[c] = 0.0
+    return "none"
 
+
+def _warn_leveling(t: pd.DataFrame, source: str, warnings: list[str]) -> None:
     # Leveling with "preserve scheduled early and late dates" leaves the remaining early
     # dates (restart/reend) apart from the early dates; a plain CPM cannot reproduce them.
     open_t = t[t["status_code"] != "TK_Complete"]
@@ -810,29 +866,77 @@ def build_snapshot(
     )
     if lev.any():
         warnings.append(
-            f"{raw.source}: {int(lev.sum())} open activities have a remaining early start "
+            f"{source}: {int(lev.sum())} open activities have a remaining early start "
             "different from their early start (resource leveling?)"
         )
 
-    cost = raw.table("PROJCOST")
-    if not cost.empty and "task_id" in cost.columns:
-        cost = cost[cost["proj_id"] == pid].copy() if "proj_id" in cost.columns else cost.copy()
-    else:
-        cost = pd.DataFrame(columns=["task_id"])
-    t["has_expense"] = t["task_id"].isin(cost["task_id"])
-    t["constraint"] = t["cstr_type"].map(CONSTRAINT).fillna(t["cstr_type"])
 
+def _expenses(raw: RawXer, pid: str) -> pd.DataFrame:
+    cost = raw.table("PROJCOST")
+    if cost.empty or "task_id" not in cost.columns:
+        return pd.DataFrame(columns=["task_id"])
+    return cost[cost["proj_id"] == pid].copy() if "proj_id" in cost.columns else cost.copy()
+
+
+def _project_finish(
+    t: pd.DataFrame, prow: pd.Series, source: str, warnings: list[str]
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    """(latest activity finish, PROJECT.scd_end_date); the activities win when they disagree."""
     acts = t[~t["is_wbs_summary"]]
     finish = acts["finish"].max() if acts["finish"].notna().any() else None
     scheduled_finish = _parse_date(prow["scd_end_date"])
     if finish is not None and scheduled_finish is not None and abs(scheduled_finish - finish) > pd.Timedelta(days=1):
         warnings.append(
-            f"{raw.source}: PROJECT.scd_end_date {scheduled_finish:%Y-%m-%d} differs from the "
+            f"{source}: PROJECT.scd_end_date {scheduled_finish:%Y-%m-%d} differs from the "
             f"latest activity finish {finish:%Y-%m-%d}; using the activities"
         )
+    return finish, scheduled_finish
+
+
+def build_snapshot(
+    raw: RawXer,
+    project_code: str | None = None,
+    settings: Settings = DEFAULT_SETTINGS,
+) -> Snapshot:
+    """Turn a parsed XER into a typed Snapshot for one project.
+
+    If the file contains several projects, ``project_code`` selects one; otherwise the
+    project with the most activities is used and a warning is recorded.
+    """
+    proj = raw.table("PROJECT")
+    if proj.empty or raw.table("TASK").empty:
+        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    _require(proj, raw.source, "PROJECT", ["proj_id"])
+    source = raw.source
+    warnings = list(raw.warnings)  # appended to in the order the steps run: that order is observable
+    task_all = _task_table(raw, proj, warnings)
+    rel_all = _taskpred_table(raw, task_all, warnings)
+
+    prow, codes = _select_project(raw, proj, task_all, project_code, warnings)
+    pid = prow["proj_id"]
+    planned_start, data_date = _project_dates(raw, prow, warnings)
+    cal, hpd, work_cals = _calendars(raw, settings)
+    wbs, project_name = _wbs_frame(raw, pid)
+    options = _scheduling_options(raw, prow, pid)
+
+    t = _task_frame(task_all, pid, hpd, wbs, options, settings, source, warnings)
+    rel, ext_pred = _relationships(rel_all, task_all, pid, hpd, settings, source, warnings)
+    links_out = _links_from_this_project(rel_all, t, pid)
+    _flag_external_links(t, links_out, ext_pred)
+    ext_tasks, ext_links = _external_links(rel, links_out, task_all, t)
+
+    asg = _assignments(raw, pid, t)
+    t["has_resource"] = t["task_id"].isin(asg["task_id"])
+    options["labor_source"] = _labor_hours(t, asg)
+    _warn_leveling(t, source, warnings)
+
+    cost = _expenses(raw, pid)
+    t["has_expense"] = t["task_id"].isin(cost["task_id"])
+    t["constraint"] = t["cstr_type"].map(CONSTRAINT).fillna(t["cstr_type"])
+    finish, scheduled_finish = _project_finish(t, prow, source, warnings)
 
     snap = Snapshot(
-        source=raw.source,
+        source=source,
         project_id=pid,
         project_code=prow["proj_short_name"],
         project_name=project_name or prow["proj_short_name"],
