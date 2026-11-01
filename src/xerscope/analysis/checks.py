@@ -16,7 +16,6 @@ from typing import Literal
 
 import pandas as pd
 
-from ..config import DEFAULT_SETTINGS, Settings
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from .baseline import Baseline
@@ -42,7 +41,6 @@ class AnalysisContext:
     snapshot: Snapshot
     store: SnapshotStore | None = None
     baseline: Baseline | None = None
-    settings: Settings = DEFAULT_SETTINGS
 
     @property
     def previous(self) -> Snapshot | None:

@@ -109,7 +109,8 @@ Layer rules (imports, as the code has them):
 Outside `analysis/`:
 
 - `config.py`: `Settings`, the few tunable defaults no standard owns (hours per day when a
-  calendar is missing, critical and near-critical float for the Gantt colours).
+  calendar is missing, critical and near-critical float for the Gantt colours). Settings are consumed at
+  `build_snapshot` time (`xer/model.py`) and by `viz/gantt`; analysis reads the derived columns.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
 - `sample.py`: the demo series generator, with the findings it plants week by week.
 
