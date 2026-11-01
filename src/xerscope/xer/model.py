@@ -190,6 +190,49 @@ def _ensure_cols(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return df
 
 
+def _require(df: pd.DataFrame, source: str, table: str, cols: list[str]) -> None:
+    """Raise a XerError for the first of ``cols`` that ``table`` lacks (identity columns: no default)."""
+    for c in cols:
+        if c not in df.columns:
+            raise XerError(f"{source}: table {table} has no column {c}")
+
+
+def _task_table(raw: RawXer, proj: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
+    """TASK with the identity columns checked; a missing proj_id is the file's only project."""
+    task = raw.table("TASK")
+    _require(task, raw.source, "TASK", ["task_id", "task_code"])
+    if "proj_id" not in task.columns:
+        _require(proj, raw.source, "PROJECT", ["proj_id"])
+        if len(proj) != 1:
+            raise XerError(
+                f"{raw.source}: table TASK has no column proj_id and PROJECT has {len(proj)} projects to choose from"
+            )
+        task = task.assign(proj_id=proj["proj_id"].iloc[0])
+        warnings.append(f"{raw.source}: TASK.proj_id missing: taken from the only project in the file")
+    return task
+
+
+def _taskpred_table(raw: RawXer, task_all: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
+    """TASKPRED with proj_id / pred_proj_id derived from TASK when the export omits them.
+
+    P6 always writes both; minimal files from other tools may not. proj_id is the
+    successor's project; pred_proj_id the predecessor's. A predecessor absent from TASK
+    gets "" there, so such a link reads as not external (no way to know better).
+    """
+    rel = raw.table("TASKPRED")
+    if rel.empty:
+        return rel
+    _require(rel, raw.source, "TASKPRED", ["task_id", "pred_task_id"])
+    owner = task_all.drop_duplicates("task_id").set_index("task_id")["proj_id"]
+    derived = {"proj_id": "task_id", "pred_proj_id": "pred_task_id"}
+    for col, via in derived.items():
+        if col not in rel.columns:
+            rel = rel.assign(**{col: rel[via].map(owner).fillna("")})
+            what = "successor" if col == "proj_id" else "predecessor"
+            warnings.append(f"{raw.source}: TASKPRED.{col} missing: taken from the {what} activity")
+    return rel
+
+
 @dataclass
 class Snapshot:
     source: str
@@ -263,6 +306,7 @@ def _wbs_frame(raw: RawXer, proj_id: str) -> tuple[pd.DataFrame, str | None]:
         return pd.DataFrame(
             columns=["wbs_id", "wbs_code", "wbs_name", "wbs_l1", "wbs_sort", "ev_compute_type", "ev_user_pct"]
         ), None
+    _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
     wbs = _ensure_cols(
         wbs[wbs["proj_id"] == proj_id].copy(),
         ["parent_wbs_id", "proj_node_flag", "seq_num", "wbs_short_name", "wbs_name", "ev_compute_type", "ev_user_pct"],
@@ -369,9 +413,12 @@ def build_snapshot(
     project with the most activities is used and a warning is recorded.
     """
     proj = raw.table("PROJECT")
-    task_all = raw.table("TASK")
-    if proj.empty or task_all.empty:
+    if proj.empty or raw.table("TASK").empty:
         raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    _require(proj, raw.source, "PROJECT", ["proj_id"])
+    warnings = list(raw.warnings)
+    task_all = _task_table(raw, proj, warnings)
+    rel_all = _taskpred_table(raw, task_all, warnings)
 
     counts = task_all["proj_id"].value_counts()
     proj = _ensure_cols(
@@ -389,7 +436,6 @@ def build_snapshot(
     )
     if proj.empty:
         raise XerError(f"{raw.source}: no project owns any activity")
-    warnings = list(raw.warnings)
     codes = proj["proj_short_name"].tolist()
 
     if project_code:
@@ -412,6 +458,7 @@ def build_snapshot(
     # Calendars -> hours per working day
     cal = raw.table("CALENDAR")
     if not cal.empty:
+        _require(cal, raw.source, "CALENDAR", ["clndr_id"])
         cal = _ensure_cols(cal.copy(), ["clndr_name", "day_hr_cnt", "week_hr_cnt", "clndr_data"])
         cal["day_hr_cnt"] = to_number(cal["day_hr_cnt"])
         hpd = cal.set_index("clndr_id")["day_hr_cnt"]
@@ -462,7 +509,6 @@ def build_snapshot(
     t = _ensure_cols(
         task_all[task_all["proj_id"] == pid].copy(),
         [
-            "task_code",
             "task_name",
             "task_type",
             "status_code",
@@ -532,7 +578,7 @@ def build_snapshot(
         warnings.append(f"{raw.source}: duplicate activity IDs {list(dupes)[:5]}; history joins may be wrong")
 
     # --- relationships ---------------------------------------------------------
-    rel = raw.table("TASKPRED")
+    rel = rel_all
     if not rel.empty:
         rel = _ensure_cols(rel[rel["proj_id"] == pid].copy(), ["pred_proj_id", "pred_type", "lag_hr_cnt"])
         all_tasks = _ensure_cols(task_all.copy(), ["clndr_id"])
@@ -576,7 +622,7 @@ def build_snapshot(
         ext_pred = set()
 
     # Links to other projects: P6's logic check lets them pass.
-    all_rel = raw.table("TASKPRED")
+    all_rel = rel_all
     ext_succ: set = set()
     if not all_rel.empty and "proj_id" in all_rel.columns:
         ext_succ = set(
