@@ -410,6 +410,34 @@ def test_missed_tasks_and_late_activities():
     assert codes(r) == ["A", "NEW"] and r.denominator == 3
 
 
+def test_dcma_11_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.11: a task is due when its baseline finish is on or before the status
+    date; it is missed when its actual or forecast finish is after the baseline finish. The base is the
+    tasks "not missing baseline start or finish dates". 4.0 leaves out completed tasks, LOE, summary tasks and
+    milestones; 4.11 counts actual finishes, so completed tasks stay (4.11 overrides 4.0 there).
+
+    UNRESOLVED: the pamphlet's Finish Variance is working time; the calendar date is compared here.
+    """
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            done("A", act_end_date="2026-02-26 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            done("B", act_end_date="2026-02-28 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("C", early_end_date="2026-03-20 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("E", early_end_date="2026-03-02 17:00", target_start_date=st, target_end_date="2026-03-02 08:00"),
+            todo("M", task_type="TT_Mile", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("NS", early_end_date="2026-03-20 17:00", target_end_date="2026-02-27 17:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
+    # Data date 2026-03-02 08:00. M is a milestone and NS has no baseline start: out of the base.
+    # A, B, C, E have both baseline dates and a baseline finish <= data date: 4 due.
+    # A 02-26 <= 02-27 on time; B 02-28 > 02-27 missed; C forecast 03-20 > 02-27 missed;
+    # E forecast 03-02 17:00 is the same date as its baseline finish 03-02 08:00: not missed.
+    assert codes(r) == ["B", "C"]
+    assert (r.numerator, r.denominator) == (2, 4)
+
+
 def test_baseline_metrics_are_na_without_baseline():
     assert run(P6, "P6-13", NOW).status == "n/a"
 

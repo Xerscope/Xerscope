@@ -114,11 +114,11 @@ params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_
 [[metric]]
 id = "DCMA-11"
 name = "Missed tasks"
-description = "Due by the data date (baseline finish) but finished late or not finished"
+description = "Due by the data date (baseline finish) but finished, or forecast to finish, on a later date"
 rule = "missed_tasks"
 target = "<= 5%"
-source = "DCMA 14-point #11: tasks due by the status date per the baseline; milestones kept here (they carry a baseline finish), as in xerlock's results the test pins"
-params = { exclude = ["loe"] }
+source = "DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date, actual or forecast finish after it; base excludes tasks missing a baseline start or finish. 4.0 excludes completed tasks, LOE, summary tasks and milestones; 4.11 measures actual finishes, so completed tasks stay here (4.11 overrides 4.0 on that point)"
+params = { exclude = ["loe", "milestones"] }
 
 [[metric]]
 id = "DCMA-12"

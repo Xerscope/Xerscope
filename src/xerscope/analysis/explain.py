@@ -158,8 +158,8 @@ def _population(rule: str, p: dict) -> list[str]:
         out.append("An in-progress activity is flagged when its remaining early start is before the data date.")
     if rule == "missed_tasks":
         out.append(
-            "Due = baseline finish on or before the data date. Missed = not finished, "
-            "or finished on a later day than the baseline finish."
+            "Due = baseline start and finish set, baseline finish on or before the data date. "
+            "Missed = actual (else forecast) finish on a later day than the baseline finish."
         )
     if rule == "late_vs_baseline":
         out.append("Variance is working time on the activity's calendar, as P6's Finish Variance.")

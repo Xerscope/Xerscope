@@ -86,7 +86,10 @@ DCMA = {
     "DCMA-07": {"numerator": 0},
     "DCMA-08": {"numerator": 2},  # MEP-010, MEP-020
     "DCMA-09": {"numerator": 0},
-    "DCMA-11": {"numerator": 4},
+    "DCMA-11": {
+        "numerator": 3,
+        "note": "xerlock: 4 (counts a milestone; PAM 200.1 4.0 excludes milestones)",
+    },
     "DCMA-12": {"status": "pass"},  # +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27
     # xerlock states 1.0 (CPL 1080 h = 135 wd x 8 h, TF 0). The file has no Must Finish By
     # date, so that float is 0 by construction and the index says nothing: n/a here
