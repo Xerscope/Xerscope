@@ -213,7 +213,7 @@ Three test files pin the checks, each in its own way:
 - `tests/test_characterization.py` (characterization, or golden, test): every metric of
   every built-in standard is run on the demo series (no baseline, planned-dates baseline,
   first update as baseline) and on the pinned third-party files, and its status, counts,
-  value and flagged Activity IDs are compared with `tests/golden/standards.json`
+  value and flagged identifiers (Activity IDs, or `pred->succ` for relationship rules) are compared with `tests/golden/standards.json`
   (sections `demo`, `demo-planned`, `demo-first-as-baseline`, `reference`; no activity
   names). A refactor must change no number. After an intended change, run
   `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`: it rewrites the

@@ -364,7 +364,7 @@ Stated by the code or docs/backlog.md; no P6 Check Schedule or DECM output has b
 - 352 h assumes 8 h/day (p6.toml); P6 targets are the EPPM 25 help's dialog defaults,
   not read from a Professional 24 dialog.
 - DECM: the specification sheets (index in docs/standards.md, Sources) have been read.
-  Settled by them: 06A205a and 06A209a include LOE, as coded. Where a sheet contradicts a
+  The 06A205a and 06A209a sheets name no LOE exclusion, so LOE stays in, as coded. Where a sheet contradicts a
   rule, or leaves a reading open (06A205a leads, 06A506b "on or before", DCMA-11 / 14
   milestones), the items are listed in docs/backlog.md, "DECM conformance"; the formulas
   above are what the code does, not what the sheets say, for those.

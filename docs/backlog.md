@@ -23,10 +23,11 @@ is done, add one when a check or a recalculation disagrees with P6.
 ## DECM conformance
 
 Where the official sheet (index in docs/standards.md, Sources) contradicts the current
-rule; none is fixed. Settled by the sheets: 06A205a and 06A209a include LOE, as coded.
+rule; none is fixed. The 06A205a and 06A209a sheets name no LOE exclusion, so LOE stays
+in, as coded (the `source` strings in `decm.toml` still call it unsaid).
 
-- [ ] **06A212a**: the sheet's population is FS links with an incomplete predecessor; the
-      code uses an incomplete successor (`decm.toml`, `rules.py`).
+- [ ] **06A212a**: the sheet's population is the FS, SS, FF and SF relationships with an
+      incomplete predecessor; the code uses an incomplete successor (`decm.toml`, `rules.py`).
 - [ ] **06A401a**: the sheet compares the constraint-method critical path with the
       contractor's critical path; the code runs the delay-injection test (`cpm.py`
       `critical_path_test`).
@@ -90,8 +91,8 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       - 0/100 and 50/50 with a non-physical % complete are untested.
       - The quote for the EV-basis Admin Preference ("When calculating earned value from a
         baseline use") is unverified.
-- [ ] **Bug**: DECM 06A212a raises TypeError when no incomplete activity has a successor
-      (seen on the four one-activity MPXJ calendar files; frozen as "error" in
+- [ ] **Bug**: DECM 06A212a raises TypeError when the project has no incomplete activity
+      (seen on the four one-activity MPXJ calendar files, whose activity is complete; frozen as "error" in
       `tests/golden/standards.json`). Fix it and regenerate the golden.
 
 ## App
@@ -119,7 +120,7 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 - [ ] Complexity hotspots still above 10: `build_snapshot` 30, `changelog` 23,
       `parse_text` 17, `build_gantt` 16, `explain._population` 15, `sidebar_loader` 14,
-      `Rule.validate` 14, `parse_standard` 12, `column_config` 12. CPM internals and
+      `Rule.validate` 14, `parse_standard` 12, `column_config` 12, `explain` 11. CPM internals and
       `sample.py` are left as they are.
 - [ ] Duplications: the `task_code` index idiom (~34 places; one `Snapshot.by_code`); the
       hours-per-day lookup (x3); three changelog row builders; two text searches in views.
