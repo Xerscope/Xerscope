@@ -101,7 +101,8 @@ Layer rules (imports, as the code has them):
 - `viz/` imports `config.py` only: it draws frames, it does not compute schedule results.
 - `verify/` imports `xer/` and `analysis/cpm.py`; `crosscheck.py` re-exports it. Nothing in
   the app depends on it.
-- `app/` imports everything above and is imported by nothing but Streamlit. Pages
+- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/` and `export.py`, and is imported
+  by nothing but Streamlit. Pages
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
 
