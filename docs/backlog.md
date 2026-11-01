@@ -11,8 +11,7 @@ is done, add one when a check or a recalculation disagrees with P6.
       population is one reading of Oracle's help pages (`src/xerscope/standards/p6.toml`
       `source` fields, P6 Professional 24 dialog help 101248 first): LOE in P6-01,
       completed activities in P6-12, BEI due counted in the baseline (P6-13), remaining
-      early start for in-progress work (P6-10), milestones in P6-04's denominator,
-      352 h = 8 h/day.
+      early start for in-progress work (P6-10), 352 h = 8 h/day.
 - [ ] **DECM**: a DECM output on one real file, for `decm.toml`. The v8.0 sheets are read
       (docs/standards.md, Sources); what they leave open or contradict is under
       "DECM conformance" below.
@@ -74,6 +73,17 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       are untested. No public 24 export exists; 23.12 and 25.12 bracket it.
 
 ## Checks and earned value
+
+- [ ] **P6 Check Schedule readings a real report has not settled** (evidence so far: the
+      P6 Professional 24 help 101248 and one P6 Professional r22.12 report analysed by Ten Six,
+      https://tensix.com/using-the-p6-check-schedule-tool/; the standard targets Pro 24):
+      - P6-12 keeps completed activities (101248 does not exclude them; EPPM 46278 does).
+      - P6-02 / P6-03 count the secondary constraint (`cstr_type2`); the help is silent.
+      - P6-11: 101248 counts an expense as cost loading; Ten Six writes that fixed-price
+        (lump sum) costs do not register. The help is followed.
+      - P6-13: in that report P6 Professional showed BEI 6 / 6 = 1.0 where 11 activities
+        were due (P6 EPPM gave 0.55 on the same schedule). xerscope counts the baseline
+        activities due, so it will differ from such a P6 Professional output.
 
 - [ ] CPLI is n/a without a Must Finish By date (DCMA's float is to the contract finish,
       which P6 holds there). A project that keeps the contract date as a milestone or in

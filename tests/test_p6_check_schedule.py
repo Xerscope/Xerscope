@@ -57,9 +57,21 @@ def test_p6_07_fs_exactly_90_percent_fails_the_strict_target_dcma_04_passes():
 # --- 2. large duration boundary ---------------------------------------------------------------
 
 
-def test_p6_04_remaining_352h_is_not_large_353h_is():
-    """'Activities that have a remaining duration greater than' the value (Large Durations option, 101248)."""
-    s = snap([todo("AT", remain_drtn_hr_cnt=str(LARGE_H)), todo("OVER", remain_drtn_hr_cnt=str(LARGE_H + 1))])
+def test_p6_04_remaining_352h_is_not_large_353h_is_and_milestones_are_out():
+    """'Activities that have a remaining duration greater than' the value (Large Durations option, 101248).
+
+    101248 is silent on milestones, but a P6 Professional r22.12 Check Schedule report analysed by Ten Six
+    (https://tensix.com/using-the-p6-check-schedule-tool/) says: "The Large Durations tasks assessment
+    only considers remaining work. Milestones and LOE tasks are not included." (its other checks count
+    the finish milestone in their total). P6 EPPM help 46282: "WBS summary activities, activities with
+    an actual finish date, milestones, and Level of Effort activities are removed from the subset"."""
+    s = snap(
+        [
+            todo("AT", remain_drtn_hr_cnt=str(LARGE_H)),
+            todo("OVER", remain_drtn_hr_cnt=str(LARGE_H + 1)),
+            todo("MS", task_type="TT_FinMile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0"),
+        ]
+    )
     r = run(P6, "P6-04", s)
     assert counts(r) == (1, 2)
     assert codes(r) == ["OVER"]
