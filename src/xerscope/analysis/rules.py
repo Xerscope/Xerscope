@@ -470,16 +470,20 @@ def late_vs_baseline(
 
 
 @rule("missed_tasks", "%", needs_baseline=True)
-def missed_tasks(ctx, exclude: Names = ("loe",)) -> RuleOutput:
-    """Of the activities due by the data date (baseline finish), those not finished or finished late."""
+def missed_tasks(ctx, exclude: Names = ("loe", "milestones")) -> RuleOutput:
+    """DCMA-EA PAM 200.1 4.11: of the tasks due by the data date, those finishing after their baseline finish.
+
+    Base = tasks with both a baseline start and finish. Due = baseline finish on or before the data
+    date. Missed = actual finish (else forecast finish) on a later date than the baseline finish, so a
+    completed task stays in and an unfinished one forecast past its baseline finish is missed.
+    UNRESOLVED: the pamphlet's Finish Variance is working time; the calendar date is compared here, as
+    an actual on a non-working day is still late.
+    """
     dd = ctx.snapshot.data_date
     pop = _with_baseline(ctx, activities(ctx, exclude))
-    due = pop[pop["bl_finish"] <= dd]
-    # finished late = on a later date than the baseline finish (DCMA compares dates; an
-    # actual on a non-working day is still late)
-    late = due["act_end_date"].dt.normalize() > due["bl_finish"].dt.normalize()
-    missed = ~due["is_complete"] | late.fillna(False).astype(bool)
-    bad = due[missed]
+    due = pop[pop["bl_start"].notna() & (pop["bl_finish"] <= dd)]
+    late = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
+    bad = due[late.fillna(False).astype(bool)]
     return RuleOutput(_act(bad, bl_finish=bad["bl_finish"]), len(bad), len(due))
 
 

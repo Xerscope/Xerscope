@@ -3726,14 +3726,12 @@
     "value": 8.333333
    },
    "DCMA/DCMA-11": {
-    "denominator": 1,
-    "flagged": [
-     "M1000"
-    ],
+    "denominator": 0,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 100.0
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -4172,14 +4170,14 @@
     "value": 8.695652
    },
    "DCMA/DCMA-11": {
-    "denominator": 2,
+    "denominator": 1,
     "flagged": [
      "C3010"
     ],
     "note": null,
     "numerator": 1,
     "status": "fail",
-    "value": 50.0
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -4640,14 +4638,14 @@
     "value": 8.695652
    },
    "DCMA/DCMA-11": {
-    "denominator": 2,
+    "denominator": 1,
     "flagged": [
      "C3010"
     ],
     "note": null,
     "numerator": 1,
     "status": "fail",
-    "value": 50.0
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -5108,7 +5106,7 @@
     "value": 9.090909
    },
    "DCMA/DCMA-11": {
-    "denominator": 3,
+    "denominator": 2,
     "flagged": [
      "C3010",
      "E1010"
@@ -5116,7 +5114,7 @@
     "note": null,
     "numerator": 2,
     "status": "fail",
-    "value": 66.666667
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -5579,7 +5577,7 @@
     "value": 9.090909
    },
    "DCMA/DCMA-11": {
-    "denominator": 5,
+    "denominator": 4,
     "flagged": [
      "C3010",
      "E1010",
@@ -5589,7 +5587,7 @@
     "note": null,
     "numerator": 4,
     "status": "fail",
-    "value": 80.0
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -6065,7 +6063,7 @@
     "value": 9.52381
    },
    "DCMA/DCMA-11": {
-    "denominator": 7,
+    "denominator": 6,
     "flagged": [
      "C3010",
      "E1010",
@@ -6077,7 +6075,7 @@
     "note": null,
     "numerator": 6,
     "status": "fail",
-    "value": 85.714286
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -6567,7 +6565,7 @@
     "value": 10.0
    },
    "DCMA/DCMA-11": {
-    "denominator": 8,
+    "denominator": 7,
     "flagged": [
      "C3010",
      "E1010",
@@ -6580,7 +6578,7 @@
     "note": null,
     "numerator": 7,
     "status": "fail",
-    "value": 87.5
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -7079,7 +7077,7 @@
     "value": 10.526316
    },
    "DCMA/DCMA-11": {
-    "denominator": 9,
+    "denominator": 8,
     "flagged": [
      "C3010",
      "E1010",
@@ -7093,7 +7091,7 @@
     "note": null,
     "numerator": 8,
     "status": "fail",
-    "value": 88.888889
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -7586,14 +7584,12 @@
     "value": 8.333333
    },
    "DCMA/DCMA-11": {
-    "denominator": 1,
-    "flagged": [
-     "M1000"
-    ],
+    "denominator": 0,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 100.0
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -8033,14 +8029,14 @@
     "value": 8.695652
    },
    "DCMA/DCMA-11": {
-    "denominator": 2,
+    "denominator": 1,
     "flagged": [
      "C3010"
     ],
     "note": null,
     "numerator": 1,
     "status": "fail",
-    "value": 50.0
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -8502,14 +8498,14 @@
     "value": 8.695652
    },
    "DCMA/DCMA-11": {
-    "denominator": 2,
+    "denominator": 1,
     "flagged": [
      "C3010"
     ],
     "note": null,
     "numerator": 1,
     "status": "fail",
-    "value": 50.0
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -8971,7 +8967,7 @@
     "value": 9.090909
    },
    "DCMA/DCMA-11": {
-    "denominator": 3,
+    "denominator": 2,
     "flagged": [
      "C3010",
      "E1010"
@@ -8979,7 +8975,7 @@
     "note": null,
     "numerator": 2,
     "status": "fail",
-    "value": 66.666667
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -9443,7 +9439,7 @@
     "value": 9.090909
    },
    "DCMA/DCMA-11": {
-    "denominator": 5,
+    "denominator": 4,
     "flagged": [
      "C3010",
      "E1010",
@@ -9453,7 +9449,7 @@
     "note": null,
     "numerator": 4,
     "status": "fail",
-    "value": 80.0
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -9927,7 +9923,7 @@
     "value": 9.52381
    },
    "DCMA/DCMA-11": {
-    "denominator": 7,
+    "denominator": 6,
     "flagged": [
      "C3010",
      "E1010",
@@ -9939,7 +9935,7 @@
     "note": null,
     "numerator": 6,
     "status": "fail",
-    "value": 85.714286
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -10427,7 +10423,7 @@
     "value": 10.0
    },
    "DCMA/DCMA-11": {
-    "denominator": 8,
+    "denominator": 7,
     "flagged": [
      "C3010",
      "E1010",
@@ -10440,7 +10436,7 @@
     "note": null,
     "numerator": 7,
     "status": "fail",
-    "value": 87.5
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,
@@ -10937,7 +10933,7 @@
     "value": 10.526316
    },
    "DCMA/DCMA-11": {
-    "denominator": 9,
+    "denominator": 8,
     "flagged": [
      "C3010",
      "E1010",
@@ -10951,7 +10947,7 @@
     "note": null,
     "numerator": 8,
     "status": "fail",
-    "value": 88.888889
+    "value": 100.0
    },
    "DCMA/DCMA-12": {
     "denominator": null,

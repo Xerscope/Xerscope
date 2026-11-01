@@ -41,8 +41,8 @@ in, as coded (the `source` strings in `decm.toml` still call it unsaid).
       duration and a baseline start in the detail planning period; the code uses the
       current original duration.
 - Still open, the sheets do not settle them: 06A205a leads (negative lags); 06A506b "on or
-  before" against "before" (the sheet uses both); DCMA-11 / DCMA-14 milestones (Deltek:
-  most metrics look only at activities baselined with a duration > 0 d, except CPT and BEI).
+  before" against "before" (the sheet uses both). DCMA-11 / DCMA-14 milestones are now settled by DCMA-EA
+  PAM 200.1 (sections 4.0, 4.11, 3.1.2.4): milestones are excluded from both.
 
 ## CPM: where the engine still differs from P6 23.12
 
