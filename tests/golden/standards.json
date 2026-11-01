@@ -1,0 +1,5822 @@
+{
+ "demo": {
+  "PRJ-ALPHA_2026-08-31.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 28,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.571429
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 38,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 38,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 10.526316
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 38,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 32,
+    "status": "fail",
+    "value": 84.210526
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 28,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.571429
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 28,
+    "flagged": [
+     "C3010",
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 14.285714
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 24,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.166667
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 24,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 28,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 7.142857
+   },
+   "DECM/06A205a": {
+    "denominator": 29,
+    "flagged": [
+     "C3040",
+     "E1040",
+     "K5040",
+     "X4030"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 13.793103
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 28,
+    "flagged": [
+     "C3010",
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "info",
+    "value": 14.285714
+   },
+   "DECM/06A212a": {
+    "denominator": 38,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505b": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A506a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A506b": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 29,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.448276
+   },
+   "P6/P6-02": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 28,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 7.142857
+   },
+   "P6/P6-04": {
+    "denominator": 28,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.571429
+   },
+   "P6/P6-05": {
+    "denominator": 38,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 28,
+    "flagged": [
+     "C3010",
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 14.285714
+   },
+   "P6/P6-07": {
+    "denominator": 38,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 32,
+    "status": "fail",
+    "value": 84.210526
+   },
+   "P6/P6-08": {
+    "denominator": 38,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 10.526316
+   },
+   "P6/P6-09": {
+    "denominator": 38,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.631579
+   },
+   "P6/P6-10": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 24,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "PRJ-ALPHA_2026-09-07.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 26,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 37,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 10.810811
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 31,
+    "status": "fail",
+    "value": 83.783784
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 26,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 11.538462
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 23,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.347826
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 23,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.695652
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 26,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 7.692308
+   },
+   "DECM/06A205a": {
+    "denominator": 27,
+    "flagged": [
+     "C3040",
+     "E1040",
+     "K5040",
+     "X4030"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 14.814815
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 27,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "info",
+    "value": 11.538462
+   },
+   "DECM/06A212a": {
+    "denominator": 37,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 2,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 4,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 23,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 27,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.703704
+   },
+   "P6/P6-02": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 26,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 7.692308
+   },
+   "P6/P6-04": {
+    "denominator": 26,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "P6/P6-05": {
+    "denominator": 37,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 11.538462
+   },
+   "P6/P6-07": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 31,
+    "status": "fail",
+    "value": 83.783784
+   },
+   "P6/P6-08": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 10.810811
+   },
+   "P6/P6-09": {
+    "denominator": 37,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.702703
+   },
+   "P6/P6-10": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 24,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "PRJ-ALPHA_2026-09-14.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 26,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 37,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 10.810811
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 31,
+    "status": "fail",
+    "value": 83.783784
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 26,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 11.538462
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 23,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.347826
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 23,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.695652
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 26,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 7.692308
+   },
+   "DECM/06A205a": {
+    "denominator": 27,
+    "flagged": [
+     "C3040",
+     "E1040",
+     "K5040",
+     "X4030"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 14.814815
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 27,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "info",
+    "value": 11.538462
+   },
+   "DECM/06A212a": {
+    "denominator": 37,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 2,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 4,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 23,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 27,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.703704
+   },
+   "P6/P6-02": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 26,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 7.692308
+   },
+   "P6/P6-04": {
+    "denominator": 26,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "P6/P6-05": {
+    "denominator": 37,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 11.538462
+   },
+   "P6/P6-07": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 31,
+    "status": "fail",
+    "value": 83.783784
+   },
+   "P6/P6-08": {
+    "denominator": 37,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 10.810811
+   },
+   "P6/P6-09": {
+    "denominator": 37,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.702703
+   },
+   "P6/P6-10": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 24,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "PRJ-ALPHA_2026-09-21.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 25,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 36,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 11.111111
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 83.333333
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 25,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 12.0
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 22,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.545455
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 28,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 22,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.090909
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 25,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "DECM/06A205a": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "E1040",
+     "K5040",
+     "X4030"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 15.384615
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "info",
+    "value": 12.0
+   },
+   "DECM/06A212a": {
+    "denominator": 36,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 8,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 3,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 8,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 7,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 22,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 26,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "P6/P6-02": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 25,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "P6/P6-04": {
+    "denominator": 25,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "P6/P6-05": {
+    "denominator": 36,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 12.0
+   },
+   "P6/P6-07": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 83.333333
+   },
+   "P6/P6-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 11.111111
+   },
+   "P6/P6-09": {
+    "denominator": 36,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.777778
+   },
+   "P6/P6-10": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 24,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "PRJ-ALPHA_2026-09-28.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 25,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 36,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 11.111111
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 83.333333
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 25,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 16.0
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 22,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.545455
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 22,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.090909
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 25,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "DECM/06A205a": {
+    "denominator": 26,
+    "flagged": [
+     "C3040",
+     "E1040",
+     "K5040",
+     "X4030"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 15.384615
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 26,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "info",
+    "value": 16.0
+   },
+   "DECM/06A212a": {
+    "denominator": 36,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A504b": {
+    "denominator": 4,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 4,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 30,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 8,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 22,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 26,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 3.846154
+   },
+   "P6/P6-02": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 25,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "P6/P6-04": {
+    "denominator": 25,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "P6/P6-05": {
+    "denominator": 36,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 16.0
+   },
+   "P6/P6-07": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 83.333333
+   },
+   "P6/P6-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "E1010->E1040",
+     "K5010->K5040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 11.111111
+   },
+   "P6/P6-09": {
+    "denominator": 36,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.777778
+   },
+   "P6/P6-10": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 25,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "PRJ-ALPHA_2026-10-05.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 24,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.166667
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 35,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 35,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "K5010->K5040"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 8.571429
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 35,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 85.714286
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 24,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.166667
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 24,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 16.666667
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 24,
+    "flagged": [
+     "P2020",
+     "P2030",
+     "P2040",
+     "X4010",
+     "X4020",
+     "X4050"
+    ],
+    "numerator": 6,
+    "status": "fail",
+    "value": 6.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 21,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.761905
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 29,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 21,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.52381
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 24,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "DECM/06A205a": {
+    "denominator": 25,
+    "flagged": [
+     "C3040",
+     "K5040",
+     "X4030"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 12.0
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 25,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 24,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "info",
+    "value": 16.666667
+   },
+   "DECM/06A212a": {
+    "denominator": 35,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A504b": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 30,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": 23,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 8,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 25,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.0
+   },
+   "P6/P6-02": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 24,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "P6/P6-04": {
+    "denominator": 24,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.166667
+   },
+   "P6/P6-05": {
+    "denominator": 35,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 24,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060",
+     "M3099"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 16.666667
+   },
+   "P6/P6-07": {
+    "denominator": 35,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 85.714286
+   },
+   "P6/P6-08": {
+    "denominator": 35,
+    "flagged": [
+     "C3020->C3040",
+     "C3050->X4030",
+     "K5010->K5040"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 8.571429
+   },
+   "P6/P6-09": {
+    "denominator": 35,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.857143
+   },
+   "P6/P6-10": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 25,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 24,
+    "flagged": [
+     "P2020",
+     "P2030",
+     "P2040",
+     "X4010",
+     "X4020",
+     "X4050"
+    ],
+    "numerator": 6,
+    "status": "fail",
+    "value": 25.0
+   }
+  },
+  "PRJ-ALPHA_2026-10-12.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 23,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.347826
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 34,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 34,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 5.882353
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 34,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 88.235294
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 23,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.347826
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 23,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 13.043478
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 23,
+    "flagged": [
+     "C3020",
+     "C3030",
+     "C3050",
+     "E1020",
+     "E1030",
+     "E1050",
+     "P2030",
+     "P2040",
+     "P2050",
+     "X4010",
+     "X4020",
+     "X4030",
+     "X4040",
+     "X4050"
+    ],
+    "numerator": 14,
+    "status": "fail",
+    "value": 14.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 20,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 5.0
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 29,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 20,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 10.0
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 23,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.695652
+   },
+   "DECM/06A205a": {
+    "denominator": 24,
+    "flagged": [
+     "C3040",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "pass",
+    "value": 8.333333
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 23,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060"
+    ],
+    "numerator": 3,
+    "status": "info",
+    "value": 13.043478
+   },
+   "DECM/06A212a": {
+    "denominator": 34,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": 10,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A504b": {
+    "denominator": 6,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 16.666667
+   },
+   "DECM/06A505a": {
+    "denominator": 10,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 6,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 10,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 10.0
+   },
+   "DECM/06A506b": {
+    "denominator": 30,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": 22,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 23,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 20,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 24,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.166667
+   },
+   "P6/P6-02": {
+    "denominator": 23,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 23,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.695652
+   },
+   "P6/P6-04": {
+    "denominator": 23,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.347826
+   },
+   "P6/P6-05": {
+    "denominator": 34,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 23,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 13.043478
+   },
+   "P6/P6-07": {
+    "denominator": 34,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 30,
+    "status": "fail",
+    "value": 88.235294
+   },
+   "P6/P6-08": {
+    "denominator": 34,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 5.882353
+   },
+   "P6/P6-09": {
+    "denominator": 34,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 2.941176
+   },
+   "P6/P6-10": {
+    "denominator": 24,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 4.166667
+   },
+   "P6/P6-11": {
+    "denominator": 25,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 23,
+    "flagged": [
+     "C3020",
+     "C3030",
+     "C3050",
+     "E1020",
+     "E1030",
+     "E1050",
+     "P2030",
+     "P2040",
+     "P2050",
+     "X4010",
+     "X4020",
+     "X4030",
+     "X4040",
+     "X4050"
+    ],
+    "numerator": 14,
+    "status": "fail",
+    "value": 60.869565
+   }
+  },
+  "PRJ-ALPHA_2026-10-19.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 22,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.545455
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 33,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 33,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 6.060606
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 33,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 29,
+    "status": "fail",
+    "value": 87.878788
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 22,
+    "flagged": [
+     "X4050"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.545455
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 22,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 13.636364
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 22,
+    "flagged": [
+     "C3020",
+     "C3030",
+     "C3050",
+     "E1030",
+     "E1050",
+     "P2030",
+     "P2040",
+     "P2050",
+     "X4010",
+     "X4020",
+     "X4030",
+     "X4040",
+     "X4050"
+    ],
+    "numerator": 13,
+    "status": "fail",
+    "value": 13.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 19,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 5.263158
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 29,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 19,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 10.526316
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 22,
+    "flagged": [
+     "K5040",
+     "M9999"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.090909
+   },
+   "DECM/06A205a": {
+    "denominator": 23,
+    "flagged": [
+     "C3040",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "pass",
+    "value": 8.695652
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 23,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 1,
+    "flagged": [
+     "L0001"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A211a": {
+    "denominator": 22,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060"
+    ],
+    "numerator": 3,
+    "status": "info",
+    "value": 13.636364
+   },
+   "DECM/06A212a": {
+    "denominator": 33,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": 11,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A504b": {
+    "denominator": 7,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 14.285714
+   },
+   "DECM/06A505a": {
+    "denominator": 11,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 7,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 11,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 9.090909
+   },
+   "DECM/06A506b": {
+    "denominator": 30,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 22,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 10,
+    "flagged": [
+     "C3020"
+    ],
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 19,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 23,
+    "flagged": [
+     "K5040"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.347826
+   },
+   "P6/P6-02": {
+    "denominator": 22,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 22,
+    "flagged": [
+     "P2040",
+     "X4050"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.090909
+   },
+   "P6/P6-04": {
+    "denominator": 22,
+    "flagged": [
+     "P2030"
+    ],
+    "numerator": 1,
+    "status": "pass",
+    "value": 4.545455
+   },
+   "P6/P6-05": {
+    "denominator": 33,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 22,
+    "flagged": [
+     "C3040",
+     "C3045",
+     "C3060"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 13.636364
+   },
+   "P6/P6-07": {
+    "denominator": 33,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040",
+     "L0001->M9999",
+     "M1000->L0001"
+    ],
+    "numerator": 29,
+    "status": "fail",
+    "value": 87.878788
+   },
+   "P6/P6-08": {
+    "denominator": 33,
+    "flagged": [
+     "C3020->C3040",
+     "K5010->K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 6.060606
+   },
+   "P6/P6-09": {
+    "denominator": 33,
+    "flagged": [
+     "E1040->E1050"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 3.030303
+   },
+   "P6/P6-10": {
+    "denominator": 23,
+    "flagged": [
+     "C3010"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 4.347826
+   },
+   "P6/P6-11": {
+    "denominator": 25,
+    "flagged": [
+     "E1050",
+     "K5040"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 22,
+    "flagged": [
+     "C3020",
+     "C3030",
+     "C3050",
+     "E1030",
+     "E1050",
+     "P2030",
+     "P2040",
+     "P2050",
+     "X4010",
+     "X4020",
+     "X4030",
+     "X4040",
+     "X4050"
+    ],
+    "numerator": 13,
+    "status": "fail",
+    "value": 59.090909
+   }
+  }
+ },
+ "reference": {
+  "PredecessorCalendar.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A205a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A212a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "error",
+    "value": null
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-09": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-11": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   }
+  },
+  "ProjectDefaultCalendar.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A205a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A212a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "error",
+    "value": null
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-09": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-11": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   }
+  },
+  "SuccessorCalendar.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A205a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A212a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "error",
+    "value": null
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-09": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-11": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   }
+  },
+  "TwentyFourHourCalendar.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A205a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A212a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "error",
+    "value": null
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "fail",
+    "value": 0.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-06": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-09": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-10": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-11": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   }
+  },
+  "percent-complete-8.4.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100"
+    ],
+    "numerator": 11,
+    "status": "fail",
+    "value": 91.666667
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100",
+     "A1110"
+    ],
+    "numerator": 12,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 12,
+    "flagged": [
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1090",
+     "A1100"
+    ],
+    "numerator": 8,
+    "status": "fail",
+    "value": 8.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100",
+     "A1110"
+    ],
+    "numerator": 12,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A205a": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "DECM/06A212a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 3,
+    "flagged": [
+     "A1030",
+     "A1070",
+     "A1110"
+    ],
+    "numerator": 3,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DECM/06A506a": {
+    "denominator": 9,
+    "flagged": [
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1090",
+     "A1100"
+    ],
+    "numerator": 8,
+    "status": "fail",
+    "value": 88.888889
+   },
+   "DECM/06A506b": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 9,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-01": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100",
+     "A1110"
+    ],
+    "numerator": 12,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-02": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-04": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100",
+     "A1110"
+    ],
+    "numerator": 10,
+    "status": "fail",
+    "value": 83.333333
+   },
+   "P6/P6-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-06": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-09": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-10": {
+    "denominator": 12,
+    "flagged": [
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1090",
+     "A1100"
+    ],
+    "numerator": 8,
+    "status": "fail",
+    "value": 66.666667
+   },
+   "P6/P6-11": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100",
+     "A1110"
+    ],
+    "numerator": 12,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 12,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "resource-rates-test.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A205a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "DECM/06A212a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505b": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A506a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A506b": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 5,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-01": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-02": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-04": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-05": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-06": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-07": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-08": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-09": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-10": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 1,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  },
+  "sample-schedule.xer": {
+   "DCMA/DCMA-01": {
+    "denominator": 21,
+    "flagged": [
+     "FIT-010",
+     "MEP-060"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.52381
+   },
+   "DCMA/DCMA-02": {
+    "denominator": 27,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-03": {
+    "denominator": 27,
+    "flagged": [
+     "FIT-010->FIT-020",
+     "MEP-060->MEP-080",
+     "ST-010->MEP-030",
+     "ST-010->MEP-040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 14.814815
+   },
+   "DCMA/DCMA-04": {
+    "denominator": 27,
+    "flagged": [
+     "FIT-010->FIT-020",
+     "MEP-060->MEP-080"
+    ],
+    "numerator": 25,
+    "status": "pass",
+    "value": 92.592593
+   },
+   "DCMA/DCMA-05": {
+    "denominator": 21,
+    "flagged": [
+     "CX-040",
+     "MS-030"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.52381
+   },
+   "DCMA/DCMA-06": {
+    "denominator": 21,
+    "flagged": [
+     "FIT-010",
+     "FIT-020",
+     "FIT-030",
+     "ST-020",
+     "ST-030"
+    ],
+    "numerator": 5,
+    "status": "fail",
+    "value": 23.809524
+   },
+   "DCMA/DCMA-07": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-08": {
+    "denominator": 19,
+    "flagged": [
+     "MEP-010",
+     "MEP-020"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 10.526316
+   },
+   "DCMA/DCMA-09": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DCMA/DCMA-10": {
+    "denominator": 19,
+    "flagged": [
+     "CX-010",
+     "CX-020",
+     "CX-030",
+     "CX-040",
+     "EW-030",
+     "FIT-010",
+     "FIT-020",
+     "FIT-030",
+     "MEP-010",
+     "MEP-020",
+     "MEP-030",
+     "MEP-040",
+     "MEP-050",
+     "MEP-060",
+     "MEP-070",
+     "MEP-080",
+     "ST-010",
+     "ST-020",
+     "ST-030"
+    ],
+    "numerator": 19,
+    "status": "fail",
+    "value": 100.0
+   },
+   "DCMA/DCMA-11": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DCMA/DCMA-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DCMA/DCMA-14": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A204b": {
+    "denominator": 21,
+    "flagged": [
+     "FIT-010",
+     "MEP-060"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.52381
+   },
+   "DECM/06A205a": {
+    "denominator": 21,
+    "flagged": [
+     "FIT-020",
+     "MEP-030",
+     "MEP-040",
+     "MEP-080"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 19.047619
+   },
+   "DECM/06A208a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A209a": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A210a": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A211a": {
+    "denominator": 21,
+    "flagged": [
+     "FIT-010",
+     "FIT-020",
+     "FIT-030",
+     "ST-020",
+     "ST-030"
+    ],
+    "numerator": 5,
+    "status": "info",
+    "value": 23.809524
+   },
+   "DECM/06A212a": {
+    "denominator": 27,
+    "flagged": [
+     "EW-020->EW-030",
+     "EW-030->ST-010"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 2.0
+   },
+   "DECM/06A401a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "pass",
+    "value": 1.0
+   },
+   "DECM/06A501a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504a": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A504b": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "DECM/06A505a": {
+    "denominator": 6,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A505b": {
+    "denominator": 3,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506a": {
+    "denominator": 6,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506b": {
+    "denominator": 24,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "DECM/06A506c": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "INTEGRITY/INT-01": {
+    "denominator": 21,
+    "flagged": [
+     "EW-030"
+    ],
+    "numerator": 1,
+    "status": "fail",
+    "value": 4.761905
+   },
+   "INTEGRITY/INT-02": {
+    "denominator": 6,
+    "flagged": [
+     "EW-030",
+     "ST-010"
+    ],
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
+   },
+   "INTEGRITY/INT-03": {
+    "denominator": 0,
+    "flagged": [],
+    "numerator": 0,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-01": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-02": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-03": {
+    "denominator": 21,
+    "flagged": [
+     "CX-040",
+     "MS-030"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.52381
+   },
+   "P6/P6-04": {
+    "denominator": 21,
+    "flagged": [
+     "MEP-010",
+     "MEP-020"
+    ],
+    "numerator": 2,
+    "status": "fail",
+    "value": 9.52381
+   },
+   "P6/P6-05": {
+    "denominator": 27,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-06": {
+    "denominator": 21,
+    "flagged": [
+     "FIT-010",
+     "FIT-020",
+     "FIT-030",
+     "ST-020",
+     "ST-030"
+    ],
+    "numerator": 5,
+    "status": "fail",
+    "value": 23.809524
+   },
+   "P6/P6-07": {
+    "denominator": 27,
+    "flagged": [
+     "FIT-010->FIT-020",
+     "MEP-060->MEP-080"
+    ],
+    "numerator": 25,
+    "status": "pass",
+    "value": 92.592593
+   },
+   "P6/P6-08": {
+    "denominator": 27,
+    "flagged": [
+     "FIT-010->FIT-020",
+     "MEP-060->MEP-080",
+     "ST-010->MEP-030",
+     "ST-010->MEP-040"
+    ],
+    "numerator": 4,
+    "status": "fail",
+    "value": 14.814815
+   },
+   "P6/P6-09": {
+    "denominator": 27,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-10": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-11": {
+    "denominator": 21,
+    "flagged": [
+     "CX-010",
+     "CX-020",
+     "CX-030",
+     "CX-040",
+     "EW-010",
+     "EW-020",
+     "EW-030",
+     "FIT-010",
+     "FIT-020",
+     "FIT-030",
+     "MEP-010",
+     "MEP-020",
+     "MEP-030",
+     "MEP-040",
+     "MEP-050",
+     "MEP-060",
+     "MEP-070",
+     "MEP-080",
+     "ST-010",
+     "ST-020",
+     "ST-030"
+    ],
+    "numerator": 21,
+    "status": "fail",
+    "value": 100.0
+   },
+   "P6/P6-12": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-13": {
+    "denominator": null,
+    "flagged": [],
+    "numerator": null,
+    "status": "n/a",
+    "value": null
+   },
+   "P6/P6-14": {
+    "denominator": 21,
+    "flagged": [],
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   }
+  }
+ }
+}
