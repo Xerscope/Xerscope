@@ -2,35 +2,30 @@
 
 Sources: P6 Professional 24 "Check Schedule dialog box" (pro24 101248, the authority) and
 the P6 EPPM 25 dialog help (G18294_01 / 91574) for the default targets.
+
+Overlaps tests/test_rules.py on purpose: here each test is one sentence of the source.
 """
 
 import pytest
+from rulekit import STANDARDS, codes, counts, run
 from xerkit import active, done, snap, todo
 
-from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
+from xerscope.analysis import Baseline
 
-P6 = builtin_standards()["P6"]
-DCMA = builtin_standards()["DCMA"]
+P6 = STANDARDS["P6"]
+DCMA = STANDARDS["DCMA"]
 
-
-def run(std, metric_id, s, baseline=None):
-    return run_metric(std[metric_id], AnalysisContext(s, baseline=baseline))
+LARGE_H = 44 * 8  # P6 "x" threshold: 44 working days on the 8 h calendar (p6.toml)
 
 
-def codes(r):
-    return sorted(r.flagged["task_code"]) if "task_code" in r.flagged else []
-
-
-def chain(link_types, lags=None, n=21):
-    """n not-started activities T01..Tn linked in a row; ``link_types``/``lags`` per link."""
-    lags = lags or [0] * (n - 1)
+def chain(link_types, lags=None):
+    """not-started activities T01..Tn linked in a row (n = links + 1); ``link_types``/``lags`` per link."""
+    n = len(link_types) + 1
+    if lags is None:
+        lags = [0] * (n - 1)
     tasks = [todo(f"T{i:02d}") for i in range(1, n + 1)]
     links = [(f"T{i:02d}", f"T{i + 1:02d}", link_types[i - 1], lags[i - 1]) for i in range(1, n)]
     return snap(tasks, links)
-
-
-def counts(r):
-    return (r.numerator, r.denominator)
 
 
 # --- 1. target strictness ---------------------------------------------------------------------
@@ -62,8 +57,8 @@ def test_p6_07_fs_exactly_90_percent_fails_the_strict_target_dcma_04_passes():
 
 
 def test_p6_04_remaining_352h_is_not_large_353h_is():
-    """'Activities that have a remaining duration greater than' the value (101248); default 352h."""
-    s = snap([todo("AT", remain_drtn_hr_cnt="352"), todo("OVER", remain_drtn_hr_cnt="353")])
+    """'Activities that have a remaining duration greater than' the value (Large Durations option, 101248)."""
+    s = snap([todo("AT", remain_drtn_hr_cnt=str(LARGE_H)), todo("OVER", remain_drtn_hr_cnt=str(LARGE_H + 1))])
     r = run(P6, "P6-04", s)
     assert counts(r) == (1, 2)
     assert codes(r) == ["OVER"]
@@ -71,7 +66,7 @@ def test_p6_04_remaining_352h_is_not_large_353h_is():
 
 def test_dcma_08_original_44_days_is_not_high_45_days_is():
     """DCMA 08 (original duration above 44 working days): 352 h = 44 d on C8, 360 h = 45 d."""
-    s = snap([todo("AT", target_drtn_hr_cnt="352"), todo("OVER", target_drtn_hr_cnt="360")])
+    s = snap([todo("AT", target_drtn_hr_cnt=str(LARGE_H)), todo("OVER", target_drtn_hr_cnt=str(LARGE_H + 8))])
     r = run(DCMA, "DCMA-08", s)
     assert counts(r) == (1, 2)
     assert codes(r) == ["OVER"]
@@ -81,9 +76,10 @@ def test_dcma_08_original_44_days_is_not_high_45_days_is():
 
 OFFENCES = {
     "P6-14": {"total_float_hr_cnt": "-8"},  # negative float
-    "P6-06": {"total_float_hr_cnt": "400"},  # above 352 h
-    "P6-04": {"remain_drtn_hr_cnt": "400"},  # above 352 h
-    "P6-02": {"cstr_type": "CS_MANDSTART", "cstr_date": "2026-03-09 08:00"},  # hard constraint
+    "P6-06": {"total_float_hr_cnt": "400"},  # above LARGE_H
+    "P6-04": {"remain_drtn_hr_cnt": "400"},  # above LARGE_H
+    # hard finish; a start constraint would be dropped on DONE by the started exemption anyway
+    "P6-02": {"cstr_type": "CS_MANDFIN", "cstr_date": "2026-03-09 08:00"},
 }
 
 
@@ -100,15 +96,17 @@ def four_with_offence(offence):
 
 
 @pytest.mark.parametrize("metric_id", sorted(OFFENCES))
-def test_completed_wbs_summary_and_loe_are_not_included(metric_id):
-    """'Completed, WBS Summary, and Level of Effort activities are not included in this analysis.'"""
+def test_p6_completed_wbs_summary_and_loe_are_not_included(metric_id):
+    """'Completed, WBS Summary, and Level of Effort activities are not included in this analysis.'
+    (Large Float wording, 101248, reused here for all four metrics.)"""
     r = run(P6, metric_id, four_with_offence(OFFENCES[metric_id]))
-    assert r.numerator == 1
+    assert counts(r)[0] == 1
+    assert r.denominator == 1  # only TODO is in the population
     assert codes(r) == ["TODO"]
 
 
 def test_p6_01_wbs_summary_without_links_is_neither_flagged_nor_counted():
-    """'Completed activities and WBS summary activities are not included in this analysis.'"""
+    """'Completed activities and WBS summary activities are not included in this analysis.' (Logic, 101248)"""
     s = snap([todo("A"), todo("B"), todo("WBS", task_type="TT_WBS")], [("A", "B", "FS", 0)])
     r = run(P6, "P6-01", s)
     assert "WBS" not in codes(r)
@@ -116,7 +114,8 @@ def test_p6_01_wbs_summary_without_links_is_neither_flagged_nor_counted():
 
 
 def test_p6_11_milestone_loe_and_wbs_are_excluded_completed_stays_in():
-    """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'"""
+    """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'
+    (Resource / Cost, 101248)"""
     s = snap(
         [
             todo("A"),
@@ -132,7 +131,8 @@ def test_p6_11_milestone_loe_and_wbs_are_excluded_completed_stays_in():
 
 
 def test_p6_12_milestone_loe_and_wbs_are_excluded_completed_stays_in():
-    """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'"""
+    """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'
+    (Late Activities, 101248)"""
     base_end = "2026-02-13 17:00"  # baseline finish; a forecast finish later than it is late
     bl_tasks = [
         todo("A", early_end_date=base_end),
@@ -187,4 +187,4 @@ def test_p6_03_counts_each_soft_constraint_type():
     s = snap([todo(f"A{i}", cstr_type=t, cstr_date="2026-03-09 08:00") for i, t in enumerate(soft)])
     r = run(P6, "P6-03", s)
     assert counts(r) == (5, 5)
-    assert len(codes(r)) == len(soft)
+    assert codes(r) == ["A0", "A1", "A2", "A3", "A4"]
