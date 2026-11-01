@@ -16,7 +16,7 @@
 #   CS_MANDSTART, CS_MANDFIN, CS_ALAP
 # group (optional): a section title, shown in the results table.
 # The built-in P6 / DCMA / DECM / INTEGRITY files use the same format: copy a metric from
-# them (e.g. DECM 06A204b "open_ends", P6 "dangling"), or see every rule below.
+# them as your own variant (its params then no longer claim a standard's authority) (e.g. DECM 06A204b "open_ends", P6 "dangling"), or see every rule below.
 
 [standard]
 id = "CUSTOM"

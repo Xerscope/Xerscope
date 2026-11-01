@@ -106,6 +106,12 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 
 ## DCMA 14-Point (legacy)
 
+Authority: DCMA-EA PAM 200.1, *DCMA Earned Value Management System Program Analyst
+Pamphlet* (Oct 2012), section 4 (points 1-14, populations in 4.0), CPLI in 3.1.2.3 and BEI in
+3.1.2.4. Copy read: [DCMA-PAM-200-1.pdf](https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf).
+Each metric's `source` in `dcma.toml` cites its section. Inputs are weekly XERs, so there is
+no detail planning period (DCMA-08: every baseline start qualifies).
+
 | # | Metric | Counts | Target |
 |---|---|---|---|
 | 1 | Logic | open ends of incomplete non-milestone tasks | ≤ 5 % |
@@ -123,9 +129,12 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 | 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the schedule's float to the Must Finish By date (n/a without one) | ≥ 0.95 |
 | 14 | BEI | completed / due (baseline finish ≤ data date) | ≥ 0.95 |
 
-Calibrated on xerlock's published result for its sample schedule: all twelve stated
-values reproduce (`tests/test_reference.py`), as does its critical path test (MEP-020,
-+600 wd) and CPL (1080 h).
+Differences with xerlock's published result on its sample schedule (the pamphlet wins;
+`tests/reference/expected.py`, `tests/test_reference.py`): DCMA-01 0 (xerlock 2: SS-only
+dangling finishes, finish milestone exempted), DCMA-04 23/25 (xerlock 25/27: links into
+milestones counted), DCMA-05 1 (xerlock 2: a milestone counted), DCMA-11 3 (xerlock 4: a
+milestone counted). The other stated values, the critical path test (MEP-020, +600 wd; the
+600 is DECM 06A401a's, the pamphlet gives none) and CPL (1080 h) reproduce.
 
 ## Integrity
 
@@ -183,6 +192,7 @@ metric is in [formulas.md](formulas.md).
   [06A506b](https://ssitools.com/helpandsuport/DECM/06A506b.pdf),
   [06A506c](https://ssitools.com/helpandsuport/DECM/06A506c.pdf)
 - [DCMA EVMS Center](https://www.dcma.mil/HQ/EVMS/)
+- [DCMA-EA PAM 200.1 (Oct 2012)](https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf)
 - [Ten Six: options for scheduling progressed activities in P6](https://tensix.com/options-for-scheduling-progressed-activities-in-p6/)
 - [Ten Six: using the P6 Check Schedule tool](https://tensix.com/using-the-p6-check-schedule-tool/)
 - [Deltek Acumen: DCMA 14-Point Assessment metric descriptions](https://help.deltek.com/Product/Acumen/8.11/GA/DCMA%2014%20Point%20Assessment%20Metric%20Descriptions.html)
