@@ -37,9 +37,9 @@ in, as coded (the `source` strings in `decm.toml` still call it unsaid).
 - [ ] **06A506c**: the sheet does not exclude LOE; the code does.
 - [ ] **06A210a**: exemption for LOE whose only successors are end-item deliverables or
       contract completion; not modelled.
-- [ ] **DCMA-08**: the Deltek text (Acumen DCMA 14-Point descriptions) says baseline
-      duration and a baseline start in the detail planning period; the code uses the
-      current original duration.
+- [ ] **DCMA-08**: PAM 200.1 section 4.8 also asks for a baseline start "within the detail
+      planning period or rolling wave"; weekly XERs carry no such period, so every baseline
+      start qualifies. The baseline duration is converted with the activity's current calendar.
 - Still open, the sheets do not settle them: 06A205a leads (negative lags); 06A506b "on or
   before" against "before" (the sheet uses both). DCMA-11 / DCMA-14 milestones are now settled by DCMA-EA
   PAM 200.1 (sections 4.0, 4.11, 3.1.2.4): milestones are excluded from both.

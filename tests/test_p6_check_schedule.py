@@ -78,9 +78,9 @@ def test_p6_04_remaining_352h_is_not_large_353h_is_and_milestones_are_out():
 
 
 def test_dcma_08_original_44_days_is_not_high_45_days_is():
-    """DCMA 08 (original duration above 44 working days): 352 h = 44 d on C8, 360 h = 45 d."""
+    """DCMA 08 (baseline duration above 44 working days): 352 h = 44 d on C8, 360 h = 45 d."""
     s = snap([todo("AT", target_drtn_hr_cnt=str(LARGE_H)), todo("OVER", target_drtn_hr_cnt=str(LARGE_H + 8))])
-    r = run(DCMA, "DCMA-08", s)
+    r = run(DCMA, "DCMA-08", s, Baseline.planned(s))
     assert counts(r) == (1, 2)
     assert codes(r) == ["OVER"]
 

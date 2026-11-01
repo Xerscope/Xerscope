@@ -88,10 +88,11 @@ source = "DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 
 [[metric]]
 id = "DCMA-08"
 name = "High duration"
-description = "Original duration above 44 working days"
+description = "Baseline duration above 44 working days"
 rule = "duration"
 target = "<= 5%"
-params = { field = "original", op = ">", value = 44, unit = "days", exclude = ["complete", "loe", "milestones"] }
+params = { field = "baseline", op = ">", value = 44, unit = "days", exclude = ["complete", "loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.8: an incomplete task with a baseline duration greater than 44 working days (2 months) and a baseline start within the detail planning period or rolling wave; §4.0: LOE and milestones excluded. UNRESOLVED: inputs are weekly XERs with no detail planning window, so every baseline start qualifies. UNRESOLVED: baseline hours are divided by the activity's current hours per day, not the baseline calendar. An activity absent from the baseline is not flagged; without a baseline the check is n/a"
 
 [[metric]]
 id = "DCMA-09"
