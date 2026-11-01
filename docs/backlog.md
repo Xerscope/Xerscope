@@ -41,8 +41,7 @@ in, as coded (the `source` strings in `decm.toml` still call it unsaid).
       planning period or rolling wave"; weekly XERs carry no such period, so every baseline
       start qualifies. The baseline duration is converted with the activity's current calendar.
 - Still open, the sheets do not settle them: 06A205a leads (negative lags); 06A506b "on or
-  before" against "before" (the sheet uses both). DCMA-11 / DCMA-14 milestones are now settled by DCMA-EA
-  PAM 200.1 (sections 4.0, 4.11, 3.1.2.4): milestones are excluded from both.
+  before" against "before" (the sheet uses both).
 
 ## CPM: where the engine still differs from P6 23.12
 
