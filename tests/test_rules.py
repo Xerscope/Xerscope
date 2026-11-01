@@ -39,10 +39,37 @@ def test_p6_logic_exemptions():
     assert r.denominator == 6  # D0 removed (actual finish)
 
 
-def test_dcma_logic_counts_dangling_and_exempts_only_project_ends():
-    # The project start is D0 (no predecessor, earliest start), so S1 and M0 are open
-    # starts for DCMA even though P6 lets them pass. F is the project finish: exempt.
+def test_dcma_01_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.1: "Any incomplete task that is missing a predecessor and/or a
+    successor is included in this metric."
+
+    4.0 excludes completed tasks, LOE, subprojects and milestones; 4.1 has no project start/finish
+    exemption and no "dangling" (an SS-only finish) case: only a missing predecessor or successor counts.
+    """
     r = run(DCMA, "DCMA-01", LOGIC)
+    # Population: D0 (complete), M0 and F (milestones) are out; S1, A, B, C remain -> 4.
+    # S1: started, no predecessor (no exemption for the project start). C: no successor.
+    # A drives B by SS only: it has a successor, so it is not flagged (no "dangling").
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
+        "S1": "no predecessor",
+        "C": "no successor",
+    }
+    assert (r.numerator, r.denominator) == (2, 4)
+
+
+def test_missing_logic_keeps_exemptions_and_dangling_for_custom_standards():
+    """The parameters DCMA-01 no longer uses stay available (custom-template.toml CUS-01)."""
+    from xerscope.analysis.rules import RULES
+
+    r = RULES["missing_logic"].fn(
+        AnalysisContext(LOGIC),
+        exclude=["complete", "loe"],
+        pred_exempt=["project_start"],
+        succ_exempt=["project_finish"],
+        dangling=True,
+    )
+    # The pre-PAM 200.1 DCMA-01 result on LOGIC, unchanged: D0 (complete) out -> 6 checked;
+    # A drives B by SS only, so it is a dangling finish.
     assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
         "S1": "no predecessor",
         "M0": "no predecessor",
@@ -239,6 +266,31 @@ def test_invalid_progress_dates():
     assert run(DCMA, "DCMA-09", s).numerator == 3  # DCMA reads the remaining finish: LATE passes
 
 
+def test_dcma_09_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.9: "Incomplete tasks that have a forecast start/finish date prior to
+    the IMS status date, or has an actual start/finish date beyond the IMS status date are included in
+    this metric."
+
+    4.0 excludes LOE, subprojects and milestones. Completed tasks are kept only when they could still
+    have an actual date beyond the status date: one finished before it is out of the population.
+    """
+    s = snap(
+        [
+            todo("EARLY", early_start_date="2026-02-27 08:00"),  # forecast start before DD: flagged
+            active("RUN", restart_date="2026-02-26 08:00", reend_date="2026-02-27 17:00"),  # remaining finish: flagged
+            todo("MEARLY", task_type="TT_Mile", target_drtn_hr_cnt="0", early_start_date="2026-02-27 08:00"),
+            done("OK"),  # finished 2026-02-13, before DD: out
+            done("FUT", act_end_date="2026-03-04 17:00"),  # actual finish beyond DD: flagged
+            todo("FINE"),
+            todo("LOE", task_type="TT_LOE", early_start_date="2026-02-27 08:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-09", s)
+    # Population: EARLY, RUN, FUT, FINE = 4 (MEARLY milestone, OK done before DD, LOE out).
+    assert codes(r) == ["EARLY", "FUT", "RUN"]
+    assert (r.numerator, r.denominator) == (3, 4)
+
+
 def test_resource_or_expense():
     s = snap(
         [todo("R"), todo("E"), todo("NONE"), done("DONE"), todo("M", task_type="TT_Mile", target_drtn_hr_cnt="0")],
@@ -279,9 +331,12 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     r = run(P6, "P6-13", gone, bl)
     assert (r.numerator, r.denominator) == (1, 3)  # B and C deleted since the baseline: still due
     assert "2 of them no longer in the schedule" in r.note
+    # DCMA-EA PAM 200.1 (Oct 2012) 3.1.2.4: "Tasks missing baseline finish dates are included in the
+    # denominator." (step 1: "Filter out Level of Effort (LOE) tasks, summary tasks, and zero duration
+    # tasks (milestones)."). NEW has no baseline finish: due, not finished -> A, B done / A, B, C, NEW.
     dcma = run(DCMA, "DCMA-14", NOW, bl)
-    assert (dcma.numerator, dcma.denominator) == (2, 3)
-    assert dcma.value == pytest.approx(2 / 3)
+    assert (dcma.numerator, dcma.denominator) == (2, 4)
+    assert dcma.value == pytest.approx(2 / 4)
 
 
 def test_missed_tasks_and_late_activities():

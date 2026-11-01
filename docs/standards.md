@@ -13,14 +13,14 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Check | P6 Check Schedule | DCMA 14-Point | DECM v8.0 |
 |---|---|---|---|
 | Units | hours (352 h = 44 d × 8 h) | working days of each activity's calendar | working days |
-| Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost and late activities | incomplete activities, LOE excluded | incomplete (no actual finish) tasks and milestones; LOE per metric |
+| Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost and late activities | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
 | Relationships checked | all except links between two finished activities | links into incomplete work | links into incomplete work |
-| Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones the successor check, external links pass | open ends + dangling start/finish; only the project start and finish are exempt | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
+| Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones the successor check, external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > 352 h, milestones stay in the denominator | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships, actual else forecast dates, X = 0 |
-| BEI | due counted in the baseline (an activity added since is never due, one deleted since still is) | activities without a baseline left out | n/a (EVMS cost metrics) |
+| BEI | due counted in the baseline (an activity added since is never due, one deleted since still is) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
 
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.
@@ -105,7 +105,7 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 
 | # | Metric | Counts | Target |
 |---|---|---|---|
-| 1 | Logic | open ends incl. dangling start/finish | ≤ 5 % |
+| 1 | Logic | open ends of incomplete non-milestone tasks | ≤ 5 % |
 | 2 | Leads | negative lags | 0 |
 | 3 | Lags | positive lags | ≤ 5 % |
 | 4 | Relationship types | FS share | ≥ 90 % |
