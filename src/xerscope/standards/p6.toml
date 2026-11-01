@@ -33,8 +33,8 @@ name = "Logic"
 description = "Activities missing predecessors or successors"
 rule = "missing_logic"
 target = "< 5%"
-source = "46291: WBS summary and actual-finish removed; actual start or start milestone pass the predecessor check; finish milestones pass the successor check; external links pass"
-params = { exclude = ["complete"], pred_exempt = ["started", "start_milestone"], succ_exempt = ["finish_milestone"], external_passes = true }
+source = "101248: completed and WBS summary activities not included; started activities and start milestones need no predecessor; a finish milestone without successor is counted, as a P6 Professional r22.12 report shows (Ten Six); external links pass (46291)"
+params = { exclude = ["complete"], pred_exempt = ["started", "start_milestone"], external_passes = true }
 
 [[metric]]
 id = "P6-02"
@@ -63,8 +63,8 @@ name = "Large durations"
 description = "Activities that have a remaining duration greater than 352 hours"
 rule = "duration"
 target = "< 5%"
-source = "101248 (P6 Professional 24 help, Check Schedule dialog): completed, WBS summary and LOE activities not included (milestones stay in; EPPM's 46282 also removes them)"
-params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "loe"] }
+source = "101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional r22.12 report shows (Ten Six) and EPPM's 46282 states"
+params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "loe", "milestones"] }
 
 [[metric]]
 id = "P6-05"

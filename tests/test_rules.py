@@ -32,11 +32,34 @@ LOGIC = snap(
 
 
 def test_p6_logic_exemptions():
-    # S1: started, no predecessor -> passes; M0: start milestone -> passes; F: finish milestone
-    # -> passes; C has no successor; A only drives B via SS (dangling finish, not an open end).
+    """101248: "Started activities and start milestones are not required by this analysis to have predecessors."
+    And: "Completed activities and WBS summary activities are not included in this analysis."
+    Nothing exempts a finish milestone from the successor check: a P6 Professional r22.12 report (Ten Six,
+    tensix.com/using-the-p6-check-schedule-tool/) notes "The W1000 Notice to Proceed task
+    has no predecessor and the W1030 Project Complete task has no successor."
+    """
+    # S1: started, no predecessor -> passes; M0: start milestone -> passes; C has no successor;
+    # F: finish milestone with no successor -> flagged; A only drives B via SS (not an open end).
     r = run(P6, "P6-01", LOGIC)
-    assert codes(r) == ["C"]
+    assert codes(r) == ["C", "F"]
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))["F"] == "no successor"
     assert r.denominator == 6  # D0 removed (actual finish)
+
+
+def test_p6_logic_flags_the_finish_milestone_without_successor():
+    """Ten Six: "the schedule would have passed if not for the Project Complete milestone with no successor." """
+    s = snap(
+        [
+            todo("Start", task_type="TT_Mile", target_drtn_hr_cnt="0"),
+            todo("A"),
+            todo("B"),
+            todo("Finish", task_type="TT_FinMile", target_drtn_hr_cnt="0"),
+        ],
+        [("Start", "A", "FS", 0), ("A", "B", "FS", 0), ("B", "Finish", "FS", 0)],
+    )
+    r = run(P6, "P6-01", s)
+    assert codes(r) == ["Finish"]  # Start needs no predecessor; Finish has no successor
+    assert (r.numerator, r.denominator) == (1, 4)
 
 
 def test_dcma_01_follows_pam_200_1():
@@ -242,7 +265,7 @@ def test_large_duration_remaining_vs_original():
         ]
     )
     assert codes(run(P6, "P6-04", s)) == ["B"]  # remaining > 352 h
-    assert run(P6, "P6-04", s).denominator == 3  # Pro 24 help (101248): milestones stay in
+    assert run(P6, "P6-04", s).denominator == 2  # milestone out: Ten Six P6 r22.12 report, EPPM 46282 (101248 silent)
     assert codes(run(DCMA, "DCMA-08", s)) == ["A", "B"]  # original > 44 d
 
 
@@ -437,7 +460,7 @@ def test_results_have_no_nan_status():
 
 
 def test_start_milestone_without_successor_is_an_open_end_for_p6():
-    # Only finish milestones pass the successor check; a start milestone must drive something.
+    # No milestone passes the successor check; a start milestone must drive something.
     s = snap([todo("S", task_type="TT_Mile", target_drtn_hr_cnt="0"), todo("A")], [("S", "A", "FS", 0)])
     assert codes(run(P6, "P6-01", s)) == ["A"]
     s = snap([todo("S", task_type="TT_Mile", target_drtn_hr_cnt="0"), todo("A")], [("A", "S", "FS", 0)])

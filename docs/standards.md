@@ -15,10 +15,10 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Units | hours (352 h = 44 d × 8 h) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost and late activities | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
 | Relationships checked | all except links between two finished activities | links into incomplete work | links into incomplete work |
-| Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones the successor check, external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
+| Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones are counted (101248 exempts none; a P6 Professional r22.12 report flags one, Ten Six), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
-| Long durations | remaining > 352 h, milestones stay in the denominator | original > 44 wd | n/a |
+| Long durations | remaining > 352 h, milestones out | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships, actual else forecast dates, X = 0 |
 | BEI | due counted in the baseline (an activity added since is never due, one deleted since still is) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
 
@@ -31,9 +31,12 @@ Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 1013
 Populations from the P6 Professional 24 help of the Check Schedule dialog
 ([101248](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)); where it is
 silent, from the P6 EPPM help of each report section (pages 46277–46291), which differs in
-four places: EPPM removes milestones from large durations and completed activities from
-late activities, counts an activity with no baseline finish as due in BEI, and reads the
-remaining finish of in-progress work for invalid dates.
+four places: EPPM lets finish milestones pass the logic successor check, removes completed
+activities from late activities, counts an activity with no baseline finish as due in BEI,
+and reads the remaining finish of in-progress work for invalid dates. Where 101248 is
+silent and a P6 Professional r22.12 report analysed by Ten Six shows the behaviour
+(finish milestones counted in logic, milestones out of large durations), the report is
+followed.
 Dangling start / dangling finish are not P6 Professional checks (they exist in P6 EPPM),
 so they are not in this standard; the `dangling` rule stays available for your own.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
@@ -42,10 +45,10 @@ checked subset.
 
 | ID | Group | Check | Subset (Oracle) | Default target (P6 dialog) |
 |---|---|---|---|---|
-| P6-01 | Inflexibility and Inefficiency | Logic | WBS summary, actual finish removed; exemptions above | < 5 % |
+| P6-01 | Inflexibility and Inefficiency | Logic | WBS summary, actual finish removed; start exemptions above; finish milestones counted (101248; Ten Six report) | < 5 % |
 | P6-02 | | Hard constraints (Mandatory Start/Finish, Start On, Finish On) | WBS, actual finish, LOE removed; start constraints ignored once started | < 1 % |
 | P6-03 | | Soft constraints (On or Before/After, As Late As Possible) | idem | < 5 % |
-| P6-04 | | Large durations (remaining > 352 h) | WBS, actual finish, LOE removed (milestones stay in) | < 5 % |
+| P6-04 | | Large durations (remaining > 352 h) | WBS, actual finish, LOE, milestones removed | < 5 % |
 | P6-05 | | Long lags (> 352 h) | links, both-finished removed | < 5 % |
 | P6-06 | | Large float (> 352 h) | WBS, actual finish, LOE removed | < 1 % |
 | P6-07 | | Relationship types (FS share) | links, both-finished removed | > 90 % |
