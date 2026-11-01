@@ -2,14 +2,14 @@
  "demo": {
   "PRJ-ALPHA_2026-08-31.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 28,
+    "denominator": 24,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.571429
+    "value": 4.166667
    },
    "DCMA/DCMA-02": {
     "denominator": 38,
@@ -88,7 +88,7 @@
     "value": 4.166667
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -449,14 +449,14 @@
   },
   "PRJ-ALPHA_2026-09-07.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 26,
+    "denominator": 23,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.846154
+    "value": 4.347826
    },
    "DCMA/DCMA-02": {
     "denominator": 37,
@@ -534,7 +534,7 @@
     "value": 4.347826
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -893,14 +893,14 @@
   },
   "PRJ-ALPHA_2026-09-14.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 26,
+    "denominator": 23,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.846154
+    "value": 4.347826
    },
    "DCMA/DCMA-02": {
     "denominator": 37,
@@ -978,7 +978,7 @@
     "value": 4.347826
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1337,14 +1337,14 @@
   },
   "PRJ-ALPHA_2026-09-21.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.0
+    "value": 4.545455
    },
    "DCMA/DCMA-02": {
     "denominator": 36,
@@ -1422,7 +1422,7 @@
     "value": 4.545455
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 22,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1781,14 +1781,14 @@
   },
   "PRJ-ALPHA_2026-09-28.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.0
+    "value": 4.545455
    },
    "DCMA/DCMA-02": {
     "denominator": 36,
@@ -1867,7 +1867,7 @@
     "value": 4.545455
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 22,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2228,14 +2228,14 @@
   },
   "PRJ-ALPHA_2026-10-05.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 24,
+    "denominator": 21,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.166667
+    "value": 4.761905
    },
    "DCMA/DCMA-02": {
     "denominator": 35,
@@ -2318,7 +2318,7 @@
     "value": 4.761905
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 21,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2683,14 +2683,14 @@
   },
   "PRJ-ALPHA_2026-10-12.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 23,
+    "denominator": 20,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.347826
+    "value": 5.0
    },
    "DCMA/DCMA-02": {
     "denominator": 34,
@@ -2779,7 +2779,7 @@
     "value": 5.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 21,
     "flagged": [
      "C3010"
     ],
@@ -3155,14 +3155,14 @@
   },
   "PRJ-ALPHA_2026-10-19.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 22,
+    "denominator": 19,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 4.545455
+    "status": "fail",
+    "value": 5.263158
    },
    "DCMA/DCMA-02": {
     "denominator": 33,
@@ -3250,7 +3250,7 @@
     "value": 5.263158
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 20,
     "flagged": [
      "C3010"
     ],
@@ -3631,14 +3631,14 @@
  "demo-first-as-baseline": {
   "PRJ-ALPHA_2026-08-31.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 28,
+    "denominator": 24,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.571429
+    "value": 4.166667
    },
    "DCMA/DCMA-02": {
     "denominator": 38,
@@ -3717,7 +3717,7 @@
     "value": 4.166667
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -4079,14 +4079,14 @@
   },
   "PRJ-ALPHA_2026-09-07.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 26,
+    "denominator": 23,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.846154
+    "value": 4.347826
    },
    "DCMA/DCMA-02": {
     "denominator": 37,
@@ -4164,7 +4164,7 @@
     "value": 4.347826
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -4548,14 +4548,14 @@
   },
   "PRJ-ALPHA_2026-09-14.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 26,
+    "denominator": 23,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.846154
+    "value": 4.347826
    },
    "DCMA/DCMA-02": {
     "denominator": 37,
@@ -4633,7 +4633,7 @@
     "value": 4.347826
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5017,14 +5017,14 @@
   },
   "PRJ-ALPHA_2026-09-21.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.0
+    "value": 4.545455
    },
    "DCMA/DCMA-02": {
     "denominator": 36,
@@ -5102,7 +5102,7 @@
     "value": 4.545455
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 22,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5488,14 +5488,14 @@
   },
   "PRJ-ALPHA_2026-09-28.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.0
+    "value": 4.545455
    },
    "DCMA/DCMA-02": {
     "denominator": 36,
@@ -5574,7 +5574,7 @@
     "value": 4.545455
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 22,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5622,14 +5622,15 @@
     "value": null
    },
    "DCMA/DCMA-14": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [
+     "C3045",
      "E1040"
     ],
     "note": null,
     "numerator": 3,
     "status": "fail",
-    "value": 0.75
+    "value": 0.6
    },
    "DECM/06A204b": {
     "denominator": 25,
@@ -5970,14 +5971,14 @@
   },
   "PRJ-ALPHA_2026-10-05.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 24,
+    "denominator": 21,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.166667
+    "value": 4.761905
    },
    "DCMA/DCMA-02": {
     "denominator": 35,
@@ -6060,7 +6061,7 @@
     "value": 4.761905
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 21,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6110,15 +6111,16 @@
     "value": null
    },
    "DCMA/DCMA-14": {
-    "denominator": 6,
+    "denominator": 7,
     "flagged": [
+     "C3045",
      "E1020",
      "P2020"
     ],
     "note": null,
     "numerator": 4,
     "status": "fail",
-    "value": 0.666667
+    "value": 0.571429
    },
    "DECM/06A204b": {
     "denominator": 24,
@@ -6464,14 +6466,14 @@
   },
   "PRJ-ALPHA_2026-10-12.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 23,
+    "denominator": 20,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.347826
+    "value": 5.0
    },
    "DCMA/DCMA-02": {
     "denominator": 34,
@@ -6560,7 +6562,7 @@
     "value": 5.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 21,
     "flagged": [
      "C3010"
     ],
@@ -6613,15 +6615,16 @@
     "value": null
    },
    "DCMA/DCMA-14": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [
+     "C3045",
      "E1020",
      "E1030"
     ],
     "note": null,
     "numerator": 5,
     "status": "fail",
-    "value": 0.714286
+    "value": 0.625
    },
    "DECM/06A204b": {
     "denominator": 23,
@@ -6977,14 +6980,14 @@
   },
   "PRJ-ALPHA_2026-10-19.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 22,
+    "denominator": 19,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 4.545455
+    "status": "fail",
+    "value": 5.263158
    },
    "DCMA/DCMA-02": {
     "denominator": 33,
@@ -7072,7 +7075,7 @@
     "value": 5.263158
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 20,
     "flagged": [
      "C3010"
     ],
@@ -7126,15 +7129,16 @@
     "value": null
    },
    "DCMA/DCMA-14": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [
+     "C3045",
      "E1030",
      "E1050"
     ],
     "note": null,
     "numerator": 6,
     "status": "fail",
-    "value": 0.75
+    "value": 0.666667
    },
    "DECM/06A204b": {
     "denominator": 22,
@@ -7495,14 +7499,14 @@
  "demo-planned": {
   "PRJ-ALPHA_2026-08-31.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 28,
+    "denominator": 24,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.571429
+    "value": 4.166667
    },
    "DCMA/DCMA-02": {
     "denominator": 38,
@@ -7581,7 +7585,7 @@
     "value": 4.166667
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7944,14 +7948,14 @@
   },
   "PRJ-ALPHA_2026-09-07.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 26,
+    "denominator": 23,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.846154
+    "value": 4.347826
    },
    "DCMA/DCMA-02": {
     "denominator": 37,
@@ -8029,7 +8033,7 @@
     "value": 4.347826
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8414,14 +8418,14 @@
   },
   "PRJ-ALPHA_2026-09-14.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 26,
+    "denominator": 23,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 3.846154
+    "value": 4.347826
    },
    "DCMA/DCMA-02": {
     "denominator": 37,
@@ -8499,7 +8503,7 @@
     "value": 4.347826
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8884,14 +8888,14 @@
   },
   "PRJ-ALPHA_2026-09-21.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.0
+    "value": 4.545455
    },
    "DCMA/DCMA-02": {
     "denominator": 36,
@@ -8969,7 +8973,7 @@
     "value": 4.545455
    },
    "DCMA/DCMA-09": {
-    "denominator": 28,
+    "denominator": 22,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9356,14 +9360,14 @@
   },
   "PRJ-ALPHA_2026-09-28.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.0
+    "value": 4.545455
    },
    "DCMA/DCMA-02": {
     "denominator": 36,
@@ -9442,7 +9446,7 @@
     "value": 4.545455
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 22,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9837,14 +9841,14 @@
   },
   "PRJ-ALPHA_2026-10-05.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 24,
+    "denominator": 21,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.166667
+    "value": 4.761905
    },
    "DCMA/DCMA-02": {
     "denominator": 35,
@@ -9927,7 +9931,7 @@
     "value": 4.761905
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 21,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10330,14 +10334,14 @@
   },
   "PRJ-ALPHA_2026-10-12.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 23,
+    "denominator": 20,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
     "status": "pass",
-    "value": 4.347826
+    "value": 5.0
    },
    "DCMA/DCMA-02": {
     "denominator": 34,
@@ -10426,7 +10430,7 @@
     "value": 5.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 21,
     "flagged": [
      "C3010"
     ],
@@ -10842,14 +10846,14 @@
   },
   "PRJ-ALPHA_2026-10-19.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 22,
+    "denominator": 19,
     "flagged": [
      "K5040"
     ],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 4.545455
+    "status": "fail",
+    "value": 5.263158
    },
    "DCMA/DCMA-02": {
     "denominator": 33,
@@ -10937,7 +10941,7 @@
     "value": 5.263158
    },
    "DCMA/DCMA-09": {
-    "denominator": 29,
+    "denominator": 20,
     "flagged": [
      "C3010"
     ],
@@ -11423,7 +11427,7 @@
     "value": null
    },
    "DCMA/DCMA-09": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11803,7 +11807,7 @@
     "value": null
    },
    "DCMA/DCMA-09": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -12183,7 +12187,7 @@
     "value": null
    },
    "DCMA/DCMA-09": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -12563,7 +12567,7 @@
     "value": null
    },
    "DCMA/DCMA-09": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -12891,12 +12895,13 @@
      "A1070",
      "A1080",
      "A1090",
-     "A1100"
+     "A1100",
+     "A1110"
     ],
     "note": null,
-    "numerator": 11,
+    "numerator": 12,
     "status": "fail",
-    "value": 91.666667
+    "value": 100.0
    },
    "DCMA/DCMA-02": {
     "denominator": 0,
@@ -13364,11 +13369,13 @@
   "mpxj/resource-rates-test.xer": {
    "DCMA/DCMA-01": {
     "denominator": 1,
-    "flagged": [],
+    "flagged": [
+     "A1000"
+    ],
     "note": null,
-    "numerator": 0,
-    "status": "pass",
-    "value": 0.0
+    "numerator": 1,
+    "status": "fail",
+    "value": 100.0
    },
    "DCMA/DCMA-02": {
     "denominator": 0,
@@ -13743,24 +13750,12 @@
   },
   "p6viewer/TERMINAL BUILDING-AIRPORT.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 66,
-    "flagged": [
-     "BA-P1-100",
-     "BA-P1-160",
-     "BA-P1-30",
-     "BA-P1-40",
-     "BA-P1-80",
-     "BA-P1-90",
-     "BA-P2-100",
-     "BA-P2-30",
-     "BA-P3-100",
-     "BA-P4-20",
-     "BA-P4-90"
-    ],
+    "denominator": 63,
+    "flagged": [],
     "note": null,
-    "numerator": 11,
-    "status": "fail",
-    "value": 16.666667
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-02": {
     "denominator": 84,
@@ -13880,7 +13875,7 @@
     "value": 1.587302
    },
    "DCMA/DCMA-09": {
-    "denominator": 66,
+    "denominator": 63,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -14319,7 +14314,7 @@
   },
   "pv/20-kW-residential-pv-p6.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 25,
+    "denominator": 21,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -14389,7 +14384,7 @@
     "value": 0.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 25,
+    "denominator": 21,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -14756,25 +14751,12 @@
   },
   "xereditor/sample.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 42,
-    "flagged": [
-     "EM00",
-     "EM01",
-     "EM02",
-     "EM03",
-     "EM04",
-     "EM05",
-     "SM00",
-     "SM01",
-     "SM02",
-     "SM03",
-     "SM04",
-     "SM05"
-    ],
+    "denominator": 30,
+    "flagged": [],
     "note": null,
-    "numerator": 12,
-    "status": "fail",
-    "value": 28.571429
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-02": {
     "denominator": 61,
@@ -14866,7 +14848,7 @@
     "value": 0.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 42,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -15286,15 +15268,12 @@
   },
   "xerlock/sample-schedule.xer": {
    "DCMA/DCMA-01": {
-    "denominator": 21,
-    "flagged": [
-     "FIT-010",
-     "MEP-060"
-    ],
+    "denominator": 19,
+    "flagged": [],
     "note": null,
-    "numerator": 2,
-    "status": "fail",
-    "value": 9.52381
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-02": {
     "denominator": 27,
@@ -15372,7 +15351,7 @@
     "value": 10.526316
    },
    "DCMA/DCMA-09": {
-    "denominator": 24,
+    "denominator": 19,
     "flagged": [],
     "note": null,
     "numerator": 0,

@@ -63,13 +63,13 @@ XERLOCK_PROJECT = {
 # DCMA results for the analysis step. Sources: docs/screenshots/health-check.png
 # (each count re-derived from the pinned file and found consistent), tests/test_standards.py
 # (CPLI hand calculation) and tests/test_cpm_sample.py (critical path test).
-# Population: incomplete activities; baseline = planned (target_*) dates in the file.
+# Population: incomplete activities, milestones and LOE out (PAM 200.1 4.0); baseline = planned
+# (target_*) dates in the file. Counts are the pamphlet's; a note gives xerlock's when it differs.
 DCMA = {
     "DCMA-01": {
-        "numerator": 2,
-        "note": "xerlock counts SS/SF-only 'dangling' finishes "
-        "(MEP-060, FIT-010) and exempts the project finish "
-        "milestone; a plain no-successor count gives 1 (MS-030)",
+        "numerator": 0,
+        "note": "xerlock: 2. xerlock counts SS-only dangling finishes and exempts the finish milestone; "
+        "PAM 200.1 4.1 counts open ends of incomplete non-milestone tasks",
     },
     "DCMA-02": {"numerator": 0},
     "DCMA-03": {"numerator": 4},
