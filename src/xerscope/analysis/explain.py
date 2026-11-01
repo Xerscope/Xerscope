@@ -19,23 +19,8 @@ from dataclasses import dataclass, field
 
 from ..xer.model import CONSTRAINT
 from .checks import CheckResult
-from .rules import RULES
+from .rules import EXCLUDE, EXEMPT, RULES
 
-EXCLUDE_TEXT = {
-    "complete": "completed activities",
-    "complete_before_data_date": "activities completed before the data date",
-    "started": "started activities",
-    "loe": "level of effort",
-    "milestones": "milestones",
-    "no_duration": "activities with no original duration",
-}
-EXEMPT_TEXT = {
-    "started": "started activities",
-    "start_milestone": "start milestones",
-    "finish_milestone": "finish milestones",
-    "project_start": "the project's first activity",
-    "project_finish": "the project's last activity",
-}
 LINKS_TEXT = {
     "all": "all relationships",
     "not_both_complete": "relationships where predecessor and successor are not both complete",
@@ -118,7 +103,7 @@ def _show(value) -> str:
 
 
 def _exclude_line(rule: str, exclude: list[str]) -> str:
-    what = ", ".join(EXCLUDE_TEXT.get(k, k) for k in exclude)
+    what = ", ".join((EXCLUDE[k][0] if k in EXCLUDE else k) for k in exclude)
     return f"Relationships whose successor is excluded: {what}." if rule in LINK_RULES else f"Excludes: {what}."
 
 
@@ -127,9 +112,9 @@ def _population(rule: str, p: dict) -> list[str]:
     if p.get("exclude"):
         out.append(_exclude_line(rule, p["exclude"]))
     if p.get("pred_exempt"):
-        out.append("No predecessor required for: " + ", ".join(EXEMPT_TEXT.get(k, k) for k in p["pred_exempt"]) + ".")
+        out.append("No predecessor required for: " + ", ".join(EXEMPT.get(k, k) for k in p["pred_exempt"]) + ".")
     if p.get("succ_exempt"):
-        out.append("No successor required for: " + ", ".join(EXEMPT_TEXT.get(k, k) for k in p["succ_exempt"]) + ".")
+        out.append("No successor required for: " + ", ".join(EXEMPT.get(k, k) for k in p["succ_exempt"]) + ".")
     if "links" in p:
         out.append("Relationships counted: " + LINKS_TEXT.get(p["links"], p["links"]) + ".")
     if p.get("exclude_loe"):

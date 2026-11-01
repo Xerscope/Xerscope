@@ -96,13 +96,14 @@ class Rule:
             elif hint == Names:
                 if isinstance(value, str) or not all(isinstance(v, str) for v in value):
                     raise ValueError(f"{where}: expected a list of names, got {value!r}")
-        for key in ("exclude", "pred_exempt", "succ_exempt"):
-            bad = set(params.get(key, [])) - ALLOWED[key]
+        self._check_vocabulary(params)
+
+    def _check_vocabulary(self, params: dict) -> None:
+        for key in sorted(set(params) & set(ALLOWED)):
+            bad = set(params[key]) - ALLOWED[key]
             if bad:
-                raise ValueError(f"{self.name}.{key}: unknown value(s) {sorted(bad)}; allowed {sorted(ALLOWED[key])}")
-        bad = set(params.get("types", [])) - set(CONSTRAINT)
-        if bad:
-            raise ValueError(f"{self.name}.types: unknown {sorted(bad)}; allowed {sorted(CONSTRAINT)}")
+                what = "unknown" if key == "types" else "unknown value(s)"
+                raise ValueError(f"{self.name}.{key}: {what} {sorted(bad)}; allowed {sorted(ALLOWED[key])}")
 
 
 RULES: dict[str, Rule] = {}
@@ -118,16 +119,31 @@ def rule(name: str, unit: Unit, needs_baseline: bool = False):
 
 # --- populations -------------------------------------------------------------------------
 
-EXCLUDE = {
-    "complete": lambda t, dd: t["is_complete"],
-    "complete_before_data_date": lambda t, dd: t["act_end_date"] < dd if dd is not None else t["is_complete"],
-    "started": lambda t, dd: t["is_started"],
-    "loe": lambda t, dd: t["is_loe"],
-    "milestones": lambda t, dd: t["is_milestone"],
-    "no_duration": lambda t, dd: ~(t["target_drtn_hr_cnt"].fillna(0) > 0),
+# Each closed vocabulary is declared once: key -> (label for explain, predicate) / label.
+EXCLUDE: dict[str, tuple[str, Callable]] = {
+    "complete": ("completed activities", lambda t, dd: t["is_complete"]),
+    "complete_before_data_date": (
+        "activities completed before the data date",
+        lambda t, dd: t["act_end_date"] < dd if dd is not None else t["is_complete"],
+    ),
+    "started": ("started activities", lambda t, dd: t["is_started"]),
+    "loe": ("level of effort", lambda t, dd: t["is_loe"]),
+    "milestones": ("milestones", lambda t, dd: t["is_milestone"]),
+    "no_duration": ("activities with no original duration", lambda t, dd: ~(t["target_drtn_hr_cnt"].fillna(0) > 0)),
 }
-EXEMPT = {"started", "start_milestone", "finish_milestone", "project_start", "project_finish"}
-ALLOWED = {"exclude": set(EXCLUDE), "pred_exempt": EXEMPT, "succ_exempt": EXEMPT}
+EXEMPT: dict[str, str] = {
+    "started": "started activities",
+    "start_milestone": "start milestones",
+    "finish_milestone": "finish milestones",
+    "project_start": "the project's first activity",
+    "project_finish": "the project's last activity",
+}
+ALLOWED: dict[str, set[str]] = {
+    "exclude": set(EXCLUDE),
+    "pred_exempt": set(EXEMPT),
+    "succ_exempt": set(EXEMPT),
+    "types": set(CONSTRAINT),
+}
 
 
 def activities(ctx: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
@@ -137,7 +153,7 @@ def activities(ctx: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
 def _without(t: pd.DataFrame, dd, exclude: list[str]) -> pd.DataFrame:
     mask = pd.Series(False, index=t.index)
     for key in exclude:
-        mask |= EXCLUDE[key](t, dd).fillna(False).astype(bool)
+        mask |= EXCLUDE[key][1](t, dd).fillna(False).astype(bool)
     return t[~mask]
 
 
@@ -194,6 +210,18 @@ def _project_ends(ctx: AnalysisContext) -> tuple[set[str], set[str]]:
     )
 
 
+def _exempt_masks(pop: pd.DataFrame, start_ids: set[str], finish_ids: set[str]) -> dict[str, pd.Series]:
+    """One boolean mask per EXEMPT key: the activities that pass the missing-logic test."""
+    masks = {
+        "started": pop["is_started"],
+        "start_milestone": pop["is_start_milestone"],
+        "finish_milestone": pop["is_milestone"] & ~pop["is_start_milestone"],
+        "project_start": pop["task_code"].isin(start_ids),
+        "project_finish": pop["task_code"].isin(finish_ids),
+    }
+    return {k: masks[k] for k in EXEMPT}
+
+
 # --- logic -------------------------------------------------------------------------------
 
 
@@ -221,14 +249,7 @@ def missing_logic(
     if external_passes:
         has_pred |= pop["has_external_pred"]
         has_succ |= pop["has_external_succ"]
-    start_ids, finish_ids = _project_ends(ctx)
-    exempt_mask = {
-        "started": pop["is_started"],
-        "start_milestone": pop["is_start_milestone"],
-        "finish_milestone": pop["is_milestone"] & ~pop["is_start_milestone"],
-        "project_start": pop["task_code"].isin(start_ids),
-        "project_finish": pop["task_code"].isin(finish_ids),
-    }
+    exempt_mask = _exempt_masks(pop, *_project_ends(ctx))
     for k in pred_exempt:
         has_pred |= exempt_mask[k]
     for k in succ_exempt:
