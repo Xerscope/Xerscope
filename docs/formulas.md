@@ -165,9 +165,9 @@ float and duration thresholds in working days of the activity's calendar.
 | Id | Name | Population | Found | Unit | Target | Tests |
 |---|---|---|---|---|---|---|
 | DCMA-01 | Logic | not complete, not LOE | no predecessor / no successor as P6-01 (external links count) except that only activities with no predecessor and the earliest `start` among them pass the predecessor side, and only activities with no successor and the latest `finish` among them pass the successor side (computed over all activities, complete included); plus dangling start: has predecessors but none FS/SS, not started, no external predecessor, not project start; dangling finish: has successors but none FS/FF, no external successor, not project finish | % | <= 5% | test_rules: test_dcma_logic_counts_dangling_and_exempts_only_project_ends, test_dangling_start_and_finish_rule; Reference |
-| DCMA-02 | Leads | links `succ_incomplete` | `lag_hr < 0` | count | <= 0 | test_lead_long_lag_and_fs_share; Reference |
-| DCMA-03 | Lags | links `succ_incomplete` | `lag_hr > 0` | % | <= 5% | test_link_populations_differ; Reference |
-| DCMA-04 | Relationship types | links `succ_incomplete` | value = `100 × FS / links` | % | >= 90% | test_lead_long_lag_and_fs_share; Reference |
+| DCMA-02 | Leads | links `succ_incomplete`, successor not LOE, not milestone (PAM 200.1 §4.0) | `lag_hr < 0` | count | <= 0 | test_lead_long_lag_and_fs_share; Reference |
+| DCMA-03 | Lags | links `succ_incomplete`, successor not LOE, not milestone (PAM 200.1 §4.0) | `lag_hr > 0` | % | <= 5% | test_link_populations_differ; Reference |
+| DCMA-04 | Relationship types | links `succ_incomplete`, successor not LOE, not milestone (PAM 200.1 §4.0) | value = `100 × FS / links` | % | >= 90% | test_lead_long_lag_and_fs_share; Reference |
 | DCMA-05 | Hard constraints | not complete, not LOE | `cstr_type` or `cstr_type2` in {CS_MSO, CS_MSOB, CS_MEO, CS_MEOB, CS_MANDSTART, CS_MANDFIN}; no started exemption | % | <= 5% | test_constraint_sets_differ_between_p6_and_dcma; Reference |
 | DCMA-06 | High float | not complete, not LOE | `total_float_d > 44` | % | <= 5% | test_float_threshold_in_hours_vs_working_days; Reference |
 | DCMA-07 | Negative float | not complete, not LOE | `total_float_d < 0` | count | <= 0 | Reference |

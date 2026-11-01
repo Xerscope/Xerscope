@@ -141,7 +141,9 @@ def _without(t: pd.DataFrame, dd, exclude: list[str]) -> pd.DataFrame:
     return t[~mask]
 
 
-def link_population(ctx: AnalysisContext, population: str, exclude_loe: bool = False) -> pd.DataFrame:
+def link_population(
+    ctx: AnalysisContext, population: str, exclude_loe: bool = False, exclude: Names = ()
+) -> pd.DataFrame:
     s = ctx.snapshot
     t = s.activities.set_index("task_code")
     r = s.relationships.copy()
@@ -153,6 +155,11 @@ def link_population(ctx: AnalysisContext, population: str, exclude_loe: bool = F
         r = r[~(pred_done & succ_done)]
     elif population == "succ_incomplete":
         r = r[~succ_done]
+    if exclude:
+        # DCMA PAM 200.1 section 4.0 reading: a link counts when its successor is a retained
+        # task; the predecessor may itself be excluded (a link out of a milestone counts).
+        kept = _without(s.activities, s.data_date, list(exclude))
+        r = r[r["succ_code"].isin(kept["task_code"])]
     if exclude_loe:
         loe = t["is_loe"]
         r = r[
@@ -285,13 +292,14 @@ def lag(
     unit: Literal["hours", "days"] = "hours",
     links: LinkPop = "succ_incomplete",
     exclude_loe: bool = False,
+    exclude: Names = (),
 ) -> RuleOutput:
     """Relationships whose lag compares to ``value`` with ``op`` (<, >, <=, >=).
 
     Negative = lead (``op = "<"``, value 0); positive lag (``">"``, 0); long lag
     (``">"``, 352 hours). ``unit``: hours, or days on the lag calendar.
     """
-    r = link_population(ctx, links, exclude_loe)
+    r = link_population(ctx, links, exclude_loe, exclude)
     col = {"hours": "lag_hr", "days": "lag_d"}[unit]
     ops = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
     bad = r[ops[op](r[col].fillna(0), value)]
@@ -300,10 +308,14 @@ def lag(
 
 @rule("relationship_type", "%")
 def relationship_type(
-    ctx, type: Literal["FS", "SS", "FF", "SF"] = "FS", links: LinkPop = "succ_incomplete", exclude_loe: bool = False
+    ctx,
+    type: Literal["FS", "SS", "FF", "SF"] = "FS",
+    links: LinkPop = "succ_incomplete",
+    exclude_loe: bool = False,
+    exclude: Names = (),
 ) -> RuleOutput:
     """Share of relationships of ``type`` (value), listing the others."""
-    r = link_population(ctx, links, exclude_loe)
+    r = link_population(ctx, links, exclude_loe, exclude)
     ok = r["type"] == type
     share = 100.0 * ok.sum() / len(r) if len(r) else None
     mix = ", ".join(f"{k} {v}" for k, v in r["type"].value_counts().items())

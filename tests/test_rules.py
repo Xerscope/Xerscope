@@ -6,7 +6,7 @@ or exemption would silently shift a result.
 
 import pandas as pd
 import pytest
-from rulekit import STANDARDS, codes, links, run
+from rulekit import STANDARDS, codes, counts, links, run
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
@@ -166,6 +166,38 @@ def test_lead_long_lag_and_fs_share():
     fs = run(DCMA, "DCMA-04", LINKS)  # D2->A FS, A->B FS, D1->B FF
     assert (fs.numerator, fs.denominator) == (2, 3)
     assert fs.value == pytest.approx(200 / 3)
+
+
+def test_dcma_02_03_04_follow_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.2: "the number of logic links with a lead (negative lag) in
+    predecessor relationships for incomplete tasks"; 4.3: "the number of lags in predecessor logic
+    relationships for incomplete tasks"; 4.4: "a count of incomplete tasks containing each type of
+    logic link".
+
+    4.0 excludes completed tasks, LOE, subprojects and milestones, so a link counts when its
+    successor is a retained task. A link whose predecessor is a milestone still counts (M->C).
+    """
+    s = snap(
+        [done("D1"), done("D2"), todo("A"), todo("B"), todo("C"), todo("M", task_type="TT_FinMile")],
+        [
+            ("D1", "D2", "FS", 16),  # out: successor complete
+            ("D2", "A", "FS", 400),  # in: lag
+            ("A", "D1", "SS", 8),  # out: successor complete
+            ("A", "B", "FS", -8),  # in: lead
+            ("D1", "B", "FF", 352),  # in: lag, not FS
+            ("B", "M", "FS", 8),  # out: successor is a milestone
+            ("M", "C", "FS", 8),  # in: predecessor milestone still counts
+        ],
+    )
+    leads = run(DCMA, "DCMA-02", s)
+    assert links(leads) == [("A", "B")]
+    assert counts(leads) == (1, 4)
+    lags = run(DCMA, "DCMA-03", s)
+    assert links(lags) == [("D1", "B"), ("D2", "A"), ("M", "C")]
+    assert counts(lags) == (3, 4)
+    fs = run(DCMA, "DCMA-04", s)
+    assert links(fs) == [("D1", "B")]  # the only link that is not FS
+    assert counts(fs) == (3, 4)
 
 
 # --- constraints, float, durations ------------------------------------------------------------
