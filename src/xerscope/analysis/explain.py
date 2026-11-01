@@ -117,10 +117,15 @@ def _show(value) -> str:
     return str(value)
 
 
+def _exclude_line(rule: str, exclude: list[str]) -> str:
+    what = ", ".join(EXCLUDE_TEXT.get(k, k) for k in exclude)
+    return f"Relationships whose successor is excluded: {what}." if rule in LINK_RULES else f"Excludes: {what}."
+
+
 def _population(rule: str, p: dict) -> list[str]:
     out = []
     if p.get("exclude"):
-        out.append("Excludes: " + ", ".join(EXCLUDE_TEXT.get(k, k) for k in p["exclude"]) + ".")
+        out.append(_exclude_line(rule, p["exclude"]))
     if p.get("pred_exempt"):
         out.append("No predecessor required for: " + ", ".join(EXEMPT_TEXT.get(k, k) for k in p["pred_exempt"]) + ".")
     if p.get("succ_exempt"):

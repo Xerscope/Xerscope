@@ -6,7 +6,7 @@
 # Population: incomplete activities, excluding LOE and milestones (PAM 200.1 section 4.0; WBS
 # summary always), except the checks that need finished work: invalid dates (09, which keeps a
 # task completed on or after the data date), missed tasks (11) and BEI (14).
-# Relationships: those into incomplete work. Durations and float in working days.
+# Relationships: those into incomplete, non-LOE, non-milestone work. Durations and float in working days.
 # Calibrated against xerlock's published DCMA result on its sample schedule
 # (tests/reference/expected.py): every count there is reproduced except where the pamphlet
 # differs from xerlock (DCMA-01, 05, 06, 07 exclude milestones, PAM 200.1 section 4.0; DCMA-01
@@ -36,7 +36,8 @@ description = "Relationships with a negative lag"
 rule = "lag"
 unit = "count"
 target = "<= 0"
-params = { op = "<", value = 0, links = "succ_incomplete" }
+params = { op = "<", value = 0, links = "succ_incomplete", exclude = ["loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.2: logic links with a lead (negative lag) in predecessor relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-03"
@@ -44,7 +45,8 @@ name = "Lags"
 description = "Relationships with a positive lag"
 rule = "lag"
 target = "<= 5%"
-params = { op = ">", value = 0, links = "succ_incomplete" }
+params = { op = ">", value = 0, links = "succ_incomplete", exclude = ["loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.3: lags in predecessor logic relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-04"
@@ -52,7 +54,8 @@ name = "Relationship types"
 description = "Share of Finish-to-Start relationships"
 rule = "relationship_type"
 target = ">= 90%"
-params = { type = "FS", links = "succ_incomplete" }
+params = { type = "FS", links = "succ_incomplete", exclude = ["loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.4: a count of incomplete tasks containing each type of logic link; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-05"

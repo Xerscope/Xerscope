@@ -49,6 +49,13 @@ def test_parameters_show_standard_and_defaults(results):
     assert any("Excludes: milestones" in line for line in explain(late).population)
 
 
+def test_link_rules_word_exclusions_on_the_successor():
+    from xerscope.analysis.explain import _population
+
+    lines = _population("lag", {"exclude": ["loe", "milestones"], "links": "succ_incomplete"})
+    assert "Relationships whose successor is excluded: level of effort, milestones." in lines
+
+
 def test_relationship_checks_say_relationships(results):
     lags = next(r for r in results if r.metric.id == "P6-08")
     e = explain(lags)
