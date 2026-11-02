@@ -30,6 +30,15 @@ hand-made schedule per difference.
 ## P6 Check Schedule (P6 Professional 24: 17 checks)
 
 Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 101393).
+
+**Baseline for P6-12 and P6-13: choose "Planned dates in each file (target_*)".** P6's "BL Project
+Start / Finish" are the Planned Start / Finish of the project baseline, and when the project is its
+own baseline they are the file's own planned dates. P6 moves the planned dates of a not-started
+activity with the schedule and freezes them when the activity starts, so only activities in progress
+(or finished) can drift from them. Checked against a P6 Professional report (3,408 activities, data
+date 25-Oct-26): with this choice Late Activities gives the same 51 activities with the same finish
+variance (to the hour) and BEI 808 / 3,143; with the project's own current dates or another baseline
+file it does not.
 Populations from the P6 Professional 24 help of the Check Schedule dialog
 ([101248](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)); where it is
 silent, from the P6 EPPM help of each report section (pages 46277–46291), which differs in
