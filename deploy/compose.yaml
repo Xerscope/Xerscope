@@ -15,6 +15,9 @@
 #   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
 #   memory cap, default 2g), XERSCOPE_UID and XERSCOPE_GID (the account the app runs as,
 #   default 65532). Nothing in this folder is edited.
+# No logging: block: Container Manager's Log tab shows only the Docker daemon's default
+# driver (Synology sets its own), and an explicit driver, json-file or local, leaves the tab
+# empty for that container. The log stays on the NAS either way.
 # Limits keep the stack from starving the NAS it shares: a memory and a PID cap per
 # container (on a kernel without those cgroups Docker drops the limit with a warning, the
 # stack still starts) and bounded tmpfs. No CPU quota: Docker refuses to create a
@@ -30,10 +33,6 @@
 # owned by root, the container's user, so it is writable without the capabilities this file
 # drops (a bind-mounted host folder belongs to a host user, and root without DAC_OVERRIDE
 # cannot write there). Removing the volume makes a new node, which needs a new key.
-x-bounded-log: &bounded-log                         # json-file, the driver Container Manager's Log tab reads (it
-  driver: json-file                                 # shows nothing for "local"), rotated: the default grows
-  options: { max-size: "5m", max-file: "2" }        # without limit on the NAS
-
 services:
   tailscale:
     image: tailscale/tailscale:v1.104.4
@@ -58,7 +57,6 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
     pids_limit: 128
-    logging: *bounded-log
     restart: unless-stopped
 
   caddy:
@@ -85,7 +83,6 @@ services:
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
     pids_limit: 128
-    logging: *bounded-log
     restart: unless-stopped
 
   xerscope:
@@ -117,7 +114,6 @@ services:
     mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
                                                     # past the cap the kernel kills the app alone and Docker restarts it
     pids_limit: 256
-    logging: *bounded-log                           # a traceback can quote a schedule value: kept on the NAS, bounded
     restart: unless-stopped
 
 volumes:
