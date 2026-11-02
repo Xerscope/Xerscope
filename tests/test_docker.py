@@ -164,3 +164,17 @@ def test_base_images_pinned_by_digest():
     df = (ROOT / "Dockerfile").read_text()
     froms = re.findall(r"^FROM (\S+)", df, re.M)
     assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
+
+
+def test_caddy_scan_exceptions_are_dated_and_reasoned():
+    """Each Trivy exception for the Caddy image names its CVE, why it is not reachable here, and an expiry."""
+    import datetime
+
+    text = (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()
+    entries = re.findall(r"- id: (\S+)\n\s+statement: (.+)\n\s+expired_at: (\d{4}-\d{2}-\d{2})", text)
+    assert entries and len(entries) == text.count("- id:"), entries
+    for cve, statement, expiry in entries:
+        assert cve.startswith(("CVE-", "GHSA-")) and len(statement) > 20, cve
+        datetime.date.fromisoformat(expiry)
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert wf.count("trivyignores:") == 1 and "trivyignores: deploy/caddy.trivyignore.yaml" in wf
