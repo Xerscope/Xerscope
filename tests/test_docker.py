@@ -38,17 +38,23 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "- tailscale-state:/var/lib/tailscale" in compose and "./tailscale-state" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     assert "basic_auth" in caddy and "reverse_proxy app:8501" in caddy and "auto_https off" in caddy
-    assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
+    assert "trusted_proxies static 127.0.0.1/32" in caddy  # the visitor's IP, trusted from tailscaled's loopback only
     # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
     # rewrite the config, basic_auth included) must not exist
     assert "admin off" in caddy
     env = (ROOT / "deploy" / ".env.example").read_text()
     assert "XERSCOPE_PASSWORD_HASH='$" in env  # unquoted, Compose interpolates the $ of a bcrypt hash
+    # each wrong password costs the NAS one bcrypt run, without CPU quota: cost 10, not Caddy's 14
+    assert "'$2a$10$...'" in env and "--bcrypt-cost 10" in env
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    for text in (env, wf, (ROOT / "docs" / "deploy.md").read_text(), (ROOT / "README.md").read_text()):
+        assert "hash-password --plaintext" not in text  # the default cost is 14
     serve = (ROOT / "deploy" / "tailscale-serve.json").read_text()
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
     assert '"/"' in serve  # the secret prefix is Caddy's job (XERSCOPE_PATH), serve.json is not edited
     assert "handle_path /{$XERSCOPE_PATH}/*" in caddy and "respond 404" in caddy  # 404 before auth elsewhere
-    assert "request>uri replace" in caddy and "resp_headers>Location delete" in caddy  # no prefix in the log
+    assert "request>uri regexp {$XERSCOPE_PATH} <prefix>" in caddy  # no prefix in the log, the rest of the path kept
+    assert "resp_headers>Location regexp {$XERSCOPE_PATH} <prefix>" in caddy
 
 
 def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_environment():
@@ -111,7 +117,8 @@ def test_caddy_error_log_redacts_the_secret_prefix():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     global_block = caddy[caddy.index("{") : caddy.index(":8080")]
     assert "log {" in global_block and "format filter" in global_block
-    assert "request>uri replace REDACTED" in global_block and "request>headers>Referer delete" in global_block
+    assert "request>uri regexp {$XERSCOPE_PATH} <prefix>" in global_block
+    assert "request>headers>Referer regexp {$XERSCOPE_PATH} <prefix>" in global_block
 
 
 def test_tailscale_key_is_optional_once_the_node_exists():
@@ -143,7 +150,7 @@ def test_remote_app_settings_reach_streamlit():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert 'XERSCOPE_DATA_LOCKED: "true"' in c
     env = dict(re.findall(r"^\s+(STREAMLIT_[A-Z_]+): \"?([^\"\s#]+)", c, re.M))
-    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "64", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
+    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "1", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
     app_dir = ROOT / "src" / "xerscope" / "app"  # `xerscope app` runs Streamlit from here (cli.py)
     shown = subprocess.run(
         [sys.executable, "-m", "streamlit", "config", "show"],
@@ -153,15 +160,64 @@ def test_remote_app_settings_reach_streamlit():
         text=True,
         check=True,
     ).stdout
-    assert "\nmaxUploadSize = 64\n" in shown and '\nshowErrorDetails = "none"\n' in shown
+    assert "\nmaxUploadSize = 1\n" in shown and '\nshowErrorDetails = "none"\n' in shown
 
 
 def test_caddy_security_headers_and_their_ci_check():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
-    for line in ("Referrer-Policy no-referrer", "X-Content-Type-Options nosniff", "frame-ancestors 'self'"):
+    headers = (
+        "Referrer-Policy no-referrer",
+        "X-Content-Type-Options nosniff",
+        "frame-ancestors 'self'",
+        'Strict-Transport-Security "max-age=31536000"',
+        'Permissions-Policy "camera=(), microphone=(), geolocation=()"',
+    )
+    for line in headers:
         assert line in caddy, line
+    block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
+    # a deletion defers the whole block, and deferred ops skip the 401: -Server has its own directive
+    assert "-Server" not in block and "    header -Server" in caddy
+    assert "header @download >Cache-Control no-store" in caddy and "@download path /media/*" in caddy
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job runs Caddy and reads them
     assert "docker compose up -d tailscale caddy" in wf and "frame-ancestors 'self'" in wf
+    assert "Strict-Transport-Security" in wf and "Permissions-Policy" in wf
+
+
+def test_caddy_logs_keep_no_token_and_no_project_code():
+    """Streamlit's WebSocket subprotocol carries its XSRF token and session id, and the tables
+    export is named after the project code: both logs drop them."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    assert caddy.count("request>headers>Sec-Websocket-Protocol delete") == 2  # error log and access log
+    assert "resp_headers>Content-Disposition delete" in caddy
+
+
+def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
+    """The stock caddy image has no rate_limit: deploy/ runs Caddy built from deploy/caddy/Dockerfile,
+    published by image.yml next to the app (ghcr and the Docker Hub copy), at one Caddy release
+    and one caddy-ratelimit commit."""
+    df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
+    froms = re.findall(r"^FROM (\S+)", df, re.M)
+    assert len(froms) == 2 and froms[0].startswith("caddy:") and froms[0].endswith("-builder"), froms
+    assert froms[0].removesuffix("-builder") == froms[1]  # builder and runtime: the same Caddy release
+    assert re.search(r"^FROM caddy:\d+\.\d+\.\d+", df, re.M)  # a release, not a moving 2 or latest
+    module = re.search(r"--with github\.com/mholt/caddy-ratelimit@(\S+)", df).group(1)
+    # a tag or a pseudo-version (one commit), which Go checks against sum.golang.org; never a branch
+    assert re.fullmatch(r"v\d+\.\d+\.\d+(-0\.\d{14}-[0-9a-f]{12})?", module), module
+    assert "grep -qx http.handlers.rate_limit" in df  # the build fails without the module
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "image: ${XERSCOPE_CADDY_IMAGE:-ghcr.io/xerscope/xerscope-caddy:" in compose
+    assert "XERSCOPE_CADDY_IMAGE=<docker-hub-login>/xerscope-caddy" in (ROOT / "deploy" / ".env.example").read_text()
+    image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    assert "{ image: xerscope-caddy, context: deploy/caddy, file: deploy/caddy/Dockerfile }" in image
+    assert "docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }}" in image  # the Docker Hub fallback
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    assert "directory: /deploy/caddy" in dependabot
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    block = caddy[caddy.index("rate_limit {") : caddy.index("basic_auth {")]
+    assert "key {client_ip}" in block  # the visitor; {remote_host} is tailscaled's 127.0.0.1 for everyone
+    assert "ipv6_prefix 64" in block and "events 120" in block and "window 1m" in block
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'docker build -t "$XERSCOPE_CADDY_IMAGE" caddy' in wf and "HTTP/1.1 429" in wf
 
 
 def test_base_images_pinned_by_digest():

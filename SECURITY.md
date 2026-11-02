@@ -9,10 +9,10 @@ within a week.
 In scope: the parser and the analyses (a crafted `.xer` must not do more than fail to
 load), the web app's defaults (`localhost` only, XSRF on, telemetry off), the container
 image (non-root, read-only root filesystem; port 8501 published on 127.0.0.1 only in `compose.yaml`, none in `deploy/`) and the remote stack in
-`deploy/` (Tailscale Funnel, Caddy basic auth, the secret URL prefix).
+`deploy/` (Tailscale Funnel, Caddy basic auth and rate limit, the secret URL prefix).
 
 Out of scope: the security of a deployment that changes those defaults, the Tailscale and
-Caddy software themselves, and the third-party schedules the tests download.
+Caddy software themselves (the `caddy-ratelimit` module included), and the third-party schedules the tests download.
 
 Dependencies are pinned in `uv.lock` with version floors in `pyproject.toml`; Dependabot
 and a weekly `pip-audit` run in CI.

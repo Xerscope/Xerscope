@@ -117,22 +117,23 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       Hub login step now conditioned on a job-level secret; the tailscale state folder is
       a bind mount writable by uid 65532; the hardened sidecars (`cap_drop`, Caddy
       read-only) still start.
-- [ ] The password prompt has no rate limit (stock Caddy has no such module): a Caddy
-      build with `caddy-ratelimit`, or Tailscale Serve with a tailnet login once the viewer
-      can install Tailscale.
-- [ ] Sidecar images in `deploy/compose.yaml` pinned by tag, not digest (the Dockerfile's
-      are): `docker buildx imagetools inspect` the tailscale and caddy tags once and write
-      `@sha256:` after each (Dependabot keeps tag and digest together).
+- [ ] Tailscale in `deploy/compose.yaml` and the two caddy bases of `deploy/caddy/Dockerfile`
+      pinned by tag, not digest (the app's Dockerfile is): `docker buildx imagetools
+      inspect` each tag once and write `@sha256:` after it (Dependabot keeps tag and digest
+      together).
+- [ ] Verify on the NAS: the `xerscope-caddy` image starts with the capabilities of
+      `deploy/compose.yaml` (cap_drop ALL + NET_BIND_SERVICE, like the stock image), and a
+      wrong password in a loop from a PC ends in 429.
 - [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
       none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
       Caddy release that fixes them, or renew each entry with its reason.
 - [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
       GitHub's Docker, not on the Synology kernel) and the memory caps applied (no
       `does not support memory limit` in the Project's build output).
-- [ ] Password hash in bcrypt (cost 14); OWASP's Password Storage Cheat Sheet now puts
-      argon2id first. Caddy 2.11.6 takes `basic_auth argon2id`, its defaults are OWASP's
-      46 MiB, t=1, p=1 variant; switching needs a new hash in `.env` and room in Caddy's
-      memory cap for parallel attempts at 46 MiB each.
+- [ ] Password hash in bcrypt cost 10 (docs/deploy.md §3: each wrong password costs the NAS
+      one hash run). OWASP's Password Storage Cheat Sheet puts argon2id first; Caddy 2.11.6
+      takes `basic_auth argon2id`, but its default 46 MiB per attempt turns the CPU cost
+      into a memory cost against Caddy's 256 MB cap.
 - [ ] One login shared by every visitor: one `basic_auth` account each would let one be
       revoked, and told apart in the log, alone.
 - [ ] The published image carries no SBOM attestation and no signature: `sbom: true` and a

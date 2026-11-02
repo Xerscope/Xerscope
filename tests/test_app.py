@@ -196,17 +196,25 @@ def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
     assert any("xerscope sample" in i.value for i in at.info)
 
 
-def test_locked_folder_gives_the_visitor_no_path_field(sample_dir, monkeypatch):
-    """Remote deployment (XERSCOPE_DATA_LOCKED): the server's folder is read, no field can point elsewhere."""
+def _with_baseline_file_choice(at):
+    at.sidebar.selectbox(key="bl_choice").set_value(at.sidebar.selectbox(key="bl_choice").options[0]).run()
+    _ok(at)
+    return at
+
+
+def test_locked_folder_gives_the_visitor_no_path_field_and_no_upload(sample_dir, monkeypatch):
+    """Remote deployment (XERSCOPE_DATA_LOCKED): the server's folder is read, no field can point
+    elsewhere and nothing can be uploaded (exports and baseline: each parsed one costs memory)."""
     monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
-    at = _run(sample_dir, monkeypatch)
-    _ok(at)
+    at = _with_baseline_file_choice(_run(sample_dir, monkeypatch))
     assert "…or read a folder" in [t.label for t in at.sidebar.text_input]
+    assert len(at.get("file_uploader")) == 2  # exports and baseline
     monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
-    at = _run(sample_dir, monkeypatch)
-    _ok(at)
+    at = _with_baseline_file_choice(_run(sample_dir, monkeypatch))
     assert "…or read a folder" not in [t.label for t in at.sidebar.text_input]
+    assert len(at.get("file_uploader")) == 0
     assert any("8 snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert any("No baseline file on this server" in c.value for c in at.sidebar.caption)
 
 
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):

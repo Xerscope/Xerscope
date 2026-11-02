@@ -18,7 +18,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
-  - package-ecosystem: docker-compose   # image: lines (tailscale, caddy) in the Funnel stack
+  - package-ecosystem: docker-compose   # image: lines (tailscale) in the Funnel stack
     directory: /deploy
     schedule:
       interval: weekly
+  - package-ecosystem: docker           # the two caddy tags of the Funnel stack's Caddy image; the
+    directory: /deploy/caddy            # caddy-ratelimit version in its RUN line is bumped by hand
+    schedule:
+      interval: weekly
+    groups:
+      caddy:
+        patterns: ["caddy"]             # builder and runtime move together: one Caddy release
