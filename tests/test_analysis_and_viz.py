@@ -27,7 +27,9 @@ def test_planted_lead_open_end_and_missing_resources(store):
 
 
 def test_planted_constraints(store):
-    assert flagged(run(store, 0, "DCMA-05")) == {"X4050"}  # finish on or before: hard for DCMA
+    # X4050 is a finish milestone with finish-on-or-before: hard for DCMA, but PAM 200.1 4.0
+    # excludes milestones from the analysis, so DCMA-05 no longer flags it (P6-03 below still does).
+    assert flagged(run(store, 0, "DCMA-05")) == set()
     assert flagged(run(store, 0, "P6-02")) == set()  # P6: only mandatory dates are hard
     assert flagged(run(store, 0, "P6-03")) == {"P2040", "X4050"}
 

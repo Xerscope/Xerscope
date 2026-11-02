@@ -1,4 +1,7 @@
+import pytest
+
 from xerscope.export import write_tables, zip_tables
+from xerscope.xer import load_snapshot, xer_files
 
 
 def test_sorted_by_data_date(store):
@@ -53,6 +56,14 @@ def test_folder_scan_accepts_upper_case_extension(tmp_path):
     assert [p.name for p in xer_files(tmp_path)] == ["a.xer", "b.XER"]
 
 
+def test_load_snapshot_from_bytes_equals_from_path(sample_dir):
+
+    path = xer_files(sample_dir)[0]
+    a, b = load_snapshot(path), load_snapshot(path.read_bytes(), name=path.name)
+    assert len(a.tasks) == len(b.tasks)
+    assert a.data_date == b.data_date
+
+
 def test_one_snapshot_per_data_date(store):
     from dataclasses import replace
 
@@ -63,3 +74,27 @@ def test_one_snapshot_per_data_date(store):
     assert len(s) == 8 and s.first.source == store.first.source
     first = store.first
     assert s.warnings == [f"zz-again.xer: same data date as {first.source} ({first.data_date:%Y-%m-%d}), skipped"]
+
+
+def test_store_column_lists_exist_in_snapshot_frames(store):
+    from xerscope import store as store_mod
+    from xerscope.xer import model
+
+    for cols, declared in (
+        (store_mod.HISTORY_COLS, [*model.TASK_COLS, *model.LABOR_COLS]),
+        (store_mod.REL_COLS, model.REL_COLS_MODEL),
+        (store_mod.ASSIGNMENT_COLS, model.ASSIGNMENT_COLS_MODEL),
+    ):
+        assert set(cols) <= set(declared), set(cols) - set(declared)
+    s = store.latest
+    for cols, frame in (
+        (store_mod.HISTORY_COLS, s.activities),
+        (store_mod.REL_COLS, s.relationships),
+        (store_mod.ASSIGNMENT_COLS, s.assignments),
+    ):
+        assert set(cols) <= set(frame.columns), set(cols) - set(frame.columns)
+
+
+def test_load_snapshot_from_bytes_needs_a_name():
+    with pytest.raises(ValueError, match="file name"):
+        load_snapshot(b"ERMHDR\t24.12")

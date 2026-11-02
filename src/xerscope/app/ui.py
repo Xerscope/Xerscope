@@ -55,8 +55,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "free_float_d": ("Free float (d)", "d1"),
     "remaining_d": ("Remaining (d)", "d1"),
     "original_d": ("Original (d)", "d1"),
-    "finish_variance_wd": ("Finish variance (wd)", "signed"),
-    "finish_var_wd": ("Δ finish vs BL (wd)", "signed"),
+    "finish_variance_wd": ("Δ finish vs BL (wd)", "signed"),
     "constraint": ("Constraint", "text"),
     "constraint2": ("Secondary constraint", "text"),
     "reason": ("Reason", "wide"),
@@ -151,18 +150,18 @@ def md_text(value: object) -> str:
     return str(value).translate(_MD_SPECIAL)
 
 
-def header(title: str, store=None, snap=None, baseline=None, lead: str = "") -> None:
+def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "") -> None:
     """Page title, then one context line: project · data date · baseline, then an optional lead."""
     st.title(title)
-    bits = []
+    parts = []
     if store is not None:
-        bits.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
-    if snap is not None:
-        bits.append(f"Data date **{snap.data_date:%d %b %Y}**")
+        parts.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
+    if snapshot is not None:
+        parts.append(f"Data date **{snapshot.data_date:%d %b %Y}**")
     if baseline is not None:
-        bits.append(f"Baseline **{md_text(baseline.label)}**")
-    if bits:
-        st.markdown(" · ".join(bits))
+        parts.append(f"Baseline **{md_text(baseline.label)}**")
+    if parts:
+        st.markdown(" · ".join(parts))
     if lead:
         st.caption(lead)
 
@@ -184,55 +183,51 @@ def section(title: str, caption: str = "") -> None:
         st.caption(caption)
 
 
-def _has_time(s: pd.Series) -> bool:
-    v = pd.to_datetime(s, errors="coerce").dropna()
-    return bool(len(v)) and bool(((v.dt.hour != 0) | (v.dt.minute != 0)).any())
+def _has_time(values: pd.Series) -> bool:
+    timestamps = pd.to_datetime(values, errors="coerce").dropna()
+    return bool(len(timestamps)) and bool(((timestamps.dt.hour != 0) | (timestamps.dt.minute != 0)).any())
 
 
-def column_config(df: pd.DataFrame, overrides: dict | None = None) -> dict:
-    cfg: dict = {}
-    for c in df.columns:
-        label, kind = COLUMNS.get(c, (str(c).replace("_", " ").capitalize(), ""))
-        if not kind:
-            s = df[c]
-            kind = (
-                "datetime"
-                if pd.api.types.is_datetime64_any_dtype(s)
-                else "bool"
-                if pd.api.types.is_bool_dtype(s)
-                else "d1"
-                if pd.api.types.is_float_dtype(s)
-                else "int"
-                if pd.api.types.is_integer_dtype(s)
-                else "text"
-            )
-        if kind in ("date", "datetime"):
-            fmt = "YYYY-MM-DD HH:mm" if kind == "datetime" and _has_time(df[c]) else "YYYY-MM-DD"
-            cfg[c] = st.column_config.DatetimeColumn(label, format=fmt)
-        elif kind == "d1":
-            cfg[c] = st.column_config.NumberColumn(label, format="%.1f")
-        elif kind == "d2":
-            cfg[c] = st.column_config.NumberColumn(label, format="%.2f")
-        elif kind == "h0":
-            cfg[c] = st.column_config.NumberColumn(label, format="%,.0f")
-        elif kind == "pct":
-            cfg[c] = st.column_config.NumberColumn(label, format="%.1f %%")
-        elif kind == "signed":
-            cfg[c] = st.column_config.NumberColumn(label, format="%+.1f")
-        elif kind == "int":
-            cfg[c] = st.column_config.NumberColumn(label, format="%d")
-        elif kind == "bool":
-            cfg[c] = st.column_config.CheckboxColumn(label)
-        elif kind == "wide":
-            cfg[c] = st.column_config.TextColumn(label, width="medium")
-        else:
-            cfg[c] = st.column_config.TextColumn(label)
-    cfg.update(overrides or {})
-    return cfg
+def _infer_kind(values: pd.Series) -> str:
+    """Display kind of a column that is not in COLUMNS, from its dtype."""
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return "datetime"
+    if pd.api.types.is_bool_dtype(values):
+        return "bool"
+    if pd.api.types.is_float_dtype(values):
+        return "d1"
+    if pd.api.types.is_integer_dtype(values):
+        return "int"
+    return "text"
+
+
+NUMBER_FORMATS = {"d1": "%.1f", "d2": "%.2f", "h0": "%,.0f", "pct": "%.1f %%", "signed": "%+.1f", "int": "%d"}
+
+
+def _column_for(label: str, kind: str, values: pd.Series):
+    if kind in ("date", "datetime"):
+        with_time = kind == "datetime" and _has_time(values)
+        return st.column_config.DatetimeColumn(label, format="YYYY-MM-DD HH:mm" if with_time else "YYYY-MM-DD")
+    if kind in NUMBER_FORMATS:
+        return st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind])
+    if kind == "bool":
+        return st.column_config.CheckboxColumn(label)
+    if kind == "wide":
+        return st.column_config.TextColumn(label, width="medium")
+    return st.column_config.TextColumn(label)
+
+
+def column_config(frame: pd.DataFrame, overrides: dict | None = None) -> dict:
+    config: dict = {}
+    for column in frame.columns:
+        label, kind = COLUMNS.get(column, (str(column).replace("_", " ").capitalize(), ""))
+        config[column] = _column_for(label, kind or _infer_kind(frame[column]), frame[column])
+    config.update(overrides or {})
+    return config
 
 
 def table(
-    df: pd.DataFrame,
+    frame: pd.DataFrame,
     *,
     columns: Iterable[str] | None = None,
     max_height: int = 560,
@@ -245,31 +240,48 @@ def table(
     ``status`` names a pass/fail column to show as coloured labels.
     """
     if columns is not None:
-        df = df[[c for c in columns if c in df.columns]]
-    df = df.drop(columns=[c for c in HIDDEN if c in df.columns])
+        frame = frame[[column for column in columns if column in frame.columns]]
+    frame = frame.drop(columns=[column for column in HIDDEN if column in frame.columns])
     kwargs.setdefault("hide_index", True)
-    kwargs.setdefault("height", min(33 * len(df) + 38, max_height))
+    kwargs.setdefault("height", min(33 * len(frame) + 38, max_height))
     kwargs.setdefault("width", "stretch")
-    cfg = column_config(df, overrides)
-    data = status_style(df, status) if status else df
-    return st.dataframe(data, column_config=cfg, **kwargs)
+    config = column_config(frame, overrides)
+    data = status_style(frame, status) if status else frame
+    return st.dataframe(data, column_config=config, **kwargs)
 
 
-def csv_button(df: pd.DataFrame, filename: str, label: str = "Download CSV", key: str | None = None) -> None:
+def csv_button(frame: pd.DataFrame, filename: str, label: str = "Download CSV", key: str | None = None) -> None:
     st.download_button(
-        label, df.to_csv(index=False).encode("utf-8-sig"), filename, "text/csv", icon=":material/download:", key=key
+        label, frame.to_csv(index=False).encode("utf-8-sig"), filename, "text/csv", icon=":material/download:", key=key
     )
 
 
-def status_style(df: pd.DataFrame, column: str = "status"):
+def _status_label(status: str) -> str:
+    return STATUS_LABEL.get(status, status)
+
+
+def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler colouring the status column (pass green, fail red…), labels capitalised."""
-    out = df.copy()
-    out[column] = out[column].map(lambda s: STATUS_LABEL.get(s, s))
-    reverse = {v: STATUS_COLOUR[k] for k, v in STATUS_LABEL.items()}
-    return out.style.map(lambda v: f"color: {reverse.get(v, 'inherit')}; font-weight: 600", subset=[column])
+    out = frame.copy()
+    out[column] = out[column].map(_status_label)
+    colour_of_label = {label: STATUS_COLOUR[status] for status, label in STATUS_LABEL.items()}
+
+    def colour_cell(label: str) -> str:
+        return f"color: {colour_of_label.get(label, 'inherit')}; font-weight: 600"
+
+    return out.style.map(colour_cell, subset=[column])
 
 
 def fold(text) -> str:
     """Lower-case without accents, for searching: fold("Béton") == "beton"."""
     text = "" if pd.isna(text) else str(text)
-    return "".join(ch for ch in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(ch))
+    return "".join(
+        character for character in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(character)
+    )
+
+
+def search_mask(frame: pd.DataFrame, columns: Sequence[str], text: str) -> pd.Series:
+    """Rows where any of ``columns`` contains ``text``, ignoring case and accents."""
+    needle = fold(text)
+    hits = {column: frame[column].map(fold).str.contains(needle, regex=False) for column in columns}
+    return pd.DataFrame(hits).any(axis=1)

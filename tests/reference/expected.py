@@ -63,23 +63,33 @@ XERLOCK_PROJECT = {
 # DCMA results for the analysis step. Sources: docs/screenshots/health-check.png
 # (each count re-derived from the pinned file and found consistent), tests/test_standards.py
 # (CPLI hand calculation) and tests/test_cpm_sample.py (critical path test).
-# Population: incomplete activities; baseline = planned (target_*) dates in the file.
+# Population: incomplete activities, milestones and LOE out (PAM 200.1 4.0); baseline = planned
+# (target_*) dates in the file. Counts are the pamphlet's; a note gives xerlock's when it differs.
 DCMA = {
     "DCMA-01": {
-        "numerator": 2,
-        "note": "xerlock counts SS/SF-only 'dangling' finishes "
-        "(MEP-060, FIT-010) and exempts the project finish "
-        "milestone; a plain no-successor count gives 1 (MS-030)",
+        "numerator": 0,
+        "note": "xerlock: 2. xerlock counts SS-only dangling finishes and exempts the finish milestone; "
+        "PAM 200.1 4.1 counts open ends of incomplete non-milestone tasks",
     },
     "DCMA-02": {"numerator": 0},
     "DCMA-03": {"numerator": 4},
-    "DCMA-04": {"numerator": 25, "denominator": 27},  # 25 FS + 2 SS into incomplete work
-    "DCMA-05": {"numerator": 2},  # CX-040, MS-030: CS_MEOB (finish on or before)
+    "DCMA-04": {
+        "numerator": 23,
+        "denominator": 25,
+        "note": "xerlock: 25/27 (counts the 2 links into milestones; PAM 200.1 4.0 excludes milestones)",
+    },
+    "DCMA-05": {
+        "numerator": 1,  # CX-040: CS_MEOB (finish on or before)
+        "note": "xerlock: 2 (counts the milestone MS-030; PAM 200.1 4.0 excludes milestones)",
+    },
     "DCMA-06": {"numerator": 5},
     "DCMA-07": {"numerator": 0},
     "DCMA-08": {"numerator": 2},  # MEP-010, MEP-020
     "DCMA-09": {"numerator": 0},
-    "DCMA-11": {"numerator": 4},
+    "DCMA-11": {
+        "numerator": 3,
+        "note": "xerlock: 4 (counts a milestone; PAM 200.1 4.0 excludes milestones)",
+    },
     "DCMA-12": {"status": "pass"},  # +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27
     # xerlock states 1.0 (CPL 1080 h = 135 wd x 8 h, TF 0). The file has no Must Finish By
     # date, so that float is 0 by construction and the index says nothing: n/a here

@@ -1,0 +1,407 @@
+"""DCMA EVMS Compliance Metrics v8.0 (21 Aug 2025), Guideline 6 schedule tests: one function per metric.
+
+Each docstring quotes the specification sheet. Threshold and pass/fail come from
+``standards/decm.toml``; the function only decides what is flagged.
+
+DECM vocabulary -> P6: status date = data date; incomplete = no actual finish; summary task
+= WBS summary activity. "On or before the status date" (the end of the reported period) is
+"before the data date" in P6, whose data date is the first instant of remaining work.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+from ...xer.model import CONSTRAINT, forecast_dates
+from ..baseline import Baseline
+from ..cpm import critical_path_test
+from ..populations import (
+    constrained_by,
+    finish_driver,
+    flagged_activities,
+    flagged_relationships,
+    open_activities,
+    with_baseline,
+    without_level_of_effort,
+)
+from ..rules import RuleOutput, rule
+
+HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]  # Primavera's hard constraints
+HIGH_FLOAT_DAYS = 44
+CRITICAL_PATH_SLIP_DAYS = 600
+STATUS_PERIOD_DAYS = 28  # monthly updates: an update is compared with the one a period older
+RIDING_WINDOW_WD = 3
+RIDING_REMAINING_TOLERANCE_WD = 2
+
+
+def _join_sorted(codes: pd.Series) -> str:
+    return ", ".join(sorted(codes))
+
+
+def _update_a_period_ago(context):
+    """The latest update at least one status period older than the snapshot, or None."""
+    store, snapshot = context.store, context.snapshot
+    if store is None or snapshot.data_date is None:
+        return None
+    cutoff = snapshot.data_date - pd.Timedelta(days=STATUS_PERIOD_DAYS)
+    earlier = [update for update in store if update.data_date is not None and update.data_date <= cutoff]
+    return earlier[-1] if earlier else None
+
+
+# --- logic ---------------------------------------------------------------------------------
+
+
+@rule("decm_06a204b_dangling_logic", "%")
+def decm_06a204b_dangling_logic(context) -> RuleOutput:
+    """Open start or open finish.
+    Counts: with an open start or finish / incomplete tasks and milestones
+    Excludes: completed activities, level of effort.
+    Open start: a task whose predecessors are only FF / SF, or none; a milestone with no predecessor.
+        Open finish: a task whose successors are only SS / SF, or none; a milestone with no successor.
+    Exempt: the earliest baseline start (start test) and the latest baseline finish (finish test); the
+        planned dates when no baseline is loaded.
+
+    06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no
+    successor (milestone: none); earliest baseline start / latest baseline finish exempt
+    """
+    tasks = without_level_of_effort(open_activities(context))
+    relationships = context.snapshot.relationships
+    codes = tasks["task_code"]
+    external_predecessor, external_successor = tasks["has_external_pred"], tasks["has_external_succ"]
+    has_predecessor = codes.isin(relationships["succ_code"]) | external_predecessor
+    has_successor = codes.isin(relationships["pred_code"]) | external_successor
+    start_driving = relationships["type"].isin(["FS", "SS"])
+    finish_driving = relationships["type"].isin(["FS", "FF"])
+    driven_start = codes.isin(relationships.loc[start_driving, "succ_code"]) | external_predecessor
+    drives_finish = codes.isin(relationships.loc[finish_driving, "pred_code"]) | external_successor
+    milestone = tasks["is_milestone"]
+    open_start = (~has_predecessor).where(milestone, ~driven_start)
+    open_finish = (~has_successor).where(milestone, ~drives_finish)
+
+    # The project's first start and last finish are looked up over every activity, finished ones
+    # included: once the first activity is done, the next one in line is not the project start.
+    frame = (context.baseline or Baseline.planned(context.snapshot)).frame
+    is_first = codes.map(frame["bl_start"]) == frame["bl_start"].min()
+    is_last = codes.map(frame["bl_finish"]) == frame["bl_finish"].max()
+    open_start &= ~is_first.fillna(False).astype(bool)
+    open_finish &= ~is_last.fillna(False).astype(bool)
+
+    reason = pd.Series("", index=tasks.index)
+    reason = reason.mask(open_finish, "open finish (no FS/FF successor)")
+    reason = reason.mask(open_start, "open start (no FS/SS predecessor)")
+    reason = reason.mask(open_start & open_finish, "open start and finish")
+    flagged = tasks[reason != ""]
+    note = "first/last by baseline dates"
+    if context.baseline is None:
+        note = "no baseline: first/last by planned dates"
+    return RuleOutput(flagged_activities(flagged, reason=reason[flagged.index]), len(flagged), len(tasks), note=note)
+
+
+@rule("decm_06a205a_lags", "%")
+def decm_06a205a_lags(context) -> RuleOutput:
+    """Activities with a lag on a predecessor.
+    Counts: with a lag / incomplete tasks and milestones
+    Excludes: completed activities.
+    Level of effort is kept; only positive lags count, leads (negative lags) do not.
+
+    06A205a: X/Y <= 10%; the sheet does not say whether LOE count or whether leads (negative lags) do:
+    LOE kept, positive lags only
+    """
+    tasks = open_activities(context)
+    relationships = context.snapshot.relationships
+    lags = relationships[relationships["lag_hr"].fillna(0) > 0]
+    lagged_from = lags.groupby("succ_code")["pred_code"].agg(_join_sorted)
+    flagged = tasks[tasks["task_code"].isin(lagged_from.index)]
+    return RuleOutput(
+        flagged_activities(flagged, lagged_from=flagged["task_code"].map(lagged_from)), len(flagged), len(tasks)
+    )
+
+
+@rule("decm_06a208a_summary_logic", "count")
+def decm_06a208a_summary_logic(context) -> RuleOutput:
+    """Summary activities carrying logic.
+    Counts: with logic /
+
+    06A208a: X = 0 (summary activities are the P6 WBS summaries; flagged when they have a predecessor or
+    a successor)
+    """
+    tasks = context.snapshot.tasks
+    summaries = tasks[tasks["is_wbs_summary"]]
+    relationships = context.snapshot.relationships
+    has_logic = summaries["task_code"].isin(relationships["pred_code"]) | summaries["task_code"].isin(
+        relationships["succ_code"]
+    )
+    flagged = summaries[has_logic]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(summaries))
+
+
+@rule("decm_06a209a_hard_constraints", "%")
+def decm_06a209a_hard_constraints(context) -> RuleOutput:
+    """Constrained activities.
+    Counts: constrained / checked
+    Excludes: completed activities.
+    Constraint types: Mandatory start, Mandatory finish.
+
+    06A209a: X/Y = 0%; Primavera P6 hard constraints = Mandatory Start, Mandatory Finish; the sheet does
+    not say whether LOE count: kept
+    """
+    tasks = open_activities(context)
+    hard = tasks[constrained_by(tasks, HARD_CONSTRAINTS, ignore_started_starts=False)]
+    return RuleOutput(flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks))
+
+
+@rule("decm_06a210a_loe_successors", "%")
+def decm_06a210a_loe_successors(context) -> RuleOutput:
+    """LOE driving discrete work.
+    Counts: with a discrete successor / incomplete LOE
+    Excludes: completed activities.
+
+    06A210a: X = 0 (incomplete LOE activities with a discrete, non-LOE, successor)
+    """
+    open_tasks = open_activities(context)
+    open_loe = open_tasks[open_tasks["is_loe"]]
+    is_loe_by_code = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")["is_loe"]
+    relationships = context.snapshot.relationships
+    from_loe = relationships[
+        relationships["pred_code"].isin(open_loe["task_code"]) & relationships["succ_code"].isin(is_loe_by_code.index)
+    ]
+    successor_is_loe = from_loe["succ_code"].map(is_loe_by_code).fillna(False).astype(bool)
+    drives = from_loe[~successor_is_loe].groupby("pred_code")["succ_code"].agg(_join_sorted)
+    flagged = open_loe[open_loe["task_code"].isin(drives.index)]
+    return RuleOutput(flagged_activities(flagged, drives=flagged["task_code"].map(drives)), len(flagged), len(open_loe))
+
+
+@rule("decm_06a211a_high_float", "%")
+def decm_06a211a_high_float(context) -> RuleOutput:
+    """Activities outside the float limit.
+    Counts: flagged / checked
+    Excludes: completed activities, level of effort.
+    Flagged when total float > 44 days.
+
+    06A211a: the population DECM samples; X/Y <= 20% of the sample with inadequate rationale. The
+    rationale review is yours
+    """
+    tasks = without_level_of_effort(open_activities(context))
+    high_float = tasks[tasks["total_float_d"] > HIGH_FLOAT_DAYS]
+    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks))
+
+
+@rule("decm_06a212a_out_of_sequence", "count", links=True)
+def decm_06a212a_out_of_sequence(context) -> RuleOutput:
+    """Progressed out of logic sequence.
+    Counts: out of sequence /
+    Relationships counted: relationships into an incomplete successor.
+    Actual dates first, else forecast; lags are not added, so a lead that lets work overlap is also an
+        out-of-sequence condition.
+
+    06A212a: X = 0; FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) <
+    P.FS
+    """
+    tasks = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    successors = open_activities(context).drop_duplicates("task_code").set_index("task_code")
+    relationships = context.snapshot.relationships
+    into_open = relationships["succ_code"].isin(successors.index)
+    links = relationships[into_open & relationships["pred_code"].isin(tasks.index)]
+    if successors.empty:
+        return RuleOutput(flagged_relationships(links), 0, 0)
+    pred_start, pred_finish = links["pred_code"].map(tasks["start"]), links["pred_code"].map(tasks["finish"])
+    succ_start, succ_finish = links["succ_code"].map(successors["start"]), links["succ_code"].map(successors["finish"])
+    kind = links["type"]
+    out_of_sequence = (
+        ((kind == "FS") & (succ_start < pred_finish))
+        | ((kind == "SS") & (succ_start < pred_start))
+        | ((kind == "FF") & (succ_finish < pred_finish))
+        | ((kind == "SF") & (succ_finish < pred_start))
+    )
+    flagged = links[out_of_sequence]
+    names = tasks["task_name"]
+    shown = flagged_relationships(
+        flagged.assign(pred_name=flagged["pred_code"].map(names), succ_name=flagged["succ_code"].map(names))
+    )
+    shown = shown.assign(
+        pred_start=pred_start[flagged.index],
+        pred_finish=pred_finish[flagged.index],
+        succ_start=succ_start[flagged.index],
+        succ_finish=succ_finish[flagged.index],
+    )
+    return RuleOutput(shown, len(flagged), len(links))
+
+
+# --- critical path -------------------------------------------------------------------------
+
+
+@rule("decm_06a401a_critical_path_test", "pass/fail")
+def decm_06a401a_critical_path_test(context) -> RuleOutput:
+    """Add 600 working days to the first open critical activity; the finish must slip as much.
+
+    06A401a: a delay on the critical path moves the project finish by the same amount; the schedule's
+    critical path is the longest path (constraint method)
+    """
+    if context.snapshot.data_date is None:
+        return RuleOutput(note="no data date")
+    if finish_driver(context) is None:
+        return RuleOutput(note="no remaining work")
+    test = critical_path_test(context.snapshot, CRITICAL_PATH_SLIP_DAYS)
+    return RuleOutput(value=1.0 if test.passed else 0.0, note=test.note, flagged=pd.DataFrame(test.blocking))
+
+
+# --- baseline, forecast and actual dates ---------------------------------------------------
+
+
+@rule("decm_06a501a_missing_baseline", "%", needs_baseline=True)
+def decm_06a501a_missing_baseline(context) -> RuleOutput:
+    """Missing a baseline start or finish.
+    Counts: without baseline dates / tasks and milestones
+
+    06A501a: X/Y <= 5%, summaries excluded
+    """
+    tasks = with_baseline(context, context.snapshot.activities)
+    flagged = tasks[tasks["bl_start"].isna() | tasks["bl_finish"].isna()]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks))
+
+
+def _actual_date_changed(context, column: str) -> RuleOutput:
+    """Activities whose actual date differs from the one the update a status period older reported.
+
+    X = activities whose date differs from (or was removed since) the earlier one; Y = activities with
+    that date in either update, so a removed date counts on both sides and the share never exceeds 100 %.
+    """
+    previous = _update_a_period_ago(context)
+    if previous is None:
+        return RuleOutput(note=f"needs an update {STATUS_PERIOD_DAYS} days older")
+    now = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    before = previous.activities.drop_duplicates("task_code").set_index("task_code")[column].dropna()
+    common = before.index.intersection(now.index)
+    changed = [code for code in common if now.at[code, column] != before[code]]
+    flagged = now.loc[changed].reset_index()
+    shown = flagged_activities(flagged, previous=[before[code] for code in changed], now=flagged.get(column))
+    dated = set(now.index[now[column].notna()]) | set(common)
+    return RuleOutput(shown, len(flagged), len(dated))
+
+
+@rule("decm_06a504a_actual_starts_changed", "%")
+def decm_06a504a_actual_starts_changed(context) -> RuleOutput:
+    """Actual date changed since the previous update.
+    Counts: changed / with that actual date
+
+    06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28
+    days) earlier
+    """
+    return _actual_date_changed(context, "act_start_date")
+
+
+@rule("decm_06a504b_actual_finishes_changed", "%")
+def decm_06a504b_actual_finishes_changed(context) -> RuleOutput:
+    """Actual date changed since the previous update.
+    Counts: changed / with that actual date
+
+    06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period (28
+    days) earlier
+    """
+    return _actual_date_changed(context, "act_end_date")
+
+
+@rule("decm_06a505a_in_progress_without_actual_start", "%")
+def decm_06a505a_in_progress_without_actual_start(context) -> RuleOutput:
+    """Progress without the matching actual.
+    Counts: without the actual date / showing that progress
+
+    06A505a: X/Y <= 5% (% complete > 0, or status in progress, but no actual start)
+    """
+    tasks = context.snapshot.activities
+    in_progress = tasks[(tasks["pct_complete"] > 0) | tasks["is_started"]]
+    flagged = in_progress[in_progress["act_start_date"].isna()]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(in_progress))
+
+
+@rule("decm_06a505b_complete_without_actual_finish", "%")
+def decm_06a505b_complete_without_actual_finish(context) -> RuleOutput:
+    """Progress without the matching actual.
+    Counts: without the actual date / showing that progress
+
+    06A505b: X/Y <= 5% (100 % complete, or status complete, but no actual finish)
+    """
+    tasks = context.snapshot.activities
+    complete = tasks[(tasks["pct_complete"] >= 100) | tasks["is_complete"]]
+    flagged = complete[complete["act_end_date"].isna()]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(complete))
+
+
+@rule("decm_06a506a_actual_dates_after_status_date", "%")
+def decm_06a506a_actual_dates_after_status_date(context) -> RuleOutput:
+    """Progress dates on the wrong side of the data date.
+    Counts: with invalid dates / with an actual start
+
+    06A506a: X/Y <= 5%, Y = tasks with an actual start (an actual start or finish after the data date)
+    """
+    data_date = context.snapshot.data_date
+    if data_date is None:
+        return RuleOutput(note="no data date")
+    tasks = context.snapshot.activities
+    flagged = tasks[(tasks["act_start_date"] > data_date) | (tasks["act_end_date"] > data_date)]
+    started = int(tasks["act_start_date"].notna().sum())
+    return RuleOutput(flagged_activities(flagged, reason="actual after data date"), len(flagged), started)
+
+
+@rule("decm_06a506b_forecast_dates_before_status_date", "%")
+def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
+    """Progress dates on the wrong side of the data date.
+    Counts: with invalid dates / checked
+
+    06A506b: X = 0, forecast on or before the status date (= before P6's data date); an incomplete
+    activity is flagged when its start (not started) or its finish is before the data date
+    """
+    data_date = context.snapshot.data_date
+    if data_date is None:
+        return RuleOutput(note="no data date")
+    tasks = context.snapshot.activities
+    early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
+    not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
+    forecast_before = ~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date))
+    flagged = tasks[forecast_before.fillna(False).astype(bool)]
+    return RuleOutput(flagged_activities(flagged, reason="forecast before data date"), len(flagged), len(tasks))
+
+
+def _start_near_data_date(snapshot, activities: pd.DataFrame) -> pd.Series:
+    """True where the forecast start is within the riding window after the data date."""
+    data_dates = pd.Series(snapshot.data_date, index=activities.index)
+    hours = snapshot.work_hours(activities["clndr_id"], data_dates, activities["start"])
+    return (hours >= 0) & (hours <= RIDING_WINDOW_WD * activities["hours_per_day"])
+
+
+@rule("decm_06a506c_riding_status_date", "%")
+def decm_06a506c_riding_status_date(context) -> RuleOutput:
+    """Forecasts riding the status date.
+    Counts: riding the status date / checked
+    Excludes: completed activities, level of effort.
+
+    06A506c: X/Y <= 1%; start within 3 wd of the status date in both updates, or remaining duration
+    within +/- 2 wd. Compared with the latest update at least one status period (28 days) older: a
+    not-started activity rides when its forecast start is within 3 working days of the data date in both;
+    a started one when its remaining duration moved by no more than 2 working days (its finish slides
+    with the data date)
+    """
+    previous = _update_a_period_ago(context)
+    if previous is None:
+        return RuleOutput(note=f"needs an update {STATUS_PERIOD_DAYS} days older")
+    previous_tasks = previous.activities.drop_duplicates("task_code").set_index("task_code")
+    tasks = without_level_of_effort(open_activities(context))
+    tasks = tasks[tasks["task_code"].isin(previous_tasks.index)]
+    before = previous_tasks.loc[tasks["task_code"]].set_index(tasks.index)
+
+    start_rides = _start_near_data_date(context.snapshot, tasks) & ~tasks["is_started"]
+    start_rode = _start_near_data_date(previous, before) & ~before["is_started"]
+    remaining_change = (tasks["remaining_d"] - before["remaining_d"]).abs()
+    both_started = tasks["is_started"] & before["is_started"]
+    finish_rides = both_started & (remaining_change <= RIDING_REMAINING_TOLERANCE_WD)
+    riding = ((start_rides & start_rode) | finish_rides).fillna(False).astype(bool)
+
+    reason = pd.Series(f"start within {RIDING_WINDOW_WD} wd of the data date in both updates", index=tasks.index)
+    reason = reason.mask(finish_rides, "remaining duration unchanged")
+    flagged = tasks[riding]
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason[riding]),
+        len(flagged),
+        len(tasks),
+        note=f"vs update of {previous.data_date:%Y-%m-%d}",
+    )

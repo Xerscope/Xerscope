@@ -27,61 +27,66 @@ from ..xer import Snapshot
 
 def milestone_codes(store: SnapshotStore) -> list[str]:
     """Milestones present in any update, ordered by their latest forecast."""
-    h = store.history
-    ms = h[h["is_milestone"]].sort_values("snapshot_idx").groupby("task_code").last()
-    return ms.sort_values("finish").index.tolist()
+    history = store.history
+    milestones = history[history["is_milestone"]].sort_values("snapshot_idx").groupby("task_code").last()
+    return milestones.sort_values("finish").index.tolist()
 
 
 def milestone_trend(store: SnapshotStore, codes: list[str] | None = None) -> pd.DataFrame:
-    h = store.history
+    history = store.history
     codes = milestone_codes(store) if codes is None else codes
-    m = h[h["task_code"].isin(codes)].copy()
+    milestones = history[history["task_code"].isin(codes)].copy()
     # a start milestone's date is its start; anything else is tracked on its finish
-    m["forecast"] = np.where(m["is_start_milestone"], m["start"], m["finish"])
-    m["forecast"] = pd.to_datetime(m["forecast"])
-    cols = ["snapshot_idx", "data_date", "task_code", "task_name", "forecast", "is_complete", "is_milestone"]
-    return m[cols].sort_values(["task_code", "snapshot_idx"]).reset_index(drop=True)
+    milestones["forecast"] = np.where(milestones["is_start_milestone"], milestones["start"], milestones["finish"])
+    milestones["forecast"] = pd.to_datetime(milestones["forecast"])
+    columns = ["snapshot_idx", "data_date", "task_code", "task_name", "forecast", "is_complete", "is_milestone"]
+    return milestones[columns].sort_values(["task_code", "snapshot_idx"]).reset_index(drop=True)
 
 
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
     """First vs latest forecast per milestone, in working days of its own calendar (latest update)."""
     latest = store.latest
-    cal_of = latest.activities.drop_duplicates("task_code").set_index("task_code")["clndr_id"]
-    g = trend.groupby("task_code")
-    out = pd.DataFrame(
+    calendar_ids = latest.activities.drop_duplicates("task_code").set_index("task_code")["clndr_id"]
+    by_milestone = trend.groupby("task_code")
+    slips = pd.DataFrame(
         {
-            "task_name": g["task_name"].last(),
-            "first_forecast": g["forecast"].first(),
-            "latest_forecast": g["forecast"].last(),
-            "complete": g["is_complete"].last(),
-            "updates": g.size(),
+            "task_name": by_milestone["task_name"].last(),
+            "first_forecast": by_milestone["forecast"].first(),
+            "latest_forecast": by_milestone["forecast"].last(),
+            "complete": by_milestone["is_complete"].last(),
+            "updates": by_milestone.size(),
         }
     )
-    cal = {c: latest.calendar(cal_of.get(c)) for c in out.index}
-    out["slip_wd"] = [
-        round(cal[c].working_days(a, b), 1)
-        for c, a, b in zip(out.index, out["first_forecast"], out["latest_forecast"], strict=True)
+    calendars = {code: latest.calendar(calendar_ids.get(code)) for code in slips.index}
+    slips["slip_wd"] = [
+        round(calendars[code].working_days(first, latest_forecast), 1)
+        for code, first, latest_forecast in zip(
+            slips.index, slips["first_forecast"], slips["latest_forecast"], strict=True
+        )
     ]
-    last2 = trend.sort_values("snapshot_idx").groupby("task_code").tail(2).groupby("task_code")["forecast"]
-    prev = last2.first()
-    out["last_week_wd"] = [
-        round(cal[c].working_days(prev[c], out.loc[c, "latest_forecast"]), 1) if c in prev.index else 0.0
-        for c in out.index
+    # the forecast one update before the latest (the first of each milestone's last two)
+    last_two = trend.sort_values("snapshot_idx").groupby("task_code").tail(2).groupby("task_code")["forecast"]
+    previous_forecast = last_two.first()
+    slips["last_week_wd"] = [
+        round(calendars[code].working_days(previous_forecast[code], slips.loc[code, "latest_forecast"]), 1)
+        if code in previous_forecast.index
+        else 0.0
+        for code in slips.index
     ]
-    return out.reset_index().sort_values("latest_forecast")
+    return slips.reset_index().sort_values("latest_forecast")
 
 
 # --- PPC --------------------------------------------------------------------------------------
 
 
-def committed(prev: Snapshot, cur: Snapshot, include_milestones: bool = True) -> pd.DataFrame:
+def committed(previous: Snapshot, current: Snapshot, include_milestones: bool = True) -> pd.DataFrame:
     """Activities W-1 forecast to finish before W's data date, with their outcome in W."""
-    p = prev.activities
-    p = p[~p["is_complete"] & ~p["is_loe"]]
+    open_work = previous.activities
+    open_work = open_work[~open_work["is_complete"] & ~open_work["is_loe"]]
     if not include_milestones:
-        p = p[~p["is_milestone"]]
-    plan = p[p["finish"] < cur.data_date][["task_code", "task_name", "wbs_code", "finish"]]
-    now = cur.activities.drop_duplicates("task_code").set_index("task_code")
+        open_work = open_work[~open_work["is_milestone"]]
+    plan = open_work[open_work["finish"] < current.data_date][["task_code", "task_name", "wbs_code", "finish"]]
+    now = current.activities.drop_duplicates("task_code").set_index("task_code")
     plan = plan.rename(columns={"finish": "planned_finish"})
     plan["in_update"] = plan["task_code"].isin(now.index)
     plan["completed"] = plan["task_code"].map(now["is_complete"]).fillna(False).astype(bool)
@@ -93,18 +98,18 @@ def committed(prev: Snapshot, cur: Snapshot, include_milestones: bool = True) ->
 
 def ppc_series(store: SnapshotStore, include_milestones: bool = True) -> pd.DataFrame:
     rows = []
-    for i in range(1, len(store)):
-        c = committed(store[i - 1], store[i], include_milestones)
-        c = c[c["in_update"]]  # deleted activities are scope changes, not missed commitments
-        n, done = len(c), int(c["completed"].sum())
+    for index in range(1, len(store)):
+        commitments = committed(store[index - 1], store[index], include_milestones)
+        commitments = commitments[commitments["in_update"]]  # deleted activities are scope changes, not misses
+        planned, done = len(commitments), int(commitments["completed"].sum())
         rows.append(
             {
-                "snapshot_idx": i,
-                "week_start": store[i - 1].data_date,
-                "data_date": store[i].data_date,
-                "committed": n,
+                "snapshot_idx": index,
+                "week_start": store[index - 1].data_date,
+                "data_date": store[index].data_date,
+                "committed": planned,
                 "completed": done,
-                "ppc": 100 * done / n if n else None,
+                "ppc": 100 * done / planned if planned else None,
             }
         )
     return pd.DataFrame(rows, columns=["snapshot_idx", "week_start", "data_date", "committed", "completed", "ppc"])
@@ -113,7 +118,7 @@ def ppc_series(store: SnapshotStore, include_milestones: bool = True) -> pd.Data
 # --- progress delta --------------------------------------------------------------------------
 
 
-def progress_delta(prev: Snapshot, cur: Snapshot, baseline=None) -> pd.DataFrame:
+def progress_delta(previous: Snapshot, current: Snapshot, baseline=None) -> pd.DataFrame:
     """Per activity: % complete W-1, W, change; earned labour hours this week.
 
     With a ``baseline``, earned hours are the week's EV gain, as on the Earned value page:
@@ -123,44 +128,45 @@ def progress_delta(prev: Snapshot, cur: Snapshot, baseline=None) -> pd.DataFrame
     """
     from .evm import performance_pct
 
-    a = prev.activities.drop_duplicates("task_code").set_index("task_code")
-    b = cur.activities.drop_duplicates("task_code").set_index("task_code")
-    cols = ["task_name", "wbs_code", "wbs_l1", "status", "labor_budget_hr", "labor_actual_hr"]
+    before = previous.activities.drop_duplicates("task_code").set_index("task_code")
+    after = current.activities.drop_duplicates("task_code").set_index("task_code")
+    columns = ["task_name", "wbs_code", "wbs_l1", "status", "labor_budget_hr", "labor_actual_hr"]
     # every activity of either update: one deleted since W-1 gives its earned hours back,
     # so the week's figures still add up to the change in EV
-    ids = b.index.union(a.index, sort=False)
-    df = b[cols].reindex(ids)
-    gone = ~ids.isin(b.index)
-    if gone.any():
-        df.loc[gone, cols] = a.loc[ids[gone], cols].to_numpy()
-        df.loc[gone, "status"] = "deleted"
-    df["pct_prev"] = a["pct_complete"].reindex(ids).fillna(0.0)
-    df["pct_now"] = b["pct_complete"].reindex(ids).fillna(0.0)
-    df["pct_delta"] = (df["pct_now"] - df["pct_prev"]).round(2)
+    codes = after.index.union(before.index, sort=False)
+    delta = after[columns].reindex(codes)
+    deleted = ~codes.isin(after.index)
+    if deleted.any():
+        delta.loc[deleted, columns] = before.loc[codes[deleted], columns].to_numpy()
+        delta.loc[deleted, "status"] = "deleted"
+    delta["pct_prev"] = before["pct_complete"].reindex(codes).fillna(0.0)
+    delta["pct_now"] = after["pct_complete"].reindex(codes).fillna(0.0)
+    delta["pct_delta"] = (delta["pct_now"] - delta["pct_prev"]).round(2)
     if baseline is None:
-        df["earned_hr_week"] = df["labor_budget_hr"] * df["pct_delta"] / 100
+        delta["earned_hr_week"] = delta["labor_budget_hr"] * delta["pct_delta"] / 100
     else:
-        bl_hr = baseline.frame["ev_labor_hr"].reindex(ids).fillna(0.0)
-        gain = performance_pct(cur)["perf_pct"].reindex(ids).fillna(0.0) - performance_pct(prev)["perf_pct"].reindex(
-            ids
-        ).fillna(0.0)
-        df["labor_budget_hr"] = bl_hr  # the weights EV uses
-        df["earned_hr_week"] = bl_hr * gain / 100
-    df["actual_hr_week"] = b["labor_actual_hr"].reindex(ids).fillna(0.0) - a["labor_actual_hr"].reindex(ids).fillna(0.0)
-    df["new"] = ~ids.isin(a.index)
-    df["deleted"] = gone
-    return df.reset_index()
+        baseline_hours = baseline.frame["ev_labor_hr"].reindex(codes).fillna(0.0)
+        performance_now = performance_pct(current)["perf_pct"].reindex(codes).fillna(0.0)
+        performance_before = performance_pct(previous)["perf_pct"].reindex(codes).fillna(0.0)
+        delta["labor_budget_hr"] = baseline_hours  # the weights EV uses
+        delta["earned_hr_week"] = baseline_hours * (performance_now - performance_before) / 100
+    actual_now = after["labor_actual_hr"].reindex(codes).fillna(0.0)
+    delta["actual_hr_week"] = actual_now - before["labor_actual_hr"].reindex(codes).fillna(0.0)
+    delta["new"] = ~codes.isin(before.index)
+    delta["deleted"] = deleted
+    return delta.reset_index()
 
 
 def rollup_delta(delta: pd.DataFrame, by: str = "wbs_l1") -> pd.DataFrame:
     """Earned hours and %-points gained per group, weighted by budget hours."""
-    g = delta.groupby(by, sort=False)
+    groups = delta.groupby(by, sort=False)
+    progressed = (delta["pct_delta"] > 0).groupby(delta[by], sort=False).sum()
     out = pd.DataFrame(
         {
-            "budget_hr": g["labor_budget_hr"].sum(),
-            "earned_hr_week": g["earned_hr_week"].sum(),
-            "actual_hr_week": g["actual_hr_week"].sum(),
-            "activities_progressed": g["pct_delta"].apply(lambda s: int((s > 0).sum())),
+            "budget_hr": groups["labor_budget_hr"].sum(),
+            "earned_hr_week": groups["earned_hr_week"].sum(),
+            "actual_hr_week": groups["actual_hr_week"].sum(),
+            "activities_progressed": progressed,
         }
     )
     out["progress_pts"] = np.where(out["budget_hr"] > 0, 100 * out["earned_hr_week"] / out["budget_hr"], np.nan)
@@ -168,3 +174,11 @@ def rollup_delta(delta: pd.DataFrame, by: str = "wbs_l1") -> pd.DataFrame:
     total["progress_pts"] = 100 * total["earned_hr_week"] / total["budget_hr"] if total["budget_hr"] else np.nan
     out.loc["Project"] = total
     return out.reset_index().rename(columns={"index": by})
+
+
+def finish_shift_since_first(store: SnapshotStore) -> float | None:
+    """Working days (project calendar) the forecast finish moved since the first update; None if unknown."""
+    first, latest = store.first.finish_date, store.latest.finish_date
+    if len(store) < 2 or first is None or latest is None:
+        return None
+    return store.latest.calendar().working_days(first, latest)

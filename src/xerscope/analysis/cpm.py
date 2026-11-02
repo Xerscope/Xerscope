@@ -115,22 +115,22 @@ class Options:
             raise ValueError(f"progressed must be one of {PROGRESSED}")
 
     @classmethod
-    def from_snapshot(cls, snap: Snapshot) -> Options:
-        o = snap.options.get("sched", {}) or {}
+    def from_snapshot(cls, snapshot: Snapshot) -> Options:
+        sched_options = snapshot.options.get("sched", {}) or {}
 
         def flag(key, default):
-            v = o.get(key, "")
-            return default if v in ("", None) else v == "Y"
+            value = sched_options.get(key, "")
+            return default if value in ("", None) else value == "Y"
 
         return cls(
-            progressed=snap.options.get("progressed", "retained_logic"),
-            float_type=o.get("sched_float_type") or "FT_FF",
-            lag_calendar=snap.options.get("lag_calendar", "rcal_Successor"),
+            progressed=snapshot.options.get("progressed", "retained_logic"),
+            float_type=sched_options.get("sched_float_type") or "FT_FF",
+            lag_calendar=snapshot.options.get("lag_calendar", "rcal_Successor"),
             open_critical=flag("sched_open_critical_flag", False),
             lag_from_early_start=flag("sched_lag_early_start_flag", True),
             use_expected_finish=flag("sched_use_expect_end_flag", True),
-            must_finish_by=snap.options.get("must_finish_by"),
-            honor_external=(o.get("sched_outer_depend_type") or "SD_Both") == "SD_Both",
+            must_finish_by=snapshot.options.get("must_finish_by"),
+            honor_external=(sched_options.get("sched_outer_depend_type") or "SD_Both") == "SD_Both",
         )
 
 
@@ -146,56 +146,59 @@ class Schedule:
 class _Axes:
     """One TimeAxis per calendar, built once over the schedule's date range."""
 
-    def __init__(self, snap: Snapshot, first, last):
-        self.snap, self.first, self.last = snap, first, last
+    def __init__(self, snapshot: Snapshot, first, last):
+        self.snapshot, self.first, self.last = snapshot, first, last
         self._axes: dict[str, TimeAxis] = {}
 
-    def __getitem__(self, cal: WorkCalendar) -> TimeAxis:
-        key = cal.clndr_id or "__default__"
+    def __getitem__(self, calendar: WorkCalendar) -> TimeAxis:
+        key = calendar.clndr_id or "__default__"
         if key not in self._axes:
-            self._axes[key] = TimeAxis(cal, self.first, self.last)
+            self._axes[key] = TimeAxis(calendar, self.first, self.last)
         return self._axes[key]
 
     def of(self, clndr_id: str) -> TimeAxis:
-        return self[self.snap.calendar(clndr_id)]
+        return self[self.snapshot.calendar(clndr_id)]
 
 
-def _date_range(snap: Snapshot):
-    t = snap.activities
-    cols = [
-        c
-        for c in [
-            "early_start_date",
-            "early_end_date",
-            "late_start_date",
-            "late_end_date",
-            "act_start_date",
-            "act_end_date",
-            "cstr_date",
-            "cstr_date2",
-            "target_end_date",
-        ]
-        if c in t
+def _date_range(snapshot: Snapshot):
+    activities = snapshot.activities
+    date_columns = [
+        "early_start_date",
+        "early_end_date",
+        "late_start_date",
+        "late_end_date",
+        "act_start_date",
+        "act_end_date",
+        "cstr_date",
+        "cstr_date2",
+        "target_end_date",
     ]
-    stamps = pd.concat([t[c] for c in cols]).dropna()
-    lo = min([stamps.min()] + [x for x in [snap.data_date] if x is not None]) if len(stamps) else snap.data_date
-    hi = max([stamps.max()] + [x for x in [snap.data_date] if x is not None]) if len(stamps) else snap.data_date
-    return (lo - pd.Timedelta(days=60)).date(), (hi + pd.Timedelta(days=400)).date()
+    stamps = pd.concat([activities[column] for column in date_columns if column in activities]).dropna()
+    first, last = snapshot.data_date, snapshot.data_date
+    if len(stamps):
+        known_data_date = [] if snapshot.data_date is None else [snapshot.data_date]
+        first = min([stamps.min()] + known_data_date)
+        last = max([stamps.max()] + known_data_date)
+    # margins: before the earliest stored date (negative lags, constraints) and far past the
+    # last one, so the time axis covers everything the passes can reach
+    return (first - pd.Timedelta(days=60)).date(), (last + pd.Timedelta(days=400)).date()
 
 
-def schedule(snap: Snapshot, extra_hours: dict[str, float] | None = None, options: Options | None = None) -> Schedule:
+def schedule(
+    snapshot: Snapshot, extra_hours: dict[str, float] | None = None, options: Options | None = None
+) -> Schedule:
     """Recompute early/late dates and float of every activity of ``snap``.
 
     The plain recalculation (no extra delay, file options) is cached on the snapshot:
     the integrity check, the critical path test and the weekly history share it.
     """
     if not extra_hours and options is None:
-        cached = getattr(snap, "_xs_schedule", None)
+        cached = getattr(snapshot, "_xs_schedule", None)
         if cached is None:
-            cached = _schedule(snap, None, None)
-            object.__setattr__(snap, "_xs_schedule", cached)
+            cached = _schedule(snapshot, None, None)
+            object.__setattr__(snapshot, "_xs_schedule", cached)
         return cached
-    return _schedule(snap, extra_hours, options)
+    return _schedule(snapshot, extra_hours, options)
 
 
 @dataclass
@@ -204,14 +207,14 @@ class _Asg:
 
     taskrsrc_id: str
     rsrc: str
-    ax: TimeAxis
-    lag_m: float  # remaining assignment lag, minutes
-    dur_m: float  # remaining duration, minutes (None = the activity's)
+    axis: TimeAxis
+    lag_minutes: float  # remaining assignment lag, minutes
+    duration_minutes: float  # remaining duration, minutes (None = the activity's)
     driving: bool
 
 
-def _schedule(snap: Snapshot, extra_hours: dict[str, float] | None, options: Options | None) -> Schedule:
-    return _Run(snap, extra_hours or {}, options or Options.from_snapshot(snap)).result()
+def _schedule(snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None) -> Schedule:
+    return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot)).result()
 
 
 class _Run:
@@ -221,49 +224,59 @@ class _Run:
     are 10x faster than DataFrame lookups in the passes' inner loops.
     """
 
-    def __init__(self, snap: Snapshot, extra: dict[str, float], opt: Options):
-        self.snap, self.extra, self.opt = snap, extra, opt
+    def __init__(self, snapshot: Snapshot, extra_hours: dict[str, float], options: Options):
+        self.snapshot, self.extra_hours, self.options = snapshot, extra_hours, options
         # Nothing is scheduled before the data date, nor before the project's planned start
         # (P6 keeps the later of the two as the earliest start of remaining work).
         self.warnings: list[str] = []
-        known = [d for d in (snap.data_date, snap.planned_start) if d is not None]
+        known = [date for date in (snapshot.data_date, snapshot.planned_start) if date is not None]
         if not known:  # never scheduled: start from the earliest date any activity carries
-            a = snap.activities
-            cols = [c for c in ("act_start_date", "early_start_date", "target_start_date") if c in a]
-            stamps = pd.concat([a[c] for c in cols]).dropna() if cols else pd.Series(dtype="datetime64[ns]")
+            all_activities = snapshot.activities
+            date_columns = [
+                column
+                for column in ("act_start_date", "early_start_date", "target_start_date")
+                if column in all_activities
+            ]
+            stamps = (
+                pd.concat([all_activities[column] for column in date_columns]).dropna()
+                if date_columns
+                else pd.Series(dtype="datetime64[ns]")
+            )
             if stamps.empty:
                 raise ValueError("no data date, no planned start and no activity date: nothing to schedule from")
             known = [stamps.min()]
             self.warnings.append(
                 f"no data date or planned start: scheduled from the earliest activity date {known[0]:%Y-%m-%d %H:%M}"
             )
-        self.dd = max(known)
-        self.t = snap.activities.drop_duplicates("task_code").set_index("task_code")
-        self.axes = _Axes(snap, *_date_range(snap))
-        self.proj_cal = snap.calendar()
+        self.data_date = max(known)
+        self.activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+        self.axes = _Axes(snapshot, *_date_range(snapshot))
+        self.project_calendar = snapshot.calendar()
         self._network()
-        cols = [
+        input_columns = [
             "task_type", "status_code", "clndr_id", "remain_drtn_hr_cnt", "act_start_date", "act_end_date",
             "cstr_type", "cstr_date", "cstr_type2", "cstr_date2", "expect_end_date",
             "external_early_start_date", "external_late_end_date", "resume_date",
         ]  # fmt: skip
-        self.R = self.t[[c for c in cols if c in self.t]].to_dict("index")
-        self.cal_ax = {c: self.axes.of(self.R[c]["clndr_id"]) for c in self.t.index}
-        self.status = self.t["status_code"].to_dict()
+        self.inputs = self.activities[[column for column in input_columns if column in self.activities]].to_dict(
+            "index"
+        )
+        self.cal_ax = {code: self.axes.of(self.inputs[code]["clndr_id"]) for code in self.activities.index}
+        self.status = self.activities["status_code"].to_dict()
         self._assignments()
-        self.es: dict[str, pd.Timestamp] = {}
-        self.ef: dict[str, pd.Timestamp] = {}
-        self.rs: dict[str, pd.Timestamp] = {}  # start used by SS/SF successors (remaining start)
-        self.ls: dict[str, pd.Timestamp] = {}
-        self.lf: dict[str, pd.Timestamp] = {}
-        self.tf: dict[str, float] = {}
-        self.ff: dict[str, float] = {}
-        self.a_early: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}  # taskrsrc_id -> start, finish
-        self.a_dur: dict[str, float] = {}  # taskrsrc_id -> remaining minutes as placed (expected finish)
-        self.a_late: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
+        self.early_start: dict[str, pd.Timestamp] = {}
+        self.early_finish: dict[str, pd.Timestamp] = {}
+        self.remaining_start: dict[str, pd.Timestamp] = {}  # start used by SS/SF successors (remaining start)
+        self.late_start: dict[str, pd.Timestamp] = {}
+        self.late_finish: dict[str, pd.Timestamp] = {}
+        self.total_float_hr: dict[str, float] = {}
+        self.free_float_hr: dict[str, float] = {}
+        self.assignment_early: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}  # taskrsrc_id -> start, finish
+        self.assignment_minutes: dict[str, float] = {}  # taskrsrc_id -> remaining minutes as placed (expected finish)
+        self.assignment_late: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
         # Retained Logic: finished activities pass logic through (see pred_bounds)
-        self.retain = opt.progressed == "retained_logic"
-        self.dur_override: dict[str, float] = {}  # remaining minutes set by an expected finish
+        self.retain = options.progressed == "retained_logic"
+        self.duration_override: dict[str, float] = {}  # remaining minutes set by an expected finish
         self.carry: dict[str, pd.Timestamp] = {}  # finished activity -> early date it passes on
         self.lcarry: dict[str, pd.Timestamp] = {}  # finished activity -> late date it passes back
         self.external: set[str] = set()  # activities bounded by an external date
@@ -272,38 +285,38 @@ class _Run:
     # --- network ---------------------------------------------------------------------------
     def _network(self) -> None:
         """Relationships between scheduled activities, LOE links apart, topological order."""
-        t = self.t
-        self.is_loe = t["is_loe"].to_dict()
-        self.nodes = [c for c in t.index if not self.is_loe[c]]
-        self.loe_codes = [c for c in t.index if self.is_loe[c]]
+        activities = self.activities
+        self.is_loe = activities["is_loe"].to_dict()
+        self.nodes = [code for code in activities.index if not self.is_loe[code]]
+        self.loe_codes = [code for code in activities.index if self.is_loe[code]]
         node_set = set(self.nodes)
         self.preds: dict[str, list] = defaultdict(list)
         self.succs: dict[str, list] = defaultdict(list)
         self.loe_preds: dict[str, list] = defaultdict(list)
         self.loe_succs: dict[str, list] = defaultdict(list)
-        rel = self.snap.relationships[["pred_code", "succ_code", "type", "lag_hr"]]
-        self.linked_on = set(rel["pred_code"])  # has a successor of any kind (LOE, WBS summary included)
-        for p, s, typ, lag in rel.itertuples(index=False):
-            lag_m = float(lag or 0) * 60
-            if p in node_set and s in node_set:
-                self.preds[s].append((p, typ, lag_m))
-                self.succs[p].append((s, typ, lag_m))
-            elif s in t.index and self.is_loe.get(s, False) and p in node_set:
-                self.loe_preds[s].append((p, typ, lag_m))
-            elif p in t.index and self.is_loe.get(p, False) and s in node_set:
-                self.loe_succs[p].append((s, typ, lag_m))
-        indeg = dict.fromkeys(self.nodes, 0)
-        for s, links in self.preds.items():
-            indeg[s] = len(links)
-        queue = deque(c for c in self.nodes if indeg[c] == 0)
+        links = self.snapshot.relationships[["pred_code", "succ_code", "type", "lag_hr"]]
+        self.linked_on = set(links["pred_code"])  # has a successor of any kind (LOE, WBS summary included)
+        for predecessor, successor, link_type, lag in links.itertuples(index=False):
+            lag_minutes = float(lag or 0) * 60
+            if predecessor in node_set and successor in node_set:
+                self.preds[successor].append((predecessor, link_type, lag_minutes))
+                self.succs[predecessor].append((successor, link_type, lag_minutes))
+            elif successor in activities.index and self.is_loe.get(successor, False) and predecessor in node_set:
+                self.loe_preds[successor].append((predecessor, link_type, lag_minutes))
+            elif predecessor in activities.index and self.is_loe.get(predecessor, False) and successor in node_set:
+                self.loe_succs[predecessor].append((successor, link_type, lag_minutes))
+        in_degree = dict.fromkeys(self.nodes, 0)
+        for successor, links in self.preds.items():
+            in_degree[successor] = len(links)
+        queue = deque(code for code in self.nodes if in_degree[code] == 0)
         order: list[str] = []
         while queue:
-            c = queue.popleft()
-            order.append(c)
-            for s, _, _ in self.succs[c]:
-                indeg[s] -= 1
-                if indeg[s] == 0:
-                    queue.append(s)
+            code = queue.popleft()
+            order.append(code)
+            for successor, _, _ in self.succs[code]:
+                in_degree[successor] -= 1
+                if in_degree[successor] == 0:
+                    queue.append(successor)
         if len(order) != len(self.nodes):
             loop = sorted(set(self.nodes) - set(order))
             raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}")
@@ -312,24 +325,28 @@ class _Run:
     def _assignments(self) -> None:
         """Open assignments. Resource-dependent activities are scheduled from their driving
         assignments, each on its resource's calendar; the others use the activity calendar."""
-        R, status = self.R, self.status
-        self.asg: dict[str, list[_Asg]] = defaultdict(list)
-        a_tab = self.snap.assignments
-        for r in a_tab.itertuples(index=False) if not a_tab.empty else []:
-            c = r.task_code
-            if c not in R or status[c] == "TK_Complete" or self.is_loe[c]:
+        inputs, status = self.inputs, self.status
+        self.assignments_by_task: dict[str, list[_Asg]] = defaultdict(list)
+        assignment_table = self.snapshot.assignments
+        for row in assignment_table.itertuples(index=False) if not assignment_table.empty else []:
+            code = row.task_code
+            if code not in inputs or status[code] == "TK_Complete" or self.is_loe[code]:
                 continue
-            rem = float(r.remain_qty) if pd.notna(r.remain_qty) else 0.0
-            rate = float(r.remain_qty_per_hr) if pd.notna(r.remain_qty_per_hr) else 0.0
-            on_rsrc_cal = R[c].get("task_type") == "TT_Rsrc" and bool(r.rsrc_clndr_id)
-            ax = self.axes.of(r.rsrc_clndr_id) if on_rsrc_cal else self.cal_ax[c]
-            dur = rem / rate * 60 if rate > 0 else None
-            lag = float(r.relag_drtn_hr_cnt) * 60 if pd.notna(r.relag_drtn_hr_cnt) else 0.0
-            name = str(r.rsrc_short_name or r.rsrc_name or r.rsrc_id or "")
-            self.asg[c].append(_Asg(str(r.taskrsrc_id), name, ax, lag, dur, bool(r.driving)))
-        rsrc_type = {c for c in self.nodes if R[c].get("task_type") == "TT_Rsrc" and status[c] != "TK_Complete"}
-        self.rsrc_dep = {c for c in rsrc_type if self.driving(c)}
-        lacking = [c for c in self.nodes if c in rsrc_type and c not in self.rsrc_dep]
+            remaining_units = float(row.remain_qty) if pd.notna(row.remain_qty) else 0.0
+            rate = float(row.remain_qty_per_hr) if pd.notna(row.remain_qty_per_hr) else 0.0
+            on_rsrc_cal = inputs[code].get("task_type") == "TT_Rsrc" and bool(row.rsrc_clndr_id)
+            axis = self.axes.of(row.rsrc_clndr_id) if on_rsrc_cal else self.cal_ax[code]
+            remaining_minutes = remaining_units / rate * 60 if rate > 0 else None
+            lag = float(row.relag_drtn_hr_cnt) * 60 if pd.notna(row.relag_drtn_hr_cnt) else 0.0
+            name = str(row.rsrc_short_name or row.rsrc_name or row.rsrc_id or "")
+            self.assignments_by_task[code].append(
+                _Asg(str(row.taskrsrc_id), name, axis, lag, remaining_minutes, bool(row.driving))
+            )
+        rsrc_type = {
+            code for code in self.nodes if inputs[code].get("task_type") == "TT_Rsrc" and status[code] != "TK_Complete"
+        }
+        self.rsrc_dep = {code for code in rsrc_type if self.driving(code)}
+        lacking = [code for code in self.nodes if code in rsrc_type and code not in self.rsrc_dep]
         if lacking:
             self.warnings.append(
                 f"{len(lacking)} resource-dependent activities without a driving assignment with "
@@ -337,49 +354,61 @@ class _Run:
             )
 
     # --- helpers -----------------------------------------------------------------------------
-    def lag_axis(self, p: str, s: str) -> TimeAxis:
-        cal = self.opt.lag_calendar
-        if cal == "rcal_Predecessor":
-            return self.cal_ax[p]
-        if cal == "rcal_24Hour":
+    def lag_axis(self, predecessor: str, successor: str) -> TimeAxis:
+        calendar = self.options.lag_calendar
+        if calendar == "rcal_Predecessor":
+            return self.cal_ax[predecessor]
+        if calendar == "rcal_24Hour":
             return self.axes[H24]
-        if cal == "rcal_ProjDefault":
-            return self.axes[self.proj_cal]
-        return self.cal_ax[s]
+        if calendar == "rcal_ProjDefault":
+            return self.axes[self.project_calendar]
+        return self.cal_ax[successor]
 
     @staticmethod
-    def shift(ax: TimeAxis, ts: pd.Timestamp, lag_m: float) -> pd.Timestamp:
-        return ts if lag_m == 0 else ax.add(ts, lag_m, finish=lag_m > 0)
+    def shift(axis: TimeAxis, ts: pd.Timestamp, lag_minutes: float) -> pd.Timestamp:
+        return ts if lag_minutes == 0 else axis.add(ts, lag_minutes, finish=lag_minutes > 0)
 
-    def kind(self, c) -> str:
-        tt = self.R[c].get("task_type")
-        return "start_ms" if tt in ("TT_Mile", "TT_StartMile") else "finish_ms" if tt == "TT_FinMile" else "task"
+    def kind(self, code) -> str:
+        task_type = self.inputs[code].get("task_type")
+        if task_type in ("TT_Mile", "TT_StartMile"):
+            return "start_ms"
+        if task_type == "TT_FinMile":
+            return "finish_ms"
+        return "task"
 
-    def dur_min(self, c) -> float:
-        if c in self.dur_override:  # remaining duration recomputed from an expected finish
-            return self.dur_override[c] + self.extra.get(c, 0.0) * 60
-        rd = self.R[c].get("remain_drtn_hr_cnt")
-        return (0.0 if pd.isna(rd) else float(rd) * 60) + self.extra.get(c, 0.0) * 60
+    def dur_min(self, code) -> float:
+        if code in self.duration_override:  # remaining duration recomputed from an expected finish
+            return self.duration_override[code] + self.extra_hours.get(code, 0.0) * 60
+        remaining_hr = self.inputs[code].get("remain_drtn_hr_cnt")
+        return (0.0 if pd.isna(remaining_hr) else float(remaining_hr) * 60) + self.extra_hours.get(code, 0.0) * 60
 
-    def driving(self, c) -> list[_Asg]:
-        return [a for a in self.asg[c] if a.driving and a.dur_m is not None]
+    def driving(self, code) -> list[_Asg]:
+        return [
+            assignment
+            for assignment in self.assignments_by_task[code]
+            if assignment.driving and assignment.duration_minutes is not None
+        ]
 
-    def constraints(self, c) -> list[tuple[str, pd.Timestamp]]:
+    def constraints(self, code) -> list[tuple[str, pd.Timestamp]]:
         """Dated constraints of ``c`` P6 schedules with. A finish constraint on a start
         milestone, or a start constraint on a finish milestone (P6's own dialog refuses
         them; an import keeps them), is ignored (P6 23.12 corpus, H6-03 A1130)."""
-        out = []
-        k = self.kind(c)
-        for ct, cd in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
-            typ, date = self.R[c].get(ct), self.R[c].get(cd)
-            if typ and isinstance(typ, str) and typ != "CS_ALAP" and pd.notna(date):
-                side = START_LIKE.get(typ) or LATE_LIKE.get(typ) or MANDATORY.get(typ)
-                if (k == "start_ms" and side == "finish") or (k == "finish_ms" and side == "start"):
+        dated = []
+        activity_kind = self.kind(code)
+        for type_field, date_field in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
+            constraint_type, date = self.inputs[code].get(type_field), self.inputs[code].get(date_field)
+            if constraint_type and isinstance(constraint_type, str) and constraint_type != "CS_ALAP" and pd.notna(date):
+                side = (
+                    START_LIKE.get(constraint_type) or LATE_LIKE.get(constraint_type) or MANDATORY.get(constraint_type)
+                )
+                if (activity_kind == "start_ms" and side == "finish") or (
+                    activity_kind == "finish_ms" and side == "start"
+                ):
                     continue
-                out.append((typ, pd.Timestamp(date)))
-        return out
+                dated.append((constraint_type, pd.Timestamp(date)))
+        return dated
 
-    def pred_bounds(self, c: str, started: bool, finish_only: bool = False) -> list[tuple[str, pd.Timestamp]]:
+    def pred_bounds(self, code: str, started: bool, finish_only: bool = False) -> list[tuple[str, pd.Timestamp]]:
         """Lower bounds the predecessors of ``c`` put on its start or its finish.
 
         Returns ("start" | "finish", instant) pairs; ``finish_only`` keeps the FF / SF ones.
@@ -395,50 +424,61 @@ class _Run:
         PrimaveraScheduler (its issue #972, checked there against real P6 schedules).
         """
         out = []
-        for p, typ, lag in self.preds[c]:
-            end = "start" if typ in ("FS", "SS") else "finish"
-            if finish_only and end == "start":
+        for predecessor, link_type, lag in self.preds[code]:
+            bounded_end = "start" if link_type in ("FS", "SS") else "finish"
+            if finish_only and bounded_end == "start":
                 continue
-            lx = self.lag_axis(p, c)
-            if self.status[p] == "TK_Complete":
+            link_axis = self.lag_axis(predecessor, code)
+            if self.status[predecessor] == "TK_Complete":
                 if self.retain:
-                    if self.status[c] == "TK_Complete":
-                        out.append((end, self.carry[p]))
+                    if self.status[code] == "TK_Complete":
+                        out.append((bounded_end, self.carry[predecessor]))
                         continue
-                    frm = self.R[p].get("act_end_date" if typ in ("FS", "FF") else "act_start_date")
-                    rem = lag
+                    measured_from = self.inputs[predecessor].get(
+                        "act_end_date" if link_type in ("FS", "FF") else "act_start_date"
+                    )
+                    unexpired_lag = lag
                     if lag <= 0:
-                        rem = 0.0
-                    elif frm is not None and pd.notna(frm):
-                        rem = max(0.0, lag - max(0, lx.between(frm, self.dd)))
-                    if typ == "SS" and not self.opt.lag_from_early_start and frm is not None and pd.notna(frm):
+                        unexpired_lag = 0.0
+                    elif measured_from is not None and pd.notna(measured_from):
+                        unexpired_lag = max(0.0, lag - max(0, link_axis.between(measured_from, self.data_date)))
+                    if (
+                        link_type == "SS"
+                        and not self.options.lag_from_early_start
+                        and measured_from is not None
+                        and pd.notna(measured_from)
+                    ):
                         # "Calculate start-to-start lag from Actual Start": from the finished
                         # predecessor's actual start, whatever it still carries (H6-07 A1190)
-                        out.append((end, self.shift(lx, frm, lag)))
+                        out.append((bounded_end, self.shift(link_axis, measured_from, lag)))
                         continue
-                    out.append((end, self.shift(lx, self.carry[p], rem)))
+                    out.append((bounded_end, self.shift(link_axis, self.carry[predecessor], unexpired_lag)))
                     continue
                 if started and not finish_only:
                     continue  # Progress Override: a finished FF / SF predecessor still bounds
-            if typ in ("FS", "FF"):
-                out.append((end, self.shift(lx, self.ef[p], lag)))
+            if link_type in ("FS", "FF"):
+                out.append((bounded_end, self.shift(link_axis, self.early_finish[predecessor], lag)))
             else:
-                if typ == "SF" and self.status[p] == "TK_Active" and self.opt.progressed == "progress_override":
+                if (
+                    link_type == "SF"
+                    and self.status[predecessor] == "TK_Active"
+                    and self.options.progressed == "progress_override"
+                ):
                     # Progress Override: the predecessor's start is an actual, an SF from it
                     # binds nothing (H10-02 A1250); an SS still does, through its unexpired lag
                     continue
-                p_start, p_lag = self.start_link(p, lx, lag)
-                out.append((end, self.shift(lx, p_start, p_lag)))
+                predecessor_start, predecessor_lag = self.start_link(predecessor, link_axis, lag)
+                out.append((bounded_end, self.shift(link_axis, predecessor_start, predecessor_lag)))
         return out
 
-    def unexpired(self, p: str, lx: TimeAxis, lag: float) -> float:
+    def unexpired(self, predecessor: str, link_axis: TimeAxis, lag: float) -> float:
         """Lag of an SS/SF link from ``p`` still to run after the data date (whole lag if not started)."""
-        act = self.R[p].get("act_start_date")
-        if self.status[p] != "TK_Active" or lag <= 0 or act is None or pd.isna(act):
+        actual_start = self.inputs[predecessor].get("act_start_date")
+        if self.status[predecessor] != "TK_Active" or lag <= 0 or actual_start is None or pd.isna(actual_start):
             return lag
-        return max(0.0, lag - max(0, lx.between(act, self.dd)))
+        return max(0.0, lag - max(0, link_axis.between(actual_start, self.data_date)))
 
-    def start_link(self, p: str, lx: TimeAxis, lag: float) -> tuple[pd.Timestamp, float]:
+    def start_link(self, predecessor: str, link_axis: TimeAxis, lag: float) -> tuple[pd.Timestamp, float]:
         """Instant an SS/SF link from ``p`` is measured from, and the lag to add.
 
         Oracle (Schedule Options, "Calculate start-to-start lag from"): Early Start =
@@ -447,96 +487,153 @@ class _Run:
         actual start (successor >= data date + remaining lag). Under Actual Dates the
         option is disabled: actual start.
         """
-        act = self.R[p].get("act_start_date")
-        if self.status[p] == "TK_NotStart" or act is None or pd.isna(act):
-            return self.rs[p], lag
-        if self.status[p] == "TK_Active" and self.opt.lag_from_early_start and self.opt.progressed != "actual_dates":
+        actual_start = self.inputs[predecessor].get("act_start_date")
+        if self.status[predecessor] == "TK_NotStart" or actual_start is None or pd.isna(actual_start):
+            return self.remaining_start[predecessor], lag
+        if (
+            self.status[predecessor] == "TK_Active"
+            and self.options.lag_from_early_start
+            and self.options.progressed != "actual_dates"
+        ):
             # Progress Override: the remaining work of a started predecessor begins at the
             # data date, and that is where the link is measured from, not from its remaining
             # start on its own calendar (H17-10 A1270: a successor at the data date while
             # the predecessor's remaining start is the next working day)
-            frm = self.dd if self.opt.progressed == "progress_override" else self.rs[p]
-            return frm, self.unexpired(p, lx, lag)
-        return act, lag
+            measured_from = (
+                self.data_date if self.options.progressed == "progress_override" else self.remaining_start[predecessor]
+            )
+            return measured_from, self.unexpired(predecessor, link_axis, lag)
+        return actual_start, lag
 
     # --- forward pass --------------------------------------------------------------------------
     def forward(self) -> None:
-        R, opt, status, dd = self.R, self.opt, self.status, self.dd
-        es, ef, rs = self.es, self.ef, self.rs
-        for c in self.order:
-            ax = self.cal_ax[c]
-            st = status[c]
-            if st == "TK_Complete":
-                es[c], ef[c] = R[c].get("act_start_date"), R[c].get("act_end_date")
-                rs[c] = es[c]
-                if pd.isna(es[c]) or pd.isna(ef[c]):
-                    self.warnings.append(f"{c}: complete without actual dates")
-                    es[c] = ef[c] = es[c] if pd.notna(es[c]) else ef[c] if pd.notna(ef[c]) else dd
-                if self.retain:
-                    self.carry[c] = max([dd] + [b for _, b in self.pred_bounds(c, started=False)])
+        inputs, options, status, data_date = self.inputs, self.options, self.status, self.data_date
+        early_start, early_finish, remaining_start = self.early_start, self.early_finish, self.remaining_start
+        for code in self.order:
+            if status[code] == "TK_Complete":
+                self.forward_finished(code)
                 continue
-            started = st == "TK_Active"
-            k, d = self.kind(c), self.dur_min(c)
-            s_c, f_c = [dd], []
-            resume = R[c].get("resume_date") if started else None
+            axis = self.cal_ax[code]
+            started = status[code] == "TK_Active"
+            activity_kind, duration = self.kind(code), self.dur_min(code)
+            start_bounds, finish_bounds = [data_date], []
+            resume = inputs[code].get("resume_date") if started else None
             if resume is not None and pd.notna(resume):
                 # suspended work resumes on its resume date (H8-07 A1020)
-                s_c.append(max(dd, pd.Timestamp(resume)))
+                start_bounds.append(max(data_date, pd.Timestamp(resume)))
             # Progress Override: the start of work under way is an actual, so FS / SS
             # predecessors no longer bound it; FF / SF predecessors still bound its finish
             # (H1-11 A1040). Mirrored in successor_limits.
-            use_logic = not (started and opt.progressed == "progress_override")
-            for end, bound in self.pred_bounds(c, started, finish_only=not use_logic):
-                (s_c if end == "start" else f_c).append(bound)
-            ext = R[c].get("external_early_start_date")
-            if use_logic and opt.honor_external and ext is not None and pd.notna(ext):
-                s_c.append(pd.Timestamp(ext))  # a lost link to a project not in the database
-                self.external.add(c)
-            pinned = None
-            if started and self.constraints(c):
-                self.unapplied.append(c)
-            for typ, date in [] if started else self.constraints(c):
-                if typ in MANDATORY:
-                    pinned = (MANDATORY[typ], date)
-                elif START_LIKE.get(typ) == "start":
-                    s_c.append(date)
-                elif START_LIKE.get(typ) == "finish":
-                    f_c.append(date)
+            use_logic = not (started and options.progressed == "progress_override")
+            for bounded_end, bound in self.pred_bounds(code, started, finish_only=not use_logic):
+                (start_bounds if bounded_end == "start" else finish_bounds).append(bound)
+            external_date = inputs[code].get("external_early_start_date")
+            if use_logic and options.honor_external and external_date is not None and pd.notna(external_date):
+                start_bounds.append(pd.Timestamp(external_date))  # a lost link to a project not in the database
+                self.external.add(code)
+            pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
             # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
             # that unstarted work never starts before the data date (H3-04 A1100, H2-06
             # A1130: the early dates move to the data date, the late dates stay)
             if pinned and pinned[0] == "start":
-                s_c, f_c = [max(pinned[1], dd)], []
-            if c in self.rsrc_dep and k == "task":
-                exp = R[c].get("expect_end_date", pd.NaT) if opt.use_expected_finish else pd.NaT
-                alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
-                exp = pd.Timestamp(exp) if pd.notna(exp) and not alap and exp >= dd else None
-                start, fin = self.rsrc_early(c, s_c, f_c, self.extra.get(c, 0.0) * 60, exp)
+                start_bounds, finish_bounds = [max(pinned[1], data_date)], []
+            if code in self.rsrc_dep and activity_kind == "task":
+                expected_date = inputs[code].get("expect_end_date", pd.NaT) if options.use_expected_finish else pd.NaT
+                alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
+                expected_date = (
+                    pd.Timestamp(expected_date)
+                    if pd.notna(expected_date) and not alap and expected_date >= data_date
+                    else None
+                )
+                start, finish_time = self.rsrc_early(
+                    code, start_bounds, finish_bounds, self.extra_hours.get(code, 0.0) * 60, expected_date
+                )
             else:
-                start, fin = _early(ax, k, d, s_c, f_c)
-            if pinned and pinned[0] == "finish" and c not in self.dur_override:
-                fin = ax.keep_or_previous(pinned[1])
-                start = ax.add(fin, -d, finish=False) if (k == "task" and d) else fin
-                if start < dd:
-                    start = ax.snap_start(dd)
-                    fin = ax.add(start, d, finish=True) if (k == "task" and d) else start
-            if k == "task" and opt.use_expected_finish:
-                exp = R[c].get("expect_end_date", pd.NaT)
-                alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
-                finish_linked = any(typ in ("FF", "SF") for _, typ, _ in self.preds[c])
-                if pd.notna(exp) and not alap and c not in self.rsrc_dep:
-                    start, fin = self.expected_finish(
-                        c, ax, pd.Timestamp(exp), s_c, f_c, start, fin, use_logic, finish_linked
+                start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
+            if pinned and pinned[0] == "finish" and code not in self.duration_override:
+                finish_time = axis.keep_or_previous(pinned[1])
+                start = (
+                    axis.add(finish_time, -duration, finish=False)
+                    if (activity_kind == "task" and duration)
+                    else finish_time
+                )
+                if start < data_date:
+                    start = axis.snap_start(data_date)
+                    finish_time = (
+                        axis.add(start, duration, finish=True) if (activity_kind == "task" and duration) else start
                     )
-            es[c], ef[c], rs[c] = (R[c].get("act_start_date") if started and k == "task" else start), fin, start
-        self.open_ = [c for c in self.order if status[c] != "TK_Complete"]
+            if activity_kind == "task" and options.use_expected_finish:
+                expected_date = inputs[code].get("expect_end_date", pd.NaT)
+                alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
+                finish_linked = any(link_type in ("FF", "SF") for _, link_type, _ in self.preds[code])
+                if pd.notna(expected_date) and not alap and code not in self.rsrc_dep:
+                    start, finish_time = self.expected_finish(
+                        code,
+                        axis,
+                        pd.Timestamp(expected_date),
+                        start_bounds,
+                        finish_bounds,
+                        start,
+                        finish_time,
+                        use_logic,
+                        finish_linked,
+                    )
+            early_start[code], early_finish[code], remaining_start[code] = (
+                (inputs[code].get("act_start_date") if started and activity_kind == "task" else start),
+                finish_time,
+                start,
+            )
+        self.open_ = [code for code in self.order if status[code] != "TK_Complete"]
         # Under Retained Logic a finished activity ends, for its successors, at its carried
         # date: an actual finish after the data date (invalid progress) no longer sets the end.
         self.finish = max(
-            (self.carry.get(c, ef[c]) if status[c] == "TK_Complete" else ef[c] for c in self.nodes), default=None
+            (
+                self.carry.get(code, early_finish[code]) if status[code] == "TK_Complete" else early_finish[code]
+                for code in self.nodes
+            ),
+            default=None,
         )
 
-    def expected_finish(self, c, ax, exp, s_c, f_c, start, fin, use_logic, finish_linked):
+    def forward_finished(self, code) -> None:
+        """A finished activity keeps its actuals; under Retained Logic it also passes on a date."""
+        early_start, early_finish = self.early_start, self.early_finish
+        early_start[code], early_finish[code] = (
+            self.inputs[code].get("act_start_date"),
+            self.inputs[code].get("act_end_date"),
+        )
+        self.remaining_start[code] = early_start[code]
+        if pd.isna(early_start[code]) or pd.isna(early_finish[code]):
+            self.warnings.append(f"{code}: complete without actual dates")
+            if pd.notna(early_start[code]):
+                early_finish[code] = early_start[code]
+            elif pd.notna(early_finish[code]):
+                early_start[code] = early_finish[code]
+            else:
+                early_start[code] = early_finish[code] = self.data_date
+        if self.retain:
+            self.carry[code] = max([self.data_date] + [bound for _, bound in self.pred_bounds(code, started=False)])
+
+    def forward_constraints(self, code, started: bool, start_bounds: list, finish_bounds: list):
+        """Add the activity's dated constraints to the start / finish bounds (in place).
+
+        Returns the Mandatory Start / Finish as (side, date), else None. Work under way keeps
+        its actual start, so its constraints are not applied here, only reported.
+        """
+        pinned = None
+        if started and self.constraints(code):
+            self.unapplied.append(code)
+        for constraint_type, date in [] if started else self.constraints(code):
+            if constraint_type in MANDATORY:
+                pinned = (MANDATORY[constraint_type], date)
+            elif START_LIKE.get(constraint_type) == "start":
+                start_bounds.append(date)
+            elif START_LIKE.get(constraint_type) == "finish":
+                finish_bounds.append(date)
+        return pinned
+
+    def expected_finish(
+        self, code, axis, expected_date, start_bounds, finish_bounds, start, finish_time, use_logic, finish_linked
+    ):
         """Early dates of task-dependent work with an expected finish, as P6 23.12 places them
         (corpus witnesses: H1-02 A1170, H4-10 A1040, H24-07 A1210).
 
@@ -552,17 +649,19 @@ class _Run:
         predecessor keeps its remaining duration when the expected finish falls before its
         early start, even when that predecessor's bound no longer binds.
         """
-        s0 = ax.snap_start(max(s_c)) if s_c else start
-        if not use_logic and finish_linked and exp < s0:
-            return start, fin
-        exp_fin = max(exp, s0)
-        f_min = ax.keep_or_next(max(f_c)) if f_c else None
-        if f_min is not None and exp_fin < f_min:
-            return start, fin
-        self.dur_override[c] = float(ax.between(s0, exp_fin))
-        return s0, exp_fin
+        early_start_time = axis.snap_start(max(start_bounds)) if start_bounds else start
+        if not use_logic and finish_linked and expected_date < early_start_time:
+            return start, finish_time
+        exp_fin = max(expected_date, early_start_time)
+        finish_bound = axis.keep_or_next(max(finish_bounds)) if finish_bounds else None
+        if finish_bound is not None and exp_fin < finish_bound:
+            return start, finish_time
+        self.duration_override[code] = float(axis.between(early_start_time, exp_fin))
+        return early_start_time, exp_fin
 
-    def rsrc_early(self, c, s_c, f_c, d_extra, exp=None) -> tuple[pd.Timestamp, pd.Timestamp]:
+    def rsrc_early(
+        self, code, start_bounds, finish_bounds, extra_minutes, expected_date=None
+    ) -> tuple[pd.Timestamp, pd.Timestamp]:
         """Resource dependent, as P6 23.12 places it (corpus H8-H30):
 
         1. the lower bound is taken on the activity's own calendar (H8-03 A1240: data date
@@ -574,54 +673,74 @@ class _Run:
            tight (H10-02 A1360: an FF bound at Fri 18:00 on a Mon-Sat 08-16 resource,
            placed Fri 08:00-16:00).
 
-        ``exp``: the expected finish when the option applies (see below).
+        ``expected_date``: the expected finish when the option applies (see below).
         """
-        ax = self.cal_ax[c]
-        lo = ax.snap_start(max(s_c))
-        f_min = max(f_c) if f_c else None
-        starts, durs = [], {}
-        for a in self.driving(c):
-            d = a.dur_m + d_extra
-            s0 = a.ax.snap_start(self.shift(a.ax, lo, a.lag_m))
-            if exp is not None and exp > s0 and (f_min is None or exp >= f_min):
+        axis = self.cal_ax[code]
+        lower_start = axis.snap_start(max(start_bounds))
+        finish_bound = max(finish_bounds) if finish_bounds else None
+        starts, durations = [], {}
+        for assignment in self.driving(code):
+            duration = assignment.duration_minutes + extra_minutes
+            assignment_start = assignment.axis.snap_start(
+                self.shift(assignment.axis, lower_start, assignment.lag_minutes)
+            )
+            if (
+                expected_date is not None
+                and expected_date > assignment_start
+                and (finish_bound is None or expected_date >= finish_bound)
+            ):
                 # the expected finish sets the remaining work, measured on the resource
                 # calendar from this placement (H26-11 A1090: 35.5 h from Tue 06:00, then
                 # run from the activity's Tue 07:00 to Fri 06:30); an expected finish before
                 # the placement keeps the file's remaining duration (H14-05 A1040), and an
                 # FF / SF bound later than it wins, as for task-dependent work
-                d = float(a.ax.between(s0, exp))
-            durs[a.taskrsrc_id] = self.a_dur[a.taskrsrc_id] = d
-            f0 = a.ax.add(s0, d, finish=True) if d else s0
-            if f_min is not None and f0 < f_min:
-                f0 = a.ax.keep_or_next(f_min)
-                s0 = a.ax.add(f0, -d, finish=False) if d else f0
-            starts.append(self.shift(a.ax, s0, -a.lag_m))
-        start = ax.snap_start(min(starts))
-        fins = []
-        for a in self.driving(c):
-            d = durs[a.taskrsrc_id]
-            s0 = a.ax.snap_start(self.shift(a.ax, start, a.lag_m))
-            f0 = a.ax.add(s0, d, finish=True) if d else s0
-            self.a_early[a.taskrsrc_id] = (s0, f0)
-            fins.append(f0)
-        if any(durs[a.taskrsrc_id] != a.dur_m + d_extra for a in self.driving(c)):
-            self.dur_override[c] = float(ax.between(start, max(fins)))  # the backward pass follows
-        return start, max(fins)
+                duration = float(assignment.axis.between(assignment_start, expected_date))
+            durations[assignment.taskrsrc_id] = self.assignment_minutes[assignment.taskrsrc_id] = duration
+            assignment_finish = (
+                assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
+            )
+            if finish_bound is not None and assignment_finish < finish_bound:
+                assignment_finish = assignment.axis.keep_or_next(finish_bound)
+                assignment_start = (
+                    assignment.axis.add(assignment_finish, -duration, finish=False) if duration else assignment_finish
+                )
+            starts.append(self.shift(assignment.axis, assignment_start, -assignment.lag_minutes))
+        start = axis.snap_start(min(starts))
+        finishes = []
+        for assignment in self.driving(code):
+            duration = durations[assignment.taskrsrc_id]
+            assignment_start = assignment.axis.snap_start(self.shift(assignment.axis, start, assignment.lag_minutes))
+            assignment_finish = (
+                assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
+            )
+            self.assignment_early[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
+            finishes.append(assignment_finish)
+        if any(
+            durations[assignment.taskrsrc_id] != assignment.duration_minutes + extra_minutes
+            for assignment in self.driving(code)
+        ):
+            self.duration_override[code] = float(axis.between(start, max(finishes)))  # the backward pass follows
+        return start, max(finishes)
 
     # --- backward pass -------------------------------------------------------------------------
-    def successor_limits(self, c, late: bool) -> tuple[list, list]:
+    def successor_limits(self, code, late: bool) -> tuple[list, list]:
         """Latest start / finish ``c`` may have against its successors' late (or early) dates."""
-        R, status = self.R, self.status
-        l_s, l_f = [], []
-        po = self.opt.progressed == "progress_override"
-        for s, typ, link_lag in self.succs[c]:
+        inputs, status = self.inputs, self.status
+        late_start_bounds, late_finish_bounds = [], []
+        progress_override = self.options.progressed == "progress_override"
+        for successor, link_type, link_lag in self.succs[code]:
             lag = link_lag
-            if po and status[s] == "TK_Active" and typ in ("FS", "SS"):
+            if progress_override and status[successor] == "TK_Active" and link_type in ("FS", "SS"):
                 # Progress Override: a started successor's start is an actual, so a link to it
                 # binds no late date; links to its finish (FF, SF) still do (H5-06 A1030
                 # against H3-03 A1030)
                 continue
-            if not late and po and status[c] == "TK_Active" and (typ in ("SS", "SF") or status[s] == "TK_Complete"):
+            if (
+                not late
+                and progress_override
+                and status[code] == "TK_Active"
+                and (link_type in ("SS", "SF") or status[successor] == "TK_Complete")
+            ):
                 # Progress Override again: the free float of work under way runs past its own
                 # start-type links (its start is an actual too) and past finished successors,
                 # to whatever is left (H2-05 A1030, H2-04 A1110; counter-examples H4-08
@@ -629,17 +748,21 @@ class _Run:
                 continue
             if (
                 late
-                and self.opt.progressed == "actual_dates"
-                and status[s] != "TK_NotStart"
-                and pd.notna(R[s].get("act_start_date"))
+                and self.options.progressed == "actual_dates"
+                and status[successor] != "TK_NotStart"
+                and pd.notna(inputs[successor].get("act_start_date"))
             ):
                 # Actual Dates: the backward pass uses the successor's actual dates
-                s_start = R[s].get("act_start_date")
-                s_fin = R[s].get("act_end_date") if status[s] == "TK_Complete" else self.lf[s]
-            elif status[s] == "TK_Complete" and not late and self.retain:
+                successor_start = inputs[successor].get("act_start_date")
+                successor_finish = (
+                    inputs[successor].get("act_end_date")
+                    if status[successor] == "TK_Complete"
+                    else self.late_finish[successor]
+                )
+            elif status[successor] == "TK_Complete" and not late and self.retain:
                 # free float against a finished successor: it sits at its carried date
-                s_start = s_fin = self.carry[s]
-            elif status[s] == "TK_Complete":
+                successor_start = successor_finish = self.carry[successor]
+            elif status[successor] == "TK_Complete":
                 if late and self.retain:
                     # Retained Logic: a finished successor passes back the late date its own
                     # successors give it, less this link's lag: in full for FS / FF (it runs
@@ -647,167 +770,221 @@ class _Run:
                     # since the actual start for SS / SF (H6-07 A1030), a lead from started
                     # work not at all; between two finished activities only the carried date
                     # passes (H1-08 A1050). MPXJ drops the FS lag; P6 does not.
-                    lc = self.lcarry[s]
-                    if status[c] == "TK_Complete":
-                        bound = lc
+                    carried_late = self.lcarry[successor]
+                    if status[code] == "TK_Complete":
+                        bound = carried_late
                     else:
-                        lx = self.lag_axis(c, s)
-                        use = self.unexpired(c, lx, lag) if typ in ("SS", "SF") else lag
-                        if typ in ("SS", "SF") and lag < 0 and status[c] == "TK_Active":
-                            use = 0.0
-                        bound = self.shift(lx, lc, -use)
-                    (l_f if typ in ("FS", "FF") else l_s).append(bound)
+                        link_axis = self.lag_axis(code, successor)
+                        lag_used = self.unexpired(code, link_axis, lag) if link_type in ("SS", "SF") else lag
+                        if link_type in ("SS", "SF") and lag < 0 and status[code] == "TK_Active":
+                            lag_used = 0.0
+                        bound = self.shift(link_axis, carried_late, -lag_used)
+                    (late_finish_bounds if link_type in ("FS", "FF") else late_start_bounds).append(bound)
                 continue
             else:
-                s_start, s_fin = (self.ls[s], self.lf[s]) if late else (self.rs[s], self.ef[s])
-            lx = self.lag_axis(c, s)
+                successor_start, successor_finish = (
+                    (self.late_start[successor], self.late_finish[successor])
+                    if late
+                    else (self.remaining_start[successor], self.early_finish[successor])
+                )
+            link_axis = self.lag_axis(code, successor)
             # SS / SF from a started activity: the forward pass only waits for the lag not
             # yet expired, so the backward pass mirrors that, or a driving link would leave
             # negative float on an unconstrained network.
-            s_lag = self.unexpired(c, lx, lag) if typ in ("SS", "SF") else lag
-            if typ in ("SS", "SF") and lag < 0 and status[c] == "TK_Active":
-                s_lag = 0.0  # a lead from work already started no longer pulls it earlier (MPXJ)
-            if status[c] == "TK_Complete":
+            successor_lag = self.unexpired(code, link_axis, lag) if link_type in ("SS", "SF") else lag
+            if link_type in ("SS", "SF") and lag < 0 and status[code] == "TK_Active":
+                successor_lag = 0.0  # a lead from work already started no longer pulls it earlier (MPXJ)
+            if status[code] == "TK_Complete":
                 # finished (Retained Logic, see lcarry): only the lag not yet expired since its
                 # actual finish (FS, FF) or start (SS, SF) still counts; a lead is dropped (MPXJ)
-                frm = R[c].get("act_end_date" if typ in ("FS", "FF") else "act_start_date")
-                done_lag = max(0, lx.between(frm, self.dd)) if frm is not None and pd.notna(frm) else 0
-                lag = s_lag = max(0.0, lag - done_lag) if lag > 0 else 0.0
-            if typ == "FS":
-                l_f.append(self.shift(lx, s_start, -lag))
-            elif typ == "SS":
-                l_s.append(self.shift(lx, s_start, -s_lag))
-            elif typ == "FF":
-                l_f.append(self.shift(lx, s_fin, -lag))
-            elif typ == "SF":
-                l_s.append(self.shift(lx, s_fin, -s_lag))
-        return l_s, l_f
+                measured_from = inputs[code].get("act_end_date" if link_type in ("FS", "FF") else "act_start_date")
+                done_lag = (
+                    max(0, link_axis.between(measured_from, self.data_date))
+                    if measured_from is not None and pd.notna(measured_from)
+                    else 0
+                )
+                lag = successor_lag = max(0.0, lag - done_lag) if lag > 0 else 0.0
+            if link_type == "FS":
+                late_finish_bounds.append(self.shift(link_axis, successor_start, -lag))
+            elif link_type == "SS":
+                late_start_bounds.append(self.shift(link_axis, successor_start, -successor_lag))
+            elif link_type == "FF":
+                late_finish_bounds.append(self.shift(link_axis, successor_finish, -lag))
+            elif link_type == "SF":
+                late_start_bounds.append(self.shift(link_axis, successor_finish, -successor_lag))
+        return late_start_bounds, late_finish_bounds
 
-    def place_late(self, c, ax, k, d, l_s, l_f, alap: bool = False) -> tuple[pd.Timestamp, pd.Timestamp]:
+    def place_late(
+        self, code, axis, activity_kind, duration, late_start_bounds, late_finish_bounds, alap: bool = False
+    ) -> tuple[pd.Timestamp, pd.Timestamp]:
         """Latest start and finish within the bounds; ``alap`` when placing early dates."""
-        if c not in self.rsrc_dep or k != "task":
-            return _late(ax, k, d, l_s, l_f)
+        if code not in self.rsrc_dep or activity_kind != "task":
+            return _late(axis, activity_kind, duration, late_start_bounds, late_finish_bounds)
         # Mirror of rsrc_early: the bounds are taken on the activity calendar first (H10-04
         # A1220: a successor's late start Tue 08:00 is Mon 16:00 on a Mon-Sat 08-16 activity,
         # the 24 h resource then runs back from there), then each driving assignment is
         # placed on its resource calendar (H9-08 A1230: the resource's holiday moves it)
-        hi_f = ax.snap_finish(min(l_f)) if l_f else None
-        hi_s = ax.snap_start(min(l_s)) if l_s else None
-        starts, fins, driven = [], [], False
-        for a in self.driving(c):
-            dd_ = self.a_dur.get(a.taskrsrc_id, a.dur_m + self.extra.get(c, 0.0) * 60)
-            f0 = a.ax.snap_finish(hi_f) if hi_f is not None else None
-            s0 = (a.ax.add(f0, -dd_, finish=False) if dd_ else f0) if f0 is not None else None
-            if hi_s is not None:
-                cand = a.ax.snap_start(self.shift(a.ax, hi_s, a.lag_m))
-                if s0 is None or cand < s0:
-                    s0, f0 = cand, a.ax.add(cand, dd_, finish=True) if dd_ else cand
-                    driven = driven or a.lag_m == 0
-            self.a_late[a.taskrsrc_id] = (s0, f0)
-            starts.append(self.shift(a.ax, s0, -a.lag_m))
-            fins.append(f0)
+        upper_finish = axis.snap_finish(min(late_finish_bounds)) if late_finish_bounds else None
+        upper_start = axis.snap_start(min(late_start_bounds)) if late_start_bounds else None
+        starts, finishes, driven = [], [], False
+        for assignment in self.driving(code):
+            assignment_duration = self.assignment_minutes.get(
+                assignment.taskrsrc_id, assignment.duration_minutes + self.extra_hours.get(code, 0.0) * 60
+            )
+            assignment_finish = assignment.axis.snap_finish(upper_finish) if upper_finish is not None else None
+            assignment_start = (
+                (
+                    assignment.axis.add(assignment_finish, -assignment_duration, finish=False)
+                    if assignment_duration
+                    else assignment_finish
+                )
+                if assignment_finish is not None
+                else None
+            )
+            if upper_start is not None:
+                candidate = assignment.axis.snap_start(self.shift(assignment.axis, upper_start, assignment.lag_minutes))
+                if assignment_start is None or candidate < assignment_start:
+                    assignment_start, assignment_finish = (
+                        candidate,
+                        assignment.axis.add(candidate, assignment_duration, finish=True)
+                        if assignment_duration
+                        else candidate,
+                    )
+                    driven = driven or assignment.lag_minutes == 0
+            self.assignment_late[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
+            starts.append(self.shift(assignment.axis, assignment_start, -assignment.lag_minutes))
+            finishes.append(assignment_finish)
         start = min(starts)
-        if driven and start == hi_s and not alap:
+        if driven and start == upper_start and not alap:
             # written at the bound's instant, as a late date from an SS bound is on
             # task-dependent work (H26-04 A1440: late start Wed 16:00, not Thu 08:00)
-            start = ax.keep_or_previous(min(l_s))
-        return start, max(fins)
+            start = axis.keep_or_previous(min(late_start_bounds))
+        return start, max(finishes)
 
     def backward(self) -> None:
-        opt, status = self.opt, self.status
-        end_anchor = opt.must_finish_by if opt.must_finish_by is not None else self.finish
-        for c in reversed(self.order):
-            if status[c] == "TK_Complete":
+        options, status = self.options, self.status
+        end_anchor = options.must_finish_by if options.must_finish_by is not None else self.finish
+        for code in reversed(self.order):
+            if status[code] == "TK_Complete":
                 if self.retain:
-                    l_s, l_f = self.successor_limits(c, late=True)
-                    self.lcarry[c] = min(l_s + l_f + [end_anchor])
+                    late_start_bounds, late_finish_bounds = self.successor_limits(code, late=True)
+                    self.lcarry[code] = min(late_start_bounds + late_finish_bounds + [end_anchor])
                 continue
-            ax = self.cal_ax[c]
-            k, d = self.kind(c), self.dur_min(c)
-            l_s, l_f = self.successor_limits(c, late=True)
-            if not l_s and not l_f:
+            axis = self.cal_ax[code]
+            activity_kind, duration = self.kind(code), self.dur_min(code)
+            late_start_bounds, late_finish_bounds = self.successor_limits(code, late=True)
+            if not late_start_bounds and not late_finish_bounds:
                 # "Make open-ended activities critical": the late finish of an activity
                 # without any successor link is its early finish, never past the project's
                 # Must Finish By (H25-05 A1380); one whose successors bind nothing (finished,
                 # a WBS summary) is not open-ended and ends at the project's end (H27-04 A1390)
-                open_end = c not in self.linked_on
-                l_f.append(min(self.ef[c], end_anchor) if opt.open_critical and open_end else end_anchor)
+                open_end = code not in self.linked_on
+                late_finish_bounds.append(
+                    min(self.early_finish[code], end_anchor) if options.open_critical and open_end else end_anchor
+                )
             else:
                 # No late finish after the project's: an activity whose successors only bound
                 # its start (SS, SF) would otherwise float past the end, and so would its
                 # predecessors. MPXJ's PrimaveraScheduler caps it the same way; no P6 file at
                 # hand covers the case (tests/test_crosscheck_mpxj.py).
-                l_f.append(end_anchor)
-            ext = self.R[c].get("external_late_end_date")
-            if opt.honor_external and ext is not None and pd.notna(ext):
-                l_f.append(pd.Timestamp(ext))
-                self.external.add(c)
+                late_finish_bounds.append(end_anchor)
+            external_date = self.inputs[code].get("external_late_end_date")
+            if options.honor_external and external_date is not None and pd.notna(external_date):
+                late_finish_bounds.append(pd.Timestamp(external_date))
+                self.external.add(code)
             pinned = None
-            c_s, c_f = [], []  # bounds the constraints themselves give
-            for typ, date in self.constraints(c):
-                if typ in MANDATORY:
-                    pinned = (MANDATORY[typ], date)
-                elif LATE_LIKE.get(typ) == "start" and status[c] != "TK_Active":
-                    c_s.append(date)
-                elif LATE_LIKE.get(typ) == "finish":
-                    c_f.append(date)
-            succ_s, succ_f = list(l_s), list(l_f)  # the successors' bounds alone
-            l_s, l_f = l_s + c_s, l_f + c_f
+            constraint_start_bounds, constraint_finish_bounds = [], []  # bounds the constraints themselves give
+            for constraint_type, date in self.constraints(code):
+                if constraint_type in MANDATORY:
+                    pinned = (MANDATORY[constraint_type], date)
+                elif LATE_LIKE.get(constraint_type) == "start" and status[code] != "TK_Active":
+                    constraint_start_bounds.append(date)
+                elif LATE_LIKE.get(constraint_type) == "finish":
+                    constraint_finish_bounds.append(date)
+            successor_start_bounds, successor_finish_bounds = (
+                list(late_start_bounds),
+                list(late_finish_bounds),
+            )  # the successors' bounds alone
+            late_start_bounds, late_finish_bounds = (
+                late_start_bounds + constraint_start_bounds,
+                late_finish_bounds + constraint_finish_bounds,
+            )
             if pinned:
                 # a second constraint of the same end tighter than the mandatory date still
                 # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
                 # Finish is the late finish)
                 if pinned[0] == "start":
-                    l_s, l_f = [min([pinned[1]] + c_s)], []
+                    late_start_bounds, late_finish_bounds = [min([pinned[1]] + constraint_start_bounds)], []
                 else:
-                    l_s, l_f = [], [min([pinned[1]] + c_f)]
-                if pinned[0] == "finish" and c in self.dur_override:
+                    late_start_bounds, late_finish_bounds = [], [min([pinned[1]] + constraint_finish_bounds)]
+                if pinned[0] == "finish" and code in self.duration_override:
                     # With an expected finish earlier than the Mandatory Finish the date no
                     # longer pins: the successors' bounds drive the late dates, capped by the
                     # expected finish on task-dependent work (H22-06 A1120, H23-03 A1210,
                     # H23-07 A1110) and by the mandatory date itself on resource-dependent
                     # work (H25-05 A1150; observed, not explained)
-                    cap = pinned[1] if c in self.rsrc_dep else min(pinned[1], self.ef[c])
-                    l_s, l_f = succ_s, succ_f + [cap]
-            self.ls[c], self.lf[c] = self.place_late(c, ax, k, d, l_s, l_f)
+                    cap = pinned[1] if code in self.rsrc_dep else min(pinned[1], self.early_finish[code])
+                    late_start_bounds, late_finish_bounds = successor_start_bounds, successor_finish_bounds + [cap]
+            self.late_start[code], self.late_finish[code] = self.place_late(
+                code, axis, activity_kind, duration, late_start_bounds, late_finish_bounds
+            )
 
     # --- float, as late as possible ------------------------------------------------------------
     def floats(self) -> None:
         """Reverse order, so an ALAP activity sees its successors already moved, and free float
         is measured against the dates P6 finally shows."""
-        R, es, ef, rs, ls, lf = self.R, self.es, self.ef, self.rs, self.ls, self.lf
-        for c in reversed(self.open_):
-            ax = self.cal_ax[c]
-            k, d = self.kind(c), self.dur_min(c)
+        inputs, early_start, early_finish, remaining_start = (
+            self.inputs,
+            self.early_start,
+            self.early_finish,
+            self.remaining_start,
+        )
+        for code in reversed(self.open_):
+            axis = self.cal_ax[code]
+            activity_kind, duration = self.kind(code), self.dur_min(code)
             # As Late As Possible moves the remaining work of started activities too
             # (H27-05 A1170: in progress, remaining 3 h, placed at its late dates)
-            alap = "CS_ALAP" in (R[c].get("cstr_type"), R[c].get("cstr_type2"))
-            e_s, e_f = self.successor_limits(c, late=False)
+            alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
+            start_limits, finish_limits = self.successor_limits(code, late=False)
             if alap:
-                if not e_s and not e_f:
-                    e_f = [self.finish]
-                keep = dict(self.a_late)
-                new_s, new_f = self.place_late(c, ax, k, d, e_s, e_f, alap=True)
-                if new_f > ef[c]:
-                    ef[c], rs[c] = new_f, new_s
-                    if self.status[c] == "TK_NotStart":
-                        es[c] = new_s
-                    for a in self.driving(c) if c in self.rsrc_dep else []:
-                        self.a_early[a.taskrsrc_id] = self.a_late[a.taskrsrc_id]
-                self.a_late.clear()
-                self.a_late.update(keep)
-            gaps = [ax.between(ef[c], x) / 60 for x in e_f] + [ax.between(rs[c], x) / 60 for x in e_s]
+                if not start_limits and not finish_limits:
+                    finish_limits = [self.finish]
+                keep = dict(self.assignment_late)
+                placed_start, placed_finish = self.place_late(
+                    code, axis, activity_kind, duration, start_limits, finish_limits, alap=True
+                )
+                if placed_finish > early_finish[code]:
+                    early_finish[code], remaining_start[code] = placed_finish, placed_start
+                    if self.status[code] == "TK_NotStart":
+                        early_start[code] = placed_start
+                    for assignment in self.driving(code) if code in self.rsrc_dep else []:
+                        self.assignment_early[assignment.taskrsrc_id] = self.assignment_late[assignment.taskrsrc_id]
+                self.assignment_late.clear()
+                self.assignment_late.update(keep)
+            gaps = [axis.between(early_finish[code], limit) / 60 for limit in finish_limits] + [
+                axis.between(remaining_start[code], limit) / 60 for limit in start_limits
+            ]
             # open end: free float runs to the project's early finish, not to "must finish by"
-            self.ff[c] = max(0.0, min(gaps)) if gaps else max(0.0, ax.between(ef[c], self.finish) / 60)
-            if c in self.dur_override:
+            self.free_float_hr[code] = (
+                max(0.0, min(gaps)) if gaps else max(0.0, axis.between(early_finish[code], self.finish) / 60)
+            )
+            if code in self.duration_override:
                 # an activity whose expected finish applies has no free float in P6, whatever
                 # its successors' early dates (corpus: 265 of 265 such values; H1-08 A1090,
                 # H5-01 A1120). Observed, not explained.
-                self.ff[c] = 0.0
-            fin_f = ax.between(ef[c], lf[c]) / 60
-            st_f = ax.between(rs[c], ls[c]) / 60
-            which = FLOAT_TYPE.get(self.opt.float_type, "finish")  # unknown code: P6's default
-            self.tf[c] = fin_f if which == "finish" else st_f if which == "start" else min(fin_f, st_f)
+                self.free_float_hr[code] = 0.0
+            self.total_float_hr[code] = self.total_float(code, axis)
+
+    def total_float(self, code, axis) -> float:
+        """Total float in hours of the activity's calendar, read the way the project's float option says."""
+        finish_float = axis.between(self.early_finish[code], self.late_finish[code]) / 60
+        start_float = axis.between(self.remaining_start[code], self.late_start[code]) / 60
+        which = FLOAT_TYPE.get(self.options.float_type, "finish")  # unknown code: P6's default
+        if which == "finish":
+            return finish_float
+        if which == "start":
+            return start_float
+        return min(finish_float, start_float)
 
     # --- level of effort: spans what drives it ------------------------------------------------
     def level_of_effort(self) -> None:
@@ -821,46 +998,77 @@ class _Run:
         start is the late finish. Float as for any activity, free float 0 (H8-01 A1160,
         H10-11 A1210).
         """
-        R, dd, es, ef, rs = self.R, self.dd, self.es, self.ef, self.rs
-        for c in self.loe_codes:
-            if self.status[c] == "TK_Complete":
-                es[c], ef[c] = R[c].get("act_start_date"), R[c].get("act_end_date")
+        inputs, data_date, early_start, early_finish, remaining_start = (
+            self.inputs,
+            self.data_date,
+            self.early_start,
+            self.early_finish,
+            self.remaining_start,
+        )
+        for code in self.loe_codes:
+            if self.status[code] == "TK_Complete":
+                early_start[code], early_finish[code] = (
+                    inputs[code].get("act_start_date"),
+                    inputs[code].get("act_end_date"),
+                )
                 continue
-            ax = self.cal_ax[c]
-            starts, ends = [], []
-            for p, typ, lag in self.loe_preds[c]:
-                lx = self.lag_axis(p, c)
-                if typ in ("SS", "SF") and self.status[p] == "TK_Active":
+            axis = self.cal_ax[code]
+            starts, end_points = [], []
+            for predecessor, link_type, lag in self.loe_preds[code]:
+                link_axis = self.lag_axis(predecessor, code)
+                if link_type in ("SS", "SF") and self.status[predecessor] == "TK_Active":
                     # from the data date plus the unexpired lag (H10-01 A1300, H12-08 A1290)
-                    frm, run = dd, self.unexpired(p, lx, lag)
+                    measured_from, run = data_date, self.unexpired(predecessor, link_axis, lag)
                 else:
-                    frm, run = (rs[p] if typ in ("SS", "SF") else ef[p]), lag
-                (starts if typ in ("SS", "FS") else ends).append(self.shift(lx, frm, run))
-            for s_, typ, lag in self.loe_succs[c]:
-                to = rs[s_] if typ in ("SS", "FS") else ef[s_]
-                (starts if typ in ("SS", "SF") else ends).append(self.shift(self.lag_axis(c, s_), to, -lag))
-            active = self.status[c] == "TK_Active"
-            s0 = R[c].get("act_start_date") if active else ax.snap_start(max([dd, min(starts)] if starts else [dd]))
-            e0 = ax.snap_finish(max(ends)) if ends else (ax.snap_finish(self.finish) if self.finish is not None else s0)
-            es[c], ef[c] = s0, max(e0, ax.snap_start(max(s0, dd)))
-            rs[c] = ax.snap_start(dd) if active else s0
+                    measured_from, run = (
+                        (remaining_start[predecessor] if link_type in ("SS", "SF") else early_finish[predecessor]),
+                        lag,
+                    )
+                (starts if link_type in ("SS", "FS") else end_points).append(self.shift(link_axis, measured_from, run))
+            for successor, link_type, lag in self.loe_succs[code]:
+                to = remaining_start[successor] if link_type in ("SS", "FS") else early_finish[successor]
+                (starts if link_type in ("SS", "SF") else end_points).append(
+                    self.shift(self.lag_axis(code, successor), to, -lag)
+                )
+            active = self.status[code] == "TK_Active"
+            loe_start = (
+                inputs[code].get("act_start_date")
+                if active
+                else axis.snap_start(max([data_date, min(starts)] if starts else [data_date]))
+            )
+            loe_finish = (
+                axis.snap_finish(max(end_points))
+                if end_points
+                else (axis.snap_finish(self.finish) if self.finish is not None else loe_start)
+            )
+            early_start[code], early_finish[code] = (
+                loe_start,
+                max(loe_finish, axis.snap_start(max(loe_start, data_date))),
+            )
+            remaining_start[code] = axis.snap_start(data_date) if active else loe_start
             lstarts, lends = [], []
-            for p, typ, lag in self.loe_preds[c]:
-                if self.status[p] != "TK_Complete":
-                    frm = self.ls[p] if typ in ("SS", "SF") else self.lf[p]
-                    (lstarts if typ in ("SS", "FS") else lends).append(self.shift(self.lag_axis(p, c), frm, lag))
-            for s_, typ, lag in self.loe_succs[c]:
-                if self.status[s_] != "TK_Complete":
-                    to = self.ls[s_] if typ in ("SS", "FS") else self.lf[s_]
-                    (lstarts if typ in ("SS", "SF") else lends).append(self.shift(self.lag_axis(c, s_), to, -lag))
-            open_end = ax.snap_finish(self.finish) if self.finish is not None else ef[c]
-            lf = ax.snap_finish(max(lends)) if lends else open_end
-            ls = min(ax.snap_start(min(lstarts)), lf) if lstarts else lf  # never after the late finish (H10-01 A1300)
-            self.ls[c], self.lf[c] = ls, lf
-            fin_f, st_f = ax.between(ef[c], lf) / 60, ax.between(rs[c], ls) / 60
-            which = FLOAT_TYPE.get(self.opt.float_type, "finish")
-            self.tf[c] = fin_f if which == "finish" else st_f if which == "start" else min(fin_f, st_f)
-            self.ff[c] = 0.0
+            for predecessor, link_type, lag in self.loe_preds[code]:
+                if self.status[predecessor] != "TK_Complete":
+                    measured_from = (
+                        self.late_start[predecessor] if link_type in ("SS", "SF") else self.late_finish[predecessor]
+                    )
+                    (lstarts if link_type in ("SS", "FS") else lends).append(
+                        self.shift(self.lag_axis(predecessor, code), measured_from, lag)
+                    )
+            for successor, link_type, lag in self.loe_succs[code]:
+                if self.status[successor] != "TK_Complete":
+                    to = self.late_start[successor] if link_type in ("SS", "FS") else self.late_finish[successor]
+                    (lstarts if link_type in ("SS", "SF") else lends).append(
+                        self.shift(self.lag_axis(code, successor), to, -lag)
+                    )
+            open_end = axis.snap_finish(self.finish) if self.finish is not None else early_finish[code]
+            late_finish = axis.snap_finish(max(lends)) if lends else open_end
+            late_start = (
+                min(axis.snap_start(min(lstarts)), late_finish) if lstarts else late_finish
+            )  # never after the late finish (H10-01 A1300)
+            self.late_start[code], self.late_finish[code] = late_start, late_finish
+            self.total_float_hr[code] = self.total_float(code, axis)
+            self.free_float_hr[code] = 0.0
 
     # --- longest path ------------------------------------------------------------------------
     def longest_path(self) -> set[str]:
@@ -868,42 +1076,44 @@ class _Run:
         "activities that have an early finish equal to the latest calculated early finish
         for the project", then "all driving relationships for those activities")."""
         longest: set[str] = set()
-        todo_ = [c for c in self.open_ if self.ef[c] == self.finish]
-        while todo_:
-            c = todo_.pop()
-            if c in longest:
+        pending = [code for code in self.open_ if self.early_finish[code] == self.finish]
+        while pending:
+            code = pending.pop()
+            if code in longest:
                 continue
-            longest.add(c)
-            ax = self.cal_ax[c]
-            for p, typ, lag in self.preds[c]:
-                if self.status[p] == "TK_Complete" or (
-                    self.status[c] == "TK_Active" and self.opt.progressed == "progress_override"
+            longest.add(code)
+            axis = self.cal_ax[code]
+            for predecessor, link_type, lag in self.preds[code]:
+                if self.status[predecessor] == "TK_Complete" or (
+                    self.status[code] == "TK_Active" and self.options.progressed == "progress_override"
                 ):
                     continue
-                lx = self.lag_axis(p, c)
-                if typ in ("FS", "FF"):
-                    bound = self.shift(lx, self.ef[p], lag)
+                link_axis = self.lag_axis(predecessor, code)
+                if link_type in ("FS", "FF"):
+                    bound = self.shift(link_axis, self.early_finish[predecessor], lag)
                 else:
-                    p_start, p_lag = self.start_link(p, lx, lag)
-                    bound = self.shift(lx, p_start, p_lag)
-                mine = self.rs[c] if typ in ("FS", "SS") else self.ef[c]
-                if ax.work(bound) >= ax.work(mine):
-                    todo_.append(p)
+                    predecessor_start, predecessor_lag = self.start_link(predecessor, link_axis, lag)
+                    bound = self.shift(link_axis, predecessor_start, predecessor_lag)
+                own_instant = self.remaining_start[code] if link_type in ("FS", "SS") else self.early_finish[code]
+                if axis.work(bound) >= axis.work(own_instant):
+                    pending.append(predecessor)
         # A level-of-effort activity is on the path when one of its links into a longest-path
         # activity drives that activity's date (P6 20.12 export: LOE spanning two activities
         # of the path, SS from the first, FF into the second, flagged). Its own dates come from
         # its links, so the trace stops there.
         for loe in self.loe_codes:
-            if self.status[loe] == "TK_Complete" or loe not in self.ef:
+            if self.status[loe] == "TK_Complete" or loe not in self.early_finish:
                 continue
-            for s_, typ, lag in self.loe_succs[loe]:
-                if s_ not in longest:
+            for successor, link_type, lag in self.loe_succs[loe]:
+                if successor not in longest:
                     continue
-                lx = self.lag_axis(loe, s_)
-                frm = self.ef[loe] if typ in ("FS", "FF") else self.rs[loe]
-                bound = self.shift(lx, frm, lag)
-                mine = self.rs[s_] if typ in ("FS", "SS") else self.ef[s_]
-                if self.cal_ax[s_].work(bound) >= self.cal_ax[s_].work(mine):
+                link_axis = self.lag_axis(loe, successor)
+                measured_from = self.early_finish[loe] if link_type in ("FS", "FF") else self.remaining_start[loe]
+                bound = self.shift(link_axis, measured_from, lag)
+                own_instant = (
+                    self.remaining_start[successor] if link_type in ("FS", "SS") else self.early_finish[successor]
+                )
+                if self.cal_ax[successor].work(bound) >= self.cal_ax[successor].work(own_instant):
                     longest.add(loe)
                     break
         return longest
@@ -914,19 +1124,45 @@ class _Run:
         own duration (units / units per hour) on the activity calendar. Checked against every
         assignment P6 stored in Hotel and Terminal (tests/test_cpm.py)."""
         rows = []
-        for c, items in self.asg.items():
-            if c not in self.rs or c not in self.ls:
+        for code, items in self.assignments_by_task.items():
+            if code not in self.remaining_start or code not in self.late_start:
                 continue
-            for a in items:
-                if a.taskrsrc_id in self.a_early:
-                    (s0, f0), (s1, f1) = self.a_early[a.taskrsrc_id], self.a_late.get(a.taskrsrc_id, (None, None))
+            for assignment in items:
+                if assignment.taskrsrc_id in self.assignment_early:
+                    (assignment_start, assignment_finish), (late_assignment_start, late_assignment_finish) = (
+                        self.assignment_early[assignment.taskrsrc_id],
+                        self.assignment_late.get(assignment.taskrsrc_id, (None, None)),
+                    )
                 else:
-                    d = a.dur_m if a.dur_m is not None else self.dur_min(c)
-                    s0 = a.ax.snap_start(self.shift(a.ax, self.rs[c], a.lag_m))
-                    f0 = a.ax.add(s0, d, finish=True) if d else s0
-                    s1 = a.ax.snap_start(self.shift(a.ax, self.ls[c], a.lag_m))
-                    f1 = a.ax.add(s1, d, finish=True) if d else s1
-                rows.append([a.taskrsrc_id, c, a.rsrc, a.driving, s0, f0, s1, f1])
+                    duration = (
+                        assignment.duration_minutes if assignment.duration_minutes is not None else self.dur_min(code)
+                    )
+                    assignment_start = assignment.axis.snap_start(
+                        self.shift(assignment.axis, self.remaining_start[code], assignment.lag_minutes)
+                    )
+                    assignment_finish = (
+                        assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
+                    )
+                    late_assignment_start = assignment.axis.snap_start(
+                        self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
+                    )
+                    late_assignment_finish = (
+                        assignment.axis.add(late_assignment_start, duration, finish=True)
+                        if duration
+                        else late_assignment_start
+                    )
+                rows.append(
+                    [
+                        assignment.taskrsrc_id,
+                        code,
+                        assignment.rsrc,
+                        assignment.driving,
+                        assignment_start,
+                        assignment_finish,
+                        late_assignment_start,
+                        late_assignment_finish,
+                    ]
+                )
         return pd.DataFrame(rows, columns=ASSIGNMENT_COLS)
 
     # --- result ------------------------------------------------------------------------------
@@ -939,19 +1175,26 @@ class _Run:
         self._report()
         rows = [
             {
-                "task_code": c, "status_code": self.status[c], "es": self.es[c], "ef": self.ef[c],
-                "remaining_start": self.rs.get(c), "ls": self.ls.get(c), "lf": self.lf.get(c),
-                "tf_hr": self.tf.get(c), "ff_hr": self.ff.get(c), "resource_dependent": c in self.rsrc_dep,
-                "longest_path": c in longest,
+                "task_code": code,
+                "status_code": self.status[code],
+                "es": self.early_start[code],
+                "ef": self.early_finish[code],
+                "remaining_start": self.remaining_start.get(code),
+                "ls": self.late_start.get(code),
+                "lf": self.late_finish.get(code),
+                "tf_hr": self.total_float_hr.get(code),
+                "ff_hr": self.free_float_hr.get(code),
+                "resource_dependent": code in self.rsrc_dep,
+                "longest_path": code in longest,
             }
-            for c in self.t.index
-            if c in self.es
-        ]  # fmt: skip
+            for code in self.activities.index
+            if code in self.early_start
+        ]
         frame = pd.DataFrame(rows).set_index("task_code")
-        return Schedule(frame, self.finish, self.opt, self.warnings, self.assignment_dates())
+        return Schedule(frame, self.finish, self.options, self.warnings, self.assignment_dates())
 
     def _report(self) -> None:
-        if (self.snap.options.get("sched", {}) or {}).get("enable_multiple_longest_path_calc") == "Y":
+        if (self.snapshot.options.get("sched", {}) or {}).get("enable_multiple_longest_path_calc") == "Y":
             self.warnings.append(
                 "the project asks for multiple float paths: dates and float are unaffected, but the float "
                 "path numbers (float_path, float_path_order) are not computed"
@@ -972,7 +1215,9 @@ class _Run:
 ASSIGNMENT_COLS = ["taskrsrc_id", "task_code", "rsrc", "driving", "restart", "reend", "rem_late_start", "rem_late_end"]
 
 
-def _early(ax: TimeAxis, kind: str, d: float, s_c: list, f_c: list) -> tuple[pd.Timestamp, pd.Timestamp]:
+def _early(
+    axis: TimeAxis, kind: str, duration: float, start_bounds: list, finish_bounds: list
+) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Early start / finish from lower bounds, in clock time, snapped the way P6 shows them.
 
     Each rule is pinned by a reference file (tests/test_cpm.py):
@@ -985,21 +1230,23 @@ def _early(ax: TimeAxis, kind: str, d: float, s_c: list, f_c: list) -> tuple[pd.
       (16:00 right after its predecessor), else the next working time
     """
     if kind == "finish_ms":
-        v = ax.keep_or_next(max(s_c + f_c))
-        return v, v
-    if kind == "start_ms" or d == 0:
-        v = ax.snap_start(max(s_c + f_c))
-        return v, v
-    start = ax.snap_start(max(s_c))
-    fin = ax.add(start, d, finish=True)
-    if f_c:
-        f_min = ax.keep_or_next(max(f_c))
-        if f_min > fin:
-            fin, start = f_min, ax.add(f_min, -d, finish=False)
-    return start, fin
+        value = axis.keep_or_next(max(start_bounds + finish_bounds))
+        return value, value
+    if kind == "start_ms" or duration == 0:
+        value = axis.snap_start(max(start_bounds + finish_bounds))
+        return value, value
+    start = axis.snap_start(max(start_bounds))
+    finish_time = axis.add(start, duration, finish=True)
+    if finish_bounds:
+        finish_bound = axis.keep_or_next(max(finish_bounds))
+        if finish_bound > finish_time:
+            finish_time, start = finish_bound, axis.add(finish_bound, -duration, finish=False)
+    return start, finish_time
 
 
-def _late(ax: TimeAxis, kind: str, d: float, l_s: list, l_f: list) -> tuple[pd.Timestamp, pd.Timestamp]:
+def _late(
+    axis: TimeAxis, kind: str, duration: float, late_start_bounds: list, late_finish_bounds: list
+) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Late start / finish from upper bounds, snapped the way P6 shows them.
 
     - task: finishes at a period end (a successor starting 08:00 -> previous evening);
@@ -1010,19 +1257,19 @@ def _late(ax: TimeAxis, kind: str, d: float, l_s: list, l_f: list) -> tuple[pd.T
       previous working time (Hotel HCMEB4000: 16:00; xerlock MS-020: 08:00)
     - finish milestone: a period end
     """
-    if kind == "start_ms" or (kind == "task" and d == 0):
-        v = ax.keep_or_previous(min(l_s + l_f))
-        return v, v
+    if kind == "start_ms" or (kind == "task" and duration == 0):
+        value = axis.keep_or_previous(min(late_start_bounds + late_finish_bounds))
+        return value, value
     if kind == "finish_ms":
-        v = ax.snap_finish(min(l_s + l_f))
-        return v, v
-    fin = ax.snap_finish(min(l_f)) if l_f else None
-    start = ax.add(fin, -d, finish=False) if fin is not None else None
-    if l_s:
-        s_max = ax.keep_or_previous(min(l_s))
-        if start is None or s_max < start:
-            start, fin = s_max, ax.add(s_max, d, finish=True)
-    return start, fin
+        value = axis.snap_finish(min(late_start_bounds + late_finish_bounds))
+        return value, value
+    finish_time = axis.snap_finish(min(late_finish_bounds)) if late_finish_bounds else None
+    start = axis.add(finish_time, -duration, finish=False) if finish_time is not None else None
+    if late_start_bounds:
+        latest_start = axis.keep_or_previous(min(late_start_bounds))
+        if start is None or latest_start < start:
+            start, finish_time = latest_start, axis.add(latest_start, duration, finish=True)
+    return start, finish_time
 
 
 # --- comparison with the dates P6 stored ---------------------------------------------------
@@ -1043,7 +1290,7 @@ ASSIGNMENT_FIELDS = [
 ]
 
 
-def compare_with_stored(snap: Snapshot, sched: Schedule | None = None) -> pd.DataFrame:
+def compare_with_stored(snapshot: Snapshot, recomputed: Schedule | None = None) -> pd.DataFrame:
     """One row per (open activity, field): what P6 stored, what the CPM gives, the gap.
 
     For in-progress activities P6 stores the remaining early start as early start.
@@ -1051,53 +1298,68 @@ def compare_with_stored(snap: Snapshot, sched: Schedule | None = None) -> pd.Dat
     of the activity's calendar (0 with agree False = same instant shown differently,
     e.g. Wednesday 17:00 vs the next working morning).
     """
-    sched = sched or schedule(snap)
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
-    f = sched.frame
+    recomputed = recomputed or schedule(snapshot)
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    frame = recomputed.frame
     rows = []
-    axes = _Axes(snap, *_date_range(snap))
-    for c in f.index:
-        if t.at[c, "status_code"] == "TK_Complete" or t.at[c, "is_loe"]:
+    axes = _Axes(snapshot, *_date_range(snapshot))
+    for code in frame.index:
+        if activities.at[code, "status_code"] == "TK_Complete" or activities.at[code, "is_loe"]:
             continue
-        ax = axes.of(t.at[c, "clndr_id"])
-        for mine, theirs in FIELDS:
-            v = f.at[c, "remaining_start"] if mine == "es" and t.at[c, "status_code"] == "TK_Active" else f.at[c, mine]
-            stored = t.at[c, theirs] if theirs in t else None
-            rows.append(_cmp_row(ax, c, theirs, stored, v, hours=mine.endswith("_hr")))
+        axis = axes.of(activities.at[code, "clndr_id"])
+        for computed_name, stored_name in FIELDS:
+            value = (
+                frame.at[code, "remaining_start"]
+                if computed_name == "es" and activities.at[code, "status_code"] == "TK_Active"
+                else frame.at[code, computed_name]
+            )
+            stored = activities.at[code, stored_name] if stored_name in activities else None
+            rows.append(_cmp_row(axis, code, stored_name, stored, value, hours=computed_name.endswith("_hr")))
     return pd.DataFrame(rows, columns=["task_code", "field", "stored", "computed", "gap_hr", "agree"])
 
 
-def _cmp_row(ax: TimeAxis, code, field_, stored, v, hours: bool) -> dict:
-    if stored is None or pd.isna(stored) or v is None or pd.isna(v):
+def _cmp_row(axis: TimeAxis, code, field_name, stored, value, hours: bool) -> dict:
+    if stored is None or pd.isna(stored) or value is None or pd.isna(value):
         gap = None
     elif hours:
-        gap = round(float(v) - float(stored), 2)
+        gap = round(float(value) - float(stored), 2)
     else:
-        gap = ax.between(stored, v) / 60
+        gap = axis.between(stored, value) / 60
     if hours:
         agree = gap == 0 if gap is not None else False
     else:  # dates: the same clock time, not just the same working minute
-        agree = gap is not None and pd.Timestamp(stored) == pd.Timestamp(v)
-    return {"task_code": code, "field": field_, "stored": stored, "computed": v, "gap_hr": gap, "agree": agree}
+        agree = gap is not None and pd.Timestamp(stored) == pd.Timestamp(value)
+    return {"task_code": code, "field": field_name, "stored": stored, "computed": value, "gap_hr": gap, "agree": agree}
 
 
-def compare_assignments(snap: Snapshot, sched: Schedule | None = None) -> pd.DataFrame:
+def compare_assignments(snapshot: Snapshot, recomputed: Schedule | None = None) -> pd.DataFrame:
     """One row per (open assignment, date): TASKRSRC remaining early / late dates vs the CPM."""
-    sched = sched or schedule(snap)
-    a = snap.assignments
-    out_cols = ["taskrsrc_id", "task_code", "rsrc", "field", "stored", "computed", "gap_hr", "agree"]
-    if a.empty or sched.assignments.empty:
-        return pd.DataFrame(columns=out_cols)
-    stored = a.assign(taskrsrc_id=a["taskrsrc_id"].astype(str)).drop_duplicates("taskrsrc_id").set_index("taskrsrc_id")
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
-    axes = _Axes(snap, *_date_range(snap))
+    recomputed = recomputed or schedule(snapshot)
+    assignments = snapshot.assignments
+    output_columns = ["taskrsrc_id", "task_code", "rsrc", "field", "stored", "computed", "gap_hr", "agree"]
+    if assignments.empty or recomputed.assignments.empty:
+        return pd.DataFrame(columns=output_columns)
+    stored = (
+        assignments.assign(taskrsrc_id=assignments["taskrsrc_id"].astype(str))
+        .drop_duplicates("taskrsrc_id")
+        .set_index("taskrsrc_id")
+    )
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    axes = _Axes(snapshot, *_date_range(snapshot))
     rows = []
-    for r in sched.assignments.itertuples(index=False):
-        ax = axes.of(t.at[r.task_code, "clndr_id"])
-        for mine, theirs in ASSIGNMENT_FIELDS:
-            row = _cmp_row(ax, r.task_code, theirs, stored.at[r.taskrsrc_id, theirs], getattr(r, mine), False)
-            rows.append({"taskrsrc_id": r.taskrsrc_id, "rsrc": r.rsrc, **row})
-    return pd.DataFrame(rows, columns=out_cols)
+    for computed_row in recomputed.assignments.itertuples(index=False):
+        axis = axes.of(activities.at[computed_row.task_code, "clndr_id"])
+        for computed_name, stored_name in ASSIGNMENT_FIELDS:
+            row = _cmp_row(
+                axis,
+                computed_row.task_code,
+                stored_name,
+                stored.at[computed_row.taskrsrc_id, stored_name],
+                getattr(computed_row, computed_name),
+                False,
+            )
+            rows.append({"taskrsrc_id": computed_row.taskrsrc_id, "rsrc": computed_row.rsrc, **row})
+    return pd.DataFrame(rows, columns=output_columns)
 
 
 # --- DCMA critical path test ----------------------------------------------------------------
@@ -1113,54 +1375,58 @@ class CptResult:
     blocking: list[dict] = field(default_factory=list)
 
 
-def critical_path_test(snap: Snapshot, delay_days: float = 600) -> CptResult:
+def critical_path_test(snapshot: Snapshot, delay_days: float = 600) -> CptResult:
     """Add ``delay_days`` to the first open activity of the critical path; the finish must move as much.
 
     The finish is measured on the project's end points (activities without successors),
     in working time of the delayed activity's calendar. Pass = it moved by at least the
     delay (further is a calendar effect, less means something absorbed the delay).
     """
-    t = snap.activities
+    activities = snapshot.activities
     try:
-        base = schedule(snap)
+        base = schedule(snapshot)
     except CycleError as exc:
         return CptResult(False, str(exc))
     # The critical path = the longest path of the recalculated schedule (with negative
     # float, "total float <= 0" would also take in less critical paths).
-    f = base.frame
-    open_ = t[~t["is_complete"] & ~t["is_loe"] & ~t["is_milestone"]].drop_duplicates("task_code")
-    crit = open_[open_["task_code"].map(f["longest_path"]).fillna(False).astype(bool)]
-    if crit.empty:
+    frame = base.frame
+    open_ = activities[
+        ~activities["is_complete"] & ~activities["is_loe"] & ~activities["is_milestone"]
+    ].drop_duplicates("task_code")
+    critical_path = open_[open_["task_code"].map(frame["longest_path"]).fillna(False).astype(bool)]
+    if critical_path.empty:
         return CptResult(False, "no open activity on the longest path: the critical path is not defined")
-    crit = crit.assign(_rs=crit["task_code"].map(f["remaining_start"]))
-    target = crit.sort_values(["_rs", "task_code"]).iloc[0]
+    critical_path = critical_path.assign(_rs=critical_path["task_code"].map(frame["remaining_start"]))
+    target = critical_path.sort_values(["_rs", "task_code"]).iloc[0]
     code = target["task_code"]
-    hpd = float(target["hours_per_day"])
-    delay_h = delay_days * hpd
+    hours_per_day = float(target["hours_per_day"])
+    delay_hours = delay_days * hours_per_day
     try:
-        late = schedule(snap, {code: delay_h})
+        late = schedule(snapshot, {code: delay_hours})
     except CycleError as exc:
         return CptResult(False, str(exc), code)
-    has_succ = set(snap.relationships["pred_code"])  # built once: per activity it took 33 s on Hotel
-    ends = [c for c in base.frame.index if c not in has_succ]
-    b_fin = base.frame.loc[ends, "ef"].max()
-    l_fin = late.frame.loc[ends, "ef"].max()
-    ax = TimeAxis(snap.calendar(target["clndr_id"]), b_fin.date(), (l_fin + pd.Timedelta(days=1)).date())
-    shift = ax.between(b_fin, l_fin) / 60
+    has_successor = set(snapshot.relationships["pred_code"])  # built once: per activity it took 33 s on Hotel
+    end_points = [code for code in base.frame.index if code not in has_successor]
+    base_finish = base.frame.loc[end_points, "ef"].max()
+    delayed_finish = late.frame.loc[end_points, "ef"].max()
+    axis = TimeAxis(
+        snapshot.calendar(target["clndr_id"]), base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date()
+    )
+    shift = axis.between(base_finish, delayed_finish) / 60
     # The finish must move by the whole delay. It can move further when the path crosses
     # calendars with other non-working days (measured here on the delayed activity's
     # calendar); moving less means a constraint or broken logic absorbed part of it.
-    passed = shift >= delay_h - 1e-6
+    passed = shift >= delay_hours - 1e-6
     note = (
-        f"+{delay_days:g} wd on {code}: forecast finish {b_fin:%Y-%m-%d} -> {l_fin:%Y-%m-%d}, "
-        f"moved {shift / hpd:+.1f} wd"
+        f"+{delay_days:g} wd on {code}: forecast finish {base_finish:%Y-%m-%d} -> {delayed_finish:%Y-%m-%d}, "
+        f"moved {shift / hours_per_day:+.1f} wd"
         + ("" if passed else f" instead of {delay_days:+g}")
-        + (" (more: the path crosses other calendars' non-working days)" if shift > delay_h + 1e-6 else "")
+        + (" (more: the path crosses other calendars' non-working days)" if shift > delay_hours + 1e-6 else "")
     )
     blocking = []
     if not passed:
-        pins = t[t["cstr_type"].isin(MANDATORY) | t["cstr_type2"].isin(MANDATORY)]
-        blocking = pins[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
+        pinned = activities[activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)]
+        blocking = pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
         if blocking:
-            note += f"; mandatory constraints may absorb it: {', '.join(p['task_code'] for p in blocking[:5])}"
-    return CptResult(passed, note, code, delay_h, shift, blocking)
+            note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"
+    return CptResult(passed, note, code, delay_hours, shift, blocking)

@@ -42,11 +42,17 @@ Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, 
 | Labour hours | TASK budgeted/actual/remaining labour units (nonlabor in `nonlabor_*_qty`), else assignments by resource type |
 | Assignments | `assignments` = TASKRSRC typed: resource type (TASKRSRC, else RSRC; `role` for role-only), name, resource calendar, driving flag, units, rates, lags, dates |
 | EV technique | `ev_compute_type` / `ev_user_pct` of each activity's WBS |
-| Links | relationships with codes and both lags (hours and days); links to other projects flagged and kept in `external_links` |
+| Links | `relationships`: codes and both lags (hours and days); `is_external` flags a predecessor in another project. A predecessor that is a `TASK` row of another project of the same file is named `[ext]{task_id}` in `pred_code`, as in `external_links`, never by its own Activity ID: that ID may also exist in this project and would read as a link from the local activity. Links whose other end has no `TASK` row in the file are dropped from `relationships`. `external_links` keeps the links to and from other projects (same `[ext]` naming) |
 | Calendars | `work_calendars` (parsed `clndr_data`), `calendar(id)` falls back to the project's |
 | Options | `options["sched"]` = the raw SCHEDOPTIONS row, `progressed` (retained logic / progress override / actual dates), `must_finish_by`, `lag_calendar` (successor when blank, per Oracle), `critical_*` |
 
 `Snapshot.activities` excludes WBS summary rows: every count and chart uses it.
+
+**Snapshot contract.** `model.py` declares the minimum columns of each frame: `TASK_COLS` plus
+`LABOR_COLS` for `tasks`, `REL_COLS_MODEL` for `relationships`, `ASSIGNMENT_COLS_MODEL` for
+`assignments`. `build_snapshot` raises `XerError` if one is missing, and the store's
+`HISTORY_COLS`, `REL_COLS` and `ASSIGNMENT_COLS` must be subsets (checked in `tests/test_store.py`).
+The frames may carry more (raw XER columns); the lists are a floor, not a filter.
 
 ## 3. `xer/calendar.py`: working time
 
@@ -93,10 +99,24 @@ Why rules plus TOML: P6's "Large Float" and DCMA-06 are one function (`float`) w
 different units and populations. A difference between standards is a parameter you can
 read and test, not a second implementation.
 
+Layer rules (imports, as the code has them):
+
+- `xer/` imports only `config.py`; it knows nothing of the layers above.
+- `store.py` imports `xer/`; `export.py` imports `store.py`.
+- `analysis/` imports `xer/`, `store.py` and `config.py`; never `viz/`, `app/` or `verify/`.
+- `viz/` imports `config.py` only: it draws frames, it does not compute schedule results.
+- `verify/` imports `xer/` and `analysis/cpm.py`; `crosscheck.py` re-exports it. Nothing in
+  the app depends on it.
+- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/` and `export.py`, and is imported
+  by nothing but Streamlit. Pages
+  compose analyses and figures (some computation still sits in the views: see
+  [backlog.md](backlog.md), Structure).
+
 Outside `analysis/`:
 
 - `config.py`: `Settings`, the few tunable defaults no standard owns (hours per day when a
-  calendar is missing, critical and near-critical float for the Gantt colours).
+  calendar is missing, critical and near-critical float for the Gantt colours). Settings are consumed at
+  `build_snapshot` time (`xer/model.py`) and by `viz/gantt`; analysis reads the derived columns.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
 - `sample.py`: the demo series generator, with the findings it plants week by week.
 
@@ -143,26 +163,29 @@ Outside `analysis/`:
 
 | Command | Does |
 |---|---|
-| `app` | launches the UI on localhost (`--data`, `--baseline`, `--standards`, `--host`) |
+| `app` | launches the UI on localhost (`--data`, `--baseline`, `--standards`, `--port`, `--host`) |
 | `check` | runs a standard on files and prints the P6-style summary (`--baseline` or `--planned-baseline`, `--out` CSV, `--flagged DIR` for the items behind each count, `--expect CSV` to diff against a P6 Check Schedule summary, `--fail-on fail` for CI) |
-| `recalc` | reschedules and compares with stored dates (`--out` CSV) |
+| `recalc` | reschedules and compares with stored dates (`--out` CSV, `--report` groups the differences by activity shape, `--show N`) |
 | `changelog` | changes between two files |
 | `standards` | lists standards and rules, or writes the template |
 | `export` | Power BI tables |
 | `crosscheck` | compares the reading with MPXJ (Java); `--cpm` the recalculation with MPXJ's scheduler and the stored dates; `--p6` with P6's held-out corpus |
-| `info` | one line per snapshot |
+| `info` | one line per snapshot (`--project`) |
 | `sample` | generates the demo series |
 
 ## 9. Tests (`tests/`)
 
 | File | What it pins |
 |---|---|
+| `rulekit.py` | shared helpers of the rule tests: the built-in standards loaded once (`STANDARDS`), `run(std, metric_id, snapshot, baseline)`, `codes(result)` (flagged Activity IDs), `counts(result)` (numerator, denominator) |
+| `test_characterization.py` + `golden/standards.json` | characterization (golden) test: status, numerator, denominator, value and flagged identifiers (Activity IDs or `pred->succ`, never names; a note only for an error) of every metric of every built-in standard, in four sections: `demo` (the demo series, no baseline), `demo-planned` (planned-dates baseline), `demo-first-as-baseline` (first update as baseline) and `reference` (the pinned third-party XERs, the large Hotel file excluded). A refactor must change no number. After an intended change, run with `XERSCOPE_UPDATE_GOLDEN=1`: that run rewrites the section and always fails by design, so a rewrite is never green; review the diff of `golden/standards.json`, then rerun without the variable |
+| `test_p6_check_schedule.py` | the P6 Check Schedule rules written from Oracle's help (P6 Professional 24 101248; EPPM 25 91574 for the default targets): one quoted sentence of the help per test (target strictness, the 352 h boundary, exclusions, the started exemption, the soft constraint set), with the DCMA reading as contrast where they differ |
 | `xerkit.py` | builds tiny XERs in code (numeric ids, full calendars, as P6 writes them), so each expected number is countable by hand and any reader sees the same file |
-| `test_cpm.py` | real P6 files to the minute (dates, floats, longest path, assignments); each rule of the engine by hand |
+| `test_cpm.py` | real P6 files to the minute (dates, floats, longest path, assignments); each rule of the engine by hand, including a predecessor in another project of the file that shares a local Activity ID |
 | `test_p6_heldout.py` | the CPM against P6 23.12's held-out corpus: a floor per set that never drops, one pinned witness activity per rule, the float-type codes read on P6's own dates |
 | `test_crosscheck_mpxj.py` | the CPM against MPXJ's independent scheduler: P6 files three ways, random networks of every kind, the hand cases, the demo; open questions named in `crosscheck.UNRESOLVED`, P6-settled shapes in `P6_SETTLED` |
 | `test_cpm_properties.py` | invariants on seeded random networks |
-| `test_rules.py` | each check, especially where P6 and DCMA differ |
+| `test_rules.py` | each check, especially where P6 and DCMA differ (helpers from `rulekit.py`) |
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ crosscheck |
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA, CLI |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |

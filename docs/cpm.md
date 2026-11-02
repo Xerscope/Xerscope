@@ -328,7 +328,9 @@ The engine reports a warning when these occur:
 - relationships to projects that are not in the file.
 
 Links to other projects that are in the file are read (`Snapshot.external_links`), but no
-reference file has them, so they are not used yet.
+reference file has them, so they are not used yet. In `Snapshot.relationships` such a
+predecessor is named `[ext]{task_id}`, so the engine never confuses it with a local
+activity that has the same Activity ID (`tests/test_cpm.py`).
 
 ## Performance
 

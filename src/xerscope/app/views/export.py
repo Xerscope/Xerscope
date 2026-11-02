@@ -14,9 +14,11 @@ ui.header(
     "to follow an activity across weeks. Parquet keeps column types; CSV opens anywhere.",
 )
 
-tables = memo(("export",), lambda: export_tables(store))
+tables = memo(("export",), export_tables, store)
 ui.table(
-    pd.DataFrame([{"table": k, "rows": len(v), "columns": len(v.columns)} for k, v in tables.items()]),
+    pd.DataFrame(
+        [{"table": name, "rows": len(frame), "columns": len(frame.columns)} for name, frame in tables.items()]
+    ),
     overrides={
         "table": st.column_config.TextColumn("Table"),
         "rows": st.column_config.NumberColumn("Rows", format="%,d"),
@@ -24,11 +26,11 @@ ui.table(
     },
 )
 
-fmt = st.radio("Format", ["parquet", "csv"], horizontal=True)
+table_format = st.radio("Format", ["parquet", "csv"], horizontal=True)
 st.download_button(
-    f"Download {fmt.upper()} tables (.zip)",
-    data=zip_tables(store, fmt),
-    file_name=f"{store.latest.project_code}_xerscope_{fmt}.zip",
+    f"Download {table_format.upper()} tables (.zip)",
+    data=zip_tables(store, table_format),
+    file_name=f"{store.latest.project_code}_xerscope_{table_format}.zip",
     mime="application/zip",
     type="primary",
     icon=":material/download:",

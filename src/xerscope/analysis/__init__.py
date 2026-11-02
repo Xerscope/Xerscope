@@ -1,5 +1,6 @@
 """Schedule analysis: rules, standards (TOML profiles) and the analyses built on them."""
 
+from . import dcma, decm, integrity, p6  # noqa: F401 - registers the one-function-per-check rules
 from .baseline import Baseline
 from .checks import (
     AnalysisContext,

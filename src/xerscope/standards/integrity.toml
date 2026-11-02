@@ -11,19 +11,19 @@ source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports"
 id = "INT-01"
 name = "Schedule recalculated"
 description = "Open activities whose stored dates or total float differ from a recalculation"
-rule = "recalculated"
+rule = "int_01_recalculated"
 target = "<= 0%"
 
 [[metric]]
 id = "INT-02"
 name = "Out-of-sequence progress"
 description = "Started before an FS predecessor finished or an SS predecessor started"
-rule = "out_of_sequence"
+rule = "int_02_out_of_sequence_progress"
 target = "info"
 
 [[metric]]
 id = "INT-03"
 name = "Assignments recalculated"
 description = "Open resource assignments whose stored remaining early/late dates differ from a recalculation"
-rule = "assignments_recalculated"
+rule = "int_03_assignments_recalculated"
 target = "<= 0%"

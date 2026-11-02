@@ -188,7 +188,7 @@ open questions: [docs/cpm.md](docs/cpm.md#validation), [docs/backlog.md](docs/ba
 | CPM, assignments, longest path | real P6 exports with stored dates (Hotel 6.0, Terminal 5.0, PV 25.12, XER-editor 20.12), `tests/test_cpm.py` | every value identical, to the minute |
 | CPM | MPXJ's PrimaveraScheduler, a second engine, `tests/test_crosscheck_mpxj.py` | identical on random networks and the demo outside the named open cases |
 | Reading of the XER tables | MPXJ as an independent reader, `xerscope crosscheck` | identical on every reference file |
-| Checks (P6, DECM, DCMA), EV, PPC, changelog | hand-built schedules (`tests/xerkit.py`), xerlock's stated DCMA results | counted by hand; **no P6 Check Schedule report or DECM output confirms the populations yet** |
+| Checks (P6, DECM, DCMA), EV, PPC, changelog | hand-built schedules (`tests/xerkit.py`), xerlock's sample file, with the pamphlet's DCMA counts (`tests/reference/expected.py`) | counted by hand; **no P6 Check Schedule report or DECM output confirms the populations yet** |
 | Invariants | 260 seeded random networks, `tests/test_cpm_properties.py` | links hold in both passes, float = LF − EF, constraints |
 | Demo series | its planted findings | found in the week they appear; its dates are xerscope's own, checked by MPXJ |
 
@@ -207,6 +207,22 @@ uv sync --extra crosscheck                        # MPXJ + jpype, needs a JDK (j
 uv run python tests/reference/mpxj_cpm.py         # MPXJ's scheduler at a pinned commit (CPM crosscheck)
 uv run pytest -rs                                 # corpus and MPXJ tests skip when their data is missing
 ```
+
+Three test files pin the checks, each in its own way:
+
+- `tests/test_characterization.py` (characterization, or golden, test): every metric of
+  every built-in standard is run on the demo series (no baseline, planned-dates baseline,
+  first update as baseline) and on the pinned third-party files, and its status, counts,
+  value and flagged identifiers (Activity IDs, or `pred->succ` for relationship rules) are compared with `tests/golden/standards.json`
+  (sections `demo`, `demo-planned`, `demo-first-as-baseline`, `reference`; no activity
+  names). A refactor must change no number. After an intended change, run
+  `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`: it rewrites the
+  file and always fails by design, so a rewrite is never green; review the diff, then
+  rerun without the variable.
+- `tests/test_p6_check_schedule.py`: the P6 Check Schedule rules, one quoted sentence of
+  Oracle's P6 Professional 24 help per test.
+- `tests/test_rules.py`: each check by hand, especially where P6 and DCMA differ.
+  `tests/rulekit.py` holds the helpers the two rule test files share.
 
 The UI tests render every page headless (Streamlit AppTest), so they run the same on
 Windows. GitHub Actions (`.github/workflows/tests.yml`) runs:
@@ -246,6 +262,7 @@ src/xerscope/
 ├── viz/                 Plotly: Gantt (+ WBS bars), S-curve, indices, MTA, PPC
 ├── app/                 Streamlit, one file per page; ui.py = shared look; .streamlit/ = theme
 ├── config.py            tunable defaults no standard owns (hours/day fallback, critical float)
+├── verify/              independent checks: P6 held-out corpus, MPXJ scheduler and reader, difference shapes
 ├── crosscheck.py        MPXJ as second reader and second CPM engine; P6 held-out corpus score
 ├── export.py            Power BI star schema
 ├── sample.py            demo generator with planted findings
