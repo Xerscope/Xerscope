@@ -9,7 +9,7 @@
 #       go in a .env file next to this one (Container Manager's Environment fields do not
 #       feed the ${...} interpolation below; Compose reads .env by itself).
 #
-# Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
+# Variables: TS_AUTHKEY (tagged key, first start only), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
 #   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
 #   the .xer files, e.g. /volume1/<shared-folder>). Nothing in this folder is edited.
@@ -29,7 +29,7 @@ services:
     image: tailscale/tailscale:v1.104.4
     hostname: xerscope                              # https://xerscope.<tailnet>.ts.net
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:?tagged Tailscale auth key}
+      TS_AUTHKEY: ${TS_AUTHKEY:-}                    # first start only; then delete it here and in the admin console
       TS_USERSPACE: "true"
       TS_AUTH_ONCE: "true"                         # log in with the key once; later starts reuse the state
       TS_STATE_DIR: /var/lib/tailscale
@@ -71,7 +71,10 @@ services:
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # read for Everyone on a NAS: the app runs as uid 65532
-    networks: [internal]                            # nothing published: reachable from Caddy only
+    networks:                                       # nothing published: reachable from Caddy only
+      internal:
+        aliases: [app]                              # Caddy's upstream: in the tailscale namespace Caddy shares,
+                                                    # /etc/hosts maps "xerscope" (tailscale's hostname) to tailscale
     read_only: true
     tmpfs:                                          # owned by the image's user (nonroot, 65532): some Docker
       - /tmp:uid=65532,gid=65532,mode=1777          # builds (Synology's) mount a bare tmpfs root-only, and
