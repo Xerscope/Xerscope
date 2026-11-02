@@ -23,6 +23,9 @@ import pandas as pd
 
 from ..xer.model import CONSTRAINT, START_CONSTRAINTS, forecast_dates
 from .baseline import Baseline
+from .populations import ACTIVITY_COLS, LINK_COLS  # noqa: F401 - re-exported
+from .populations import flagged_activities as _act
+from .populations import flagged_relationships as _lnk
 
 if TYPE_CHECKING:
     from .checks import AnalysisContext
@@ -31,22 +34,6 @@ Unit = Literal["%", "ratio", "count", "days", "pass/fail"]
 Names = tuple[str, ...] | list[str]  # TOML gives lists, defaults are tuples
 Op = Literal["<", "<=", ">", ">="]
 LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
-
-ACTIVITY_COLS = [
-    "task_code",
-    "task_name",
-    "wbs_code",
-    "type",
-    "status",
-    "start",
-    "finish",
-    "total_float_d",
-    "total_float_hr_cnt",
-    "remaining_d",
-    "original_d",
-    "constraint",
-]
-LINK_COLS = ["pred_code", "pred_name", "succ_code", "succ_name", "type", "lag_hr", "lag_d"]
 
 
 @dataclass
@@ -200,17 +187,6 @@ def link_population(
         ]
     name = t["task_name"]
     return r.assign(pred_name=r["pred_code"].map(name), succ_name=r["succ_code"].map(name))
-
-
-def _act(df: pd.DataFrame, **extra) -> pd.DataFrame:
-    out = df[[c for c in ACTIVITY_COLS if c in df.columns]].copy()
-    for k, v in extra.items():
-        out[k] = v
-    return out
-
-
-def _lnk(df: pd.DataFrame) -> pd.DataFrame:
-    return df[[c for c in LINK_COLS if c in df.columns]].copy()
 
 
 def _project_ends(ctx: AnalysisContext) -> tuple[set[str], set[str]]:

@@ -31,40 +31,36 @@ id = "P6-01"
 group = "Inflexibility and Inefficiency"
 name = "Logic"
 description = "Activities missing predecessors or successors"
-rule = "missing_logic"
+rule = "p6_01_logic"
 target = "< 5%"
 source = "101248: completed and WBS summary activities not included; started activities and start milestones need no predecessor; a finish milestone without successor is counted, as a P6 Professional r22.12 report shows (Ten Six); external links pass (46291)"
-params = { exclude = ["complete"], pred_exempt = ["started", "start_milestone"], external_passes = true }
 
 [[metric]]
 id = "P6-02"
 group = "Inflexibility and Inefficiency"
 name = "Hard constraints"
 description = "Constraints that prevent activities being moved (Mandatory Start, Start On, Mandatory Finish, Finish On)"
-rule = "constraints"
+rule = "p6_02_hard_constraints"
 target = "< 1%"
 source = "46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"
-params = { types = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"], exclude = ["complete", "loe"], ignore_start_when_started = true }
 
 [[metric]]
 id = "P6-03"
 group = "Inflexibility and Inefficiency"
 name = "Soft constraints"
 description = "Constraints that do not prevent activities being moved"
-rule = "constraints"
+rule = "p6_03_soft_constraints"
 target = "< 5%"
 source = "46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"
-params = { types = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"], exclude = ["complete", "loe"], ignore_start_when_started = true }
 
 [[metric]]
 id = "P6-04"
 group = "Inflexibility and Inefficiency"
 name = "Large durations"
 description = "Activities that have a remaining duration greater than 352 hours"
-rule = "duration"
+rule = "p6_04_large_durations"
 target = "< 5%"
 source = "101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional r22.12 report shows (Ten Six) and EPPM's 46282 states"
-params = { field = "remaining", op = ">", value = 352, unit = "hours", exclude = ["complete", "loe", "milestones"] }
 
 [[metric]]
 id = "P6-05"
