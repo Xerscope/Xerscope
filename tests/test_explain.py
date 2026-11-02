@@ -68,9 +68,9 @@ def test_explain_tables_match_registry():
 
     # cpli (ratio) and critical_path_test (pass/fail) have no numerator/denominator/flagged
     # list to word; explain() falls back to defaults for them.
-    assert {n for n, r in RULES.items() if r.wording} == set(RULES) - {"cpli", "critical_path_test"}
+    assert {name for name, rule in RULES.items() if rule.title} == set(RULES) - {"cpli", "critical_path_test"}
     # the vocabularies carry their own labels: every key has one, so explain never falls back to the key
-    assert all(label and callable(pred) for label, pred in EXCLUDE.values())
+    assert all(label and callable(test) for label, test in EXCLUDE.values())
     assert all(EXEMPT.values())
 
 

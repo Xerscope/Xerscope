@@ -41,9 +41,9 @@ def _yes(column: pd.Series) -> pd.Series:
     return column.fillna(False).astype(bool)
 
 
-def open_activities(ctx: AnalysisContext) -> pd.DataFrame:
+def open_activities(context: AnalysisContext) -> pd.DataFrame:
     """Every activity that is not completed (WBS summaries are never in the snapshot's activities)."""
-    activities = ctx.snapshot.activities
+    activities = context.snapshot.activities
     return activities[~_yes(activities["is_complete"])]
 
 
@@ -55,18 +55,18 @@ def without_milestones(activities: pd.DataFrame) -> pd.DataFrame:
     return activities[~_yes(activities["is_milestone"])]
 
 
-def has_predecessor_in_project(ctx: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
+def has_predecessor_in_project(context: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
     """True where the activity is the successor of a relationship inside this project."""
-    return activities["task_code"].isin(_relationships_in_project(ctx)["succ_code"])
+    return activities["task_code"].isin(_relationships_in_project(context)["succ_code"])
 
 
-def has_successor_in_project(ctx: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
+def has_successor_in_project(context: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
     """True where the activity is the predecessor of a relationship inside this project."""
-    return activities["task_code"].isin(_relationships_in_project(ctx)["pred_code"])
+    return activities["task_code"].isin(_relationships_in_project(context)["pred_code"])
 
 
-def _relationships_in_project(ctx: AnalysisContext) -> pd.DataFrame:
-    relationships = ctx.snapshot.relationships
+def _relationships_in_project(context: AnalysisContext) -> pd.DataFrame:
+    relationships = context.snapshot.relationships
     return relationships[~relationships["is_external"].astype(bool)]
 
 
@@ -88,10 +88,10 @@ def constrained_by(activities: pd.DataFrame, constraint_types: list[str], ignore
 # --- relationships -----------------------------------------------------------------------
 
 
-def relationships_into(ctx: AnalysisContext, successors: pd.DataFrame) -> pd.DataFrame:
+def relationships_into(context: AnalysisContext, successors: pd.DataFrame) -> pd.DataFrame:
     """Relationships whose successor is one of ``successors``, with both activity names added."""
-    names = ctx.snapshot.activities.set_index("task_code")["task_name"]
-    relationships = ctx.snapshot.relationships
+    names = context.snapshot.activities.set_index("task_code")["task_name"]
+    relationships = context.snapshot.relationships
     into = relationships[relationships["succ_code"].isin(successors["task_code"])]
     return into.assign(pred_name=into["pred_code"].map(names), succ_name=into["succ_code"].map(names))
 
@@ -101,17 +101,17 @@ def relationships_into(ctx: AnalysisContext, successors: pd.DataFrame) -> pd.Dat
 
 def open_end_reason(missing_predecessor: pd.Series, missing_successor: pd.Series) -> pd.Series:
     """Why an activity is an open end; empty where it has both."""
-    reason = np.where(
-        missing_predecessor & missing_successor,
-        "no predecessor, no successor",
-        np.where(missing_predecessor, "no predecessor", np.where(missing_successor, "no successor", "")),
+    reason = np.select(
+        [missing_predecessor & missing_successor, missing_predecessor, missing_successor],
+        ["no predecessor, no successor", "no predecessor", "no successor"],
+        default="",
     )
     return pd.Series(reason, index=missing_predecessor.index)
 
 
 def flagged_activities(activities: pd.DataFrame, **extra_columns) -> pd.DataFrame:
     """The standard activity columns of the flagged rows, plus any extra column."""
-    flagged = activities[[c for c in ACTIVITY_COLS if c in activities.columns]].copy()
+    flagged = activities[[column for column in ACTIVITY_COLS if column in activities.columns]].copy()
     for name, values in extra_columns.items():
         flagged[name] = values
     return flagged
@@ -119,4 +119,4 @@ def flagged_activities(activities: pd.DataFrame, **extra_columns) -> pd.DataFram
 
 def flagged_relationships(relationships: pd.DataFrame) -> pd.DataFrame:
     """The standard relationship columns of the flagged rows."""
-    return relationships[[c for c in LINK_COLS if c in relationships.columns]].copy()
+    return relationships[[column for column in LINK_COLS if column in relationships.columns]].copy()
