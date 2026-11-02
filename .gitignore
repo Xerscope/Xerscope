@@ -7,3 +7,7 @@ export/
 tests/reference/data/
 .env
 tailscale-state/
+# Schedules never enter the repository: the compose files read exports/ by default
+exports/
+*.xer
+*.XER
