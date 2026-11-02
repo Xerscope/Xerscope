@@ -114,6 +114,11 @@ log says `Permission denied`.
 The case of the folder name matters inside the container: `/volume1/Planning` and
 `/volume1/planning` are two different paths. Copy it from File Station.
 
+The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes the sidebar
+field that takes a path. Uploads stay possible, up to 64 MB per file
+(`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`; the largest export is about 40 MB), and an error shows
+no traceback on the page (`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
+
 ## 6. Create the project
 
 Coming from the earlier all-in-one container: stop and delete it first, and delete its
@@ -130,6 +135,8 @@ XERSCOPE_USER=<login>
 XERSCOPE_PASSWORD_HASH='$2a$14$...'     # single quotes: unquoted, Compose reads the $ as variables
 XERSCOPE_PATH=<random>                 # no slashes
 XERSCOPE_EXPORTS=/volume1/<shared-folder>   # exact case
+# XERSCOPE_IMAGE=<image>@sha256:<digest>    # the build to run, pinned (§7)
+# XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
 ```
 
 Then Container Manager → **Project** → **Create**:
@@ -163,7 +170,7 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 | Want | Do |
 |---|---|
 | new app build | Container → Image → the app image (`ghcr.io/xerscope/xerscope` or the Docker Hub copy) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
-| pin a version | push a git tag `v0.1.0` → the workflow publishes `:0.1.0`; put it in `.env` (`XERSCOPE_IMAGE=<image>:0.1.0`), Build. Rollback = previous tag, Build. `sha-<short>` tags exist for every `main` build |
+| pin a build | `.env`: `XERSCOPE_IMAGE=<image>@sha256:<digest>`, Build. The `image` run prints the digest (`pushing manifest for …@sha256:…`); a tag (`sha-<short>`, `:0.1.0` from a git tag `v0.1.0`) can be pushed again by whoever holds the push token, a digest cannot change. Rollback = the previous digest, Build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only for a new node: Project → Stop, Container Manager → Volume → delete `xerscope_tailscale-state`, new key in `.env`, Build; delete the old machine in the admin console |
@@ -171,11 +178,23 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
 pins in `compose.yaml` on the NAS, Build.
 
+**Memory.** Each container has a memory and a PID cap, and its tmpfs a size
+(`deploy/compose.yaml`): past its cap the kernel kills that container alone, Docker restarts
+it, and the NAS keeps its RAM. The app's cap is `XERSCOPE_MEM_LIMIT`, default `2g`. Measured
+on a synthetic 43 MB export (97,121 activities): 0.95 GB at the peak of parsing, Streamlit's
+cached copy included; a DCMA check on it, 0.9 GB on its own; each further file of that size
+held in the session adds about 0.75 GB. A real export carries wider rows, so fewer
+activities per MB: after loading the usual weeks, read the app's memory in Container Manager
+and keep the cap above it, within what the NAS can spare. If the Project's build output says
+`Your kernel does not support memory limit capabilities`, Docker dropped the cap. There is no
+CPU quota on purpose: Docker refuses to create a container with one on a kernel without CFS
+bandwidth control.
+
 ## 8. Image on Docker Hub
 
 A **public** Docker Hub repository pulls without a registry login: steps 1 and 2 below, skip
 step 3. Anyone holding the Read & Write token can push a `latest` the NAS would pull at
-the next Update, so pin `XERSCOPE_IMAGE` to a `sha-<short>` tag (§7).
+the next Update, so pin `XERSCOPE_IMAGE` to a digest (§7).
 
 A private ghcr package needs a GitHub token on the NAS, which Container Manager does not
 handle. Keep the image private on Docker Hub instead, where Container Manager logs in
@@ -204,7 +223,10 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env` (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume).
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
-- [ ] App image pinned to a `sha-<short>` or version tag, not `latest` (§7).
+- [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
+- [ ] Memory and PID caps on the three containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
+- [ ] The visitor cannot type a folder path (`XERSCOPE_DATA_LOCKED`) and sees no traceback (§5).
+- [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: frame-ancestors 'self'` (the CI job `deploy` runs the stack and checks them).
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
 - [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`) and redacts the request line, Referer and redirect (they hold the prefix), in the access log and in the error log (global `log` block).
@@ -225,5 +247,6 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
+| the app container restarts while files load (Container Manager: exited, then running) | the memory cap: the kernel killed it | load fewer weeks at once, or raise `XERSCOPE_MEM_LIMIT` in `.env` within the NAS's free RAM (§7), Build |
 | page after upload disappears on restart | upload lands in the container's tmpfs | drop files in the shared folder instead |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |
