@@ -138,11 +138,14 @@ Outside `analysis/`:
 
 ## 6. `viz/`: figures
 
-- **`gantt.py`:** status-coloured bars, comparison outlines, milestones, logic links, a
-  data-date line and WBS summary bars. The Gantt page shows one WBS level at a time
-  (`level_rows`: the node's own activities, then one collapsed row per child node);
-  `analysis/wbs.py` gives the navigation (`children`, `path`, `visible_tree` for the
-  outline). Axes are fixed: the WBS is navigated, the chart is not zoomed.
+- **`gantt.py`, `gantt.js`, `gantt.css`:** the Gantt grouped by WBS, laid out like P6's
+  Activities view: a tree grid (Activity / WBS, % complete, float) on the left and the
+  timeline on the right, one row each. `gantt_rows` builds the rows in P6 order (each
+  WBS node, its own activities, then its child nodes) with float-category colours,
+  comparison dates and finish shifts; `gantt_html` wraps them as JSON with the script.
+  WBS rows open and close in the browser, without a rerun; there is no zoom, only a
+  month or week timescale. Schedule text is never parsed as HTML (`textContent` only)
+  and the page's Content-Security-Policy blocks every network request.
 - **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
   (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the
   check-status colours in `app/ui.py` derive from them. The series palette is a fixed

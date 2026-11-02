@@ -1,0 +1,71 @@
+/* WBS Gantt (gantt.js). Colours come from the data (--ink, --grid…), set on the root element. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--background); }
+#gantt {
+  height: 100vh; display: flex; flex-direction: column;
+  font: 13px/1.3 "Source Sans 3", "Source Sans Pro", system-ui, sans-serif; color: var(--ink);
+}
+.toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 2px 8px; flex-wrap: wrap; }
+.toolbar button {
+  font: inherit; color: var(--secondary); background: var(--background); cursor: pointer;
+  border: 1px solid var(--axis); border-radius: 4px; padding: 2px 9px;
+}
+.toolbar button:hover { color: var(--ink); border-color: var(--secondary); }
+.toolbar .sep { width: 1px; height: 18px; background: var(--axis); margin: 0 6px; }
+.toolbar .label { color: var(--muted); }
+.legend { margin-left: auto; display: flex; gap: 12px; color: var(--secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.legend i.ring { border: 1px solid var(--secondary); background: none; }
+.legend i.dd { width: 0; height: 12px; border-left: 2px dashed var(--secondary); border-radius: 0; }
+
+.scroll { flex: 1; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--axis); border-radius: 4px; }
+.head { position: sticky; top: 0; z-index: 3; display: flex; background: var(--band); border-bottom: 1px solid var(--axis); }
+.ghead { display: grid; width: var(--grid-w); flex: none; border-right: 1px solid var(--axis); }
+.ghead div { padding: 0 8px; align-self: end; height: 26px; line-height: 26px; color: var(--secondary); font-weight: 600; white-space: nowrap; }
+.ghead div + div { text-align: right; }
+.cols { grid-template-columns: 1fr 44px 58px; }
+.scale { position: relative; flex: 1; height: 52px; overflow: hidden; }
+.scale .tick { position: absolute; color: var(--secondary); white-space: nowrap; padding-left: 4px; border-left: 1px solid var(--axis); height: 26px; line-height: 26px; }
+.scale .tier2 { top: 26px; font-size: 12px; }
+
+.body { display: flex; position: relative; }
+.gcol { width: var(--grid-w); flex: none; border-right: 1px solid var(--axis); }
+.tcol { flex: 1; position: relative; overflow: hidden; }
+.row, .trow { height: 26px; }
+.row { display: grid; align-items: center; border-bottom: 1px solid var(--grid); cursor: default; }
+.row > div { padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }
+.row.wbs { background: var(--band); font-weight: 600; cursor: pointer; }
+.row.sel, .trow.sel { box-shadow: inset 3px 0 0 var(--Normal); }
+.row.hover, .trow.hover { background: color-mix(in srgb, var(--Normal) 8%, transparent); }
+.name { display: flex; align-items: center; gap: 4px; }
+.toggle { width: 14px; flex: none; color: var(--secondary); font-size: 10px; text-align: center; }
+.code { color: var(--secondary); margin-right: 6px; flex: none; }
+.row.wbs .code { color: var(--ink); }
+.text { overflow: hidden; text-overflow: ellipsis; }
+
+.trow { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--grid); }
+.trow.wbs { background: var(--band); }
+.bar, .outline, .summary, .diamond { position: absolute; }
+.bar { top: 7px; height: 12px; border-radius: 3px; }
+.outline { top: 4px; height: 18px; border: 1px solid var(--secondary); border-radius: 3px; }
+.summary { top: 10px; height: 6px; background: var(--secondary); }
+.summary::before, .summary::after { content: ""; position: absolute; top: 0; border: 5px solid transparent; border-top-color: var(--secondary); }
+.summary::before { left: 0; border-left-color: var(--secondary); }
+.summary::after { right: 0; border-right-color: var(--secondary); }
+.diamond { top: 7px; width: 12px; height: 12px; transform: translateX(-6px) rotate(45deg); border: 1px solid var(--ink); }
+.vline { position: absolute; top: 0; width: 0; border-left: 1px solid var(--grid); }
+.vline.dd { border-left: 2px dashed var(--secondary); z-index: 1; }
+svg.links { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 1; }
+svg.links path { fill: none; stroke: var(--muted); stroke-width: 1; }
+svg.links marker path { fill: var(--muted); stroke: none; }
+
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; display: none; max-width: 360px;
+  background: var(--background); border: 1px solid var(--axis); border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); padding: 6px 9px; color: var(--ink);
+}
+.tip .title { font-weight: 600; margin-bottom: 3px; }
+.tip .line { color: var(--secondary); }
+.empty { padding: 16px; color: var(--muted); }

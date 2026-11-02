@@ -25,7 +25,7 @@ from xerscope.analysis.progress import (
     progress_delta,
     rollup_delta,
 )
-from xerscope.analysis.wbs import ROOT, children, path, rollup, subtree_ids, visible_tree
+from xerscope.analysis.wbs import ROOT, path, rollup, subtree_ids
 from xerscope.store import SnapshotStore
 
 # --- changelog -------------------------------------------------------------------------------
@@ -354,18 +354,10 @@ def test_wbs_rollup_hours_weighting_and_tree():
     assert subtree_ids(rollup(s), "W1") == {"W1", "W11"}
 
 
-def test_wbs_navigation_children_path_and_outline():
+def test_wbs_path_from_the_project_down():
     nodes = rollup(snap([todo("A", wbs_id="W11")], wbs=WBS))
-    assert children(nodes, ROOT) == ["W1", "W2"]
-    assert children(nodes, "W1") == ["W11"]
-    assert children(nodes, "W11") == []
     assert path(nodes, "W11") == [ROOT, "W1", "W11"]
     assert path(nodes, ROOT) == [ROOT]
-    closed = visible_tree(nodes, set())
-    assert closed["wbs_id"].tolist() == [ROOT, "W1", "W2"]  # W11 hidden under the closed W1
-    assert closed.set_index("wbs_id")["open"].to_dict() == {ROOT: True, "W1": False, "W2": False}
-    assert visible_tree(nodes, {"W1"})["wbs_id"].tolist() == [ROOT, "W1", "W11", "W2"]
-    assert not visible_tree(nodes, {"W1"}).set_index("wbs_id").at["W11", "has_children"]
 
 
 # --- milestone trend -----------------------------------------------------------------------------

@@ -1,10 +1,15 @@
 """Chart readability: labels that would print on top of each other, colours that would collide."""
 
+import json
+from pathlib import Path
+
 import pandas as pd
+from xerkit import snap, todo
 
 from xerscope.analysis.wbs import rollup
-from xerscope.viz import build_finish_trend, build_gantt, level_rows
-from xerscope.viz.charts import INK, build_activity_dates, build_mta, build_ppc
+from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
+from xerscope.viz import gantt as gantt_module
+from xerscope.viz.charts import build_activity_dates, build_mta, build_ppc
 
 
 def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
@@ -64,55 +69,151 @@ def test_activity_dates_axis_keeps_days_when_dates_never_move():
     assert (low, high) == (day - pd.Timedelta(days=7), day + pd.Timedelta(days=7))
 
 
-def test_charts_show_dates_to_the_day(store):
+def test_finish_trend_shows_dates_to_the_day(store):
     """Weekly reporting reads dates, not times: no hour in hovers or tick labels."""
-    s = store.latest
-    gantt = build_gantt(s.activities, data_date=s.data_date)
-    starts = [row[3] for trace in gantt.data if trace.customdata is not None for row in trace.customdata]
-    assert starts and all(len(start) == 10 for start in starts)  # 2026-11-16, no 08:00
     trend = build_finish_trend(store.summary)
-    for fig in (gantt, trend):
-        for axis in (fig.layout.xaxis, fig.layout.yaxis):
-            if axis.type == "date" or fig is trend:
-                assert axis.hoverformat == "%Y-%m-%d"
-                assert all(stop.value != "%H:%M" for stop in axis.tickformatstops)
-    assert gantt.layout.xaxis.tickformatstops[0].dtickrange[1] == 86_400_000  # below a day: day labels
+    for axis in (trend.layout.xaxis, trend.layout.yaxis):
+        assert axis.hoverformat == "%Y-%m-%d"
+        assert axis.tickformatstops[0].dtickrange[1] == 86_400_000  # below a day: day labels
 
 
-def test_gantt_week_and_month_timescales(store):
-    s = store.latest
-    month = build_gantt(s.activities, data_date=s.data_date, timescale="month")
-    assert month.layout.xaxis.dtick == "M1" and month.layout.xaxis.range is None  # whole project
-    week = build_gantt(s.activities, data_date=s.data_date, timescale="week")
-    assert week.layout.xaxis.dtick == 7 * 86_400_000
-    low, high = (pd.Timestamp(x) for x in week.layout.xaxis.range)
-    assert low <= s.data_date <= high and high - low == pd.Timedelta(weeks=12)
+# --- WBS Gantt -------------------------------------------------------------------------------
+
+WBS = [  # project W0 > E (W1) > D (W11), project > C (W2)
+    {
+        "wbs_id": "W0",
+        "proj_id": "1",
+        "parent_wbs_id": "",
+        "proj_node_flag": "Y",
+        "wbs_short_name": "T",
+        "wbs_name": "Project",
+        "seq_num": "0",
+    },
+    {
+        "wbs_id": "W1",
+        "proj_id": "1",
+        "parent_wbs_id": "W0",
+        "proj_node_flag": "N",
+        "wbs_short_name": "E",
+        "wbs_name": "Engineering",
+        "seq_num": "1",
+    },
+    {
+        "wbs_id": "W11",
+        "proj_id": "1",
+        "parent_wbs_id": "W1",
+        "proj_node_flag": "N",
+        "wbs_short_name": "D",
+        "wbs_name": "Design",
+        "seq_num": "1",
+    },
+    {
+        "wbs_id": "W2",
+        "proj_id": "1",
+        "parent_wbs_id": "W0",
+        "proj_node_flag": "N",
+        "wbs_short_name": "C",
+        "wbs_name": "Civil",
+        "seq_num": "2",
+    },
+]
 
 
-def test_gantt_logic_links_are_darker_than_the_grid(store):
-    s = store.latest
-    fig = build_gantt(s.activities, data_date=s.data_date, relationships=s.relationships, show_links=True)
-    link = next(t for t in fig.data if t.name == "Logic")
-    assert link.line.color == INK["light"]["muted"]  # the axis grey vanished on white
+def _wbs_snapshot(**names):
+    activities = [
+        todo("B", wbs_id="W1", early_start_date="2026-03-09 08:00", early_end_date="2026-03-13 17:00"),
+        todo("A", wbs_id="W11", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+        todo("C", wbs_id="W2", early_start_date="2026-03-02 08:00", early_end_date="2026-03-04 17:00"),
+        todo("P", wbs_id="W0", early_start_date="2026-03-02 08:00", early_end_date="2026-03-02 17:00"),
+    ]
+    for row in activities:
+        row["task_name"] = names.get(row["task_code"], row["task_code"])
+    return snap(activities, [("A", "B", "FS", 0), ("B", "C", "FS", 0)], wbs=WBS)
 
 
-def test_gantt_level_rows_bold_summaries_and_no_zoom(store):
-    s = store.latest
+def _rows(s, nodes=None, **kw):
+    tasks = s.activities.assign(category=categorise(s.activities))
+    return gantt_rows(tasks, rollup(s) if nodes is None else nodes, **kw)
+
+
+def test_gantt_rows_follow_the_wbs_tree_in_p6_order():
+    rows = _rows(_wbs_snapshot())
+    assert [(r["id"], r["parent"], r["depth"]) for r in rows] == [
+        ("w:__project__", None, 0),
+        ("a:P", "w:__project__", 1),  # on the project node itself
+        ("w:W1", "w:__project__", 1),
+        ("a:B", "w:W1", 2),  # a node's own activities come before its child nodes
+        ("w:W11", "w:W1", 2),
+        ("a:A", "w:W11", 3),
+        ("w:W2", "w:__project__", 1),
+        ("a:C", "w:W2", 2),
+    ]
+
+
+def test_gantt_rows_of_one_branch_and_filtered():
+    s = _wbs_snapshot()
     nodes = rollup(s)
-    top = nodes[nodes["depth"] == 1]
-    tasks = s.activities[s.activities["task_code"] == "M1000"]
-    order, summaries = level_rows(tasks, top)
-    assert order[0] == "M1000  Notice to proceed"  # the level's own activities first
-    assert order[1:] == ["▸ " + label for label in top["label"]]  # then one row per child node
-    fig = build_gantt(tasks, data_date=s.data_date, summaries=summaries, row_order=order)
-    ticks = dict(zip(fig.layout.yaxis.tickvals, fig.layout.yaxis.ticktext, strict=True))
-    assert ticks[order[1]] == f"<b>{order[1]}</b>" and ticks[order[0]] == order[0]
-    assert fig.layout.xaxis.fixedrange and fig.layout.yaxis.fixedrange  # a drag must not zoom
+    branch = nodes[nodes["wbs_id"].isin(["W1", "W11"])]
+    in_branch = s.activities[s.activities["wbs_id"].isin(["W1", "W11"])]
+    rows = gantt_rows(in_branch.assign(category=categorise(in_branch)), branch)
+    assert [(r["id"], r["parent"], r["depth"]) for r in rows] == [
+        ("w:W1", None, 0),  # the branch's top node is the root of the drawing
+        ("a:B", "w:W1", 1),
+        ("w:W11", "w:W1", 1),
+        ("a:A", "w:W11", 2),
+    ]
+    only_c = s.activities[s.activities["task_code"] == "C"]
+    filtered = gantt_rows(only_c.assign(category=categorise(only_c)), nodes, keep_empty=False)
+    assert [r["id"] for r in filtered] == ["w:__project__", "w:W2", "a:C"]  # empty W1, W11 dropped
 
 
-def test_gantt_month_axis_keeps_the_project_span(store):
-    s = store.latest
-    one = s.activities[s.activities["task_code"] == "C3020"]
-    span = (s.activities["start"].min(), s.activities["finish"].max())
-    low, high = (pd.Timestamp(x) for x in build_gantt(one, data_date=s.data_date, span=span).layout.xaxis.range)
-    assert (low, high) == (span[0] - pd.Timedelta(days=7), span[1] + pd.Timedelta(days=7))
+def test_gantt_rows_compare_dates_and_shift():
+    s = _wbs_snapshot()
+    earlier = s.activities.assign(finish=s.activities["finish"] - pd.Timedelta(days=1))
+    row = next(r for r in _rows(s, compare=earlier, snapshot=s) if r["id"] == "a:B")
+    assert row["cmp_finish"] == "2026-03-12T17:00" and row["finish"] == "2026-03-13T17:00"
+    assert row["shift_wd"] == 1  # Thu 12 -> Fri 13 March, Mon-Fri calendar
+
+
+def test_gantt_html_keeps_schedule_text_out_of_the_markup():
+    hostile = "</script><img src=x onerror=alert(1)>"
+    s = _wbs_snapshot(B=hostile)
+    page = gantt_html(_rows(s), data_date=s.data_date)
+    assert hostile not in page and "<img" not in page  # the name travels as escaped JSON only
+    assert json.loads(page.split("const DATA = ")[1].split(";</script>")[0])["rows"][3]["name"] == hostile
+    assert "default-src 'none'" in page  # no network request, no external resource
+
+
+def test_gantt_script_never_parses_text_as_html_nor_calls_out():
+    script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
+    for unsafe in (
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "Function(",
+        "fetch(",
+        "XMLHttpRequest",
+        "WebSocket",
+        "sendBeacon",
+        "import(",
+    ):
+        assert unsafe not in script
+
+
+def test_gantt_html_timescales_and_links():
+    s = _wbs_snapshot()
+    rows = _rows(s)
+    data = lambda page: json.loads(page.split("const DATA = ")[1].split(";</script>")[0])  # noqa: E731
+    span = (pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-31"))
+    month = data(gantt_html(rows, data_date=s.data_date, span=span))
+    assert month["window"] == ["2026-02-23T00:00", "2026-04-07T00:00"]  # the span, 7 days each side
+    week = data(gantt_html(rows, data_date=s.data_date, timescale="week"))
+    low, high = (pd.Timestamp(w) for w in week["window"])
+    assert high - low == pd.Timedelta(weeks=12) and low < s.data_date < high
+    assert data(gantt_html(rows, relationships=s.relationships))["links"] == []  # off unless asked
+    linked = data(gantt_html(rows, relationships=s.relationships, links=True))["links"]
+    assert linked == [["a:A", "a:B", "FS"], ["a:B", "a:C", "FS"]]
+    no_c = [r for r in rows if r["id"] != "a:C"]
+    assert data(gantt_html(no_c, relationships=s.relationships, links=True))["links"] == [["a:A", "a:B", "FS"]]

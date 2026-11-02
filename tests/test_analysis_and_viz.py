@@ -12,10 +12,10 @@ from rulekit import STANDARDS, codes, run_on_store
 
 import xerscope
 from xerscope.analysis import Baseline, health_history
+from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
-from xerscope.viz import build_finish_trend, build_gantt
+from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
 from xerscope.viz.charts import ACCENT, build_activity_dates, build_activity_float
-from xerscope.viz.gantt import MIN_BAR_MS
 
 
 def test_planted_lead_open_end_and_missing_resources(store):
@@ -61,21 +61,15 @@ def test_health_history_is_long_format(store):
     assert neg[4] == 0 and neg[5] > 0
 
 
-def test_gantt_figure(store):
+def test_gantt_rows_on_the_demo_series(store):
     s = store.latest
-    fig = build_gantt(
-        s.activities,
-        data_date=s.data_date,
-        compare=store.first.activities,
-        relationships=s.relationships,
-        show_links=True,
-    )
-    names = {t.name for t in fig.data}
-    assert {"Critical", "Logic"} <= names
-    assert any(n and n.startswith("Data date") for n in names)
-    bars = [trace for trace in fig.data if trace.type == "bar"]
-    assert bars
-    assert all(min(trace.x) >= MIN_BAR_MS for trace in bars)  # one-hour tasks stay visible
+    tasks = s.activities.assign(category=categorise(s.activities))
+    rows = gantt_rows(tasks, rollup(s), compare=store.first.activities, snapshot=s)
+    drawn = [r["code"] for r in rows if r["kind"] == "task"]
+    assert sorted(drawn) == sorted(s.activities["task_code"])  # every activity once
+    assert rows[0]["id"] == "w:__project__" and rows[0]["depth"] == 0
+    assert {r["category"] for r in rows if r["kind"] == "task"} >= {"Critical", "Complete"}
+    assert "Critical" in gantt_html(rows, relationships=s.relationships, data_date=s.data_date, links=True)
 
 
 def test_finish_trend(store):
@@ -84,13 +78,12 @@ def test_finish_trend(store):
 
 
 def test_gantt_compare_with_no_common_tasks(store):
-    """Comparison that shares no task code (another project): every finish shift is NaN and
-    the hover text must still build (an all-NaN mapped Series is float64; str + float64 raises)."""
+    """Comparison sharing no task code (another project): no outline, no shift, rows still build."""
     s = store.latest
-    other = store.first.activities.copy()
-    other["task_code"] = "ZZ-" + other["task_code"].astype(str)
-    fig = build_gantt(s.activities, data_date=s.data_date, compare=other, compare_label="other")
-    assert fig.data
+    other = store.first.activities.assign(task_code=lambda f: "ZZ-" + f["task_code"].astype(str))
+    tasks = s.activities.assign(category=categorise(s.activities))
+    rows = gantt_rows(tasks, rollup(s), compare=other, snapshot=s)
+    assert all(r["cmp_finish"] is None and r["shift_wd"] is None for r in rows if r["kind"] == "task")
 
 
 def test_activity_charts_follow_the_history(store):
