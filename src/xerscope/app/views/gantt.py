@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis.wbs import ROOT, path, rollup, subtree_ids
+from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, compare_picker, is_dark, memo, require_store, snapshot_picker
 from xerscope.viz import categorise, gantt_html, gantt_rows
@@ -38,15 +38,17 @@ nodes = memo(
 )
 if st.session_state.get(NODE_KEY) not in set(nodes["wbs_id"]):
     st.session_state[NODE_KEY] = ROOT  # first visit, or a node the picked update does not have
-labels = nodes.set_index("wbs_id")["label"]
+labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
 
 
-def wbs_path_label(wbs_id: str) -> str:
-    """'CIV · Civil works › ZA · Zone A': the node and the nodes above it."""
-    return " › ".join(labels[i] for i in path(nodes, wbs_id)[1:]) or labels[ROOT]
+# "CIV · Civil works › ZA · Zone A": each node and the nodes above it, built once (the list
+# formats every node on each rerun)
+path_labels = {
+    wbs_id: " › ".join(labels[a] for a in reversed(ancestors) if a != ROOT) or labels[ROOT]
+    for wbs_id, ancestors in zip(nodes["wbs_id"], nodes["ancestors"], strict=True)
+}
 
-
-current = st.selectbox("WBS", nodes["wbs_id"].tolist(), format_func=wbs_path_label, key=NODE_KEY)
+current = st.selectbox("WBS", nodes["wbs_id"].tolist(), format_func=path_labels.get, key=NODE_KEY)
 node = nodes[nodes["wbs_id"] == current].iloc[0]
 ui.kpis(
     [
@@ -86,15 +88,16 @@ tasks = snapshot.activities
 if current != ROOT:
     tasks = tasks[tasks["wbs_id"].isin(branch_ids)]
 tasks = tasks.assign(category=categorise(tasks))
+if hide_loe:
+    tasks = tasks[~tasks["is_loe"]]
+unfiltered = len(tasks)
 if status:
     tasks = tasks[tasks["status"].isin(status)]
 if categories:
     tasks = tasks[tasks["category"].isin(categories)]
-if hide_loe:
-    tasks = tasks[~tasks["is_loe"]]
 if search:
     tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
-filtering = bool(status or categories or search)
+filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the outline stays closed
 
 rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
 root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]

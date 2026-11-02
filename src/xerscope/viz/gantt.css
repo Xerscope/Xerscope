@@ -30,10 +30,11 @@ html, body { margin: 0; height: 100%; background: var(--background); }
 .scale .tier2 { top: 26px; font-size: 12px; }
 
 .body { display: flex; position: relative; }
-.gcol { width: var(--grid-w); flex: none; border-right: 1px solid var(--axis); }
+.gcol { width: var(--grid-w); flex: none; position: relative; border-right: 1px solid var(--axis); }
+.layer { position: absolute; left: 0; top: 0; right: 0; }
 .tcol { flex: 1; position: relative; overflow: hidden; }
 .row, .trow { height: 26px; }
-.row { display: grid; align-items: center; border-bottom: 1px solid var(--grid); cursor: default; }
+.row { position: absolute; left: 0; right: 0; display: grid; align-items: center; border-bottom: 1px solid var(--grid); cursor: default; }
 .row > div { padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }
 .row.wbs { background: var(--band); font-weight: 600; cursor: pointer; }

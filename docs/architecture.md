@@ -143,8 +143,9 @@ Outside `analysis/`:
   timeline on the right, one row each. `gantt_rows` builds the rows in P6 order (each
   WBS node, its own activities, then its child nodes) with float-category colours,
   comparison dates and finish shifts; `gantt_html` wraps them as JSON with the script.
-  WBS rows open and close in the browser, without a rerun; there is no zoom, only a
-  month or week timescale. Schedule text is never parsed as HTML (`textContent` only)
+  WBS rows open and close in the browser, without a rerun; only the rows in view are
+  in the page, so a schedule of 15,000 activities scrolls like a small one. There is
+  no zoom, only a month or week timescale. Schedule text is never parsed as HTML (`textContent` only)
   and the page's Content-Security-Policy blocks every network request.
 - **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
   (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the

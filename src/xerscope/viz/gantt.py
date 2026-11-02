@@ -16,6 +16,7 @@ and a Content-Security-Policy forbids any network request or external resource.
 from __future__ import annotations
 
 import json
+import math
 from importlib.resources import files
 
 import numpy as np
@@ -62,7 +63,7 @@ def _iso(value) -> str | None:
 
 
 def _number(value, digits: int = 1) -> float | None:
-    return None if value is None or pd.isna(value) else round(float(value), digits)
+    return None if value is None or pd.isna(value) or not math.isfinite(float(value)) else round(float(value), digits)
 
 
 def _compare_columns(t: pd.DataFrame, compare: pd.DataFrame | None, snapshot) -> pd.DataFrame:
@@ -93,25 +94,40 @@ def _wbs_row(n, top: str, top_depth: int, shown: set[str]) -> dict:
     }
 
 
-def _task_row(a, node: str, depth: int) -> dict:
-    return {
-        "id": f"a:{a.task_code}",
-        "parent": f"w:{node}",
-        "depth": depth,
-        "kind": "task",
-        "code": str(a.task_code),
-        "name": str(a.task_name),
-        "start": _iso(a.start),
-        "finish": _iso(a.finish),
-        "cmp_start": _iso(a.cmp_start),
-        "cmp_finish": _iso(a.cmp_finish),
-        "category": a.category,
-        "milestone": ("start" if a.is_start_milestone else "finish") if a.is_milestone else None,
-        "status": str(a.status),
-        "pct": _number(a.pct_complete, 0),
-        "float_d": _number(a.total_float_d),
-        "shift_wd": _number(a.shift_wd),
+def _iso_column(dates: pd.Series) -> list[str | None]:
+    text = dates.dt.strftime("%Y-%m-%dT%H:%M").tolist()
+    return [value if isinstance(value, str) else None for value in text]  # NaT -> None
+
+
+def _number_column(values: pd.Series, digits: int = 1) -> list[float | None]:
+    rounded = pd.to_numeric(values, errors="coerce").astype(float).round(digits).tolist()
+    return [value if math.isfinite(value) else None for value in rounded]  # NaN, inf -> None
+
+
+def _task_rows(t: pd.DataFrame) -> list[dict]:
+    """Activity rows, built column by column (one pass, not one pandas lookup per cell)."""
+    milestone = [
+        ("start" if start else "finish") if is_milestone else None
+        for start, is_milestone in zip(t["is_start_milestone"], t["is_milestone"], strict=True)
+    ]
+    columns = {
+        "id": ("a:" + t["task_code"].astype(str)).tolist(),
+        "parent": ("w:" + t["node"].astype(str)).tolist(),
+        "kind": ["task"] * len(t),
+        "code": t["task_code"].astype(str).tolist(),
+        "name": t["task_name"].astype(str).tolist(),
+        "start": _iso_column(t["start"]),
+        "finish": _iso_column(t["finish"]),
+        "cmp_start": _iso_column(t["cmp_start"]),
+        "cmp_finish": _iso_column(t["cmp_finish"]),
+        "category": t["category"].tolist(),
+        "milestone": milestone,
+        "status": t["status"].astype(str).tolist(),
+        "pct": _number_column(t["pct_complete"], 0),
+        "float_d": _number_column(t["total_float_d"]),
+        "shift_wd": _number_column(t["shift_wd"]),
     }
+    return [dict(zip(columns, values, strict=True)) for values in zip(*columns.values(), strict=True)]
 
 
 def gantt_rows(
@@ -134,17 +150,21 @@ def gantt_rows(
     shown = set(nodes["wbs_id"])
     top, top_depth = nodes["wbs_id"].iloc[0], int(nodes["depth"].iloc[0])
     t = tasks.assign(node=tasks["wbs_id"].where(tasks["wbs_id"].isin(shown), top))
-    t = _compare_columns(t, compare, snapshot)
+    t = _compare_columns(t, compare, snapshot).sort_values(["start", "task_code"], na_position="last")
     ancestors = nodes.set_index("wbs_id")["ancestors"]
     used = {a for node in t["node"].unique() for a in ancestors.get(node, [node]) if a in shown}
-    by_node = {k: g.sort_values(["start", "task_code"]) for k, g in t.groupby("node", sort=False)}
+    by_node: dict[str, list[dict]] = {}
+    for row, node in zip(_task_rows(t), t["node"], strict=True):
+        by_node.setdefault(node, []).append(row)
     rows = []
     for n in nodes.itertuples():
         if not keep_empty and n.wbs_id not in used:
             continue
         rows.append(_wbs_row(n, top, top_depth, shown))
         depth = int(n.depth) - top_depth + 1
-        rows += [_task_row(a, n.wbs_id, depth) for a in by_node[n.wbs_id].itertuples()] if n.wbs_id in by_node else []
+        for row in by_node.get(n.wbs_id, []):
+            row["depth"] = depth
+            rows.append(row)
     return rows
 
 

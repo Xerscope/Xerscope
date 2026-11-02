@@ -1,6 +1,7 @@
 """Chart readability: labels that would print on top of each other, colours that would collide."""
 
 import json
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -217,3 +218,29 @@ def test_gantt_html_timescales_and_links():
     assert linked == [["a:A", "a:B", "FS"], ["a:B", "a:C", "FS"]]
     no_c = [r for r in rows if r["id"] != "a:C"]
     assert data(gantt_html(no_c, relationships=s.relationships, links=True))["links"] == [["a:A", "a:B", "FS"]]
+
+
+def test_gantt_rows_scale_to_a_large_schedule():
+    """3,000 activities on 300 WBS nodes: rows are built in one pass, not one pandas lookup per cell
+    (per-node sorting and itertuples took about 3 s here, and kept a real schedule loading)."""
+    wbs = [WBS[0]] + [
+        {
+            "wbs_id": f"N{k}",
+            "proj_id": "1",
+            "parent_wbs_id": "W0",
+            "proj_node_flag": "N",
+            "wbs_short_name": f"N{k}",
+            "wbs_name": f"Node {k}",
+            "seq_num": str(k),
+        }
+        for k in range(300)
+    ]
+    tasks = [
+        todo(f"A{k}", wbs_id=f"N{k % 300}", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00")
+        for k in range(3000)
+    ]
+    s = snap(tasks, wbs=wbs)
+    started = time.perf_counter()
+    rows = _rows(s, compare=s.activities, snapshot=s)
+    assert time.perf_counter() - started < 2
+    assert len(rows) == 1 + 300 + 3000
