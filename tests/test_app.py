@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from xerkit import xer_text
 
 import xerscope
 
@@ -238,3 +239,59 @@ def test_folder_files_can_be_picked(sample_dir, monkeypatch):
     picker.set_value(picker.value[:3]).run()
     _ok(at)
     assert any("3 snapshot(s)" in c.value for c in at.sidebar.caption)
+
+
+def _with_second_project(main: str, code: str, task_codes: list[str], data_date: str) -> str:
+    """``main`` plus a second PROJECT (proj_id 2) owning ``task_codes``, as P6 writes a file
+    exported with a baseline copy or a second project."""
+    extra = xer_text(
+        [{"task_code": c, "task_id": str(100 + i), "proj_id": "2"} for i, c in enumerate(task_codes)],
+        data_date=data_date,
+        project={"proj_id": "2", "proj_short_name": code},
+    ).splitlines()
+    project_row = extra[extra.index("%T\tPROJECT") + 2]
+    task_rows = [line for line in extra[extra.index("%T\tTASK") + 2 :] if line.startswith("%R")]
+    lines = main.splitlines()
+    lines.insert(lines.index("%T\tPROJECT") + 3, project_row)
+    end = lines.index("%T\tTASK") + 2
+    while end < len(lines) and lines[end].startswith("%R"):
+        end += 1
+    lines[end:end] = task_rows
+    return "\n".join(lines) + "\n"
+
+
+@pytest.fixture
+def renamed_project(tmp_path):
+    """Week 1 holds project NEW plus a second project OLD; week 2 holds NEW only."""
+    tasks = [{"task_code": c} for c in ("A1", "A2", "A3")]
+    week1 = xer_text(tasks, data_date="2026-03-02 08:00", project={"proj_short_name": "NEW"})
+    (tmp_path / "w1.xer").write_text(_with_second_project(week1, "OLD", ["A1", "A2"], "2026-03-02 08:00"))
+    (tmp_path / "w2.xer").write_text(xer_text(tasks, data_date="2026-03-09 08:00", project={"proj_short_name": "NEW"}))
+    return tmp_path
+
+
+def _pick_project(at, code: str) -> None:
+    next(box for box in at.sidebar.selectbox if box.label == "Project").set_value(code).run()
+
+
+def test_project_choice_applies_to_the_files_that_hold_it(renamed_project, monkeypatch):
+    """A project in one file only: the other files keep their own project, none is rejected."""
+    at = _run(renamed_project, monkeypatch)
+    _ok(at)
+    _pick_project(at, "OLD")
+    _ok(at)
+    assert not at.sidebar.error
+    store = at.session_state["store"]
+    assert [s.project_code for s in store] == ["OLD", "NEW"]
+    assert [len(s.activities) for s in store] == [2, 3]
+
+
+def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch):
+    """Analyses cached for one project are not served for another."""
+    at = _run(renamed_project, monkeypatch)
+    at.switch_page("views/export.py").run()
+    _ok(at)
+    _pick_project(at, "OLD")
+    _ok(at)
+    exported = [list(v["dim_snapshot"]["project"]) for k, v in at.session_state["_memo"].items() if k[-1] == "export"]
+    assert ["OLD", "NEW"] in exported

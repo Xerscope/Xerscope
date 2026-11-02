@@ -86,7 +86,7 @@ class SnapshotStore:
                 self._snaps.append(s)
         codes = {s.project_code for s in self._snaps}
         if len(codes) > 1:
-            self.warnings.append(f"snapshots mix several projects: {sorted(codes)}")
+            self.warnings.append(f"project code differs across snapshots (renamed or other project): {sorted(codes)}")
 
     # --- construction ----------------------------------------------------------
     @classmethod
