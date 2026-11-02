@@ -72,6 +72,9 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any(m.label == "Focus" and m.value == "CIV" for m in app.metric)
     _toggle(app, "Logic links", True)
     assert _gantt_data(app)["links"]
+    app.multiselect[0].set_value(["Not started", "In progress", "Complete"]).run()
+    assert _gantt_data(app)["open"] == ["w:7003"]  # every status ticked: nothing filtered, nothing opened
+    app.multiselect[0].set_value([]).run()
     app.text_input[0].set_value("earthworks").run()  # a search opens every branch on the matches
     data = _gantt_data(app)
     assert [r["code"] for r in data["rows"] if r["kind"] == "task"] == ["C3020"]

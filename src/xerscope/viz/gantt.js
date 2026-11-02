@@ -201,24 +201,44 @@
   const hideTip = () => { tip.style.display = "none"; };
 
   // --- rows ----------------------------------------------------------------------------
+  // Only the rows in view (plus a margin) exist in the DOM: a 15,000-activity schedule
+  // draws as fast as a small one. Events are handled once per column, not per row.
+  const BUFFER = 30; // rows drawn above and below the visible ones
+  const NS = "http://www.w3.org/2000/svg";
+  for (const r of rows) {
+    r.t0 = time(r.start); r.t1 = time(r.finish);
+    r.c0 = time(r.cmp_start); r.c1 = time(r.cmp_finish);
+  }
+  let shown = [];
+  let index = new Map();
+  let drawn = [-1, -1];
+
+  const gridLayer = el("div", "layer");
+  const timeLayer = el("div", "layer");
+  const gridLines = el("div", "layer");
+  const linkSvg = document.createElementNS(NS, "svg");
+  linkSvg.setAttribute("class", "links");
+  gcol.append(gridLayer);
+  tcol.append(gridLines, timeLayer, linkSvg);
+
   const toggle = (r) => {
     if (!children.has(r.id)) return;
     if (open.has(r.id)) open.delete(r.id); else open.add(r.id);
     render();
   };
 
-  const gridRow = (r) => {
+  const gridRow = (r, i) => {
     const row = el("div", "row cols " + r.kind + (r.id === D.selected ? " sel" : ""));
+    row.style.top = i * ROW + "px";
+    row.dataset.i = String(i);
     const name = el("div", "name");
     name.style.paddingLeft = 8 + r.depth * 16 + "px";
-    const hasChildren = children.has(r.id);
-    name.append(el("span", "toggle", hasChildren ? (open.has(r.id) ? "▾" : "▸") : ""));
+    name.append(el("span", "toggle", children.has(r.id) ? (open.has(r.id) ? "▾" : "▸") : ""));
     if (r.code) name.append(el("span", "code", r.code));
     const text = el("span", "text", r.name);
     text.title = r.name;
     name.append(text);
     row.append(name, el("div", "num", r.pct === null ? "" : r.pct), el("div", "num", r.float_d === null ? "" : r.float_d));
-    if (r.kind === "wbs") row.addEventListener("click", () => toggle(r));
     return row;
   };
 
@@ -230,41 +250,35 @@
     return node;
   };
 
-  const timelineRow = (r, index) => {
+  const timelineRow = (r, i) => {
     const row = el("div", "trow " + r.kind + (r.id === D.selected ? " sel" : ""));
-    row.style.top = index * ROW + "px";
-    const start = time(r.start);
-    const finish = time(r.finish);
+    row.style.top = i * ROW + "px";
+    row.dataset.i = String(i);
     if (r.kind === "wbs") {
-      if (start !== null && finish !== null) row.append(box("summary", start, finish));
+      if (r.t0 !== null && r.t1 !== null) row.append(box("summary", r.t0, r.t1));
       return row;
     }
-    const cs = time(r.cmp_start);
-    const cf = time(r.cmp_finish);
-    if (cs !== null && cf !== null && !r.milestone) row.append(box("outline", cs, cf));
+    if (r.c0 !== null && r.c1 !== null && !r.milestone) row.append(box("outline", r.c0, r.c1));
     const colour = P[r.category] || P.Normal;
     if (r.milestone) {
-      const at = r.milestone === "start" ? start : finish;
+      const at = r.milestone === "start" ? r.t0 : r.t1;
       if (at !== null) {
         const diamond = el("div", "diamond");
         diamond.style.left = x(at) + "px";
         diamond.style.background = colour;
         row.append(diamond);
       }
-    } else if (start !== null && finish !== null) {
-      const bar = box("bar", start, finish);
+    } else if (r.t0 !== null && r.t1 !== null) {
+      const bar = box("bar", r.t0, r.t1);
       bar.style.background = colour;
       row.append(bar);
     }
     return row;
   };
 
-  const linkLayer = (shown) => {
-    const NS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("class", "links");
-    svg.setAttribute("width", String(width));
-    svg.setAttribute("height", String(shown.length * ROW));
+  const drawLinks = (first, last) => {
+    linkSvg.replaceChildren();
+    if (!D.links.length) return;
     const defs = document.createElementNS(NS, "defs");
     const marker = document.createElementNS(NS, "marker");
     for (const [k, v] of Object.entries({ id: "arrow", markerWidth: "6", markerHeight: "6", refX: "5", refY: "3", orient: "auto" })) marker.setAttribute(k, v);
@@ -272,67 +286,113 @@
     head.setAttribute("d", "M0,0 L6,3 L0,6 Z");
     marker.append(head);
     defs.append(marker);
-    svg.append(defs);
-    const index = new Map(shown.map((r, i) => [r.id, i]));
+    linkSvg.append(defs);
     for (const [pred, succ, kind] of D.links) {
-      if (!index.has(pred) || !index.has(succ)) continue;
+      const i0 = index.get(pred);
+      const i1 = index.get(succ);
+      if (i0 === undefined || i1 === undefined) continue;
+      if (Math.max(i0, i1) < first || Math.min(i0, i1) > last) continue; // crosses no drawn row
       const p = byId.get(pred);
       const s = byId.get(succ);
-      const x0 = x(time(kind === "SS" || kind === "SF" ? p.start : p.finish));
-      const x1 = x(time(kind === "FF" || kind === "SF" ? s.finish : s.start));
-      const y0 = index.get(pred) * ROW + ROW / 2;
-      const y1 = index.get(succ) * ROW + ROW / 2;
+      const x0 = x(kind === "SS" || kind === "SF" ? p.t0 : p.t1);
+      const x1 = x(kind === "FF" || kind === "SF" ? s.t1 : s.t0);
       if (!isFinite(x0) || !isFinite(x1)) continue;
       const path = document.createElementNS(NS, "path");
-      path.setAttribute("d", `M${x0},${y0} H${x0 + 6} V${y1} H${x1}`);
+      path.setAttribute("d", `M${x0},${i0 * ROW + ROW / 2} H${x0 + 6} V${i1 * ROW + ROW / 2} H${x1}`);
       path.setAttribute("marker-end", "url(#arrow)");
-      svg.append(path);
+      linkSvg.append(path);
     }
-    return svg;
   };
 
-  // --- render --------------------------------------------------------------------------
+  // rows from first to last (inclusive) that the scroll position shows, with a margin
+  const windowRows = () => {
+    const top = scroll.scrollTop - body.offsetTop;
+    const first = Math.max(0, Math.floor(top / ROW) - BUFFER);
+    const last = Math.min(shown.length - 1, Math.ceil((top + scroll.clientHeight) / ROW) + BUFFER);
+    return [first, last];
+  };
+
+  const drawWindow = (force) => {
+    const [first, last] = windowRows();
+    if (!force && first === drawn[0] && last === drawn[1]) return;
+    drawn = [first, last];
+    const g = [];
+    const t = [];
+    for (let i = first; i <= last; i++) {
+      g.push(gridRow(shown[i], i));
+      t.push(timelineRow(shown[i], i));
+    }
+    gridLayer.replaceChildren(...g);
+    timeLayer.replaceChildren(...t);
+    drawLinks(first, last);
+  };
+
   function render() {
     width = Math.max(1, tcol.clientWidth);
-    const shown = visibleRows();
+    shown = visibleRows();
+    index = new Map(shown.map((r, i) => [r.id, i]));
+    const height = shown.length * ROW;
     const marks = ticks();
     drawScale(marks);
-    gcol.replaceChildren();
-    tcol.replaceChildren();
-    tcol.style.height = shown.length * ROW + "px";
-    if (!shown.length) {
-      gcol.append(el("div", "empty", "No activity matches the filters."));
-      return;
-    }
-    for (const t of marks.bottom) {
+    gcol.style.height = tcol.style.height = height + "px";
+    linkSvg.setAttribute("width", String(width));
+    linkSvg.setAttribute("height", String(height));
+    const lines = marks.bottom.map((tick) => {
       const line = el("div", "vline");
-      line.style.left = x(t.t) + "px";
-      line.style.height = shown.length * ROW + "px";
-      tcol.append(line);
-    }
+      line.style.left = x(tick.t) + "px";
+      line.style.height = height + "px";
+      return line;
+    });
     if (D.dataDate) {
       const line = el("div", "vline dd");
       line.style.left = x(time(D.dataDate)) + "px";
-      line.style.height = shown.length * ROW + "px";
-      tcol.append(line);
+      line.style.height = height + "px";
+      lines.push(line);
     }
-    shown.forEach((r, i) => {
-      const g = gridRow(r);
-      const t = timelineRow(r, i);
-      for (const node of [g, t]) {
-        node.addEventListener("mousemove", (event) => showTip(r, event));
-        node.addEventListener("mouseenter", () => { g.classList.add("hover"); t.classList.add("hover"); });
-        node.addEventListener("mouseleave", () => { g.classList.remove("hover"); t.classList.remove("hover"); hideTip(); });
-      }
-      t.addEventListener("click", () => toggle(r));
-      gcol.append(g);
-      tcol.append(t);
-    });
-    if (D.links.length) tcol.append(linkLayer(shown));
+    gridLines.replaceChildren(...lines);
+    empty.style.display = shown.length ? "none" : "block";
+    drawWindow(true);
   }
 
+  const empty = el("div", "empty", "No activity matches the filters.");
+  scroll.append(empty);
+
+  // one listener per column: hover, tooltip and folding find their row through data-i
+  let hovered = -1;
+  const setHover = (i) => {
+    if (i === hovered) return;
+    for (const node of body.querySelectorAll(".hover")) node.classList.remove("hover");
+    hovered = i;
+    if (i >= 0) for (const node of body.querySelectorAll(`[data-i="${i}"]`)) node.classList.add("hover");
+  };
+  const rowAt = (event) => {
+    const node = event.target.closest("[data-i]");
+    return node ? Number(node.dataset.i) : -1;
+  };
+  body.addEventListener("mousemove", (event) => {
+    const i = rowAt(event);
+    setHover(i);
+    if (i >= 0) showTip(shown[i], event); else hideTip();
+  });
+  body.addEventListener("mouseleave", () => { setHover(-1); hideTip(); });
+  body.addEventListener("click", (event) => {
+    const i = rowAt(event);
+    if (i >= 0) toggle(shown[i]);
+  });
+
+  let pending = false;
+  scroll.addEventListener("scroll", () => {
+    hideTip();
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; drawWindow(false); });
+  });
+  window.addEventListener("resize", () => render());
+
   render();
-  const selectedIndex = visibleRows().findIndex((r) => r.id === D.selected);
-  if (selectedIndex > 1) scroll.scrollTop = (selectedIndex - 1) * ROW;
-  window.addEventListener("resize", render);
+  const selectedIndex = index.get(D.selected);
+  if (selectedIndex > 1) {
+    scroll.scrollTop = (selectedIndex - 1) * ROW;
+    drawWindow(false);
+  }
 })();

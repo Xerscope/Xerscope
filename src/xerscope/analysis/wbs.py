@@ -117,11 +117,6 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
     return out
 
 
-def path(nodes: pd.DataFrame, wbs_id: str) -> list[str]:
-    """Node ids from the project row down to ``wbs_id``."""
-    return list(reversed(nodes.set_index("wbs_id").at[wbs_id, "ancestors"]))
-
-
 def subtree_ids(nodes: pd.DataFrame, wbs_id: str) -> set[str]:
     """``wbs_id`` and every node below it."""
     return {

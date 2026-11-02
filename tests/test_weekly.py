@@ -25,7 +25,7 @@ from xerscope.analysis.progress import (
     progress_delta,
     rollup_delta,
 )
-from xerscope.analysis.wbs import ROOT, path, rollup, subtree_ids
+from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.store import SnapshotStore
 
 # --- changelog -------------------------------------------------------------------------------
@@ -352,12 +352,6 @@ def test_wbs_rollup_hours_weighting_and_tree():
     assert r.loc["W2", "pct_complete"] == pytest.approx(37.5)
     assert r.loc[ROOT, "activities"] == 4
     assert subtree_ids(rollup(s), "W1") == {"W1", "W11"}
-
-
-def test_wbs_path_from_the_project_down():
-    nodes = rollup(snap([todo("A", wbs_id="W11")], wbs=WBS))
-    assert path(nodes, "W11") == [ROOT, "W1", "W11"]
-    assert path(nodes, ROOT) == [ROOT]
 
 
 # --- milestone trend -----------------------------------------------------------------------------
