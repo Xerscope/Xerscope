@@ -76,7 +76,9 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 
 | Module | Input → output | Notes |
 |---|---|---|
-| `rules.py` | context + parameters → `RuleOutput(flagged, numerator, denominator, value)` | the only check code; one function per check, parameterised (`exclude`, `links`, `op`, `value`, `unit`…) |
+| `p6/check_schedule.py`, `dcma/fourteen_point.py`, `decm/schedule_metrics.py`, `integrity.py` | context → `RuleOutput(flagged, numerator, denominator, value)` | the built-in standards: one explicit function per check, its docstring quoting the source |
+| `populations.py` | snapshot → activity or link subsets (open, with a predecessor, into open work…) | the building blocks those functions combine |
+| `rules.py` | the `@rule` registry; context + parameters → `RuleOutput` | parameterised rules (`exclude`, `links`, `op`, `value`, `unit`…) for your own standard, and helpers shared with the explicit checks |
 | `standards.py` | TOML → `Standard(metrics)` | validated on load (rule, parameter names, population keywords, target syntax) |
 | `checks.py` | standard + `AnalysisContext` → `CheckResult` per metric; `health_history` over the series | a failing rule returns status "error", never crashes the page |
 | `baseline.py` | BL snapshot (or planned dates) → frame `bl_start, bl_finish, bl_labor_hr…` | shared by BEI, missed, late, PV |
@@ -89,15 +91,18 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 
 Standards are data in `standards/*.toml`:
 
-- `p6.toml`: P6 Professional 24 Check Schedule (17 checks: the 14 of the help plus out of sequence and dangling start/finish from a real report; Oracle's groups);
+- `p6.toml`: P6 Professional 24 Check Schedule (17 checks: the 14 of the help plus out of sequence and dangling start/finish from a P6 Professional report; Oracle's groups);
 - `decm.toml`: DCMA DECM v8.0, Guideline 6 schedule tests;
 - `dcma.toml`: DCMA 14-Point (legacy);
 - `integrity.toml`: recalculation of activities and assignments, out-of-sequence progress;
 - `custom-template.toml`: the commented starting point for your own.
 
-Why rules plus TOML: P6's "Large Float" and DCMA-06 are one function (`float`) with
-different units and populations. A difference between standards is a parameter you can
-read and test, not a second implementation.
+Why explicit functions plus TOML: P6's "Large Float" (`p6_06_large_float`) and DCMA-06
+look alike but differ in unit and population. Each built-in check is one function that
+reads like its source text, so a reviewer can hold it against the Oracle page or the DCMA
+sheet; the TOML holds only the target and the source. Your own standard picks the
+parameterised rules of `rules.py` (`float` among them) and sets units, exclusions and
+targets as data.
 
 Layer rules (imports, as the code has them):
 
