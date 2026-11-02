@@ -128,13 +128,6 @@ def _late_vs_baseline_notes(params: dict) -> list[str]:
     return notes
 
 
-def _missed_tasks_notes(params: dict) -> list[str]:
-    return [
-        "Due = baseline start and finish set, baseline finish on or before the data date. "
-        "Missed = actual (else forecast) finish on a later day than the baseline finish."
-    ]
-
-
 def _bei_notes(params: dict) -> list[str]:
     if params.get("due_from") == "baseline":
         due_text = (
@@ -152,7 +145,6 @@ NOTES: dict[str, Callable[[dict], list[str]]] = {
     "relationship_type": _relationship_type_notes,
     "invalid_dates": _invalid_dates_notes,
     "late_vs_baseline": _late_vs_baseline_notes,
-    "missed_tasks": _missed_tasks_notes,
     "bei": _bei_notes,
 }
 

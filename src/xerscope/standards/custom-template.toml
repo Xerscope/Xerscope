@@ -15,8 +15,8 @@
 # Constraint codes (types): CS_MSO, CS_MSOA, CS_MSOB, CS_MEO, CS_MEOA, CS_MEOB,
 #   CS_MANDSTART, CS_MANDFIN, CS_ALAP
 # group (optional): a section title, shown in the results table.
-# The built-in P6 / DCMA / DECM / INTEGRITY files use the same format: copy a metric from
-# them as your own variant (its params then no longer claim a standard's authority) (e.g. DECM 06A204b "open_ends", P6 "dangling"), or see every rule below.
+# The built-in P6 / DCMA / DECM / INTEGRITY files give each check its own function (no params);
+# the rules here are the parameterised ones for your own standard (see every rule below).
 
 [standard]
 id = "CUSTOM"
@@ -126,28 +126,3 @@ params = { delay_days = 600 }
 # rule = "dangling"                 # EPPM check, not in P6 Professional
 # target = "<= 5%"
 # params = { end = "finish", exclude = ["complete"] }
-#
-# [[metric]]
-# id = "CUS-15"
-# name = "Open starts / finishes (DECM)"
-# rule = "open_ends"
-# target = "<= 0%"
-# params = { exempt_ends = "baseline" }
-#
-# [[metric]]
-# id = "CUS-16"
-# name = "Out-of-sequence links"
-# rule = "out_of_sequence"
-# unit = "count"
-# target = "<= 0"
-# params = { method = "decm", exclude = [] }
-#
-# [[metric]]
-# id = "CUS-17"
-# name = "Recalculated"
-# rule = "recalculated"             # stored dates = a P6-style F9
-# target = "<= 0%"
-#
-# Also: lagged_activities, summary_logic, loe_successors, missing_baseline,
-# actuals_changed, progress_actuals, riding_status_date, assignments_recalculated
-# (xerscope standards --rules lists their parameters).

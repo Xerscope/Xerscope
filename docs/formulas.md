@@ -191,7 +191,7 @@ Source string: "xerscope: analysis/cpm.py, validated against P6-scheduled export
 | INT-02 | Out-of-sequence progress | started, not LOE | has a predecessor link (predecessor an activity) with FS: predecessor actual finish blank or `> act_start_date`; SS: predecessor actual start blank or `> act_start_date` | count (value = found; denominator = started) | info | test_out_of_sequence_progress_is_listed |
 | INT-03 | Assignments recalculated | `TASKRSRC` rows the recalculation schedules, with a stored `restart_date`, `reend_date`, `rem_late_start_date` or `rem_late_end_date` | at least one of those dates differs from the recalculation (exact timestamp) | % | <= 0% | test_rules: test_assignment_dates_integrity; test_cpm: test_assignment_dates_reproduce_p6 |
 
-### 2.5 Critical path rules (rules.py `cpli`, `critical_path_test`; cpm.py `critical_path_test`)
+### 2.5 Critical path rules (dcma/fourteen_point.py `dcma_13_cpli`, `dcma_12_critical_path_test`; cpm.py `critical_path_test`)
 
 **CPLI.** `end` = the activity with the latest `finish` among not complete, not LOE
 activities (milestones included; ties: first row). `CPL = working_days(data date, end.finish)`
