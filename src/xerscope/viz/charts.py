@@ -40,6 +40,9 @@ INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC
 PPC_TARGET = 80  # default PPC target, in percent
 LABEL_FULL_MAX = 20  # PPC bars up to this many weeks carry "63% (5/8)"
 LABEL_SHORT_MAX = 40  # up to this many weeks they carry "63%", beyond none
+# Weekly updates are read to the day: no time in hovers, and zooming below one day keeps
+# day labels instead of Plotly's hour and minute ticks. For date axes only.
+DATE_AXIS = dict(hoverformat="%Y-%m-%d", tickformatstops=[dict(dtickrange=[None, 86_400_000], value="%d %b")])
 
 
 def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
@@ -65,6 +68,7 @@ def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", le
         spikedash="dot",
         tickfont=TICK,
         title_font=FONT,
+        **DATE_AXIS,
     )
     fig.update_yaxes(
         title=y_title,
@@ -289,7 +293,7 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
     fig.update_xaxes(
         title="Reporting date (data date)", range=[trend["data_date"].min() - pad, trend["data_date"].max() + 3 * pad]
     )
-    fig.update_yaxes(range=[trend["forecast"].min() - 2 * pad, trend["forecast"].max() + 2 * pad])
+    fig.update_yaxes(range=[trend["forecast"].min() - 2 * pad, trend["forecast"].max() + 2 * pad], **DATE_AXIS)
     return fig
 
 
@@ -314,6 +318,7 @@ def build_activity_dates(history: pd.DataFrame, dark: bool = False) -> go.Figure
     fig = go.Figure([_line(history, "start", "Start", colours[0]), _line(history, "finish", "Finish", colours[1])])
     fig.update_xaxes(title="Data date")
     fig = _layout(fig, dark, 380, "Forecast date")
+    fig.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
     if pd.notna(low) and high - low < pd.Timedelta(days=14):
         # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
@@ -355,6 +360,7 @@ def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
     )
     fig.update_xaxes(title="Data date")
     fig = _layout(fig, dark, 380, "Forecast finish", legend=False)
+    fig.update_yaxes(**DATE_AXIS)
     fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
     return fig
 

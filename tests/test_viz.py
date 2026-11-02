@@ -2,7 +2,8 @@
 
 import pandas as pd
 
-from xerscope.viz.charts import build_activity_dates, build_mta, build_ppc
+from xerscope.viz import build_finish_trend, build_gantt
+from xerscope.viz.charts import INK, build_activity_dates, build_mta, build_ppc
 
 
 def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
@@ -60,3 +61,35 @@ def test_activity_dates_axis_keeps_days_when_dates_never_move():
     )
     low, high = (pd.Timestamp(x) for x in build_activity_dates(history).layout.yaxis.range)
     assert (low, high) == (day - pd.Timedelta(days=7), day + pd.Timedelta(days=7))
+
+
+def test_charts_show_dates_to_the_day(store):
+    """Weekly reporting reads dates, not times: no hour in hovers or tick labels."""
+    s = store.latest
+    gantt = build_gantt(s.activities, data_date=s.data_date)
+    starts = [row[3] for trace in gantt.data if trace.customdata is not None for row in trace.customdata]
+    assert starts and all(len(start) == 10 for start in starts)  # 2026-11-16, no 08:00
+    trend = build_finish_trend(store.summary)
+    for fig in (gantt, trend):
+        for axis in (fig.layout.xaxis, fig.layout.yaxis):
+            if axis.type == "date" or fig is trend:
+                assert axis.hoverformat == "%Y-%m-%d"
+                assert all(stop.value != "%H:%M" for stop in axis.tickformatstops)
+    assert gantt.layout.xaxis.tickformatstops[0].dtickrange[1] == 86_400_000  # below a day: day labels
+
+
+def test_gantt_week_and_month_timescales(store):
+    s = store.latest
+    month = build_gantt(s.activities, data_date=s.data_date, timescale="month")
+    assert month.layout.xaxis.dtick == "M1" and month.layout.xaxis.range is None  # whole project
+    week = build_gantt(s.activities, data_date=s.data_date, timescale="week")
+    assert week.layout.xaxis.dtick == 7 * 86_400_000
+    low, high = (pd.Timestamp(x) for x in week.layout.xaxis.range)
+    assert low <= s.data_date <= high and high - low == pd.Timedelta(weeks=12)
+
+
+def test_gantt_logic_links_are_darker_than_the_grid(store):
+    s = store.latest
+    fig = build_gantt(s.activities, data_date=s.data_date, relationships=s.relationships, show_links=True)
+    link = next(t for t in fig.data if t.name == "Logic")
+    assert link.line.color == INK["light"]["muted"]  # the axis grey vanished on white
