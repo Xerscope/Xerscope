@@ -103,6 +103,7 @@ folder of the repository:
 | `compose.yaml` | nothing |
 | `Caddyfile` | nothing (login and hash come from the environment) |
 | `tailscale-serve.json` | nothing |
+| `caddy/` | not used on the NAS: the Caddy image is pulled (`xerscope-caddy`), never built there |
 
 Add a `.env` from `.env.example` with the five values (§6). Container Manager's Environment
 fields at project creation do not feed the compose file's `${...}` interpolation: left empty,
@@ -191,6 +192,8 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 | new app or Caddy build | Container → Image → the image (`ghcr.io/xerscope/xerscope`, `ghcr.io/xerscope/xerscope-caddy`, or their Docker Hub copies) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
 | pin a build | `.env`: `XERSCOPE_IMAGE=<image>@sha256:<digest>`, Build. The `image` run prints the digest (`pushing manifest for …@sha256:…`); a tag (`sha-<short>`, `:0.1.0` from a git tag `v0.1.0`) can be pushed again by whoever holds the push token, a digest cannot change. Rollback = the previous digest, Build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
+| new `deploy/` files (a merged PR changed `Caddyfile`, `compose.yaml` or `tailscale-serve.json`) | copy the changed files over the ones in `docker/xerscope/`, keep `.env`, add any new variable from `.env.example`, Build |
+| hash made at another cost | bcrypt reads the cost from the hash: a `$2a$14$` hash still logs in, but every wrong password then costs the NAS cost 14 (§3). Regenerate it at cost 10, `.env`, Build |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only for a new node: Project → Stop, Container Manager → Volume → delete `xerscope_tailscale-state`, new key in `.env`, Build; delete the old machine in the admin console |
 

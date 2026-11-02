@@ -252,4 +252,6 @@ def test_schedules_stay_out_of_git():
     assert not re.search(r"\.(xer|parquet|xlsx?|csv)$", tracked, re.I | re.M)
     assert "git ls-files | grep -iE" in (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert "driver: local" in c and 'max-size: "5m"' in c
+    # json-file, the driver Container Manager's Log tab reads ("local" shows nothing there), bounded
+    assert "driver: json-file" in c and 'max-size: "5m"' in c and "driver: local" not in c
+    assert c.count("logging: *bounded-log") == 3
