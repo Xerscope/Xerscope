@@ -169,7 +169,7 @@ jobs:
     # deploy/ as the NAS runs it, without the app and without a tailnet login: the compose
     # file is valid, tailscaled starts on its read-only root and the CLI reaches it, Caddy
     # answers 404 outside the prefix, 401 inside it, 502 once authenticated (no app here),
-    # Referrer-Policy on every answer, and the prefix never appears in its log.
+    # the security headers on every answer, and the prefix never appears in its log.
     runs-on: ubuntu-latest
     env:
       XERSCOPE_USER: ci
@@ -223,8 +223,11 @@ jobs:
             echo "$line" | grep -q '"Referrer-Policy": \["no-referrer"\]'
             echo "$line" | grep -q '"X-Content-Type-Options": \["nosniff"\]'
             echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'\"\]"
+            echo "$line" | grep -q '"Strict-Transport-Security": \["max-age=31536000"\]'
+            echo "$line" | grep -q '"Permissions-Policy": \["camera=(), microphone=(), geolocation=()"\]'
           done
           ! grep -q "$XERSCOPE_PATH" caddy.log
+          grep -q '"uri": "/<prefix>/"' caddy.log   # the prefix is masked, the rest of the path kept
       - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

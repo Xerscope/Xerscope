@@ -38,7 +38,7 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "- tailscale-state:/var/lib/tailscale" in compose and "./tailscale-state" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     assert "basic_auth" in caddy and "reverse_proxy app:8501" in caddy and "auto_https off" in caddy
-    assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
+    assert "trusted_proxies static 127.0.0.1/32" in caddy  # the visitor's IP, trusted from tailscaled's loopback only
     # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
     # rewrite the config, basic_auth included) must not exist
     assert "admin off" in caddy
@@ -48,7 +48,8 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
     assert '"/"' in serve  # the secret prefix is Caddy's job (XERSCOPE_PATH), serve.json is not edited
     assert "handle_path /{$XERSCOPE_PATH}/*" in caddy and "respond 404" in caddy  # 404 before auth elsewhere
-    assert "request>uri replace" in caddy and "resp_headers>Location delete" in caddy  # no prefix in the log
+    assert "request>uri regexp {$XERSCOPE_PATH} <prefix>" in caddy  # no prefix in the log, the rest of the path kept
+    assert "resp_headers>Location regexp {$XERSCOPE_PATH} <prefix>" in caddy
 
 
 def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_environment():
@@ -111,7 +112,8 @@ def test_caddy_error_log_redacts_the_secret_prefix():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     global_block = caddy[caddy.index("{") : caddy.index(":8080")]
     assert "log {" in global_block and "format filter" in global_block
-    assert "request>uri replace REDACTED" in global_block and "request>headers>Referer delete" in global_block
+    assert "request>uri regexp {$XERSCOPE_PATH} <prefix>" in global_block
+    assert "request>headers>Referer regexp {$XERSCOPE_PATH} <prefix>" in global_block
 
 
 def test_tailscale_key_is_optional_once_the_node_exists():
@@ -158,10 +160,30 @@ def test_remote_app_settings_reach_streamlit():
 
 def test_caddy_security_headers_and_their_ci_check():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
-    for line in ("Referrer-Policy no-referrer", "X-Content-Type-Options nosniff", "frame-ancestors 'self'"):
+    headers = (
+        "Referrer-Policy no-referrer",
+        "X-Content-Type-Options nosniff",
+        "frame-ancestors 'self'",
+        'Strict-Transport-Security "max-age=31536000"',
+        'Permissions-Policy "camera=(), microphone=(), geolocation=()"',
+    )
+    for line in headers:
         assert line in caddy, line
+    block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
+    # a deletion defers the whole block, and deferred ops skip the 401: -Server has its own directive
+    assert "-Server" not in block and "    header -Server" in caddy
+    assert "header @download >Cache-Control no-store" in caddy and "@download path /media/*" in caddy
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job runs Caddy and reads them
     assert "docker compose up -d tailscale caddy" in wf and "frame-ancestors 'self'" in wf
+    assert "Strict-Transport-Security" in wf and "Permissions-Policy" in wf
+
+
+def test_caddy_logs_keep_no_token_and_no_project_code():
+    """Streamlit's WebSocket subprotocol carries its XSRF token and session id, and the tables
+    export is named after the project code: both logs drop them."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    assert caddy.count("request>headers>Sec-Websocket-Protocol delete") == 2  # error log and access log
+    assert "resp_headers>Content-Disposition delete" in caddy
 
 
 def test_base_images_pinned_by_digest():

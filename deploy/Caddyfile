@@ -3,6 +3,11 @@
 # XERSCOPE_PATH is the secret URL prefix (no slashes): the app lives at /<prefix>/, every
 # other path answers 404 before authentication. Scanners find every *.ts.net name within
 # seconds from the public certificate logs; the prefix keeps them off the login prompt.
+#
+# The logs keep what a review needs (path, status, visitor IP) and drop what a reader of
+# them could reuse: the prefix becomes "<prefix>" wherever the URL appears, Streamlit's
+# XSRF token and session id (the WebSocket subprotocol) are deleted, and so is the name of
+# a downloaded file (the tables export names it after the project code).
 {
     admin off
     auto_https off
@@ -10,12 +15,13 @@
     log {                                       # default logger: proxy errors (http.log.error.*) print the
         format filter {                         # request too; the site's log block filters access logs only
             wrap json
-            request>uri replace REDACTED
-            request>headers>Referer delete
+            request>uri regexp {$XERSCOPE_PATH} <prefix>
+            request>headers>Referer regexp {$XERSCOPE_PATH} <prefix>
+            request>headers>Sec-Websocket-Protocol delete
         }
     }
     servers {
-        trusted_proxies static private_ranges   # tailscaled proxies from 127.0.0.1: log the visitor's IP
+        trusted_proxies static 127.0.0.1/32     # tailscaled proxies from loopback: log the visitor's IP
     }
 }
 
@@ -24,12 +30,18 @@
         Referrer-Policy no-referrer      # a link the page opens never carries the URL, i.e. the secret prefix
         X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
         Content-Security-Policy "frame-ancestors 'self'"   # no other site can frame the app (clickjacking)
+        Strict-Transport-Security "max-age=31536000"   # the browser never tries the name over plain HTTP
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"   # the app uses none of them
     }
+    header -Server   # neither Caddy nor uvicorn names itself; a deletion is deferred, so it stays out of
+                     # the block above, which must also reach the 401 (an error, where deferred ops do not run)
     redir /{$XERSCOPE_PATH} /{$XERSCOPE_PATH}/ 308   # the page's relative asset URLs need the trailing slash
     handle_path /{$XERSCOPE_PATH}/* {              # strips the prefix: Streamlit keeps serving "/"
         basic_auth {
             {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
         }
+        @download path /media/*          # st.download_button files: schedule data, never kept on the visitor's disk
+        header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
         reverse_proxy app:8501    # network alias: "xerscope" is tailscale's hostname here
     }
     handle {
@@ -39,9 +51,11 @@
         output stdout
         format filter {
             wrap console
-            request>headers>Referer delete   # the Referer holds the full URL, i.e. the secret prefix
-            request>uri replace REDACTED     # so does the request line
-            resp_headers>Location delete     # and the redirect to the trailing slash
+            request>uri regexp {$XERSCOPE_PATH} <prefix>               # the request line holds the secret prefix
+            request>headers>Referer regexp {$XERSCOPE_PATH} <prefix>   # so does the Referer
+            resp_headers>Location regexp {$XERSCOPE_PATH} <prefix>     # and the redirect to the trailing slash
+            request>headers>Sec-Websocket-Protocol delete   # Streamlit's XSRF token and session id
+            resp_headers>Content-Disposition delete         # the export's file name carries the project code
         }
     }
 }
