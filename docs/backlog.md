@@ -128,7 +128,7 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Sidecar images in `deploy/compose.yaml` pinned by tag, not digest (the Dockerfile's
       are): `docker buildx imagetools inspect` the tailscale and caddy tags once and write
       `@sha256:` after each (Dependabot keeps tag and digest together).
-- [ ] Caddy image: 7 Trivy findings accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
+- [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
       none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
       Caddy release that fixes them, or renew each entry with its reason.
 - [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
