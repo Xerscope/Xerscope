@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .cpm import CycleError, compare_assignments, compare_with_stored
-from .populations import flagged_activities, without_level_of_effort
+from .populations import flagged_activities, links_between, without_level_of_effort
 from .rules import RuleOutput, rule
 
 STORED_FIELDS = ["early_start_date", "early_end_date", "late_start_date", "late_end_date", "total_float_hr_cnt"]
@@ -49,6 +49,20 @@ def int_01_recalculated(context) -> RuleOutput:
     )
 
 
+def _predecessors_ahead(links: pd.DataFrame, started: pd.DataFrame, tasks: pd.DataFrame) -> pd.Series:
+    """For each started successor, its FS / SS predecessors that had not finished / started at its actual start."""
+    if links.empty:
+        return pd.Series(dtype=object)
+    start = links["succ_code"].map(started["act_start_date"])
+    predecessor_finish = links["pred_code"].map(tasks["act_end_date"])
+    predecessor_start = links["pred_code"].map(tasks["act_start_date"])
+    # a predecessor with no actual date yet has certainly not happened before the successor's start
+    finish_after = (links["type"] == "FS") & (predecessor_finish.isna() | (predecessor_finish > start))
+    start_after = (links["type"] == "SS") & (predecessor_start.isna() | (predecessor_start > start))
+    ahead = links[finish_after | start_after]
+    return (ahead["pred_code"] + " (" + ahead["type"] + ")").groupby(ahead["succ_code"]).agg(", ".join)
+
+
 @rule("int_02_out_of_sequence_progress", "count")
 def int_02_out_of_sequence_progress(context) -> RuleOutput:
     """Progressed out of logic sequence.
@@ -61,22 +75,9 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
     activities = without_level_of_effort(context.snapshot.activities)
     tasks = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
     started = activities[activities["is_started"]].drop_duplicates("task_code").set_index("task_code")
-    relationships = context.snapshot.relationships
-    relationships = relationships[
-        relationships["succ_code"].isin(started.index) & relationships["pred_code"].isin(tasks.index)
-    ]
-    ahead_of: dict[str, list[str]] = {}
-    columns = ["pred_code", "succ_code", "type"]
-    for predecessor, successor, link_type in relationships[columns].itertuples(index=False):
-        start = started.at[successor, "act_start_date"]
-        predecessor_finish = tasks.at[predecessor, "act_end_date"]
-        predecessor_start = tasks.at[predecessor, "act_start_date"]
-        finish_after = link_type == "FS" and (pd.isna(predecessor_finish) or predecessor_finish > start)
-        start_after = link_type == "SS" and (pd.isna(predecessor_start) or predecessor_start > start)
-        if finish_after or start_after:
-            ahead_of.setdefault(successor, []).append(f"{predecessor} ({link_type})")
-    flagged = started.loc[sorted(ahead_of)].reset_index()
-    texts = [", ".join(ahead_of[task_code]) for task_code in flagged["task_code"]]
+    ahead_of = _predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), started, tasks)
+    flagged = started.loc[ahead_of.index].reset_index()
+    texts = flagged["task_code"].map(ahead_of)
     return RuleOutput(flagged_activities(flagged, ahead_of=texts), len(flagged), len(started))
 
 

@@ -12,26 +12,30 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ...xer.model import CONSTRAINT, forecast_dates
+from ...xer.model import CONSTRAINT
 from ..baseline import Baseline
-from ..cpm import critical_path_test
 from ..populations import (
+    CRITICAL_PATH_SLIP_DAYS,
+    DCMA_HIGH_DAYS,
+    actual_after,
+    as_flag,
     constrained_by,
-    finish_driver,
     flagged_activities,
     flagged_relationships,
+    forecast_before,
+    has_driving_predecessor,
+    has_driving_successor,
+    links_between,
     open_activities,
     with_baseline,
     without_level_of_effort,
 )
-from ..rules import RuleOutput, rule
+from ..rules import RuleOutput, critical_path_output, rule
 
-HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]  # Primavera's hard constraints
-HIGH_FLOAT_DAYS = 44
-CRITICAL_PATH_SLIP_DAYS = 600
+DECM_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]  # Primavera's hard constraints
 STATUS_PERIOD_DAYS = 28  # monthly updates: an update is compared with the one a period older
-RIDING_WINDOW_WD = 3
-RIDING_REMAINING_TOLERANCE_WD = 2
+RIDING_WINDOW_WD = 3  # 06A506c: a forecast start this close to the data date "rides" it
+RIDING_REMAINING_TOLERANCE_WD = 2  # 06A506c: a remaining duration that moved by no more "rides" it too
 
 
 def _join_sorted(codes: pd.Series) -> str:
@@ -70,10 +74,8 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     external_predecessor, external_successor = tasks["has_external_pred"], tasks["has_external_succ"]
     has_predecessor = codes.isin(relationships["succ_code"]) | external_predecessor
     has_successor = codes.isin(relationships["pred_code"]) | external_successor
-    start_driving = relationships["type"].isin(["FS", "SS"])
-    finish_driving = relationships["type"].isin(["FS", "FF"])
-    driven_start = codes.isin(relationships.loc[start_driving, "succ_code"]) | external_predecessor
-    drives_finish = codes.isin(relationships.loc[finish_driving, "pred_code"]) | external_successor
+    driven_start = has_driving_predecessor(codes, relationships) | external_predecessor
+    drives_finish = has_driving_successor(codes, relationships) | external_successor
     milestone = tasks["is_milestone"]
     open_start = (~has_predecessor).where(milestone, ~driven_start)
     open_finish = (~has_successor).where(milestone, ~drives_finish)
@@ -83,8 +85,8 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     frame = (context.baseline or Baseline.planned(context.snapshot)).frame
     is_first = codes.map(frame["bl_start"]) == frame["bl_start"].min()
     is_last = codes.map(frame["bl_finish"]) == frame["bl_finish"].max()
-    open_start &= ~is_first.fillna(False).astype(bool)
-    open_finish &= ~is_last.fillna(False).astype(bool)
+    open_start &= ~as_flag(is_first)
+    open_finish &= ~as_flag(is_last)
 
     reason = pd.Series("", index=tasks.index)
     reason = reason.mask(open_finish, "open finish (no FS/FF successor)")
@@ -146,7 +148,7 @@ def decm_06a209a_hard_constraints(context) -> RuleOutput:
     not say whether LOE count: kept
     """
     tasks = open_activities(context)
-    hard = tasks[constrained_by(tasks, HARD_CONSTRAINTS, ignore_started_starts=False)]
+    hard = tasks[constrained_by(tasks, DECM_HARD_CONSTRAINTS, ignore_started_starts=False)]
     return RuleOutput(flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks))
 
 
@@ -165,7 +167,7 @@ def decm_06a210a_loe_successors(context) -> RuleOutput:
     from_loe = relationships[
         relationships["pred_code"].isin(open_loe["task_code"]) & relationships["succ_code"].isin(is_loe_by_code.index)
     ]
-    successor_is_loe = from_loe["succ_code"].map(is_loe_by_code).fillna(False).astype(bool)
+    successor_is_loe = as_flag(from_loe["succ_code"].map(is_loe_by_code))
     drives = from_loe[~successor_is_loe].groupby("pred_code")["succ_code"].agg(_join_sorted)
     flagged = open_loe[open_loe["task_code"].isin(drives.index)]
     return RuleOutput(flagged_activities(flagged, drives=flagged["task_code"].map(drives)), len(flagged), len(open_loe))
@@ -182,7 +184,7 @@ def decm_06a211a_high_float(context) -> RuleOutput:
     rationale review is yours
     """
     tasks = without_level_of_effort(open_activities(context))
-    high_float = tasks[tasks["total_float_d"] > HIGH_FLOAT_DAYS]
+    high_float = tasks[tasks["total_float_d"] > DCMA_HIGH_DAYS]
     return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks))
 
 
@@ -200,8 +202,7 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
     tasks = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
     successors = open_activities(context).drop_duplicates("task_code").set_index("task_code")
     relationships = context.snapshot.relationships
-    into_open = relationships["succ_code"].isin(successors.index)
-    links = relationships[into_open & relationships["pred_code"].isin(tasks.index)]
+    links = links_between(relationships, successors, tasks)
     if successors.empty:
         return RuleOutput(flagged_relationships(links), 0, 0)
     pred_start, pred_finish = links["pred_code"].map(tasks["start"]), links["pred_code"].map(tasks["finish"])
@@ -237,12 +238,7 @@ def decm_06a401a_critical_path_test(context) -> RuleOutput:
     06A401a: a delay on the critical path moves the project finish by the same amount; the schedule's
     critical path is the longest path (constraint method)
     """
-    if context.snapshot.data_date is None:
-        return RuleOutput(note="no data date")
-    if finish_driver(context) is None:
-        return RuleOutput(note="no remaining work")
-    test = critical_path_test(context.snapshot, CRITICAL_PATH_SLIP_DAYS)
-    return RuleOutput(value=1.0 if test.passed else 0.0, note=test.note, flagged=pd.DataFrame(test.blocking))
+    return critical_path_output(context, CRITICAL_PATH_SLIP_DAYS)
 
 
 # --- baseline, forecast and actual dates ---------------------------------------------------
@@ -338,7 +334,7 @@ def decm_06a506a_actual_dates_after_status_date(context) -> RuleOutput:
     if data_date is None:
         return RuleOutput(note="no data date")
     tasks = context.snapshot.activities
-    flagged = tasks[(tasks["act_start_date"] > data_date) | (tasks["act_end_date"] > data_date)]
+    flagged = tasks[actual_after(tasks, data_date)]
     started = int(tasks["act_start_date"].notna().sum())
     return RuleOutput(flagged_activities(flagged, reason="actual after data date"), len(flagged), started)
 
@@ -355,10 +351,7 @@ def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
     if data_date is None:
         return RuleOutput(note="no data date")
     tasks = context.snapshot.activities
-    early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
-    not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
-    forecast_before = ~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date))
-    flagged = tasks[forecast_before.fillna(False).astype(bool)]
+    flagged = tasks[forecast_before(tasks, data_date)]
     return RuleOutput(flagged_activities(flagged, reason="forecast before data date"), len(flagged), len(tasks))
 
 
@@ -394,7 +387,7 @@ def decm_06a506c_riding_status_date(context) -> RuleOutput:
     remaining_change = (tasks["remaining_d"] - before["remaining_d"]).abs()
     both_started = tasks["is_started"] & before["is_started"]
     finish_rides = both_started & (remaining_change <= RIDING_REMAINING_TOLERANCE_WD)
-    riding = ((start_rides & start_rode) | finish_rides).fillna(False).astype(bool)
+    riding = as_flag((start_rides & start_rode) | finish_rides)
 
     reason = pd.Series(f"start within {RIDING_WINDOW_WD} wd of the data date in both updates", index=tasks.index)
     reason = reason.mask(finish_rides, "remaining duration unchanged")

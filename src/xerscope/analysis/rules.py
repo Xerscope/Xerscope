@@ -3,7 +3,10 @@
 The built-in standards (P6, DCMA, DECM, INTEGRITY) are one explicit function per check
 (``p6/``, ``dcma/``, ``decm/``, ``integrity.py``); the TOML only gives each its target.
 The rules below take parameters instead, so a company standard
-(``standards/custom-template.toml``) can pick a rule, set its parameters and a target.
+(``standards/custom-template.toml``) can pick a rule, set its parameters and a target:
+``Rule.params`` / ``Rule.validate``, ``EXCLUDE`` and ``ALLOWED`` exist for them alone.
+The helpers after the generic rules (``share_of_type``, ``late_output``, ...) are shared
+with the explicit checks.
 
 Each rule returns a :class:`RuleOutput`; the profile's target turns it into pass/fail.
 Populations always exclude WBS-summary rows (``Snapshot.activities``).
@@ -26,22 +29,29 @@ depends on their parameters (the generic ones) leave out the population lines:
 from __future__ import annotations
 
 import inspect
+import operator
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-import numpy as np
 import pandas as pd
 
 from ..xer.model import CONSTRAINT, forecast_dates
-from .populations import (  # noqa: F401 - re-exported
+from .cpm import critical_path_test
+from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     ACTIVITY_COLS,
     LINK_COLS,
+    actual_after,
+    as_flag,
     constrained_by,
     finish_driver,
     flagged_activities,
     flagged_relationships,
+    has_driving_predecessor,
+    has_driving_successor,
+    invalid_date_reason,
+    lag_flagged,
     open_end_reason,
     with_baseline,
 )
@@ -50,7 +60,7 @@ if TYPE_CHECKING:
     from .checks import AnalysisContext
 
 Unit = Literal["%", "ratio", "count", "days", "pass/fail"]
-Names = tuple[str, ...] | list[str]  # TOML gives lists, defaults are tuples
+Names = Sequence[str]  # TOML gives lists, defaults are tuples
 Op = Literal["<", "<=", ">", ">="]
 LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
 
@@ -64,7 +74,7 @@ class RuleOutput:
     note: str = ""
 
 
-_OPS = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}
+COMPARE = {"<": operator.lt, ">": operator.gt, "<=": operator.le, ">=": operator.ge, "==": operator.eq}
 
 
 @dataclass(frozen=True)
@@ -159,40 +169,14 @@ def rule(name: str, unit: Unit, needs_baseline: bool = False, links: bool = Fals
 # --- populations -------------------------------------------------------------------------
 
 
-def is_complete(tasks, data_date):
-    return tasks["is_complete"]
-
-
-def is_complete_before_data_date(tasks, data_date):
-    if data_date is None:
-        return tasks["is_complete"]
-    return tasks["act_end_date"] < data_date
-
-
-def is_started(tasks, data_date):
-    return tasks["is_started"]
-
-
-def is_level_of_effort(tasks, data_date):
-    return tasks["is_loe"]
-
-
-def is_milestone(tasks, data_date):
-    return tasks["is_milestone"]
-
-
-def has_no_duration(tasks, data_date):
-    return ~(tasks["target_drtn_hr_cnt"].fillna(0) > 0)
-
-
-# Each closed vocabulary is declared once: key -> (label for explain, function).
-EXCLUDE: dict[str, tuple[str, Callable]] = {
-    "complete": ("completed activities", is_complete),
-    "complete_before_data_date": ("activities completed before the data date", is_complete_before_data_date),
-    "started": ("started activities", is_started),
-    "loe": ("level of effort", is_level_of_effort),
-    "milestones": ("milestones", is_milestone),
-    "no_duration": ("activities with no original duration", has_no_duration),
+# Each closed vocabulary is declared once: key -> label for explain.
+EXCLUDE: dict[str, str] = {
+    "complete": "completed activities",
+    "complete_before_data_date": "activities completed before the data date",
+    "started": "started activities",
+    "loe": "level of effort",
+    "milestones": "milestones",
+    "no_duration": "activities with no original duration",
 }
 EXEMPT: dict[str, str] = {
     "started": "started activities",
@@ -213,27 +197,38 @@ def activities(context: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
     return _without(context.snapshot.activities, context.snapshot.data_date, exclude)
 
 
-def _without(tasks: pd.DataFrame, data_date, exclude: list[str]) -> pd.DataFrame:
+def _exclude_masks(tasks: pd.DataFrame, data_date) -> dict[str, pd.Series]:
+    """One boolean mask per EXCLUDE key: the activities that vocabulary removes."""
+    completed_before = tasks["is_complete"] if data_date is None else tasks["act_end_date"] < data_date
+    masks = {
+        "complete": tasks["is_complete"],
+        "complete_before_data_date": completed_before,
+        "started": tasks["is_started"],
+        "loe": tasks["is_loe"],
+        "milestones": tasks["is_milestone"],
+        "no_duration": ~(tasks["target_drtn_hr_cnt"].fillna(0) > 0),
+    }
+    return {key: as_flag(masks[key]) for key in EXCLUDE}
+
+
+def _without(tasks: pd.DataFrame, data_date, exclude: Sequence[str]) -> pd.DataFrame:
+    masks = _exclude_masks(tasks, data_date)
     excluded = pd.Series(False, index=tasks.index)
     for key in exclude:
-        excluded |= EXCLUDE[key][1](tasks, data_date).fillna(False).astype(bool)
+        excluded |= masks[key]
     return tasks[~excluded]
-
-
-def _flag_of(codes: pd.Series, flags: pd.Series) -> pd.Series:
-    """The boolean ``flags`` (indexed by task code) of each code; False for an unknown code."""
-    return codes.map(flags).fillna(False).astype(bool)
 
 
 def link_population(
     context: AnalysisContext, links: str, exclude_loe: bool = False, exclude: Names = ()
 ) -> pd.DataFrame:
+    """Relationships into a scheduled activity, with both names, narrowed by ``links`` (see LinkPop)."""
     snapshot = context.snapshot
     tasks = snapshot.activities.set_index("task_code")
     relationships = snapshot.relationships
     relationships = relationships[relationships["succ_code"].isin(tasks.index)]
-    predecessor_done = _flag_of(relationships["pred_code"], tasks["is_complete"])
-    successor_done = _flag_of(relationships["succ_code"], tasks["is_complete"])
+    predecessor_done = as_flag(relationships["pred_code"].map(tasks["is_complete"]))
+    successor_done = as_flag(relationships["succ_code"].map(tasks["is_complete"]))
     if links == "not_both_complete":
         relationships = relationships[~(predecessor_done & successor_done)]
     elif links == "succ_incomplete":
@@ -244,8 +239,8 @@ def link_population(
         kept = _without(snapshot.activities, snapshot.data_date, list(exclude))
         relationships = relationships[relationships["succ_code"].isin(kept["task_code"])]
     if exclude_loe:
-        touches_loe = _flag_of(relationships["pred_code"], tasks["is_loe"]) | _flag_of(
-            relationships["succ_code"], tasks["is_loe"]
+        touches_loe = as_flag(relationships["pred_code"].map(tasks["is_loe"])) | as_flag(
+            relationships["succ_code"].map(tasks["is_loe"])
         )
         relationships = relationships[~touches_loe]
     names = tasks["task_name"]
@@ -317,18 +312,17 @@ def missing_logic(
         has_successor |= exempt_mask[key]
     reason = open_end_reason(~has_predecessor, ~has_successor)
     if dangling:
-        drives_start = set(relationships.loc[relationships["type"].isin(["FS", "SS"]), "succ_code"])
-        driven_by_finish = set(relationships.loc[relationships["type"].isin(["FS", "FF"]), "pred_code"])
+        codes = population["task_code"]
         dangling_start = (
             has_predecessor
-            & ~population["task_code"].isin(drives_start)
+            & ~has_driving_predecessor(codes, relationships)
             & ~population["is_started"]
             & ~population["has_external_pred"]
             & ~exempt_mask["project_start"]
         )
         dangling_finish = (
             has_successor
-            & ~population["task_code"].isin(driven_by_finish)
+            & ~has_driving_successor(codes, relationships)
             & ~population["has_external_succ"]
             & ~exempt_mask["project_finish"]
         )
@@ -349,19 +343,15 @@ def dangling(context, end: Literal["start", "finish"] = "finish", exclude: Names
     ``end = "finish"``: has successors but none FS or FF (the finish drives nothing).
     Activities with no logic at all on that end are left to ``missing_logic``.
     """
-    if end not in ("start", "finish"):
-        raise ValueError("dangling.end must be 'start' or 'finish'")
     population = activities(context, exclude)
     relationships = context.snapshot.relationships
     if end == "start":
         population = population[~population["is_started"]]
         has_logic = population["task_code"].isin(relationships["succ_code"])
-        driving_types = relationships["type"].isin(["FS", "SS"])
-        driving = population["task_code"].isin(relationships.loc[driving_types, "succ_code"])
+        driving = has_driving_predecessor(population["task_code"], relationships)
     else:
         has_logic = population["task_code"].isin(relationships["pred_code"])
-        driving_types = relationships["type"].isin(["FS", "FF"])
-        driving = population["task_code"].isin(relationships.loc[driving_types, "pred_code"])
+        driving = has_driving_successor(population["task_code"], relationships)
     flagged = population[has_logic & ~driving]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
 
@@ -386,7 +376,7 @@ def lag(
     """
     relationships = link_population(context, links, exclude_loe, exclude)
     column = {"hours": "lag_hr", "days": "lag_d"}[unit]
-    flagged = relationships[_OPS[op](relationships[column].fillna(0), value)]
+    flagged = lag_flagged(relationships, COMPARE[op], value, column)
     return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
 
 
@@ -404,11 +394,7 @@ def relationship_type(
     Share of relationships of ``type`` (value), listing the others.
     """
     relationships = link_population(context, links, exclude_loe, exclude)
-    of_type = relationships["type"] == type
-    share = 100.0 * of_type.sum() / len(relationships) if len(relationships) else None
-    mix = ", ".join(f"{kind} {count}" for kind, count in relationships["type"].value_counts().items())
-    others = flagged_relationships(relationships[~of_type])
-    return RuleOutput(others, int(of_type.sum()), len(relationships), share, note=mix)
+    return share_of_type(relationships, type)
 
 
 # --- constraints, float, duration ----------------------------------------------------------
@@ -440,7 +426,7 @@ def total_float(
     """
     population = activities(context, exclude)
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
-    flagged = population[_OPS[op](population[column], value).fillna(False).astype(bool)]
+    flagged = population[as_flag(COMPARE[op](population[column], value))]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
 
 
@@ -477,7 +463,7 @@ def duration(
             ("remaining", "days"): "remaining_d",
         }[(field, unit)]
         measured = population[column]
-    flagged = population[_OPS[op](measured, value).fillna(False).astype(bool)]
+    flagged = population[as_flag(COMPARE[op](measured, value))]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
 
 
@@ -510,11 +496,7 @@ def invalid_dates(
     population = activities(context, exclude)
     if data_date is None:
         return RuleOutput(note="no data date")
-    if denominator not in ("population", "started"):
-        raise ValueError("invalid_dates.denominator must be 'population' or 'started'")
-    if in_progress not in ("finish", "start"):
-        raise ValueError("invalid_dates.in_progress must be 'finish' or 'start'")
-    before = np.less_equal if include_data_date else np.less
+    before = operator.le if include_data_date else operator.lt
     is_open = ~population["is_complete"]
     early_start, early_finish = forecast_dates(population)  # the same reading as the model's Start / Finish
     if in_progress == "start":
@@ -522,17 +504,11 @@ def invalid_dates(
     else:
         not_started_early = (~population["is_started"]) & before(early_start, data_date)
         forecast = is_open & (not_started_early | before(early_finish, data_date))
-    actual = (population["act_start_date"] > data_date) | (population["act_end_date"] > data_date)
-    forecast, actual = forecast.fillna(False).astype(bool), actual.fillna(False).astype(bool)
+    forecast, actual = as_flag(forecast), actual_after(population, data_date)
     hit = {"forecast": forecast, "actual": actual, "both": forecast | actual}[kind]
-    reason = np.select(
-        [forecast & actual, forecast],
-        ["forecast before and actual after data date", "forecast before data date"],
-        default="actual after data date",
-    )
     flagged = population[hit]
     total = int(population["act_start_date"].notna().sum()) if denominator == "started" else len(population)
-    reasons = pd.Series(reason, index=population.index)[hit]
+    reasons = invalid_date_reason(forecast, actual)[hit]
     return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), total)
 
 
@@ -569,17 +545,10 @@ def late_vs_baseline(
     ``no_baseline``: an activity with no baseline finish passes, or (``"planned"``, P6
     Professional) is late when its finish is later than its planned finish.
     """
-    if no_baseline not in ("pass", "planned"):
-        raise ValueError("late_vs_baseline.no_baseline must be 'pass' or 'planned'")
     population = with_baseline(context, activities(context, exclude))
     if no_baseline == "planned":
         population["bl_finish"] = population["bl_finish"].combine_first(population["target_end_date"])
-    variance_hours = context.snapshot.work_hours(population["clndr_id"], population["bl_finish"], population["finish"])
-    late = variance_hours > tolerance_hours
-    flagged = population[late.fillna(False).astype(bool)]
-    variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
-    extra = {"bl_finish": flagged["bl_finish"], "finish_variance_wd": variance_days}
-    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population))
+    return late_output(context, population, tolerance_hours)
 
 
 @rule("bei", "ratio", needs_baseline=True)
@@ -603,48 +572,72 @@ def bei(
     if data_date is None:
         return RuleOutput(note="no data date")
     population = with_baseline(context, activities(context, exclude))
-    done = int(population["is_complete"].sum())
     if due_from == "baseline":
-        baseline = context.baseline
-        kept_codes = _without(baseline.snapshot.activities, data_date, exclude)["task_code"]
-        kept = baseline.frame[baseline.frame.index.isin(kept_codes)]
-        due_codes = set(kept.index[kept["bl_finish"] <= data_date])
-        late = population[population["task_code"].isin(due_codes) & ~population["is_complete"]]
-        gone = len(due_codes - set(context.snapshot.activities["task_code"]))
-        note = f"{done} completed / {len(due_codes)} due in the baseline" + (
-            f"; {gone} of them no longer in the schedule" if gone else ""
-        )
-        due_count = len(due_codes)
-        index = done / due_count if due_count else None
-        return RuleOutput(flagged_activities(late, bl_finish=late["bl_finish"]), done, due_count, index, note)
-    if due_from != "snapshot":
-        raise ValueError("bei.due_from must be 'snapshot' or 'baseline'")
+        baseline_population = _without(context.baseline.snapshot.activities, data_date, exclude)
+        return bei_from_baseline(context, population, baseline_population)
+    return bei_from_snapshot(population, data_date, missing_baseline == "due")
+
+
+# --- shared with the explicit checks -------------------------------------------------------------
+
+
+def share_of_type(relationships: pd.DataFrame, link_type: str) -> RuleOutput:
+    """Share of relationships of ``link_type`` (value), listing the others; the note is the type mix."""
+    of_type = relationships["type"] == link_type
+    share = 100.0 * of_type.sum() / len(relationships) if len(relationships) else None
+    mix = ", ".join(f"{kind} {count}" for kind, count in relationships["type"].value_counts().items())
+    others = flagged_relationships(relationships[~of_type])
+    return RuleOutput(others, int(of_type.sum()), len(relationships), share, note=mix)
+
+
+def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_hours: float = 0) -> RuleOutput:
+    """The activities finishing later than ``bl_finish`` by more than the tolerance, in working time."""
+    variance_hours = context.snapshot.work_hours(population["clndr_id"], population["bl_finish"], population["finish"])
+    flagged = population[as_flag(variance_hours > tolerance_hours)]
+    variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
+    extra = {"bl_finish": flagged["bl_finish"], "finish_variance_wd": variance_days}
+    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population))
+
+
+def bei_from_baseline(
+    context: AnalysisContext, population: pd.DataFrame, baseline_population: pd.DataFrame
+) -> RuleOutput:
+    """BEI whose due activities are counted in the baseline (``baseline_population``: its kept activities):
+    an activity added since is never due, one deleted since still is."""
+    baseline = context.baseline
+    done = int(population["is_complete"].sum())
+    kept = baseline.frame[baseline.frame.index.isin(baseline_population["task_code"])]
+    due_codes = set(kept.index[kept["bl_finish"] <= context.snapshot.data_date])
+    late = population[population["task_code"].isin(due_codes) & ~population["is_complete"]]
+    gone = len(due_codes - set(context.snapshot.activities["task_code"]))
+    note = f"{done} completed / {len(due_codes)} due in the baseline"
+    if gone:
+        note += f"; {gone} of them no longer in the schedule"
+    index = done / len(due_codes) if due_codes else None
+    return RuleOutput(flagged_activities(late, bl_finish=late["bl_finish"]), done, len(due_codes), index, note)
+
+
+def bei_from_snapshot(population: pd.DataFrame, data_date, missing_baseline_is_due: bool) -> RuleOutput:
+    """BEI whose due activities are the snapshot's own, ``population`` carrying its ``bl_finish``."""
+    done = int(population["is_complete"].sum())
+    without_baseline = population["bl_finish"].isna()
     is_due = population["bl_finish"] <= data_date
-    if missing_baseline == "due":
-        is_due |= population["bl_finish"].isna()
-    elif missing_baseline != "ignore":
-        raise ValueError("bei.missing_baseline must be 'due' or 'ignore'")
+    if missing_baseline_is_due:
+        is_due |= without_baseline
     due = population[is_due]
     late = due[~due["is_complete"]]
-    without_baseline = int(population["bl_finish"].isna().sum())
-    note = f"{done} completed / {len(due)} due" + (
-        f"; {without_baseline} without baseline finish" if without_baseline else ""
-    )
+    note = f"{done} completed / {len(due)} due"
+    if without_baseline.any():
+        note += f"; {int(without_baseline.sum())} without baseline finish"
     index = done / len(due) if len(due) else None
     return RuleOutput(flagged_activities(late, bl_finish=late["bl_finish"]), done, len(due), index, note)
 
 
-# --- critical path -------------------------------------------------------------------------------
-
-
-@rule("critical_path_test", "pass/fail")
-def critical_path_test(context, delay_days: float = 600) -> RuleOutput:
-    """Add ``delay_days`` to the first open critical activity; the finish must slip as much."""
-    from .cpm import critical_path_test as run
-
+def critical_path_output(context: AnalysisContext, slip_days: float) -> RuleOutput:
+    """The critical path test: slip the first open critical activity by ``slip_days``; the finish must follow."""
     if context.snapshot.data_date is None:
         return RuleOutput(note="no data date")
     if finish_driver(context) is None:
         return RuleOutput(note="no remaining work")
-    result = run(context.snapshot, delay_days)
-    return RuleOutput(value=1.0 if result.passed else 0.0, note=result.note, flagged=pd.DataFrame(result.blocking))
+    test = critical_path_test(context.snapshot, slip_days)
+    return RuleOutput(value=1.0 if test.passed else 0.0, note=test.note, flagged=pd.DataFrame(test.blocking))
