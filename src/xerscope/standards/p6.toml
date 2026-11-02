@@ -164,7 +164,7 @@ name = "Out of sequence"
 description = "Activities which are completed or in-progress before their predecessors"
 rule = "p6_15_out_of_sequence"
 target = "< 2%"
-source = "P6 Professional Check Schedule report: one row per activity and predecessor, against the total of activities; read as the scheduling log's out-of-sequence progress (FS predecessor not finished, SS not started, at the actual start)"
+source = "P6 Professional Check Schedule report (data date 25-Oct-26): 7 pairs listed, 6 activities counted against the total of activities; each started activity has an FS predecessor not completed at the data date (SS: not started); a predecessor that finished late but before the data date is not listed"
 
 [[metric]]
 id = "P6-16"
@@ -173,7 +173,7 @@ name = "Dangling start"
 description = "Activities with start dates that are not driven by predecessors"
 rule = "p6_16_dangling_start"
 target = "<= 0%"
-source = "P6 Professional Check Schedule report (Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only"
+source = "P6 Professional Check Schedule report (Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"
 
 [[metric]]
 id = "P6-17"
@@ -182,4 +182,4 @@ name = "Dangling finish"
 description = "Activities with finish dates that do not drive successors"
 rule = "p6_17_dangling_finish"
 target = "<= 0%"
-source = "P6 Professional Check Schedule report (Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only"
+source = "P6 Professional Check Schedule report (Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"

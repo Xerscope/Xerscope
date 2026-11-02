@@ -3772,13 +3772,11 @@
    },
    "P6/P6-15": {
     "denominator": 30,
-    "flagged": [
-     "C3020"
-    ],
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 3.333333
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-16": {
     "denominator": 30,
@@ -7802,13 +7800,11 @@
    },
    "P6/P6-15": {
     "denominator": 30,
-    "flagged": [
-     "C3020"
-    ],
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 3.333333
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-16": {
     "denominator": 30,
@@ -11828,13 +11824,11 @@
    },
    "P6/P6-15": {
     "denominator": 30,
-    "flagged": [
-     "C3020"
-    ],
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 3.333333
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-16": {
     "denominator": 30,
@@ -15947,33 +15941,19 @@
    },
    "P6/P6-16": {
     "denominator": 52,
-    "flagged": [
-     "EM00",
-     "EM01",
-     "EM02",
-     "EM03",
-     "EM04",
-     "EM05"
-    ],
+    "flagged": [],
     "note": null,
-    "numerator": 6,
-    "status": "fail",
-    "value": 11.538462
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-17": {
     "denominator": 52,
-    "flagged": [
-     "SM00",
-     "SM01",
-     "SM02",
-     "SM03",
-     "SM04",
-     "SM05"
-    ],
+    "flagged": [],
     "note": null,
-    "numerator": 6,
-    "status": "fail",
-    "value": 11.538462
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "xerlock/sample-schedule.xer": {
@@ -16458,13 +16438,12 @@
    "P6/P6-15": {
     "denominator": 24,
     "flagged": [
-     "EW-030",
      "ST-010"
     ],
     "note": null,
-    "numerator": 2,
+    "numerator": 1,
     "status": "fail",
-    "value": 8.333333
+    "value": 4.166667
    },
    "P6/P6-16": {
     "denominator": 24,
