@@ -20,6 +20,11 @@
 }
 
 :8080 {   # no host here: a host in the site address also filters the Host header
+    header {                             # every response, 404 and 401 included
+        Referrer-Policy no-referrer      # a link the page opens never carries the URL, i.e. the secret prefix
+        X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
+        Content-Security-Policy "frame-ancestors 'self'"   # no other site can frame the app (clickjacking)
+    }
     redir /{$XERSCOPE_PATH} /{$XERSCOPE_PATH}/ 308   # the page's relative asset URLs need the trailing slash
     handle_path /{$XERSCOPE_PATH}/* {              # strips the prefix: Streamlit keeps serving "/"
         basic_auth {

@@ -10,12 +10,13 @@
 # (glibc + libstdc++ for pyarrow, no shell, no package manager), non-root user. The
 # interpreter and the venv are copied at the same paths, so the venv's links still resolve.
 #
-# Pin the base images by digest in production (docker buildx imagetools inspect <image>).
+# Base images are pinned by digest: a tag can be moved, a digest cannot. Dependabot
+# (.github/dependabot.yml, ecosystem docker) proposes tag and digest together; the FROM
+# lines are literal because it cannot follow an ARG.
 
-ARG UV_VERSION=0.13.6
 ARG PYTHON_VERSION=3.14
 
-FROM ghcr.io/astral-sh/uv:${UV_VERSION}-trixie-slim AS build
+FROM ghcr.io/astral-sh/uv:0.13.6-trixie-slim@sha256:caa9f629fcb575ba2ed6ee160ec51e82e8444f6bdc3fc05c855b2636a5511eb8 AS build
 ARG PYTHON_VERSION
 ENV UV_PYTHON_INSTALL_DIR=/python \
   UV_PYTHON_PREFERENCE=only-managed \
@@ -39,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # an empty mount point for the exports, owned by the runtime user (distroless has no mkdir)
 RUN mkdir -p /data
 
-FROM gcr.io/distroless/cc-debian13:nonroot
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
 COPY --from=build /python /python
 COPY --from=build /app/.venv /app/.venv
 COPY --from=build --chown=nonroot:nonroot /data /data
