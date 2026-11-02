@@ -27,46 +27,59 @@ CONSTRAINT = {
 }
 
 
-def shapes(snap: Snapshot) -> pd.Series:
+def join_unique(types: pd.Series) -> str:
+    return "+".join(sorted(set(types)))
+
+
+def join_fields(fields: pd.Series) -> str:
+    return ", ".join(sorted(set(fields)))
+
+
+def shapes(snapshot: Snapshot) -> pd.Series:
     """One label per activity (indexed by task_code)."""
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
-    rel = snap.relationships
-    preds = rel.groupby("succ_code")["type"].agg(lambda s: "+".join(sorted(set(s))))
-    succs = rel.groupby("pred_code")["type"].agg(lambda s: "+".join(sorted(set(s))))
-    lagged = set(rel.loc[rel["lag_hr"] != 0, "succ_code"]) | set(rel.loc[rel["lag_hr"] != 0, "pred_code"])
-    option = snap.options.get("progressed", "retained_logic").replace("_", " ")
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    relationships = snapshot.relationships
+    predecessors = relationships.groupby("succ_code")["type"].agg(join_unique)
+    successors = relationships.groupby("pred_code")["type"].agg(join_unique)
+    lagged_links = relationships[relationships["lag_hr"] != 0]
+    lagged = set(lagged_links["succ_code"]) | set(lagged_links["pred_code"])
+    option = snapshot.options.get("progressed", "retained_logic").replace("_", " ")
 
     def label(code: str) -> str:
-        row = t.loc[code]
+        row = activities.loc[code]
         parts = [str(row["status"]).lower(), str(row["type"]).lower()]
-        for col in ("cstr_type", "cstr_type2"):
-            c = row.get(col)
-            if isinstance(c, str) and c:
-                parts.append(CONSTRAINT.get(c, c))
+        for constraint_column in ("cstr_type", "cstr_type2"):
+            constraint = row.get(constraint_column)
+            if isinstance(constraint, str) and constraint:
+                parts.append(CONSTRAINT.get(constraint, constraint))
         if row.get("expect_end_date") is not None and pd.notna(row.get("expect_end_date")):
             parts.append("expected finish")
-        parts.append(f"pred {preds.get(code, 'none')}")
-        parts.append(f"succ {succs.get(code, 'none')}")
+        parts.append(f"pred {predecessors.get(code, 'none')}")
+        parts.append(f"succ {successors.get(code, 'none')}")
         if code in lagged:
             parts.append("lag")
         if row.get("is_started") and option != "retained logic":
             parts.append(option)
         return " · ".join(parts)
 
-    return pd.Series({c: label(c) for c in t.index}, name="shape")
+    return pd.Series({code: label(code) for code in activities.index}, name="shape")
 
 
-def difference_report(snap: Snapshot, cmp: pd.DataFrame) -> pd.DataFrame:
+def count_wrong(agree: pd.Series) -> int:
+    return int((~agree).sum())
+
+
+def difference_report(snapshot: Snapshot, comparison: pd.DataFrame) -> pd.DataFrame:
     """``compare_with_stored`` rows grouped by shape: values compared, values wrong, the
     fields wrong, and one example activity. Worst share first."""
-    d = cmp[cmp["stored"].notna()].copy()
-    if d.empty:
+    compared = comparison[comparison["stored"].notna()].copy()
+    if compared.empty:
         return pd.DataFrame(columns=["shape", "values", "wrong", "share", "fields", "example"])
-    d["shape"] = d["task_code"].map(shapes(snap))
-    bad = d[~d["agree"]]
-    g = d.groupby("shape")["agree"].agg(values="count", wrong=lambda s: int((~s).sum()))
-    g["share"] = g["wrong"] / g["values"]
-    g["fields"] = bad.groupby("shape")["field"].agg(lambda s: ", ".join(sorted(set(s))))
-    g["example"] = bad.groupby("shape")["task_code"].first()
-    g = g[g["wrong"] > 0].sort_values(["share", "wrong"], ascending=False).reset_index()
-    return g[["shape", "values", "wrong", "share", "fields", "example"]]
+    compared["shape"] = compared["task_code"].map(shapes(snapshot))
+    wrong_rows = compared[~compared["agree"]]
+    report = compared.groupby("shape")["agree"].agg(values="count", wrong=count_wrong)
+    report["share"] = report["wrong"] / report["values"]
+    report["fields"] = wrong_rows.groupby("shape")["field"].agg(join_fields)
+    report["example"] = wrong_rows.groupby("shape")["task_code"].first()
+    report = report[report["wrong"] > 0].sort_values(["share", "wrong"], ascending=False).reset_index()
+    return report[["shape", "values", "wrong", "share", "fields", "example"]]

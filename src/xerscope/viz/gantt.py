@@ -285,19 +285,23 @@ def build_gantt(
     return fig
 
 
+def format_shift(shift_wd: float) -> str:
+    return "" if pd.isna(shift_wd) else f" ({shift_wd:+g} wd)"
+
+
 def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
     """Forecast project finish per weekly update: the single most-watched planning trend."""
     pal = PALETTE["dark" if dark else "light"]
-    s = summary.dropna(subset=["data_date", "forecast_finish"])
-    shift = s["finish_shift_wd"].map(lambda v: "" if pd.isna(v) else f" ({v:+g} wd)")
+    updates = summary.dropna(subset=["data_date", "forecast_finish"])
+    shift = updates["finish_shift_wd"].map(format_shift)
     fig = go.Figure(
         go.Scatter(
-            x=s["data_date"],
-            y=s["forecast_finish"],
+            x=updates["data_date"],
+            y=updates["forecast_finish"],
             mode="lines+markers",
             line=dict(color=pal["Normal"], width=2),
             marker=dict(size=8, color=pal["Normal"]),
-            customdata=np.stack([s["source"], shift], axis=-1) if len(s) else None,
+            customdata=np.stack([updates["source"], shift], axis=-1) if len(updates) else None,
             hovertemplate="Update %{x|%Y-%m-%d}<br>Forecast finish %{y|%Y-%m-%d}%{customdata[1]}"
             "<br>%{customdata[0]}<extra></extra>",
         )

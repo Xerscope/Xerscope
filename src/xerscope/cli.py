@@ -15,17 +15,17 @@ APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
 
 def _expand(paths: list[str]) -> list[Path]:
     """Files as given; folders -> their *.xer, sorted. Nothing to read is an error (exit 2)."""
-    out: list[Path] = []
-    for p in (Path(x).expanduser() for x in paths):
-        if p.is_dir():
-            out += xer_files(p)
-        elif p.is_file():
-            out.append(p)
+    found: list[Path] = []
+    for path in (Path(raw_path).expanduser() for raw_path in paths):
+        if path.is_dir():
+            found += xer_files(path)
+        elif path.is_file():
+            found.append(path)
         else:
-            raise SystemExit(f"xerscope: {p}: no such file or folder")
-    if not out:
+            raise SystemExit(f"xerscope: {path}: no such file or folder")
+    if not found:
         raise SystemExit(f"xerscope: no .xer file in {', '.join(paths)}")
-    return out
+    return found
 
 
 def _cmd_app(args: argparse.Namespace) -> int:
@@ -55,18 +55,18 @@ def _cmd_app(args: argparse.Namespace) -> int:
     return subprocess.call(cmd, env=env, cwd=APP_PATH.parent)
 
 
-def _when(ts, fmt: str = "%Y-%m-%d") -> str:
+def _when(timestamp, fmt: str = "%Y-%m-%d") -> str:
     """A date for printing; files without a data date or a finish exist."""
     import pandas as pd  # the CLI imports pandas lazily, so `xerscope app` starts fast
 
-    return "-" if ts is None or pd.isna(ts) else f"{ts:{fmt}}"
+    return "-" if timestamp is None or pd.isna(timestamp) else f"{timestamp:{fmt}}"
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
     from .store import SnapshotStore
 
     store = SnapshotStore.from_paths(_expand(args.paths), project_code=args.project)
-    cols = [
+    columns = [
         "data_date",
         "source",
         "forecast_finish",
@@ -76,9 +76,9 @@ def _cmd_info(args: argparse.Namespace) -> int:
         "critical",
         "relationships",
     ]
-    print(store.summary[cols].to_string(index=False))
-    for w in store.warnings:
-        print(f"warning: {w}", file=sys.stderr)
+    print(store.summary[columns].to_string(index=False))
+    for warning in store.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     return 0
 
 
@@ -100,31 +100,33 @@ def _cmd_check(args: argparse.Namespace) -> int:
     from .store import SnapshotStore
     from .xer import load_snapshot
 
-    std = _standard(args.standard)
-    bl = Baseline.from_snapshot(load_snapshot(args.baseline)) if args.baseline else None
+    standard = _standard(args.standard)
+    baseline = Baseline.from_snapshot(load_snapshot(args.baseline)) if args.baseline else None
     frames = []
     # one series, so checks against the previous update (DECM 06A504, 06A506c) can run
     store = SnapshotStore(load_snapshot(p, args.project) for p in _expand(args.paths))
-    for snap in store:
-        path = Path(snap.source)
-        base = bl or (Baseline.planned(snap) if args.planned_baseline else None)
-        results = run_standard(std, AnalysisContext(snap, store, baseline=base))
-        df = results_frame(results)
-        df.insert(0, "file", path.name)
-        df.insert(1, "data_date", snap.data_date)
-        frames.append(df)
+    for snapshot in store:
+        path = Path(snapshot.source)
+        applied_baseline = baseline or (Baseline.planned(snapshot) if args.planned_baseline else None)
+        results = run_standard(standard, AnalysisContext(snapshot, store, baseline=applied_baseline))
+        frame = results_frame(results)
+        frame.insert(0, "file", path.name)
+        frame.insert(1, "data_date", snapshot.data_date)
+        frames.append(frame)
         if args.flagged:  # the items behind each count, to diff against P6's own lists
             out_dir = Path(args.flagged)
             out_dir.mkdir(parents=True, exist_ok=True)
-            for r in results:
-                if not r.flagged.empty:
-                    r.flagged.to_csv(out_dir / f"{path.stem}_{r.metric.id}.csv", index=False, encoding="utf-8-sig")
+            for result in results:
+                if not result.flagged.empty:
+                    result.flagged.to_csv(
+                        out_dir / f"{path.stem}_{result.metric.id}.csv", index=False, encoding="utf-8-sig"
+                    )
         print(
-            f"\n{std.name} · {path.name} · data date {_when(snap.data_date)}"
-            f" · baseline {base.label if base else 'none'}"
+            f"\n{standard.name} · {path.name} · data date {_when(snapshot.data_date)}"
+            f" · baseline {applied_baseline.label if applied_baseline else 'none'}"
         )
-        cols = ["id", "check", "target", "actual", "found", "total", "status"]
-        print(df[cols].to_string(index=False, float_format=lambda v: f"{v:.2f}"))
+        columns = ["id", "check", "target", "actual", "found", "total", "status"]
+        print(frame[columns].to_string(index=False, float_format="{:.2f}".format))
     results = pd.concat(frames)
     if args.out:
         results.to_csv(args.out, index=False, encoding="utf-8-sig")
@@ -147,20 +149,20 @@ def _expect_differs(results, expect_csv: str) -> bool:
     file name without its folder). Prints every expected line as expected / got."""
     import pandas as pd
 
-    exp = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
-    missing = {"id", "found", "total"} - set(exp.columns)
+    expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    missing = {"id", "found", "total"} - set(expected.columns)
     if missing:
         sys.exit(f"{expect_csv}: columns {', '.join(sorted(missing))} missing")
-    keys = ["file", "id"] if "file" in exp.columns else ["id"]
-    if "file" not in exp.columns and results["file"].nunique() > 1:
+    keys = ["file", "id"] if "file" in expected.columns else ["id"]
+    if "file" not in expected.columns and results["file"].nunique() > 1:
         sys.exit(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
     got = results[keys + ["check", "found", "total"]]
-    m = exp.merge(got, on=keys, how="left", suffixes=("_exp", ""))
-    m["match"] = (m["found_exp"] == m["found"]) & (m["total_exp"] == m["total"])
-    cols = keys + ["check", "found_exp", "found", "total_exp", "total", "match"]
+    merged = expected.merge(got, on=keys, how="left", suffixes=("_exp", ""))
+    merged["match"] = (merged["found_exp"] == merged["found"]) & (merged["total_exp"] == merged["total"])
+    columns = keys + ["check", "found_exp", "found", "total_exp", "total", "match"]
     print(f"\nExpected (from {expect_csv}) vs xerscope:")
-    print(m[cols].to_string(index=False))
-    bad = int((~m["match"].fillna(False)).sum())
+    print(merged[columns].to_string(index=False))
+    bad = int((~merged["match"].fillna(False)).sum())
     print(f"\n{bad} difference(s)" if bad else "\nall counts match", file=sys.stderr if bad else sys.stdout)
     return bad > 0
 
@@ -176,15 +178,15 @@ def _cmd_standards(args: argparse.Namespace) -> int:
             print(f"written {args.template}")
         return 0
     if args.rules:
-        for r in RULES.values():
-            params = ", ".join(f"{k}={v!r}" for k, v in r.params.items())
-            print(f"{r.name}  [{r.unit}{', needs baseline' if r.needs_baseline else ''}]\n  ({params})")
-            print("  " + r.doc.replace("\n", "\n  ") + "\n")
+        for rule in RULES.values():
+            params = ", ".join(f"{name}={value!r}" for name, value in rule.params.items())
+            print(f"{rule.name}  [{rule.unit}{', needs baseline' if rule.needs_baseline else ''}]\n  ({params})")
+            print("  " + rule.doc.replace("\n", "\n  ") + "\n")
         return 0
-    for s in builtin_standards().values():
-        print(f"{s.id:6} {s.name} ({len(s.metrics)} metrics)")
-        for m in s.metrics:
-            print(f"   {m.id:8} {m.name:42} {m.threshold_label:10} rule={m.rule}")
+    for standard in builtin_standards().values():
+        print(f"{standard.id:6} {standard.name} ({len(standard.metrics)} metrics)")
+        for metric in standard.metrics:
+            print(f"   {metric.id:8} {metric.name:42} {metric.threshold_label:10} rule={metric.rule}")
     print("\nYour own: xerscope standards --template my.toml, then --standard my.toml")
     return 0
 
@@ -194,44 +196,45 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
     from .xer import load_snapshot
 
     for path in _expand(args.paths):
-        snap = load_snapshot(path, args.project)
-        sched = schedule(snap)
-        cmp = compare_with_stored(snap, sched)
-        stored = cmp[cmp["stored"].notna()]
+        snapshot = load_snapshot(path, args.project)
+        recalculated = schedule(snapshot)
+        comparison = compare_with_stored(snapshot, recalculated)
+        stored = comparison[comparison["stored"].notna()]
         print(
-            f"\n{path.name} · {len(snap.activities)} activities · data date {_when(snap.data_date, '%Y-%m-%d %H:%M')}"
-            f" · recalculated finish {_when(sched.finish, '%Y-%m-%d %H:%M')}"
+            f"\n{path.name} · {len(snapshot.activities)} activities"
+            f" · data date {_when(snapshot.data_date, '%Y-%m-%d %H:%M')}"
+            f" · recalculated finish {_when(recalculated.finish, '%Y-%m-%d %H:%M')}"
         )
         if stored.empty:
             print("  no stored dates to compare (never scheduled in P6?)")
         else:
             agg = stored.groupby("field")["agree"].agg(["sum", "count"])
-            for field, r in agg.iterrows():
-                print(f"  {field:20} {int(r['sum']):>7} / {int(r['count']):<7} identical")
-            bad = stored[~stored["agree"]]
-            if len(bad):
-                print(bad.head(args.show).to_string(index=False))
-            if args.report and len(bad):
+            for field, row in agg.iterrows():
+                print(f"  {field:20} {int(row['sum']):>7} / {int(row['count']):<7} identical")
+            wrong = stored[~stored["agree"]]
+            if len(wrong):
+                print(wrong.head(args.show).to_string(index=False))
+            if args.report and len(wrong):
                 from .verify.shapes import difference_report
 
-                rep = difference_report(snap, cmp)
-                rep["share"] = rep["share"].map("{:.0%}".format)
+                report = difference_report(snapshot, comparison)
+                report["share"] = report["share"].map("{:.0%}".format)
                 print("\n  differences by activity shape (status · type · constraint · links · option):")
-                print(rep.to_string(index=False))
-        a_cmp = compare_assignments(snap, sched)
-        a_cmp = a_cmp[a_cmp["stored"].notna()]
-        if len(a_cmp):
+                print(report.to_string(index=False))
+        assignment_comparison = compare_assignments(snapshot, recalculated)
+        assignment_comparison = assignment_comparison[assignment_comparison["stored"].notna()]
+        if len(assignment_comparison):
             print(
-                f"  assignments ({a_cmp['taskrsrc_id'].nunique()}): "
-                f"{int(a_cmp['agree'].sum())} / {len(a_cmp)} stored dates identical"
+                f"  assignments ({assignment_comparison['taskrsrc_id'].nunique()}): "
+                f"{int(assignment_comparison['agree'].sum())} / {len(assignment_comparison)} stored dates identical"
             )
-            a_bad = a_cmp[~a_cmp["agree"]]
-            if len(a_bad):
-                print(a_bad.head(args.show).to_string(index=False))
-        for w in sched.warnings + [w for w in snap.warnings if "leveling" in w]:
-            print(f"  warning: {w}")
+            assignment_wrong = assignment_comparison[~assignment_comparison["agree"]]
+            if len(assignment_wrong):
+                print(assignment_wrong.head(args.show).to_string(index=False))
+        for warning in recalculated.warnings + [warning for warning in snapshot.warnings if "leveling" in warning]:
+            print(f"  warning: {warning}")
         if args.out:
-            out = sched.frame.join(snap.activities.set_index("task_code")[["task_name"]])
+            out = recalculated.frame.join(snapshot.activities.set_index("task_code")[["task_name"]])
             dest = (
                 Path(args.out)
                 if len(args.paths) == 1
@@ -260,8 +263,8 @@ def _cmd_export(args: argparse.Namespace) -> int:
     from .store import SnapshotStore
 
     store = SnapshotStore.from_folder(args.folder, project_code=args.project)
-    for p in write_tables(store, args.out, args.format):
-        print(p)
+    for written_path in write_tables(store, args.out, args.format):
+        print(written_path)
     return 0
 
 
@@ -272,17 +275,17 @@ def _cmd_crosscheck(args: argparse.Namespace) -> int:
         return _cmd_crosscheck_cpm(args)
     from .crosscheck import compare_paths
 
-    df = compare_paths(_expand(args.paths))
+    checks = compare_paths(_expand(args.paths))
     if args.out:
-        df.to_csv(args.out, index=False, encoding="utf-8-sig")
-    summary = df.groupby("file")["agree"].agg(agree="sum", checks="count")
+        checks.to_csv(args.out, index=False, encoding="utf-8-sig")
+    summary = checks.groupby("file")["agree"].agg(agree="sum", checks="count")
     print(summary.to_string())
-    bad = df[~df["agree"]]
-    print(f"\n{len(bad)} disagreement(s) out of {len(df)} checks")
-    if len(bad):
-        print(bad.groupby("field").size().to_string())
-        print(bad.head(30).to_string(index=False))
-    return 1 if len(bad) else 0
+    wrong = checks[~checks["agree"]]
+    print(f"\n{len(wrong)} disagreement(s) out of {len(checks)} checks")
+    if len(wrong):
+        print(wrong.groupby("field").size().to_string())
+        print(wrong.head(30).to_string(index=False))
+    return 1 if len(wrong) else 0
 
 
 def _cmd_crosscheck_p6(args: argparse.Namespace) -> int:
@@ -291,34 +294,35 @@ def _cmd_crosscheck_p6(args: argparse.Namespace) -> int:
 
     from .crosscheck import p6_heldout_score
 
-    frames = [p6_heldout_score(Path(p).expanduser()) for p in args.paths]
-    d = pd.concat(frames, ignore_index=True)
-    err = d[d["field"] == "error"]
-    d = d[d["field"] != "error"]
-    for name, g in d.groupby("set"):
-        by = g.groupby("field")["agree"].mean().mul(100).round(1)
-        rd = g[g["resource_dependent"]]
+    frames = [p6_heldout_score(Path(folder).expanduser()) for folder in args.paths]
+    scores = pd.concat(frames, ignore_index=True)
+    errors = scores[scores["field"] == "error"]
+    scores = scores[scores["field"] != "error"]
+    for name, group in scores.groupby("set"):
+        by_field = group.groupby("field")["agree"].mean().mul(100).round(1)
+        dependent = group[group["resource_dependent"]]
         print(
-            f"{name}: {g['agree'].mean():.1%} of {len(g)} values identical to P6"
+            f"{name}: {group['agree'].mean():.1%} of {len(group)} values identical to P6"
             + (
-                f" ({rd['agree'].mean():.1%} on {rd['task_code'].nunique()} resource-dependent activities)"
-                if len(rd)
+                f" ({dependent['agree'].mean():.1%} on {dependent['task_code'].nunique()} resource-dependent"
+                " activities)"
+                if len(dependent)
                 else ""
             )
         )
-        print("   " + "  ".join(f"{k} {v}%" for k, v in by.items()))
-    for e in err.itertuples():
-        print(f"  {e.set} {e.case}: cannot schedule: {e.xerscope}")
+        print("   " + "  ".join(f"{field} {agreement}%" for field, agreement in by_field.items()))
+    for error in errors.itertuples():
+        print(f"  {error.set} {error.case}: cannot schedule: {error.xerscope}")
     if args.out:
-        d.to_csv(args.out, index=False, encoding="utf-8-sig")
-    bad = d[~d["agree"]]
-    if len(bad) and args.show:
+        scores.to_csv(args.out, index=False, encoding="utf-8-sig")
+    wrong = scores[~scores["agree"]]
+    if len(wrong) and args.show:
         print(
-            bad[["set", "case", "task_code", "status", "field", "p6", "xerscope"]]
+            wrong[["set", "case", "task_code", "status", "field", "p6", "xerscope"]]
             .head(args.show)
             .to_string(index=False)
         )
-    return 0 if bad.empty else 1
+    return 0 if wrong.empty else 1
 
 
 def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
@@ -348,29 +352,34 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
         )
     frames, unexplained = [], 0
     for path in _expand(args.paths):
-        snap = load_snapshot(path)
-        cmp = cpm_crosscheck(path).assign(file=path.name)
-        frames.append(cmp)
-        ok = cmp[cmp["comparable"]]
+        snapshot = load_snapshot(path)
+        comparison = cpm_crosscheck(path).assign(file=path.name)
+        frames.append(comparison)
+        ok = comparison[comparison["comparable"]]
         print(f"\n{path.name} · {ok['task_code'].nunique()} open activities")
-        agg = ok.groupby("field")[["xs_mpxj_work", "xs_p6", "mpxj_p6"]].mean().mul(100).round(2)
-        agg.columns = ["xerscope = MPXJ %", "xerscope = stored %", "MPXJ = stored %"]
-        print(agg.to_string())
-        for u in mpxj_unsupported(snap):
-            print(f"  option MPXJ does not model: {u}")
-        for k in sorted(settled_patterns(snap)):
-            print(f"  MPXJ differs from P6 here: {P6_SETTLED[k]}")
-        for k in sorted(unresolved_patterns(snap)):
-            print(f"  open question present: {UNRESOLVED[k]}")
-        broken = mpxj_inconsistent(snap, cmp)
+        agreement = ok.groupby("field")[["xs_mpxj_work", "xs_p6", "mpxj_p6"]].mean().mul(100).round(2)
+        agreement.columns = ["xerscope = MPXJ %", "xerscope = stored %", "MPXJ = stored %"]
+        print(agreement.to_string())
+        for option in mpxj_unsupported(snapshot):
+            print(f"  option MPXJ does not model: {option}")
+        for pattern in sorted(settled_patterns(snapshot)):
+            print(f"  MPXJ differs from P6 here: {P6_SETTLED[pattern]}")
+        for pattern in sorted(unresolved_patterns(snapshot)):
+            print(f"  open question present: {UNRESOLVED[pattern]}")
+        broken = mpxj_inconsistent(snapshot, comparison)
         if broken:
             print(f"  MPXJ contradicts itself on: {', '.join(sorted(broken)[:8])}")
-        bad = ok[~ok["xs_mpxj_work"]]
-        bad = bad[[excused_row(snap, c, f) is None for c, f in zip(bad["task_code"], bad["field"], strict=True)]]
-        explained = unresolved_patterns(snap) or settled_patterns(snap) or broken or mpxj_unsupported(snap)
-        if len(bad) and not explained:
-            unexplained += len(bad)
-            print(bad[["task_code", "field", "p6", "xerscope", "mpxj"]].head(args.show).to_string(index=False))
+        wrong = ok[~ok["xs_mpxj_work"]]
+        wrong = wrong[
+            [
+                excused_row(snapshot, task_code, field) is None
+                for task_code, field in zip(wrong["task_code"], wrong["field"], strict=True)
+            ]
+        ]
+        explained = unresolved_patterns(snapshot) or settled_patterns(snapshot) or broken or mpxj_unsupported(snapshot)
+        if len(wrong) and not explained:
+            unexplained += len(wrong)
+            print(wrong[["task_code", "field", "p6", "xerscope", "mpxj"]].head(args.show).to_string(index=False))
     if args.out:
         pd.concat(frames).to_csv(args.out, index=False, encoding="utf-8-sig")
     print(f"\n{unexplained} difference(s) no listed cause explains")
@@ -380,111 +389,113 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
 def _cmd_sample(args: argparse.Namespace) -> int:
     from .sample import generate
 
-    for p in generate(args.out, weeks=args.weeks):
-        print(p)
+    for sample_path in generate(args.out, weeks=args.weeks):
+        print(sample_path)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="xerscope", description="Weekly P6 XER analysis")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    parser = argparse.ArgumentParser(prog="xerscope", description="Weekly P6 XER analysis")
+    sub = parser.add_subparsers(dest="cmd", required=True)
 
-    a = sub.add_parser("app", help="launch the web app")
-    a.add_argument("--data", help="folder of weekly .xer files to preload")
-    a.add_argument("--baseline", help="baseline .xer (contract baseline)")
-    a.add_argument("--standards", help="folder of your own standard .toml files")
-    a.add_argument("--port", type=int, default=8501)
-    a.add_argument(
+    app_parser = sub.add_parser("app", help="launch the web app")
+    app_parser.add_argument("--data", help="folder of weekly .xer files to preload")
+    app_parser.add_argument("--baseline", help="baseline .xer (contract baseline)")
+    app_parser.add_argument("--standards", help="folder of your own standard .toml files")
+    app_parser.add_argument("--port", type=int, default=8501)
+    app_parser.add_argument(
         "--host",
         default="localhost",
         help="interface to listen on; default localhost. 0.0.0.0 exposes your schedules to the network",
     )
-    a.set_defaults(fn=_cmd_app)
+    app_parser.set_defaults(fn=_cmd_app)
 
-    i = sub.add_parser("info", help="summarise one or more XER files / folders")
-    i.add_argument("paths", nargs="+")
-    i.add_argument("--project", help="project short name, if files hold several")
-    i.set_defaults(fn=_cmd_info)
+    info_parser = sub.add_parser("info", help="summarise one or more XER files / folders")
+    info_parser.add_argument("paths", nargs="+")
+    info_parser.add_argument("--project", help="project short name, if files hold several")
+    info_parser.set_defaults(fn=_cmd_info)
 
-    k = sub.add_parser("check", help="run a standard (P6, DCMA or a .toml) on XER files")
-    k.add_argument("paths", nargs="+")
-    k.add_argument("--standard", default="P6", help="P6, DCMA or path to your .toml")
-    k.add_argument("--baseline", help="baseline .xer for BEI / missed / late checks")
-    k.add_argument(
+    check_parser = sub.add_parser("check", help="run app_parser standard (P6, DCMA or app_parser .toml) on XER files")
+    check_parser.add_argument("paths", nargs="+")
+    check_parser.add_argument("--standard", default="P6", help="P6, DCMA or path to your .toml")
+    check_parser.add_argument("--baseline", help="baseline .xer for BEI / missed / late checks")
+    check_parser.add_argument(
         "--planned-baseline", action="store_true", help="no baseline file: use each file's planned dates (target_*)"
     )
-    k.add_argument("--project")
-    k.add_argument("--out", help="write all results to this CSV")
-    k.add_argument("--flagged", metavar="DIR", help="write the items found by each check, one CSV per file and check")
-    k.add_argument(
+    check_parser.add_argument("--project")
+    check_parser.add_argument("--out", help="write all results to this CSV")
+    check_parser.add_argument(
+        "--flagged", metavar="DIR", help="write the items found by each check, one CSV per file and check"
+    )
+    check_parser.add_argument(
         "--expect",
         metavar="CSV",
-        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on a difference",
+        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on app_parser difference",
     )
-    k.add_argument(
+    check_parser.add_argument(
         "--fail-on",
         choices=["none", "fail", "error"],
         default="none",
-        help="exit 1 when a check fails (fail) or cannot run (error); default: always 0",
+        help="exit 1 when app_parser check fails (fail) or cannot run (error); default: always 0",
     )
-    k.set_defaults(fn=_cmd_check)
+    check_parser.set_defaults(fn=_cmd_check)
 
-    st = sub.add_parser("standards", help="list standards and rules, or print the template")
-    st.add_argument("--rules", action="store_true", help="list rules and their parameters")
-    st.add_argument(
+    standards_parser = sub.add_parser("standards", help="list standards and rules, or print the template")
+    standards_parser.add_argument("--rules", action="store_true", help="list rules and their parameters")
+    standards_parser.add_argument(
         "--template",
         nargs="?",
         const="-",
         metavar="FILE",
-        help="write a standard template to FILE (UTF-8), or print it",
+        help="write app_parser standard template to FILE (UTF-8), or print it",
     )
-    st.set_defaults(fn=_cmd_standards)
+    standards_parser.set_defaults(fn=_cmd_standards)
 
-    r = sub.add_parser("recalc", help="reschedule like P6 and compare with the dates stored in the file")
-    r.add_argument("paths", nargs="+")
-    r.add_argument("--project")
-    r.add_argument("--out", help="write the recalculated dates and float to this CSV")
-    r.add_argument("--report", action="store_true", help="group the differences by activity shape")
-    r.add_argument("--show", type=int, default=20, help="differences to print")
-    r.set_defaults(fn=_cmd_recalc)
+    recalc_parser = sub.add_parser("recalc", help="reschedule like P6 and compare with the dates stored in the file")
+    recalc_parser.add_argument("paths", nargs="+")
+    recalc_parser.add_argument("--project")
+    recalc_parser.add_argument("--out", help="write the recalculated dates and float to this CSV")
+    recalc_parser.add_argument("--report", action="store_true", help="group the differences by activity shape")
+    recalc_parser.add_argument("--show", type=int, default=20, help="differences to print")
+    recalc_parser.set_defaults(fn=_cmd_recalc)
 
-    g = sub.add_parser("changelog", help="what changed between two XER files")
-    g.add_argument("old")
-    g.add_argument("new")
-    g.add_argument("--project")
-    g.add_argument("--out", help="write the full changelog to this CSV")
-    g.set_defaults(fn=_cmd_changelog)
+    changelog_parser = sub.add_parser("changelog", help="what changed between two XER files")
+    changelog_parser.add_argument("old")
+    changelog_parser.add_argument("new")
+    changelog_parser.add_argument("--project")
+    changelog_parser.add_argument("--out", help="write the full changelog to this CSV")
+    changelog_parser.set_defaults(fn=_cmd_changelog)
 
-    e = sub.add_parser("export", help="write BI tables (Power BI star schema)")
-    e.add_argument("folder")
-    e.add_argument("--out", default="export")
-    e.add_argument("--format", choices=["parquet", "csv"], default="parquet")
-    e.add_argument("--project")
-    e.set_defaults(fn=_cmd_export)
+    export_parser = sub.add_parser("export", help="write BI tables (Power BI star schema)")
+    export_parser.add_argument("folder")
+    export_parser.add_argument("--out", default="export")
+    export_parser.add_argument("--format", choices=["parquet", "csv"], default="parquet")
+    export_parser.add_argument("--project")
+    export_parser.set_defaults(fn=_cmd_export)
 
-    c = sub.add_parser("crosscheck", help="compare xerscope with MPXJ on XER files (needs Java)")
-    c.add_argument("paths", nargs="+")
-    c.add_argument("--out", help="write every comparison to this CSV")
-    c.add_argument(
+    crosscheck_parser = sub.add_parser("crosscheck", help="compare xerscope with MPXJ on XER files (needs Java)")
+    crosscheck_parser.add_argument("paths", nargs="+")
+    crosscheck_parser.add_argument("--out", help="write every comparison to this CSV")
+    crosscheck_parser.add_argument(
         "--cpm",
         action="store_true",
         help="compare the recalculation with MPXJ's scheduler (build it: tests/reference/mpxj_cpm.py)",
     )
-    c.add_argument(
+    crosscheck_parser.add_argument(
         "--p6",
         action="store_true",
         help="paths are held-out set folders (tests/reference/data/p6-heldout/validation/held-out/H1 ...): "
         "compare the recalculation with what P6 23.12 scheduled",
     )
-    c.add_argument("--show", type=int, default=20, help="differences to print")
-    c.set_defaults(fn=_cmd_crosscheck)
+    crosscheck_parser.add_argument("--show", type=int, default=20, help="differences to print")
+    crosscheck_parser.set_defaults(fn=_cmd_crosscheck)
 
-    s = sub.add_parser("sample", help="generate demo weekly XER files")
-    s.add_argument("--out", default="data/sample")
-    s.add_argument("--weeks", type=int, default=8)
-    s.set_defaults(fn=_cmd_sample)
+    sample_parser = sub.add_parser("sample", help="generate demo weekly XER files")
+    sample_parser.add_argument("--out", default="data/sample")
+    sample_parser.add_argument("--weeks", type=int, default=8)
+    sample_parser.set_defaults(fn=_cmd_sample)
 
-    args = ap.parse_args(argv)
+    args = parser.parse_args(argv)
     return args.fn(args)
 
 

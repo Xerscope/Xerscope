@@ -25,45 +25,78 @@ def _parse(name: str, data: bytes, project: str | None = None) -> Snapshot:
 
 
 def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
-    snaps, errors = [], []
+    snapshots, errors = [], []
     for name, data in items:
         try:
-            snap = _parse(name, data, project)
+            snapshot = _parse(name, data, project)
         except XerError as exc:
             errors.append(str(exc))
             continue
-        if snap.data_date is None:
+        if snapshot.data_date is None:
             errors.append(f"{name}: no data date (PROJECT.last_recalc_date); the file is skipped")
             continue
-        snaps.append(snap)
-    return (SnapshotStore(snaps) if snaps else None), errors
+        snapshots.append(snapshot)
+    return (SnapshotStore(snapshots) if snapshots else None), errors
+
+
+def _items_from_uploads(uploads) -> tuple[tuple, list[tuple[str, bytes]] | None]:
+    """Signature of the uploaded files, and their contents when they changed since last run."""
+    # keyed on content, so a corrected file of the same name and size is read again
+    signature = ("upload",) + tuple(
+        sorted((upload.name, hashlib.sha256(upload.getvalue()).hexdigest()) for upload in uploads)
+    )
+    if signature == st.session_state.get("signature"):
+        return signature, None
+    return signature, [(upload.name, upload.getvalue()) for upload in uploads]
+
+
+def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, bytes]] | None, bool]:
+    """Signature of the folder's XER files, their contents when changed, and whether the folder is usable."""
+    root = Path(folder).expanduser()
+    files = xer_files(root) if root.is_dir() else []
+    if not files:
+        sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
+        st.session_state.update(store=None, signature=(), errors=[])
+        return (), None, False
+    signature = ("folder", str(root)) + tuple((path.name, path.stat().st_mtime_ns) for path in files)
+    if signature == st.session_state.get("signature"):
+        return signature, None, True
+    return signature, [(path.name, path.read_bytes()) for path in files], True
+
+
+def _project_picker(sidebar, store: SnapshotStore) -> SnapshotStore:
+    """A file exported with several projects: the one with the most activities was taken;
+    let the user pick another and read the files again for it."""
+    codes = sorted({code for snapshot in store for code in snapshot.projects_in_file})
+    if len(codes) <= 1:
+        return store
+    current = store.latest.project_code
+    index = codes.index(current) if current in codes else 0
+    choice = sidebar.selectbox("Project", codes, index=index, key="project")
+    if choice == current:
+        return store
+    with st.spinner(f"Reading {choice}…"):
+        store, errors = _build(st.session_state["items"], project=choice)
+    st.session_state.update(store=store, errors=errors)
+    return store
 
 
 def sidebar_loader() -> None:
-    sb = st.sidebar
-    sb.subheader("Weekly XER exports")
-    uploads = sb.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
-    folder = sb.text_input(
+    sidebar = st.sidebar
+    sidebar.subheader("Weekly XER exports")
+    uploads = sidebar.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
+    folder = sidebar.text_input(
         "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
     )
 
     items: list[tuple[str, bytes]] | None = None
     signature: tuple = ()
     if uploads:
-        # keyed on content, so a corrected file of the same name and size is read again
-        signature = ("upload",) + tuple(sorted((f.name, hashlib.sha256(f.getvalue()).hexdigest()) for f in uploads))
-        if signature != st.session_state.get("signature"):
-            items = [(f.name, f.getvalue()) for f in uploads]
+        signature, items = _items_from_uploads(uploads)
     elif folder:
-        root = Path(folder).expanduser()
-        files = xer_files(root) if root.is_dir() else []
-        if not files:
-            sb.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
-            st.session_state.update(store=None, signature=(), errors=[])
+        signature, items, usable = _items_from_folder(sidebar, folder)
+        if not usable:
             return
-        signature = ("folder", str(root)) + tuple((p.name, p.stat().st_mtime_ns) for p in files)
-        if signature != st.session_state.get("signature"):
-            items = [(p.name, p.read_bytes()) for p in files]
 
     if items is not None:
         with st.spinner(f"Parsing {len(items)} file(s)…"):
@@ -74,24 +107,13 @@ def sidebar_loader() -> None:
 
     store: SnapshotStore | None = st.session_state.get("store")
     if store is not None:
-        # a file exported with several projects: the one with the most activities was
-        # taken; let the user pick another and read the files again for it
-        codes = sorted({c for snap in store for c in snap.projects_in_file})
-        if len(codes) > 1:
-            current = store.latest.project_code
-            idx = codes.index(current) if current in codes else 0
-            choice = sb.selectbox("Project", codes, index=idx, key="project")
-            if choice != current:
-                with st.spinner(f"Reading {choice}…"):
-                    store, errors = _build(st.session_state["items"], project=choice)
-                st.session_state.update(store=store, errors=errors)
-    if store is not None:
-        sb.caption(
+        store = _project_picker(sidebar, store)
+        sidebar.caption(
             f"{store.latest.project_code} · {len(store)} snapshot(s) · "
             f"{store.first.data_date:%d %b %Y} → {store.latest.data_date:%d %b %Y}"
         )
-    for err in st.session_state.get("errors", []):
-        sb.error(err)
+    for error in st.session_state.get("errors", []):
+        sidebar.error(error)
     if store is not None:
         _baseline_picker(store)
 
@@ -101,74 +123,86 @@ BL_PLANNED = "Planned dates in each file (target_*)"
 BL_FILE = "Separate baseline file"
 
 
+EV_BASIS_LABEL = {
+    "budgeted_planned": "Budgeted · planned dates",
+    "budgeted_current": "Budgeted · current dates",
+    "at_completion_current": "At completion · current dates",
+}
+
+
+def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str):
+    """The Baseline (or marker) the sidebar choice stands for; None when nothing usable."""
+    if choice == BL_PLANNED:
+        return BL_PLANNED  # resolved per snapshot
+    if choice == BL_NONE:
+        return None
+    if choice != BL_FILE:
+        return Baseline.from_snapshot(store.by_label(choice), basis)
+    upload = sidebar.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
+    source = (upload.name, upload.getvalue()) if upload is not None else None
+    if source is None and env_path and Path(env_path).is_file():
+        source = (Path(env_path).name, Path(env_path).read_bytes())
+    if source is None:
+        sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
+        return None
+    try:
+        return Baseline.from_snapshot(_parse(*source), basis)
+    except XerError as exc:
+        sidebar.error(f"Baseline not read: {exc}")
+        return None
+
+
+def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
+    sidebar.caption(f"{baseline.label} · {len(baseline.frame)} activities · {baseline.bac_hours:,.0f} labour h")
+    baseline_date, first_date = baseline.snapshot.data_date, store.first.data_date
+    if baseline_date is not None and first_date is not None and baseline_date > first_date:
+        sidebar.warning(
+            f"The baseline's data date ({baseline_date:%d %b %Y}) is after the first update's ({first_date:%d %b %Y}): "
+            "BEI, missed tasks and PV before that date compare against a plan that did not exist yet.",
+            icon=":material/warning:",
+        )
+
+
 def _baseline_picker(store: SnapshotStore) -> None:
-    sb = st.sidebar
-    sb.subheader("Baseline")
+    sidebar = st.sidebar
+    sidebar.subheader("Baseline")
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
     options = [BL_FILE] + store.labels + [BL_PLANNED, BL_NONE]
-    default = 0 if env_path else 1
-    choice = sb.selectbox(
+    choice = sidebar.selectbox(
         "Baseline (BL)",
         options,
-        index=default,
+        index=0 if env_path else 1,
         key="bl_choice",
         help="PV, BEI, missed tasks and late activities are measured against it. "
         "Usually the contract baseline, exported from P6 as its own XER.",
     )
-    short = {
-        "budgeted_planned": "Budgeted · planned dates",
-        "budgeted_current": "Budgeted · current dates",
-        "at_completion_current": "At completion · current dates",
-    }
-    basis = sb.selectbox(
+    basis = sidebar.selectbox(
         "Earned value basis",
         list(EV_BASES),
         key="ev_basis",
         index=list(EV_BASES).index(DEFAULT_EV_BASIS),
-        format_func=short.get,
+        format_func=EV_BASIS_LABEL.get,
         help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
         "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
     )
-    bl: Baseline | None | str = None
-    if choice == BL_FILE:
-        up = sb.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
-        source = (up.name, up.getvalue()) if up is not None else None
-        if source is None and env_path and Path(env_path).is_file():
-            source = (Path(env_path).name, Path(env_path).read_bytes())
-        if source is not None:
-            try:
-                bl = Baseline.from_snapshot(_parse(*source), basis)
-            except XerError as exc:
-                sb.error(f"Baseline not read: {exc}")
-        else:
-            sb.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
-    elif choice == BL_PLANNED:
-        bl = BL_PLANNED  # resolved per snapshot
-    elif choice != BL_NONE:
-        bl = Baseline.from_snapshot(store.by_label(choice), basis)
-    st.session_state["baseline"] = bl
-    if isinstance(bl, Baseline):
-        sb.caption(f"{bl.label} · {len(bl.frame)} activities · {bl.bac_hours:,.0f} labour h")
-        bl_dd, first_dd = bl.snapshot.data_date, store.first.data_date
-        if bl_dd is not None and first_dd is not None and bl_dd > first_dd:
-            sb.warning(
-                f"The baseline's data date ({bl_dd:%d %b %Y}) is after the first update's ({first_dd:%d %b %Y}): "
-                "BEI, missed tasks and PV before that date compare against a plan that did not exist yet.",
-                icon=":material/warning:",
-            )
+    baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
+    st.session_state["baseline"] = baseline
+    if isinstance(baseline, Baseline):
+        _describe_baseline(sidebar, store, baseline)
 
 
-def baseline_for(snap: Snapshot) -> Baseline | None:
-    """The sidebar's baseline, as it applies to ``snap``."""
-    bl = st.session_state.get("baseline")
-    if bl == BL_PLANNED:
-        return Baseline.planned(snap, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
-    return bl if isinstance(bl, Baseline) else None
+def baseline_for(snapshot: Snapshot) -> Baseline | None:
+    """The sidebar's baseline, as it applies to ``snapshot``."""
+    baseline = st.session_state.get("baseline")
+    if baseline == BL_PLANNED:
+        return Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
+    return baseline if isinstance(baseline, Baseline) else None
 
 
 def standards() -> dict[str, Standard]:
     """Built-in standards, files in XERSCOPE_STANDARDS and any uploaded this session."""
-    found, errors = discover_standards(*[d for d in [os.environ.get("XERSCOPE_STANDARDS", "")] if d])
+    extra_folder = os.environ.get("XERSCOPE_STANDARDS", "")
+    found, errors = discover_standards(*([extra_folder] if extra_folder else []))
     found.update(st.session_state.get("uploaded_standards", {}))
     st.session_state["standard_errors"] = errors
     return found
@@ -214,26 +248,29 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     if choice == COMPARE_NONE:
         return None, ""
     if choice == COMPARE_PREV:
-        prev = store.previous(current)
-        return (prev.activities if prev is not None else None), "previous update"
+        previous = store.previous(current)
+        return (previous.activities if previous is not None else None), "previous update"
     if choice == COMPARE_BL:
-        bl = baseline_for(current)
-        if bl is None:
+        baseline = baseline_for(current)
+        if baseline is None:
             return None, ""
-        f = bl.frame.rename(columns={"bl_start": "start", "bl_finish": "finish"}).reset_index()
-        return f, "baseline"
+        activities = baseline.frame.rename(columns={"bl_start": "start", "bl_finish": "finish"}).reset_index()
+        return activities, "baseline"
     if choice == COMPARE_FIRST:
         return (store.first.activities if store.first is not current else None), "first snapshot"
-    snap = store.by_label(choice)
-    return snap.activities, f"{snap.data_date:%Y-%m-%d}"
+    chosen = store.by_label(choice)
+    return chosen.activities, f"{chosen.data_date:%Y-%m-%d}"
 
 
-def memo(key: tuple, fn):
-    """Per-session cache keyed on the loaded files: heavy analyses run once per data set."""
+def memo(key: tuple, function, *arguments):
+    """Per-session cache keyed on the loaded files: heavy analyses run once per data set.
+
+    ``function(*arguments)`` runs only on a cache miss.
+    """
     cache = st.session_state.setdefault("_memo", {})
-    full = (st.session_state.get("signature"),) + key
-    if full not in cache:
+    full_key = (st.session_state.get("signature"),) + key
+    if full_key not in cache:
         if len(cache) > 64:
             cache.clear()
-        cache[full] = fn()
-    return cache[full]
+        cache[full_key] = function(*arguments)
+    return cache[full_key]
