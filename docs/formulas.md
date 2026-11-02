@@ -283,6 +283,10 @@ milestone in any update) and update, `forecast` = `start` for start milestones, 
 otherwise. `slip_wd = round(working_days(first forecast, latest forecast), 1)` and
 `last_week_wd` = same between the last two updates (0 with one update), on the
 milestone's calendar as of the latest update. Pinned by test_milestone_slip_in_working_days.
+The chart (`plotted_trend`) draws each line up to the first update that reports it
+complete, where it meets the diagonal, and leaves out a line complete in its first
+update; the slippage table keeps every update. Pinned by
+test_mta_line_stops_at_completion.
 
 **Finish shift** (`SnapshotStore.summary.finish_shift_wd`):
 `round(working_days(previous finish_date, this finish_date), 1)` on this (newer)

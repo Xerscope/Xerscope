@@ -2,7 +2,8 @@
 
 MTA: for each milestone, its forecast date in every update. Plotted against the update
 date, a flat line is a stable forecast, a rising one a slipping milestone; a completed
-milestone meets the diagonal (forecast = reporting date).
+milestone meets the diagonal (forecast = reporting date) and its line ends there: later
+updates only repeat the actual date below the diagonal (`plotted_trend`).
 
 PPC (Percent Plan Complete, Last Planner): of the activities the W-1 update forecast to
 finish before the W data date, the share that the W update shows complete. In a file P6
@@ -25,10 +26,15 @@ from ..xer import Snapshot
 # --- milestone trend -----------------------------------------------------------------------
 
 
-def milestone_codes(store: SnapshotStore) -> list[str]:
-    """Milestones present in any update, ordered by their latest forecast."""
+def milestone_codes(store: SnapshotStore, open_only: bool = False) -> list[str]:
+    """Milestones present in any update, ordered by their latest forecast.
+
+    `open_only` keeps those not complete in the last update that holds them.
+    """
     history = store.history
     milestones = history[history["is_milestone"]].sort_values("snapshot_idx").groupby("task_code").last()
+    if open_only:
+        milestones = milestones[~milestones["is_complete"].astype(bool)]
     return milestones.sort_values("finish").index.tolist()
 
 
@@ -41,6 +47,19 @@ def milestone_trend(store: SnapshotStore, codes: list[str] | None = None) -> pd.
     milestones["forecast"] = pd.to_datetime(milestones["forecast"])
     columns = ["snapshot_idx", "data_date", "task_code", "task_name", "forecast", "is_complete", "is_milestone"]
     return milestones[columns].sort_values(["task_code", "snapshot_idx"]).reset_index(drop=True)
+
+
+def plotted_trend(trend: pd.DataFrame) -> pd.DataFrame:
+    """MTA chart rows: each line stops at the first update that reports it complete.
+
+    Later updates repeat the actual date below the diagonal and carry no trend; a line
+    already complete in its first update has none in this series and is left out.
+    Slippage (`milestone_slips`) still reads the full trend.
+    """
+    done = trend["is_complete"].astype(bool)
+    done_before = done.groupby(trend["task_code"]).transform(lambda d: d.cumsum().shift(fill_value=0) > 0)
+    done_at_start = done.groupby(trend["task_code"]).transform("first")
+    return trend[~done_before & ~done_at_start].reset_index(drop=True)
 
 
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
