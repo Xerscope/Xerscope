@@ -6,20 +6,13 @@ or exemption would silently shift a result.
 
 import pandas as pd
 import pytest
+from rulekit import STANDARDS, codes, counts, links, run
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
 
-P6 = builtin_standards()["P6"]
-DCMA = builtin_standards()["DCMA"]
-
-
-def run(std, metric_id, s, baseline=None):
-    return run_metric(std[metric_id], AnalysisContext(s, baseline=baseline))
-
-
-def codes(r):
-    return sorted(r.flagged["task_code"]) if "task_code" in r.flagged else []
+P6 = STANDARDS["P6"]
+DCMA = STANDARDS["DCMA"]
 
 
 # --- logic --------------------------------------------------------------------------------
@@ -39,17 +32,67 @@ LOGIC = snap(
 
 
 def test_p6_logic_exemptions():
-    # S1: started, no predecessor -> passes; M0: start milestone -> passes; F: finish milestone
-    # -> passes; C has no successor; A only drives B via SS (dangling finish, not an open end).
+    """101248: "Started activities and start milestones are not required by this analysis to have predecessors."
+    And: "Completed activities and WBS summary activities are not included in this analysis."
+    Nothing exempts a finish milestone from the successor check: a P6 Professional r22.12 report (Ten Six,
+    tensix.com/using-the-p6-check-schedule-tool/) notes "The W1000 Notice to Proceed task
+    has no predecessor and the W1030 Project Complete task has no successor."
+    """
+    # S1: started, no predecessor -> passes; M0: start milestone -> passes; C has no successor;
+    # F: finish milestone with no successor -> flagged; A only drives B via SS (not an open end).
     r = run(P6, "P6-01", LOGIC)
-    assert codes(r) == ["C"]
+    assert codes(r) == ["C", "F"]
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))["F"] == "no successor"
     assert r.denominator == 6  # D0 removed (actual finish)
 
 
-def test_dcma_logic_counts_dangling_and_exempts_only_project_ends():
-    # The project start is D0 (no predecessor, earliest start), so S1 and M0 are open
-    # starts for DCMA even though P6 lets them pass. F is the project finish: exempt.
+def test_p6_logic_flags_the_finish_milestone_without_successor():
+    """Ten Six: "the schedule would have passed if not for the Project Complete milestone with no successor." """
+    s = snap(
+        [
+            todo("Start", task_type="TT_Mile", target_drtn_hr_cnt="0"),
+            todo("A"),
+            todo("B"),
+            todo("Finish", task_type="TT_FinMile", target_drtn_hr_cnt="0"),
+        ],
+        [("Start", "A", "FS", 0), ("A", "B", "FS", 0), ("B", "Finish", "FS", 0)],
+    )
+    r = run(P6, "P6-01", s)
+    assert codes(r) == ["Finish"]  # Start needs no predecessor; Finish has no successor
+    assert (r.numerator, r.denominator) == (1, 4)
+
+
+def test_dcma_01_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.1: "Any incomplete task that is missing a predecessor and/or a
+    successor is included in this metric."
+
+    4.0 excludes completed tasks, LOE, subprojects and milestones; 4.1 has no project start/finish
+    exemption and no "dangling" (an SS-only finish) case: only a missing predecessor or successor counts.
+    """
     r = run(DCMA, "DCMA-01", LOGIC)
+    # Population: D0 (complete), M0 and F (milestones) are out; S1, A, B, C remain -> 4.
+    # S1: started, no predecessor (no exemption for the project start). C: no successor.
+    # A drives B by SS only: it has a successor, so it is not flagged (no "dangling").
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
+        "S1": "no predecessor",
+        "C": "no successor",
+    }
+    assert (r.numerator, r.denominator) == (2, 4)
+
+
+def test_missing_logic_keeps_exemptions_and_dangling_for_custom_standards():
+    """The parameters DCMA-01 no longer uses stay available (custom-template.toml CUS-01)."""
+    from xerscope.analysis.rules import RULES
+
+    r = RULES["missing_logic"].fn(
+        AnalysisContext(LOGIC),
+        exclude=["complete", "loe"],
+        pred_exempt=["project_start"],
+        succ_exempt=["project_finish"],
+        dangling=True,
+    )
+    # The pre-PAM 200.1 DCMA-01 result on LOGIC, unchanged: D0 (complete) out -> 6 checked;
+    # A drives B by SS only, so it is a dangling finish.
     assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
         "S1": "no predecessor",
         "M0": "no predecessor",
@@ -125,6 +168,38 @@ def test_lead_long_lag_and_fs_share():
     assert fs.value == pytest.approx(200 / 3)
 
 
+def test_dcma_02_03_04_follow_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.2: "the number of logic links with a lead (negative lag) in
+    predecessor relationships for incomplete tasks"; 4.3: "the number of lags in predecessor logic
+    relationships for incomplete tasks"; 4.4: "a count of incomplete tasks containing each type of
+    logic link".
+
+    4.0 excludes completed tasks, LOE, subprojects and milestones, so a link counts when its
+    successor is a retained task. A link whose predecessor is a milestone still counts (M->C).
+    """
+    s = snap(
+        [done("D1"), done("D2"), todo("A"), todo("B"), todo("C"), todo("M", task_type="TT_FinMile")],
+        [
+            ("D1", "D2", "FS", 16),  # out: successor complete
+            ("D2", "A", "FS", 400),  # in: lag
+            ("A", "D1", "SS", 8),  # out: successor complete
+            ("A", "B", "FS", -8),  # in: lead
+            ("D1", "B", "FF", 352),  # in: lag, not FS
+            ("B", "M", "FS", 8),  # out: successor is a milestone
+            ("M", "C", "FS", 8),  # in: predecessor milestone still counts
+        ],
+    )
+    leads = run(DCMA, "DCMA-02", s)
+    assert links(leads) == [("A", "B")]
+    assert counts(leads) == (1, 4)
+    lags = run(DCMA, "DCMA-03", s)
+    assert links(lags) == [("D1", "B"), ("D2", "A"), ("M", "C")]
+    assert counts(lags) == (3, 4)
+    fs = run(DCMA, "DCMA-04", s)
+    assert links(fs) == [("D1", "B")]  # the only link that is not FS
+    assert counts(fs) == (3, 4)
+
+
 # --- constraints, float, durations ------------------------------------------------------------
 
 
@@ -144,6 +219,36 @@ def test_constraint_sets_differ_between_p6_and_dcma():
     assert codes(run(DCMA, "DCMA-05", s)) == ["LB", "MF", "MS", "SEC"]
 
 
+def test_dcma_05_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.5: "Divide the total number of hard constraints by the number of
+    incomplete tasks."
+
+    Hard constraints are MFO, MSO, SNLT and FNLT (a secondary constraint counts, a started task is
+    not exempt); soft ones (SNET, FNET, ASAP) are not. 4.0 excludes completed tasks, LOE,
+    subprojects and milestones: MSF, a finish milestone with FNLT, is out of numerator and population.
+    """
+    s = snap(
+        [
+            todo("MS", cstr_type="CS_MSO", cstr_date="2026-04-01 08:00"),
+            todo("MF", cstr_type="CS_MANDFIN", cstr_date="2026-04-01 17:00"),
+            todo("LB", cstr_type="CS_MEOB", cstr_date="2026-04-01 17:00"),
+            todo("SEC", cstr_type2="CS_MANDSTART", cstr_date2="2026-04-01 08:00"),
+            active("STB", cstr_type="CS_MSOB", cstr_date="2026-03-09 08:00"),
+            active("ST", cstr_type="CS_MSOA", cstr_date="2026-02-23 08:00"),
+            todo(
+                "MSF",
+                task_type="TT_FinMile",
+                target_drtn_hr_cnt="0",
+                cstr_type="CS_MEOB",
+                cstr_date="2026-04-01 17:00",
+            ),
+        ]
+    )
+    r = run(DCMA, "DCMA-05", s)
+    assert codes(r) == ["LB", "MF", "MS", "SEC", "STB"]
+    assert (r.numerator, r.denominator) == (5, 6)
+
+
 def test_float_threshold_in_hours_vs_working_days():
     # 10 h/day calendar: 400 h = 40 working days. P6 (> 352 h) flags it, DCMA (> 44 d) does not.
     s = snap(
@@ -159,6 +264,30 @@ def test_float_threshold_in_hours_vs_working_days():
     assert codes(run(P6, "P6-14", s)) == ["N"]
 
 
+def test_dcma_06_07_follow_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.6: "An incomplete task with total float greater than 44 working
+    days (2 months) is counted in this metric." 4.7: "An incomplete task with total float less than 0
+    working days is included in this metric."
+
+    4.0 excludes completed tasks, LOE, subprojects and milestones: the milestones MH (high float) and
+    MN (negative float) are out of numerator and population. Float is in the task's calendar days.
+    """
+    s = snap(
+        [
+            todo("A", clndr_id="C10", total_float_hr_cnt="400"),  # 40 d
+            todo("B", total_float_hr_cnt="353"),  # 44.1 d
+            todo("C", total_float_hr_cnt="352"),  # 44 d
+            todo("N", total_float_hr_cnt="-8"),
+            todo("MH", task_type="TT_FinMile", target_drtn_hr_cnt="0", total_float_hr_cnt="400"),
+            todo("MN", task_type="TT_FinMile", target_drtn_hr_cnt="0", total_float_hr_cnt="-8"),
+        ]
+    )
+    high = run(DCMA, "DCMA-06", s)
+    assert (codes(high), high.denominator) == (["B"], 4)
+    neg = run(DCMA, "DCMA-07", s)
+    assert (codes(neg), neg.denominator) == (["N"], 4)
+
+
 def test_large_duration_remaining_vs_original():
     s = snap(
         [
@@ -168,7 +297,34 @@ def test_large_duration_remaining_vs_original():
         ]
     )
     assert codes(run(P6, "P6-04", s)) == ["B"]  # remaining > 352 h
-    assert codes(run(DCMA, "DCMA-08", s)) == ["A", "B"]  # original > 44 d
+    assert run(P6, "P6-04", s).denominator == 2  # milestone out: Ten Six P6 r22.12 report, EPPM 46282 (101248 silent)
+    assert codes(run(DCMA, "DCMA-08", s, Baseline.planned(s))) == ["A", "B"]  # baseline > 44 d
+
+
+BL8 = snap(
+    [todo("A", target_drtn_hr_cnt="800"), todo("B", target_drtn_hr_cnt="360"), todo("C", target_drtn_hr_cnt="352")]
+)
+
+
+def test_dcma_08_uses_the_baseline_duration_not_the_re_estimated_one():
+    """PAM 200.1 4.8: baseline duration > 44 wd. A was re-estimated to 50 d (still flagged: baseline 100 d);
+    B shrank to 10 d (flagged: baseline 45 d); C is 44 d (not above). NEWD (800 h) is not in the baseline: it
+    has no baseline duration so it is not flagged, but it stays in the denominator (incomplete, not excluded).
+    The milestone is excluded. Without a baseline the check is n/a."""
+    s = snap(
+        [
+            active("A", target_drtn_hr_cnt="400"),
+            todo("B", target_drtn_hr_cnt="80"),
+            todo("C", target_drtn_hr_cnt="352"),
+            todo("M", task_type="TT_FinMile", target_drtn_hr_cnt="0"),
+            todo("NEWD", target_drtn_hr_cnt="800"),
+        ]
+    )
+    r = run(DCMA, "DCMA-08", s, Baseline.from_snapshot(BL8))
+    assert codes(r) == ["A", "B"]
+    assert counts(r) == (2, 4)
+    n = run(DCMA, "DCMA-08", s)
+    assert (n.status, n.numerator, n.note) == ("n/a", None, "needs a baseline")
 
 
 # --- progress, resources --------------------------------------------------------------------
@@ -178,15 +334,42 @@ def test_invalid_progress_dates():
     s = snap(
         [
             todo("EARLY", early_start_date="2026-02-27 08:00"),
-            active("RUN", early_end_date="2026-02-27 17:00"),
+            active("RUN", restart_date="2026-02-26 08:00", reend_date="2026-02-27 17:00"),
+            active("LATE", restart_date="2026-02-27 08:00", reend_date="2026-03-05 17:00"),  # not re-scheduled
             done("FUT", act_end_date="2026-03-04 17:00"),
             done("OK"),
             todo("FINE"),
         ]
     )
-    assert codes(run(P6, "P6-10", s)) == ["EARLY", "FUT", "RUN"]  # Pro 24: one check, both sides
-    assert run(P6, "P6-10", s).denominator == 4  # OK finished before the data date: removed
-    assert run(DCMA, "DCMA-09", s).numerator == 3
+    # Pro 24 help (101248): in progress = remaining early start before the data date
+    assert codes(run(P6, "P6-10", s)) == ["EARLY", "FUT", "LATE", "RUN"]
+    assert run(P6, "P6-10", s).denominator == 5  # OK finished before the data date: removed
+    assert run(DCMA, "DCMA-09", s).numerator == 3  # DCMA reads the remaining finish: LATE passes
+
+
+def test_dcma_09_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.9: "Incomplete tasks that have a forecast start/finish date prior to
+    the IMS status date, or has an actual start/finish date beyond the IMS status date are included in
+    this metric."
+
+    4.0 excludes LOE, subprojects and milestones. Completed tasks are kept only when they could still
+    have an actual date beyond the status date: one finished before it is out of the population.
+    """
+    s = snap(
+        [
+            todo("EARLY", early_start_date="2026-02-27 08:00"),  # forecast start before DD: flagged
+            active("RUN", restart_date="2026-02-26 08:00", reend_date="2026-02-27 17:00"),  # remaining finish: flagged
+            todo("MEARLY", task_type="TT_Mile", target_drtn_hr_cnt="0", early_start_date="2026-02-27 08:00"),
+            done("OK"),  # finished 2026-02-13, before DD: out
+            done("FUT", act_end_date="2026-03-04 17:00"),  # actual finish beyond DD: flagged
+            todo("FINE"),
+            todo("LOE", task_type="TT_LOE", early_start_date="2026-02-27 08:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-09", s)
+    # Population: EARLY, RUN, FUT, FINE = 4 (MEARLY milestone, OK done before DD, LOE out).
+    assert codes(r) == ["EARLY", "FUT", "RUN"]
+    assert (r.numerator, r.denominator) == (3, 4)
 
 
 def test_resource_or_expense():
@@ -220,19 +403,65 @@ NOW = snap(
 )  # not in the baseline
 
 
-def test_bei_p6_counts_unbaselined_as_due_dcma_ignores_them():
+def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     bl = Baseline.from_snapshot(BL)
     p6 = run(P6, "P6-13", NOW, bl)
-    assert (p6.numerator, p6.denominator) == (2, 4)  # A, B done / A, B, C + NEW (no baseline)
+    # Pro 24 help (101248): baseline activities finishing before the data date; NEW is not one
+    assert (p6.numerator, p6.denominator) == (2, 3)  # A, B done / A, B, C
+    gone = snap([done("A", act_end_date="2026-02-26 17:00"), todo("D", early_end_date="2026-04-29 17:00")])
+    r = run(P6, "P6-13", gone, bl)
+    assert (r.numerator, r.denominator) == (1, 3)  # B and C deleted since the baseline: still due
+    assert "2 of them no longer in the schedule" in r.note
+    # DCMA-EA PAM 200.1 (Oct 2012) 3.1.2.4: "Tasks missing baseline finish dates are included in the
+    # denominator." (step 1: "Filter out Level of Effort (LOE) tasks, summary tasks, and zero duration
+    # tasks (milestones)."). NEW has no baseline finish: due, not finished -> A, B done / A, B, C, NEW.
     dcma = run(DCMA, "DCMA-14", NOW, bl)
-    assert (dcma.numerator, dcma.denominator) == (2, 3)
-    assert dcma.value == pytest.approx(2 / 3)
+    assert (dcma.numerator, dcma.denominator) == (2, 4)
+    assert dcma.value == pytest.approx(2 / 4)
 
 
 def test_missed_tasks_and_late_activities():
     bl = Baseline.from_snapshot(BL)
     assert codes(run(DCMA, "DCMA-11", NOW, bl)) == ["B", "C"]
-    assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # D finishes earlier; NEW has no baseline
+    assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # B: Sat 17:00 vs Fri 17:00, no working time
+    # Pro 24 help (101248): completed activities stay in; no baseline -> against the planned finish
+    now = snap(
+        [
+            done("A", act_end_date="2026-03-02 17:00"),  # a working day after its baseline finish
+            todo("NEW", early_end_date="2026-03-10 17:00", target_end_date="2026-03-09 17:00"),
+            todo("NEW2", early_end_date="2026-03-10 17:00", target_end_date="2026-03-10 17:00"),
+        ]
+    )
+    r = run(P6, "P6-12", now, bl)
+    assert codes(r) == ["A", "NEW"] and r.denominator == 3
+
+
+def test_dcma_11_follows_pam_200_1():
+    """DCMA-EA PAM 200.1 (Oct 2012) 4.11: a task is due when its baseline finish is on or before the status
+    date; it is missed when its actual or forecast finish is after the baseline finish. The base is the
+    tasks "not missing baseline start or finish dates". 4.0 leaves out completed tasks, LOE, summary tasks and
+    milestones; 4.11 counts actual finishes, so completed tasks stay (4.11 overrides 4.0 there).
+
+    UNRESOLVED: the pamphlet's Finish Variance is working time; the calendar date is compared here.
+    """
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            done("A", act_end_date="2026-02-26 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            done("B", act_end_date="2026-02-28 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("C", early_end_date="2026-03-20 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("E", early_end_date="2026-03-02 17:00", target_start_date=st, target_end_date="2026-03-02 08:00"),
+            todo("M", task_type="TT_Mile", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("NS", early_end_date="2026-03-20 17:00", target_end_date="2026-02-27 17:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
+    # Data date 2026-03-02 08:00. M is a milestone and NS has no baseline start: out of the base.
+    # A, B, C, E have both baseline dates and a baseline finish <= data date: 4 due.
+    # A 02-26 <= 02-27 on time; B 02-28 > 02-27 missed; C forecast 03-20 > 02-27 missed;
+    # E forecast 03-02 17:00 is the same date as its baseline finish 03-02 08:00: not missed.
+    assert codes(r) == ["B", "C"]
+    assert (r.numerator, r.denominator) == (2, 4)
 
 
 def test_baseline_metrics_are_na_without_baseline():
@@ -302,7 +531,7 @@ def test_broken_rule_reports_error_not_crash(monkeypatch):
     def boom(ctx, **_):
         raise RuntimeError("kaput")
 
-    monkeypatch.setitem(rules.RULES, "float", rules.Rule("float", boom, "%", ""))
+    monkeypatch.setitem(rules.RULES, "p6_06_large_float", rules.Rule("p6_06_large_float", boom, "%", ""))
     r = run(P6, "P6-06", LOGIC)
     assert r.status == "error" and "kaput" in r.note
 
@@ -317,7 +546,7 @@ def test_results_have_no_nan_status():
 
 
 def test_start_milestone_without_successor_is_an_open_end_for_p6():
-    # Only finish milestones pass the successor check; a start milestone must drive something.
+    # No milestone passes the successor check; a start milestone must drive something.
     s = snap([todo("S", task_type="TT_Mile", target_drtn_hr_cnt="0"), todo("A")], [("S", "A", "FS", 0)])
     assert codes(run(P6, "P6-01", s)) == ["A"]
     s = snap([todo("S", task_type="TT_Mile", target_drtn_hr_cnt="0"), todo("A")], [("A", "S", "FS", 0)])
@@ -466,7 +695,7 @@ def test_decm_out_of_sequence_counts_relationships():
     s.tasks.loc[s.tasks["task_code"] == "D", "start"] = pd.Timestamp("2026-03-13 09:00")  # overlap via the lead
     s.tasks.loc[s.tasks["task_code"] == "C", "finish"] = pd.Timestamp("2026-03-13 17:00")
     r = run(DECM, "06A212a", s)
-    assert sorted(zip(r.flagged["pred_code"], r.flagged["succ_code"], strict=True)) == [("A", "B"), ("C", "D")]
+    assert links(r) == [("A", "B"), ("C", "D")]
     assert r.status == "fail"
 
 
@@ -598,11 +827,33 @@ def test_actuals_changed_counts_a_removed_date_on_both_sides():
     from xerkit import active, todo
 
     from xerscope.analysis import AnalysisContext
-    from xerscope.analysis.rules import RULES
     from xerscope.store import SnapshotStore
 
     a = snap([active("A"), active("B"), todo("C")])
-    b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-09 08:00")
+    b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-30 08:00")
     store = SnapshotStore([a, b])
-    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start", period_days=0)
+    out = run_metric(DECM["06A504a"], AnalysisContext(store[1], store))
     assert sorted(out.flagged["task_code"]) == ["A", "B"] and (out.numerator, out.denominator) == (2, 2)
+
+
+# --- no data date ------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("std", "metric"), [(P6, "P6-13"), (DCMA, "DCMA-11"), (DCMA, "DCMA-12"), (DCMA, "DCMA-13"), (DCMA, "DCMA-14")]
+)
+def test_data_date_checks_are_na_without_a_data_date(std, metric):
+    s = snap(
+        [done("A"), active("B"), todo("C", early_end_date="2026-03-20 17:00")],
+        [("A", "B", "FS", 0), ("B", "C", "FS", 0)],
+        project={"last_recalc_date": "", "plan_start_date": ""},
+    )
+    assert s.data_date is None
+    r = run(std, metric, s, Baseline.planned(s))
+    assert r.status == "n/a" and "data date" in r.note
+
+
+def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
+    s = snap([done("A"), done("B")], [("A", "B", "FS", 0)])
+    r = run(DECM, "06A212a", s)
+    assert r.status != "error" and r.numerator == 0

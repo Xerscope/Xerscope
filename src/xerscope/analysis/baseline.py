@@ -31,27 +31,29 @@ EV_BASES = {
 DEFAULT_EV_BASIS = "budgeted_planned"
 
 
-def _frame(a: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) -> pd.DataFrame:
+def _frame(activities: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) -> pd.DataFrame:
     if ev_basis not in EV_BASES:
         raise ValueError(f"ev_basis must be one of {sorted(EV_BASES)}")
     planned = ev_basis == "budgeted_planned"
     # an activity without planned dates (some exporters) falls back to its current dates
-    ev_start = a["target_start_date"].combine_first(start) if planned else start
-    ev_finish = a["target_end_date"].combine_first(finish) if planned else finish
-    at_completion = a["labor_actual_hr"].fillna(0.0) + a["labor_remaining_hr"].fillna(0.0)
+    ev_start = activities["target_start_date"].combine_first(start) if planned else start
+    ev_finish = activities["target_end_date"].combine_first(finish) if planned else finish
+    at_completion = activities["labor_actual_hr"].fillna(0.0) + activities["labor_remaining_hr"].fillna(0.0)
     frame = pd.DataFrame(
         {
             "bl_start": start.values,
             "bl_finish": finish.values,
-            "bl_labor_hr": a["labor_budget_hr"].values,
-            "bl_duration_hr": a["target_drtn_hr_cnt"].values,
-            "bl_clndr_id": a["clndr_id"].values,
-            "bl_name": a["task_name"].values,
+            "bl_labor_hr": activities["labor_budget_hr"].values,
+            "bl_duration_hr": activities["target_drtn_hr_cnt"].values,
+            "bl_clndr_id": activities["clndr_id"].values,
+            "bl_name": activities["task_name"].values,
             "ev_start": ev_start.values,
             "ev_finish": ev_finish.values,
-            "ev_labor_hr": (at_completion if ev_basis == "at_completion_current" else a["labor_budget_hr"]).values,
+            "ev_labor_hr": (
+                at_completion if ev_basis == "at_completion_current" else activities["labor_budget_hr"]
+            ).values,
         },
-        index=pd.Index(a["task_code"], name="task_code"),
+        index=pd.Index(activities["task_code"], name="task_code"),
     )
     return frame[~frame.index.duplicated()]
 
@@ -60,19 +62,20 @@ def _frame(a: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) 
 class Baseline:
     frame: pd.DataFrame  # index task_code, columns COLS
     label: str
-    snapshot: Snapshot | None = None  # source file, for its calendars (PV spreading)
+    snapshot: Snapshot  # source file, for its calendars (PV spreading)
     ev_basis: str = DEFAULT_EV_BASIS
 
     @classmethod
-    def from_snapshot(cls, bl: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
-        a = bl.activities
-        return cls(_frame(a, a["start"], a["finish"], ev_basis), f"BL {bl.label}", bl, ev_basis)
+    def from_snapshot(cls, baseline_snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
+        activities = baseline_snapshot.activities
+        frame = _frame(activities, activities["start"], activities["finish"], ev_basis)
+        return cls(frame, f"BL {baseline_snapshot.label}", baseline_snapshot, ev_basis)
 
     @classmethod
-    def planned(cls, snap: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
-        a = snap.activities
-        frame = _frame(a, a["target_start_date"], a["target_end_date"], ev_basis)
-        return cls(frame, f"planned dates (target_*) of {snap.label}", snap, ev_basis)
+    def planned(cls, snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
+        activities = snapshot.activities
+        frame = _frame(activities, activities["target_start_date"], activities["target_end_date"], ev_basis)
+        return cls(frame, f"planned dates (target_*) of {snapshot.label}", snapshot, ev_basis)
 
     @property
     def bac_hours(self) -> float:

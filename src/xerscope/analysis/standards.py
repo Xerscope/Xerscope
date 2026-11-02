@@ -99,56 +99,58 @@ def parse_target(text: str | None, unit: str) -> tuple[str | None, float | None]
     return m.group(1), float(m.group(2))
 
 
+def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric:
+    """One [[metric]] table checked and turned into a Metric; raises ValueError with the reason."""
+    for key in ("id", "name", "rule"):
+        if key not in entry:
+            raise ValueError(f"missing {key!r}")
+    if entry["id"] in seen_ids:
+        raise ValueError("duplicate id")
+    seen_ids.add(entry["id"])
+    if entry["rule"] not in RULES:
+        raise ValueError(f"unknown rule {entry['rule']!r}; available: {sorted(RULES)}")
+    rule = RULES[entry["rule"]]
+    params = dict(entry.get("params", {}))
+    rule.validate(params)
+    unit = entry.get("unit", rule.unit)
+    if unit not in UNITS:
+        raise ValueError(f"unit {unit!r} not in {sorted(UNITS)}")
+    if unit != rule.unit and {unit, rule.unit} != {"%", "count"}:
+        raise ValueError(
+            f"metric {entry.get('id')!r}: unit {unit!r} does not fit rule {rule.name!r} ({rule.unit}); "
+            "only % and count are interchangeable"
+        )
+    comparator, threshold = parse_target(entry.get("target"), unit)
+    extra = set(entry) - {"id", "name", "rule", "description", "params", "unit", "target", "source", "group"}
+    if extra:
+        raise ValueError(f"unknown key(s) {sorted(extra)}")
+    return Metric(
+        id=entry["id"],
+        name=entry["name"],
+        standard=standard_name,
+        rule=entry["rule"],
+        description=entry.get("description", rule.doc.splitlines()[0] if rule.doc else ""),
+        params=params,
+        unit=unit,
+        comparator=comparator,
+        threshold=threshold,
+        source=entry.get("source", ""),
+        group=entry.get("group", ""),
+    )
+
+
 def parse_standard(data: dict, path: str = "") -> Standard:
     where = path or "standard"
     head = data.get("standard")
     if not isinstance(head, dict) or "id" not in head or "name" not in head:
         raise ValueError(f"{where}: needs a [standard] table with id and name")
     metrics = []
-    seen = set()
-    for i, m in enumerate(data.get("metric", [])):
-        label = f"{where}: metric #{i + 1} ({m.get('id', '?')})"
+    seen_ids: set[str] = set()
+    for number, entry in enumerate(data.get("metric", []), start=1):
         try:
-            for key in ("id", "name", "rule"):
-                if key not in m:
-                    raise ValueError(f"missing {key!r}")
-            if m["id"] in seen:
-                raise ValueError("duplicate id")
-            seen.add(m["id"])
-            if m["rule"] not in RULES:
-                raise ValueError(f"unknown rule {m['rule']!r}; available: {sorted(RULES)}")
-            rule = RULES[m["rule"]]
-            params = dict(m.get("params", {}))
-            rule.validate(params)
-            unit = m.get("unit", rule.unit)
-            if unit not in UNITS:
-                raise ValueError(f"unit {unit!r} not in {sorted(UNITS)}")
-            if unit != rule.unit and {unit, rule.unit} != {"%", "count"}:
-                raise ValueError(
-                    f"metric {m.get('id')!r}: unit {unit!r} does not fit rule {rule.name!r} ({rule.unit}); "
-                    "only % and count are interchangeable"
-                )
-            comparator, threshold = parse_target(m.get("target"), unit)
-            extra = set(m) - {"id", "name", "rule", "description", "params", "unit", "target", "source", "group"}
-            if extra:
-                raise ValueError(f"unknown key(s) {sorted(extra)}")
+            metrics.append(_parse_metric(entry, head["name"], seen_ids))
         except ValueError as exc:
-            raise ValueError(f"{label}: {exc}") from None
-        metrics.append(
-            Metric(
-                id=m["id"],
-                name=m["name"],
-                standard=head["name"],
-                rule=m["rule"],
-                description=m.get("description", rule.doc.splitlines()[0] if rule.doc else ""),
-                params=params,
-                unit=unit,
-                comparator=comparator,
-                threshold=threshold,
-                source=m.get("source", ""),
-                group=m.get("group", ""),
-            )
-        )
+            raise ValueError(f"{where}: metric #{number} ({entry.get('id', '?')}): {exc}") from None
     if not metrics:
         raise ValueError(f"{where}: no [[metric]] defined")
     return Standard(head["id"], head["name"], tuple(metrics), head.get("description", ""), head.get("source", ""), path)
@@ -162,8 +164,8 @@ def decode(data: bytes) -> str:
 
 
 def load_standard(path: str | Path) -> Standard:
-    p = Path(path)
-    return loads_standard(decode(p.read_bytes()), p.name)
+    file = Path(path)
+    return loads_standard(decode(file.read_bytes()), file.name)
 
 
 def loads_standard(text: str | bytes, name: str = "uploaded.toml") -> Standard:
@@ -180,12 +182,12 @@ BUILTIN_DIR = resources.files("xerscope") / "standards"
 
 
 def builtin_standards() -> dict[str, Standard]:
-    out = {}
-    for entry in sorted(BUILTIN_DIR.iterdir(), key=lambda e: e.name):
+    standards = {}
+    for entry in sorted(BUILTIN_DIR.iterdir(), key=operator.attrgetter("name")):
         if entry.name.endswith(".toml") and not entry.name.startswith("custom-template"):
-            s = parse_standard(tomllib.loads(entry.read_text(encoding="utf-8")), entry.name)
-            out[s.id] = s
-    return out
+            standard = parse_standard(tomllib.loads(entry.read_text(encoding="utf-8")), entry.name)
+            standards[standard.id] = standard
+    return standards
 
 
 def template_text() -> str:
@@ -196,16 +198,18 @@ def discover_standards(*dirs: str | Path) -> tuple[dict[str, Standard], list[str
     """Built-ins plus every ``*.toml`` in ``dirs``; returns (standards, load errors)."""
     found = builtin_standards()
     errors = []
-    for d in dirs:
-        root = Path(d).expanduser()
+    for directory in dirs:
+        root = Path(directory).expanduser()
         if not root.is_dir():
             continue
-        for p in sorted(root.glob("*.toml")):
+        for file in sorted(root.glob("*.toml")):
             try:
-                s = load_standard(p)
-                if s.id in found:
-                    errors.append(f"{p.name}: id {s.id!r} replaces the standard of that id ({found[s.id].name})")
-                found[s.id] = s
+                standard = load_standard(file)
+                if standard.id in found:
+                    errors.append(
+                        f"{file.name}: id {standard.id!r} replaces the standard of that id ({found[standard.id].name})"
+                    )
+                found[standard.id] = standard
             except (ValueError, OSError) as exc:
                 errors.append(str(exc))
     return found, errors

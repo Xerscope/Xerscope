@@ -1,133 +1,136 @@
-# DCMA 14-Point Schedule Assessment (DCMA, 2005; thresholds as commonly applied).
+# DCMA 14-Point Schedule Assessment, as DCMA-EA PAM 200.1 (Oct 2012) defines it: section 4
+# (the 14 points, 4.0 for the populations) plus 3.1.2.3 (CPLI) and 3.1.2.4 (BEI). Each metric's
+# `source` cites its section.
 #
-# Legacy: DCMA itself now assesses schedules with the DECM (decm.toml, v8.0). The
-# 14-Point remains the industry's common screen and what most tools report.
+# Legacy: DCMA itself now assesses schedules with the DECM (decm.toml, v8.0). The 14-Point
+# remains the industry's common screen.
 #
-# Population: incomplete activities, excluding LOE (and WBS summary, always), except the
-# checks that need finished work: invalid dates (09), missed tasks (11) and BEI (14).
-# Relationships: those into incomplete work. Durations and float in working days.
-# Calibrated against xerlock's published DCMA result on its sample schedule
-# (tests/reference/expected.py): every count there is reproduced.
+# Population: incomplete activities, excluding LOE and milestones (PAM 200.1 section 4.0; WBS
+# summary always), except the checks that need finished work: invalid dates (09, which keeps a
+# task completed on or after the data date), missed tasks (11) and BEI (14).
+# Relationships: those into incomplete, non-LOE, non-milestone work. Durations and float in working days.
+# Inputs are weekly XERs: there is no detail planning period or rolling wave window (DCMA-08).
+# xerlock's published result on its sample schedule is a comparison, not the authority; where
+# the pamphlet differs from it (DCMA-01, 04, 05, 11, 13) the difference is noted in
+# tests/reference/expected.py.
 
 [standard]
 id = "DCMA"
 name = "DCMA 14-Point"
 description = "DCMA 14-Point Schedule Assessment (legacy; DCMA now uses the DECM)"
-source = "DCMA 14-Point Assessment; xerlock sample results used for calibration"
+source = "DCMA-EA PAM 200.1 (Oct 2012), section 4 and sections 3.1.2.3, 3.1.2.4"
 
 [[metric]]
 id = "DCMA-01"
 name = "Logic"
-description = "Open ends: missing predecessor or successor, or a dangling start/finish"
-rule = "missing_logic"
+description = "Incomplete tasks missing a predecessor or a successor"
+rule = "dcma_01_logic"
 target = "<= 5%"
-params = { exclude = ["complete", "loe"], pred_exempt = ["project_start"], succ_exempt = ["project_finish"], dangling = true }
+source = "DCMA-EA PAM 200.1 §4.1: any incomplete task missing a predecessor and/or a successor; no project start/finish exemption and no dangling case; §4.0: milestones excluded; a link to another project counts as logic (rule default)"
 
 [[metric]]
 id = "DCMA-02"
 name = "Leads"
 description = "Relationships with a negative lag"
-rule = "lag"
+rule = "dcma_02_leads"
 unit = "count"
 target = "<= 0"
-params = { op = "<", value = 0, links = "succ_incomplete" }
+source = "DCMA-EA PAM 200.1 §4.2: logic links with a lead (negative lag) in predecessor relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-03"
 name = "Lags"
 description = "Relationships with a positive lag"
-rule = "lag"
+rule = "dcma_03_lags"
 target = "<= 5%"
-params = { op = ">", value = 0, links = "succ_incomplete" }
+source = "DCMA-EA PAM 200.1 §4.3: lags in predecessor logic relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-04"
 name = "Relationship types"
 description = "Share of Finish-to-Start relationships"
-rule = "relationship_type"
+rule = "dcma_04_relationship_types"
 target = ">= 90%"
-params = { type = "FS", links = "succ_incomplete" }
+source = "DCMA-EA PAM 200.1 §4.4: a count of incomplete tasks containing each type of logic link; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-05"
 name = "Hard constraints"
 description = "Start/finish on, start/finish no later than, mandatory dates"
-rule = "constraints"
+rule = "dcma_05_hard_constraints"
 target = "<= 5%"
-params = { types = ["CS_MSO", "CS_MSOB", "CS_MEO", "CS_MEOB", "CS_MANDSTART", "CS_MANDFIN"], exclude = ["complete", "loe"], ignore_start_when_started = false }
+source = "DCMA-EA PAM 200.1 §4.5 (and §4.0: milestones excluded); MSO = Start On / Mandatory Start, MFO = Finish On / Mandatory Finish, SNLT = Start On or Before, FNLT = Finish On or Before"
 
 [[metric]]
 id = "DCMA-06"
 name = "High float"
 description = "Total float above 44 working days"
-rule = "float"
+rule = "dcma_06_high_float"
 target = "<= 5%"
-params = { op = ">", value = 44, unit = "days", exclude = ["complete", "loe"] }
+source = "DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months); §4.0: milestones excluded"
 
 [[metric]]
 id = "DCMA-07"
 name = "Negative float"
 description = "Total float below 0"
-rule = "float"
+rule = "dcma_07_negative_float"
 unit = "count"
 target = "<= 0"
-params = { op = "<", value = 0, unit = "days", exclude = ["complete", "loe"] }
+source = "DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 working days; §4.0: milestones excluded"
 
 [[metric]]
 id = "DCMA-08"
 name = "High duration"
-description = "Original duration above 44 working days"
-rule = "duration"
+description = "Baseline duration above 44 working days"
+rule = "dcma_08_high_duration"
 target = "<= 5%"
-params = { field = "original", op = ">", value = 44, unit = "days", exclude = ["complete", "loe", "milestones"] }
+source = "DCMA-EA PAM 200.1 §4.8: an incomplete task with a baseline duration greater than 44 working days (2 months) and a baseline start within the detail planning period or rolling wave; §4.0: LOE and milestones excluded. UNRESOLVED: inputs are weekly XERs with no detail planning window, so every baseline start qualifies. UNRESOLVED: baseline hours are divided by the activity's current hours per day, not the baseline calendar. An activity absent from the baseline is not flagged; without a baseline the check is n/a"
 
 [[metric]]
 id = "DCMA-09"
 name = "Invalid dates"
 description = "Forecast before the data date, or actual after it"
-rule = "invalid_dates"
+rule = "dcma_09_invalid_dates"
 unit = "count"
 target = "<= 0"
-params = { kind = "both", exclude = ["loe"] }
+source = "DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an actual start/finish beyond it; §4.0: LOE and milestones excluded; a task completed before the status date is out too, so only an actual date beyond it can flag a completed task"
 
 [[metric]]
 id = "DCMA-10"
 name = "Resources"
 description = "Activities with a duration but no resource or cost"
-rule = "no_resource"
+rule = "dcma_10_resources"
 target = "<= 0%"
-params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = true }
+source = "DCMA-EA PAM 200.1 §4.10: \"all tasks with durations greater than zero have dollars or hours assigned\"; incomplete tasks without them over incomplete tasks; §4.0 exclusions apply. Cost or hours = a resource assignment or an expense"
 
 [[metric]]
 id = "DCMA-11"
 name = "Missed tasks"
-description = "Due by the data date (baseline finish) but finished late or not finished"
-rule = "missed_tasks"
+description = "Due by the data date (baseline finish) but finished, or forecast to finish, on a later date"
+rule = "dcma_11_missed_tasks"
 target = "<= 5%"
-source = "DCMA 14-point #11: tasks due by the status date per the baseline; milestones kept here (they carry a baseline finish), as in xerlock's results the test pins"
-params = { exclude = ["loe"] }
+source = "DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date, actual or forecast finish after it; base excludes tasks missing a baseline start or finish. 4.0 excludes completed tasks, LOE, summary tasks and milestones; 4.11 measures actual finishes, so completed tasks stay here (4.11 overrides 4.0 on that point)"
 
 [[metric]]
 id = "DCMA-12"
 name = "Critical path test"
 description = "A delay on the critical path moves the finish by the same amount"
-rule = "critical_path_test"
+rule = "dcma_12_critical_path_test"
 target = "pass"
-params = { delay_days = 600 }
+source = "DCMA-EA PAM 200.1 §4.12: the project completion date must move \"in direct proportion\" to the \"intentional slip\" introduced. The pamphlet gives no slip length; 600 working days is the value of DECM 06A401a"
 
 [[metric]]
 id = "DCMA-13"
 name = "CPLI"
 description = "Critical Path Length Index = (CPL + total float) / CPL"
-rule = "cpli"
+rule = "dcma_13_cpli"
 target = ">= 0.95"
-source = "DCMA 14-point #13: (critical path length + total float) / critical path length, float measured to the contract finish; P6 writes that float only against the Must Finish By date, so the check is n/a without one"
+source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). P6 writes that float only against the Must Finish By date, so the check is n/a without one"
 
 [[metric]]
 id = "DCMA-14"
 name = "BEI"
 description = "Activities completed / activities due by the data date (baseline)"
-rule = "bei"
+rule = "dcma_14_bei"
 target = ">= 0.95"
-source = "DCMA 14-point #14: tasks completed / tasks baselined to finish by the status date; milestones left out here, an activity without a baseline finish is neither; xerlock's results pin the value"
-params = { exclude = ["loe", "milestones"], missing_baseline = "ignore" }
+source = "DCMA-EA PAM 200.1 §3.1.2.4: step 1 filters out LOE, summary and zero duration tasks (milestones); tasks missing baseline finish dates are included in the denominator"

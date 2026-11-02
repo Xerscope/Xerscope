@@ -59,7 +59,7 @@ def test_builtin_standards():
     assert len(std["P6"].metrics) == 14  # P6 Professional 24
     assert len(std["DECM"].metrics) == 16
     assert std["DCMA"]["DCMA-13"].threshold == 0.95
-    assert std["P6"]["P6-05"].params["value"] == 352
+    assert std["P6"]["P6-05"].rule == "p6_05_long_lags"
 
 
 def test_template_is_a_valid_standard():
@@ -77,7 +77,7 @@ HEAD = '[standard]\nid = "X"\nname = "X"\n'
         ('rule = "float"\nparams = { treshold = 3 }', "no parameter(s) ['treshold']"),
         ('rule = "float"\nparams = { exclude = ["finished"] }', "unknown value(s) ['finished']"),
         ('rule = "float"\ntarget = "about 5"', "write e.g."),
-        ('rule = "cpli"\ntarget = "<= 5%"', "is a percentage but the metric unit is 'ratio'"),
+        ('rule = "bei"\ntarget = "<= 5%"', "is a percentage but the metric unit is 'ratio'"),
         ('rule = "lag"\nparams = { links = "some" }', "lag.links: 'some' is not one of"),
         ('rule = "float"\ncolour = "red"', "unknown key(s) ['colour']"),
         ('rule = "float"\nparams = { op = "=>" }', "float.op: '=>' is not one of"),
