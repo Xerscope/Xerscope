@@ -55,6 +55,28 @@ def without_milestones(activities: pd.DataFrame) -> pd.DataFrame:
     return activities[~_yes(activities["is_milestone"])]
 
 
+def discrete_tasks(activities: pd.DataFrame) -> pd.DataFrame:
+    """Neither level of effort nor milestones: the tasks DCMA PAM 200.1 section 4.0 measures."""
+    return without_milestones(without_level_of_effort(activities))
+
+
+def open_tasks(context: AnalysisContext) -> pd.DataFrame:
+    """The DCMA population: incomplete, non-LOE, non-milestone tasks."""
+    return discrete_tasks(open_activities(context))
+
+
+def with_baseline(context: AnalysisContext, activities: pd.DataFrame) -> pd.DataFrame:
+    """The activities with their baseline start and finish (empty where the baseline lacks them)."""
+    return activities.join(context.baseline.frame[["bl_start", "bl_finish"]], on="task_code")
+
+
+def finish_driver(context: AnalysisContext) -> pd.Series | None:
+    """The open, non-LOE activity with the latest forecast finish; None when no work remains."""
+    activities = context.snapshot.activities
+    remaining = activities[~activities["is_complete"] & ~activities["is_loe"] & activities["finish"].notna()]
+    return None if remaining.empty else remaining.loc[remaining["finish"].idxmax()]
+
+
 def has_predecessor_in_project(context: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
     """True where the activity is the successor of a relationship inside this project."""
     return activities["task_code"].isin(_relationships_in_project(context)["succ_code"])
