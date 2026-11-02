@@ -15,28 +15,28 @@ from ..xer import Snapshot
 from .baseline import Baseline
 
 
-def tree(snap: Snapshot) -> pd.DataFrame:
+def tree(snapshot: Snapshot) -> pd.DataFrame:
     """WBS nodes (project node excluded) with depth and the list of ancestor ids."""
-    w = snap.wbs
-    if w.empty:
+    nodes = snapshot.wbs
+    if nodes.empty:
         return pd.DataFrame(columns=["wbs_id", "wbs_code", "wbs_name", "wbs_sort", "depth", "parent", "ancestors"])
-    w = w[w["proj_node_flag"] != "Y"].copy()
-    by_id = w.set_index("wbs_id")
+    nodes = nodes[nodes["proj_node_flag"] != "Y"].copy()
+    by_id = nodes.set_index("wbs_id")
     parent = by_id["parent_wbs_id"].where(by_id["parent_wbs_id"].isin(by_id.index))
 
-    def chain(wid):
-        out, seen = [], set()
-        while isinstance(wid, str) and wid in by_id.index and wid not in seen:
-            seen.add(wid)
-            out.append(wid)
-            wid = parent.get(wid)
-        return out
+    def chain(wbs_id):
+        ancestors, seen = [], set()
+        while isinstance(wbs_id, str) and wbs_id in by_id.index and wbs_id not in seen:
+            seen.add(wbs_id)
+            ancestors.append(wbs_id)
+            wbs_id = parent.get(wbs_id)
+        return ancestors
 
-    w["ancestors"] = [chain(i) for i in w["wbs_id"]]  # self first, then up to the top
-    w["depth"] = w["ancestors"].map(len)
-    w["parent"] = w["wbs_id"].map(parent)
+    nodes["ancestors"] = [chain(wbs_id) for wbs_id in nodes["wbs_id"]]  # self first, then up to the top
+    nodes["depth"] = nodes["ancestors"].map(len)
+    nodes["parent"] = nodes["wbs_id"].map(parent)
     return (
-        w[["wbs_id", "wbs_code", "wbs_name", "wbs_sort", "depth", "parent", "ancestors"]]
+        nodes[["wbs_id", "wbs_code", "wbs_name", "wbs_sort", "depth", "parent", "ancestors"]]
         .sort_values("wbs_sort")
         .reset_index(drop=True)
     )
@@ -45,15 +45,15 @@ def tree(snap: Snapshot) -> pd.DataFrame:
 ROOT = "__project__"
 
 
-def rollup(snap: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame:
+def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame:
     """One row per WBS node plus a project row (``wbs_id == ROOT``, depth 0), in P6 order."""
-    tr = tree(snap)
+    nodes = tree(snapshot)
     root = pd.DataFrame(
         [
             {
                 "wbs_id": ROOT,
-                "wbs_code": snap.project_code,
-                "wbs_name": snap.project_name,
+                "wbs_code": snapshot.project_code,
+                "wbs_name": snapshot.project_name,
                 "wbs_sort": "",
                 "depth": 0,
                 "parent": None,
@@ -61,56 +61,64 @@ def rollup(snap: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame:
             }
         ]
     )
-    tr = pd.concat([root, tr], ignore_index=True)
-    tr["ancestors"] = [
-        anc if wid == ROOT else anc + [ROOT] for wid, anc in zip(tr["wbs_id"], tr["ancestors"], strict=True)
+    nodes = pd.concat([root, nodes], ignore_index=True)
+    nodes["ancestors"] = [
+        ancestors if wbs_id == ROOT else ancestors + [ROOT]
+        for wbs_id, ancestors in zip(nodes["wbs_id"], nodes["ancestors"], strict=True)
     ]
-    a = snap.activities.copy()
-    anc = tr.set_index("wbs_id")["ancestors"]
-    a["node"] = [anc.get(w, [ROOT]) for w in a["wbs_id"]]
-    a = a.explode("node")
+    activities = snapshot.activities.copy()
+    ancestors_of = nodes.set_index("wbs_id")["ancestors"]
+    activities["node"] = [ancestors_of.get(wbs_id, [ROOT]) for wbs_id in activities["wbs_id"]]
+    activities = activities.explode("node")  # an activity counts in every node above it
     if baseline is not None:
-        a = a.join(baseline.frame[["bl_finish"]], on="task_code")
+        activities = activities.join(baseline.frame[["bl_finish"]], on="task_code")
     else:
-        a["bl_finish"] = pd.NaT
-    a["w_hr"] = a["labor_budget_hr"].fillna(0)
-    a["w_d"] = a["original_d"].fillna(0)
-    a["open"] = ~a["is_complete"]
-    g = a.groupby("node")
-    r = pd.DataFrame(
+        activities["bl_finish"] = pd.NaT
+    activities["w_hr"] = activities["labor_budget_hr"].fillna(0)
+    activities["w_d"] = activities["original_d"].fillna(0)
+    activities["open_critical"] = activities["is_critical"] & ~activities["is_complete"]
+    activities["weighted_pct_hr"] = activities["w_hr"] * activities["pct_complete"]
+    activities["weighted_pct_d"] = activities["w_d"] * activities["pct_complete"]
+    by_node = activities.groupby("node")
+    totals = pd.DataFrame(
         {
-            "activities": g.size(),
-            "complete": g["is_complete"].sum(),
-            "critical": g.apply(lambda x: int((x["is_critical"] & x["open"]).sum()), include_groups=False),
-            "min_float_d": g["total_float_d"].min(),
-            "start": g["start"].min(),
-            "finish": g["finish"].max(),
-            "bl_finish": g["bl_finish"].max(),
-            "budget_hr": g["w_hr"].sum(),
-            "actual_hr": g["labor_actual_hr"].sum(),
-            "remaining_hr": g["labor_remaining_hr"].sum(),
-            "_pct_hr": g.apply(lambda x: (x["w_hr"] * x["pct_complete"]).sum(), include_groups=False),
-            "_pct_d": g.apply(lambda x: (x["w_d"] * x["pct_complete"]).sum(), include_groups=False),
-            "_w_d": g["w_d"].sum(),
+            "activities": by_node.size(),
+            "complete": by_node["is_complete"].sum(),
+            "critical": by_node["open_critical"].sum(),
+            "min_float_d": by_node["total_float_d"].min(),
+            "start": by_node["start"].min(),
+            "finish": by_node["finish"].max(),
+            "bl_finish": by_node["bl_finish"].max(),
+            "budget_hr": by_node["w_hr"].sum(),
+            "actual_hr": by_node["labor_actual_hr"].sum(),
+            "remaining_hr": by_node["labor_remaining_hr"].sum(),
+            "_pct_hr": by_node["weighted_pct_hr"].sum(),
+            "_pct_d": by_node["weighted_pct_d"].sum(),
+            "_w_d": by_node["w_d"].sum(),
         }
     )
-    use_hr = r["budget_hr"] > 0
-    r["pct_complete"] = np.where(
-        use_hr, r["_pct_hr"] / r["budget_hr"].where(use_hr), r["_pct_d"] / r["_w_d"].where(r["_w_d"] > 0)
+    use_hours = totals["budget_hr"] > 0
+    totals["pct_complete"] = np.where(
+        use_hours,
+        totals["_pct_hr"] / totals["budget_hr"].where(use_hours),
+        totals["_pct_d"] / totals["_w_d"].where(totals["_w_d"] > 0),
     )
-    r["weight"] = np.where(use_hr, "hours", "duration")
+    totals["weight"] = np.where(use_hours, "hours", "duration")
     # project calendar: a WBS node has no calendar of its own
-    r["finish_variance_wd"] = snap.working_days(pd.Series("", index=r.index), r["bl_finish"], r["finish"]).round(1)
-    r = r.drop(columns=["_pct_hr", "_pct_d", "_w_d"])
-    out = tr.join(r, on="wbs_id", how="left")
+    no_calendar = pd.Series("", index=totals.index)
+    totals["finish_variance_wd"] = snapshot.working_days(no_calendar, totals["bl_finish"], totals["finish"]).round(1)
+    totals = totals.drop(columns=["_pct_hr", "_pct_d", "_w_d"])
+    out = nodes.join(totals, on="wbs_id", how="left")
     out[["activities", "complete", "critical"]] = out[["activities", "complete", "critical"]].fillna(0).astype(int)
     out["label"] = [
-        n if d == 0 else "   " * (d - 1) + f"{c.split('.')[-1]} · {n}"
-        for d, c, n in zip(out["depth"], out["wbs_code"], out["wbs_name"], strict=True)
+        name if depth == 0 else "   " * (depth - 1) + f"{code.split('.')[-1]} · {name}"
+        for depth, code, name in zip(out["depth"], out["wbs_code"], out["wbs_name"], strict=True)
     ]
     return out
 
 
-def subtree_ids(tr: pd.DataFrame, wbs_id: str) -> set[str]:
+def subtree_ids(nodes: pd.DataFrame, wbs_id: str) -> set[str]:
     """``wbs_id`` and every node below it."""
-    return {i for i, anc in zip(tr["wbs_id"], tr["ancestors"], strict=True) if wbs_id in anc}
+    return {
+        node_id for node_id, ancestors in zip(nodes["wbs_id"], nodes["ancestors"], strict=True) if wbs_id in ancestors
+    }
