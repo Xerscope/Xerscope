@@ -43,11 +43,11 @@ def test_verdict_follows_status(results):
 
 def test_parameters_show_standard_and_defaults(results):
     late = next(r for r in results if r.metric.id == "P6-12")
-    params = {name: (value, origin) for name, value, origin in explain(late).parameters}
-    assert params["exclude"] == ("milestones, loe", "standard")
-    assert params["no_baseline"] == ("planned", "standard")
-    assert params["tolerance_hours"][1] == "default"
+    assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
     assert any("Excludes: milestones" in line for line in explain(late).population)
+    with_parameters = [explain(r).parameters for r in results if explain(r).parameters]
+    origins = {origin for parameters in with_parameters for _name, _value, origin in parameters}
+    assert origins == {"standard", "default"}
 
 
 def test_link_rules_word_exclusions_on_the_successor():

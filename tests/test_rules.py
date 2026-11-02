@@ -531,7 +531,7 @@ def test_broken_rule_reports_error_not_crash(monkeypatch):
     def boom(ctx, **_):
         raise RuntimeError("kaput")
 
-    monkeypatch.setitem(rules.RULES, "float", rules.Rule("float", boom, "%", ""))
+    monkeypatch.setitem(rules.RULES, "p6_06_large_float", rules.Rule("p6_06_large_float", boom, "%", ""))
     r = run(P6, "P6-06", LOGIC)
     assert r.status == "error" and "kaput" in r.note
 
