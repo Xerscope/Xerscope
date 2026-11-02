@@ -108,13 +108,11 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 - [ ] Not reachable by AppTest: the upload path (`file_uploader`) and a WBS row selection
       (`on_select`); both are checked by hand before a release.
-- [ ] Baseline file: the sidebar re-hashes its bytes on every rerun (`st.cache_data`);
+- [ ] Baseline file: the sidebar re-hashes its bytes on every rerun (`_parse` key);
       noticeable above ~50 MB only.
 - [ ] Memory per loaded file: a synthetic 43 MB export (97,121 activities) holds about
-      0.65 GB parsed, plus a 0.1 GB pickled copy in `_parse`'s `st.cache_data`
-      (`max_entries=512`, no size bound), plus its raw bytes in session state. This sets how
-      many weeks fit under the NAS's memory cap (docs/deploy.md §7): drop the bytes once
-      parsed, bound the cache by size.
+      0.65 GB parsed, plus its raw bytes in session state. This sets how many weeks fit under
+      the NAS's memory cap (docs/deploy.md §7): drop the bytes once parsed.
 
 ## Deployment and CI
 
@@ -155,7 +153,7 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       hours-per-day lookup (x3); three changelog row builders; two text searches in views.
 - [ ] Computations still inside `app/views` (changelog, health, ppc, gantt): pure
       functions per page would be testable without AppTest. One cache policy
-      (`st.cache_data` for parsing, `memo` for analyses).
+      (`_parse` and `memo`, both in session state).
 - [ ] `cpm.py`: the status × link × lag × option cases are spread over four methods; a
       table read by both passes would make each cell a test.
 - [ ] `tests/test_p6_heldout.py` is four of the suite's seven minutes: score the sets in
