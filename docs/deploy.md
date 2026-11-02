@@ -106,10 +106,15 @@ DSM administrator — same confidentiality as the folder, not a vault.
 
 A shared folder (for example `planning`), weekly `.xer` dropped by Synology Drive or
 SMB; sub-folders are read too. Mounted read-only: the app cannot alter or delete anything.
-The container runs as uid 65532 (`nonroot`), which is nobody on the NAS: the folder needs
-read for *Everyone* (File Station → Properties → Permission → Advanced; or Control Panel →
-Shared Folder → Permissions → "Everyone" read). Without it the page shows no file and the
-log says `Permission denied`.
+On the NAS the app runs as a dedicated DSM account, the only one besides yours that can read
+the folder; *Everyone* would open the exports to every NAS account. Create the account
+(Control Panel → User: group `users`, every application denied, no access to any other
+shared folder), give it read-only on a shared folder that holds only the exports to show
+(for example `xerscope-data`: hidden, no recycle bin, not encrypted, since an encrypted
+folder is not mounted at boot), and read its uid with a Task Scheduler script run as your
+own account: `id <account> > /volume1/docker/xerscope/uid.txt 2>&1`. Then
+`XERSCOPE_UID` and `XERSCOPE_GID` in `.env`. Without them the app runs as uid 65532, which
+has no right on that folder: the page shows no file and the log says `Permission denied`.
 
 The case of the folder name matters inside the container: `/volume1/Planning` and
 `/volume1/planning` are two different paths. Copy it from File Station.
@@ -135,6 +140,8 @@ XERSCOPE_USER=<login>
 XERSCOPE_PASSWORD_HASH='$2a$14$...'     # single quotes: unquoted, Compose reads the $ as variables
 XERSCOPE_PATH=<random>                 # no slashes
 XERSCOPE_EXPORTS=/volume1/<shared-folder>   # exact case
+XERSCOPE_UID=<uid>                          # the dedicated account (§5)
+XERSCOPE_GID=<gid>
 # XERSCOPE_IMAGE=<image>@sha256:<digest>    # the build to run, pinned (§7)
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
 ```

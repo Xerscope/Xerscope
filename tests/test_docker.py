@@ -77,9 +77,13 @@ def test_sidecars_hardened():
     assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
     # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
     assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
-    for f in ["compose.yaml", "deploy/compose.yaml"]:  # the app's writable dirs belong to its user, not root
-        app = (ROOT / f).read_text()
-        assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app, f
+    app = (ROOT / "compose.yaml").read_text()  # the app's writable dirs belong to its user, not root
+    assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app
+    nas = (ROOT / "deploy" / "compose.yaml").read_text()  # same user as `user:`, the image's nonroot by default
+    uid, gid = "${XERSCOPE_UID:-65532}", "${XERSCOPE_GID:-65532}"
+    assert f'user: "{uid}:{gid}"' in nas and "HOME: /home/nonroot" in nas
+    assert f"/home/nonroot:uid={uid},gid={gid}" in nas and f"/tmp:uid={uid},gid={gid}" in nas
+    assert "65532," not in nas.replace(uid, "").replace(gid, "")  # no uid written outside the variables
     assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c
 
 

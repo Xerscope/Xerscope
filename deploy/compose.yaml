@@ -13,7 +13,8 @@
 #   docker run --rm caddy:2.11.7 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
 #   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
-#   memory cap, default 2g). Nothing in this folder is edited.
+#   memory cap, default 2g), XERSCOPE_UID and XERSCOPE_GID (the account the app runs as,
+#   default 65532). Nothing in this folder is edited.
 # Limits keep the stack from starving the NAS it shares: a memory and a PID cap per
 # container (on a kernel without those cgroups Docker drops the limit with a warning, the
 # stack still starts) and bounded tmpfs. No CPU quota: Docker refuses to create a
@@ -82,23 +83,27 @@ services:
   xerscope:
     image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
                                                     # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
+    user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # NAS: a dedicated DSM account, the only one allowed to
+                                                    # read the exports folder; default: the image's nonroot user
     environment:
       XERSCOPE_DATA: /data
+      HOME: /home/nonroot                           # an uid outside the image's /etc/passwd would get HOME=/
       XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field in the sidebar
       STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "64"        # MB per uploaded file; the largest export is about 40
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
-      - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # read for Everyone on a NAS: the app runs as uid 65532
+      - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
     networks:                                       # nothing published: reachable from Caddy only
       internal:
         aliases: [app]                              # Caddy's upstream: in the tailscale namespace Caddy shares,
                                                     # /etc/hosts maps "xerscope" (tailscale's hostname) to tailscale
     read_only: true
-    tmpfs:                                          # owned by the image's user (nonroot, 65532): some Docker
-      - /tmp:uid=65532,gid=65532,mode=1777,size=256m          # builds (Synology's) mount a bare tmpfs
-      - /home/nonroot:uid=65532,gid=65532,mode=700,size=16m   # root-only, and Streamlit then fails
-                                                              # reading ~/.streamlit/secrets.toml
+    tmpfs:                                          # owned by the app's user: some Docker builds (Synology's)
+                                                    # mount a bare tmpfs root-only, and Streamlit then fails
+                                                    # reading ~/.streamlit/secrets.toml
+      - /tmp:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=1777,size=256m
+      - /home/nonroot:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=700,size=16m
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
