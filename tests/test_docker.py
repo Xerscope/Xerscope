@@ -37,7 +37,7 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     # the node state is a named volume: root without DAC_OVERRIDE cannot write a host folder owned by a NAS user
     assert "- tailscale-state:/var/lib/tailscale" in compose and "./tailscale-state" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
-    assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
+    assert "basic_auth" in caddy and "reverse_proxy app:8501" in caddy and "auto_https off" in caddy
     assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
     # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
     # rewrite the config, basic_auth included) must not exist
@@ -85,3 +85,30 @@ def test_runtime_image_carries_no_pip():
     """pip in the managed CPython is never run and its vendored packages carry CVEs."""
     df = (ROOT / "Dockerfile").read_text()
     assert "site-packages/pip " in df and "site-packages/pip-*.dist-info" in df and "bin/pip*" in df
+
+
+def test_caddy_upstream_is_not_shadowed_by_the_tailscale_hostname():
+    """Caddy shares tailscale's namespace and its /etc/hosts, where tailscale's hostname maps to
+    tailscale itself: an upstream with that name reaches tailscale, not the app (502, refused)."""
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    hostnames = re.findall(r"^\s+hostname:\s*(\S+)", compose, re.M)
+    upstreams = re.findall(r"reverse_proxy\s+([\w.-]+):\d+", caddy)
+    assert hostnames == ["xerscope"] and upstreams == ["app"]
+    assert not set(hostnames) & set(upstreams)
+    assert re.search(r"internal:\n\s+aliases: \[app\]", compose)  # the name Caddy uses, on the app's only network
+
+
+def test_caddy_error_log_redacts_the_secret_prefix():
+    """The site's log block filters access logs only; proxy errors go to the default logger
+    with the request line, so the global log block filters it too."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    global_block = caddy[caddy.index("{") : caddy.index(":8080")]
+    assert "log {" in global_block and "format filter" in global_block
+    assert "request>uri replace REDACTED" in global_block and "request>headers>Referer delete" in global_block
+
+
+def test_tailscale_key_is_optional_once_the_node_exists():
+    """TS_AUTH_ONCE: the key is read on the first start only, so it can leave the NAS afterwards."""
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "TS_AUTHKEY: ${TS_AUTHKEY:-}" in compose and 'TS_AUTH_ONCE: "true"' in compose

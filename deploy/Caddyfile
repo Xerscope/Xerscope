@@ -7,6 +7,13 @@
     admin off
     auto_https off
     default_bind 127.0.0.1
+    log {                                       # default logger: proxy errors (http.log.error.*) print the
+        format filter {                         # request too; the site's log block filters access logs only
+            wrap json
+            request>uri replace REDACTED
+            request>headers>Referer delete
+        }
+    }
     servers {
         trusted_proxies static private_ranges   # tailscaled proxies from 127.0.0.1: log the visitor's IP
     }
@@ -18,7 +25,7 @@
         basic_auth {
             {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
         }
-        reverse_proxy xerscope:8501
+        reverse_proxy app:8501    # network alias: "xerscope" is tailscale's hostname here
     }
     handle {
         respond 404
