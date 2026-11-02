@@ -6,12 +6,12 @@ is done, add one when a check or a recalculation disagrees with P6.
 
 ## Proof: get an oracle for what has none
 
-- [ ] **P6 Check Schedule report** (P6 Professional 24) on one real file, with that file's
-      F9 export, under `tests/reference/`; one assertion per count. Today every P6 check
-      population is one reading of Oracle's help pages (`src/xerscope/standards/p6.toml`
-      `source` fields, P6 Professional 24 dialog help 101248 first): LOE in P6-01,
-      completed activities in P6-12, BEI due counted in the baseline (P6-13), remaining
-      early start for in-progress work (P6-10), 352 h = 8 h/day.
+- [ ] **P6 Check Schedule report** (P6 Professional 24) on a shareable file, with that
+      file's F9 export, under `tests/reference/`; one assertion per count. One P6
+      Professional report on a real schedule settled P6-12, P6-13 and P6-15 to P6-17
+      (`p6.toml` `source` fields), but it cannot enter the repository. Still a reading of Oracle's help only: LOE in P6-01,
+      remaining early start for in-progress work (P6-10), 352 h = 8 h/day, FF / SF links in
+      P6-15, the constraint options of P6-16 / P6-17.
 - [ ] **DECM**: a DECM output on one real file, for `decm.toml`. The v8.0 sheets are read
       (docs/standards.md, Sources); what they leave open or contradict is under
       "DECM conformance" below.
@@ -26,7 +26,7 @@ rule; none is fixed. The 06A205a and 06A209a sheets name no LOE exclusion, so LO
 in, as coded (the `source` strings in `decm.toml` still call it unsaid).
 
 - [ ] **06A212a**: the sheet's population is the FS, SS, FF and SF relationships with an
-      incomplete predecessor; the code uses an incomplete successor (`decm.toml`, `rules.py`).
+      incomplete predecessor; the code uses an incomplete successor (`decm/schedule_metrics.py`).
 - [ ] **06A401a**: the sheet compares the constraint-method critical path with the
       contractor's critical path; the code runs the delay-injection test (`cpm.py`
       `critical_path_test`).
@@ -76,13 +76,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] **P6 Check Schedule readings a real report has not settled** (evidence so far: the
       P6 Professional 24 help 101248 and one P6 Professional r22.12 report analysed by Ten Six,
       https://tensix.com/using-the-p6-check-schedule-tool/; the standard targets Pro 24):
-      - P6-12 keeps completed activities (101248 does not exclude them; EPPM 46278 does).
       - P6-02 / P6-03 count the secondary constraint (`cstr_type2`); the help is silent.
       - P6-11: 101248 counts an expense as cost loading; Ten Six writes that fixed-price
         (lump sum) costs do not register. The help is followed.
       - P6-13: in that report P6 Professional showed BEI 6 / 6 = 1.0 where 11 activities
-        were due (P6 EPPM gave 0.55 on the same schedule). xerscope counts the baseline
-        activities due, so it will differ from such a P6 Professional output.
+        were due (P6 EPPM gave 0.55 on the same schedule); the P6 Professional report behind P6-12
+        divides by every baseline activity, which xerscope follows. The r22.12 figure fits
+        neither reading and is not explained.
 
 - [ ] CPLI is n/a without a Must Finish By date (DCMA's float is to the contract finish,
       which P6 holds there). A project that keeps the contract date as a milestone or in
@@ -143,11 +143,12 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 ## Structure (only once the above is done, at constant output)
 
 - [ ] Complexity hotspots still above 10 (`ruff check src --select C901`): `parse_text` 17,
-      `build_gantt` 15, and in the CPM `pred_bounds`, `forward`, `successor_limits`, `backward`,
+      `build_gantt` 16, and in the CPM `pred_bounds`, `forward`, `successor_limits`, `backward`,
       `longest_path`; `sample.py` (`_cpm`, `_progress`, `generate`). CPM internals and
       `sample.py` are left as they are.
-- [ ] Duplications: the `task_code` index idiom (~34 places; one `Snapshot.by_code`); the
-      hours-per-day lookup (x3); three changelog row builders.
+- [ ] Duplications: `set_index("task_code")` in 13 places where `Snapshot.by_code` could
+      serve; three changelog row builders (`_change`, `assignment_change`,
+      `relationship_change`).
 - [ ] Computations still inside `app/views` (changelog, health, ppc, gantt): pure
       functions per page would be testable without AppTest. One cache policy
       (`_parse` and `memo`, both in session state).

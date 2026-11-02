@@ -1,0 +1,30 @@
+name: Bug or feature
+description: The app, the CLI, the container or the deployment does not do what it should, or should do more
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No real schedule, hostname, tailnet name, login, token or path prefix in this issue: use placeholders (`<tailnet>`, `<random>`).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happens, or what is missing.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Command or page, steps, error message. The demo series (`xerscope sample`) is the preferred input.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and environment
+      placeholder: "commit or image tag; OS; Python; local / Docker / deploy"
