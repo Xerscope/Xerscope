@@ -242,7 +242,7 @@ def test_caddy_scan_exceptions_are_dated_and_reasoned():
 
 def test_schedules_stay_out_of_git():
     """Real exports never reach the public repository: the folders the compose files read and
-    every .xer are ignored, CI fails on a tracked one, and the remote app's log is bounded."""
+    every .xer are ignored, CI fails on a tracked one, and the remote stack logs to the NAS default driver."""
     import subprocess
 
     probes = ["exports/a.xer", "deploy/a.xer", "a.XER", "data/a.xer", "export/a.csv"]
@@ -252,6 +252,5 @@ def test_schedules_stay_out_of_git():
     assert not re.search(r"\.(xer|parquet|xlsx?|csv)$", tracked, re.I | re.M)
     assert "git ls-files | grep -iE" in (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    # json-file, the driver Container Manager's Log tab reads ("local" shows nothing there), bounded
-    assert "driver: json-file" in c and 'max-size: "5m"' in c and "driver: local" not in c
-    assert c.count("logging: *bounded-log") == 3
+    # the daemon's default driver: Container Manager's Log tab shows nothing for json-file or local
+    assert not re.search(r"^\s+logging:", c, re.M)
