@@ -188,6 +188,9 @@ jobs:
           hash=$(docker run --rm "$caddy_image" caddy hash-password --plaintext ci-pass)
           echo "XERSCOPE_PASSWORD_HASH=$hash" >> "$GITHUB_ENV"
           XERSCOPE_PASSWORD_HASH="$hash" docker compose config --quiet
+          docker run --rm -e XERSCOPE_USER -e XERSCOPE_PATH -e XERSCOPE_PASSWORD_HASH="$hash" \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           echo "caddy=$caddy_image" >> "$GITHUB_OUTPUT"
           echo "tailscale=$(sed -n 's/^    image: \(tailscale\/[^ ]*\).*/\1/p' compose.yaml)" >> "$GITHUB_OUTPUT"
       - name: tailscaled starts on a read-only root; the CLI finds it at its default socket
@@ -236,5 +239,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+      - name: Container states and logs, when a step failed
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color
       - if: always()
         run: docker compose down -v
