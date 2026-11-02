@@ -29,311 +29,333 @@ CATEGORIES = [
 COLS = ["category", "change", "task_code", "task_name", "wbs_code", "field", "before", "after", "delta", "unit"]
 
 
-def _fmt(v) -> str:
-    if v is None or (not isinstance(v, str) and pd.isna(v)):
+def _format_value(value) -> str:
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
         return ""
-    if isinstance(v, pd.Timestamp):
-        return f"{v:%Y-%m-%d %H:%M}"
-    if isinstance(v, (float, np.floating)):
-        return f"{v:,.2f}".rstrip("0").rstrip(".")
-    return str(v)
+    if isinstance(value, pd.Timestamp):
+        return f"{value:%Y-%m-%d %H:%M}"
+    if isinstance(value, (float, np.floating)):
+        return f"{value:,.2f}".rstrip("0").rstrip(".")
+    return str(value)
 
 
-def _rows(changes: list[dict]) -> pd.DataFrame:
-    df = pd.DataFrame(changes, columns=COLS)
-    for c in ("before", "after"):
-        df[c] = df[c].map(_fmt)
-    df["delta"] = pd.to_numeric(df["delta"], errors="coerce")
-    return df
+def _change(category, change, task_code, field, before, after, delta=None, unit=""):
+    """One change as a plain tuple; :func:`_to_frame` adds the activity name and WBS."""
+    return (category, change, task_code, field, before, after, delta, unit)
+
+
+def _to_frame(changes: list[tuple], previous: pd.DataFrame, current: pd.DataFrame) -> pd.DataFrame:
+    """Rows with the activity name and WBS looked up in the new update, else in the old one."""
+    rows = []
+    for category, change, task_code, field, before, after, delta, unit in changes:
+        source = current if task_code in current.index else previous
+        known = task_code in source.index
+        rows.append(
+            {
+                "category": category,
+                "change": change,
+                "task_code": task_code,
+                "task_name": source.loc[task_code, "task_name"] if known else None,
+                "wbs_code": source.loc[task_code, "wbs_code"] if known else None,
+                "field": field,
+                "before": before,
+                "after": after,
+                "delta": delta,
+                "unit": unit,
+            }
+        )
+    frame = pd.DataFrame(rows, columns=COLS)
+    for column in ("before", "after"):
+        frame[column] = frame[column].map(_format_value)
+    frame["delta"] = pd.to_numeric(frame["delta"], errors="coerce")
+    return frame
+
+
+def _differs(before: pd.Series, after: pd.Series) -> pd.Series:
+    """True where the value changed (two missing values are equal)."""
+    return ~((before == after) | (before.isna() & after.isna()))
 
 
 def changelog(old: Snapshot, new: Snapshot) -> pd.DataFrame:
-    a = old.activities.drop_duplicates("task_code").set_index("task_code")
-    b = new.activities.drop_duplicates("task_code").set_index("task_code")
-    rows: list[dict] = []
-
-    def add(cat, change, code, field, before, after, delta=None, unit=""):
-        src = b.loc[code] if code in b.index else a.loc[code] if code in a.index else None
-        rows.append(
-            dict(
-                category=cat,
-                change=change,
-                task_code=code,
-                task_name=None if src is None else src["task_name"],
-                wbs_code=None if src is None else src["wbs_code"],
-                field=field,
-                before=before,
-                after=after,
-                delta=delta,
-                unit=unit,
-            )
-        )
-
-    # --- project -------------------------------------------------------------------------
-    cal = new.calendar()
-    add(
-        "Project",
-        "data date",
-        "",
-        "data date",
-        old.data_date,
-        new.data_date,
-        cal.working_days(old.data_date, new.data_date) if old.data_date is not None else None,
-        "wd",
+    previous_all = old.activities.drop_duplicates("task_code").set_index("task_code")
+    current_all = new.activities.drop_duplicates("task_code").set_index("task_code")
+    common = sorted(set(previous_all.index) & set(current_all.index))
+    previous, current = previous_all.loc[common], current_all.loc[common]
+    changes = (
+        _project_changes(old, new, previous_all, current_all)
+        + _scope_changes(previous_all, current_all)
+        + _activity_changes(old, new, previous, current)
+        + _duration_changes(previous, current)
+        + _progress_changes(previous, current)
+        + _date_and_float_changes(new, previous, current)
+        + _constraint_changes(previous, current)
+        + _budget_changes(previous, current)
+        + _assignment_changes(old, new, previous_all, current_all)
+        + _relationship_changes(old, new)
     )
-    add(
-        "Project",
-        "forecast finish",
-        "",
-        "forecast finish",
-        old.finish_date,
-        new.finish_date,
-        cal.working_days(old.finish_date, new.finish_date) if old.finish_date is not None else None,
-        "wd",
-    )
-    add("Project", "activities", "", "activities", len(a), len(b), len(b) - len(a))
-    add(
-        "Project",
-        "relationships",
-        "",
-        "relationships",
-        len(old.relationships),
-        len(new.relationships),
-        len(new.relationships) - len(old.relationships),
-    )
+    frame = _to_frame(changes, previous_all, current_all)
+    frame["category"] = pd.Categorical(frame["category"], CATEGORIES, ordered=True)
+    return frame.sort_values(["category", "change", "task_code"], kind="stable").reset_index(drop=True)
 
-    # --- scope -----------------------------------------------------------------------------
-    for code in sorted(set(b.index) - set(a.index)):
-        add("Scope", "added", code, "activity", None, b.loc[code, "task_name"])
-    for code in sorted(set(a.index) - set(b.index)):
-        add("Scope", "deleted", code, "activity", a.loc[code, "task_name"], None)
 
-    common = sorted(set(a.index) & set(b.index))
-    A, B = a.loc[common], b.loc[common]
+def _project_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame, current_all: pd.DataFrame) -> list:
+    calendar = new.calendar()
+    data_date_shift = calendar.working_days(old.data_date, new.data_date) if old.data_date is not None else None
+    finish_shift = calendar.working_days(old.finish_date, new.finish_date) if old.finish_date is not None else None
+    old_links, new_links = len(old.relationships), len(new.relationships)
+    old_count, new_count = len(previous_all), len(current_all)
+    return [
+        _change("Project", "data date", "", "data date", old.data_date, new.data_date, data_date_shift, "wd"),
+        _change(
+            "Project", "forecast finish", "", "forecast finish", old.finish_date, new.finish_date, finish_shift, "wd"
+        ),
+        _change("Project", "activities", "", "activities", old_count, new_count, new_count - old_count),
+        _change("Project", "relationships", "", "relationships", old_links, new_links, new_links - old_links),
+    ]
 
-    def changed(col):
-        x, y = A[col], B[col]
-        return ~((x == y) | (x.isna() & y.isna()))
 
-    cal_name = {cid: c.name for cid, c in new.work_calendars.items()} | {
-        cid: c.name for cid, c in old.work_calendars.items()
+def _scope_changes(previous_all: pd.DataFrame, current_all: pd.DataFrame) -> list:
+    changes = []
+    for code in sorted(set(current_all.index) - set(previous_all.index)):
+        changes.append(_change("Scope", "added", code, "activity", None, current_all.loc[code, "task_name"]))
+    for code in sorted(set(previous_all.index) - set(current_all.index)):
+        changes.append(_change("Scope", "deleted", code, "activity", previous_all.loc[code, "task_name"], None))
+    return changes
+
+
+def _activity_changes(old: Snapshot, new: Snapshot, previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    # show calendar names rather than ids; the old update's name wins when both define an id
+    calendar_names = {cid: cal.name for cid, cal in new.work_calendars.items()} | {
+        cid: cal.name for cid, cal in old.work_calendars.items()
     }
-    for col, change in [
+    changes = []
+    for column, change in [
         ("task_name", "renamed"),
         ("wbs_code", "moved to another WBS"),
         ("type", "type changed"),
         ("clndr_id", "calendar changed"),
     ]:
-        for code in A.index[changed(col)]:
-            x, y = A.loc[code, col], B.loc[code, col]
-            if col == "clndr_id":
-                x, y = cal_name.get(x, x), cal_name.get(y, y)
-            add("Activities", change, code, col, x, y)
+        for code in previous.index[_differs(previous[column], current[column])]:
+            before, after = previous.loc[code, column], current.loc[code, column]
+            if column == "clndr_id":
+                before, after = calendar_names.get(before, before), calendar_names.get(after, after)
+            changes.append(_change("Activities", change, code, column, before, after))
+    return changes
 
-    # --- durations ------------------------------------------------------------------------------
-    for code in A.index[changed("original_d")]:
-        x, y = A.loc[code, "original_d"], B.loc[code, "original_d"]
-        add("Durations", "original duration changed", code, "original duration", x, y, y - x, "wd")
-    grew = (B["remaining_d"] > A["remaining_d"] + 1e-9) & ~B["is_complete"]
-    for code in A.index[grew]:
-        x, y = A.loc[code, "remaining_d"], B.loc[code, "remaining_d"]
-        add("Durations", "remaining duration increased", code, "remaining duration", x, y, y - x, "wd")
 
-    # --- progress --------------------------------------------------------------------------------
-    order = {"Not started": 0, "In progress": 1, "Complete": 2}
-    for code in A.index[changed("status")]:
-        x, y = A.loc[code, "status"], B.loc[code, "status"]
-        step = order.get(y, 0) - order.get(x, 0)
-        change = "status reverted" if step < 0 else ("finished" if y == "Complete" else "started")
-        add("Progress", change, code, "status", x, y)
-    for col, label in [("act_start_date", "actual start"), ("act_end_date", "actual finish")]:
-        x, y = A[col], B[col]
-        moved = x.notna() & y.notna() & (x != y)
-        removed = x.notna() & y.isna()
-        for code in A.index[moved]:
-            add("Progress", f"{label} changed (retroactive)", code, label, x[code], y[code])
-        for code in A.index[removed]:
-            add("Progress", f"{label} removed", code, label, x[code], None)
-    dp = (B["pct_complete"] - A["pct_complete"]).round(2)
-    for code in A.index[dp.fillna(0) != 0]:
-        add(
-            "Progress",
-            "% complete",
-            code,
-            "% complete",
-            A.loc[code, "pct_complete"],
-            B.loc[code, "pct_complete"],
-            dp[code],
-            "pts",
+def _duration_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    changes = []
+    for code in previous.index[_differs(previous["original_d"], current["original_d"])]:
+        before, after = previous.loc[code, "original_d"], current.loc[code, "original_d"]
+        changes.append(
+            _change(
+                "Durations", "original duration changed", code, "original duration", before, after, after - before, "wd"
+            )
         )
-
-    # --- dates and float (open work only: actuals are covered above) --------------------------------
-    open_ = ~B["is_complete"]
-    for col, label in [("start", "start moved"), ("finish", "finish moved")]:
-        move = new.working_days(B["clndr_id"], A[col], B[col]).round(2)
-        for code in A.index[open_ & (move.abs() > 0.005)]:
-            add("Dates", label, code, col, A.loc[code, col], B.loc[code, col], move[code], "wd")
-    dtf = (B["total_float_d"] - A["total_float_d"]).round(2)
-    for code in A.index[open_ & (dtf.abs() > 0.005)]:
-        add(
-            "Float",
-            "total float changed",
-            code,
-            "total float",
-            A.loc[code, "total_float_d"],
-            B.loc[code, "total_float_d"],
-            dtf[code],
-            "wd",
+    grew = (current["remaining_d"] > previous["remaining_d"] + 1e-9) & ~current["is_complete"]
+    for code in previous.index[grew]:
+        before, after = previous.loc[code, "remaining_d"], current.loc[code, "remaining_d"]
+        changes.append(
+            _change(
+                "Durations",
+                "remaining duration increased",
+                code,
+                "remaining duration",
+                before,
+                after,
+                after - before,
+                "wd",
+            )
         )
-    for code in A.index[~A["is_critical"] & B["is_critical"]]:
-        add("Float", "became critical", code, "critical", "no", "yes")
-    for code in A.index[A["is_critical"] & ~B["is_critical"] & open_]:
-        add("Float", "no longer critical", code, "critical", "yes", "no")
+    return changes
 
-    # --- constraints -------------------------------------------------------------------------------------
-    for typ, date, label in [
+
+def _progress_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    changes = []
+    status_rank = {"Not started": 0, "In progress": 1, "Complete": 2}
+    for code in previous.index[_differs(previous["status"], current["status"])]:
+        before, after = previous.loc[code, "status"], current.loc[code, "status"]
+        if status_rank.get(after, 0) < status_rank.get(before, 0):
+            change = "status reverted"
+        elif after == "Complete":
+            change = "finished"
+        else:
+            change = "started"
+        changes.append(_change("Progress", change, code, "status", before, after))
+    for column, label in [("act_start_date", "actual start"), ("act_end_date", "actual finish")]:
+        before, after = previous[column], current[column]
+        moved = before.notna() & after.notna() & (before != after)
+        removed = before.notna() & after.isna()
+        for code in previous.index[moved]:
+            changes.append(
+                _change("Progress", f"{label} changed (retroactive)", code, label, before[code], after[code])
+            )
+        for code in previous.index[removed]:
+            changes.append(_change("Progress", f"{label} removed", code, label, before[code], None))
+    pct_gain = (current["pct_complete"] - previous["pct_complete"]).round(2)
+    for code in previous.index[pct_gain.fillna(0) != 0]:
+        before, after = previous.loc[code, "pct_complete"], current.loc[code, "pct_complete"]
+        changes.append(_change("Progress", "% complete", code, "% complete", before, after, pct_gain[code], "pts"))
+    return changes
+
+
+def _date_and_float_changes(new: Snapshot, previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    """Open work only: actuals of finished work are covered by the progress changes."""
+    changes = []
+    is_open = ~current["is_complete"]
+    for column, label in [("start", "start moved"), ("finish", "finish moved")]:
+        move = new.working_days(current["clndr_id"], previous[column], current[column]).round(2)
+        for code in previous.index[is_open & (move.abs() > 0.005)]:
+            before, after = previous.loc[code, column], current.loc[code, column]
+            changes.append(_change("Dates", label, code, column, before, after, move[code], "wd"))
+    float_change = (current["total_float_d"] - previous["total_float_d"]).round(2)
+    for code in previous.index[is_open & (float_change.abs() > 0.005)]:
+        before, after = previous.loc[code, "total_float_d"], current.loc[code, "total_float_d"]
+        changes.append(
+            _change("Float", "total float changed", code, "total float", before, after, float_change[code], "wd")
+        )
+    for code in previous.index[~previous["is_critical"] & current["is_critical"]]:
+        changes.append(_change("Float", "became critical", code, "critical", "no", "yes"))
+    for code in previous.index[previous["is_critical"] & ~current["is_critical"] & is_open]:
+        changes.append(_change("Float", "no longer critical", code, "critical", "yes", "no"))
+    return changes
+
+
+def _constraint_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    changes = []
+    for type_column, date_column, label in [
         ("cstr_type", "cstr_date", "primary constraint"),
         ("cstr_type2", "cstr_date2", "secondary constraint"),
     ]:
-        tx, ty = A[typ].replace("", np.nan), B[typ].replace("", np.nan)
-        diff = ~((tx == ty) | (tx.isna() & ty.isna())) | (tx.notna() & changed(date))
-        for code in A.index[diff]:
-            before = "" if pd.isna(tx[code]) else f"{tx[code]} {_fmt(A.loc[code, date])}"
-            after = "" if pd.isna(ty[code]) else f"{ty[code]} {_fmt(B.loc[code, date])}"
-            change = "added" if pd.isna(tx[code]) else "removed" if pd.isna(ty[code]) else "changed"
-            add("Constraints", f"{label} {change}", code, label, before.strip(), after.strip())
+        type_before = previous[type_column].replace("", np.nan)
+        type_after = current[type_column].replace("", np.nan)
+        date_changed = _differs(previous[date_column], current[date_column])
+        differs = _differs(type_before, type_after) | (type_before.notna() & date_changed)
+        for code in previous.index[differs]:
+            had_before, has_after = pd.notna(type_before[code]), pd.notna(type_after[code])
+            before = f"{type_before[code]} {_format_value(previous.loc[code, date_column])}" if had_before else ""
+            after = f"{type_after[code]} {_format_value(current.loc[code, date_column])}" if has_after else ""
+            if not had_before:
+                change = "added"
+            elif not has_after:
+                change = "removed"
+            else:
+                change = "changed"
+            changes.append(_change("Constraints", f"{label} {change}", code, label, before.strip(), after.strip()))
+    return changes
 
-    # --- resources ------------------------------------------------------------------------------------
-    dh = (B["labor_budget_hr"] - A["labor_budget_hr"]).round(2)
-    for code in A.index[dh.fillna(0) != 0]:
-        add(
-            "Resources",
-            "budgeted labour hours changed",
-            code,
-            "budget labour h",
-            A.loc[code, "labor_budget_hr"],
-            B.loc[code, "labor_budget_hr"],
-            dh[code],
-            "h",
+
+def _budget_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    hours_change = (current["labor_budget_hr"] - previous["labor_budget_hr"]).round(2)
+    changes = []
+    for code in previous.index[hours_change.fillna(0) != 0]:
+        before, after = previous.loc[code, "labor_budget_hr"], current.loc[code, "labor_budget_hr"]
+        changes.append(
+            _change(
+                "Resources",
+                "budgeted labour hours changed",
+                code,
+                "budget labour h",
+                before,
+                after,
+                hours_change[code],
+                "h",
+            )
         )
-
-    rows += _assignment_changes(old, new, a, b)
-
-    # --- relationships -------------------------------------------------------------------------------------
-    rows += _relationship_changes(old, new, b, a)
-    df = _rows(rows)
-    df["category"] = pd.Categorical(df["category"], CATEGORIES, ordered=True)
-    return df.sort_values(["category", "change", "task_code"], kind="stable").reset_index(drop=True)
+    return changes
 
 
-def _assignment_changes(old: Snapshot, new: Snapshot, a: pd.DataFrame, b: pd.DataFrame) -> list[dict]:
+def _assignment_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame, current_all: pd.DataFrame) -> list:
     """Resource assignments added / removed, and budgeted units changed, per activity and resource."""
 
-    def units(snap: Snapshot) -> pd.Series:
-        x = snap.assignments
-        if x.empty:
+    def units(snapshot: Snapshot) -> pd.Series:
+        assignments = snapshot.assignments
+        if assignments.empty:
             return pd.Series(dtype=float)
-        who = x["rsrc_short_name"].fillna(x["rsrc_name"]).fillna(x["rsrc_id"]).astype(str)
-        who = who.where(x["rsrc_type"] != "role", "role " + x["rsrc_name"].fillna(x["role_id"]).astype(str))
-        return x["target_qty"].fillna(0.0).groupby([x["task_code"], who]).sum()
+        who = assignments["rsrc_short_name"].fillna(assignments["rsrc_name"]).fillna(assignments["rsrc_id"]).astype(str)
+        role_name = "role " + assignments["rsrc_name"].fillna(assignments["role_id"]).astype(str)
+        who = who.where(assignments["rsrc_type"] != "role", role_name)
+        return assignments["target_qty"].fillna(0.0).groupby([assignments["task_code"], who]).sum()
 
-    uo, un = units(old), units(new)
-    rows = []
+    def assignment_change(change, task_code, who, before, after, delta=None):
+        unit = "units" if delta is not None else ""
+        return _change("Resources", change, task_code, f"assignment {who}", before, after, delta, unit)
 
-    def add(change, code, who, before, after, delta=None):
-        src = b if code in b.index else a
-        rows.append(
-            dict(
-                category="Resources",
-                change=change,
-                task_code=code,
-                task_name=src.loc[code, "task_name"] if code in src.index else None,
-                wbs_code=src.loc[code, "wbs_code"] if code in src.index else None,
-                field=f"assignment {who}",
-                before=before,
-                after=after,
-                delta=delta,
-                unit="units" if delta is not None else "",
-            )
-        )
-
-    common = set(a.index) & set(b.index)  # added / deleted activities are in Scope already
-    for code, who in sorted(set(un.index) - set(uo.index)):
-        if code in common:
-            add("resource assigned", code, who, None, un[(code, who)])
-    for code, who in sorted(set(uo.index) - set(un.index)):
-        if code in common:
-            add("resource removed", code, who, uo[(code, who)], None)
-    for key in sorted(set(uo.index) & set(un.index)):
-        d = round(float(un[key] - uo[key]), 2)
-        if d:
-            add("budgeted units changed", key[0], key[1], uo[key], un[key], d)
-    return rows
+    old_units, new_units = units(old), units(new)
+    changes = []
+    # added / deleted activities are in Scope already
+    both = set(previous_all.index) & set(current_all.index)
+    for code, who in sorted(set(new_units.index) - set(old_units.index)):
+        if code in both:
+            changes.append(assignment_change("resource assigned", code, who, None, new_units[(code, who)]))
+    for code, who in sorted(set(old_units.index) - set(new_units.index)):
+        if code in both:
+            changes.append(assignment_change("resource removed", code, who, old_units[(code, who)], None))
+    for key in sorted(set(old_units.index) & set(new_units.index)):
+        delta = round(float(new_units[key] - old_units[key]), 2)
+        if delta:
+            changes.append(assignment_change("budgeted units changed", *key, old_units[key], new_units[key], delta))
+    return changes
 
 
-def _relationship_changes(old: Snapshot, new: Snapshot, b: pd.DataFrame, a: pd.DataFrame) -> list[dict]:
-    def by_pair(rel: pd.DataFrame) -> dict[tuple[str, str], set[tuple[str, float, float]]]:
+def _relationship_changes(old: Snapshot, new: Snapshot) -> list:
+    def by_pair(relationships: pd.DataFrame) -> dict[tuple[str, str], set[tuple[str, float, float]]]:
         # identity on the lag in hours (what P6 stores); days only for display, since they
         # depend on the predecessor's calendar
-        out: dict = {}
-        for p, s, t, lag_h, lag_d in rel[["pred_code", "succ_code", "type", "lag_hr", "lag_d"]].itertuples(index=False):
-            out.setdefault((p, s), set()).add((t, round(float(lag_h or 0), 2), round(float(lag_d or 0), 2)))
-        return out
+        pairs: dict = {}
+        columns = ["pred_code", "succ_code", "type", "lag_hr", "lag_d"]
+        for predecessor, successor, link_type, lag_hr, lag_d in relationships[columns].itertuples(index=False):
+            pairs.setdefault((predecessor, successor), set()).add(
+                (link_type, round(float(lag_hr or 0), 2), round(float(lag_d or 0), 2))
+            )
+        return pairs
 
     def label(links: set) -> str:
-        return ", ".join(f"{t}{lag_d:+g}d" if lag_h else t for t, lag_h, lag_d in sorted(links))
-
-    po, pn = by_pair(old.relationships), by_pair(new.relationships)
-    rows = []
-
-    def add(change, pred, succ, before, after):
-        src = b if succ in b.index else a
-        rows.append(
-            dict(
-                category="Relationships",
-                change=change,
-                task_code=succ,
-                task_name=src.loc[succ, "task_name"] if succ in src.index else None,
-                wbs_code=src.loc[succ, "wbs_code"] if succ in src.index else None,
-                field=f"{pred} → {succ}",
-                before=before,
-                after=after,
-                delta=None,
-                unit="",
-            )
+        return ", ".join(
+            f"{link_type}{lag_d:+g}d" if lag_hr else link_type for link_type, lag_hr, lag_d in sorted(links)
         )
 
-    for pair in sorted(set(pn) - set(po)):
-        add("added", *pair, "", label(pn[pair]))
-    for pair in sorted(set(po) - set(pn)):
-        add("deleted", *pair, label(po[pair]), "")
-    for pair in sorted(set(po) & set(pn)):
-        if {x[:2] for x in po[pair]} != {x[:2] for x in pn[pair]}:
-            same_types = {x[0] for x in po[pair]} == {x[0] for x in pn[pair]}
-            add("lag changed" if same_types else "type changed", *pair, label(po[pair]), label(pn[pair]))
-    return rows
+    def relationship_change(change, predecessor, successor, before, after):
+        return _change("Relationships", change, successor, f"{predecessor} → {successor}", before, after)
+
+    old_pairs, new_pairs = by_pair(old.relationships), by_pair(new.relationships)
+    changes = []
+    for pair in sorted(set(new_pairs) - set(old_pairs)):
+        changes.append(relationship_change("added", *pair, "", label(new_pairs[pair])))
+    for pair in sorted(set(old_pairs) - set(new_pairs)):
+        changes.append(relationship_change("deleted", *pair, label(old_pairs[pair]), ""))
+    for pair in sorted(set(old_pairs) & set(new_pairs)):
+        if {link[:2] for link in old_pairs[pair]} != {link[:2] for link in new_pairs[pair]}:
+            same_types = {link[0] for link in old_pairs[pair]} == {link[0] for link in new_pairs[pair]}
+            change = "lag changed" if same_types else "type changed"
+            changes.append(relationship_change(change, *pair, label(old_pairs[pair]), label(new_pairs[pair])))
+    return changes
 
 
 def summary(log: pd.DataFrame) -> pd.DataFrame:
     """Count of changes per category and kind (project rows excluded)."""
-    x = log[log["category"] != "Project"]
-    return x.groupby(["category", "change"], observed=True).size().rename("count").reset_index()
+    without_project = log[log["category"] != "Project"]
+    return without_project.groupby(["category", "change"], observed=True).size().rename("count").reset_index()
+
+
+def _joined_kinds(changes: pd.Series) -> str:
+    return ", ".join(sorted(changes))
 
 
 def category_totals(counts: pd.DataFrame) -> pd.DataFrame:
     """Per category: total number of changes and the sorted kinds of change seen (from :func:`summary`)."""
     totals = counts.groupby("category", observed=True)["count"].sum().rename("total").reset_index()
-    kinds = counts.groupby("category", observed=True)["change"].apply(lambda s: ", ".join(sorted(s))).rename("kinds")
+    kinds = counts.groupby("category", observed=True)["change"].apply(_joined_kinds).rename("kinds")
     return totals.merge(kinds.reset_index(), on="category")
 
 
 def weekly_change_counts(store: SnapshotStore) -> pd.DataFrame:
     """:func:`summary` of every consecutive pair of updates, tagged with the newer data date as ``week``."""
     frames = []
-    for i in range(1, len(store)):
-        c = summary(changelog(store[i - 1], store[i]))
-        c["week"] = f"{store[i].data_date:%Y-%m-%d}"
-        frames.append(c)
+    for index in range(1, len(store)):
+        counts = summary(changelog(store[index - 1], store[index]))
+        counts["week"] = f"{store[index].data_date:%Y-%m-%d}"
+        frames.append(counts)
     return pd.concat(frames, ignore_index=True)
 
 

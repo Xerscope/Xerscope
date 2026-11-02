@@ -38,40 +38,40 @@ from .standards import Metric
 
 def ev_technique(code: object) -> str:
     """PROJWBS.ev_compute_type -> technique key (EC_Cmp_pct = activity % complete)."""
-    c = str(code or "").strip().lower()
-    if c in ("", "nan", "none") or "cmp" in c:
+    text = str(code or "").strip().lower()
+    if text in ("", "nan", "none") or "cmp" in text:
         return "activity"
-    if "user" in c or "custom" in c:
+    if "user" in text or "custom" in text:
         return "custom"
-    if "50" in c:
+    if "50" in text:
         return "50/50"
-    if "wbs" in c or "mile" in c:
+    if "wbs" in text or "mile" in text:
         return "wbs_milestones"
-    if "crv" in c or "curve" in c or "rsrc" in c:
+    if "crv" in text or "curve" in text or "rsrc" in text:
         return "resource_curves"
-    if "0" in c:
+    if "0" in text:
         return "0/100"
     return "activity"
 
 
-def _ramp_sum(ws: np.ndarray, wf: np.ndarray, h: np.ndarray, grid: np.ndarray) -> np.ndarray:
-    """Sum over rows of h * clip((g - ws) / (wf - ws), 0, 1) at every grid value g.
+def _ramp_sum(work_starts: np.ndarray, work_finishes: np.ndarray, hours: np.ndarray, grid: np.ndarray) -> np.ndarray:
+    """Sum over rows of hours * clip((g - start) / (finish - start), 0, 1) at every grid value g.
 
     Piecewise linear: one slope change at each start and finish, so the sum is
     evaluated in O((rows + grid) log rows) instead of rows x grid.
     """
-    if len(ws) == 0:
+    if len(work_starts) == 0:
         return np.zeros(len(grid))
-    d = (wf - ws).astype(float)
-    x = np.concatenate([ws, wf]).astype(float)
-    ds = np.concatenate([h / d, -h / d])
-    o = np.argsort(x, kind="stable")
-    xs, slope = x[o], np.cumsum(ds[o])  # slope just after each breakpoint
-    vals = np.concatenate([[0.0], np.cumsum(slope[:-1] * np.diff(xs))])  # value at each breakpoint
-    j = np.searchsorted(xs, grid, side="right") - 1
-    jc = np.clip(j, 0, len(xs) - 1)
-    out = vals[jc] + slope[jc] * (grid - xs[jc])
-    return np.where(j < 0, 0.0, out)
+    durations = (work_finishes - work_starts).astype(float)
+    breakpoints = np.concatenate([work_starts, work_finishes]).astype(float)
+    slope_changes = np.concatenate([hours / durations, -hours / durations])
+    order = np.argsort(breakpoints, kind="stable")
+    sorted_breakpoints, slope = breakpoints[order], np.cumsum(slope_changes[order])  # slope just after each one
+    values = np.concatenate([[0.0], np.cumsum(slope[:-1] * np.diff(sorted_breakpoints))])  # value at each one
+    position = np.searchsorted(sorted_breakpoints, grid, side="right") - 1
+    nearest = np.clip(position, 0, len(sorted_breakpoints) - 1)
+    result = values[nearest] + slope[nearest] * (grid - sorted_breakpoints[nearest])
+    return np.where(position < 0, 0.0, result)
 
 
 @dataclass
@@ -82,33 +82,35 @@ class _Spread:
     steps: list[tuple[np.ndarray, np.ndarray]] = field(default_factory=list)  # zero-duration rows
 
     @classmethod
-    def build(cls, snap: Snapshot, frame: pd.DataFrame, hours: str, start: str, finish: str, cal: str) -> _Spread:
-        f = frame[(frame[hours] > 0) & frame[start].notna() & frame[finish].notna()]
-        out = cls()
-        if f.empty:
-            return out
-        lo, hi = f[start].min().date(), f[finish].max().date()
-        for cid, g in f.groupby(f[cal].fillna(""), sort=False):
-            ax = TimeAxis(snap.calendar(cid), lo, hi)
-            ws, wf = ax.work_many(g[start]), ax.work_many(g[finish])
-            ws, wf = np.minimum(ws, wf), np.maximum(ws, wf)
-            h = g[hours].to_numpy(float)
-            zero = wf == ws
-            if (~zero).any():
-                out.groups.append((ax, ws[~zero], wf[~zero], h[~zero]))
-            if zero.any():  # all at once when its (single) instant is reached
-                out.steps.append((g[finish].to_numpy("datetime64[ns]")[zero], h[zero]))
-        return out
+    def build(
+        cls, snapshot: Snapshot, frame: pd.DataFrame, hours: str, start: str, finish: str, calendar: str
+    ) -> _Spread:
+        rows = frame[(frame[hours] > 0) & frame[start].notna() & frame[finish].notna()]
+        spread = cls()
+        if rows.empty:
+            return spread
+        first_day, last_day = rows[start].min().date(), rows[finish].max().date()
+        for calendar_id, group in rows.groupby(rows[calendar].fillna(""), sort=False):
+            axis = TimeAxis(snapshot.calendar(calendar_id), first_day, last_day)
+            work_starts, work_finishes = axis.work_many(group[start]), axis.work_many(group[finish])
+            work_starts, work_finishes = np.minimum(work_starts, work_finishes), np.maximum(work_starts, work_finishes)
+            group_hours = group[hours].to_numpy(float)
+            instant = work_finishes == work_starts
+            if (~instant).any():
+                spread.groups.append((axis, work_starts[~instant], work_finishes[~instant], group_hours[~instant]))
+            if instant.any():  # all at once when its (single) instant is reached
+                spread.steps.append((group[finish].to_numpy("datetime64[ns]")[instant], group_hours[instant]))
+        return spread
 
     def at(self, stamps) -> np.ndarray:
         stamps = pd.DatetimeIndex(pd.to_datetime(pd.Series(stamps).reset_index(drop=True))).as_unit("ns")
         total = np.zeros(len(stamps))
-        for ax, ws, wf, h in self.groups:
-            total += _ramp_sum(ws, wf, h, ax.work_many(stamps).astype(float))
-        for when, h in self.steps:
-            o = np.argsort(when)
-            cum = np.concatenate([[0.0], np.cumsum(h[o])])
-            total += cum[np.searchsorted(when[o], stamps.values, side="right")]
+        for axis, work_starts, work_finishes, hours in self.groups:
+            total += _ramp_sum(work_starts, work_finishes, hours, axis.work_many(stamps).astype(float))
+        for instants, hours in self.steps:
+            order = np.argsort(instants)
+            cumulative = np.concatenate([[0.0], np.cumsum(hours[order])])
+            total += cumulative[np.searchsorted(instants[order], stamps.values, side="right")]
         return total
 
 
@@ -118,17 +120,16 @@ def _pv_spread(baseline: Baseline) -> _Spread:
 
 def pv_curve(baseline: Baseline) -> pd.DataFrame:
     """Daily and cumulative planned labour hours of the baseline (cumulative = end of day)."""
-    f = baseline.frame
-    f = f[(f["ev_labor_hr"] > 0) & f["ev_start"].notna() & f["ev_finish"].notna()]
-    if f.empty:
+    frame = baseline.frame
+    frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
+    if frame.empty:
         return pd.DataFrame(columns=["date", "pv_hr", "pv_cum_hr", "pv_pct"])
-    days = pd.date_range(f["ev_start"].min().normalize(), f["ev_finish"].max().normalize(), freq="D")
-    cum = _pv_spread(baseline).at(days + pd.Timedelta(days=1))
-    df = pd.DataFrame({"date": days, "pv_cum_hr": cum})
-    df["pv_hr"] = df["pv_cum_hr"].diff().fillna(df["pv_cum_hr"])
+    days = pd.date_range(frame["ev_start"].min().normalize(), frame["ev_finish"].max().normalize(), freq="D")
+    curve = pd.DataFrame({"date": days, "pv_cum_hr": _pv_spread(baseline).at(days + pd.Timedelta(days=1))})
+    curve["pv_hr"] = curve["pv_cum_hr"].diff().fillna(curve["pv_cum_hr"])
     bac = baseline.bac_hours
-    df["pv_pct"] = 100 * df["pv_cum_hr"] / bac if bac else np.nan
-    return df[["date", "pv_hr", "pv_cum_hr", "pv_pct"]]
+    curve["pv_pct"] = 100 * curve["pv_cum_hr"] / bac if bac else np.nan
+    return curve[["date", "pv_hr", "pv_cum_hr", "pv_pct"]]
 
 
 def pv_at(baseline: Baseline, when: pd.Timestamp | None) -> float:
@@ -140,24 +141,26 @@ def pv_at(baseline: Baseline, when: pd.Timestamp | None) -> float:
 
 def schedule_pct(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
     """P6 Schedule % Complete of each baseline activity at ``when`` (on the EV basis dates)."""
-    f = baseline.frame
-    out = pd.Series(np.nan, index=f.index)
-    snap = baseline.snapshot
-    ok = f["ev_start"].notna() & f["ev_finish"].notna()
-    if not ok.any():
-        return out
-    lo, hi = min(f.loc[ok, "ev_start"].min(), when).date(), max(f.loc[ok, "ev_finish"].max(), when).date()
-    for cid, g in f[ok].groupby(f.loc[ok, "bl_clndr_id"].fillna(""), sort=False):
-        ax = TimeAxis(snap.calendar(cid), lo, hi)
-        ws, wf, w = ax.work_many(g["ev_start"]), ax.work_many(g["ev_finish"]), ax.work(when)
-        d = (wf - ws).astype(float)
-        pct = np.where(
-            d > 0,
-            np.clip((w - ws) / np.where(d > 0, d, 1), 0, 1),
-            (g["ev_finish"].to_numpy("datetime64[ns]") <= np.datetime64(when)).astype(float),
+    frame = baseline.frame
+    percent = pd.Series(np.nan, index=frame.index)
+    has_dates = frame["ev_start"].notna() & frame["ev_finish"].notna()
+    if not has_dates.any():
+        return percent
+    first_day = min(frame.loc[has_dates, "ev_start"].min(), when).date()
+    last_day = max(frame.loc[has_dates, "ev_finish"].max(), when).date()
+    for calendar_id, group in frame[has_dates].groupby(frame.loc[has_dates, "bl_clndr_id"].fillna(""), sort=False):
+        axis = TimeAxis(baseline.snapshot.calendar(calendar_id), first_day, last_day)
+        work_starts, work_finishes = axis.work_many(group["ev_start"]), axis.work_many(group["ev_finish"])
+        work_now = axis.work(when)
+        durations = (work_finishes - work_starts).astype(float)
+        # a zero-length activity is 0% before its instant and 100% from then on
+        fraction = np.where(
+            durations > 0,
+            np.clip((work_now - work_starts) / np.where(durations > 0, durations, 1), 0, 1),
+            (group["ev_finish"].to_numpy("datetime64[ns]") <= np.datetime64(when)).astype(float),
         )
-        out.loc[g.index] = 100 * pct
-    return out.round(2)
+        percent.loc[group.index] = 100 * fraction
+    return percent.round(2)
 
 
 @dataclass
@@ -184,12 +187,12 @@ class EvPoint:
     def productivity(self) -> float | None:
         """EV per hour spent on baselined work: EV only exists for baselined activities,
         so hours spent on the others would make the ratio look worse than the work is."""
-        ac = self.ac_hr - self.ac_unbaselined_hr
-        return self.ev_hr / ac if ac else None
+        baselined_actual_hr = self.ac_hr - self.ac_unbaselined_hr
+        return self.ev_hr / baselined_actual_hr if baselined_actual_hr else None
 
     def as_row(self) -> dict:
-        def pct(v: float) -> float | None:
-            return 100 * v / self.bac_hr if self.bac_hr else None
+        def percent_of_bac(hours: float) -> float | None:
+            return 100 * hours / self.bac_hr if self.bac_hr else None
 
         return {
             "data_date": self.data_date,
@@ -199,8 +202,8 @@ class EvPoint:
             "ac_hr": self.ac_hr,
             "etc_hr": self.etc_hr,
             "eac_hr": self.eac_hr,
-            "pv_pct": pct(self.pv_hr),
-            "ev_pct": pct(self.ev_hr),
+            "pv_pct": percent_of_bac(self.pv_hr),
+            "ev_pct": percent_of_bac(self.ev_hr),
             "sv_hr": self.ev_hr - self.pv_hr,
             "spi": self.spi,
             "productivity": self.productivity,
@@ -209,91 +212,103 @@ class EvPoint:
         }
 
 
-def performance_pct(snap: Snapshot) -> pd.DataFrame:
+def performance_pct(snapshot: Snapshot) -> pd.DataFrame:
     """Per activity (index task_code): EV technique of its WBS and Performance % Complete."""
-    a = snap.activities.drop_duplicates("task_code").set_index("task_code")
-    tech = a["ev_compute_type"].map(ev_technique) if "ev_compute_type" in a else pd.Series("activity", index=a.index)
-    user = pd.to_numeric(a["ev_user_pct"], errors="coerce") if "ev_user_pct" in a else pd.Series(np.nan, index=a.index)
-    done, started = a["is_complete"], a["is_started"]
-    pct = a["pct_complete"].astype(float)
-    pct = pct.mask(tech == "0/100", np.where(done, 100.0, 0.0))
-    pct = pct.mask(tech == "50/50", np.where(done, 100.0, np.where(started, 50.0, 0.0)))
-    pct = pct.mask(tech == "custom", np.where(done, 100.0, np.where(started, user.fillna(0.0), 0.0)))
-    return pd.DataFrame({"ev_technique": tech, "perf_pct": pct.clip(0, 100)})
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    if "ev_compute_type" in activities:
+        technique = activities["ev_compute_type"].map(ev_technique)
+    else:
+        technique = pd.Series("activity", index=activities.index)
+    if "ev_user_pct" in activities:
+        custom_pct = pd.to_numeric(activities["ev_user_pct"], errors="coerce")
+    else:
+        custom_pct = pd.Series(np.nan, index=activities.index)
+    done = activities["is_complete"]
+    in_progress = ~done & activities["is_started"]
+    # the stepped techniques: 100 once done, 0 before starting, a fixed value in between
+    zero_hundred = pd.Series(np.where(done, 100.0, 0.0), index=activities.index)
+    fifty_fifty = zero_hundred.mask(in_progress, 50.0)
+    custom = zero_hundred.mask(in_progress, custom_pct.fillna(0.0))
+    percent = activities["pct_complete"].astype(float)
+    percent = percent.mask(technique == "0/100", zero_hundred)
+    percent = percent.mask(technique == "50/50", fifty_fifty)
+    percent = percent.mask(technique == "custom", custom)
+    return pd.DataFrame({"ev_technique": technique, "perf_pct": percent.clip(0, 100)})
 
 
-def earned(snap: Snapshot, baseline: Baseline) -> pd.DataFrame:
+def earned(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
     """Per baseline activity: BL hours, Schedule % and Performance % now, PV and EV hours.
 
     ``bl_labor_hr`` / ``bl_start`` / ``bl_finish`` here are the EV basis values (see
     baseline.EV_BASES): the hours and dates PV and EV are computed from.
     """
-    a = snap.activities.drop_duplicates("task_code").set_index("task_code")
-    bl = baseline.frame.drop(columns=["bl_labor_hr", "bl_start", "bl_finish"]).rename(
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    baseline_ev = baseline.frame.drop(columns=["bl_labor_hr", "bl_start", "bl_finish"]).rename(
         columns={"ev_labor_hr": "bl_labor_hr", "ev_start": "bl_start", "ev_finish": "bl_finish"}
     )
-    df = (
-        bl[["bl_name", "bl_labor_hr", "bl_start", "bl_finish"]]
-        .join(
-            a[["task_name", "wbs_code", "wbs_l1", "pct_complete", "labor_actual_hr", "labor_remaining_hr"]], how="left"
-        )
-        .join(performance_pct(snap), how="left")
+    current_columns = ["task_name", "wbs_code", "wbs_l1", "pct_complete", "labor_actual_hr", "labor_remaining_hr"]
+    result = (
+        baseline_ev[["bl_name", "bl_labor_hr", "bl_start", "bl_finish"]]
+        .join(activities[current_columns], how="left")
+        .join(performance_pct(snapshot), how="left")
     )
-    df["in_snapshot"] = df["task_name"].notna()
-    df["pct_complete"] = df["pct_complete"].fillna(0.0)
-    df["perf_pct"] = df["perf_pct"].fillna(0.0)
-    df["ev_technique"] = df["ev_technique"].fillna("activity")
-    df["schedule_pct"] = schedule_pct(baseline, snap.data_date) if snap.data_date is not None else np.nan
-    df["pv_hr"] = df["bl_labor_hr"] * df["schedule_pct"].fillna(0.0) / 100
-    df["ev_hr"] = df["bl_labor_hr"] * df["perf_pct"] / 100
-    return df
+    result["in_snapshot"] = result["task_name"].notna()
+    result["pct_complete"] = result["pct_complete"].fillna(0.0)
+    result["perf_pct"] = result["perf_pct"].fillna(0.0)
+    result["ev_technique"] = result["ev_technique"].fillna("activity")
+    result["schedule_pct"] = schedule_pct(baseline, snapshot.data_date) if snapshot.data_date is not None else np.nan
+    result["pv_hr"] = result["bl_labor_hr"] * result["schedule_pct"].fillna(0.0) / 100
+    result["ev_hr"] = result["bl_labor_hr"] * result["perf_pct"] / 100
+    return result
 
 
-def ev_point(snap: Snapshot, baseline: Baseline, spread: _Spread | None = None) -> EvPoint:
+def ev_point(snapshot: Snapshot, baseline: Baseline, spread: _Spread | None = None) -> EvPoint:
     spread = _pv_spread(baseline) if spread is None else spread
-    e = earned(snap, baseline)
-    a = snap.activities
-    unbaselined = sorted(set(a["task_code"]) - set(baseline.frame.index))
-    fallback = sorted(e.index[e["ev_technique"].isin(["wbs_milestones", "resource_curves"]) & e["in_snapshot"]])
-    pv = float(spread.at([snap.data_date])[0]) if snap.data_date is not None else 0.0
+    earned_values = earned(snapshot, baseline)
+    activities = snapshot.activities
+    unbaselined = sorted(set(activities["task_code"]) - set(baseline.frame.index))
+    on_fallback = earned_values["ev_technique"].isin(["wbs_milestones", "resource_curves"])
+    fallback = sorted(earned_values.index[on_fallback & earned_values["in_snapshot"]])
+    planned_hr = float(spread.at([snapshot.data_date])[0]) if snapshot.data_date is not None else 0.0
     return EvPoint(
-        snap.data_date,
+        snapshot.data_date,
         baseline.bac_hours,
-        pv,
-        float(e["ev_hr"].sum()),
-        float(a["labor_actual_hr"].sum()),
-        float(a["labor_remaining_hr"].sum()),
+        planned_hr,
+        float(earned_values["ev_hr"].sum()),
+        float(activities["labor_actual_hr"].sum()),
+        float(activities["labor_remaining_hr"].sum()),
         unbaselined,
         fallback,
-        ac_unbaselined_hr=float(a.loc[a["task_code"].isin(unbaselined), "labor_actual_hr"].sum()),
+        ac_unbaselined_hr=float(activities.loc[activities["task_code"].isin(unbaselined), "labor_actual_hr"].sum()),
     )
 
 
 def evm_series(store: SnapshotStore, baseline: Baseline) -> pd.DataFrame:
     spread = _pv_spread(baseline)
-    return pd.DataFrame([ev_point(s, baseline, spread).as_row() for s in store])
+    return pd.DataFrame([ev_point(snapshot, baseline, spread).as_row() for snapshot in store])
 
 
-def forecast_curve(snap: Snapshot) -> pd.DataFrame:
+def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
     """Cumulative hours, one row per day from the data date's day to the last finish: AC
     plus the remaining hours of open work spread over working time to each activity's
     finish. As in ``pv_curve``, a row names a day and holds the cumulative at its end."""
-    a = snap.activities
-    open_ = a[~a["is_complete"]].copy()
-    dd = snap.data_date
-    ac = float(a["labor_actual_hr"].sum())
-    if dd is None:
+    activities = snapshot.activities
+    open_work = activities[~activities["is_complete"]].copy()
+    data_date = snapshot.data_date
+    actual_hr = float(activities["labor_actual_hr"].sum())
+    if data_date is None:
         return pd.DataFrame({"date": [], "fc_cum_hr": []})
-    open_["fc_start"] = open_["start"].where(open_["start"] > dd, dd)
-    open_["fc_finish"] = open_["finish"].where(open_["finish"] > open_["fc_start"], open_["fc_start"])
-    f = open_[(open_["labor_remaining_hr"] > 0) & open_["fc_finish"].notna()]
-    if f.empty:
-        return pd.DataFrame({"date": [dd.normalize()], "fc_cum_hr": [ac]})
-    days = pd.date_range(dd.normalize(), f["fc_finish"].max().normalize(), freq="D")
-    cum = ac + _Spread.build(snap, f, "labor_remaining_hr", "fc_start", "fc_finish", "clndr_id").at(
-        days + pd.Timedelta(days=1)
+    # remaining work cannot happen before the data date, nor finish before it starts
+    open_work["fc_start"] = open_work["start"].where(open_work["start"] > data_date, data_date)
+    open_work["fc_finish"] = open_work["finish"].where(
+        open_work["finish"] > open_work["fc_start"], open_work["fc_start"]
     )
-    return pd.DataFrame({"date": days, "fc_cum_hr": cum})
+    with_remaining = open_work[(open_work["labor_remaining_hr"] > 0) & open_work["fc_finish"].notna()]
+    if with_remaining.empty:
+        return pd.DataFrame({"date": [data_date.normalize()], "fc_cum_hr": [actual_hr]})
+    days = pd.date_range(data_date.normalize(), with_remaining["fc_finish"].max().normalize(), freq="D")
+    spread = _Spread.build(snapshot, with_remaining, "labor_remaining_hr", "fc_start", "fc_finish", "clndr_id")
+    return pd.DataFrame({"date": days, "fc_cum_hr": actual_hr + spread.at(days + pd.Timedelta(days=1))})
 
 
 def bei_series(
@@ -305,13 +320,13 @@ def bei_series(
     gives each snapshot its own baseline. Columns: data_date, bei_p6, bei_dcma.
     """
     rows = []
-    for s in store:
-        ctx = AnalysisContext(s, baseline=baseline_for(s))
+    for snapshot in store:
+        context = AnalysisContext(snapshot, baseline=baseline_for(snapshot))
         rows.append(
             {
-                "data_date": s.data_date,
-                "bei_p6": run_metric(bei_metrics["P6"], ctx).value,
-                "bei_dcma": run_metric(bei_metrics["DCMA"], ctx).value,
+                "data_date": snapshot.data_date,
+                "bei_p6": run_metric(bei_metrics["P6"], context).value,
+                "bei_dcma": run_metric(bei_metrics["DCMA"], context).value,
             }
         )
     return pd.DataFrame(rows)
