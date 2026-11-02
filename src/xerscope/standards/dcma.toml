@@ -24,37 +24,33 @@ source = "DCMA-EA PAM 200.1 (Oct 2012), section 4 and sections 3.1.2.3, 3.1.2.4"
 id = "DCMA-01"
 name = "Logic"
 description = "Incomplete tasks missing a predecessor or a successor"
-rule = "missing_logic"
+rule = "dcma_01_logic"
 target = "<= 5%"
-params = { exclude = ["complete", "loe", "milestones"] }
 source = "DCMA-EA PAM 200.1 §4.1: any incomplete task missing a predecessor and/or a successor; no project start/finish exemption and no dangling case; §4.0: milestones excluded; a link to another project counts as logic (rule default)"
 
 [[metric]]
 id = "DCMA-02"
 name = "Leads"
 description = "Relationships with a negative lag"
-rule = "lag"
+rule = "dcma_02_leads"
 unit = "count"
 target = "<= 0"
-params = { op = "<", value = 0, links = "succ_incomplete", exclude = ["loe", "milestones"] }
 source = "DCMA-EA PAM 200.1 §4.2: logic links with a lead (negative lag) in predecessor relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-03"
 name = "Lags"
 description = "Relationships with a positive lag"
-rule = "lag"
+rule = "dcma_03_lags"
 target = "<= 5%"
-params = { op = ">", value = 0, links = "succ_incomplete", exclude = ["loe", "milestones"] }
 source = "DCMA-EA PAM 200.1 §4.3: lags in predecessor logic relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-04"
 name = "Relationship types"
 description = "Share of Finish-to-Start relationships"
-rule = "relationship_type"
+rule = "dcma_04_relationship_types"
 target = ">= 90%"
-params = { type = "FS", links = "succ_incomplete", exclude = ["loe", "milestones"] }
 source = "DCMA-EA PAM 200.1 §4.4: a count of incomplete tasks containing each type of logic link; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
