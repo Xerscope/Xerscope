@@ -1,8 +1,8 @@
 """Run a standard's metrics on a snapshot.
 
     std = builtin_standards()["P6"]
-    ctx = AnalysisContext(snapshot, baseline=Baseline.from_snapshot(bl))
-    results_frame(run_standard(std, ctx))
+    context = AnalysisContext(snapshot, baseline=Baseline.from_snapshot(bl))
+    results_frame(run_standard(std, context))
 
 A failing rule never takes the others down: its result has status "error" and the
 exception text as note.
@@ -47,11 +47,11 @@ class AnalysisContext:
         return self.store.previous(self.snapshot) if self.store else None
 
 
-def run_metric(metric: Metric, ctx: AnalysisContext) -> CheckResult:
-    if metric.needs_baseline and ctx.baseline is None:
+def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
+    if metric.needs_baseline and context.baseline is None:
         return CheckResult(metric, "n/a", note="needs a baseline")
     try:
-        out = RULES[metric.rule].fn(ctx, **metric.params)
+        out = RULES[metric.rule].fn(context, **metric.params)
     except Exception as exc:  # noqa: BLE001 - reported in the result
         return CheckResult(metric, "error", note=f"{type(exc).__name__}: {exc}")
     value = out.value
@@ -67,30 +67,30 @@ def run_metric(metric: Metric, ctx: AnalysisContext) -> CheckResult:
     return CheckResult(metric, status, value, out.numerator, out.denominator, out.flagged, note)
 
 
-def run_standard(standard: Standard, ctx: AnalysisContext) -> list[CheckResult]:
-    return [run_metric(m, ctx) for m in standard.metrics]
+def run_standard(standard: Standard, context: AnalysisContext) -> list[CheckResult]:
+    return [run_metric(metric, context) for metric in standard.metrics]
 
 
 def results_frame(results: list[CheckResult]) -> pd.DataFrame:
-    df = pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
-                "id": r.metric.id,
-                "group": r.metric.group,
-                "check": r.metric.name,
-                "description": r.metric.description,
-                "target": r.metric.threshold_label,
-                "actual": r.value,
-                "found": r.numerator,
-                "total": r.denominator,
-                "status": r.status,
-                "note": r.note,
+                "id": result.metric.id,
+                "group": result.metric.group,
+                "check": result.metric.name,
+                "description": result.metric.description,
+                "target": result.metric.threshold_label,
+                "actual": result.value,
+                "found": result.numerator,
+                "total": result.denominator,
+                "status": result.status,
+                "note": result.note,
             }
-            for r in results
+            for result in results
         ]
     )
-    df[["found", "total"]] = df[["found", "total"]].astype("Int64")
-    return df
+    frame[["found", "total"]] = frame[["found", "total"]].astype("Int64")
+    return frame
 
 
 def health_history(
@@ -102,25 +102,25 @@ def health_history(
     (e.g. ``Baseline.planned``).
     """
     rows = []
-    for i, snap in enumerate(store):
-        bl = baseline(snap) if callable(baseline) else baseline
-        ctx = AnalysisContext(snap, store, bl)
-        for r in run_standard(standard, ctx):
+    for index, update in enumerate(store):
+        update_baseline = baseline(update) if callable(baseline) else baseline
+        context = AnalysisContext(update, store, update_baseline)
+        for result in run_standard(standard, context):
             rows.append(
                 {
-                    "snapshot_idx": i,
-                    "data_date": snap.data_date,
-                    "id": r.metric.id,
-                    "check": r.metric.name,
-                    "actual": r.value,
-                    "found": r.numerator,
-                    "total": r.denominator,
-                    "status": r.status,
+                    "snapshot_idx": index,
+                    "data_date": update.data_date,
+                    "id": result.metric.id,
+                    "check": result.metric.name,
+                    "actual": result.value,
+                    "found": result.numerator,
+                    "total": result.denominator,
+                    "status": result.status,
                 }
             )
-    df = pd.DataFrame(rows)
-    df[["found", "total"]] = df[["found", "total"]].astype("Int64")
-    return df
+    frame = pd.DataFrame(rows)
+    frame[["found", "total"]] = frame[["found", "total"]].astype("Int64")
+    return frame
 
 
 def health_wide(history: pd.DataFrame, standard: Standard) -> pd.DataFrame:
@@ -128,8 +128,8 @@ def health_wide(history: pd.DataFrame, standard: Standard) -> pd.DataFrame:
 
     ``history`` is the long frame from :func:`health_history`; rows follow the standard's order.
     """
-    ids = [m.id for m in standard.metrics]
+    ids = [metric.id for metric in standard.metrics]
     wide = history.pivot_table(index="id", columns="data_date", values="actual", aggfunc="first").reindex(ids)
-    wide.columns = [f"{c:%Y-%m-%d}" for c in wide.columns]
-    wide.insert(0, "check", [standard[i].name for i in wide.index])
+    wide.columns = [f"{column:%Y-%m-%d}" for column in wide.columns]
+    wide.insert(0, "check", [standard[metric_id].name for metric_id in wide.index])
     return wide.reset_index()

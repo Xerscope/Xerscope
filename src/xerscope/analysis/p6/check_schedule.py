@@ -24,23 +24,20 @@ SOFT_CONSTRAINTS = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"]
 LARGE_DURATION_HOURS = 352
 
 
-@rule(
-    "p6_01_logic",
-    "%",
-    wording=("open-ended", "checked", "Missing a predecessor or a successor"),
-    notes=lambda _: [
-        "Excludes: completed activities.",
-        "No predecessor required for: started activities, start milestones.",
-    ],
-)
-def p6_01_logic(ctx) -> RuleOutput:
-    """101248: completed and WBS summary activities not included; started activities and start milestones
+@rule("p6_01_logic", "%")
+def p6_01_logic(context) -> RuleOutput:
+    """Missing a predecessor or a successor.
+    Counts: open-ended / checked
+    Excludes: completed activities.
+    No predecessor required for: started activities, start milestones.
+
+    101248: completed and WBS summary activities not included; started activities and start milestones
     need no predecessor; a finish milestone without successor is counted, as a P6 Professional r22.12
     report shows (Ten Six); external links pass (46291)
     """
-    activities = open_activities(ctx)
-    has_predecessor = has_predecessor_in_project(ctx, activities) | activities["has_external_pred"]
-    has_successor = has_successor_in_project(ctx, activities) | activities["has_external_succ"]
+    activities = open_activities(context)
+    has_predecessor = has_predecessor_in_project(context, activities) | activities["has_external_pred"]
+    has_successor = has_successor_in_project(context, activities) | activities["has_external_succ"]
     started = activities["is_started"]
     start_milestone = activities["is_start_milestone"]
 
@@ -51,18 +48,15 @@ def p6_01_logic(ctx) -> RuleOutput:
     return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities))
 
 
-@rule(
-    "p6_02_hard_constraints",
-    "%",
-    wording=("constrained", "checked", "Constrained activities"),
-    notes=lambda _: [
-        "Excludes: completed activities, level of effort.",
-        "Constraint types: Mandatory start, Start on, Mandatory finish, Finish on.",
-    ],
-)
-def p6_02_hard_constraints(ctx) -> RuleOutput:
-    """46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"""
-    activities = without_level_of_effort(open_activities(ctx))
+@rule("p6_02_hard_constraints", "%")
+def p6_02_hard_constraints(context) -> RuleOutput:
+    """Constrained activities.
+    Counts: constrained / checked
+    Excludes: completed activities, level of effort.
+    Constraint types: Mandatory start, Start on, Mandatory finish, Finish on.
+
+    46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"""
+    activities = without_level_of_effort(open_activities(context))
     has_hard_constraint = constrained_by(activities, HARD_CONSTRAINTS, ignore_started_starts=True)
 
     flagged = activities[has_hard_constraint]
@@ -71,19 +65,16 @@ def p6_02_hard_constraints(ctx) -> RuleOutput:
     )
 
 
-@rule(
-    "p6_03_soft_constraints",
-    "%",
-    wording=("constrained", "checked", "Constrained activities"),
-    notes=lambda _: [
-        "Excludes: completed activities, level of effort.",
-        "Constraint types: Start on or before, Start on or after, Finish on or before, "
-        "Finish on or after, As late as possible.",
-    ],
-)
-def p6_03_soft_constraints(ctx) -> RuleOutput:
-    """46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"""
-    activities = without_level_of_effort(open_activities(ctx))
+@rule("p6_03_soft_constraints", "%")
+def p6_03_soft_constraints(context) -> RuleOutput:
+    """Constrained activities.
+    Counts: constrained / checked
+    Excludes: completed activities, level of effort.
+    Constraint types: Start on or before, Start on or after, Finish on or before,
+        Finish on or after, As late as possible.
+
+    46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"""
+    activities = without_level_of_effort(open_activities(context))
     has_soft_constraint = constrained_by(activities, SOFT_CONSTRAINTS, ignore_started_starts=True)
 
     flagged = activities[has_soft_constraint]
@@ -92,20 +83,17 @@ def p6_03_soft_constraints(ctx) -> RuleOutput:
     )
 
 
-@rule(
-    "p6_04_large_durations",
-    "%",
-    wording=("flagged", "checked", "Activities outside the duration limit"),
-    notes=lambda _: [
-        "Excludes: completed activities, level of effort, milestones.",
-        "Flagged when remaining duration > 352 hours.",
-    ],
-)
-def p6_04_large_durations(ctx) -> RuleOutput:
-    """101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional
+@rule("p6_04_large_durations", "%")
+def p6_04_large_durations(context) -> RuleOutput:
+    """Activities outside the duration limit.
+    Counts: flagged / checked
+    Excludes: completed activities, level of effort, milestones.
+    Flagged when remaining duration > 352 hours.
+
+    101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional
     r22.12 report shows (Ten Six) and EPPM's 46282 states
     """
-    activities = without_milestones(without_level_of_effort(open_activities(ctx)))
+    activities = without_milestones(without_level_of_effort(open_activities(context)))
     remaining_hours = activities["remain_drtn_hr_cnt"]
 
     flagged = activities[(remaining_hours > LARGE_DURATION_HOURS).fillna(False)]
