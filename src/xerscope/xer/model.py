@@ -21,6 +21,7 @@ Key decisions
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from operator import attrgetter
 
 import numpy as np
 import pandas as pd
@@ -369,12 +370,6 @@ class Snapshot:
         """``calendar`` for a cell value: anything but a string (NaN, None) means the default."""
         return self.calendar(clndr_id if isinstance(clndr_id, str) else None)
 
-    def _calendar_id_of(self, clndr_id: object) -> str:
-        return self._calendar_of(clndr_id).clndr_id
-
-    def _hours_per_day_of(self, clndr_id: object) -> float:
-        return self._calendar_of(clndr_id).hours_per_day
-
     def work_hours(self, clndr: pd.Series, start: pd.Series, end: pd.Series) -> pd.Series:
         """Working hours from ``start`` to ``end``, row by row, on each row's calendar.
 
@@ -387,7 +382,7 @@ class Snapshot:
             return hours
         first_day = min(start[known].min(), end[known].min()).date()
         last_day = max(start[known].max(), end[known].max()).date()
-        calendar_ids = clndr[known].map(self._calendar_id_of)
+        calendar_ids = clndr[known].map(self._calendar_of).map(attrgetter("clndr_id"))
         for calendar_id, rows in calendar_ids.groupby(calendar_ids).groups.items():
             axis = TimeAxis(self.calendar(calendar_id or None), first_day, last_day)
             hours[rows] = (axis.work_many(end[rows]) - axis.work_many(start[rows])) / 60
@@ -395,7 +390,7 @@ class Snapshot:
 
     def working_days(self, clndr: pd.Series, start: pd.Series, end: pd.Series) -> pd.Series:
         """``work_hours`` in days of each row's calendar (its hours per day)."""
-        hours_per_day = clndr.map(self._hours_per_day_of)
+        hours_per_day = clndr.map(self._calendar_of).map(attrgetter("hours_per_day"))
         return self.work_hours(clndr, start, end) / hours_per_day.astype(float)
 
     @property
@@ -798,14 +793,13 @@ def _external_links(
     return external_tasks, links
 
 
-def _labor_hours(tasks: pd.DataFrame, assignments: pd.DataFrame) -> tuple[pd.DataFrame, str]:
-    """Add the labour / nonlabor columns and say where they came from.
+def _labor_hours(tasks: pd.DataFrame, assignments: pd.DataFrame) -> str:
+    """Add the labour / nonlabor columns to ``tasks`` in place and say where they came from.
 
     P6 keeps the activity totals on TASK (Budgeted / Actual / Remaining Labor Units;
     nonlabor in *_equip_qty). Older or partial exports only have the assignments: sum them
     by resource type (roles count as labour, as in P6).
     """
-    tasks = tasks.copy()
     if tasks["target_work_qty"].notna().any():
         tasks["labor_budget_hr"] = tasks["target_work_qty"].fillna(0.0)
         tasks["labor_actual_hr"] = tasks["act_work_qty"].fillna(0.0)
@@ -813,18 +807,18 @@ def _labor_hours(tasks: pd.DataFrame, assignments: pd.DataFrame) -> tuple[pd.Dat
         tasks["nonlabor_budget_qty"] = tasks["target_equip_qty"].fillna(0.0)
         tasks["nonlabor_actual_qty"] = tasks["act_equip_qty"].fillna(0.0)
         tasks["nonlabor_remaining_qty"] = tasks["remain_equip_qty"].fillna(0.0)
-        return tasks, "TASK"
+        return "TASK"
     if assignments.empty:
         for column in LABOR_COLS:
             tasks[column] = 0.0
-        return tasks, "none"
+        return "none"
     for prefix, kinds in (("labor", ("RT_Labor", "role", "")), ("nonlabor", ("RT_Equip",))):
         by_task = assignments[assignments["rsrc_type"].isin(kinds)].groupby("task_id")
         unit = "hr" if prefix == "labor" else "qty"
         tasks[f"{prefix}_budget_{unit}"] = tasks["task_id"].map(by_task["target_qty"].sum()).fillna(0.0)
         tasks[f"{prefix}_actual_{unit}"] = tasks["task_id"].map(by_task["act_qty"].sum()).fillna(0.0)
         tasks[f"{prefix}_remaining_{unit}"] = tasks["task_id"].map(by_task["remain_qty"].sum()).fillna(0.0)
-    return tasks, "TASKRSRC"
+    return "TASKRSRC"
 
 
 def _warn_leveling(tasks: pd.DataFrame, inputs: _BuildInputs) -> None:
@@ -899,7 +893,7 @@ def build_snapshot(
     # Resources, labour hours, leveling, expenses
     assignments = _assignments(inputs, tasks)
     tasks["has_resource"] = tasks["task_id"].isin(assignments["task_id"])
-    tasks, options["labor_source"] = _labor_hours(tasks, assignments)
+    options["labor_source"] = _labor_hours(tasks, assignments)
     _warn_leveling(tasks, inputs)
     expenses = raw.table("PROJCOST")
     if expenses.empty or "task_id" not in expenses.columns:

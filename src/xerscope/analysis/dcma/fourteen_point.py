@@ -49,7 +49,7 @@ def dcma_01_logic(context) -> RuleOutput:
     return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(tasks))
 
 
-@rule("dcma_02_leads", "%")
+@rule("dcma_02_leads", "%", links=True)
 def dcma_02_leads(context) -> RuleOutput:
     """Relationships with the lag in question.
     Counts: flagged / relationships checked
@@ -68,7 +68,7 @@ def dcma_02_leads(context) -> RuleOutput:
     return RuleOutput(flagged_relationships(leads), len(leads), len(relationships))
 
 
-@rule("dcma_03_lags", "%")
+@rule("dcma_03_lags", "%", links=True)
 def dcma_03_lags(context) -> RuleOutput:
     """Relationships with the lag in question.
     Counts: flagged / relationships checked
@@ -87,7 +87,7 @@ def dcma_03_lags(context) -> RuleOutput:
     return RuleOutput(flagged_relationships(lags), len(lags), len(relationships))
 
 
-@rule("dcma_04_relationship_types", "%")
+@rule("dcma_04_relationship_types", "%", links=True)
 def dcma_04_relationship_types(context) -> RuleOutput:
     """Relationships of another type.
     Counts: of the required type / relationships checked

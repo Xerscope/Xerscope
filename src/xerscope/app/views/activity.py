@@ -1,5 +1,7 @@
 """One activity across every weekly update: how its dates, float and progress moved."""
 
+from functools import partial
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -21,13 +23,9 @@ LIST_COLUMNS = [
 ]
 
 
-def activity_label(names: pd.Series):
+def activity_label(names: pd.Series, task_code: str) -> str:
     """Selectbox label for an Activity ID: the code and its latest name."""
-
-    def label(task_code: str) -> str:
-        return f"{task_code} · {names[task_code]}"
-
-    return label
+    return f"{task_code} · {names[task_code]}"
 
 
 def show_kpis(store, history: pd.DataFrame) -> None:
@@ -114,7 +112,7 @@ ui.header(
 
 all_history = store.history
 names = all_history.drop_duplicates("task_code", keep="last").set_index("task_code")["task_name"]
-choice = st.selectbox("Activity", names.index, format_func=activity_label(names))
+choice = st.selectbox("Activity", names.index, format_func=partial(activity_label, names))
 history = all_history[all_history["task_code"] == choice].sort_values("data_date")
 if len(store) - len(history):
     st.caption(f"Present in {len(history)} of {len(store)} updates (added or deleted along the way).")

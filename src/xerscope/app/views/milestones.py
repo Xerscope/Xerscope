@@ -1,3 +1,5 @@
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
@@ -7,13 +9,9 @@ from xerscope.app.state import is_dark, memo, require_store
 from xerscope.viz.charts import SERIES, build_mta
 
 
-def milestone_label(names: pd.Series):
+def milestone_label(names: pd.Series, task_code: str) -> str:
     """Multiselect label for an Activity ID: the code and its latest name."""
-
-    def label(task_code: str) -> str:
-        return f"{task_code} · {names.get(task_code, '')}"
-
-    return label
+    return f"{task_code} · {names.get(task_code, '')}"
 
 
 store = require_store()
@@ -34,7 +32,7 @@ picked = st.multiselect(
     all_ms + others,
     default=all_ms[:cap],
     max_selections=cap,
-    format_func=milestone_label(names),
+    format_func=partial(milestone_label, names),
     key="mta_pick",
 )
 if not picked:

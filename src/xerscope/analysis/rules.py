@@ -74,15 +74,11 @@ class Rule:
     unit: Unit
     doc: str  # the method text: the docstring without its header
     needs_baseline: bool = False
+    links: bool = False  # True when the flagged rows are relationships, not activities
     title: str = ""  # label of the flagged list, from the docstring header
     numerator_word: str = "flagged"
     denominator_word: str = "checked"
     population: tuple[str, ...] = ()  # fixed population lines, from the docstring header
-
-    @property
-    def links(self) -> bool:
-        """True when the rule counts relationships, not activities."""
-        return "relationships" in self.denominator_word
 
     @property
     def params(self) -> dict[str, object]:
@@ -151,10 +147,10 @@ def read_docstring(doc: str) -> dict:
     }
 
 
-def rule(name: str, unit: Unit, needs_baseline: bool = False):
+def rule(name: str, unit: Unit, needs_baseline: bool = False, links: bool = False):
     def register(function):
         fields = read_docstring(inspect.getdoc(function) or "")
-        RULES[name] = Rule(name, function, unit, needs_baseline=needs_baseline, **fields)
+        RULES[name] = Rule(name, function, unit, needs_baseline=needs_baseline, links=links, **fields)
         return function
 
     return register
@@ -370,7 +366,7 @@ def dangling(context, end: Literal["start", "finish"] = "finish", exclude: Names
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
 
 
-@rule("lag", "%")
+@rule("lag", "%", links=True)
 def lag(
     context,
     op: Op = ">",
@@ -394,7 +390,7 @@ def lag(
     return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
 
 
-@rule("relationship_type", "%")
+@rule("relationship_type", "%", links=True)
 def relationship_type(
     context,
     type: Literal["FS", "SS", "FF", "SF"] = "FS",

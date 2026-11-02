@@ -1,3 +1,5 @@
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
@@ -180,7 +182,7 @@ def show_trend(standard, baseline_key) -> None:
     ui.section("Trend across updates", "The same check on every loaded update, against its target.")
     history = memo(("health", repr(standard), baseline_key), health_history, store, standard, baseline_for)
     metric_ids = [metric.id for metric in standard.metrics]
-    metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=check_label)
+    metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=partial(check_label, standard))
     metric = standard[metric_id]
     st.plotly_chart(
         build_metric_trend(
@@ -237,7 +239,7 @@ def standard_name(standard_id: str) -> str:
     return available[standard_id].name
 
 
-def check_label(metric_id: str) -> str:
+def check_label(standard, metric_id: str) -> str:
     return f"{metric_id} · {standard[metric_id].name}"
 
 
