@@ -74,9 +74,14 @@ def test_rules_that_flag_relationships_declare_links(results):
 def test_explain_tables_match_registry():
     from xerscope.analysis.rules import EXCLUDE, EXEMPT, RULES
 
-    # cpli (ratio) and critical_path_test (pass/fail) have no numerator/denominator/flagged
+    # the CPLI (ratio) and critical path test (pass/fail) rules have no numerator/denominator/flagged
     # list to word; explain() falls back to defaults for them.
-    assert {name for name, rule in RULES.items() if rule.title} == set(RULES) - {"cpli", "critical_path_test"}
+    assert {name for name, rule in RULES.items() if rule.title} == set(RULES) - {
+        "cpli",
+        "critical_path_test",
+        "dcma_12_critical_path_test",
+        "dcma_13_cpli",
+    }
     # the vocabularies carry their own labels: every key has one, so explain never falls back to the key
     assert all(label and callable(test) for label, test in EXCLUDE.values())
     assert all(EXEMPT.values())

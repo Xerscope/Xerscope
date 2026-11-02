@@ -479,7 +479,7 @@ def test_bei_series_one_row_per_update_p6_and_dcma(store):
     from xerscope.analysis.evm import bei_series
 
     std = builtin_standards()
-    bei = {k: next(m for m in std[k].metrics if m.rule == "bei") for k in ("P6", "DCMA")}
+    bei = {k: next(m for m in std[k].metrics if m.name == "BEI") for k in ("P6", "DCMA")}
     out = bei_series(store, bei, Baseline.planned)
     assert list(out.columns) == ["data_date", "bei_p6", "bei_dcma"]
     assert out["data_date"].tolist() == [s.data_date for s in store]
