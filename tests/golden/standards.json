@@ -4034,12 +4034,12 @@
     "value": 0.0
    },
    "P6/P6-13": {
-    "denominator": 0,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
-    "status": "n/a",
-    "value": null
+    "status": "fail",
+    "value": 0.0
    },
    "P6/P6-14": {
     "denominator": 28,
@@ -4470,9 +4470,8 @@
     "value": 8.333333
    },
    "P6/P6-12": {
-    "denominator": 24,
+    "denominator": 23,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
@@ -4497,17 +4496,17 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 23,
+    "numerator": 22,
     "status": "fail",
-    "value": 95.833333
+    "value": 95.652174
    },
    "P6/P6-13": {
-    "denominator": 1,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.041667
    },
    "P6/P6-14": {
     "denominator": 26,
@@ -4938,9 +4937,8 @@
     "value": 8.333333
    },
    "P6/P6-12": {
-    "denominator": 24,
+    "denominator": 23,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
@@ -4965,17 +4963,17 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 23,
+    "numerator": 22,
     "status": "fail",
-    "value": 95.833333
+    "value": 95.652174
    },
    "P6/P6-13": {
-    "denominator": 1,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.041667
    },
    "P6/P6-14": {
     "denominator": 26,
@@ -5407,15 +5405,13 @@
     "value": 8.333333
    },
    "P6/P6-12": {
-    "denominator": 24,
+    "denominator": 22,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
      "E1040",
@@ -5435,17 +5431,17 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 24,
+    "numerator": 22,
     "status": "fail",
     "value": 100.0
    },
    "P6/P6-13": {
-    "denominator": 2,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 2,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.083333
    },
    "P6/P6-14": {
     "denominator": 25,
@@ -5887,15 +5883,13 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
      "E1040",
@@ -5904,7 +5898,6 @@
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
      "P2020",
      "P2030",
      "P2040",
@@ -5915,19 +5908,19 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 24,
+    "numerator": 21,
     "status": "fail",
-    "value": 96.0
+    "value": 95.454545
    },
    "P6/P6-13": {
-    "denominator": 4,
+    "denominator": 24,
     "flagged": [
      "E1040"
     ],
     "note": null,
     "numerator": 3,
     "status": "fail",
-    "value": 0.75
+    "value": 0.125
    },
    "P6/P6-14": {
     "denominator": 25,
@@ -6373,24 +6366,20 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 21,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
-     "E1040",
      "E1050",
      "K5010",
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
      "P2020",
      "P2030",
      "P2040",
@@ -6401,12 +6390,12 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 24,
+    "numerator": 20,
     "status": "fail",
-    "value": 96.0
+    "value": 95.238095
    },
    "P6/P6-13": {
-    "denominator": 6,
+    "denominator": 24,
     "flagged": [
      "E1020",
      "P2020"
@@ -6414,7 +6403,7 @@
     "note": null,
     "numerator": 4,
     "status": "fail",
-    "value": 0.666667
+    "value": 0.166667
    },
    "P6/P6-14": {
     "denominator": 24,
@@ -6877,26 +6866,21 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 20,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3045",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
-     "E1040",
      "E1050",
      "K5010",
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
-     "P2020",
      "P2030",
      "P2040",
      "P2050",
@@ -6906,12 +6890,12 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 25,
+    "numerator": 20,
     "status": "fail",
     "value": 100.0
    },
    "P6/P6-13": {
-    "denominator": 7,
+    "denominator": 24,
     "flagged": [
      "E1020",
      "E1030"
@@ -6919,7 +6903,7 @@
     "note": null,
     "numerator": 5,
     "status": "fail",
-    "value": 0.714286
+    "value": 0.208333
    },
    "P6/P6-14": {
     "denominator": 23,
@@ -7394,26 +7378,20 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 19,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3045",
      "C3050",
      "C3060",
-     "E1010",
-     "E1020",
      "E1030",
-     "E1040",
      "E1050",
      "K5010",
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
-     "P2020",
      "P2030",
      "P2040",
      "P2050",
@@ -7423,12 +7401,12 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 25,
+    "numerator": 19,
     "status": "fail",
     "value": 100.0
    },
    "P6/P6-13": {
-    "denominator": 8,
+    "denominator": 24,
     "flagged": [
      "E1030",
      "E1050"
@@ -7436,7 +7414,7 @@
     "note": null,
     "numerator": 6,
     "status": "fail",
-    "value": 0.75
+    "value": 0.25
    },
    "P6/P6-14": {
     "denominator": 22,
@@ -7893,12 +7871,12 @@
     "value": 0.0
    },
    "P6/P6-13": {
-    "denominator": 0,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
-    "status": "n/a",
-    "value": null
+    "status": "fail",
+    "value": 0.0
    },
    "P6/P6-14": {
     "denominator": 28,
@@ -8330,9 +8308,8 @@
     "value": 8.333333
    },
    "P6/P6-12": {
-    "denominator": 24,
+    "denominator": 23,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
@@ -8357,17 +8334,17 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 23,
+    "numerator": 22,
     "status": "fail",
-    "value": 95.833333
+    "value": 95.652174
    },
    "P6/P6-13": {
-    "denominator": 1,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.041667
    },
    "P6/P6-14": {
     "denominator": 26,
@@ -8799,9 +8776,8 @@
     "value": 8.333333
    },
    "P6/P6-12": {
-    "denominator": 24,
+    "denominator": 23,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
@@ -8826,17 +8802,17 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 23,
+    "numerator": 22,
     "status": "fail",
-    "value": 95.833333
+    "value": 95.652174
    },
    "P6/P6-13": {
-    "denominator": 1,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.041667
    },
    "P6/P6-14": {
     "denominator": 26,
@@ -9269,15 +9245,13 @@
     "value": 8.333333
    },
    "P6/P6-12": {
-    "denominator": 24,
+    "denominator": 22,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
      "E1040",
@@ -9297,17 +9271,17 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 24,
+    "numerator": 22,
     "status": "fail",
     "value": 100.0
    },
    "P6/P6-13": {
-    "denominator": 2,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 2,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.083333
    },
    "P6/P6-14": {
     "denominator": 25,
@@ -9747,15 +9721,13 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 22,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
      "E1040",
@@ -9764,7 +9736,6 @@
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
      "P2020",
      "P2030",
      "P2040",
@@ -9775,19 +9746,19 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 24,
+    "numerator": 21,
     "status": "fail",
-    "value": 96.0
+    "value": 95.454545
    },
    "P6/P6-13": {
-    "denominator": 4,
+    "denominator": 25,
     "flagged": [
      "E1040"
     ],
     "note": null,
     "numerator": 3,
     "status": "fail",
-    "value": 0.75
+    "value": 0.12
    },
    "P6/P6-14": {
     "denominator": 25,
@@ -10231,24 +10202,20 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 21,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
-     "E1040",
      "E1050",
      "K5010",
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
      "P2020",
      "P2030",
      "P2040",
@@ -10259,12 +10226,12 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 24,
+    "numerator": 20,
     "status": "fail",
-    "value": 96.0
+    "value": 95.238095
    },
    "P6/P6-13": {
-    "denominator": 6,
+    "denominator": 25,
     "flagged": [
      "E1020",
      "P2020"
@@ -10272,7 +10239,7 @@
     "note": null,
     "numerator": 4,
     "status": "fail",
-    "value": 0.666667
+    "value": 0.16
    },
    "P6/P6-14": {
     "denominator": 24,
@@ -10733,26 +10700,21 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 20,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3045",
      "C3050",
      "C3060",
-     "E1010",
      "E1020",
      "E1030",
-     "E1040",
      "E1050",
      "K5010",
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
-     "P2020",
      "P2030",
      "P2040",
      "P2050",
@@ -10762,12 +10724,12 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 25,
+    "numerator": 20,
     "status": "fail",
     "value": 100.0
    },
    "P6/P6-13": {
-    "denominator": 7,
+    "denominator": 25,
     "flagged": [
      "E1020",
      "E1030"
@@ -10775,7 +10737,7 @@
     "note": null,
     "numerator": 5,
     "status": "fail",
-    "value": 0.714286
+    "value": 0.2
    },
    "P6/P6-14": {
     "denominator": 23,
@@ -11248,26 +11210,20 @@
     "value": 8.0
    },
    "P6/P6-12": {
-    "denominator": 25,
+    "denominator": 19,
     "flagged": [
-     "C3010",
      "C3020",
      "C3030",
      "C3040",
      "C3045",
      "C3050",
      "C3060",
-     "E1010",
-     "E1020",
      "E1030",
-     "E1040",
      "E1050",
      "K5010",
      "K5020",
      "K5030",
      "K5040",
-     "P2010",
-     "P2020",
      "P2030",
      "P2040",
      "P2050",
@@ -11277,12 +11233,12 @@
      "X4040"
     ],
     "note": null,
-    "numerator": 25,
+    "numerator": 19,
     "status": "fail",
     "value": 100.0
    },
    "P6/P6-13": {
-    "denominator": 8,
+    "denominator": 25,
     "flagged": [
      "E1030",
      "E1050"
@@ -11290,7 +11246,7 @@
     "note": null,
     "numerator": 6,
     "status": "fail",
-    "value": 0.75
+    "value": 0.24
    },
    "P6/P6-14": {
     "denominator": 22,

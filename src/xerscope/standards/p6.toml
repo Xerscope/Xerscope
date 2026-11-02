@@ -136,7 +136,7 @@ name = "Late activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "p6_12_late_activities"
 target = "< 5%"
-source = "101248: milestones, WBS summary and LOE not included (completed stay in); no baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
+source = "101248: milestones, WBS summary and LOE not included; a P6 Professional report (3,408 activities) checks the Large Durations population, so completed activities are out too. No baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
 
 [[metric]]
 id = "P6-13"
@@ -144,8 +144,8 @@ group = "Lateness"
 name = "BEI"
 description = "Baseline Execution Index"
 rule = "p6_13_bei"
-target = ">= 0.95"
-source = "101248: completed activities of the open project / baseline activities finishing before its data date; milestones, WBS summary and LOE not included on either side (EPPM's 46277 instead counts an activity with no baseline finish as due)"
+target = "> 0.95"
+source = "101248 reads 'baseline activities calculated to finish before the data date', but a P6 Professional report prints 808 completed / 3,143 baseline activities (every baseline activity, whatever its finish date; target shown as > 0.95). The report wins. Milestones, WBS summary and LOE not included on either side"
 
 [[metric]]
 id = "P6-14"

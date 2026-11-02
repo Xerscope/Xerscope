@@ -29,7 +29,6 @@ from ..populations import (
 )
 from ..rules import (
     RuleOutput,
-    bei_from_baseline,
     late_output,
     link_population,
     rule,
@@ -227,14 +226,14 @@ def p6_11_resource_cost(context) -> RuleOutput:
 def p6_12_late_activities(context) -> RuleOutput:
     """Forecast to finish after their baseline finish.
     Counts: late / checked
-    Excludes: milestones, level of effort.
+    Excludes: completed activities, milestones, level of effort.
     Variance is working time on the activity's calendar, as P6's Finish Variance.
     An activity with no baseline finish is late when its finish is later than its planned finish.
 
-    101248: milestones, WBS summary and LOE not included (completed stay in); no baseline counterpart =
-    late when the remaining early finish is later than the planned finish. 46278: finish variance in
-    working time"""
-    activities = without_level_of_effort(without_milestones(context.snapshot.activities))
+    101248: milestones, WBS summary and LOE not included; a P6 Professional report checks the Large
+    Durations population here, so completed activities are out too. No baseline counterpart = late when
+    the remaining early finish is later than the planned finish. 46278: finish variance in working time"""
+    activities = without_level_of_effort(without_milestones(open_activities(context)))
     activities = with_baseline(context, activities)
     activities["bl_finish"] = activities["bl_finish"].combine_first(activities["target_end_date"])
     return late_output(context, activities)
@@ -242,22 +241,29 @@ def p6_12_late_activities(context) -> RuleOutput:
 
 @rule("p6_13_bei", "ratio", needs_baseline=True)
 def p6_13_bei(context) -> RuleOutput:
-    """Due by the data date but not completed.
-    Counts: completed / due by the data date
+    """Completed activities against the baseline's activities.
+    Counts: completed / baseline activities
     Excludes: level of effort, milestones.
-    Due = baseline activities finishing on or before the data date, counted in the baseline:
-        an activity added since is never due, one deleted since still is.
-        Completed = all completed activities in the population, early ones included.
+    The list shows the activities due by the data date in the baseline and not completed.
 
-    101248: completed activities of the open project / baseline activities finishing before its data
-    date; milestones, WBS summary and LOE not included on either side (EPPM's 46277 instead counts an
-    activity with no baseline finish as due)"""
+    101248 says baseline activities finishing before the data date, but a P6 Professional report prints
+    808 completed / 3,143 baseline activities on a project whose Resources/Cost check also totals 3,143:
+    P6 counts every baseline activity, whatever its finish date. The report wins. Milestones, WBS summary
+    and LOE not included on either side"""
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
     activities = with_baseline(context, without_level_of_effort(without_milestones(context.snapshot.activities)))
     baseline_activities = without_level_of_effort(without_milestones(context.baseline.snapshot.activities))
-    return bei_from_baseline(context, activities, baseline_activities)
+    completed = int(activities["is_complete"].sum())
+    due = activities[as_flag(activities["bl_finish"] <= data_date) & ~activities["is_complete"]]
+    total = len(baseline_activities)
+    gone = len(set(baseline_activities["task_code"]) - set(context.snapshot.activities["task_code"]))
+    note = f"{completed} completed / {total} baseline activities"
+    if gone:
+        note += f"; {gone} of them no longer in the schedule"
+    index = completed / total if total else None
+    return RuleOutput(flagged_activities(due, bl_finish=due["bl_finish"]), completed, total, index, note)
 
 
 @rule("p6_14_negative_float", "%")

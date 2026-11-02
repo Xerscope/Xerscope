@@ -45,7 +45,7 @@ def test_verdict_follows_status(results):
 def test_parameters_show_standard_and_defaults(results, store):
     late = next(r for r in results if r.metric.id == "P6-12")
     assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
-    assert any("Excludes: milestones" in line for line in explain(late).population)
+    assert any("milestones" in line for line in explain(late).population)
     assert all(not explain(r).parameters for r in results)  # no built-in check takes parameters
 
     custom = loads_standard(template_text())  # the parameterised rules live in the custom template

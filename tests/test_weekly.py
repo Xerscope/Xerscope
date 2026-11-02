@@ -470,9 +470,15 @@ def test_bei_series_one_row_per_update_p6_and_dcma(store):
     assert list(out.columns) == ["data_date", "bei_p6", "bei_dcma"]
     assert out["data_date"].tolist() == [s.data_date for s in store]
     assert out["bei_p6"].dtype == out["bei_dcma"].dtype == "float64"
-    assert pd.isna(out["bei_p6"].iloc[0])
-    assert out["bei_p6"].iloc[1:].tolist() == pytest.approx([1, 1, 1, 0.75, 2 / 3, 5 / 7, 0.75])
-    assert out["bei_dcma"].iloc[1:].tolist() == pytest.approx(out["bei_p6"].iloc[1:].tolist())
+    assert pd.isna(out["bei_dcma"].iloc[0])
+    assert out["bei_dcma"].iloc[1:].tolist() == pytest.approx([1, 1, 1, 0.75, 2 / 3, 5 / 7, 0.75])
+    # P6 Professional: completed / every baseline activity, milestones and LOE out (the planned
+    # baseline is the snapshot itself)
+    expected_p6 = []
+    for snapshot in store:
+        counted = snapshot.activities[~snapshot.activities["is_milestone"] & ~snapshot.activities["is_loe"]]
+        expected_p6.append(counted["is_complete"].sum() / len(counted))
+    assert out["bei_p6"].tolist() == pytest.approx(expected_p6)
 
 
 def test_health_wide_has_one_row_per_check_and_one_column_per_update(store):

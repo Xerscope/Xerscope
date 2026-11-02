@@ -406,11 +406,12 @@ NOW = snap(
 def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     bl = Baseline.from_snapshot(BL)
     p6 = run(P6, "P6-13", NOW, bl)
-    # Pro 24 help (101248): baseline activities finishing before the data date; NEW is not one
-    assert (p6.numerator, p6.denominator) == (2, 3)  # A, B done / A, B, C
+    # P6 Professional report: every baseline activity counts (101248 says those finishing before the
+    # data date, but the report prints 808 / 3,143 on a 3,408-activity project); NEW is not one
+    assert (p6.numerator, p6.denominator) == (2, 4)  # A, B done / A, B, C, D
     gone = snap([done("A", act_end_date="2026-02-26 17:00"), todo("D", early_end_date="2026-04-29 17:00")])
     r = run(P6, "P6-13", gone, bl)
-    assert (r.numerator, r.denominator) == (1, 3)  # B and C deleted since the baseline: still due
+    assert (r.numerator, r.denominator) == (1, 4)  # B and C deleted since the baseline: still counted
     assert "2 of them no longer in the schedule" in r.note
     # DCMA-EA PAM 200.1 (Oct 2012) 3.1.2.4: "Tasks missing baseline finish dates are included in the
     # denominator." (step 1: "Filter out Level of Effort (LOE) tasks, summary tasks, and zero duration
@@ -424,7 +425,8 @@ def test_missed_tasks_and_late_activities():
     bl = Baseline.from_snapshot(BL)
     assert codes(run(DCMA, "DCMA-11", NOW, bl)) == ["B", "C"]
     assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # B: Sat 17:00 vs Fri 17:00, no working time
-    # Pro 24 help (101248): completed activities stay in; no baseline -> against the planned finish
+    # P6 Professional report: completed activities are out (Late Activities checks the Large Durations
+    # population); no baseline -> against the planned finish
     now = snap(
         [
             done("A", act_end_date="2026-03-02 17:00"),  # a working day after its baseline finish
@@ -433,7 +435,7 @@ def test_missed_tasks_and_late_activities():
         ]
     )
     r = run(P6, "P6-12", now, bl)
-    assert codes(r) == ["A", "NEW"] and r.denominator == 3
+    assert codes(r) == ["NEW"] and r.denominator == 2
 
 
 def test_dcma_11_follows_pam_200_1():

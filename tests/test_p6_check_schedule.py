@@ -143,9 +143,10 @@ def test_p6_11_milestone_loe_and_wbs_are_excluded_completed_stays_in():
     assert codes(r) == ["A", "DONE"]
 
 
-def test_p6_12_milestone_loe_and_wbs_are_excluded_completed_stays_in():
+def test_p6_12_milestone_loe_wbs_and_completed_are_excluded():
     """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'
-    (Late Activities, 101248)"""
+    (Late Activities, 101248). A P6 Professional report on a 3,408-activity project checks 2,335 late
+    activities, the same population as Large Durations: completed activities are out too."""
     base_end = "2026-02-13 17:00"  # baseline finish; a forecast finish later than it is late
     bl_tasks = [
         todo("A", early_end_date=base_end),
@@ -162,8 +163,8 @@ def test_p6_12_milestone_loe_and_wbs_are_excluded_completed_stays_in():
         done("DONE", act_end_date="2026-02-20 17:00"),  # a week after its baseline finish
     ]
     r = run(P6, "P6-12", snap(late_tasks), Baseline.from_snapshot(snap(bl_tasks)))
-    assert counts(r) == (2, 2)
-    assert codes(r) == ["A", "DONE"]
+    assert counts(r) == (1, 1)
+    assert codes(r) == ["A"]
 
 
 # --- 4. started exemption ---------------------------------------------------------------------
@@ -303,20 +304,21 @@ def test_p6_11_a_role_only_or_an_expense_only_activity_passes_and_nothing_assign
 # --- 9. BEI -------------------------------------------------------------------------------------
 
 
-def test_p6_13_bei_is_completed_over_baseline_activities_finishing_before_the_data_date():
-    """'...the number of completed activities in the project against the number of baseline activities
-    calculated to finish before the open project's data date.' (BEI, 101248)"""
+def test_p6_13_bei_is_completed_over_all_baseline_activities():
+    """101248 says 'baseline activities calculated to finish before the open project's data date', but a
+    P6 Professional report (3,408 activities, 916 complete) prints BEI 0.26 = 808 project activities /
+    3,143 baseline activities: every baseline activity counts, whatever its finish date. The report wins."""
     # A finishes before the data date; B keeps xerkit's default early end (2026-03-13), after it
     baseline = Baseline.from_snapshot(snap([todo("A", early_end_date=BL_BEFORE_DD), todo("B")]))
     current = snap([done("A"), done("B")])
     r = run(P6, "P6-13", current, baseline)
-    assert counts(r) == (2, 1)
-    assert r.value == 2.0
+    assert counts(r) == (2, 2)
+    assert r.value == 1.0
     assert r.status == "pass"
-    assert r.note == "2 completed / 1 due in the baseline"
+    assert r.note == "2 completed / 2 baseline activities"
 
 
-def test_p6_13_a_baseline_milestone_finishing_before_the_data_date_is_not_due():
+def test_p6_13_a_baseline_milestone_is_not_counted():
     """'In the project baseline, milestones, WBS Summary activities, Level of Effort activities, and activities
     with a finish date later than the open project's data date are not included in this analysis.'
     (BEI, 101248)"""
