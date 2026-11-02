@@ -117,7 +117,7 @@ environment variables, never written in the files.
 
 ```bash
 cd deploy && cp .env.example .env          # TS_AUTHKEY (tag:xerscope), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH, XERSCOPE_PATH, XERSCOPE_EXPORTS
-docker run --rm caddy:2.11.6 caddy hash-password --plaintext 'your password'
+docker run --rm caddy:2.11.7 caddy hash-password --plaintext 'your password'
 docker compose up -d
 docker compose exec tailscale tailscale funnel status
 ```
