@@ -10,7 +10,7 @@
 #       feed the ${...} interpolation below; Compose reads .env by itself).
 #
 # Variables: TS_AUTHKEY (tagged key, first start only), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
-#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
+#   docker run --rm caddy:2.11.7 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
 #   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
 #   memory cap, default 2g). Nothing in this folder is edited.
@@ -56,7 +56,7 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.11.6
+    image: caddy:2.11.7
     network_mode: service:tailscale                 # listens on 127.0.0.1:8080 of that namespace only
     environment:
       XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}
