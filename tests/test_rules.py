@@ -407,7 +407,7 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     bl = Baseline.from_snapshot(BL)
     p6 = run(P6, "P6-13", NOW, bl)
     # P6 Professional report: every baseline activity counts (101248 says those finishing before the
-    # data date, but the report prints completed / baseline on a real project); NEW is not one
+    # data date, but report R1, docs/standards.md, divides by all of them); NEW is not one
     assert (p6.numerator, p6.denominator) == (2, 4)  # A, B done / A, B, C, D
     gone = snap([done("A", act_end_date="2026-02-26 17:00"), todo("D", early_end_date="2026-04-29 17:00")])
     r = run(P6, "P6-13", gone, bl)

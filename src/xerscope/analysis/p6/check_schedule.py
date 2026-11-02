@@ -249,9 +249,9 @@ def p6_13_bei(context) -> RuleOutput:
     Excludes: level of effort, milestones.
     The list shows the activities due by the data date in the baseline and not completed.
 
-    101248 says baseline activities finishing before the data date, but a P6 Professional report prints
-    completed / baseline activities on a project whose Resources/Cost check also totals N:
-    P6 counts every baseline activity, whatever its finish date. The report wins. Milestones, WBS summary
+    101248 says baseline activities finishing before the data date, but a P6 Professional report (R1,
+    docs/standards.md) divides by a total equal to its Resources/Cost total: P6 counts every baseline
+    activity, whatever its finish date. The report wins. Milestones, WBS summary
     and LOE not included on either side"""
     data_date = context.snapshot.data_date
     if data_date is None:
@@ -276,7 +276,7 @@ def p6_15_out_of_sequence(context) -> RuleOutput:
     One row per activity and predecessor, as P6 lists them; the count is of activities.
 
     P6 Professional report: 'Activities which are completed or in-progress before their predecessors'.
-    On a real report it lists N pairs, N activities: each started activity has an FS
+    Report R1 lists pairs and counts activities once: each started activity has an FS
     predecessor not completed at the data date; started activities whose predecessor finished late but
     before the data date are not listed. SS: predecessor not started. UNRESOLVED: FF and SF"""
     activities = context.snapshot.activities

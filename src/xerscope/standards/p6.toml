@@ -137,7 +137,7 @@ name = "Late activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "p6_12_late_activities"
 target = "< 5%"
-source = "101248: milestones, WBS summary and LOE not included; a P6 Professional report (R1) checks the Large Durations population, so completed activities are out too. No baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
+source = "101248: milestones, WBS summary and LOE not included; a P6 Professional Check Schedule report (R1, docs/standards.md) checks the Large Durations population, so completed activities are out too. No baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
 
 [[metric]]
 id = "P6-13"
@@ -146,7 +146,7 @@ name = "BEI"
 description = "Baseline Execution Index"
 rule = "p6_13_bei"
 target = "> 0.95"
-source = "101248 reads 'baseline activities calculated to finish before the data date', but a P6 Professional report prints completed / baseline activities (every baseline activity, whatever its finish date; target shown as > 0.95). The report wins. Milestones, WBS summary and LOE not included on either side"
+source = "101248 reads 'baseline activities calculated to finish before the data date', but a P6 Professional Check Schedule report (R1) divides by every baseline activity, whatever its finish date (target shown as > 0.95). The report wins. Milestones, WBS summary and LOE not included on either side"
 
 [[metric]]
 id = "P6-14"
@@ -164,7 +164,7 @@ name = "Out of sequence"
 description = "Activities which are completed or in-progress before their predecessors"
 rule = "p6_15_out_of_sequence"
 target = "< 2%"
-source = "P6 Professional Check Schedule report: N pairs listed, N activities counted against the total of activities; each started activity has an FS predecessor not completed at the data date (SS: not started); a predecessor that finished late but before the data date is not listed"
+source = "P6 Professional Check Schedule report (R1): pairs listed, activities counted once against the total of activities; each started activity has an FS predecessor not completed at the data date (SS: not started); a predecessor that finished late but before the data date is not listed"
 
 [[metric]]
 id = "P6-16"
@@ -173,7 +173,7 @@ name = "Dangling start"
 description = "Activities with start dates that are not driven by predecessors"
 rule = "p6_16_dangling_start"
 target = "<= 0%"
-source = "P6 Professional Check Schedule report (Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"
+source = "P6 Professional Check Schedule report (R1, Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"
 
 [[metric]]
 id = "P6-17"
@@ -182,4 +182,4 @@ name = "Dangling finish"
 description = "Activities with finish dates that do not drive successors"
 rule = "p6_17_dangling_finish"
 target = "<= 0%"
-source = "P6 Professional Check Schedule report (Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"
+source = "P6 Professional Check Schedule report (R1, Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"

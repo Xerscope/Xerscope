@@ -14,13 +14,13 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 
 | Check | P6 Check Schedule | DCMA 14-Point | DECM v8.0 |
 |---|---|---|---|
-| Units | hours (352 h = 44 d × 8 h) | working days of each activity's calendar | working days |
+| Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
 | Relationships checked | all except links between two finished activities | links into incomplete work | links into incomplete work |
 | Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones are counted (101248 exempts none; a P6 Professional r22.12 report flags one, Ten Six), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
-| Long durations | remaining > 352 h, milestones out | original > 44 wd | n/a |
+| Long durations | remaining > `x` hours, milestones out | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships, actual else forecast dates, X = 0 |
 | BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
 
@@ -35,9 +35,9 @@ Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 1013
 Start / Finish" are the Planned Start / Finish of the project baseline, and when the project is its
 own baseline they are the file's own planned dates. P6 moves the planned dates of a not-started
 activity with the schedule and freezes them when the activity starts, so only activities in progress
-(or finished) can drift from them. Checked against a P6 Professional report (R1): with this choice Late Activities gives the same N activities with the same finish
-variance (to the hour) and BEI completed / baseline; with the project's own current dates or another baseline
-file it does not.
+(or finished) can drift from them. Checked against report R1 (see Sources): with this choice Late
+Activities lists the same activities with the same finish variance (to the hour) and BEI gives the
+same ratio; with the project's own current dates or another baseline file it does not.
 Populations from the P6 Professional 24 help of the Check Schedule dialog
 ([101248](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)); where it is
 silent, from the P6 EPPM help of each report section (pages 46277–46291), which differs in
@@ -46,10 +46,10 @@ activities from late activities, counts an activity with no baseline finish as d
 and reads the remaining finish of in-progress work for invalid dates. Where 101248 is
 silent and a P6 Professional r22.12 report analysed by Ten Six shows the behaviour
 (finish milestones counted in logic, milestones out of large durations), the report is
-followed. Where the P6 Professional report above contradicts 101248, the report is followed:
+followed. Where report R1 contradicts 101248, the report is followed:
 P6-12 leaves completed activities out, P6-13 divides by every baseline activity.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
-are written from that report alone, and their open points are marked `UNRESOLVED` in the
+are written from R1 alone, and their open points are marked `UNRESOLVED` in the
 rule docstrings (`analysis/p6/check_schedule.py`).
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
@@ -60,25 +60,27 @@ checked subset.
 | P6-01 | Inflexibility and Inefficiency | Logic | WBS summary, actual finish removed; start exemptions above; finish milestones counted (101248; Ten Six report) | < 5 % |
 | P6-02 | | Hard constraints (Mandatory Start/Finish, Start On, Finish On) | WBS, actual finish, LOE removed; start constraints ignored once started | < 1 % |
 | P6-03 | | Soft constraints (On or Before/After, As Late As Possible) | idem | < 5 % |
-| P6-04 | | Large durations (remaining > 352 h) | WBS, actual finish, LOE, milestones removed | < 5 % |
-| P6-05 | | Long lags (> 352 h) | links, both-finished removed | < 5 % |
-| P6-06 | | Large float (> 352 h) | WBS, actual finish, LOE removed | < 1 % |
+| P6-04 | | Large durations (remaining > `x` hours) | WBS, actual finish, LOE, milestones removed | < 5 % |
+| P6-05 | | Long lags (> `x` hours) | links, both-finished removed | < 5 % |
+| P6-06 | | Large float (> `x` hours) | WBS, actual finish, LOE removed | < 1 % |
 | P6-07 | | Relationship types (FS share) | links, both-finished removed | > 90 % |
 | P6-08 | | Lags | idem | < 5 % |
 | P6-09 | Inaccuracy | Negative lags | idem | < 1 % |
 | P6-10 | | Invalid progress dates (start, or remaining early start once started, before / actual after the data date) | WBS, LOE, finished-before-data-date removed | < 1 % |
 | P6-11 | | Resource / cost | WBS, milestones, LOE removed (completed stay in); a role assignment counts | < 1 % |
-| P6-12 | Lateness | Late activities (finish variance < 0, working time; no baseline: finish later than planned finish) | WBS, milestones, LOE, completed removed (P6 Professional report) | < 5 % |
-| P6-13 | | BEI: completed / every baseline activity (P6 Professional report); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | ≥ 0.95 |
+| P6-12 | Lateness | Late activities (finish variance < 0, working time; no baseline: finish later than planned finish) | WBS, milestones, LOE, completed removed (R1) | < 5 % |
+| P6-13 | | BEI: completed / every baseline activity (R1); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | ≥ 0.95 |
 | P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
-| P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | < 2 % (report) |
-| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | ≤ 0 % (report) |
-| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted | ≤ 0 % (report) |
+| P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | `p6.toml` |
+| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | `p6.toml` |
+| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted | `p6.toml` |
 
 **Targets** are those of the Check Schedule dialog as the P6 EPPM 25 help prints them
 ([91574](https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm): "should be less than 5 %",
 "less than 1 %", "greater than 90 %", BEI "0.95 or greater"); the P6 Professional help does not
-print them. Edit `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
+print them. P6-15 to P6-17 have no documented default, and the duration limit `x` of
+P6-04 to P6-06 is a setting of the dialog: their values are in `p6.toml` only. Edit
+`p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
 
 ### Comparing with a P6 Check Schedule report
 
@@ -216,3 +218,7 @@ metric is in [formulas.md](formulas.md).
 - [GAO-16-89G Schedule Assessment Guide](https://www.gao.gov/products/gao-16-89g)
 - [NDIA PASEG v6.0](https://www.humphreys-assoc.com/?p=13023)
 - [xerlock (reference results)](https://github.com/joaompfp/xerlock)
+- **R1**: a P6 Professional Check Schedule report on a real schedule, with the matching XER.
+  Confidential: kept by the maintainer outside the repository; the repository cites it by
+  this label only, never its figures, dates or names. The tests rebuild each behaviour it
+  settled by hand (`tests/test_p6_check_schedule.py`).

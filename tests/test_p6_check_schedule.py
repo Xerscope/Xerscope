@@ -145,8 +145,8 @@ def test_p6_11_milestone_loe_and_wbs_are_excluded_completed_stays_in():
 
 def test_p6_12_milestone_loe_wbs_and_completed_are_excluded():
     """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'
-    (Late Activities, 101248). A P6 Professional report on a real project checks N late
-    activities, the same population as Large Durations: completed activities are out too."""
+    (Late Activities, 101248). Report R1 (docs/standards.md) checks as many late activities as large
+    durations, the same population: completed activities are out too."""
     base_end = "2026-02-13 17:00"  # baseline finish; a forecast finish later than it is late
     bl_tasks = [
         todo("A", early_end_date=base_end),
@@ -306,8 +306,8 @@ def test_p6_11_a_role_only_or_an_expense_only_activity_passes_and_nothing_assign
 
 def test_p6_13_bei_is_completed_over_all_baseline_activities():
     """101248 says 'baseline activities calculated to finish before the open project's data date', but a
-    P6 Professional report (R1) prints BEI = completed /
-    baseline activities: every baseline activity counts, whatever its finish date. The report wins."""
+    P6 Professional report (R1) divides the completed activities by every baseline activity, whatever its
+    finish date. The report wins."""
     # A finishes before the data date; B keeps xerkit's default early end (2026-03-13), after it
     baseline = Baseline.from_snapshot(snap([todo("A", early_end_date=BL_BEFORE_DD), todo("B")]))
     current = snap([done("A"), done("B")])
@@ -337,12 +337,12 @@ def test_p6_13_a_baseline_milestone_is_not_counted():
     assert codes(r) == []
 
 
-# --- 10. Out of sequence and dangling (P6 Professional report, the project's activities) ------------------
+# --- 10. Out of sequence and dangling (P6 Professional report R1) -----------------------------------
 
 
 def test_p6_15_out_of_sequence_is_progress_while_a_predecessor_is_still_open():
     """'Activities which are completed or in-progress before their predecessors.' A P6 Professional report
-    lists N pairs and counts N activities: in every pair the FS predecessor finishes
+    (R1) lists pairs and counts each activity once: in every pair the FS predecessor finishes
     after the data date; pairs whose predecessor finished late but before the data date are not listed."""
     s = snap(
         [done("A"), active("B"), todo("A2"), active("A3"), active("C"), active("D")],
@@ -375,8 +375,8 @@ def test_p6_17_dangling_finish_needs_a_successor_that_is_not_driven():
 
 
 def test_p6_16_and_17_leave_milestones_out():
-    """A milestone has a single date. On the real P6 Professional report, start and finish milestones
-    with only FF or SS logic (Start on or after constraints) are not dangling: 0 for both checks."""
+    """A milestone has a single date. On report R1, start and finish milestones with only FF or SS logic
+    (Start on or after constraints) are not dangling: none found by either check."""
     s = snap(
         [todo("P"), todo("FM", **FM), todo("SM", **SM), todo("S")],
         [("P", "FM", "FF", 0), ("SM", "S", "SS", 0)],
