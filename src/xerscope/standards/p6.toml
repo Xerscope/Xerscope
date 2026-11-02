@@ -137,7 +137,7 @@ name = "Late activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "p6_12_late_activities"
 target = "< 5%"
-source = "101248: milestones, WBS summary and LOE not included. A P6 Professional report (3,408 activities, project baseline V5) checks 2,335 activities (completed out) and lists 51 late ones, all in progress: not-started activities past their BL Project Finish are not listed. 46278: finish variance in working time"
+source = "101248: milestones, WBS summary and LOE not included; a P6 Professional report (3,408 activities) checks the Large Durations population, so completed activities are out too. No baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
 
 [[metric]]
 id = "P6-13"
