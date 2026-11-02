@@ -424,14 +424,14 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
 def test_missed_tasks_and_late_activities():
     bl = Baseline.from_snapshot(BL)
     assert codes(run(DCMA, "DCMA-11", NOW, bl)) == ["B", "C"]
-    assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # B: Sat 17:00 vs Fri 17:00, no working time
+    assert codes(run(P6, "P6-12", NOW, bl)) == []  # C is late but not started: P6 lists in-progress ones only
     # P6 Professional report: completed activities are out (Late Activities checks the Large Durations
     # population); no baseline -> against the planned finish
     now = snap(
         [
             done("A", act_end_date="2026-03-02 17:00"),  # a working day after its baseline finish
-            todo("NEW", early_end_date="2026-03-10 17:00", target_end_date="2026-03-09 17:00"),
-            todo("NEW2", early_end_date="2026-03-10 17:00", target_end_date="2026-03-10 17:00"),
+            active("NEW", early_end_date="2026-03-10 17:00", target_end_date="2026-03-09 17:00"),
+            active("NEW2", early_end_date="2026-03-10 17:00", target_end_date="2026-03-10 17:00"),
         ]
     )
     r = run(P6, "P6-12", now, bl)
@@ -600,9 +600,9 @@ def test_out_of_sequence_progress_is_listed():
 def test_late_activities_use_working_time():
     # Finished Fri 17:00 against a baseline of Mon 08:00: the same working minute, not late.
     bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 08:00")]))
-    now = snap([todo("A", early_end_date="2026-03-06 17:00")])
+    now = snap([active("A", early_end_date="2026-03-06 17:00")])
     assert codes(run(P6, "P6-12", now, bl)) == []
-    later = snap([todo("A", early_end_date="2026-03-09 09:00")])
+    later = snap([active("A", early_end_date="2026-03-09 09:00")])
     r = run(P6, "P6-12", later, bl)
     assert codes(r) == ["A"] and r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(1 / 8, abs=0.01)
 

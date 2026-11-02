@@ -227,19 +227,23 @@ def p6_11_resource_cost(context) -> RuleOutput:
 
 @rule("p6_12_late_activities", "%", needs_baseline=True)
 def p6_12_late_activities(context) -> RuleOutput:
-    """Forecast to finish after their baseline finish.
+    """In progress and forecast to finish after their baseline finish.
     Counts: late / checked
     Excludes: completed activities, milestones, level of effort.
+    Only activities in progress can be late; the others count in the checked total.
     Variance is working time on the activity's calendar, as P6's Finish Variance.
     An activity with no baseline finish is late when its finish is later than its planned finish.
 
-    101248: milestones, WBS summary and LOE not included; a P6 Professional report checks the Large
-    Durations population here, so completed activities are out too. No baseline counterpart = late when
-    the remaining early finish is later than the planned finish. 46278: finish variance in working time"""
-    activities = without_level_of_effort(without_milestones(open_activities(context)))
-    activities = with_baseline(context, activities)
-    activities["bl_finish"] = activities["bl_finish"].combine_first(activities["target_end_date"])
-    return late_output(context, activities)
+    101248: milestones, WBS summary and LOE not included. A P6 Professional report (3,408 activities,
+    project baseline V5) lists 51 late activities, all in progress, out of 2,335 checked (the Large
+    Durations population); a not-started activity 12 days past its BL Project Finish is not listed.
+    46278: finish variance in working time. UNRESOLVED: 8 listed activities and 5 not listed differ in
+    their finish variance from the one read here"""
+    checked = without_level_of_effort(without_milestones(open_activities(context)))
+    checked = with_baseline(context, checked)
+    checked["bl_finish"] = checked["bl_finish"].combine_first(checked["target_end_date"])
+    in_progress = late_output(context, checked[checked["is_started"]])
+    return RuleOutput(in_progress.flagged, in_progress.numerator, len(checked))
 
 
 @rule("p6_13_bei", "ratio", needs_baseline=True)

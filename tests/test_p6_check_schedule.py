@@ -156,7 +156,7 @@ def test_p6_12_milestone_loe_wbs_and_completed_are_excluded():
         todo("DONE", early_end_date=base_end),
     ]
     late_tasks = [
-        todo("A"),  # default early finish 2026-03-13: late
+        active("A", early_end_date="2026-03-13 17:00"),  # in progress, finishing after its baseline: late
         todo("MS", task_type="TT_Mile", target_drtn_hr_cnt="0"),
         todo("LOE", task_type="TT_LOE"),
         todo("WBS", task_type="TT_WBS"),
@@ -383,3 +383,17 @@ def test_p6_16_and_17_leave_milestones_out():
     )
     assert counts(run(P6, "P6-16", s)) == (0, 4)
     assert counts(run(P6, "P6-17", s)) == (0, 4)
+
+
+def test_p6_12_counts_only_activities_in_progress_over_every_open_one():
+    """A P6 Professional report (3,408 activities, project baseline V5) lists 51 late activities, all of them
+    in progress, out of 2,335 checked; not-started activities whose finish moved past the baseline finish
+    (BL Project Finish 12-Nov-26, finish 30-Nov-26) are not listed."""
+    base_end = "2026-02-13 17:00"
+    baseline = Baseline.from_snapshot(
+        snap([todo("RUN", early_end_date=base_end), todo("WAIT", early_end_date=base_end)])
+    )
+    current = snap([active("RUN", early_end_date="2026-03-13 17:00"), todo("WAIT", early_end_date="2026-03-13 17:00")])
+    r = run(P6, "P6-12", current, baseline)
+    assert counts(r) == (1, 2)
+    assert codes(r) == ["RUN"]
