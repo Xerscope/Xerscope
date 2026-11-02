@@ -42,10 +42,6 @@ class AnalysisContext:
     store: SnapshotStore | None = None
     baseline: Baseline | None = None
 
-    @property
-    def previous(self) -> Snapshot | None:
-        return self.store.previous(self.snapshot) if self.store else None
-
 
 def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
     if metric.needs_baseline and context.baseline is None:

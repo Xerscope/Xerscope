@@ -371,9 +371,9 @@ Stated by the code or docs/backlog.md; no P6 Check Schedule or DECM output has b
   above are what the code does, not what the sheets say, for those.
 - CPLI takes the schedule's total float, i.e. P6's distance to the Must Finish By date;
   a contract finish kept elsewhere (a baseline, a contract milestone) is not read.
-- `cpli` reads the float of the latest-finishing open non-LOE activity, which may differ
+- DCMA-13 CPLI (`dcma_13_cpli`) reads the float of the latest-finishing open non-LOE activity, which may differ
   from `finish_date` (max over all activities); `critical_path_test` excludes milestones
-  from the delayed candidates, `cpli` does not.
+  from the delayed candidates, CPLI does not.
 - EV techniques "WBS milestones" and "resource curves" are not modelled: they fall back
   to activity % complete and are listed in `EvPoint.not_modelled` (evm.py).
 - `pv_curve` and `forecast_curve` name a day and hold the cumulative at its end.
