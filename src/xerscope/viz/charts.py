@@ -40,6 +40,9 @@ INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC
 PPC_TARGET = 80  # default PPC target, in percent
 LABEL_FULL_MAX = 20  # PPC bars up to this many weeks carry "63% (5/8)"
 LABEL_SHORT_MAX = 40  # up to this many weeks they carry "63%", beyond none
+# Weekly updates are read to the day: no time in hovers, and zooming below one day keeps
+# day labels instead of Plotly's hour and minute ticks. For date axes only.
+DATE_AXIS = dict(hoverformat="%Y-%m-%d", tickformatstops=[dict(dtickrange=[None, 86_400_000], value="%d %b")])
 
 
 def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
@@ -65,6 +68,7 @@ def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", le
         spikedash="dot",
         tickfont=TICK,
         title_font=FONT,
+        **DATE_AXIS,
     )
     fig.update_yaxes(
         title=y_title,
@@ -94,6 +98,37 @@ def _data_date(fig: go.Figure, when, dark: bool) -> None:
 
 def _end_label(fig: go.Figure, x, y, text: str, color: str) -> None:
     fig.add_annotation(x=x, y=y, text=text, showarrow=False, xanchor="left", xshift=6, font=dict(size=12, color=color))
+
+
+def _as_number(y) -> float:
+    return float(pd.Timestamp(y).value) if isinstance(y, pd.Timestamp) else float(y)
+
+
+def _end_labels(fig: go.Figure, ends: list[tuple], span: float, color: str) -> None:
+    """End labels for several lines, ``ends`` = (x, y, text) with y numeric or Timestamp.
+
+    Plotly does not move colliding annotations: labels of lines ending on the same point
+    are merged into one, labels closer than 4 % of ``span`` (the y-axis span, same unit as
+    y) are stacked 16 px apart upwards.
+    """
+    merged: dict[tuple, list[str]] = {}
+    for x, y, text in ends:
+        merged.setdefault((x, y), []).append(text)
+    last, shift = None, 0
+    for (x, y), texts in sorted(merged.items(), key=lambda item: _as_number(item[0][1])):
+        value = _as_number(y)
+        shift = shift + 16 if last is not None and value - last < 0.04 * span else 0
+        fig.add_annotation(
+            x=x,
+            y=y,
+            text=" · ".join(texts),
+            showarrow=False,
+            xanchor="left",
+            xshift=6,
+            yshift=shift,
+            font=dict(size=12, color=color),
+        )
+        last = value
 
 
 # --- earned value -------------------------------------------------------------------------------
@@ -193,25 +228,12 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
             )
         )
         if len(s):
-            ends.append((float(s[col].iloc[-1]), s["data_date"].iloc[-1], name))
-    # end labels: push apart labels whose values sit closer than ~4 % of the axis span
+            y = float(s[col].iloc[-1])
+            ends.append((s["data_date"].iloc[-1], y, f"{name} {y:.2f}"))
     span = max((float(series[c].max()) for c in columns if series[c].notna().any()), default=1.0) - min(
         (float(series[c].min()) for c in columns if series[c].notna().any()), default=0.0
     )
-    last_y, shift = None, 0
-    for y, x, name in sorted(ends):
-        shift = shift + 16 if last_y is not None and abs(y - last_y) < 0.04 * max(span, 0.1) else 0
-        fig.add_annotation(
-            x=x,
-            y=y,
-            text=f"{name} {y:.2f}",
-            showarrow=False,
-            xanchor="left",
-            xshift=6,
-            yshift=shift,
-            font=dict(size=12, color=ink["secondary"]),
-        )
-        last_y = y
+    _end_labels(fig, ends, max(span, 0.1), ink["secondary"])
     fig.add_hline(y=1.0, line=dict(color=ink["muted"], width=1))
     fig.add_hline(
         y=INDEX_ALERT,
@@ -226,7 +248,13 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
 
 
 def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) -> go.Figure:
-    """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today."""
+    """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
+
+    Colours follow ``colour_order`` among the plotted lines only, so up to len(SERIES)
+    lines never share a colour; a line keeps its colour while the lines before it in
+    ``colour_order`` stay picked. Lines with the same dates hide each other: the unified
+    hover lists every line at a reporting date and their end labels merge.
+    """
     c = SERIES[_mode(dark)]
     ink = INK[_mode(dark)]
     fig = go.Figure()
@@ -242,8 +270,10 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
             hoverinfo="skip",
         )
     )
+    ranked = sorted((code for code in trend["task_code"].unique() if code in colour_order), key=colour_order.index)
+    ends = []
     for code, g in trend.groupby("task_code", sort=False):
-        color = c[colour_order.index(code) % len(c)] if code in colour_order else ink["muted"]
+        color = c[ranked.index(code) % len(c)] if code in ranked else ink["muted"]
         done = g["is_complete"].to_numpy()
         fig.add_trace(
             go.Scatter(
@@ -256,14 +286,14 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
                 hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
             )
         )
-        _end_label(fig, g["data_date"].iloc[-1], g["forecast"].iloc[-1], code, ink["secondary"])
-    fig = _layout(fig, dark, 540, "Forecast date")
-    fig.update_layout(hovermode="closest")
+        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], code))
     pad = pd.Timedelta(days=10)
+    _end_labels(fig, ends, (trend["forecast"].max() - trend["forecast"].min() + 4 * pad).value, ink["secondary"])
+    fig = _layout(fig, dark, 540, "Forecast date")
     fig.update_xaxes(
         title="Reporting date (data date)", range=[trend["data_date"].min() - pad, trend["data_date"].max() + 3 * pad]
     )
-    fig.update_yaxes(range=[trend["forecast"].min() - 2 * pad, trend["forecast"].max() + 2 * pad])
+    fig.update_yaxes(range=[trend["forecast"].min() - 2 * pad, trend["forecast"].max() + 2 * pad], **DATE_AXIS)
     return fig
 
 
@@ -287,7 +317,13 @@ def build_activity_dates(history: pd.DataFrame, dark: bool = False) -> go.Figure
     colours = SERIES[_mode(dark)]
     fig = go.Figure([_line(history, "start", "Start", colours[0]), _line(history, "finish", "Finish", colours[1])])
     fig.update_xaxes(title="Data date")
-    return _layout(fig, dark, 380, "Forecast date")
+    fig = _layout(fig, dark, 380, "Forecast date")
+    fig.update_yaxes(**DATE_AXIS)
+    low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
+    if pd.notna(low) and high - low < pd.Timedelta(days=14):
+        # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
+        fig.update_yaxes(range=[low - pd.Timedelta(days=7), high + pd.Timedelta(days=7)])
+    return fig
 
 
 def build_activity_float(history: pd.DataFrame, dark: bool = False) -> go.Figure:
@@ -324,6 +360,7 @@ def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
     )
     fig.update_xaxes(title="Data date")
     fig = _layout(fig, dark, 380, "Forecast finish", legend=False)
+    fig.update_yaxes(**DATE_AXIS)
     fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
     return fig
 
@@ -361,11 +398,18 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET, dark: bool = False)
             hovertemplate="Week to %{x}: %{customdata}<extra></extra>",
         )
     )
-    fig.add_hline(
+    critical = STATUS[_mode(dark)]["critical"]
+    fig.add_hline(y=target, line=dict(color=critical, width=1, dash="dot"))
+    # in the right margin: inside the plot it sits on the last bar
+    fig.add_annotation(
+        x=1,
+        xref="paper",
         y=target,
-        line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
-        annotation_text=f"target {target:g}%",
-        annotation_position="top right",
+        text=f"target {target:g}%",
+        showarrow=False,
+        xanchor="left",
+        xshift=6,
+        font=dict(size=12, color=critical),
     )
     fig = _layout(fig, dark, 400, "PPC (%)", legend=False)
     fig.update_layout(hovermode="closest")

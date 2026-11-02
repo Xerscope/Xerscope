@@ -70,6 +70,9 @@ with filter_column:
     show_links = right_options.toggle("Logic links", value=False)
     hide_loe = left_options.toggle("Hide LOE", value=True)
     max_rows = right_options.number_input("Max rows", 20, 1000, MAX_ROWS_DEFAULT, step=10)
+    timescale = st.segmented_control(
+        "Timescale", ["Month", "Week"], default="Month", help="Week opens on 12 weeks around the data date"
+    )
 
 focus_ids = subtree_ids(nodes, node["wbs_id"])
 tasks = snapshot.activities.copy()
@@ -137,6 +140,7 @@ st.plotly_chart(
         summaries=summaries,
         snapshot=snapshot,
         row_order=order,
+        timescale="week" if timescale == "Week" else "month",
     ),
     width="stretch",
 )
