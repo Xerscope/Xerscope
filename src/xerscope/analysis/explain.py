@@ -78,7 +78,7 @@ def _show(value) -> str:
 
 
 def _exclude_line(links: bool, exclude: list[str]) -> str:
-    what = ", ".join((EXCLUDE[key][0] if key in EXCLUDE else key) for key in exclude)
+    what = ", ".join(EXCLUDE.get(key, key) for key in exclude)
     return f"Relationships whose successor is excluded: {what}." if links else f"Excludes: {what}."
 
 

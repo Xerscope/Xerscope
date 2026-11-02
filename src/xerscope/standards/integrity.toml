@@ -1,5 +1,5 @@
 # Integrity: is the file what P6 would calculate from its own logic?
-# Not a published standard: checks that make the other two trustworthy.
+# Not a published standard: checks that make the other standards trustworthy.
 
 [standard]
 id = "INTEGRITY"

@@ -1,4 +1,4 @@
-"""Building blocks shared by the one-function-per-check modules (``p6/``, ``dcma/``).
+"""Building blocks shared by the one-function-per-check modules (``p6/``, ``dcma/``, ``decm/``).
 
 Each helper answers one question in the words a schedule reader uses: which activities
 are open, which have a predecessor, which links lead into open work. A check reads as a
@@ -7,12 +7,13 @@ few of these combined with ``&``, ``|`` and ``~``.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
-from ..xer.model import START_CONSTRAINTS
+from ..xer.model import START_CONSTRAINTS, forecast_dates
 
 if TYPE_CHECKING:
     from .checks import AnalysisContext
@@ -33,26 +34,40 @@ ACTIVITY_COLS = [
 ]
 LINK_COLS = ["pred_code", "pred_name", "succ_code", "succ_name", "type", "lag_hr", "lag_d"]
 
+DCMA_HIGH_DAYS = 44  # DCMA PAM 200.1 "two months of work", in working days (float and duration limits)
+LARGE_HOURS = DCMA_HIGH_DAYS * 8  # 352 h: the same 44 days on an 8 h calendar, P6's duration, float and lag limit
+# The pamphlet gives no slip length; 600 working days is the value of DECM 06A401a.
+CRITICAL_PATH_SLIP_DAYS = 600
+# A link drives the successor's start through FS / SS, and the predecessor's finish through FS / FF.
+START_DRIVING_TYPES = ("FS", "SS")
+FINISH_DRIVING_TYPES = ("FS", "FF")
+
 
 # --- activities --------------------------------------------------------------------------
 
 
-def _yes(column: pd.Series) -> pd.Series:
+def as_flag(column: pd.Series) -> pd.Series:
+    """A boolean column with the blanks read as False."""
     return column.fillna(False).astype(bool)
+
+
+def joined_sorted(values: pd.Series) -> str:
+    """The values as one sorted, comma-separated string (a groupby aggregation)."""
+    return ", ".join(sorted(values))
 
 
 def open_activities(context: AnalysisContext) -> pd.DataFrame:
     """Every activity that is not completed (WBS summaries are never in the snapshot's activities)."""
     activities = context.snapshot.activities
-    return activities[~_yes(activities["is_complete"])]
+    return activities[~as_flag(activities["is_complete"])]
 
 
 def without_level_of_effort(activities: pd.DataFrame) -> pd.DataFrame:
-    return activities[~_yes(activities["is_loe"])]
+    return activities[~as_flag(activities["is_loe"])]
 
 
 def without_milestones(activities: pd.DataFrame) -> pd.DataFrame:
-    return activities[~_yes(activities["is_milestone"])]
+    return activities[~as_flag(activities["is_milestone"])]
 
 
 def discrete_tasks(activities: pd.DataFrame) -> pd.DataFrame:
@@ -92,7 +107,9 @@ def _relationships_in_project(context: AnalysisContext) -> pd.DataFrame:
     return relationships[~relationships["is_external"].astype(bool)]
 
 
-def constrained_by(activities: pd.DataFrame, constraint_types: list[str], ignore_started_starts: bool) -> pd.Series:
+def constrained_by(
+    activities: pd.DataFrame, constraint_types: Collection[str], ignore_started_starts: bool
+) -> pd.Series:
     """True where the primary or the secondary constraint is one of ``constraint_types``.
 
     With ``ignore_started_starts`` a start constraint on an activity that has started is
@@ -110,12 +127,53 @@ def constrained_by(activities: pd.DataFrame, constraint_types: list[str], ignore
 # --- relationships -----------------------------------------------------------------------
 
 
-def relationships_into(context: AnalysisContext, successors: pd.DataFrame) -> pd.DataFrame:
-    """Relationships whose successor is one of ``successors``, with both activity names added."""
-    names = context.snapshot.activities.set_index("task_code")["task_name"]
-    relationships = context.snapshot.relationships
-    into = relationships[relationships["succ_code"].isin(successors["task_code"])]
-    return into.assign(pred_name=into["pred_code"].map(names), succ_name=into["succ_code"].map(names))
+def links_between(relationships: pd.DataFrame, successors: pd.DataFrame, tasks: pd.DataFrame) -> pd.DataFrame:
+    """Relationships into one of ``successors`` whose predecessor is in ``tasks`` (both indexed by task code)."""
+    return relationships[
+        relationships["succ_code"].isin(successors.index) & relationships["pred_code"].isin(tasks.index)
+    ]
+
+
+def has_driving_predecessor(codes: pd.Series, relationships: pd.DataFrame) -> pd.Series:
+    """True where the activity is the successor of an FS or SS relationship."""
+    driving = relationships["type"].isin(START_DRIVING_TYPES)
+    return codes.isin(relationships.loc[driving, "succ_code"])
+
+
+def has_driving_successor(codes: pd.Series, relationships: pd.DataFrame) -> pd.Series:
+    """True where the activity is the predecessor of an FS or FF relationship."""
+    driving = relationships["type"].isin(FINISH_DRIVING_TYPES)
+    return codes.isin(relationships.loc[driving, "pred_code"])
+
+
+def lag_flagged(relationships: pd.DataFrame, compare: Callable, limit: float, column: str = "lag_hr") -> pd.DataFrame:
+    """The relationships whose lag (blank = 0) satisfies ``compare(lag, limit)``."""
+    return relationships[compare(relationships[column].fillna(0), limit)]
+
+
+# --- progress dates ----------------------------------------------------------------------
+
+
+def forecast_before(tasks: pd.DataFrame, data_date) -> pd.Series:
+    """Incomplete activities whose forecast start (not started) or finish is before the data date."""
+    early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
+    not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
+    return as_flag(~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date)))
+
+
+def actual_after(tasks: pd.DataFrame, data_date) -> pd.Series:
+    """Activities with an actual start or finish after the data date."""
+    return as_flag((tasks["act_start_date"] > data_date) | (tasks["act_end_date"] > data_date))
+
+
+def invalid_date_reason(forecast: pd.Series, actual: pd.Series) -> pd.Series:
+    """Why an activity has an invalid progress date (read only where one of the two masks is True)."""
+    reason = np.select(
+        [forecast & actual, forecast],
+        ["forecast before and actual after data date", "forecast before data date"],
+        default="actual after data date",
+    )
+    return pd.Series(reason, index=forecast.index)
 
 
 # --- flagged rows ------------------------------------------------------------------------
@@ -142,3 +200,17 @@ def flagged_activities(activities: pd.DataFrame, **extra_columns) -> pd.DataFram
 def flagged_relationships(relationships: pd.DataFrame) -> pd.DataFrame:
     """The standard relationship columns of the flagged rows."""
     return relationships[[column for column in LINK_COLS if column in relationships.columns]].copy()
+
+
+def predecessors_ahead(links: pd.DataFrame, started: pd.DataFrame, tasks: pd.DataFrame) -> pd.DataFrame:
+    """The links whose FS predecessor had not finished, or SS predecessor not started, at the successor's actual
+    start (``started`` and ``tasks`` indexed by task code): P6's out-of-sequence progress."""
+    if links.empty:
+        return links
+    start = links["succ_code"].map(started["act_start_date"])
+    predecessor_finish = links["pred_code"].map(tasks["act_end_date"])
+    predecessor_start = links["pred_code"].map(tasks["act_start_date"])
+    # a predecessor with no actual date yet has certainly not happened before the successor's start
+    finish_after = (links["type"] == "FS") & (predecessor_finish.isna() | (predecessor_finish > start))
+    start_after = (links["type"] == "SS") & (predecessor_start.isna() | (predecessor_start > start))
+    return links[finish_after | start_after]

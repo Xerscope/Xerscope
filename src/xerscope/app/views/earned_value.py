@@ -6,8 +6,9 @@ from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import bei_series, earned, evm_series, forecast_curve, pv_curve
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, is_dark, memo, require_store, snapshot_picker
-from xerscope.viz.charts import build_index_trend, build_scurve
+from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 
+BEI_METRIC_IDS = {"P6": "P6-13", "DCMA": "DCMA-14"}  # the BEI check of each built-in standard
 ACTIVITY_COLUMNS = [
     "task_code",
     "bl_name",
@@ -115,7 +116,7 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
             calculation,
             overrides={
                 "formula": st.column_config.TextColumn("Formula", width="large"),
-                "this update": st.column_config.TextColumn(f"{snapshot.data_date:%Y-%m-%d}"),
+                "this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date)),
             },
         )
         st.caption(
@@ -145,7 +146,8 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
     )
 
     ui.section(
-        "Performance indices by update", "1.00 = on plan; the dotted line marks 0.95, the usual alert threshold."
+        "Performance indices by update",
+        f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
     st.plotly_chart(
         build_index_trend(series, {"spi": "SPI", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC"}, is_dark()),
@@ -155,10 +157,10 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
 
 
 def show_activity_detail(snapshot, baseline) -> None:
-    with st.expander(f"Earned hours by activity ({snapshot.data_date:%Y-%m-%d})"):
+    with st.expander(f"Earned hours by activity ({ui.stamp(snapshot.data_date)})"):
         activities = earned(snapshot, baseline).reset_index()
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
-        ui.csv_button(activities[ACTIVITY_COLUMNS], f"earned_{snapshot.data_date:%Y-%m-%d}.csv")
+        ui.csv_button(activities[ACTIVITY_COLUMNS], f"earned_{ui.stamp(snapshot.data_date)}.csv")
         fallback_mask = activities["ev_technique"].isin(["wbs_milestones", "resource_curves"])
         fallback = sorted(activities.loc[fallback_mask, "task_code"])
         if fallback:
@@ -197,9 +199,7 @@ cache_key = ("evm", st.session_state.get("bl_choice"), baseline.label, baseline.
 curve = memo(cache_key + ("pv",), pv_curve, baseline)
 series = memo(cache_key + ("series",), evm_series, store, baseline)
 standards = builtin_standards()
-bei_metrics = {
-    code: next(metric for metric in standards[code].metrics if metric.name == "BEI") for code in ("P6", "DCMA")
-}
+bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
 series = series.merge(
     memo(cache_key + ("bei",), bei_series, store, bei_metrics, baseline_for), on="data_date", how="left"
 )

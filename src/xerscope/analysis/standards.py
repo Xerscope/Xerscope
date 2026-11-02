@@ -2,8 +2,8 @@
 
 A standard is a TOML file: a header plus a list of metrics, each one a rule from
 ``rules.py`` with its parameters and a target. The built-in ones (P6 Check Schedule,
-DCMA 14-Point) live in ``xerscope/standards/``; yours can live anywhere and use the same
-format (see ``custom-template.toml``)::
+DCMA 14-Point, DECM, Integrity) live in ``xerscope/standards/`` and name one explicit check
+each; yours can live anywhere and use the same format (see ``custom-template.toml``)::
 
     [standard]
     id = "ACME"
@@ -29,9 +29,8 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
-from .rules import RULES, Unit
+from .rules import COMPARE, RULES, Unit
 
-_OPS = {"<=": operator.le, ">=": operator.ge, "==": operator.eq, "<": operator.lt, ">": operator.gt}
 _TARGET = re.compile(r"^\s*(<=|>=|==|<|>)\s*(-?\d+(?:\.\d+)?)\s*(%?)\s*$")
 UNITS = {"%", "ratio", "count", "days", "pass/fail"}
 
@@ -67,7 +66,7 @@ class Metric:
             return "n/a"
         if self.comparator is None or self.threshold is None:
             return "info"
-        return "pass" if _OPS[self.comparator](round(value, 6), self.threshold) else "fail"
+        return "pass" if COMPARE[self.comparator](round(value, 6), self.threshold) else "fail"
 
 
 @dataclass(frozen=True)

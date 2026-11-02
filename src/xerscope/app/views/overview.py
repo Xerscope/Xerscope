@@ -8,7 +8,6 @@ from xerscope.viz import build_finish_trend
 
 store = require_store()
 latest = store.latest
-prev = store.previous(latest)
 summary = store.summary
 last = summary.iloc[-1]
 before = summary.iloc[-2] if len(summary) > 1 else None
@@ -17,7 +16,8 @@ ui.header(
     "Overview",
     store,
     latest,
-    lead=f"{len(store)} weekly update(s) loaded, {store.first.data_date:%d %b %Y} → {latest.data_date:%d %b %Y}.",
+    lead=f"{len(store)} weekly update(s) loaded, "
+    f"{ui.fmt_date(store.first.data_date)} → {ui.fmt_date(latest.data_date)}.",
 )
 
 shift = last["finish_shift_wd"]
@@ -26,7 +26,7 @@ ui.kpis(
     [
         (
             "Forecast finish",
-            f"{latest.finish_date:%d %b %Y}" if latest.finish_date is not None else "–",
+            ui.fmt_date(latest.finish_date),
             None if pd.isna(shift) else f"{shift:+g} wd vs previous update",
             "Latest early finish of the project",
             "inverse",

@@ -6,36 +6,40 @@ and pass/fail come from ``standards/dcma.toml``; the function only decides what 
 
 from __future__ import annotations
 
-import numpy as np
+import operator
+
 import pandas as pd
 
-from ...xer.model import CONSTRAINT, forecast_dates
-from ..cpm import critical_path_test
+from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
 from ..populations import (
+    CRITICAL_PATH_SLIP_DAYS,
+    DCMA_HIGH_DAYS,
+    actual_after,
+    as_flag,
     constrained_by,
     discrete_tasks,
     finish_driver,
     flagged_activities,
     flagged_relationships,
+    forecast_before,
     has_predecessor_in_project,
     has_successor_in_project,
+    invalid_date_reason,
+    lag_flagged,
     open_end_reason,
     open_tasks,
-    relationships_into,
     with_baseline,
 )
-from ..rules import RuleOutput, rule
+from ..rules import RuleOutput, bei_from_snapshot, critical_path_output, link_population, rule, share_of_type
 
-# Start On, Start On or Before, Finish On, Finish On or Before, Mandatory Start, Mandatory Finish.
-HARD_CONSTRAINTS = ["CS_MSO", "CS_MSOB", "CS_MEO", "CS_MEOB", "CS_MANDSTART", "CS_MANDFIN"]
-TWO_MONTHS_OF_WORK = 44  # working days
-# The pamphlet gives no slip length; 600 working days is the value of DECM 06A401a.
-CRITICAL_PATH_SLIP_DAYS = 600
+# Start On, Start On or Before, Finish On, Finish On or Before, Mandatory Start, Mandatory Finish:
+# the model's set.
+DCMA_HARD_CONSTRAINTS = HARD_CONSTRAINTS
 
 
 def _relationships_into_open_tasks(context) -> pd.DataFrame:
     """PAM 200.1 section 4.0: a link counts when its successor is an incomplete, non-LOE, non-milestone task."""
-    return relationships_into(context, open_tasks(context))
+    return link_population(context, "all", exclude=("complete", "loe", "milestones"))
 
 
 @rule("dcma_01_logic", "%")
@@ -72,9 +76,8 @@ def dcma_02_leads(context) -> RuleOutput:
     when its successor is kept
     """
     relationships = _relationships_into_open_tasks(context)
-    lag_hours = relationships["lag_hr"].fillna(0)
 
-    leads = relationships[lag_hours < 0]
+    leads = lag_flagged(relationships, operator.lt, 0)
     return RuleOutput(flagged_relationships(leads), len(leads), len(relationships))
 
 
@@ -91,9 +94,8 @@ def dcma_03_lags(context) -> RuleOutput:
     kept
     """
     relationships = _relationships_into_open_tasks(context)
-    lag_hours = relationships["lag_hr"].fillna(0)
 
-    lags = relationships[lag_hours > 0]
+    lags = lag_flagged(relationships, operator.gt, 0)
     return RuleOutput(flagged_relationships(lags), len(lags), len(relationships))
 
 
@@ -109,15 +111,7 @@ def dcma_04_relationship_types(context) -> RuleOutput:
     completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is
     kept
     """
-    relationships = _relationships_into_open_tasks(context)
-    finish_to_start = relationships["type"] == "FS"
-
-    share = 100.0 * finish_to_start.sum() / len(relationships) if len(relationships) else None
-    type_mix = ", ".join(f"{kind} {n}" for kind, n in relationships["type"].value_counts().items())
-    other_types = relationships[~finish_to_start]
-    return RuleOutput(
-        flagged_relationships(other_types), int(finish_to_start.sum()), len(relationships), share, note=type_mix
-    )
+    return share_of_type(_relationships_into_open_tasks(context), "FS")
 
 
 @rule("dcma_05_hard_constraints", "%")
@@ -132,7 +126,7 @@ def dcma_05_hard_constraints(context) -> RuleOutput:
     On / Mandatory Finish, SNLT = Start On or Before, FNLT = Finish On or Before
     """
     tasks = open_tasks(context)
-    hard = tasks[constrained_by(tasks, HARD_CONSTRAINTS, ignore_started_starts=False)]
+    hard = tasks[constrained_by(tasks, DCMA_HARD_CONSTRAINTS, ignore_started_starts=False)]
     return RuleOutput(flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks))
 
 
@@ -147,7 +141,7 @@ def dcma_06_high_float(context) -> RuleOutput:
     §4.0: milestones excluded
     """
     tasks = open_tasks(context)
-    high_float = tasks[tasks["total_float_d"] > TWO_MONTHS_OF_WORK]
+    high_float = tasks[tasks["total_float_d"] > DCMA_HIGH_DAYS]
     return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks))
 
 
@@ -184,7 +178,7 @@ def dcma_08_high_duration(context) -> RuleOutput:
         return RuleOutput(note="needs a baseline")
     tasks = open_tasks(context)
     baseline_hours = tasks["task_code"].map(context.baseline.frame["bl_duration_hr"])
-    long_tasks = tasks[baseline_hours / tasks["hours_per_day"] > TWO_MONTHS_OF_WORK]
+    long_tasks = tasks[baseline_hours / tasks["hours_per_day"] > DCMA_HIGH_DAYS]
     return RuleOutput(flagged_activities(long_tasks), len(long_tasks), len(tasks))
 
 
@@ -204,20 +198,10 @@ def dcma_09_invalid_dates(context) -> RuleOutput:
     tasks = discrete_tasks(context.snapshot.activities)
     tasks = tasks[~(tasks["act_end_date"] < data_date)]
 
-    early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
-    not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
-    forecast_before = ~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date))
-    actual_after = (tasks["act_start_date"] > data_date) | (tasks["act_end_date"] > data_date)
-    forecast_before = forecast_before.fillna(False).astype(bool)
-    actual_after = actual_after.fillna(False).astype(bool)
-
-    reason = np.select(
-        [forecast_before & actual_after, forecast_before],
-        ["forecast before and actual after data date", "forecast before data date"],
-        default="actual after data date",
-    )
-    invalid = forecast_before | actual_after
-    reasons = pd.Series(reason, index=tasks.index)[invalid]
+    forecast = forecast_before(tasks, data_date)
+    actual = actual_after(tasks, data_date)
+    invalid = forecast | actual
+    reasons = invalid_date_reason(forecast, actual)[invalid]
     return RuleOutput(flagged_activities(tasks[invalid], reason=reasons), int(invalid.sum()), len(tasks))
 
 
@@ -257,7 +241,7 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     tasks = with_baseline(context, discrete_tasks(context.snapshot.activities))
     due = tasks[tasks["bl_start"].notna() & (tasks["bl_finish"] <= data_date)]
     finishes_later = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
-    missed = due[finishes_later.fillna(False).astype(bool)]
+    missed = due[as_flag(finishes_later)]
     return RuleOutput(flagged_activities(missed, bl_finish=missed["bl_finish"]), len(missed), len(due))
 
 
@@ -269,12 +253,7 @@ def dcma_12_critical_path_test(context) -> RuleOutput:
     "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is the value of
     DECM 06A401a
     """
-    if context.snapshot.data_date is None:
-        return RuleOutput(note="no data date")
-    if finish_driver(context) is None:
-        return RuleOutput(note="no remaining work")
-    test = critical_path_test(context.snapshot, CRITICAL_PATH_SLIP_DAYS)
-    return RuleOutput(value=1.0 if test.passed else 0.0, note=test.note, flagged=pd.DataFrame(test.blocking))
+    return critical_path_output(context, CRITICAL_PATH_SLIP_DAYS)
 
 
 @rule("dcma_13_cpli", "ratio")
@@ -324,12 +303,4 @@ def dcma_14_bei(context) -> RuleOutput:
     if data_date is None:
         return RuleOutput(note="no data date")
     tasks = with_baseline(context, discrete_tasks(context.snapshot.activities))
-    no_baseline_finish = tasks["bl_finish"].isna()
-    done = int(tasks["is_complete"].sum())
-    due = tasks[(tasks["bl_finish"] <= data_date) | no_baseline_finish]
-    not_done = due[~due["is_complete"]]
-    note = f"{done} completed / {len(due)} due"
-    if no_baseline_finish.any():
-        note += f"; {int(no_baseline_finish.sum())} without baseline finish"
-    index = done / len(due) if len(due) else None
-    return RuleOutput(flagged_activities(not_done, bl_finish=not_done["bl_finish"]), done, len(due), index, note)
+    return bei_from_snapshot(tasks, data_date, missing_baseline_is_due=True)

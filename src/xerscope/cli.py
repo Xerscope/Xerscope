@@ -8,9 +8,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from xerscope.config import DATE_FMT, DATETIME_FMT
 from xerscope.xer import xer_files
 
 APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
+# --fail-on: the statuses that make `check` exit 1 (a CI job or script stops on a schedule that misses the standard)
+FAIL_ON = {"none": set(), "fail": {"fail", "error"}, "error": {"error"}}
 
 
 def _expand(paths: list[str]) -> list[Path]:
@@ -26,6 +29,22 @@ def _expand(paths: list[str]) -> list[Path]:
     if not found:
         raise SystemExit(f"xerscope: no .xer file in {', '.join(paths)}")
     return found
+
+
+def _add_paths(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("paths", nargs="+")
+
+
+def _add_project(parser: argparse.ArgumentParser, help_text: str | None = None) -> None:
+    parser.add_argument("--project", help=help_text)
+
+
+def _add_out(parser: argparse.ArgumentParser, help_text: str) -> None:
+    parser.add_argument("--out", help=help_text)
+
+
+def _write_csv(frame, path, *, index: bool = False) -> None:
+    frame.to_csv(path, index=index, encoding="utf-8-sig")  # the BOM makes Excel read UTF-8
 
 
 def _cmd_app(args: argparse.Namespace) -> int:
@@ -55,11 +74,28 @@ def _cmd_app(args: argparse.Namespace) -> int:
     return subprocess.call(cmd, env=env, cwd=APP_PATH.parent)
 
 
-def _when(timestamp, fmt: str = "%Y-%m-%d") -> str:
+def _args_app(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--data", help="folder of weekly .xer files to preload")
+    parser.add_argument("--baseline", help="baseline .xer (contract baseline)")
+    parser.add_argument("--standards", help="folder of your own standard .toml files")
+    parser.add_argument("--port", type=int, default=8501)
+    parser.add_argument(
+        "--host",
+        default="localhost",
+        help="interface to listen on; default localhost. 0.0.0.0 exposes your schedules to the network",
+    )
+
+
+def _when(timestamp, fmt: str = DATE_FMT) -> str:
     """A date for printing; files without a data date or a finish exist."""
     import pandas as pd  # the CLI imports pandas lazily, so `xerscope app` starts fast
 
     return "-" if timestamp is None or pd.isna(timestamp) else f"{timestamp:{fmt}}"
+
+
+def _args_info(parser: argparse.ArgumentParser) -> None:
+    _add_paths(parser)
+    _add_project(parser, "project short name, if files hold several")
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
@@ -93,6 +129,31 @@ def _standard(spec: str):
     raise SystemExit(f"unknown standard {spec!r}: use {', '.join(found)} or a .toml file")
 
 
+def _args_check(parser: argparse.ArgumentParser) -> None:
+    _add_paths(parser)
+    parser.add_argument("--standard", default="P6", help="P6, DCMA or path to your .toml")
+    parser.add_argument("--baseline", help="baseline .xer for BEI / missed / late checks")
+    parser.add_argument(
+        "--planned-baseline", action="store_true", help="no baseline file: use each file's planned dates (target_*)"
+    )
+    _add_project(parser)
+    _add_out(parser, "write all results to this CSV")
+    parser.add_argument(
+        "--flagged", metavar="DIR", help="write the items found by each check, one CSV per file and check"
+    )
+    parser.add_argument(
+        "--expect",
+        metavar="CSV",
+        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on a difference",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=list(FAIL_ON),
+        default="none",
+        help="exit 1 when a check fails (fail) or cannot run (error); default: always 0",
+    )
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     import pandas as pd
 
@@ -104,7 +165,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     baseline = Baseline.from_snapshot(load_snapshot(args.baseline)) if args.baseline else None
     frames = []
     # one series, so checks against the previous update (DECM 06A504, 06A506c) can run
-    store = SnapshotStore(load_snapshot(p, args.project) for p in _expand(args.paths))
+    store = SnapshotStore.from_paths(_expand(args.paths), args.project)
     for snapshot in store:
         path = Path(snapshot.source)
         applied_baseline = baseline or (Baseline.planned(snapshot) if args.planned_baseline else None)
@@ -118,9 +179,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
             out_dir.mkdir(parents=True, exist_ok=True)
             for result in results:
                 if not result.flagged.empty:
-                    result.flagged.to_csv(
-                        out_dir / f"{path.stem}_{result.metric.id}.csv", index=False, encoding="utf-8-sig"
-                    )
+                    _write_csv(result.flagged, out_dir / f"{path.stem}_{result.metric.id}.csv")
         print(
             f"\n{standard.name} · {path.name} · data date {_when(snapshot.data_date)}"
             f" · baseline {applied_baseline.label if applied_baseline else 'none'}"
@@ -129,12 +188,11 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(frame[columns].to_string(index=False, float_format="{:.2f}".format))
     results = pd.concat(frames)
     if args.out:
-        results.to_csv(args.out, index=False, encoding="utf-8-sig")
+        _write_csv(results, args.out)
         print(f"\nwritten {args.out}")
     if args.expect and _expect_differs(results, args.expect):
         return 1
-    # --fail-on: let a CI job or a script stop on a schedule that misses the standard
-    bad = {"fail": {"fail", "error"}, "error": {"error"}, "none": set()}[args.fail_on]
+    bad = FAIL_ON[args.fail_on]
     hits = results[results["status"].isin(bad)]
     if len(hits):
         print(f"\n{len(hits)} result(s) with status {'/'.join(sorted(bad))}", file=sys.stderr)
@@ -167,6 +225,17 @@ def _expect_differs(results, expect_csv: str) -> bool:
     return bad > 0
 
 
+def _args_standards(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--rules", action="store_true", help="list rules and their parameters")
+    parser.add_argument(
+        "--template",
+        nargs="?",
+        const="-",
+        metavar="FILE",
+        help="write a standard template to FILE (UTF-8), or print it",
+    )
+
+
 def _cmd_standards(args: argparse.Namespace) -> int:
     from .analysis import RULES, builtin_standards, template_text
 
@@ -191,6 +260,14 @@ def _cmd_standards(args: argparse.Namespace) -> int:
     return 0
 
 
+def _args_recalc(parser: argparse.ArgumentParser) -> None:
+    _add_paths(parser)
+    _add_project(parser)
+    _add_out(parser, "write the recalculated dates and float to this CSV")
+    parser.add_argument("--report", action="store_true", help="group the differences by activity shape")
+    parser.add_argument("--show", type=int, default=20, help="differences to print")
+
+
 def _cmd_recalc(args: argparse.Namespace) -> int:
     from .analysis.cpm import compare_assignments, compare_with_stored, schedule
     from .xer import load_snapshot
@@ -202,8 +279,8 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
         stored = comparison[comparison["stored"].notna()]
         print(
             f"\n{path.name} · {len(snapshot.activities)} activities"
-            f" · data date {_when(snapshot.data_date, '%Y-%m-%d %H:%M')}"
-            f" · recalculated finish {_when(recalculated.finish, '%Y-%m-%d %H:%M')}"
+            f" · data date {_when(snapshot.data_date, DATETIME_FMT)}"
+            f" · recalculated finish {_when(recalculated.finish, DATETIME_FMT)}"
         )
         if stored.empty:
             print("  no stored dates to compare (never scheduled in P6?)")
@@ -240,9 +317,16 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
                 if len(args.paths) == 1
                 else Path(args.out).with_name(f"{path.stem}_{Path(args.out).name}")
             )
-            out.to_csv(dest, encoding="utf-8-sig")
+            _write_csv(out, dest, index=True)
             print(f"  written {dest}")
     return 0
+
+
+def _args_changelog(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("old")
+    parser.add_argument("new")
+    _add_project(parser)
+    _add_out(parser, "write the full changelog to this CSV")
 
 
 def _cmd_changelog(args: argparse.Namespace) -> int:
@@ -253,9 +337,16 @@ def _cmd_changelog(args: argparse.Namespace) -> int:
     log = changelog(old, new)
     print(summary(log).to_string(index=False))
     if args.out:
-        log.to_csv(args.out, index=False, encoding="utf-8-sig")
+        _write_csv(log, args.out)
         print(f"\nwritten {args.out} ({len(log)} changes)")
     return 0
+
+
+def _args_export(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("folder")
+    parser.add_argument("--out", default="export")
+    parser.add_argument("--format", choices=["parquet", "csv"], default="parquet")
+    _add_project(parser)
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
@@ -268,6 +359,23 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _args_crosscheck(parser: argparse.ArgumentParser) -> None:
+    _add_paths(parser)
+    _add_out(parser, "write every comparison to this CSV")
+    parser.add_argument(
+        "--cpm",
+        action="store_true",
+        help="compare the recalculation with MPXJ's scheduler (build it: tests/reference/mpxj_cpm.py)",
+    )
+    parser.add_argument(
+        "--p6",
+        action="store_true",
+        help="paths are held-out set folders (tests/reference/data/p6-heldout/validation/held-out/H1 ...): "
+        "compare the recalculation with what P6 23.12 scheduled",
+    )
+    parser.add_argument("--show", type=int, default=20, help="differences to print")
+
+
 def _cmd_crosscheck(args: argparse.Namespace) -> int:
     if args.p6:
         return _cmd_crosscheck_p6(args)
@@ -277,7 +385,7 @@ def _cmd_crosscheck(args: argparse.Namespace) -> int:
 
     checks = compare_paths(_expand(args.paths))
     if args.out:
-        checks.to_csv(args.out, index=False, encoding="utf-8-sig")
+        _write_csv(checks, args.out)
     summary = checks.groupby("file")["agree"].agg(agree="sum", checks="count")
     print(summary.to_string())
     wrong = checks[~checks["agree"]]
@@ -314,7 +422,7 @@ def _cmd_crosscheck_p6(args: argparse.Namespace) -> int:
     for error in errors.itertuples():
         print(f"  {error.set} {error.case}: cannot schedule: {error.xerscope}")
     if args.out:
-        scores.to_csv(args.out, index=False, encoding="utf-8-sig")
+        _write_csv(scores, args.out)
     wrong = scores[~scores["agree"]]
     if len(wrong) and args.show:
         print(
@@ -381,9 +489,14 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
             unexplained += len(wrong)
             print(wrong[["task_code", "field", "p6", "xerscope", "mpxj"]].head(args.show).to_string(index=False))
     if args.out:
-        pd.concat(frames).to_csv(args.out, index=False, encoding="utf-8-sig")
+        _write_csv(pd.concat(frames), args.out)
     print(f"\n{unexplained} difference(s) no listed cause explains")
     return 1 if unexplained else 0
+
+
+def _args_sample(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--out", default="data/sample")
+    parser.add_argument("--weeks", type=int, default=8)
 
 
 def _cmd_sample(args: argparse.Namespace) -> int:
@@ -394,107 +507,27 @@ def _cmd_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+# name: (help, adds its arguments, runs); the order is the order of `xerscope --help`
+COMMANDS = {
+    "app": ("launch the web app", _args_app, _cmd_app),
+    "info": ("summarise one or more XER files / folders", _args_info, _cmd_info),
+    "check": ("run a standard (P6, DCMA or a .toml) on XER files", _args_check, _cmd_check),
+    "standards": ("list standards and rules, or print the template", _args_standards, _cmd_standards),
+    "recalc": ("reschedule like P6 and compare with the dates stored in the file", _args_recalc, _cmd_recalc),
+    "changelog": ("what changed between two XER files", _args_changelog, _cmd_changelog),
+    "export": ("write BI tables (Power BI star schema)", _args_export, _cmd_export),
+    "crosscheck": ("compare xerscope with MPXJ on XER files (needs Java)", _args_crosscheck, _cmd_crosscheck),
+    "sample": ("generate demo weekly XER files", _args_sample, _cmd_sample),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="xerscope", description="Weekly P6 XER analysis")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    app_parser = sub.add_parser("app", help="launch the web app")
-    app_parser.add_argument("--data", help="folder of weekly .xer files to preload")
-    app_parser.add_argument("--baseline", help="baseline .xer (contract baseline)")
-    app_parser.add_argument("--standards", help="folder of your own standard .toml files")
-    app_parser.add_argument("--port", type=int, default=8501)
-    app_parser.add_argument(
-        "--host",
-        default="localhost",
-        help="interface to listen on; default localhost. 0.0.0.0 exposes your schedules to the network",
-    )
-    app_parser.set_defaults(fn=_cmd_app)
-
-    info_parser = sub.add_parser("info", help="summarise one or more XER files / folders")
-    info_parser.add_argument("paths", nargs="+")
-    info_parser.add_argument("--project", help="project short name, if files hold several")
-    info_parser.set_defaults(fn=_cmd_info)
-
-    check_parser = sub.add_parser("check", help="run a standard (P6, DCMA or a .toml) on XER files")
-    check_parser.add_argument("paths", nargs="+")
-    check_parser.add_argument("--standard", default="P6", help="P6, DCMA or path to your .toml")
-    check_parser.add_argument("--baseline", help="baseline .xer for BEI / missed / late checks")
-    check_parser.add_argument(
-        "--planned-baseline", action="store_true", help="no baseline file: use each file's planned dates (target_*)"
-    )
-    check_parser.add_argument("--project")
-    check_parser.add_argument("--out", help="write all results to this CSV")
-    check_parser.add_argument(
-        "--flagged", metavar="DIR", help="write the items found by each check, one CSV per file and check"
-    )
-    check_parser.add_argument(
-        "--expect",
-        metavar="CSV",
-        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on a difference",
-    )
-    check_parser.add_argument(
-        "--fail-on",
-        choices=["none", "fail", "error"],
-        default="none",
-        help="exit 1 when a check fails (fail) or cannot run (error); default: always 0",
-    )
-    check_parser.set_defaults(fn=_cmd_check)
-
-    standards_parser = sub.add_parser("standards", help="list standards and rules, or print the template")
-    standards_parser.add_argument("--rules", action="store_true", help="list rules and their parameters")
-    standards_parser.add_argument(
-        "--template",
-        nargs="?",
-        const="-",
-        metavar="FILE",
-        help="write a standard template to FILE (UTF-8), or print it",
-    )
-    standards_parser.set_defaults(fn=_cmd_standards)
-
-    recalc_parser = sub.add_parser("recalc", help="reschedule like P6 and compare with the dates stored in the file")
-    recalc_parser.add_argument("paths", nargs="+")
-    recalc_parser.add_argument("--project")
-    recalc_parser.add_argument("--out", help="write the recalculated dates and float to this CSV")
-    recalc_parser.add_argument("--report", action="store_true", help="group the differences by activity shape")
-    recalc_parser.add_argument("--show", type=int, default=20, help="differences to print")
-    recalc_parser.set_defaults(fn=_cmd_recalc)
-
-    changelog_parser = sub.add_parser("changelog", help="what changed between two XER files")
-    changelog_parser.add_argument("old")
-    changelog_parser.add_argument("new")
-    changelog_parser.add_argument("--project")
-    changelog_parser.add_argument("--out", help="write the full changelog to this CSV")
-    changelog_parser.set_defaults(fn=_cmd_changelog)
-
-    export_parser = sub.add_parser("export", help="write BI tables (Power BI star schema)")
-    export_parser.add_argument("folder")
-    export_parser.add_argument("--out", default="export")
-    export_parser.add_argument("--format", choices=["parquet", "csv"], default="parquet")
-    export_parser.add_argument("--project")
-    export_parser.set_defaults(fn=_cmd_export)
-
-    crosscheck_parser = sub.add_parser("crosscheck", help="compare xerscope with MPXJ on XER files (needs Java)")
-    crosscheck_parser.add_argument("paths", nargs="+")
-    crosscheck_parser.add_argument("--out", help="write every comparison to this CSV")
-    crosscheck_parser.add_argument(
-        "--cpm",
-        action="store_true",
-        help="compare the recalculation with MPXJ's scheduler (build it: tests/reference/mpxj_cpm.py)",
-    )
-    crosscheck_parser.add_argument(
-        "--p6",
-        action="store_true",
-        help="paths are held-out set folders (tests/reference/data/p6-heldout/validation/held-out/H1 ...): "
-        "compare the recalculation with what P6 23.12 scheduled",
-    )
-    crosscheck_parser.add_argument("--show", type=int, default=20, help="differences to print")
-    crosscheck_parser.set_defaults(fn=_cmd_crosscheck)
-
-    sample_parser = sub.add_parser("sample", help="generate demo weekly XER files")
-    sample_parser.add_argument("--out", default="data/sample")
-    sample_parser.add_argument("--weeks", type=int, default=8)
-    sample_parser.set_defaults(fn=_cmd_sample)
-
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
+    for name, (help_text, add_arguments, run) in COMMANDS.items():
+        command_parser = subparsers.add_parser(name, help=help_text)
+        add_arguments(command_parser)
+        command_parser.set_defaults(fn=run)
     args = parser.parse_args(argv)
     return args.fn(args)
 

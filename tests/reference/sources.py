@@ -14,7 +14,6 @@ XEREDITOR_COMMIT = "9cb4f23fdf53ff5c65fec0f5cfe97d6b11820a61"  # ASHspace/Primev
 # under a published protocol, with P6's results read back from its database (p6_heldout.py)
 P6_HELDOUT_COMMIT = "313701d8b8c2ef4be60d7f6a61d1f91a1468a830"
 P6_HELDOUT_REPO = "https://github.com/danafitkowski/cpp-cpm-engine"
-P6_HELDOUT_SETS = [f"H{i}" for i in range(1, 31)]
 
 _MPXJ = f"https://raw.githubusercontent.com/joniles/mpxj/{MPXJ_COMMIT}/junit/data"
 _XERLOCK = f"https://raw.githubusercontent.com/joaompfp/xerlock/{XERLOCK_COMMIT}"

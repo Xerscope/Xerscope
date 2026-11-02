@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from conftest import REFERENCE_HINT, missing
-from xerkit import active, done, snap, todo
+from xerkit import FM, SECONDARY_CONSTRAINTS, SM, active, done, hours, snap, todo
 
 from xerscope.analysis.cpm import (
     FIELDS,
@@ -32,12 +32,6 @@ from xerscope.xer import load_snapshot
 
 T = pd.Timestamp
 REF = Path(__file__).parent / "reference" / "data"
-FM = dict(task_type="TT_FinMile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
-SM = dict(task_type="TT_Mile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
-
-
-def hours(h):
-    return dict(target_drtn_hr_cnt=str(h), remain_drtn_hr_cnt=str(h))
 
 
 def dates(s, code):
@@ -67,7 +61,6 @@ NOT_P6 = {
 }
 
 
-@pytest.mark.reference
 @pytest.mark.parametrize("name", REFERENCE)
 def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
     if not (REF / name).exists():
@@ -80,7 +73,6 @@ def test_recalculation_reproduces_the_stored_dates_to_the_minute(name):
     assert set(zip(bad["task_code"], bad["field"], strict=True)) == NOT_P6.get(name, set()), bad.head(20).to_string()
 
 
-@pytest.mark.reference
 @pytest.mark.parametrize("name", REFERENCE)
 def test_longest_path_matches_p6s_flag(name):
     """Every open activity's computed longest-path membership = P6's driving_path_flag,
@@ -96,7 +88,6 @@ def test_longest_path_matches_p6s_flag(name):
     assert (mine == open_["on_longest_path"]).all()
 
 
-@pytest.mark.reference
 def test_level_of_effort_dates_reproduce_p6(require_reference):
     """P6 20.12 stored the dates of 10 LOE activities (SS from a task, FF into the next):
     start, finish, late dates and float all reproduced, the only P6 output with LOE at hand."""
@@ -113,7 +104,6 @@ def test_level_of_effort_dates_reproduce_p6(require_reference):
 ASSIGNMENTS = {"p6viewer/Hotel Project.xer": 2278, "p6viewer/TERMINAL BUILDING-AIRPORT.xer": 62}
 
 
-@pytest.mark.reference
 @pytest.mark.parametrize("name", ASSIGNMENTS)
 def test_assignment_dates_reproduce_p6(name):
     """TASKRSRC remaining early/late start and finish of every assignment, to the minute:
@@ -126,7 +116,6 @@ def test_assignment_dates_reproduce_p6(name):
     assert bad.empty, bad.head(20).to_string()
 
 
-@pytest.mark.reference
 def test_critical_path_test_lands_on_xerlocks_date():
     """xerlock tests/test_cpm_sample.py: +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27."""
     name = "xerlock/sample-schedule.xer"
@@ -293,18 +282,7 @@ def test_constraint_on_an_in_progress_activity_is_reported():
 
 
 def test_secondary_constraint_counts():
-    s = snap(
-        [
-            todo(
-                "A",
-                cstr_type="CS_MSOA",
-                cstr_date="2026-03-03 08:00",
-                cstr_type2="CS_MEOB",
-                cstr_date2="2026-03-03 12:00",
-                **hours(8),
-            )
-        ]
-    )
+    s = snap([todo("A", **SECONDARY_CONSTRAINTS)])
     # finishes Tue 17:00 but must finish by Tue 12:00: 13:00-17:00 = 4 working hours late
     assert dates(s, "A")[3:5] == (T("2026-03-03 12:00"), -4)
 

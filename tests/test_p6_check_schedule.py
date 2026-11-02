@@ -143,9 +143,10 @@ def test_p6_11_milestone_loe_and_wbs_are_excluded_completed_stays_in():
     assert codes(r) == ["A", "DONE"]
 
 
-def test_p6_12_milestone_loe_and_wbs_are_excluded_completed_stays_in():
+def test_p6_12_milestone_loe_wbs_and_completed_are_excluded():
     """'Milestones, WBS Summary activities, and Level of Effort activities are not included in this analysis.'
-    (Late Activities, 101248)"""
+    (Late Activities, 101248). A P6 Professional report on a 3,408-activity project checks 2,335 late
+    activities, the same population as Large Durations: completed activities are out too."""
     base_end = "2026-02-13 17:00"  # baseline finish; a forecast finish later than it is late
     bl_tasks = [
         todo("A", early_end_date=base_end),
@@ -162,8 +163,8 @@ def test_p6_12_milestone_loe_and_wbs_are_excluded_completed_stays_in():
         done("DONE", act_end_date="2026-02-20 17:00"),  # a week after its baseline finish
     ]
     r = run(P6, "P6-12", snap(late_tasks), Baseline.from_snapshot(snap(bl_tasks)))
-    assert counts(r) == (2, 2)
-    assert codes(r) == ["A", "DONE"]
+    assert counts(r) == (1, 1)
+    assert codes(r) == ["A"]
 
 
 # --- 4. started exemption ---------------------------------------------------------------------
@@ -303,20 +304,21 @@ def test_p6_11_a_role_only_or_an_expense_only_activity_passes_and_nothing_assign
 # --- 9. BEI -------------------------------------------------------------------------------------
 
 
-def test_p6_13_bei_is_completed_over_baseline_activities_finishing_before_the_data_date():
-    """'...the number of completed activities in the project against the number of baseline activities
-    calculated to finish before the open project's data date.' (BEI, 101248)"""
+def test_p6_13_bei_is_completed_over_all_baseline_activities():
+    """101248 says 'baseline activities calculated to finish before the open project's data date', but a
+    P6 Professional report (3,408 activities, 916 complete) prints BEI 0.26 = 808 project activities /
+    3,143 baseline activities: every baseline activity counts, whatever its finish date. The report wins."""
     # A finishes before the data date; B keeps xerkit's default early end (2026-03-13), after it
     baseline = Baseline.from_snapshot(snap([todo("A", early_end_date=BL_BEFORE_DD), todo("B")]))
     current = snap([done("A"), done("B")])
     r = run(P6, "P6-13", current, baseline)
-    assert counts(r) == (2, 1)
-    assert r.value == 2.0
+    assert counts(r) == (2, 2)
+    assert r.value == 1.0
     assert r.status == "pass"
-    assert r.note == "2 completed / 1 due in the baseline"
+    assert r.note == "2 completed / 2 baseline activities"
 
 
-def test_p6_13_a_baseline_milestone_finishing_before_the_data_date_is_not_due():
+def test_p6_13_a_baseline_milestone_is_not_counted():
     """'In the project baseline, milestones, WBS Summary activities, Level of Effort activities, and activities
     with a finish date later than the open project's data date are not included in this analysis.'
     (BEI, 101248)"""
@@ -333,3 +335,39 @@ def test_p6_13_a_baseline_milestone_finishing_before_the_data_date_is_not_due():
     assert counts(r) == (1, 1)
     assert r.value == 1.0
     assert codes(r) == []
+
+
+# --- 10. Out of sequence and dangling (P6 Professional report, 3,408 activities) ------------------
+
+
+def test_p6_15_out_of_sequence_counts_one_row_per_predecessor_over_all_activities():
+    """'Activities which are completed or in-progress before their predecessors.' A P6 Professional report
+    lists one row per activity and predecessor (6 rows, one activity twice) against the total of activities."""
+    s = snap(
+        [done("A"), active("B"), todo("A2"), todo("A3"), active("C")],
+        [("A", "B", "FS", 0), ("A2", "C", "FS", 0), ("A3", "C", "FS", 0)],
+    )
+    r = run(P6, "P6-15", s)
+    assert counts(r) == (2, 5)
+    assert codes(r) == ["C", "C"]
+
+
+def test_p6_16_dangling_start_ignores_in_progress_and_activities_without_predecessor():
+    """'Activities with start dates that are not driven by predecessors', 'Ignore In Progress Activities'
+    checked. The report's Logic check lists the activity with no predecessor; the dangling check does not."""
+    s = snap(
+        [todo("P"), todo("X"), active("Y"), todo("Z")],
+        [("P", "X", "FF", 0), ("P", "Y", "FF", 0), ("X", "Z", "FS", 0)],
+    )
+    r = run(P6, "P6-16", s)
+    assert counts(r) == (1, 4)
+    assert codes(r) == ["X"]
+
+
+def test_p6_17_dangling_finish_needs_a_successor_that_is_not_driven():
+    """'Activities with finish dates that do not drive successors.' An activity with no successor at all is
+    the Logic check's (the report lists it there, not here)."""
+    s = snap([todo("X"), todo("S"), todo("K")], [("X", "S", "SS", 0)])
+    r = run(P6, "P6-17", s)
+    assert counts(r) == (1, 3)
+    assert codes(r) == ["X"]

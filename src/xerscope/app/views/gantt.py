@@ -5,6 +5,11 @@ from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, compare_picker, is_dark, memo, require_store, snapshot_picker
 from xerscope.viz import build_gantt, categorise, wbs_rows
+from xerscope.viz.gantt import CATEGORY_ORDER
+from xerscope.xer.model import STATUS
+
+WBS_TABLE_MAX_HEIGHT = 420
+MAX_ROWS_DEFAULT = 150  # Gantt rows drawn before the figure gets too tall to read
 
 store = require_store()
 top = st.container()
@@ -43,7 +48,7 @@ with wbs_column:
         selection_mode="single-row",
         key=f"wbs_table:{snapshot.source}",  # a new update gets a fresh selection: row positions differ
         width="stretch",
-        height=min(33 * len(nodes) + 38, 420),
+        height=ui.table_height(len(nodes), WBS_TABLE_MAX_HEIGHT),
         column_config={
             "label": st.column_config.TextColumn("WBS", width="medium"),
             "pct_complete": st.column_config.ProgressColumn("% complete", min_value=0, max_value=100, format="%.0f %%"),
@@ -52,19 +57,19 @@ with wbs_column:
             ),
         },
     )
-    rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
+    rows = event.selection.rows
     node = nodes.iloc[rows[0]] if rows and rows[0] < len(nodes) else nodes.iloc[0]
 
 with filter_column:
     st.markdown("**Filters**")
-    status = st.multiselect("Status", ["Not started", "In progress", "Complete"], placeholder="All")
-    categories = st.multiselect("Float", ["Critical", "Near critical", "Normal", "Complete"], placeholder="All")
+    status = st.multiselect("Status", list(STATUS.values()), placeholder="All")
+    categories = st.multiselect("Float", CATEGORY_ORDER, placeholder="All")
     search = st.text_input("Search", placeholder="Activity ID or name")
     left_options, right_options = st.columns(2)
     group = left_options.toggle("Group by WBS", value=True)
     show_links = right_options.toggle("Logic links", value=False)
     hide_loe = left_options.toggle("Hide LOE", value=True)
-    max_rows = right_options.number_input("Max rows", 20, 1000, 150, step=10)
+    max_rows = right_options.number_input("Max rows", 20, 1000, MAX_ROWS_DEFAULT, step=10)
 
 focus_ids = subtree_ids(nodes, node["wbs_id"])
 tasks = snapshot.activities.copy()
@@ -85,7 +90,7 @@ with kpis:
             ),
             (
                 "Forecast finish",
-                f"{node['finish']:%d %b %Y}" if pd.notna(node["finish"]) else "–",
+                ui.fmt_date(node["finish"]),
                 None if pd.isna(node["finish_variance_wd"]) else f"{node['finish_variance_wd']:+.1f} wd vs BL",
                 None,
                 "inverse",
@@ -152,4 +157,4 @@ with st.expander("Table view"):
         "constraint",
     ]
     ui.table(tasks, columns=table_columns)
-    ui.csv_button(tasks[table_columns], f"gantt_{snapshot.data_date:%Y-%m-%d}.csv")
+    ui.csv_button(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv")

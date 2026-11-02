@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from ..xer import build_snapshot, read_xer
-from .mpxj_reader import _read_project, _start_jvm
+from .mpxj_reader import read_project, start_jvm
 
 # --- second CPM engine: MPXJ's PrimaveraScheduler ----------------------------------------------
 #
@@ -60,7 +60,7 @@ P6_SETTLED = {
 
 def settled_patterns(snap) -> set[str]:
     """Keys of P6_SETTLED present in ``snap``: MPXJ is known to differ from P6 there."""
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     st, r = t["status_code"], snap.relationships
     p, s = r["pred_code"].map(st), r["succ_code"].map(st)
     out = set()
@@ -81,7 +81,7 @@ def settled_patterns(snap) -> set[str]:
 
 def unresolved_patterns(snap) -> set[str]:
     """Keys of UNRESOLVED present in ``snap`` (network-wide: a difference propagates)."""
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     st, r = t["status_code"], snap.relationships
     p, s = r["pred_code"].map(st), r["succ_code"].map(st)
     out = set()
@@ -136,7 +136,7 @@ def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
     from ..analysis.cpm import Options, _Run
 
     run = _Run(snap, {}, Options.from_snapshot(snap))
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     m = cmp.pivot_table(index="task_code", columns="field", values="mpxj", aggfunc="first")
     out: set[str] = set()
     todo = [c for c in m.index if t.at[c, "task_type"] == "TT_Task" and t.at[c, "status_code"] == "TK_NotStart"]
@@ -158,7 +158,7 @@ def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
 
 def mpxj_scheduler_source() -> str:
     """Where the PrimaveraScheduler class was loaded from (the released jar or a newer build)."""
-    _start_jvm()
+    start_jvm()
     from org.mpxj.cpm import PrimaveraScheduler
 
     return str(PrimaveraScheduler.class_.getProtectionDomain().getCodeSource().getLocation())
@@ -198,17 +198,17 @@ def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataF
     the at-completion duration is set to actual + remaining (MPXJ otherwise derives it
     from the stored dates), and the non-standard TT_StartMile is read as a start milestone.
     """
-    _start_jvm()
+    reader = start_jvm()  # first: the org.mpxj imports below need the JVM running
     from org.mpxj import ActivityType, Duration, TimeUnit
     from org.mpxj.cpm import PrimaveraScheduler
 
     path = Path(path)
     if project_code is None:
         project_code = build_snapshot(read_xer(path)).project_code
-    proj = _read_project(_start_jvm(), path, project_code)
+    proj = read_project(reader, path, project_code)
     props = proj.getProjectProperties()
 
-    def hours(d) -> float:
+    def duration_hours(d) -> float:
         return 0.0 if d is None else float(d.convertUnits(TimeUnit.HOURS, props).getDuration())
 
     status = props.getStatusDate()
@@ -224,7 +224,7 @@ def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataF
             end = status if status.isAfter(a_s) else a_s
             t.setActualDuration(t.getEffectiveCalendar().getWork(a_s, end, TimeUnit.HOURS))
         if t.getRemainingDuration() is not None:
-            total = hours(t.getActualDuration()) + hours(t.getRemainingDuration())
+            total = duration_hours(t.getActualDuration()) + duration_hours(t.getRemainingDuration())
             t.setDuration(Duration.getInstance(total, TimeUnit.HOURS))
     PrimaveraScheduler().schedule(proj, props.getStartDate())
     rows = {}
@@ -237,8 +237,8 @@ def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataF
             "ef": _jdt(t.getEarlyFinish()),
             "ls": _jdt(t.getLateStart()),
             "lf": _jdt(t.getLateFinish()),
-            "tf_hr": None if tf is None else round(hours(tf), 2),
-            "ff_hr": None if ff is None else round(hours(ff), 2),
+            "tf_hr": None if tf is None else round(duration_hours(tf), 2),
+            "ff_hr": None if ff is None else round(duration_hours(ff), 2),
             "complete": t.getActualFinish() is not None,
         }
     return pd.DataFrame.from_dict(rows, orient="index").rename_axis("task_code")
@@ -258,7 +258,7 @@ def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.Data
     axes = _Axes(snap, *_date_range(snap))
     ours = schedule(snap).frame
     theirs = mpxj_schedule(path, snap.project_code)
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     stored = {
         "es": "early_start_date",
         "ef": "early_end_date",
@@ -286,11 +286,11 @@ def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.Data
                     "mpxj": mp,
                     # MPXJ leaves some values empty (no total float on an ALAP activity)
                     "comparable": mp is not None and not pd.isna(mp),
-                    "xs_mpxj": _same(xs, mp),
+                    "xs_mpxj": same_value(xs, mp),
                     # same instant of work written differently (Friday 17:00 / Monday 08:00)
-                    "xs_mpxj_work": _same(xs, mp) or _same_work(ax, xs, mp),
-                    "xs_p6": _same(xs, p6),
-                    "mpxj_p6": _same(mp, p6),
+                    "xs_mpxj_work": same_value(xs, mp) or _same_work(ax, xs, mp),
+                    "xs_p6": same_value(xs, p6),
+                    "mpxj_p6": same_value(mp, p6),
                 }
             )
     return pd.DataFrame(
@@ -317,18 +317,9 @@ def _same_work(ax, a, b) -> bool:
     return ax.work(a) == ax.work(b)
 
 
-def _same(a, b) -> bool:
+def same_value(a, b) -> bool:
     if a is None or b is None or pd.isna(a) or pd.isna(b):
         return False
     if isinstance(a, pd.Timestamp) or isinstance(b, pd.Timestamp):
         return pd.Timestamp(a) == pd.Timestamp(b)
     return abs(float(a) - float(b)) < 0.01
-
-
-# --- P6 itself: the held-out corpus of cpp-cpm-engine ------------------------------------------
-#
-# 30 sets of 12 synthetic schedules, each frozen before P6 saw it, imported into P6
-# Professional 23.12.1 and scheduled with F9, with P6's early/late dates and floats read
-# back from its database (tests/reference/fetch_p6_heldout.py; the protocol is in the
-# corpus). That is P6 output on progressed, constrained, multi-calendar and (from H8)
-# resource-dependent work, which no public export covers. P6's import re-sizes resource

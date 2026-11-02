@@ -41,10 +41,11 @@ class RawXer:
         return self.tables.get(name, pd.DataFrame())
 
 
-def decode(data: bytes) -> tuple[str, str]:
-    for enc in ENCODINGS:
+def decode_xer(data: bytes) -> tuple[str, str]:
+    """The text of an XER file and the encoding that read it."""
+    for encoding in ENCODINGS:
         try:
-            return data.decode(enc), enc
+            return data.decode(encoding), encoding
         except UnicodeDecodeError:
             continue
     return data.decode("cp1252", errors="replace"), "cp1252 (lossy)"
@@ -113,8 +114,8 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
 
 
 def parse_bytes(data: bytes, source: str = "") -> RawXer:
-    text, enc = decode(data)
-    return parse_text(text, source=source, encoding=enc)
+    text, encoding = decode_xer(data)
+    return parse_text(text, source=source, encoding=encoding)
 
 
 def read_xer(path: str | Path) -> RawXer:

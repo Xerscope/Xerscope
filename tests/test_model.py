@@ -62,54 +62,14 @@ def test_blank_data_date_falls_back_to_planned_start():
 
 
 def _xer(project_extra: dict, sched: dict | None = None, tasks=None, preds=None):
-    """Minimal XER text. Calendars: C8 = 8 h/day, C10 = 10 h/day, C7 = 7.5 h/day."""
-    pf = {
-        "proj_id": "1",
-        "proj_short_name": "P",
-        "last_recalc_date": "2026-03-02 08:00",
-        "clndr_id": "C7",
-        **project_extra,
-    }
-    lines = [
-        "ERMHDR\t23.12\t2026-03-02",
-        "%T\tCALENDAR",
-        "%F\tclndr_id\tclndr_name\tday_hr_cnt",
-        "%R\tC8\tEight\t8",
-        "%R\tC10\tTen\t10",
-        "%R\tC7\tSeven-half\t7.5",
-        "%T\tPROJECT",
-        "%F\t" + "\t".join(pf),
-        "%R\t" + "\t".join(pf.values()),
-    ]
-    if sched:
-        lines += ["%T\tSCHEDOPTIONS", "%F\tproj_id\t" + "\t".join(sched), "%R\t1\t" + "\t".join(sched.values())]
-    cols = [
-        "task_id",
-        "proj_id",
-        "task_code",
-        "task_name",
-        "task_type",
-        "status_code",
-        "clndr_id",
-        "total_float_hr_cnt",
-        "driving_path_flag",
-    ]
-    lines += ["%T\tTASK", "%F\t" + "\t".join(cols)]
-    for r in tasks or []:
-        lines.append("%R\t" + "\t".join(r))
-    if preds:
-        lines += [
-            "%T\tTASKPRED",
-            "%F\ttask_pred_id\ttask_id\tpred_task_id\tproj_id\tpred_proj_id\tpred_type\tlag_hr_cnt",
-        ]
-        lines += ["%R\t" + "\t".join(r) for r in preds]
-    return "\n".join(lines) + "\n"
+    """Minimal XER text (see xerkit.xer_text); ``project_extra`` overrides PROJECT columns."""
+    return xer_text(tasks or [], preds or (), project=project_extra, sched=sched)
 
 
-TASKS = [  # id, proj, code, name, type, status, calendar, TF hours, driving path
-    ["1", "1", "A", "A", "TT_Task", "TK_NotStart", "C8", "0", "Y"],
-    ["2", "1", "B", "B", "TT_Task", "TK_NotStart", "C10", "40", "N"],
-    ["3", "1", "C", "C", "TT_Task", "TK_NotStart", "C8", "48", "Y"],
+TASKS = [  # A is critical by float and on the driving path, B is 40 h and C 48 h from critical
+    {"task_code": "A", "clndr_id": "C8", "total_float_hr_cnt": "0", "driving_path_flag": "Y"},
+    {"task_code": "B", "clndr_id": "C10", "total_float_hr_cnt": "40", "driving_path_flag": "N"},
+    {"task_code": "C", "clndr_id": "C8", "total_float_hr_cnt": "48", "driving_path_flag": "Y"},
 ]
 
 
@@ -144,7 +104,7 @@ def test_lag_days_use_the_predecessor_calendar_whatever_the_lag_calendar(setting
         {},
         {"sched_calendar_on_relationship_lag": setting},
         tasks=TASKS,
-        preds=[["9", "2", "1", "1", "1", "PR_FS", "30"]],
+        preds=[("A", "B", "FS", 30)],
     )
     s = build_snapshot(parse_text(xer))
     assert s.options["lag_calendar"] == setting
