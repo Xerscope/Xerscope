@@ -9,30 +9,261 @@ from xerscope.app import ui
 from xerscope.app.state import baseline_for, is_dark, memo, require_store, snapshot_picker, standards
 from xerscope.viz.charts import build_metric_trend
 
+STATUS_MARK = {
+    "pass": ":green[**PASS**]",
+    "fail": ":red[**FAIL**]",
+    "info": ":blue[**INFO**]",
+    "n/a": ":gray[**N/A**]",
+    "error": ":orange[**ERROR**]",
+}
+IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
+
+
+def target_text(result) -> str:
+    return result.metric.threshold_label.replace("<=", "≤").replace(">=", "≥")
+
+
+def value_text(result, missing: str) -> str:
+    if result.status in ("n/a", "error"):
+        return missing
+    return fmt_value(result.value, result.metric.unit)
+
+
+def count_text(result) -> str:
+    if result.numerator is not None and result.denominator is not None:
+        return f"{result.numerator} / {result.denominator}"
+    return "" if result.numerator is None else str(result.numerator)
+
+
+def culprits_first(frame: pd.DataFrame) -> pd.DataFrame:
+    """ID and name, then the columns this check adds (reason, BL finish, variance…), then the rest."""
+    identity = [column for column in IDENTITY_COLUMNS if column in frame.columns]
+    extra = [column for column in frame.columns if column not in ACTIVITY_COLS + LINK_COLS]
+    return frame[identity + extra + [column for column in frame.columns if column not in identity + extra]]
+
+
+def show_kpis(results) -> None:
+    status = pd.Series([result.status for result in results])
+    scored = int(status.isin(["pass", "fail"]).sum())
+    ui.kpis(
+        [
+            ("Checks passed", f"{int((status == 'pass').sum())} / {scored}", None, "Checks with a target that meet it"),
+            ("Checks failed", int((status == "fail").sum()), None, "Checks with a target that miss it"),
+            ("For review", int((status == "info").sum()), None, "Reported without a pass/fail target"),
+            ("Not applicable", int(status.isin(["n/a", "error"]).sum()), None, "No population, or no baseline"),
+        ]
+    )
+
+
+def show_summary(results, standard, snapshot) -> None:
+    summary = pd.DataFrame(
+        [
+            {
+                "status": result.status,
+                "id": result.metric.id,
+                "group": result.metric.group,
+                "check": result.metric.name,
+                "result": value_text(result, "–"),
+                "count": count_text(result),
+                "target": target_text(result),
+                "flagged": len(result.flagged),
+            }
+            for result in results
+        ]
+    )
+    if not summary["group"].astype(bool).any():
+        summary = summary.drop(columns="group")
+
+    ui.section(
+        "Results",
+        "One row per check, in the standard's order. "
+        "Open a check below for its calculation and the activities behind it.",
+    )
+    ui.table(
+        summary,
+        status="status",
+        max_height=700,
+        overrides={"flagged": st.column_config.NumberColumn("Items listed", format="%d")},
+    )
+
+    # Every flagged item of every check in one file: the audit trail behind the scores.
+    trail = pd.concat(
+        [
+            result.flagged.assign(check_id=result.metric.id, check=result.metric.name, check_status=result.status)
+            for result in results
+            if not result.flagged.empty
+        ]
+        or [pd.DataFrame()],
+        ignore_index=True,
+    )
+    summary_column, trail_column, _ = st.columns([1, 1.3, 4])
+    with summary_column:
+        ui.csv_button(
+            summary, f"{standard.id}_{snapshot.data_date:%Y-%m-%d}_summary.csv", "Summary (CSV)", key="dl_sum"
+        )
+    with trail_column:
+        if not trail.empty:
+            front = ["check_id", "check", "check_status"]
+            ui.csv_button(
+                trail[front + [column for column in trail.columns if column not in front]],
+                f"{standard.id}_{snapshot.data_date:%Y-%m-%d}_flagged.csv",
+                "All flagged items (CSV)",
+                key="dl_trail",
+            )
+
+
+def show_check(result, explanation, snapshot, expanded: bool) -> None:
+    """One expander: what the check measures, its calculation, method and the flagged items."""
+    metric = result.metric
+    counts = (
+        f" ({result.numerator} / {result.denominator})" if result.numerator is not None and result.denominator else ""
+    )
+    label = (
+        f"{STATUS_MARK[result.status]}  {metric.id} · **{metric.name}** — {value_text(result, 'n/a')}{counts}"
+        f" · target {target_text(result)}"
+    )
+    with st.expander(label, expanded=expanded):
+        left, right = st.columns([3, 2], gap="large")
+        with left:
+            st.markdown(f"**What it measures** · {explanation.measured}")
+            with st.container(border=True):
+                st.caption("Calculation")
+                st.markdown(f"#### {explanation.formula}")
+                st.markdown(explanation.verdict)
+            if explanation.population:
+                st.markdown("**Population**")
+                st.markdown("\n".join(f"- {line}" for line in explanation.population))
+            if result.note and result.note not in explanation.formula:
+                st.markdown(f"**Note** · {ui.md_text(result.note)}")
+        with right:
+            st.markdown("**Method**")
+            st.caption(explanation.method.replace("``", "`"))
+            if explanation.parameters:
+                st.markdown("**Parameters**")
+                ui.table(pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]), max_height=260)
+            if metric.source:
+                st.caption(
+                    "Source: "
+                    + (f"[{metric.source}]({metric.source})" if metric.source.startswith("http") else metric.source)
+                )
+
+        if result.flagged.empty:
+            st.caption("No item listed for this check.")
+        else:
+            st.markdown(
+                f"**{explanation.flagged_label}** · {len(result.flagged)} "
+                f"{noun(explanation.subject, len(result.flagged))}"
+            )
+            ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
+            ui.csv_button(
+                result.flagged,
+                f"{metric.id}_{snapshot.data_date:%Y-%m-%d}.csv",
+                "Download list (CSV)",
+                key=f"dl_{metric.id}",
+            )
+
+
+def show_details(results, snapshot, only_failed: bool) -> None:
+    ui.section("Detail by check")
+    expand_all = st.toggle("Expand all", value=False, key="health_expand")
+    group = None
+    for result in results:
+        if only_failed and result.status != "fail":
+            continue
+        if result.metric.group and result.metric.group != group:
+            group = result.metric.group
+            st.markdown(f"##### {group}")
+        show_check(result, explain(result), snapshot, expand_all)
+
+
+def show_trend(standard, baseline_key) -> None:
+    ui.section("Trend across updates", "The same check on every loaded update, against its target.")
+    history = memo(("health", repr(standard), baseline_key), health_history, store, standard, baseline_for)
+    metric_ids = [metric.id for metric in standard.metrics]
+    metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=check_label)
+    metric = standard[metric_id]
+    st.plotly_chart(
+        build_metric_trend(
+            history[history["id"] == metric_id],
+            metric.name,
+            metric.threshold,
+            metric.threshold_label,
+            metric.unit,
+            is_dark(),
+        ),
+        width="stretch",
+    )
+    by_update = health_wide(history, standard)
+    with st.expander("All checks, all updates"):
+        ui.table(
+            by_update,
+            max_height=640,
+            # dates follow the id and check columns
+            overrides={name: st.column_config.NumberColumn(name, format="%.2f") for name in by_update.columns[2:]},
+        )
+
+
+def show_own_standard() -> None:
+    with st.expander("Use your own standard"):
+        st.markdown(
+            "A standard is a TOML file: each check picks a rule, its parameters and a target. "
+            "Start from the template, edit it, upload it here (or put it in the folder given to "
+            "`xerscope app --standards`)."
+        )
+        st.download_button(
+            "Download the template",
+            template_text().encode("utf-8"),
+            "my-standard.toml",
+            "application/toml",
+            icon=":material/download:",
+        )
+        upload = st.file_uploader("Upload a standard (.toml)", type=["toml"], key="std_upload")
+        if upload is not None:
+            try:
+                custom = loads_standard(upload.getvalue(), upload.name)
+                st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
+                st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
+            except (ValueError, UnicodeDecodeError) as exc:
+                st.error(str(exc))
+        for error in st.session_state.get("standard_errors", []):
+            st.error(error)
+
+
 store = require_store()
 available = standards()
+
+
+def standard_name(standard_id: str) -> str:
+    return available[standard_id].name
+
+
+def check_label(metric_id: str) -> str:
+    return f"{metric_id} · {standard[metric_id].name}"
+
+
 top = st.container()  # title and context, filled once the update is picked
 
-c1, c2, c3 = st.columns([4, 2.2, 1.3], vertical_alignment="bottom")
-with c1:
-    std_id = st.segmented_control(
+standard_column, snapshot_column, failed_column = st.columns([4, 2.2, 1.3], vertical_alignment="bottom")
+with standard_column:
+    standard_id = st.segmented_control(
         "Standard",
         list(available),
         default="P6" if "P6" in available else None,
-        format_func=lambda k: available[k].name,
+        format_func=standard_name,
         key="health_std",
     )
-with c2:
-    snap = snapshot_picker(store, "Update", key="health_snap")
-with c3:
+with snapshot_column:
+    snapshot = snapshot_picker(store, "Update", key="health_snap")
+with failed_column:
     only_failed = st.toggle("Failed checks only", value=False, key="health_failed")
-std = available[std_id or next(iter(available))]
-bl = baseline_for(snap)
+standard = available[standard_id or next(iter(available))]
+baseline = baseline_for(snapshot)
 
 with top:
-    ui.header("Schedule health", store, snap, bl)
-st.caption((std.description or std.name) + (f" · [reference]({std.source})" if std.source.startswith("http") else ""))
-if bl is None:
+    ui.header("Schedule health", store, snapshot, baseline)
+reference = f" · [reference]({standard.source})" if standard.source.startswith("http") else ""
+st.caption((standard.description or standard.name) + reference)
+if baseline is None:
     st.warning(
         "No baseline selected: checks against the baseline (late activities, BEI, missed tasks) "
         "are not applicable. Pick one in the sidebar.",
@@ -41,199 +272,25 @@ if bl is None:
 
 # memoised per (data set, standard, update, baseline): the DECM critical path test alone
 # takes ~2 s on a 4,000-activity file, and every widget change reruns the page
-_bl_key = st.session_state.get("bl_choice"), bl.label if bl else None
+baseline_key = st.session_state.get("bl_choice"), baseline.label if baseline else None
 results = memo(
-    ("health_results", repr(std), snap.source, str(snap.data_date), _bl_key),
-    lambda: run_standard(std, AnalysisContext(snap, store, bl)),
+    ("health_results", repr(standard), snapshot.source, str(snapshot.data_date), baseline_key),
+    run_standard,
+    standard,
+    AnalysisContext(snapshot, store, baseline),
 )
-status = pd.Series([r.status for r in results])
-scored = int(status.isin(["pass", "fail"]).sum())
-ui.kpis(
-    [
-        ("Checks passed", f"{int((status == 'pass').sum())} / {scored}", None, "Checks with a target that meet it"),
-        ("Checks failed", int((status == "fail").sum()), None, "Checks with a target that miss it"),
-        ("For review", int((status == "info").sum()), None, "Reported without a pass/fail target"),
-        ("Not applicable", int(status.isin(["n/a", "error"]).sum()), None, "No population, or no baseline"),
-    ]
-)
-
-# --- summary --------------------------------------------------------------------------------------
-explained = [explain(r) for r in results]
-summary = pd.DataFrame(
-    [
-        {
-            "status": r.status,
-            "id": r.metric.id,
-            "group": r.metric.group,
-            "check": r.metric.name,
-            "result": fmt_value(r.value, r.metric.unit) if r.status not in ("n/a", "error") else "–",
-            "count": f"{r.numerator} / {r.denominator}"
-            if r.numerator is not None and r.denominator is not None
-            else ("" if r.numerator is None else str(r.numerator)),
-            "target": r.metric.threshold_label.replace("<=", "≤").replace(">=", "≥"),
-            "flagged": len(r.flagged),
-        }
-        for r in results
-    ]
-)
-if not summary["group"].astype(bool).any():
-    summary = summary.drop(columns="group")
-
-ui.section(
-    "Results",
-    "One row per check, in the standard's order. Open a check below for its calculation and the activities behind it.",
-)
-ui.table(
-    summary,
-    status="status",
-    max_height=700,
-    overrides={
-        "flagged": st.column_config.NumberColumn("Items listed", format="%d"),
-    },
-)
-
-# Every flagged item of every check in one file: the audit trail behind the scores.
-trail = pd.concat(
-    [
-        r.flagged.assign(check_id=r.metric.id, check=r.metric.name, check_status=r.status)
-        for r in results
-        if not r.flagged.empty
-    ]
-    or [pd.DataFrame()],
-    ignore_index=True,
-)
-d1, d2, _ = st.columns([1, 1.3, 4])
-with d1:
-    ui.csv_button(summary, f"{std.id}_{snap.data_date:%Y-%m-%d}_summary.csv", "Summary (CSV)", key="dl_sum")
-with d2:
-    if not trail.empty:
-        front = ["check_id", "check", "check_status"]
-        ui.csv_button(
-            trail[front + [c for c in trail.columns if c not in front]],
-            f"{std.id}_{snap.data_date:%Y-%m-%d}_flagged.csv",
-            "All flagged items (CSV)",
-            key="dl_trail",
-        )
-
-# --- detail per check -----------------------------------------------------------------------------
-ui.section("Detail by check")
-expand_all = st.toggle("Expand all", value=False, key="health_expand")
-
-
-def culprits_first(df: pd.DataFrame) -> pd.DataFrame:
-    """ID and name, then the columns this check adds (reason, BL finish, variance…), then the rest."""
-    ident = [
-        c
-        for c in ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
-        if c in df.columns
-    ]
-    extra = [c for c in df.columns if c not in ACTIVITY_COLS + LINK_COLS]
-    return df[ident + extra + [c for c in df.columns if c not in ident + extra]]
-
-
-MARK = {
-    "pass": ":green[**PASS**]",
-    "fail": ":red[**FAIL**]",
-    "info": ":blue[**INFO**]",
-    "n/a": ":gray[**N/A**]",
-    "error": ":orange[**ERROR**]",
-}
-group = None
-for r, e in zip(results, explained, strict=True):
-    if only_failed and r.status != "fail":
-        continue
-    if r.metric.group and r.metric.group != group:
-        group = r.metric.group
-        st.markdown(f"##### {group}")
-    result_txt = fmt_value(r.value, r.metric.unit) if r.status not in ("n/a", "error") else "n/a"
-    counts = f" ({r.numerator} / {r.denominator})" if r.numerator is not None and r.denominator else ""
-    target = r.metric.threshold_label.replace("<=", "≤").replace(">=", "≥")
-    label = f"{MARK[r.status]}  {r.metric.id} · **{r.metric.name}** — {result_txt}{counts} · target {target}"
-    with st.expander(label, expanded=expand_all):
-        left, right = st.columns([3, 2], gap="large")
-        with left:
-            st.markdown(f"**What it measures** · {e.measured}")
-            with st.container(border=True):
-                st.caption("Calculation")
-                st.markdown(f"#### {e.formula}")
-                st.markdown(e.verdict)
-            if e.population:
-                st.markdown("**Population**")
-                st.markdown("\n".join(f"- {line}" for line in e.population))
-            if r.note and r.note not in e.formula:
-                st.markdown(f"**Note** · {ui.md_text(r.note)}")
-        with right:
-            st.markdown("**Method**")
-            st.caption(e.method.replace("``", "`"))
-            if e.parameters:
-                st.markdown("**Parameters**")
-                ui.table(pd.DataFrame(e.parameters, columns=["parameter", "value", "set by"]), max_height=260)
-            if r.metric.source:
-                src = r.metric.source
-                st.caption("Source: " + (f"[{src}]({src})" if src.startswith("http") else src))
-
-        if r.flagged.empty:
-            st.caption("No item listed for this check.")
-        else:
-            st.markdown(f"**{e.flagged_label}** · {len(r.flagged)} {noun(e.subject, len(r.flagged))}")
-            ui.table(culprits_first(r.flagged), max_height=420, key=f"flag_{r.metric.id}")
-            ui.csv_button(
-                r.flagged,
-                f"{r.metric.id}_{snap.data_date:%Y-%m-%d}.csv",
-                "Download list (CSV)",
-                key=f"dl_{r.metric.id}",
-            )
-
-# --- week over week -------------------------------------------------------------------------------
+show_kpis(results)
+show_summary(results, standard, snapshot)
+show_details(results, snapshot, only_failed)
 if len(store) > 1:
-    ui.section("Trend across updates", "The same check on every loaded update, against its target.")
-    hist = memo(("health", repr(std), _bl_key), lambda: health_history(store, std, baseline_for))
-    metric_ids = [m.id for m in std.metrics]
-    mid = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=lambda i: f"{i} · {std[i].name}")
-    m = std[mid]
-    st.plotly_chart(
-        build_metric_trend(hist[hist["id"] == mid], m.name, m.threshold, m.threshold_label, m.unit, is_dark()),
-        width="stretch",
-    )
-    wide = health_wide(hist, std)
-    with st.expander("All checks, all updates"):
-        ui.table(
-            wide,
-            max_height=640,
-            overrides={
-                c: st.column_config.NumberColumn(c, format="%.2f") for c in wide.columns[2:]
-            },  # dates follow the id and check columns
-        )
+    show_trend(standard, baseline_key)
 
-if bl is not None:
-    missing = sorted(set(snap.activities["task_code"]) - set(bl.frame.index))
+if baseline is not None:
+    missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
     if missing:
         st.caption(
             f"{len(missing)} activities are not in the baseline: "
             f"{ui.md_text(', '.join(missing[:10]))}{'…' if len(missing) > 10 else ''}"
         )
 
-# --- your own standard ----------------------------------------------------------------------------
-with st.expander("Use your own standard"):
-    st.markdown(
-        "A standard is a TOML file: each check picks a rule, its parameters and a target. "
-        "Start from the template, edit it, upload it here (or put it in the folder given to "
-        "`xerscope app --standards`)."
-    )
-    st.download_button(
-        "Download the template",
-        template_text().encode("utf-8"),
-        "my-standard.toml",
-        "application/toml",
-        icon=":material/download:",
-    )
-    up = st.file_uploader("Upload a standard (.toml)", type=["toml"], key="std_upload")
-    if up is not None:
-        try:
-            custom = loads_standard(up.getvalue(), up.name)
-            st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
-            st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
-        except (ValueError, UnicodeDecodeError) as exc:
-            st.error(str(exc))
-    for err in st.session_state.get("standard_errors", []):
-        st.error(err)
+show_own_standard()
