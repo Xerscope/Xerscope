@@ -107,7 +107,7 @@ def p6_heldout_score(set_dir: str | Path, overlay: bool = True) -> pd.DataFrame:
                 )
             )
             continue
-        t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+        t = snap.by_code
         for r in g.itertuples(index=False):
             if r.task_code not in f.index:
                 continue

@@ -37,7 +37,7 @@ def int_01_recalculated(context) -> RuleOutput:
     for task_code, field_name, stored, computed, agrees in comparison[columns].itertuples(index=False):
         if not agrees:
             differences.setdefault(task_code, []).append(f"{field_name}: {stored} -> {computed}")
-    tasks = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    tasks = context.snapshot.by_code
     flagged = tasks.loc[sorted(differences)].reset_index()
     texts = ["; ".join(differences[task_code]) for task_code in flagged["task_code"]]
     different_values = sum(len(found) for found in differences.values())
@@ -73,7 +73,7 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
     actual start (P6 lists them in its scheduling log). Counts activities.
     """
     activities = without_level_of_effort(context.snapshot.activities)
-    tasks = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    tasks = context.snapshot.by_code
     started = activities[activities["is_started"]].drop_duplicates("task_code").set_index("task_code")
     ahead_of = _predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), started, tasks)
     flagged = started.loc[ahead_of.index].reset_index()

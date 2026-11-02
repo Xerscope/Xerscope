@@ -25,6 +25,7 @@ from ..populations import (
     forecast_before,
     has_driving_predecessor,
     has_driving_successor,
+    joined_sorted,
     links_between,
     open_activities,
     with_baseline,
@@ -36,10 +37,6 @@ DECM_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]  # Primavera's hard const
 STATUS_PERIOD_DAYS = 28  # monthly updates: an update is compared with the one a period older
 RIDING_WINDOW_WD = 3  # 06A506c: a forecast start this close to the data date "rides" it
 RIDING_REMAINING_TOLERANCE_WD = 2  # 06A506c: a remaining duration that moved by no more "rides" it too
-
-
-def _join_sorted(codes: pd.Series) -> str:
-    return ", ".join(sorted(codes))
 
 
 def _update_a_period_ago(context):
@@ -112,7 +109,7 @@ def decm_06a205a_lags(context) -> RuleOutput:
     tasks = open_activities(context)
     relationships = context.snapshot.relationships
     lags = relationships[relationships["lag_hr"].fillna(0) > 0]
-    lagged_from = lags.groupby("succ_code")["pred_code"].agg(_join_sorted)
+    lagged_from = lags.groupby("succ_code")["pred_code"].agg(joined_sorted)
     flagged = tasks[tasks["task_code"].isin(lagged_from.index)]
     return RuleOutput(
         flagged_activities(flagged, lagged_from=flagged["task_code"].map(lagged_from)), len(flagged), len(tasks)
@@ -162,13 +159,13 @@ def decm_06a210a_loe_successors(context) -> RuleOutput:
     """
     open_tasks = open_activities(context)
     open_loe = open_tasks[open_tasks["is_loe"]]
-    is_loe_by_code = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")["is_loe"]
+    is_loe_by_code = context.snapshot.by_code["is_loe"]
     relationships = context.snapshot.relationships
     from_loe = relationships[
         relationships["pred_code"].isin(open_loe["task_code"]) & relationships["succ_code"].isin(is_loe_by_code.index)
     ]
     successor_is_loe = as_flag(from_loe["succ_code"].map(is_loe_by_code))
-    drives = from_loe[~successor_is_loe].groupby("pred_code")["succ_code"].agg(_join_sorted)
+    drives = from_loe[~successor_is_loe].groupby("pred_code")["succ_code"].agg(joined_sorted)
     flagged = open_loe[open_loe["task_code"].isin(drives.index)]
     return RuleOutput(flagged_activities(flagged, drives=flagged["task_code"].map(drives)), len(flagged), len(open_loe))
 
@@ -199,7 +196,7 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
     06A212a: X = 0; FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) <
     P.FS
     """
-    tasks = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    tasks = context.snapshot.by_code
     successors = open_activities(context).drop_duplicates("task_code").set_index("task_code")
     relationships = context.snapshot.relationships
     links = links_between(relationships, successors, tasks)
@@ -265,8 +262,8 @@ def _actual_date_changed(context, column: str) -> RuleOutput:
     previous = _update_a_period_ago(context)
     if previous is None:
         return RuleOutput(note=f"needs an update {STATUS_PERIOD_DAYS} days older")
-    now = context.snapshot.activities.drop_duplicates("task_code").set_index("task_code")
-    before = previous.activities.drop_duplicates("task_code").set_index("task_code")[column].dropna()
+    now = context.snapshot.by_code
+    before = previous.by_code[column].dropna()
     common = before.index.intersection(now.index)
     changed = [code for code in common if now.at[code, column] != before[code]]
     flagged = now.loc[changed].reset_index()
@@ -377,7 +374,7 @@ def decm_06a506c_riding_status_date(context) -> RuleOutput:
     previous = _update_a_period_ago(context)
     if previous is None:
         return RuleOutput(note=f"needs an update {STATUS_PERIOD_DAYS} days older")
-    previous_tasks = previous.activities.drop_duplicates("task_code").set_index("task_code")
+    previous_tasks = previous.by_code
     tasks = without_level_of_effort(open_activities(context))
     tasks = tasks[tasks["task_code"].isin(previous_tasks.index)]
     before = previous_tasks.loc[tasks["task_code"]].set_index(tasks.index)

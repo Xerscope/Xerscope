@@ -12,20 +12,27 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 
 from xerscope.viz.charts import ACCENT, INK, STATUS
 
-# Check status -> (label, colour for text on white, Markdown mark). Red / amber / green are
-# reserved for status.
+
+class StatusStyle(NamedTuple):
+    label: str
+    colour: str  # for text on white
+    mark: str  # Markdown
+
+
+# Check status -> style. Red / amber / green are reserved for status.
 STATUS_STYLE = {
-    "pass": ("Pass", STATUS["light"]["good"], ":green[**PASS**]"),
-    "fail": ("Fail", STATUS["light"]["critical"], ":red[**FAIL**]"),
-    "info": ("Info", ACCENT, ":blue[**INFO**]"),
-    "n/a": ("N/A", INK["light"]["muted"], ":gray[**N/A**]"),
-    "error": ("Error", STATUS["light"]["warning"], ":orange[**ERROR**]"),
+    "pass": StatusStyle("Pass", STATUS["light"]["good"], ":green[**PASS**]"),
+    "fail": StatusStyle("Fail", STATUS["light"]["critical"], ":red[**FAIL**]"),
+    "info": StatusStyle("Info", ACCENT, ":blue[**INFO**]"),
+    "n/a": StatusStyle("N/A", INK["light"]["muted"], ":gray[**N/A**]"),
+    "error": StatusStyle("Error", STATUS["light"]["warning"], ":orange[**ERROR**]"),
 }
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
 HEADER_HEIGHT = 38
@@ -277,7 +284,7 @@ def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler colouring the status column (pass green, fail red…), labels capitalised."""
     out = frame.copy()
     out[column] = out[column].map(status_label)
-    colour_of_label = {label: colour for label, colour, _ in STATUS_STYLE.values()}
+    colour_of_label = {style.label: style.colour for style in STATUS_STYLE.values()}
 
     def colour_cell(label: str) -> str:
         return f"color: {colour_of_label.get(label, 'inherit')}; font-weight: 600"
@@ -286,7 +293,7 @@ def status_style(frame: pd.DataFrame, column: str = "status"):
 
 
 def status_label(status: str) -> str:
-    return STATUS_STYLE[status][0] if status in STATUS_STYLE else status
+    return STATUS_STYLE[status].label if status in STATUS_STYLE else status
 
 
 def latest_names(store) -> pd.Series:

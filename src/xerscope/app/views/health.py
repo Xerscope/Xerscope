@@ -121,7 +121,7 @@ def show_check(result, explanation, snapshot, expanded: bool) -> None:
     metric = result.metric
     counts = f" ({count_text(result)})" if result.numerator is not None and result.denominator else ""
     label = (
-        f"{ui.STATUS_STYLE[result.status][2]}  {metric.id} · **{metric.name}** — {value_text(result, 'n/a')}{counts}"
+        f"{ui.STATUS_STYLE[result.status].mark}  {metric.id} · **{metric.name}** — {value_text(result, 'n/a')}{counts}"
         f" · target {target_text(result)}"
     )
     with st.expander(label, expanded=expanded):

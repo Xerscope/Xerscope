@@ -207,7 +207,7 @@ class EvPoint:
 
 def performance_pct(snapshot: Snapshot) -> pd.DataFrame:
     """Per activity (index task_code): EV technique of its WBS and Performance % Complete."""
-    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    activities = snapshot.by_code
     if "ev_compute_type" in activities:
         technique = activities["ev_compute_type"].map(ev_technique)
     else:
@@ -235,7 +235,7 @@ def earned(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
     ``bl_labor_hr`` / ``bl_start`` / ``bl_finish`` here are the EV basis values (see
     baseline.EV_BASES): the hours and dates PV and EV are computed from.
     """
-    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    activities = snapshot.by_code
     baseline_ev = baseline.frame.drop(columns=["bl_labor_hr", "bl_start", "bl_finish"]).rename(
         columns={"ev_labor_hr": "bl_labor_hr", "ev_start": "bl_start", "ev_finish": "bl_finish"}
     )

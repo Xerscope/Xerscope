@@ -249,7 +249,7 @@ class _Run:
                 f"no data date or planned start: scheduled from the earliest activity date {known[0]:%Y-%m-%d %H:%M}"
             )
         self.data_date = max(known)
-        self.activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+        self.activities = snapshot.by_code
         self.axes = _Axes(snapshot, *_date_range(snapshot))
         self.project_calendar = snapshot.calendar()
         self._network()
@@ -1299,7 +1299,7 @@ def compare_with_stored(snapshot: Snapshot, recomputed: Schedule | None = None) 
     e.g. Wednesday 17:00 vs the next working morning).
     """
     recomputed = recomputed or schedule(snapshot)
-    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    activities = snapshot.by_code
     frame = recomputed.frame
     rows = []
     axes = _Axes(snapshot, *_date_range(snapshot))
@@ -1344,7 +1344,7 @@ def compare_assignments(snapshot: Snapshot, recomputed: Schedule | None = None) 
         .drop_duplicates("taskrsrc_id")
         .set_index("taskrsrc_id")
     )
-    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    activities = snapshot.by_code
     axes = _Axes(snapshot, *_date_range(snapshot))
     rows = []
     for computed_row in recomputed.assignments.itertuples(index=False):

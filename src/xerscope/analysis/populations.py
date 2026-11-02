@@ -51,6 +51,11 @@ def as_flag(column: pd.Series) -> pd.Series:
     return column.fillna(False).astype(bool)
 
 
+def joined_sorted(values: pd.Series) -> str:
+    """The values as one sorted, comma-separated string (a groupby aggregation)."""
+    return ", ".join(sorted(values))
+
+
 def open_activities(context: AnalysisContext) -> pd.DataFrame:
     """Every activity that is not completed (WBS summaries are never in the snapshot's activities)."""
     activities = context.snapshot.activities

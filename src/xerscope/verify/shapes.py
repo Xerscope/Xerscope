@@ -25,7 +25,7 @@ def join_fields(fields: pd.Series) -> str:
 
 def shapes(snapshot: Snapshot) -> pd.Series:
     """One label per activity (indexed by task_code)."""
-    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    activities = snapshot.by_code
     relationships = snapshot.relationships
     predecessors = relationships.groupby("succ_code")["type"].agg(join_unique)
     successors = relationships.groupby("pred_code")["type"].agg(join_unique)

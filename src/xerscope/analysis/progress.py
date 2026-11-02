@@ -46,7 +46,7 @@ def milestone_trend(store: SnapshotStore, codes: list[str] | None = None) -> pd.
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
     """First vs latest forecast per milestone, in working days of its own calendar (latest update)."""
     latest = store.latest
-    calendar_ids = latest.activities.drop_duplicates("task_code").set_index("task_code")["clndr_id"]
+    calendar_ids = latest.by_code["clndr_id"]
     by_milestone = trend.groupby("task_code")
     slips = pd.DataFrame(
         {
@@ -86,7 +86,7 @@ def committed(previous: Snapshot, current: Snapshot, include_milestones: bool = 
     if not include_milestones:
         open_work = open_work[~open_work["is_milestone"]]
     plan = open_work[open_work["finish"] < current.data_date][["task_code", "task_name", "wbs_code", "finish"]]
-    now = current.activities.drop_duplicates("task_code").set_index("task_code")
+    now = current.by_code
     plan = plan.rename(columns={"finish": "planned_finish"})
     plan["in_update"] = plan["task_code"].isin(now.index)
     plan["completed"] = plan["task_code"].map(now["is_complete"]).fillna(False).astype(bool)
@@ -128,8 +128,8 @@ def progress_delta(previous: Snapshot, current: Snapshot, baseline=None) -> pd.D
     """
     from .evm import performance_pct
 
-    before = previous.activities.drop_duplicates("task_code").set_index("task_code")
-    after = current.activities.drop_duplicates("task_code").set_index("task_code")
+    before = previous.by_code
+    after = current.by_code
     columns = ["task_name", "wbs_code", "wbs_l1", "status", "labor_budget_hr", "labor_actual_hr"]
     # every activity of either update: one deleted since W-1 gives its earned hours back,
     # so the week's figures still add up to the change in EV

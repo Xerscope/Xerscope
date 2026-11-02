@@ -13,6 +13,7 @@ import pandas as pd
 
 from ..store import SnapshotStore
 from ..xer import Snapshot
+from .populations import joined_sorted
 
 CATEGORIES = [
     "Project",
@@ -77,8 +78,8 @@ def _differs(before: pd.Series, after: pd.Series) -> pd.Series:
 
 
 def changelog(old: Snapshot, new: Snapshot) -> pd.DataFrame:
-    previous_all = old.activities.drop_duplicates("task_code").set_index("task_code")
-    current_all = new.activities.drop_duplicates("task_code").set_index("task_code")
+    previous_all = old.by_code
+    current_all = new.by_code
     common = sorted(set(previous_all.index) & set(current_all.index))
     previous, current = previous_all.loc[common], current_all.loc[common]
     changes = (
@@ -338,14 +339,10 @@ def summary(log: pd.DataFrame) -> pd.DataFrame:
     return without_project.groupby(["category", "change"], observed=True).size().rename("count").reset_index()
 
 
-def _joined_kinds(changes: pd.Series) -> str:
-    return ", ".join(sorted(changes))
-
-
 def category_totals(counts: pd.DataFrame) -> pd.DataFrame:
     """Per category: total number of changes and the sorted kinds of change seen (from :func:`summary`)."""
     totals = counts.groupby("category", observed=True)["count"].sum().rename("total").reset_index()
-    kinds = counts.groupby("category", observed=True)["change"].apply(_joined_kinds).rename("kinds")
+    kinds = counts.groupby("category", observed=True)["change"].apply(joined_sorted).rename("kinds")
     return totals.merge(kinds.reset_index(), on="category")
 
 

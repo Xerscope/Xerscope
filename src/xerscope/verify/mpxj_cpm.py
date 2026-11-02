@@ -60,7 +60,7 @@ P6_SETTLED = {
 
 def settled_patterns(snap) -> set[str]:
     """Keys of P6_SETTLED present in ``snap``: MPXJ is known to differ from P6 there."""
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     st, r = t["status_code"], snap.relationships
     p, s = r["pred_code"].map(st), r["succ_code"].map(st)
     out = set()
@@ -81,7 +81,7 @@ def settled_patterns(snap) -> set[str]:
 
 def unresolved_patterns(snap) -> set[str]:
     """Keys of UNRESOLVED present in ``snap`` (network-wide: a difference propagates)."""
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     st, r = t["status_code"], snap.relationships
     p, s = r["pred_code"].map(st), r["succ_code"].map(st)
     out = set()
@@ -136,7 +136,7 @@ def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
     from ..analysis.cpm import Options, _Run
 
     run = _Run(snap, {}, Options.from_snapshot(snap))
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     m = cmp.pivot_table(index="task_code", columns="field", values="mpxj", aggfunc="first")
     out: set[str] = set()
     todo = [c for c in m.index if t.at[c, "task_type"] == "TT_Task" and t.at[c, "status_code"] == "TK_NotStart"]
@@ -258,7 +258,7 @@ def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.Data
     axes = _Axes(snap, *_date_range(snap))
     ours = schedule(snap).frame
     theirs = mpxj_schedule(path, snap.project_code)
-    t = snap.activities.drop_duplicates("task_code").set_index("task_code")
+    t = snap.by_code
     stored = {
         "es": "early_start_date",
         "ef": "early_end_date",
