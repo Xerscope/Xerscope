@@ -55,11 +55,17 @@ no route to the internet.
 Password hash — Caddy gets a bcrypt hash, never the password:
 
 ```bash
-docker run --rm caddy:2.11.7 caddy hash-password --plaintext 'your passphrase'   # → $2a$14$...
+docker run --rm caddy:2.11.7 caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext 'your passphrase'   # → $2a$10$...
 ```
 
 Use a long passphrase (24+ characters, generated; a password manager or
 `openssl rand -base64 24`). Note it: a bcrypt hash cannot be reversed.
+
+Why cost 10 and not Caddy's default 14: every wrong password costs one bcrypt run on the
+NAS's CPU, and the stack has no CPU quota (§7), so at cost 14 (about 1.25 s per attempt on
+a 2-core x86 test machine) a few clients retrying in a loop hold every core of the NAS. Cost
+10 is 16 times cheaper (about 0.08 s). The cost only slows an offline attack on a stolen
+hash, and a generated 24-character passphrase (about 140 bits) is out of reach at either cost.
 
 Secret URL prefix — `openssl rand -hex 12` → `<random>` (24 hex chars, 96 bits). Internet
 scanners find every new `*.ts.net` name within seconds (the certificate is in the public CT
@@ -120,9 +126,11 @@ The case of the folder name matters inside the container: `/volume1/Planning` an
 `/volume1/planning` are two different paths. Copy it from File Station.
 
 The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes the sidebar
-field that takes a path. Uploads stay possible, up to 64 MB per file
-(`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`; the largest export is about 40 MB), and an error shows
-no traceback on the page (`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
+field that takes a path and the XER uploads (exports and baseline: one parsed 40 MB export
+takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New weeks go in
+the shared folder. The only upload left is a standard (.toml) on the Schedule health page,
+capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`). An error shows no traceback on the page
+(`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
 
 ## 6. Create the project
 
@@ -137,7 +145,7 @@ name `".env"` with the quotes). A missing value stops the build with its name.
 ```
 TS_AUTHKEY=tskey-auth-...              # first start only (TS_AUTH_ONCE): once the node is up, delete this line and the key in the admin console
 XERSCOPE_USER=<login>
-XERSCOPE_PASSWORD_HASH='$2a$14$...'     # single quotes: unquoted, Compose reads the $ as variables
+XERSCOPE_PASSWORD_HASH='$2a$10$...'     # single quotes: unquoted, Compose reads the $ as variables
 XERSCOPE_PATH=<random>                 # no slashes
 XERSCOPE_EXPORTS=/volume1/<shared-folder>   # exact case
 XERSCOPE_UID=<uid>                          # the dedicated account (§5)
@@ -232,7 +240,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
 - [ ] Memory and PID caps on the three containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
-- [ ] The visitor cannot type a folder path (`XERSCOPE_DATA_LOCKED`) and sees no traceback (§5).
+- [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`) and sees no traceback (§5).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
@@ -255,5 +263,4 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | the app container restarts while files load (Container Manager: exited, then running) | the memory cap: the kernel killed it | load fewer weeks at once, or raise `XERSCOPE_MEM_LIMIT` in `.env` within the NAS's free RAM (§7), Build |
-| page after upload disappears on restart | an upload is held in the session's memory, never written to disk | drop files in the shared folder instead |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |

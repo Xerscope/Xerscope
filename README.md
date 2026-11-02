@@ -152,7 +152,7 @@ Configuration (environment variables, also set by the `app` flags):
 | `XERSCOPE_DATA` | folder of weekly `.xer` files to preload |
 | `XERSCOPE_BASELINE` | baseline `.xer` |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
-| `XERSCOPE_DATA_LOCKED` | `true`: the sidebar offers no folder field, only `XERSCOPE_DATA` is read (remote deployment) |
+| `XERSCOPE_DATA_LOCKED` | `true`: the sidebar offers no folder field and no `.xer` upload, only `XERSCOPE_DATA` is read (remote deployment) |
 
 ## Definitions that matter
 
@@ -219,7 +219,7 @@ schedules, and any gap names a rule to fix.
 
 ```bash
 cd deploy && cp .env.example .env    # TS_AUTHKEY, XERSCOPE_USER, XERSCOPE_PASSWORD_HASH, XERSCOPE_PATH, XERSCOPE_EXPORTS
-docker run --rm caddy:2.11.7 caddy hash-password --plaintext '<password>'
+docker run --rm caddy:2.11.7 caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext '<password>'
 docker compose up -d
 docker compose exec tailscale tailscale funnel status
 ```

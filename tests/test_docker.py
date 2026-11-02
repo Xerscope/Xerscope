@@ -44,6 +44,11 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "admin off" in caddy
     env = (ROOT / "deploy" / ".env.example").read_text()
     assert "XERSCOPE_PASSWORD_HASH='$" in env  # unquoted, Compose interpolates the $ of a bcrypt hash
+    # each wrong password costs the NAS one bcrypt run, without CPU quota: cost 10, not Caddy's 14
+    assert "'$2a$10$...'" in env and "--bcrypt-cost 10" in env
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    for text in (env, wf, (ROOT / "docs" / "deploy.md").read_text(), (ROOT / "README.md").read_text()):
+        assert "hash-password --plaintext" not in text  # the default cost is 14
     serve = (ROOT / "deploy" / "tailscale-serve.json").read_text()
     assert '"AllowFunnel"' in serve and "127.0.0.1:8080" in serve
     assert '"/"' in serve  # the secret prefix is Caddy's job (XERSCOPE_PATH), serve.json is not edited
@@ -145,7 +150,7 @@ def test_remote_app_settings_reach_streamlit():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert 'XERSCOPE_DATA_LOCKED: "true"' in c
     env = dict(re.findall(r"^\s+(STREAMLIT_[A-Z_]+): \"?([^\"\s#]+)", c, re.M))
-    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "64", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
+    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "1", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
     app_dir = ROOT / "src" / "xerscope" / "app"  # `xerscope app` runs Streamlit from here (cli.py)
     shown = subprocess.run(
         [sys.executable, "-m", "streamlit", "config", "show"],
@@ -155,7 +160,7 @@ def test_remote_app_settings_reach_streamlit():
         text=True,
         check=True,
     ).stdout
-    assert "\nmaxUploadSize = 64\n" in shown and '\nshowErrorDetails = "none"\n' in shown
+    assert "\nmaxUploadSize = 1\n" in shown and '\nshowErrorDetails = "none"\n' in shown
 
 
 def test_caddy_security_headers_and_their_ci_check():

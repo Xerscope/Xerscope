@@ -10,7 +10,7 @@
 #       feed the ${...} interpolation below; Compose reads .env by itself).
 #
 # Variables: TS_AUTHKEY (tagged key, first start only), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
-#   docker run --rm caddy:2.11.7 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
+#   caddy hash-password --algorithm bcrypt --bcrypt-cost 10, docs/deploy.md §3), XERSCOPE_PATH (the
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
 #   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
 #   memory cap, default 2g), XERSCOPE_UID and XERSCOPE_GID (the account the app runs as,
@@ -88,8 +88,8 @@ services:
     environment:
       XERSCOPE_DATA: /data
       HOME: /home/nonroot                           # an uid outside the image's /etc/passwd would get HOME=/
-      XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field in the sidebar
-      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "64"        # MB per uploaded file; the largest export is about 40
+      XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field, no XER upload
+      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:

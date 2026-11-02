@@ -129,10 +129,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
       GitHub's Docker, not on the Synology kernel) and the memory caps applied (no
       `does not support memory limit` in the Project's build output).
-- [ ] Password hash in bcrypt (cost 14); OWASP's Password Storage Cheat Sheet now puts
-      argon2id first. Caddy 2.11.6 takes `basic_auth argon2id`, its defaults are OWASP's
-      46 MiB, t=1, p=1 variant; switching needs a new hash in `.env` and room in Caddy's
-      memory cap for parallel attempts at 46 MiB each.
+- [ ] Password hash in bcrypt cost 10 (docs/deploy.md §3: each wrong password costs the NAS
+      one hash run). OWASP's Password Storage Cheat Sheet puts argon2id first; Caddy 2.11.6
+      takes `basic_auth argon2id`, but its default 46 MiB per attempt turns the CPU cost
+      into a memory cost against Caddy's 256 MB cap.
 - [ ] One login shared by every visitor: one `basic_auth` account each would let one be
       revoked, and told apart in the log, alone.
 - [ ] The published image carries no SBOM attestation and no signature: `sbom: true` and a

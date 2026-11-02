@@ -89,15 +89,22 @@ def _project_picker(sidebar, store: SnapshotStore) -> SnapshotStore:
     return store
 
 
+def _data_locked() -> bool:
+    """Remote deployment: the visitor reads the server's exports folder and nothing else. No path
+    field (the app cannot be pointed elsewhere) and no upload (one parsed export of 40 MB takes
+    about 1 GB, so a few uploads would push the app past its memory cap, docs/deploy.md §7)."""
+    return os.environ.get("XERSCOPE_DATA_LOCKED", "").lower() in ("1", "true", "yes")
+
+
 def sidebar_loader() -> None:
     sidebar = st.sidebar
     sidebar.subheader("Weekly XER exports")
-    uploads = sidebar.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
-    if os.environ.get("XERSCOPE_DATA_LOCKED", "").lower() in ("1", "true", "yes"):
-        # Remote deployment: the folder is the server's, a visitor cannot point the app elsewhere.
+    if _data_locked():
+        uploads = None
         folder = os.environ.get("XERSCOPE_DATA", "")
-        sidebar.caption("…or the exports folder of this server")
+        sidebar.caption("The exports folder of this server")
     else:
+        uploads = sidebar.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
         folder = sidebar.text_input(
             "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
         )
@@ -151,12 +158,15 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         return None
     if choice != BL_FILE:
         return Baseline.from_snapshot(store.by_label(choice), basis)
-    upload = sidebar.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
+    upload = None if _data_locked() else sidebar.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
     source = (upload.name, upload.getvalue()) if upload is not None else None
     if source is None and env_path and Path(env_path).is_file():
         source = (Path(env_path).name, Path(env_path).read_bytes())
     if source is None:
-        sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
+        if _data_locked():
+            sidebar.caption("No baseline file on this server: pick one of the loaded snapshots.")
+        else:
+            sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
         return None
     try:
         return Baseline.from_snapshot(_parse(*source), basis)

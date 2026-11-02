@@ -187,7 +187,7 @@ jobs:
         run: |
           mkdir -p "$XERSCOPE_EXPORTS"
           caddy_image=$(sed -n 's/^    image: \(caddy:[^ ]*\).*/\1/p' compose.yaml)
-          hash=$(docker run --rm "$caddy_image" caddy hash-password --plaintext ci-pass)
+          hash=$(docker run --rm "$caddy_image" caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext ci-pass)
           echo "XERSCOPE_PASSWORD_HASH=$hash" >> "$GITHUB_ENV"
           XERSCOPE_PASSWORD_HASH="$hash" docker compose config --quiet
           docker run --rm -e XERSCOPE_USER -e XERSCOPE_PATH -e XERSCOPE_PASSWORD_HASH="$hash" \
