@@ -383,3 +383,26 @@ def test_p6_16_and_17_leave_milestones_out():
     )
     assert counts(run(P6, "P6-16", s)) == (0, 4)
     assert counts(run(P6, "P6-17", s)) == (0, 4)
+
+
+def test_p6_12_and_13_with_the_planned_dates_baseline_reproduce_p6():
+    """Report R1 (docs/standards.md) is reproduced exactly with the "planned dates in each file" baseline:
+    the same late activities with the same finish variance to the hour, and the same BEI. P6 moves a
+    not-started activity's planned dates with the schedule (variance 0) and freezes them at its actual
+    start, so only an activity in progress drifts from them."""
+    current = snap(
+        [
+            # in progress: planned finish frozen two weeks before the forecast finish -> late, 10 wd
+            active("RUN", target_end_date="2026-02-27 17:00", early_end_date="2026-03-13 17:00"),
+            # not started: planned dates follow the schedule -> on time
+            todo("WAIT", target_end_date="2026-03-13 17:00", early_end_date="2026-03-13 17:00"),
+            done("DONE", target_end_date="2026-02-13 17:00"),
+        ]
+    )
+    baseline = Baseline.planned(current)
+    late = run(P6, "P6-12", current, baseline)
+    assert counts(late) == (1, 2)  # completed activities are not checked
+    assert codes(late) == ["RUN"]
+    assert late.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(10)  # P6: -80 h on an 8 h day
+    bei = run(P6, "P6-13", current, baseline)
+    assert counts(bei) == (1, 3)  # completed / every activity of the baseline (the file itself)

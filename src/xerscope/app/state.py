@@ -66,6 +66,14 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
         sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
         st.session_state.update(store=None, signature=(), errors=[])
         return (), None, False
+    names = [path.name for path in files]
+    # every file by default; a file left out (another project, a draft) stays out of the series
+    picked = sidebar.multiselect("Files to read", names, default=names, key=f"folder_files:{root}")
+    if not picked:
+        sidebar.info("Tick at least one file to read")
+        st.session_state.update(store=None, signature=(), errors=[])
+        return (), None, False
+    files = [path for path in files if path.name in picked]
     signature = ("folder", str(root)) + tuple((path.name, path.stat().st_mtime_ns) for path in files)
     if signature == st.session_state.get("signature"):
         return signature, None, True
