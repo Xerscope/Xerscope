@@ -2,7 +2,8 @@
 
 import pandas as pd
 
-from xerscope.viz import build_finish_trend, build_gantt
+from xerscope.analysis.wbs import rollup
+from xerscope.viz import build_finish_trend, build_gantt, level_rows
 from xerscope.viz.charts import INK, build_activity_dates, build_mta, build_ppc
 
 
@@ -93,3 +94,25 @@ def test_gantt_logic_links_are_darker_than_the_grid(store):
     fig = build_gantt(s.activities, data_date=s.data_date, relationships=s.relationships, show_links=True)
     link = next(t for t in fig.data if t.name == "Logic")
     assert link.line.color == INK["light"]["muted"]  # the axis grey vanished on white
+
+
+def test_gantt_level_rows_bold_summaries_and_no_zoom(store):
+    s = store.latest
+    nodes = rollup(s)
+    top = nodes[nodes["depth"] == 1]
+    tasks = s.activities[s.activities["task_code"] == "M1000"]
+    order, summaries = level_rows(tasks, top)
+    assert order[0] == "M1000  Notice to proceed"  # the level's own activities first
+    assert order[1:] == ["▸ " + label for label in top["label"]]  # then one row per child node
+    fig = build_gantt(tasks, data_date=s.data_date, summaries=summaries, row_order=order)
+    ticks = dict(zip(fig.layout.yaxis.tickvals, fig.layout.yaxis.ticktext, strict=True))
+    assert ticks[order[1]] == f"<b>{order[1]}</b>" and ticks[order[0]] == order[0]
+    assert fig.layout.xaxis.fixedrange and fig.layout.yaxis.fixedrange  # a drag must not zoom
+
+
+def test_gantt_month_axis_keeps_the_project_span(store):
+    s = store.latest
+    one = s.activities[s.activities["task_code"] == "C3020"]
+    span = (s.activities["start"].min(), s.activities["finish"].max())
+    low, high = (pd.Timestamp(x) for x in build_gantt(one, data_date=s.data_date, span=span).layout.xaxis.range)
+    assert (low, high) == (span[0] - pd.Timedelta(days=7), span[1] + pd.Timedelta(days=7))

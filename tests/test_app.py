@@ -55,11 +55,30 @@ def _toggle(at, label: str, value: bool) -> None:
     _ok(at)
 
 
+def _gantt_rows(at) -> list[str]:
+    return json.loads(at.get("plotly_chart")[0].proto.spec)["layout"]["yaxis"]["categoryarray"]
+
+
+def test_gantt_opens_the_wbs_one_level_at_a_time(app):
+    app.switch_page("views/gantt.py").run()
+    top = _gantt_rows(app)  # project level: one collapsed row per top-level WBS node
+    assert top and all(row.startswith("▸ ") for row in top)
+    app.session_state["gantt_node"] = "7003"  # demo WBS "CIV": a leaf node, its own activities
+    app.run()
+    _ok(app)
+    rows = _gantt_rows(app)
+    assert rows and not any(row.startswith("▸ ") for row in rows) and "C3020  Earthworks" in rows
+    app.button(key="crumb:__project__").click().run()  # breadcrumb back up
+    assert _gantt_rows(app) == top
+    app.text_input[0].set_value("earthworks").run()  # a search lists the matching activities, flat
+    assert _gantt_rows(app) == ["C3020  Earthworks"]
+
+
 def test_gantt_options(app):
     app.switch_page("views/gantt.py").run()
-    assert "WBS summary" in _gantt_traces(app)  # grouped by WBS by default
-    _toggle(app, "Group by WBS", False)
-    assert "WBS summary" not in _gantt_traces(app)
+    assert "WBS summary" in _gantt_traces(app)
+    app.session_state["gantt_node"] = "7003"  # a level with activities linked to each other
+    app.run()
     assert "Logic" not in _gantt_traces(app)
     _toggle(app, "Logic links", True)
     assert "Logic" in _gantt_traces(app)

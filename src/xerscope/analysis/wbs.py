@@ -111,9 +111,39 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
     out = nodes.join(totals, on="wbs_id", how="left")
     out[["activities", "complete", "critical"]] = out[["activities", "complete", "critical"]].fillna(0).astype(int)
     out["label"] = [
-        name if depth == 0 else "   " * (depth - 1) + f"{code.split('.')[-1]} · {name}"
+        name if depth == 0 else f"{code.split('.')[-1]} · {name}"
         for depth, code, name in zip(out["depth"], out["wbs_code"], out["wbs_name"], strict=True)
     ]
+    return out
+
+
+def _parent(nodes: pd.DataFrame) -> pd.Series:
+    """Parent id of each node; top-level nodes hang off the project row (ROOT)."""
+    return nodes["parent"].where(nodes["depth"] > 1, ROOT).where(nodes["wbs_id"] != ROOT)
+
+
+def children(nodes: pd.DataFrame, wbs_id: str) -> list[str]:
+    """Direct child node ids of ``wbs_id`` (ROOT: the top level), in P6 order."""
+    return nodes.loc[_parent(nodes) == wbs_id, "wbs_id"].tolist()
+
+
+def path(nodes: pd.DataFrame, wbs_id: str) -> list[str]:
+    """Node ids from the project row down to ``wbs_id``."""
+    return list(reversed(nodes.set_index("wbs_id").at[wbs_id, "ancestors"]))
+
+
+def visible_tree(nodes: pd.DataFrame, open_ids: set[str]) -> pd.DataFrame:
+    """The tree as an outline: a node shows when every node above it is open.
+
+    The project row and the top level always show. ``open`` and ``has_children`` say
+    which marker the row gets (open, closed or leaf).
+    """
+    parent = _parent(nodes)
+    has_children = nodes["wbs_id"].isin(set(parent.dropna()))
+    shown = [set(ancestors[1:]) <= open_ids | {ROOT} for ancestors in nodes["ancestors"]]
+    out = nodes[shown].copy()
+    out["has_children"] = has_children[shown]
+    out["open"] = out["wbs_id"].isin(open_ids | {ROOT}) & out["has_children"]
     return out
 
 
