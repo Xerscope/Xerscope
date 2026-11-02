@@ -178,3 +178,18 @@ def test_caddy_scan_exceptions_are_dated_and_reasoned():
         datetime.date.fromisoformat(expiry)
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert wf.count("trivyignores:") == 1 and "trivyignores: deploy/caddy.trivyignore.yaml" in wf
+
+
+def test_schedules_stay_out_of_git():
+    """Real exports never reach the public repository: the folders the compose files read and
+    every .xer are ignored, CI fails on a tracked one, and the remote app's log is bounded."""
+    import subprocess
+
+    probes = ["exports/a.xer", "deploy/a.xer", "a.XER", "data/a.xer", "export/a.csv"]
+    out = subprocess.run(["git", "check-ignore", *probes], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    assert out.split() == probes
+    tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    assert not re.search(r"\.(xer|parquet|xlsx?|csv)$", tracked, re.I | re.M)
+    assert "git ls-files | grep -iE" in (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "driver: local" in c and 'max-size: "5m"' in c
