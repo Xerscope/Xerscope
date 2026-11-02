@@ -110,6 +110,11 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       (`on_select`); both are checked by hand before a release.
 - [ ] Baseline file: the sidebar re-hashes its bytes on every rerun (`st.cache_data`);
       noticeable above ~50 MB only.
+- [ ] Memory per loaded file: a synthetic 43 MB export (97,121 activities) holds about
+      0.65 GB parsed, plus a 0.1 GB pickled copy in `_parse`'s `st.cache_data`
+      (`max_entries=512`, no size bound), plus its raw bytes in session state. This sets how
+      many weeks fit under the NAS's memory cap (docs/deploy.md §7): drop the bytes once
+      parsed, bound the cache by size.
 
 ## Deployment and CI
 
@@ -120,8 +125,20 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] The password prompt has no rate limit (stock Caddy has no such module): a Caddy
       build with `caddy-ratelimit`, or Tailscale Serve with a tailnet login once the viewer
       can install Tailscale.
-- [ ] Base images pinned by tag, not digest: `docker buildx imagetools inspect` the four
-      of them and write the digests into the Dockerfiles once (Dependabot keeps them up).
+- [ ] Sidecar images in `deploy/compose.yaml` pinned by tag, not digest (the Dockerfile's
+      are): `docker buildx imagetools inspect` the tailscale and caddy tags once and write
+      `@sha256:` after each (Dependabot keeps tag and digest together).
+- [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
+      GitHub's Docker, not on the Synology kernel) and the memory caps applied (no
+      `does not support memory limit` in the Project's build output).
+- [ ] Password hash in bcrypt (cost 14); OWASP's Password Storage Cheat Sheet now puts
+      argon2id first. Caddy 2.11.6 takes `basic_auth argon2id`, its defaults are OWASP's
+      46 MiB, t=1, p=1 variant; switching needs a new hash in `.env` and room in Caddy's
+      memory cap for parallel attempts at 46 MiB each.
+- [ ] One login shared by every visitor: one `basic_auth` account each would let one be
+      revoked, and told apart in the log, alone.
+- [ ] The published image carries no SBOM attestation and no signature: `sbom: true` and a
+      keyless cosign step in `image.yml` (verified from a PC; Container Manager checks none).
 - [ ] The container job in CI starts the app image but opens no page: an AppTest-like
       request through the published port would catch a broken runtime.
 

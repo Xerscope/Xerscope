@@ -12,7 +12,12 @@
 # Variables: TS_AUTHKEY (tagged key, first start only), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
 #   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
-#   the .xer files, e.g. /volume1/<shared-folder>). Nothing in this folder is edited.
+#   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
+#   memory cap, default 2g). Nothing in this folder is edited.
+# Limits keep the stack from starving the NAS it shares: a memory and a PID cap per
+# container (on a kernel without those cgroups Docker drops the limit with a warning, the
+# stack still starts) and bounded tmpfs. No CPU quota: Docker refuses to create a
+# container with one on a kernel without CFS bandwidth control.
 # The app answers at https://xerscope.<tailnet>.ts.net/<XERSCOPE_PATH>/ only: Caddy strips
 # the prefix and returns 404 for every other path before authentication (scanners find every
 # *.ts.net name within seconds from the public certificate logs). Streamlit serves "/".
@@ -40,8 +45,14 @@ services:
       - tailscale-state:/var/lib/tailscale          # named volume: the node identity, kept across Builds
       - ./tailscale-serve.json:/config/serve.json:ro
     networks: [egress, internal]                    # egress: outbound to Tailscale only (nothing published)
+    read_only: true                                 # in userspace mode containerboot writes only:
+    tmpfs:
+      - /tmp:size=16m                               # the LocalAPI socket (TS_SOCKET default /tmp/tailscaled.sock)
+      - /var/run/tailscale:size=1m                  # its symlink at the CLI's default path (tailscale status)
     cap_drop: [ALL]                                 # userspace networking needs no capability
     security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
     restart: unless-stopped
 
   caddy:
@@ -56,11 +67,16 @@ services:
     depends_on: [tailscale]
     read_only: true
     tmpfs:
-      - /tmp
-      - /data                                       # Caddy's storage (unused: auto_https off)
-      - /config
-    cap_drop: [ALL]                                 # port 8080 needs none
+      - /tmp:size=16m
+      - /data:size=16m                              # Caddy's storage (unused: auto_https off)
+      - /config:size=16m
+    cap_drop: [ALL]                                 # port 8080 needs none, but the image's binary carries the
+    cap_add: [NET_BIND_SERVICE]                     # file capability cap_net_bind_service (setcap in its
+                                                    # Dockerfile): with an empty bounding set the kernel refuses
+                                                    # to exec it ("exec /usr/bin/caddy: operation not permitted")
     security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
     restart: unless-stopped
 
   xerscope:
@@ -68,6 +84,9 @@ services:
                                                     # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
     environment:
       XERSCOPE_DATA: /data
+      XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field in the sidebar
+      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "64"        # MB per uploaded file; the largest export is about 40
+      STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # read for Everyone on a NAS: the app runs as uid 65532
@@ -77,10 +96,14 @@ services:
                                                     # /etc/hosts maps "xerscope" (tailscale's hostname) to tailscale
     read_only: true
     tmpfs:                                          # owned by the image's user (nonroot, 65532): some Docker
-      - /tmp:uid=65532,gid=65532,mode=1777          # builds (Synology's) mount a bare tmpfs root-only, and
-      - /home/nonroot:uid=65532,gid=65532,mode=700  # Streamlit then fails reading ~/.streamlit/secrets.toml
+      - /tmp:uid=65532,gid=65532,mode=1777,size=256m          # builds (Synology's) mount a bare tmpfs
+      - /home/nonroot:uid=65532,gid=65532,mode=700,size=16m   # root-only, and Streamlit then fails
+                                                              # reading ~/.streamlit/secrets.toml
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
+                                                    # past the cap the kernel kills the app alone and Docker restarts it
+    pids_limit: 256
     restart: unless-stopped
 
 volumes:

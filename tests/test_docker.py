@@ -75,6 +75,8 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
+    assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
     for f in ["compose.yaml", "deploy/compose.yaml"]:  # the app's writable dirs belong to its user, not root
         app = (ROOT / f).read_text()
         assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app, f
@@ -112,3 +114,53 @@ def test_tailscale_key_is_optional_once_the_node_exists():
     """TS_AUTH_ONCE: the key is read on the first start only, so it can leave the NAS afterwards."""
     compose = (ROOT / "deploy" / "compose.yaml").read_text()
     assert "TS_AUTHKEY: ${TS_AUTHKEY:-}" in compose and 'TS_AUTH_ONCE: "true"' in compose
+
+
+def test_funnel_stack_bounds_what_it_takes_from_the_nas():
+    """A memory and a PID cap per container and bounded tmpfs, so the app cannot starve the NAS.
+    No CPU quota: Docker refuses to create a container with one on a kernel without CFS
+    bandwidth control, while it only drops a memory or PID cap it cannot apply."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert c.count("mem_limit:") == 3 and c.count("pids_limit:") == 3
+    assert "mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}" in c
+    assert not re.search(r"^\s+(cpus|cpu_quota|cpu_period|cpuset):", c, re.M)
+    tmpfs = re.findall(r"^\s+- (/[\w/]+)(\S*)", c, re.M)  # tmpfs entries are the only "- /path" list items
+    assert len(tmpfs) == 7 and all("size=" in opts for _, opts in tmpfs), tmpfs
+    assert c.count("read_only: true") == 3  # tailscaled writes its socket to tmpfs, its state to the volume
+    assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
+
+
+def test_remote_app_settings_reach_streamlit():
+    """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
+    import os
+    import subprocess
+    import sys
+
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert 'XERSCOPE_DATA_LOCKED: "true"' in c
+    env = dict(re.findall(r"^\s+(STREAMLIT_[A-Z_]+): \"?([^\"\s#]+)", c, re.M))
+    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "64", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
+    app_dir = ROOT / "src" / "xerscope" / "app"  # `xerscope app` runs Streamlit from here (cli.py)
+    shown = subprocess.run(
+        [sys.executable, "-m", "streamlit", "config", "show"],
+        cwd=app_dir,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "\nmaxUploadSize = 64\n" in shown and '\nshowErrorDetails = "none"\n' in shown
+
+
+def test_caddy_security_headers_and_their_ci_check():
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    for line in ("Referrer-Policy no-referrer", "X-Content-Type-Options nosniff", "frame-ancestors 'self'"):
+        assert line in caddy, line
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job runs Caddy and reads them
+    assert "docker compose up -d tailscale caddy" in wf and "frame-ancestors 'self'" in wf
+
+
+def test_base_images_pinned_by_digest():
+    df = (ROOT / "Dockerfile").read_text()
+    froms = re.findall(r"^FROM (\S+)", df, re.M)
+    assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
