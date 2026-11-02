@@ -8,7 +8,7 @@ Overlaps tests/test_rules.py on purpose: here each test is one sentence of the s
 
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import DD, active, done, snap, todo
+from xerkit import DD, FM, SM, active, done, snap, todo
 
 from xerscope.analysis import Baseline
 
@@ -340,16 +340,17 @@ def test_p6_13_a_baseline_milestone_is_not_counted():
 # --- 10. Out of sequence and dangling (P6 Professional report, the project's activities) ------------------
 
 
-def test_p6_15_out_of_sequence_counts_one_row_per_predecessor_over_all_activities():
+def test_p6_15_out_of_sequence_is_progress_while_a_predecessor_is_still_open():
     """'Activities which are completed or in-progress before their predecessors.' A P6 Professional report
-    lists one row per activity and predecessor (6 rows, one activity twice) against the total of activities."""
+    lists N pairs and counts N activities: in every pair the FS predecessor finishes
+    after the data date; pairs whose predecessor finished late but before the data date are not listed."""
     s = snap(
-        [done("A"), active("B"), todo("A2"), todo("A3"), active("C")],
-        [("A", "B", "FS", 0), ("A2", "C", "FS", 0), ("A3", "C", "FS", 0)],
+        [done("A"), active("B"), todo("A2"), active("A3"), active("C"), active("D")],
+        [("A", "B", "FS", 0), ("A2", "C", "FS", 0), ("A3", "C", "FS", 0), ("A2", "D", "SS", 0)],
     )
     r = run(P6, "P6-15", s)
-    assert counts(r) == (2, 5)
-    assert codes(r) == ["C", "C"]
+    assert counts(r) == (2, 6)  # C (two open FS predecessors) and D (SS predecessor not started)
+    assert codes(r) == ["C", "C", "D"]  # one row per activity and predecessor, as the report lists them
 
 
 def test_p6_16_dangling_start_ignores_in_progress_and_activities_without_predecessor():
@@ -371,3 +372,14 @@ def test_p6_17_dangling_finish_needs_a_successor_that_is_not_driven():
     r = run(P6, "P6-17", s)
     assert counts(r) == (1, 3)
     assert codes(r) == ["X"]
+
+
+def test_p6_16_and_17_leave_milestones_out():
+    """A milestone has a single date. On the real P6 Professional report, start and finish milestones
+    with only FF or SS logic (Start on or after constraints) are not dangling: 0 for both checks."""
+    s = snap(
+        [todo("P"), todo("FM", **FM), todo("SM", **SM), todo("S")],
+        [("P", "FM", "FF", 0), ("SM", "S", "SS", 0)],
+    )
+    assert counts(run(P6, "P6-16", s)) == (0, 4)
+    assert counts(run(P6, "P6-17", s)) == (0, 4)

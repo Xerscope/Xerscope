@@ -26,7 +26,6 @@ from ..populations import (
     links_between,
     open_activities,
     open_end_reason,
-    predecessors_ahead,
     with_baseline,
     without_level_of_effort,
     without_milestones,
@@ -272,37 +271,43 @@ def p6_13_bei(context) -> RuleOutput:
 
 @rule("p6_15_out_of_sequence", "%")
 def p6_15_out_of_sequence(context) -> RuleOutput:
-    """Progressed before a predecessor.
+    """Progressed while a predecessor is still open.
     Counts: out of sequence / activities
-    One row per activity and predecessor, as P6 lists them.
+    One row per activity and predecessor, as P6 lists them; the count is of activities.
 
-    P6 Professional report: 'Activities which are completed or in-progress before their predecessors',
-    one row per activity and predecessor, against the total of activities. Read as P6's scheduling log:
-    an FS predecessor not finished, or an SS predecessor not started, at the activity's actual start.
-    UNRESOLVED: whether P6 also reads FF and SF relationships here"""
+    P6 Professional report: 'Activities which are completed or in-progress before their predecessors'.
+    On a real report it lists N pairs, N activities: each started activity has an FS
+    predecessor not completed at the data date; started activities whose predecessor finished late but
+    before the data date are not listed. SS: predecessor not started. UNRESOLVED: FF and SF"""
     activities = context.snapshot.activities
     tasks = context.snapshot.by_code
-    started = activities[activities["is_started"]].drop_duplicates("task_code").set_index("task_code")
-    ahead = predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), started, tasks)
-    flagged = started.loc[ahead["succ_code"]].reset_index()
+    started = activities[activities["is_started"]]
+    links = links_between(context.snapshot.relationships, started.set_index("task_code"), tasks)
+    predecessor_complete = links["pred_code"].map(tasks["is_complete"]).astype(bool)
+    predecessor_started = links["pred_code"].map(tasks["is_started"]).astype(bool)
+    still_open = ((links["type"] == "FS") & ~predecessor_complete) | ((links["type"] == "SS") & ~predecessor_started)
+    ahead = links[still_open].sort_values(["succ_code", "pred_code"])
+    rows = started.drop_duplicates("task_code").set_index("task_code").loc[ahead["succ_code"]].reset_index()
     extra = {"predecessor": ahead["pred_code"].to_numpy(), "type": ahead["type"].to_numpy()}
-    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(activities))
+    out_of_sequence = ahead["succ_code"].nunique()
+    return RuleOutput(flagged_activities(rows, **extra), out_of_sequence, len(activities))
 
 
 @rule("p6_16_dangling_start", "%")
 def p6_16_dangling_start(context) -> RuleOutput:
     """Start not driven by any predecessor.
     Counts: dangling / activities
-    Excludes: started activities (P6's 'Ignore In Progress Activities', checked).
+    Excludes: started activities (P6's 'Ignore In Progress Activities', checked), milestones.
     An activity with no predecessor at all is the Logic check's, not this one's.
 
     P6 Professional report: 'Activities with start dates that are not driven by predecessors', against the
     total of activities; the report lists an activity without any predecessor under Logic only. Read as:
     predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore activities with soft/hard constraints'
-    (unchecked by default) is not read"""
+    (unchecked by default) is not read. Milestones are out: the report shows 0 for milestones with FF / SS
+    logic only"""
     activities = context.snapshot.activities
     relationships = context.snapshot.relationships
-    candidates = activities[~activities["is_started"]]
+    candidates = activities[~activities["is_started"] & ~activities["is_milestone"]]
     has_logic = candidates["task_code"].isin(relationships["succ_code"])
     driven = has_driving_predecessor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driven]
@@ -313,7 +318,7 @@ def p6_16_dangling_start(context) -> RuleOutput:
 def p6_17_dangling_finish(context) -> RuleOutput:
     """Finish that drives no successor.
     Counts: dangling / activities
-    Excludes: completed activities.
+    Excludes: completed activities, milestones.
     An activity with no successor at all is the Logic check's, not this one's.
 
     P6 Professional report: 'Activities with finish dates that do not drive successors', against the total
@@ -321,7 +326,7 @@ def p6_17_dangling_finish(context) -> RuleOutput:
     exist, none of them FS or FF"""
     activities = context.snapshot.activities
     relationships = context.snapshot.relationships
-    candidates = activities[~activities["is_complete"]]
+    candidates = activities[~activities["is_complete"] & ~activities["is_milestone"]]
     has_logic = candidates["task_code"].isin(relationships["pred_code"])
     driving = has_driving_successor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driving]
