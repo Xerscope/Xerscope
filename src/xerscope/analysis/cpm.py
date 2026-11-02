@@ -1370,12 +1370,17 @@ class CptResult:
     passed: bool
     note: str
     delayed: str | None = None
-    expected_h: float = 0.0
     shift_h: float = 0.0
     blocking: list[dict] = field(default_factory=list)
 
 
-def critical_path_test(snapshot: Snapshot, delay_days: float = 600) -> CptResult:
+def _cycle_failure(error: CycleError, delayed: str | None = None) -> CptResult:
+    return CptResult(False, str(error), delayed)
+
+
+def critical_path_test(
+    snapshot: Snapshot, delay_days: float = 600
+) -> CptResult:  # default kept until callers pass it (W1)
     """Add ``delay_days`` to the first open activity of the critical path; the finish must move as much.
 
     The finish is measured on the project's end points (activities without successors),
@@ -1386,7 +1391,7 @@ def critical_path_test(snapshot: Snapshot, delay_days: float = 600) -> CptResult
     try:
         base = schedule(snapshot)
     except CycleError as exc:
-        return CptResult(False, str(exc))
+        return _cycle_failure(exc)
     # The critical path = the longest path of the recalculated schedule (with negative
     # float, "total float <= 0" would also take in less critical paths).
     frame = base.frame
@@ -1404,7 +1409,7 @@ def critical_path_test(snapshot: Snapshot, delay_days: float = 600) -> CptResult
     try:
         late = schedule(snapshot, {code: delay_hours})
     except CycleError as exc:
-        return CptResult(False, str(exc), code)
+        return _cycle_failure(exc, code)
     has_successor = set(snapshot.relationships["pred_code"])  # built once: per activity it took 33 s on Hotel
     end_points = [code for code in base.frame.index if code not in has_successor]
     base_finish = base.frame.loc[end_points, "ef"].max()
@@ -1429,4 +1434,4 @@ def critical_path_test(snapshot: Snapshot, delay_days: float = 600) -> CptResult
         blocking = pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
         if blocking:
             note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"
-    return CptResult(passed, note, code, delay_hours, shift, blocking)
+    return CptResult(passed, note, code, shift, blocking)

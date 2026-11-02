@@ -12,7 +12,6 @@ from xerscope.analysis.evm import (
     ev_technique,
     evm_series,
     forecast_curve,
-    pv_at,
     pv_curve,
     schedule_pct,
 )
@@ -97,21 +96,26 @@ def _bl(**a):
     return Baseline.from_snapshot(snap([todo("A", target_work_qty="80", **a)]))
 
 
+def _pv_at(baseline, when):
+    """Cumulative PV at an instant, read off an update whose data date is that instant."""
+    return ev_point(snap([todo("A")], data_date=when), baseline).pv_hr
+
+
 def test_pv_spreads_over_working_days():
     bl = _bl(early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")  # 10 working days
     curve = pv_curve(bl)
     assert curve["pv_cum_hr"].iloc[-1] == pytest.approx(80)
     assert curve.set_index("date").loc["2026-03-07", "pv_hr"] == 0  # Saturday
-    assert pv_at(bl, pd.Timestamp("2026-03-04 08:00")) == pytest.approx(16)  # Mon + Tue
-    assert pv_at(bl, pd.Timestamp("2026-03-04 12:00")) == pytest.approx(20)  # + half of Wed
-    assert pv_at(bl, pd.Timestamp("2026-03-04 12:30")) == pytest.approx(20)  # lunch is not working time
+    assert _pv_at(bl, "2026-03-04 08:00") == pytest.approx(16)  # Mon + Tue
+    assert _pv_at(bl, "2026-03-04 12:00") == pytest.approx(20)  # + half of Wed
+    assert _pv_at(bl, "2026-03-04 12:30") == pytest.approx(20)  # lunch is not working time
 
 
 def test_pv_is_schedule_pct_complete_in_working_time():
     """Oracle: PV labour units = BL labour units x Schedule % Complete; an activity starting
     at 13:00 has done 4 of its 12 working hours by the evening, not a third of a day."""
     bl = _bl(early_start_date="2026-03-02 13:00", early_end_date="2026-03-03 17:00", target_drtn_hr_cnt="12")
-    assert pv_at(bl, pd.Timestamp("2026-03-02 17:00")) == pytest.approx(80 * 4 / 12)
+    assert _pv_at(bl, "2026-03-02 17:00") == pytest.approx(80 * 4 / 12)
     assert schedule_pct(bl, pd.Timestamp("2026-03-03 08:00")).loc["A"] == pytest.approx(33.33)
     assert pv_curve(bl).set_index("date").loc["2026-03-02", "pv_hr"] == pytest.approx(80 / 3)
 

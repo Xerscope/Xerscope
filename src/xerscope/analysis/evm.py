@@ -132,13 +132,6 @@ def pv_curve(baseline: Baseline) -> pd.DataFrame:
     return curve[["date", "pv_hr", "pv_cum_hr", "pv_pct"]]
 
 
-def pv_at(baseline: Baseline, when: pd.Timestamp | None) -> float:
-    """Cumulative PV at an instant: sum of BL hours x Schedule % Complete, exact."""
-    if when is None or pd.isna(when):
-        return 0.0
-    return float(_pv_spread(baseline).at([when])[0])
-
-
 def schedule_pct(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
     """P6 Schedule % Complete of each baseline activity at ``when`` (on the EV basis dates)."""
     frame = baseline.frame
