@@ -75,6 +75,8 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
+    assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
     for f in ["compose.yaml", "deploy/compose.yaml"]:  # the app's writable dirs belong to its user, not root
         app = (ROOT / f).read_text()
         assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app, f
