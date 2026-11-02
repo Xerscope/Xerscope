@@ -415,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
     info_parser.add_argument("--project", help="project short name, if files hold several")
     info_parser.set_defaults(fn=_cmd_info)
 
-    check_parser = sub.add_parser("check", help="run app_parser standard (P6, DCMA or app_parser .toml) on XER files")
+    check_parser = sub.add_parser("check", help="run a standard (P6, DCMA or a .toml) on XER files")
     check_parser.add_argument("paths", nargs="+")
     check_parser.add_argument("--standard", default="P6", help="P6, DCMA or path to your .toml")
     check_parser.add_argument("--baseline", help="baseline .xer for BEI / missed / late checks")
@@ -430,13 +430,13 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument(
         "--expect",
         metavar="CSV",
-        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on app_parser difference",
+        help="counts typed from P6's Check Schedule summary (id,found,total[,file]); exit 1 on a difference",
     )
     check_parser.add_argument(
         "--fail-on",
         choices=["none", "fail", "error"],
         default="none",
-        help="exit 1 when app_parser check fails (fail) or cannot run (error); default: always 0",
+        help="exit 1 when a check fails (fail) or cannot run (error); default: always 0",
     )
     check_parser.set_defaults(fn=_cmd_check)
 
@@ -447,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         const="-",
         metavar="FILE",
-        help="write app_parser standard template to FILE (UTF-8), or print it",
+        help="write a standard template to FILE (UTF-8), or print it",
     )
     standards_parser.set_defaults(fn=_cmd_standards)
 
