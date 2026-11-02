@@ -209,3 +209,14 @@ def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch)
     second = _run(sample_dir, monkeypatch)  # another browser session, same files
     _ok(second)
     assert len(calls) == 2 * parsed_once
+
+
+def test_folder_files_can_be_picked(sample_dir, monkeypatch):
+    """Every XER of the folder is read by default; unticking files leaves them out of the series."""
+    at = _run(sample_dir, monkeypatch)
+    _ok(at)
+    picker = next(m for m in at.sidebar.multiselect if m.label == "Files to read")
+    assert len(picker.value) == 8
+    picker.set_value(picker.value[:3]).run()
+    _ok(at)
+    assert any("3 snapshot(s)" in c.value for c in at.sidebar.caption)
