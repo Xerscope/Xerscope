@@ -37,6 +37,8 @@ jobs:
       - run: uv sync --locked
       - run: uvx ruff check src tests
       - run: uvx ruff format --check src tests
+      - name: No schedule or data export is tracked (the repository is public)
+        run: "! git ls-files | grep -iE '\\.(xer|parquet|xlsx?|csv)$'"
 
   test:
     strategy:
