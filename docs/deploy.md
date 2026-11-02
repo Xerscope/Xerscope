@@ -255,5 +255,5 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | the app container restarts while files load (Container Manager: exited, then running) | the memory cap: the kernel killed it | load fewer weeks at once, or raise `XERSCOPE_MEM_LIMIT` in `.env` within the NAS's free RAM (§7), Build |
-| page after upload disappears on restart | upload lands in the container's tmpfs | drop files in the shared folder instead |
+| page after upload disappears on restart | an upload is held in the session's memory, never written to disk | drop files in the shared folder instead |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |
