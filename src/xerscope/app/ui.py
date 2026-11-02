@@ -18,15 +18,17 @@ import streamlit as st
 
 from xerscope.viz.charts import ACCENT, INK, STATUS
 
-# Status colours (text on white): red / amber / green are reserved for status.
-STATUS_COLOUR = {
-    "pass": STATUS["light"]["good"],
-    "fail": STATUS["light"]["critical"],
-    "info": ACCENT,
-    "n/a": INK["light"]["muted"],
-    "error": STATUS["light"]["warning"],
+# Check status -> (label, colour for text on white, Markdown mark). Red / amber / green are
+# reserved for status.
+STATUS_STYLE = {
+    "pass": ("Pass", STATUS["light"]["good"], ":green[**PASS**]"),
+    "fail": ("Fail", STATUS["light"]["critical"], ":red[**FAIL**]"),
+    "info": ("Info", ACCENT, ":blue[**INFO**]"),
+    "n/a": ("N/A", INK["light"]["muted"], ":gray[**N/A**]"),
+    "error": ("Error", STATUS["light"]["warning"], ":orange[**ERROR**]"),
 }
-STATUS_LABEL = {"pass": "Pass", "fail": "Fail", "info": "Info", "n/a": "N/A", "error": "Error"}
+ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
+HEADER_HEIGHT = 38
 
 # column -> (label, kind). kind: text | date | datetime | d1 | d2 | h0 | pct | signed | int | bool
 COLUMNS: dict[str, tuple[str, str]] = {
@@ -144,6 +146,21 @@ HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not show
 _MD_SPECIAL = str.maketrans({c: "\\" + c for c in "\\`*_{}[]()#+-.!|<>~$"})
 
 
+def fmt_date(timestamp, missing: str = "–") -> str:
+    """A date for display ("02 Nov 2026"); ``missing`` stands for NaT / None."""
+    return missing if pd.isna(timestamp) else f"{timestamp:%d %b %Y}"
+
+
+def stamp(timestamp) -> str:
+    """A date for file names and titles (2026-11-02)."""
+    return f"{timestamp:%Y-%m-%d}"
+
+
+def table_height(rows: int, max_height: int) -> int:
+    """Pixel height of a dataframe with ``rows`` rows, capped at ``max_height``."""
+    return min(ROW_HEIGHT * rows + HEADER_HEIGHT, max_height)
+
+
 def md_text(value: object) -> str:
     """Text from a schedule file, shown literally inside Markdown: no link, image, emphasis
     or LaTeX ($...$) can come from an activity name or code."""
@@ -157,7 +174,7 @@ def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "")
     if store is not None:
         parts.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
     if snapshot is not None:
-        parts.append(f"Data date **{snapshot.data_date:%d %b %Y}**")
+        parts.append(f"Data date **{fmt_date(snapshot.data_date)}**")
     if baseline is not None:
         parts.append(f"Baseline **{md_text(baseline.label)}**")
     if parts:
@@ -243,7 +260,7 @@ def table(
         frame = frame[[column for column in columns if column in frame.columns]]
     frame = frame.drop(columns=[column for column in HIDDEN if column in frame.columns])
     kwargs.setdefault("hide_index", True)
-    kwargs.setdefault("height", min(33 * len(frame) + 38, max_height))
+    kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
     config = column_config(frame, overrides)
     data = status_style(frame, status) if status else frame
@@ -256,20 +273,30 @@ def csv_button(frame: pd.DataFrame, filename: str, label: str = "Download CSV", 
     )
 
 
-def _status_label(status: str) -> str:
-    return STATUS_LABEL.get(status, status)
-
-
 def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler colouring the status column (pass green, fail red…), labels capitalised."""
     out = frame.copy()
-    out[column] = out[column].map(_status_label)
-    colour_of_label = {label: STATUS_COLOUR[status] for status, label in STATUS_LABEL.items()}
+    out[column] = out[column].map(status_label)
+    colour_of_label = {label: colour for label, colour, _ in STATUS_STYLE.values()}
 
     def colour_cell(label: str) -> str:
         return f"color: {colour_of_label.get(label, 'inherit')}; font-weight: 600"
 
     return out.style.map(colour_cell, subset=[column])
+
+
+def status_label(status: str) -> str:
+    return STATUS_STYLE[status][0] if status in STATUS_STYLE else status
+
+
+def latest_names(store) -> pd.Series:
+    """Latest task name of every Activity ID in any update, indexed by task_code."""
+    return store.history.drop_duplicates("task_code", keep="last").set_index("task_code")["task_name"]
+
+
+def code_label(names: pd.Series, task_code: str) -> str:
+    """Selectbox label for an Activity ID: the code and its latest name."""
+    return f"{task_code} · {names.get(task_code, '')}"
 
 
 def fold(text) -> str:

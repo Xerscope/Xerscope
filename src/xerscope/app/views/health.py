@@ -11,13 +11,6 @@ from xerscope.app import ui
 from xerscope.app.state import baseline_for, is_dark, memo, require_store, snapshot_picker, standards
 from xerscope.viz.charts import build_metric_trend
 
-STATUS_MARK = {
-    "pass": ":green[**PASS**]",
-    "fail": ":red[**FAIL**]",
-    "info": ":blue[**INFO**]",
-    "n/a": ":gray[**N/A**]",
-    "error": ":orange[**ERROR**]",
-}
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
 
 
@@ -37,6 +30,10 @@ def count_text(result) -> str:
     return "" if result.numerator is None else str(result.numerator)
 
 
+def check_label(standard, metric_id: str) -> str:
+    return f"{metric_id} · {standard[metric_id].name}"
+
+
 def culprits_first(frame: pd.DataFrame) -> pd.DataFrame:
     """ID and name, then the columns this check adds (reason, BL finish, variance…), then the rest."""
     identity = [column for column in IDENTITY_COLUMNS if column in frame.columns]
@@ -45,14 +42,19 @@ def culprits_first(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def show_kpis(results) -> None:
-    status = pd.Series([result.status for result in results])
-    scored = int(status.isin(["pass", "fail"]).sum())
+    counts = pd.Series([result.status for result in results]).value_counts()
+    scored = int(counts.get("pass", 0) + counts.get("fail", 0))
     ui.kpis(
         [
-            ("Checks passed", f"{int((status == 'pass').sum())} / {scored}", None, "Checks with a target that meet it"),
-            ("Checks failed", int((status == "fail").sum()), None, "Checks with a target that miss it"),
-            ("For review", int((status == "info").sum()), None, "Reported without a pass/fail target"),
-            ("Not applicable", int(status.isin(["n/a", "error"]).sum()), None, "No population, or no baseline"),
+            ("Checks passed", f"{int(counts.get('pass', 0))} / {scored}", None, "Checks with a target that meet it"),
+            ("Checks failed", int(counts.get("fail", 0)), None, "Checks with a target that miss it"),
+            ("For review", int(counts.get("info", 0)), None, "Reported without a pass/fail target"),
+            (
+                "Not applicable",
+                int(counts.get("n/a", 0) + counts.get("error", 0)),
+                None,
+                "No population, or no baseline",
+            ),
         ]
     )
 
@@ -101,14 +103,14 @@ def show_summary(results, standard, snapshot) -> None:
     summary_column, trail_column, _ = st.columns([1, 1.3, 4])
     with summary_column:
         ui.csv_button(
-            summary, f"{standard.id}_{snapshot.data_date:%Y-%m-%d}_summary.csv", "Summary (CSV)", key="dl_sum"
+            summary, f"{standard.id}_{ui.stamp(snapshot.data_date)}_summary.csv", "Summary (CSV)", key="dl_sum"
         )
     with trail_column:
         if not trail.empty:
             front = ["check_id", "check", "check_status"]
             ui.csv_button(
                 trail[front + [column for column in trail.columns if column not in front]],
-                f"{standard.id}_{snapshot.data_date:%Y-%m-%d}_flagged.csv",
+                f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
                 "All flagged items (CSV)",
                 key="dl_trail",
             )
@@ -117,11 +119,9 @@ def show_summary(results, standard, snapshot) -> None:
 def show_check(result, explanation, snapshot, expanded: bool) -> None:
     """One expander: what the check measures, its calculation, method and the flagged items."""
     metric = result.metric
-    counts = (
-        f" ({result.numerator} / {result.denominator})" if result.numerator is not None and result.denominator else ""
-    )
+    counts = f" ({count_text(result)})" if result.numerator is not None and result.denominator else ""
     label = (
-        f"{STATUS_MARK[result.status]}  {metric.id} · **{metric.name}** — {value_text(result, 'n/a')}{counts}"
+        f"{ui.STATUS_STYLE[result.status][2]}  {metric.id} · **{metric.name}** — {value_text(result, 'n/a')}{counts}"
         f" · target {target_text(result)}"
     )
     with st.expander(label, expanded=expanded):
@@ -159,7 +159,7 @@ def show_check(result, explanation, snapshot, expanded: bool) -> None:
             ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
             ui.csv_button(
                 result.flagged,
-                f"{metric.id}_{snapshot.data_date:%Y-%m-%d}.csv",
+                f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
                 "Download list (CSV)",
                 key=f"dl_{metric.id}",
             )
@@ -178,7 +178,7 @@ def show_details(results, snapshot, only_failed: bool) -> None:
         show_check(result, explain(result), snapshot, expand_all)
 
 
-def show_trend(standard, baseline_key) -> None:
+def show_trend(store, standard, baseline_key) -> None:
     ui.section("Trend across updates", "The same check on every loaded update, against its target.")
     history = memo(("health", repr(standard), baseline_key), health_history, store, standard, baseline_for)
     metric_ids = [metric.id for metric in standard.metrics]
@@ -239,10 +239,6 @@ def standard_name(standard_id: str) -> str:
     return available[standard_id].name
 
 
-def check_label(standard, metric_id: str) -> str:
-    return f"{metric_id} · {standard[metric_id].name}"
-
-
 top = st.container()  # title and context, filled once the update is picked
 
 standard_column, snapshot_column, failed_column = st.columns([4, 2.2, 1.3], vertical_alignment="bottom")
@@ -285,7 +281,7 @@ show_kpis(results)
 show_summary(results, standard, snapshot)
 show_details(results, snapshot, only_failed)
 if len(store) > 1:
-    show_trend(standard, baseline_key)
+    show_trend(store, standard, baseline_key)
 
 if baseline is not None:
     missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))

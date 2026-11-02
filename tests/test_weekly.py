@@ -366,24 +366,6 @@ def test_milestone_slip_in_working_days(tmp_path):
     assert s["slip_wd"] == 2  # Fri 10 -> Tue 14 April = Mon + Tue
 
 
-# --- CLI ---------------------------------------------------------------------------------------------
-
-
-def test_cli_check_and_standards(sample_dir, tmp_path, capsys):
-    from xerscope.cli import main
-
-    out = tmp_path / "r.csv"
-    files = sorted(sample_dir.glob("*.xer"))
-    assert main(["check", str(files[-1]), "--standard", "DCMA", "--baseline", str(files[0]), "--out", str(out)]) == 0
-    text = capsys.readouterr().out
-    assert "DCMA-14" in text and "baseline BL" in text
-    assert len(pd.read_csv(out)) == 14
-    assert main(["standards", "--rules"]) == 0
-    assert "missing_logic" in capsys.readouterr().out
-    assert main(["changelog", str(files[3]), str(files[4])]) == 0
-    assert "added" in capsys.readouterr().out
-
-
 def test_changelog_lists_assignment_changes():
     res = [
         {"rsrc_id": "R1", "rsrc_short_name": "CRANE", "rsrc_type": "RT_Equip", "clndr_id": "C8"},

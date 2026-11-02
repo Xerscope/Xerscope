@@ -7,6 +7,7 @@ markers, recessive grid, legend + direct end labels for a few series.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -35,6 +36,10 @@ def _mode(dark: bool) -> str:
 
 FONT = dict(size=13)
 TICK = dict(size=12)
+INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC)
+PPC_TARGET = 80  # default PPC target, in percent
+LABEL_FULL_MAX = 20  # PPC bars up to this many weeks carry "63% (5/8)"
+LABEL_SHORT_MAX = 40  # up to this many weeks they carry "63%", beyond none
 
 
 def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
@@ -169,7 +174,7 @@ def build_scurve(
 
 
 def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool = False) -> go.Figure:
-    """Performance indices per update on one ratio axis, 1.0 and 0.95 marked."""
+    """Performance indices per update on one ratio axis, 1.0 and the alert threshold marked."""
     c = SERIES[_mode(dark)]
     ink = INK[_mode(dark)]
     fig = go.Figure()
@@ -209,9 +214,9 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
         last_y = y
     fig.add_hline(y=1.0, line=dict(color=ink["muted"], width=1))
     fig.add_hline(
-        y=0.95,
+        y=INDEX_ALERT,
         line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
-        annotation_text="0.95",
+        annotation_text=f"{INDEX_ALERT:g}",
         annotation_position="bottom left",
     )
     return _layout(fig, dark, 380, "index")
@@ -262,10 +267,75 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
     return fig
 
 
+# --- one activity / project finish across updates ------------------------------------------------
+
+
+def _line(history: pd.DataFrame, column: str, name: str, colour: str, **options) -> go.Scatter:
+    return go.Scatter(
+        x=history["data_date"],
+        y=history[column],
+        name=name,
+        mode="lines+markers",
+        line=dict(color=colour, width=2),
+        marker=dict(size=8),
+        **options,
+    )
+
+
+def build_activity_dates(history: pd.DataFrame, dark: bool = False) -> go.Figure:
+    """Forecast start and finish of one activity in every update."""
+    colours = SERIES[_mode(dark)]
+    fig = go.Figure([_line(history, "start", "Start", colours[0]), _line(history, "finish", "Finish", colours[1])])
+    fig.update_xaxes(title="Data date")
+    return _layout(fig, dark, 380, "Forecast date")
+
+
+def build_activity_float(history: pd.DataFrame, dark: bool = False) -> go.Figure:
+    """Total float of one activity in every update, zero marked as critical."""
+    fig = go.Figure(
+        _line(history, "total_float_d", "Total float", SERIES[_mode(dark)][0], hovertemplate="%{y} d<extra></extra>")
+    )
+    fig.add_hline(
+        y=0,
+        line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
+        annotation_text="critical",
+        annotation_position="bottom left",
+    )
+    fig.update_xaxes(title="Data date")
+    return _layout(fig, dark, 380, "Working days")
+
+
+def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
+    """Forecast project finish per weekly update: the single most-watched planning trend."""
+    colour = SERIES[_mode(dark)][0]
+    updates = summary.dropna(subset=["data_date", "forecast_finish"])
+    shift = updates["finish_shift_wd"].map(format_shift)
+    fig = go.Figure(
+        go.Scatter(
+            x=updates["data_date"],
+            y=updates["forecast_finish"],
+            mode="lines+markers",
+            line=dict(color=colour, width=2),
+            marker=dict(size=8, color=colour),
+            customdata=np.stack([updates["source"], shift], axis=-1) if len(updates) else None,
+            hovertemplate="Update %{x|%Y-%m-%d}<br>Forecast finish %{y|%Y-%m-%d}%{customdata[1]}"
+            "<br>%{customdata[0]}<extra></extra>",
+        )
+    )
+    fig.update_xaxes(title="Data date")
+    fig = _layout(fig, dark, 380, "Forecast finish", legend=False)
+    fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
+    return fig
+
+
+def format_shift(shift_wd: float) -> str:
+    return "" if pd.isna(shift_wd) else f" ({shift_wd:+g} wd)"
+
+
 # --- PPC ---------------------------------------------------------------------------------------
 
 
-def build_ppc(ppc: pd.DataFrame, target: float = 80, dark: bool = False) -> go.Figure:
+def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET, dark: bool = False) -> go.Figure:
     c = SERIES[_mode(dark)]
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
@@ -273,14 +343,15 @@ def build_ppc(ppc: pd.DataFrame, target: float = 80, dark: bool = False) -> go.F
         f"{v:.0f}% ({d}/{n})" if pd.notna(v) else "no commitment"
         for v, d, n in zip(p["ppc"], p["completed"], p["committed"], strict=True)
     ]
-    # bar labels shrink with the number of weeks (full past 20 bars overlap; the hover
-    # keeps the counts): "63%" up to 40 weeks, none beyond
-    short = ["" if n > 40 else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc"] for n in [len(p)]]
+    # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
+    # the hover keeps the counts)
+    weeks = len(p)
+    short = ["" if weeks > LABEL_SHORT_MAX else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc"]]
     fig = go.Figure(
         go.Bar(
             x=p["label"],
             y=p["ppc"].fillna(0),
-            text=text if len(p) <= 20 else short,
+            text=text if weeks <= LABEL_FULL_MAX else short,
             customdata=text,
             textposition="outside",
             cliponaxis=False,

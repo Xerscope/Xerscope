@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import mpxj_or_skip
+from conftest import REFERENCE_HINT, missing, mpxj_or_skip
 from reference import expected as E
 from reference.sources import FILES
 
@@ -17,13 +17,13 @@ from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_
 from xerscope.xer import build_snapshot, percent_complete, read_xer
 
 DATA = Path(__file__).parent / "reference" / "data"
-pytestmark = [
-    pytest.mark.reference,
-    pytest.mark.skipif(
-        not all((DATA / n).exists() for n in FILES),
-        reason="reference files missing: uv run python tests/reference/fetch.py",
-    ),
-]
+
+
+@pytest.fixture(autouse=True)
+def require_all_reference_files():
+    """Skip (or fail under XERSCOPE_REQUIRE=reference) when a pinned file was not fetched."""
+    if not all((DATA / name).exists() for name in FILES):
+        missing("reference", REFERENCE_HINT)
 
 
 def snap(name):

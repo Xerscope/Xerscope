@@ -23,7 +23,6 @@ PALETTE = {
         "Near critical": STATUS[mode]["warning"],
         "Normal": SERIES[mode][0],
         "Complete": STATUS[mode]["complete"],
-        "ghost": INK[mode]["secondary"],
         "ink": INK[mode]["secondary"],
         "grid": INK[mode]["grid"],
         "link": INK[mode]["axis"],
@@ -32,6 +31,11 @@ PALETTE = {
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
 MIN_BAR_MS = 4 * 3600 * 1000  # keep 1-hour tasks visible
+
+
+def _bar_ms(frame: pd.DataFrame) -> pd.Series:
+    """Bar length in milliseconds (a horizontal Bar on a date axis), never below MIN_BAR_MS."""
+    return ((frame["finish"] - frame["start"]).dt.total_seconds() * 1000).clip(lower=MIN_BAR_MS)
 
 
 def categorise(tasks: pd.DataFrame, settings: Settings = DEFAULT_SETTINGS) -> pd.Series:
@@ -52,6 +56,28 @@ def row_label(tasks: pd.DataFrame, width: int = 42) -> pd.Series:
     name = tasks["task_name"].astype(str)
     name = name.where(name.str.len() <= width, name.str.slice(0, width - 1) + "…")
     return tasks["task_code"].astype(str) + "  " + name
+
+
+def _finish_shift_text(tasks, compare, compare_label, snapshot):
+    """Hover text of the finish shift vs the comparison, and the comparison's dates by task code."""
+    shift_txt = pd.Series("", index=tasks.index)
+    if compare is None or compare.empty:
+        return shift_txt, None
+    cmp = compare.set_index("task_code")[["start", "finish"]]
+    cf = tasks["task_code"].map(cmp["finish"])
+    if snapshot is not None:
+        shift, unit = snapshot.working_days(tasks["clndr_id"], cf, tasks["finish"]), "wd"
+    else:
+        shift, unit = (tasks["finish"] - cf).dt.total_seconds() / 86400, "cal. d"
+    shift_txt = np.where(
+        shift.notna(),
+        "<br>Finish vs "
+        + compare_label
+        + ": "
+        + shift.round(1).map(("{:+g} " + unit).format, na_action="ignore").astype(object),
+        np.where(cf.isna(), "<br>Not in " + compare_label, ""),
+    )
+    return pd.Series(shift_txt, index=tasks.index), cmp
 
 
 def build_gantt(
@@ -78,28 +104,11 @@ def build_gantt(
     pal = PALETTE["dark" if dark else "light"]
     t = tasks.copy()
     t["row"] = row_label(t)
-    t["category"] = categorise(t, settings)
+    if "category" not in t.columns:  # the app page already categorised for its filter
+        t["category"] = categorise(t, settings)
     rows = row_order or t["row"].tolist()
 
-    # Finish shift vs comparison, for the hover text.
-    shift_txt = pd.Series("", index=t.index)
-    cmp = None
-    if compare is not None and not compare.empty:
-        cmp = compare.set_index("task_code")[["start", "finish"]]
-        cf = t["task_code"].map(cmp["finish"])
-        if snapshot is not None:
-            shift, unit = snapshot.working_days(t["clndr_id"], cf, t["finish"]), "wd"
-        else:
-            shift, unit = (t["finish"] - cf).dt.total_seconds() / 86400, "cal. d"
-        shift_txt = np.where(
-            shift.notna(),
-            "<br>Finish vs "
-            + compare_label
-            + ": "
-            + shift.round(1).map(("{:+g} " + unit).format, na_action="ignore").astype(object),
-            np.where(cf.isna(), "<br>Not in " + compare_label, ""),
-        )
-        shift_txt = pd.Series(shift_txt, index=t.index)
+    shift_txt, cmp = _finish_shift_text(t, compare, compare_label, snapshot)
 
     tf = t["total_float_d"].round(1).astype(object).where(t["total_float_d"].notna(), "-")
     pct = t["pct_complete"].round(0).astype(object).where(t["pct_complete"].notna(), "-")
@@ -132,7 +141,7 @@ def build_gantt(
         c = t[["row", "task_code", "is_milestone"]].join(cmp, on="task_code")
         c = c[~c["is_milestone"] & c["start"].notna() & c["finish"].notna()]
         if not c.empty:
-            dur = ((c["finish"] - c["start"]).dt.total_seconds() * 1000).clip(lower=MIN_BAR_MS)
+            dur = _bar_ms(c)
             fig.add_trace(
                 go.Bar(
                     y=c["row"],
@@ -142,7 +151,7 @@ def build_gantt(
                     width=0.8,
                     name=compare_label,
                     legendrank=10,
-                    marker=dict(color="rgba(0,0,0,0)", line=dict(color=pal["ghost"], width=1)),
+                    marker=dict(color="rgba(0,0,0,0)", line=dict(color=pal["ink"], width=1)),
                     hoverinfo="skip",
                 )
             )
@@ -154,7 +163,7 @@ def build_gantt(
         b = bars[bars["category"] == cat]
         if b.empty:
             continue
-        dur = ((b["finish"] - b["start"]).dt.total_seconds() * 1000).clip(lower=MIN_BAR_MS)
+        dur = _bar_ms(b)
         fig.add_trace(
             go.Bar(
                 y=b["row"],
@@ -200,7 +209,7 @@ def build_gantt(
     # 3b) WBS summary bars: thin and dark, like P6's grouping bands
     if summaries is not None and not summaries.empty:
         sm = summaries.dropna(subset=["start", "finish"])
-        dur = ((sm["finish"] - sm["start"]).dt.total_seconds() * 1000).clip(lower=MIN_BAR_MS)
+        dur = _bar_ms(sm)
         pct = sm["pct_complete"].round(0).astype(object).where(sm["pct_complete"].notna(), "-")
         fig.add_trace(
             go.Bar(
@@ -282,41 +291,6 @@ def build_gantt(
     fig.update_yaxes(
         categoryorder="array", categoryarray=rows, autorange="reversed", showgrid=False, tickfont=dict(size=13)
     )
-    return fig
-
-
-def format_shift(shift_wd: float) -> str:
-    return "" if pd.isna(shift_wd) else f" ({shift_wd:+g} wd)"
-
-
-def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
-    """Forecast project finish per weekly update: the single most-watched planning trend."""
-    pal = PALETTE["dark" if dark else "light"]
-    updates = summary.dropna(subset=["data_date", "forecast_finish"])
-    shift = updates["finish_shift_wd"].map(format_shift)
-    fig = go.Figure(
-        go.Scatter(
-            x=updates["data_date"],
-            y=updates["forecast_finish"],
-            mode="lines+markers",
-            line=dict(color=pal["Normal"], width=2),
-            marker=dict(size=8, color=pal["Normal"]),
-            customdata=np.stack([updates["source"], shift], axis=-1) if len(updates) else None,
-            hovertemplate="Update %{x|%Y-%m-%d}<br>Forecast finish %{y|%Y-%m-%d}%{customdata[1]}"
-            "<br>%{customdata[0]}<extra></extra>",
-        )
-    )
-    fig.update_layout(
-        height=380,
-        margin=dict(l=10, r=20, t=20, b=10),
-        showlegend=False,
-        font=dict(color=pal["ink"], **FONT),
-        hoverlabel=dict(font=FONT),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    fig.update_xaxes(title="Data date", gridcolor=pal["grid"], tickfont=TICK)
-    fig.update_yaxes(title="Forecast finish", gridcolor=pal["grid"], tickfont=TICK)
     return fig
 
 

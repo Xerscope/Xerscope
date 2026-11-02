@@ -100,9 +100,6 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       - 0/100 and 50/50 with a non-physical % complete are untested.
       - The quote for the EV-basis Admin Preference ("When calculating earned value from a
         baseline use") is unverified.
-- [ ] **Bug**: DECM 06A212a raises TypeError when the project has no incomplete activity
-      (seen on the four one-activity MPXJ calendar files, whose activity is complete; frozen as "error" in
-      `tests/golden/standards.json`). Fix it and regenerate the golden.
 
 ## App
 
@@ -127,12 +124,12 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 ## Structure (only once the above is done, at constant output)
 
-- [ ] Complexity hotspots still above 10: `build_snapshot` 30, `changelog` 23,
-      `parse_text` 17, `build_gantt` 16, `explain._population` 15, `sidebar_loader` 14,
-      `Rule.validate` 14, `parse_standard` 12, `column_config` 12, `explain` 11. CPM internals and
+- [ ] Complexity hotspots still above 10 (`ruff check src --select C901`): `parse_text` 17,
+      `build_gantt` 15, and in the CPM `pred_bounds`, `forward`, `successor_limits`, `backward`,
+      `longest_path`; `sample.py` (`_cpm`, `_progress`, `generate`). CPM internals and
       `sample.py` are left as they are.
 - [ ] Duplications: the `task_code` index idiom (~34 places; one `Snapshot.by_code`); the
-      hours-per-day lookup (x3); three changelog row builders; two text searches in views.
+      hours-per-day lookup (x3); three changelog row builders.
 - [ ] Computations still inside `app/views` (changelog, health, ppc, gantt): pure
       functions per page would be testable without AppTest. One cache policy
       (`st.cache_data` for parsing, `memo` for analyses).

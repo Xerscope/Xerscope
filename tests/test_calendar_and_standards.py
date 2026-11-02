@@ -1,3 +1,4 @@
+import re
 from datetime import date
 
 import pandas as pd
@@ -94,7 +95,7 @@ HEAD = '[standard]\nid = "X"\nname = "X"\n'
 )
 def test_invalid_standard_fails_loudly(metric, error):
     text = HEAD + f'[[metric]]\nid = "X-1"\nname = "m"\n{metric}\n'
-    with pytest.raises(ValueError, match=pytest.importorskip("re").escape(error)):
+    with pytest.raises(ValueError, match=re.escape(error)):
         loads_standard(text)
 
 

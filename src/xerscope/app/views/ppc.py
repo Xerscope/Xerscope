@@ -4,7 +4,7 @@ import streamlit as st
 from xerscope.analysis.progress import committed, ppc_series, progress_delta, rollup_delta
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, is_dark, memo, require_store
-from xerscope.viz.charts import build_ppc
+from xerscope.viz.charts import PPC_TARGET, build_ppc
 
 COMMITMENT_COLUMNS = [
     "task_code",
@@ -80,7 +80,7 @@ def show_progress_by_activity(progress: pd.DataFrame, current) -> None:
     moved_mask = (progress["pct_delta"] != 0) | (progress["earned_hr_week"] != 0) | (progress["actual_hr_week"] != 0)
     moved = progress[moved_mask].sort_values("earned_hr_week", ascending=False)
     ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS)
-    ui.csv_button(progress, f"progress_{current.data_date:%Y-%m-%d}.csv")
+    ui.csv_button(progress, f"progress_{ui.stamp(current.data_date)}.csv")
 
 
 store = require_store()
@@ -92,7 +92,7 @@ if len(store) < 2:
     st.stop()
 
 target_column, milestones_column, week_column = st.columns([1, 1, 2], vertical_alignment="bottom")
-target = target_column.number_input("PPC target (%)", 0, 100, 80, step=5)
+target = target_column.number_input("PPC target (%)", 0, 100, PPC_TARGET, step=5)
 with_ms = milestones_column.toggle("Include milestones", value=True)
 week_labels = store.labels[1:]
 week = week_column.selectbox("Week ending", week_labels, index=len(week_labels) - 1, key="ppc_week")

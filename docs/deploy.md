@@ -100,7 +100,7 @@ DSM administrator — same confidentiality as the folder, not a vault.
 ## 5. The exports folder
 
 A shared folder (for example `planning`), weekly `.xer` dropped by Synology Drive or
-SMB; sub-folders are read too. Mounted read-only: the app cannot alter or delete anything.
+SMB; sub-folders are not read. Mounted read-only: the app cannot alter or delete anything.
 The container runs as uid 65532 (`nonroot`), which is nobody on the NAS: the folder needs
 read for *Everyone* (File Station → Properties → Permission → Advanced; or Control Panel →
 Shared Folder → Permissions → "Everyone" read). Without it the page shows no file and the

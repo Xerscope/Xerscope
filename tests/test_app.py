@@ -4,6 +4,7 @@ Uses Streamlit's headless AppTest, so it runs the same on Linux, Windows and mac
 without a browser. It checks that pages run; the numbers are tested elsewhere.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -44,11 +45,27 @@ def test_every_page_renders(app):
         assert app.title, f"{page} rendered no title"
 
 
+def _gantt_traces(at) -> list[str]:
+    figure = json.loads(at.get("plotly_chart")[0].proto.spec)
+    return [trace.get("name") for trace in figure["data"]]
+
+
+def _toggle(at, label: str, value: bool) -> None:
+    next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
+    _ok(at)
+
+
 def test_gantt_options(app):
     app.switch_page("views/gantt.py").run()
-    for i in range(len(app.toggle)):
-        app.toggle[i].set_value(not app.toggle[i].value).run()
-        _ok(app)
+    assert "WBS summary" in _gantt_traces(app)  # grouped by WBS by default
+    _toggle(app, "Group by WBS", False)
+    assert "WBS summary" not in _gantt_traces(app)
+    assert "Logic" not in _gantt_traces(app)
+    _toggle(app, "Logic links", True)
+    assert "Logic" in _gantt_traces(app)
+    _toggle(app, "Logic links", False)
+    assert "Logic" not in _gantt_traces(app)
+    _toggle(app, "Hide LOE", False)
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
     first = app.selectbox(key="gantt_snap").options[0]
     app.selectbox(key="gantt_snap").set_value(first).run()

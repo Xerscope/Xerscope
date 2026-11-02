@@ -528,7 +528,7 @@ def test_calendar_holiday_counts_in_cpl():
 def test_broken_rule_reports_error_not_crash(monkeypatch):
     from xerscope.analysis import rules
 
-    def boom(ctx, **_):
+    def boom(_context, **_):
         raise RuntimeError("kaput")
 
     monkeypatch.setitem(rules.RULES, "p6_06_large_float", rules.Rule("p6_06_large_float", boom, "%", ""))

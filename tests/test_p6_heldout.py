@@ -70,7 +70,6 @@ def _score(name: str) -> pd.DataFrame:
     return p6_heldout_score(HELD_OUT / name)
 
 
-@pytest.mark.reference
 @pytest.mark.parametrize("name", list(FLOORS))
 def test_share_of_values_identical_to_p6_never_drops(corpus, name):
     d = _score(name)
@@ -87,7 +86,6 @@ def _p6_results(set_dir: Path) -> pd.DataFrame:
     return res
 
 
-@pytest.mark.reference
 def test_float_type_codes_read_as_p6_does(corpus):
     """Which float P6 reports under each ``sched_float_type`` code, measured on P6's own
     dates (nothing of xerscope's CPM is involved), on the resource-dependent work of
@@ -127,7 +125,6 @@ def test_float_type_codes_read_as_p6_does(corpus):
         assert FLOAT_TYPE[code] == best
 
 
-@pytest.mark.reference
 def test_total_float_agrees_wherever_the_four_dates_do(corpus):
     """An activity whose early and late dates are P6's has P6's total float too, under
     FT_FF and FT_SS (the codes P6 itself writes). The float-type reading is then the only
@@ -240,7 +237,6 @@ PINNED = {
 }
 
 
-@pytest.mark.reference
 @pytest.mark.parametrize("rule", list(PINNED))
 def test_rule_reproduces_p6_on_its_corpus_witness(corpus, rule):
     for set_name, case, code, field in PINNED[rule]:
