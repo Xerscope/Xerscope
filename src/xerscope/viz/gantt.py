@@ -54,10 +54,15 @@ def _fmt(ts: pd.Series) -> pd.Series:
     return ts.dt.strftime(DATE_FMT).fillna("-")
 
 
-def row_label(tasks: pd.DataFrame, width: int = 42) -> pd.Series:
-    name = tasks["task_name"].astype(str)
-    name = name.where(name.str.len() <= width, name.str.slice(0, width - 1) + "…")
-    return tasks["task_code"].astype(str) + "  " + name
+LABEL_WIDTH = 42  # characters of a row's name before it is cut with "…"
+
+
+def _truncate(text: str, width: int = LABEL_WIDTH) -> str:
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def row_label(tasks: pd.DataFrame) -> pd.Series:
+    return tasks["task_code"].astype(str) + "  " + tasks["task_name"].astype(str).map(_truncate)
 
 
 def _finish_shift_text(tasks, compare, compare_label, snapshot):
@@ -96,14 +101,17 @@ def build_gantt(
     row_order: list[str] | None = None,
     snapshot=None,
     timescale: str = "month",
+    span: tuple[pd.Timestamp, pd.Timestamp] | None = None,
 ) -> go.Figure:
     """Rows are drawn top to bottom in the order of ``tasks`` (sort before calling).
 
     ``timescale`` "month" shows the whole schedule with one tick per month; "week" ticks
-    every Monday and opens on 12 weeks around the data date (pan or zoom out for the rest).
+    every Monday and shows the 12 weeks around the data date.
+    ``span`` (start, finish) fixes the month timescale to a wider period than the rows
+    shown, so the time axis stays put while the WBS is navigated level by level.
 
     ``summaries`` (columns row, start, finish, pct_complete, activities) adds WBS summary
-    bars; ``row_order`` then interleaves them with the activity rows (see wbs_rows).
+    bars; ``row_order`` then orders them with the activity rows (see level_rows).
     ``snapshot`` (the Snapshot ``tasks`` come from) gives the finish shift in working days
     of each activity's calendar; without it the hover says calendar days.
     """
@@ -283,7 +291,7 @@ def build_gantt(
 
     fig.update_layout(
         barmode="overlay",
-        height=min(max(360, 26 * len(rows) + 150), 4000),  # past ~150 rows: filter, or zoom
+        height=min(max(240, 26 * len(rows) + 150), 4000),  # past ~150 rows: filter, or open a sub-WBS
         margin=dict(l=10, r=20, t=90, b=10),
         # legend pinned to the figure's top edge; the date axis sits between it and the bars
         legend=dict(orientation="h", yref="container", y=0.995, yanchor="top", x=0, xanchor="left", font=FONT),
@@ -298,40 +306,39 @@ def build_gantt(
         window = None if data_date is None else [data_date - WEEK_WINDOW[0], data_date + WEEK_WINDOW[1]]
         fig.update_xaxes(dtick=WEEK_MS, tick0="2000-01-03", tickformat="%d %b", range=window)  # 2000-01-03: a Monday
     else:
-        fig.update_xaxes(dtick="M1", tickformat="%b %Y")
+        pad = pd.Timedelta(days=7)
+        window = None if span is None or pd.isna(span[0]) else [span[0] - pad, span[1] + pad]
+        fig.update_xaxes(dtick="M1", tickformat="%b %Y", range=window)
+    summary_rows = set() if summaries is None or summaries.empty else set(summaries["row"])
     fig.update_yaxes(
-        categoryorder="array", categoryarray=rows, autorange="reversed", showgrid=False, tickfont=dict(size=13)
+        categoryorder="array",
+        categoryarray=rows,
+        autorange="reversed",
+        showgrid=False,
+        tickfont=dict(size=13),
+        tickvals=rows,
+        ticktext=[f"<b>{row}</b>" if row in summary_rows else row for row in rows],
     )
+    # the view is navigated through the WBS, not by zooming: a drag must not change the axes
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     return fig
 
 
-def wbs_rows(tasks: pd.DataFrame, nodes: pd.DataFrame) -> tuple[list[str], pd.DataFrame]:
-    """Row order grouping activities under their WBS node, plus the summary rows.
+def level_rows(tasks: pd.DataFrame, nodes: pd.DataFrame) -> tuple[list[str], pd.DataFrame]:
+    """Rows of one WBS level: the activities given, then one summary row per child node.
 
-    ``nodes`` is analysis.wbs.rollup output restricted to the nodes to show (in order);
-    each activity goes under the node it is assigned to.
+    ``nodes`` is analysis.wbs.rollup output restricted to the child nodes, in P6 order.
     """
-    t = tasks.copy()
-    t["row"] = row_label(t)
-    order: list[str] = []
-    summary_rows = []
-    by_node = {k: g.sort_values(["start", "task_code"])["row"].tolist() for k, g in t.groupby("wbs_id")}
-    shown = set()
-    for n in nodes.itertuples():
-        # non-breaking spaces: Plotly keeps them, so the tree indentation survives
-        label = "\u00a0" * 3 * max(n.depth - 1, 0) + "▾ " + n.label.strip()
-        order.append(label)
-        summary_rows.append(
-            {
-                "row": label,
-                "start": n.start,
-                "finish": n.finish,
-                "pct_complete": n.pct_complete,
-                "activities": n.activities,
-            }
-        )
-        for r in by_node.get(n.wbs_id, []):
-            order.append(r)
-            shown.add(r)
-    rest = [r for r in t.sort_values(["start", "task_code"])["row"] if r not in shown]
-    return order + rest, pd.DataFrame(summary_rows)
+    order = row_label(tasks.sort_values(["start", "task_code"])).tolist()
+    summary_rows = [
+        {
+            "row": "▸ " + _truncate(n.label),
+            "start": n.start,
+            "finish": n.finish,
+            "pct_complete": n.pct_complete,
+            "activities": n.activities,
+        }
+        for n in nodes.itertuples()
+    ]
+    return order + [r["row"] for r in summary_rows], pd.DataFrame(summary_rows)

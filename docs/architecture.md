@@ -139,7 +139,10 @@ Outside `analysis/`:
 ## 6. `viz/`: figures
 
 - **`gantt.py`:** status-coloured bars, comparison outlines, milestones, logic links, a
-  data-date line and WBS summary bars (`wbs_rows`).
+  data-date line and WBS summary bars. The Gantt page shows one WBS level at a time
+  (`level_rows`: the node's own activities, then one collapsed row per child node);
+  `analysis/wbs.py` gives the navigation (`children`, `path`, `visible_tree` for the
+  outline). Axes are fixed: the WBS is navigated, the chart is not zoomed.
 - **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
   (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the
   check-status colours in `app/ui.py` derive from them. The series palette is a fixed
