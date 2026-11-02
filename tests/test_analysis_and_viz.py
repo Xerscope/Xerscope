@@ -56,7 +56,7 @@ def test_baseline_execution(store):
 
 def test_health_history_is_long_format(store):
     h = health_history(store, STANDARDS["DCMA"], Baseline.from_snapshot(store.first))
-    assert len(h) == 14 * len(store)
+    assert len(h) == 14 * len(store)  # DCMA 14-Point
     neg = h[h["id"] == "DCMA-07"].set_index("snapshot_idx")["found"]
     assert neg[4] == 0 and neg[5] > 0
 

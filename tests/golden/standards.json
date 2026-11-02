@@ -442,6 +442,30 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-09-07.xer": {
@@ -878,6 +902,30 @@
    },
    "P6/P6-14": {
     "denominator": 26,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1324,6 +1372,30 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-09-21.xer": {
@@ -1760,6 +1832,30 @@
    },
    "P6/P6-14": {
     "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2204,6 +2300,30 @@
    },
    "P6/P6-14": {
     "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2661,6 +2781,30 @@
     "numerator": 6,
     "status": "fail",
     "value": 25.0
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-10-12.xer": {
@@ -3130,6 +3274,30 @@
     "numerator": 14,
     "status": "fail",
     "value": 60.869565
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-10-19.xer": {
@@ -3601,6 +3769,32 @@
     "numerator": 13,
     "status": "fail",
     "value": 59.090909
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [
+     "C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 3.333333
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   }
  },
@@ -4043,6 +4237,30 @@
    },
    "P6/P6-14": {
     "denominator": 28,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -4515,6 +4733,30 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-09-14.xer": {
@@ -4977,6 +5219,30 @@
    },
    "P6/P6-14": {
     "denominator": 26,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5445,6 +5711,30 @@
    },
    "P6/P6-14": {
     "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5924,6 +6214,30 @@
    },
    "P6/P6-14": {
     "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6419,6 +6733,30 @@
     "numerator": 6,
     "status": "fail",
     "value": 25.0
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-10-12.xer": {
@@ -6927,6 +7265,30 @@
     "numerator": 14,
     "status": "fail",
     "value": 60.869565
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-10-19.xer": {
@@ -7437,6 +7799,32 @@
     "numerator": 13,
     "status": "fail",
     "value": 59.090909
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [
+     "C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 3.333333
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   }
  },
@@ -7880,6 +8268,30 @@
    },
    "P6/P6-14": {
     "denominator": 28,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8353,6 +8765,30 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-09-14.xer": {
@@ -8816,6 +9252,30 @@
    },
    "P6/P6-14": {
     "denominator": 26,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9285,6 +9745,30 @@
    },
    "P6/P6-14": {
     "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9762,6 +10246,30 @@
    },
    "P6/P6-14": {
     "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10255,6 +10763,30 @@
     "numerator": 6,
     "status": "fail",
     "value": 25.0
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-10-12.xer": {
@@ -10761,6 +11293,30 @@
     "numerator": 14,
     "status": "fail",
     "value": 60.869565
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "PRJ-ALPHA_2026-10-19.xer": {
@@ -11269,6 +11825,32 @@
     "numerator": 13,
     "status": "fail",
     "value": 59.090909
+   },
+   "P6/P6-15": {
+    "denominator": 30,
+    "flagged": [
+     "C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 3.333333
+   },
+   "P6/P6-16": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   }
  },
@@ -11651,6 +12233,30 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "P6/P6-15": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "mpxj/ProjectDefaultCalendar.xer": {
@@ -12031,6 +12637,30 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "P6/P6-15": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "mpxj/SuccessorCalendar.xer": {
@@ -12411,6 +13041,30 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "P6/P6-15": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "mpxj/TwentyFourHourCalendar.xer": {
@@ -12791,6 +13445,30 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "P6/P6-15": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "mpxj/percent-complete-8.4.xer": {
@@ -13263,6 +13941,30 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 12,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 12,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 12,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    }
   },
   "mpxj/resource-rates-test.xer": {
@@ -13639,6 +14341,30 @@
     "value": null
    },
    "P6/P6-14": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
     "denominator": 1,
     "flagged": [],
     "note": null,
@@ -14209,6 +14935,42 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 66,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 66,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 66,
+    "flagged": [
+     "BA-P1-100",
+     "BA-P1-160",
+     "BA-P1-30",
+     "BA-P1-40",
+     "BA-P1-80",
+     "BA-P1-90",
+     "BA-P2-100",
+     "BA-P2-30",
+     "BA-P3-100",
+     "BA-P4-20",
+     "BA-P4-90"
+    ],
+    "note": null,
+    "numerator": 11,
+    "status": "fail",
+    "value": 16.666667
    }
   },
   "pv/20-kW-residential-pv-p6.xer": {
@@ -14642,6 +15404,30 @@
     "value": null
    },
    "P6/P6-14": {
+    "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
     "denominator": 25,
     "flagged": [],
     "note": null,
@@ -15150,6 +15936,44 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 52,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-16": {
+    "denominator": 52,
+    "flagged": [
+     "EM00",
+     "EM01",
+     "EM02",
+     "EM03",
+     "EM04",
+     "EM05"
+    ],
+    "note": null,
+    "numerator": 6,
+    "status": "fail",
+    "value": 11.538462
+   },
+   "P6/P6-17": {
+    "denominator": 52,
+    "flagged": [
+     "SM00",
+     "SM01",
+     "SM02",
+     "SM03",
+     "SM04",
+     "SM05"
+    ],
+    "note": null,
+    "numerator": 6,
+    "status": "fail",
+    "value": 11.538462
    }
   },
   "xerlock/sample-schedule.xer": {
@@ -15630,6 +16454,36 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "P6/P6-15": {
+    "denominator": 24,
+    "flagged": [
+     "EW-030",
+     "ST-010"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
+   },
+   "P6/P6-16": {
+    "denominator": 24,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "P6/P6-17": {
+    "denominator": 24,
+    "flagged": [
+     "FIT-010",
+     "MEP-060"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "fail",
+    "value": 8.333333
    }
   }
  }

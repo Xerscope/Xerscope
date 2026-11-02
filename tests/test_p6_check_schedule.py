@@ -335,3 +335,39 @@ def test_p6_13_a_baseline_milestone_is_not_counted():
     assert counts(r) == (1, 1)
     assert r.value == 1.0
     assert codes(r) == []
+
+
+# --- 10. Out of sequence and dangling (P6 Professional report, 3,408 activities) ------------------
+
+
+def test_p6_15_out_of_sequence_counts_one_row_per_predecessor_over_all_activities():
+    """'Activities which are completed or in-progress before their predecessors.' A P6 Professional report
+    lists one row per activity and predecessor (6 rows, one activity twice) against the total of activities."""
+    s = snap(
+        [done("A"), active("B"), todo("A2"), todo("A3"), active("C")],
+        [("A", "B", "FS", 0), ("A2", "C", "FS", 0), ("A3", "C", "FS", 0)],
+    )
+    r = run(P6, "P6-15", s)
+    assert counts(r) == (2, 5)
+    assert codes(r) == ["C", "C"]
+
+
+def test_p6_16_dangling_start_ignores_in_progress_and_activities_without_predecessor():
+    """'Activities with start dates that are not driven by predecessors', 'Ignore In Progress Activities'
+    checked. The report's Logic check lists the activity with no predecessor; the dangling check does not."""
+    s = snap(
+        [todo("P"), todo("X"), active("Y"), todo("Z")],
+        [("P", "X", "FF", 0), ("P", "Y", "FF", 0), ("X", "Z", "FS", 0)],
+    )
+    r = run(P6, "P6-16", s)
+    assert counts(r) == (1, 4)
+    assert codes(r) == ["X"]
+
+
+def test_p6_17_dangling_finish_needs_a_successor_that_is_not_driven():
+    """'Activities with finish dates that do not drive successors.' An activity with no successor at all is
+    the Logic check's (the report lists it there, not here)."""
+    s = snap([todo("X"), todo("S"), todo("K")], [("X", "S", "SS", 0)])
+    r = run(P6, "P6-17", s)
+    assert counts(r) == (1, 3)
+    assert codes(r) == ["X"]

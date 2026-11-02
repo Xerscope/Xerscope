@@ -1,8 +1,9 @@
 # Oracle Primavera P6 Professional 24 — Check Schedule (Tools > Check Schedule).
 #
-# The 14 checks, in the order and groups of the P6 Professional 24 User Guide ("Check
-# Schedule", F88968_01 page 101393). Dangling start / finish are not P6 Professional
-# checks (they exist in P6 EPPM only), so they are not here.
+# The 14 checks of the P6 Professional 24 User Guide ("Check Schedule"), plus the out-of-sequence and dangling
+# checks a P6 Professional Check Schedule report prints; in the order and groups of the guide ("Check
+# Schedule", F88968_01 page 101393). Out of sequence and dangling start / finish are absent from
+# that help page; a P6 Professional report prints them, so they close the list (P6-15..17).
 # Populations follow the P6 Professional 24 help of the Check Schedule dialog
 # (https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm); where it is silent,
 # Oracle's help for each section of the Schedule Check Report (P6 EPPM, pages 46277-46291).
@@ -21,7 +22,7 @@
 [standard]
 id = "P6"
 name = "P6 Check Schedule"
-description = "Oracle Primavera P6 Professional 24 Check Schedule (14 checks)"
+description = "Oracle Primavera P6 Professional 24 Check Schedule (17 checks)"
 source = "https://docs.oracle.com/cd/F88968_01/English/User_Guides/p6_pro_user/101393.htm"
 
 # --- Inflexibility and Inefficiency -------------------------------------------------------
@@ -155,3 +156,30 @@ description = "Activities with a total float less than 0"
 rule = "p6_14_negative_float"
 target = "< 1%"
 source = "46283: WBS summary, actual-finish and LOE removed"
+
+[[metric]]
+id = "P6-15"
+group = "Inaccuracy"
+name = "Out of sequence"
+description = "Activities which are completed or in-progress before their predecessors"
+rule = "p6_15_out_of_sequence"
+target = "< 2%"
+source = "P6 Professional Check Schedule report: one row per activity and predecessor, against the total of activities; read as the scheduling log's out-of-sequence progress (FS predecessor not finished, SS not started, at the actual start)"
+
+[[metric]]
+id = "P6-16"
+group = "Inaccuracy"
+name = "Dangling start"
+description = "Activities with start dates that are not driven by predecessors"
+rule = "p6_16_dangling_start"
+target = "<= 0%"
+source = "P6 Professional Check Schedule report (Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only"
+
+[[metric]]
+id = "P6-17"
+group = "Inaccuracy"
+name = "Dangling finish"
+description = "Activities with finish dates that do not drive successors"
+rule = "p6_17_dangling_finish"
+target = "<= 0%"
+source = "P6 Professional Check Schedule report (Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only"

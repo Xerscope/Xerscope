@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .cpm import CycleError, compare_assignments, compare_with_stored
-from .populations import flagged_activities, links_between, without_level_of_effort
+from .populations import flagged_activities, links_between, predecessors_ahead, without_level_of_effort
 from .rules import RuleOutput, rule
 
 STORED_FIELDS = ["early_start_date", "early_end_date", "late_start_date", "late_end_date", "total_float_hr_cnt"]
@@ -50,16 +50,10 @@ def int_01_recalculated(context) -> RuleOutput:
 
 
 def _predecessors_ahead(links: pd.DataFrame, started: pd.DataFrame, tasks: pd.DataFrame) -> pd.Series:
-    """For each started successor, its FS / SS predecessors that had not finished / started at its actual start."""
-    if links.empty:
+    """For each started successor, its predecessors ahead of it as 'CODE (FS), CODE (SS)'."""
+    ahead = predecessors_ahead(links, started, tasks)
+    if ahead.empty:
         return pd.Series(dtype=object)
-    start = links["succ_code"].map(started["act_start_date"])
-    predecessor_finish = links["pred_code"].map(tasks["act_end_date"])
-    predecessor_start = links["pred_code"].map(tasks["act_start_date"])
-    # a predecessor with no actual date yet has certainly not happened before the successor's start
-    finish_after = (links["type"] == "FS") & (predecessor_finish.isna() | (predecessor_finish > start))
-    start_after = (links["type"] == "SS") & (predecessor_start.isna() | (predecessor_start > start))
-    ahead = links[finish_after | start_after]
     return (ahead["pred_code"] + " (" + ahead["type"] + ")").groupby(ahead["succ_code"]).agg(", ".join)
 
 

@@ -89,7 +89,7 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 
 Standards are data in `standards/*.toml`:
 
-- `p6.toml`: P6 Professional 24 Check Schedule (14 checks, Oracle's groups);
+- `p6.toml`: P6 Professional 24 Check Schedule (17 checks: the 14 of the help plus out of sequence and dangling start/finish from a real report; Oracle's groups);
 - `decm.toml`: DCMA DECM v8.0, Guideline 6 schedule tests;
 - `dcma.toml`: DCMA 14-Point (legacy);
 - `integrity.toml`: recalculation of activities and assignments, out-of-sequence progress;

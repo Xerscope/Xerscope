@@ -61,7 +61,7 @@ def test_builtin_standards():
     std = builtin_standards()
     assert set(std) >= {"P6", "DCMA", "DECM", "INTEGRITY"}
     assert len(std["DCMA"].metrics) == 14
-    assert len(std["P6"].metrics) == 14  # P6 Professional 24
+    assert len(std["P6"].metrics) == 17  # the 14 of the help + out of sequence, dangling start and finish
     assert len(std["DECM"].metrics) == 16
     assert std["DCMA"]["DCMA-13"].threshold == 0.95
     assert std["P6"]["P6-05"].rule == "p6_05_long_lags"

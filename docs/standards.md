@@ -27,7 +27,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.
 
-## P6 Check Schedule (P6 Professional 24: 14 checks)
+## P6 Check Schedule (P6 Professional 24: 17 checks)
 
 Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 101393).
 Populations from the P6 Professional 24 help of the Check Schedule dialog
