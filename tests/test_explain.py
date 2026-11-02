@@ -2,9 +2,10 @@
 
 import pytest
 
-from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
+from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric, run_standard
 from xerscope.analysis.explain import explain, fmt_value
 from xerscope.analysis.rules import RULES
+from xerscope.analysis.standards import loads_standard, template_text
 
 
 @pytest.fixture(scope="module")
@@ -41,13 +42,15 @@ def test_verdict_follows_status(results):
         assert expected in v, (r.metric.id, r.status, v)
 
 
-def test_parameters_show_standard_and_defaults(results):
+def test_parameters_show_standard_and_defaults(results, store):
     late = next(r for r in results if r.metric.id == "P6-12")
     assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
     assert any("Excludes: milestones" in line for line in explain(late).population)
-    with_parameters = [explain(r).parameters for r in results if explain(r).parameters]
-    origins = {origin for parameters in with_parameters for _name, _value, origin in parameters}
-    assert origins == {"standard", "default"}
+    assert all(not explain(r).parameters for r in results)  # no built-in check takes parameters
+
+    custom = loads_standard(template_text())  # the parameterised rules live in the custom template
+    lines = explain(run_metric(custom["CUS-04"], AnalysisContext(store.latest))).parameters
+    assert {origin for _name, _value, origin in lines} == {"standard", "default"}
 
 
 def test_link_rules_word_exclusions_on_the_successor():
@@ -66,8 +69,7 @@ def test_relationship_checks_say_relationships(results):
 
 def test_rules_that_flag_relationships_declare_links(results):
     for r in results:
-        # out_of_sequence lists relationships only with method="decm"; explain reads the rows.
-        if "pred_code" in r.flagged.columns and r.metric.rule != "out_of_sequence":
+        if "pred_code" in r.flagged.columns:
             assert RULES[r.metric.rule].links, r.metric.id
 
 
@@ -77,10 +79,10 @@ def test_explain_tables_match_registry():
     # the CPLI (ratio) and critical path test (pass/fail) rules have no numerator/denominator/flagged
     # list to word; explain() falls back to defaults for them.
     assert {name for name, rule in RULES.items() if rule.title} == set(RULES) - {
-        "cpli",
         "critical_path_test",
         "dcma_12_critical_path_test",
         "dcma_13_cpli",
+        "decm_06a401a_critical_path_test",
     }
     # the vocabularies carry their own labels: every key has one, so explain never falls back to the key
     assert all(label and callable(test) for label, test in EXCLUDE.values())

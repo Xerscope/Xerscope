@@ -77,7 +77,7 @@ HEAD = '[standard]\nid = "X"\nname = "X"\n'
         ('rule = "float"\nparams = { treshold = 3 }', "no parameter(s) ['treshold']"),
         ('rule = "float"\nparams = { exclude = ["finished"] }', "unknown value(s) ['finished']"),
         ('rule = "float"\ntarget = "about 5"', "write e.g."),
-        ('rule = "cpli"\ntarget = "<= 5%"', "is a percentage but the metric unit is 'ratio'"),
+        ('rule = "bei"\ntarget = "<= 5%"', "is a percentage but the metric unit is 'ratio'"),
         ('rule = "lag"\nparams = { links = "some" }', "lag.links: 'some' is not one of"),
         ('rule = "float"\ncolour = "red"', "unknown key(s) ['colour']"),
         ('rule = "float"\nparams = { op = "=>" }', "float.op: '=>' is not one of"),

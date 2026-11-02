@@ -827,13 +827,12 @@ def test_actuals_changed_counts_a_removed_date_on_both_sides():
     from xerkit import active, todo
 
     from xerscope.analysis import AnalysisContext
-    from xerscope.analysis.rules import RULES
     from xerscope.store import SnapshotStore
 
     a = snap([active("A"), active("B"), todo("C")])
-    b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-09 08:00")
+    b = snap([todo("A"), active("B", act_start_date="2026-02-24 08:00"), todo("C")], data_date="2026-03-30 08:00")
     store = SnapshotStore([a, b])
-    out = RULES["actuals_changed"].fn(AnalysisContext(store[1], store), field="start", period_days=0)
+    out = run_metric(DECM["06A504a"], AnalysisContext(store[1], store))
     assert sorted(out.flagged["task_code"]) == ["A", "B"] and (out.numerator, out.denominator) == (2, 2)
 
 
