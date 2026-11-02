@@ -37,6 +37,8 @@ jobs:
       - run: uv sync --locked
       - run: uvx ruff check src tests
       - run: uvx ruff format --check src tests
+      - name: No schedule or data export is tracked (the repository is public)
+        run: "! git ls-files | grep -iE '\\.(xer|parquet|xlsx?|csv)$'"
 
   test:
     strategy:
@@ -162,3 +164,88 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+  deploy:
+    # deploy/ as the NAS runs it, without the app and without a tailnet login: the compose
+    # file is valid, tailscaled starts on its read-only root and the CLI reaches it, Caddy
+    # answers 404 outside the prefix, 401 inside it, 502 once authenticated (no app here),
+    # Referrer-Policy on every answer, and the prefix never appears in its log.
+    runs-on: ubuntu-latest
+    env:
+      XERSCOPE_USER: ci
+      XERSCOPE_PATH: ci0prefix0for0the0log0check
+      XERSCOPE_EXPORTS: /tmp/exports
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The compose file is valid with the NAS's variables
+        id: compose
+        run: |
+          mkdir -p "$XERSCOPE_EXPORTS"
+          caddy_image=$(sed -n 's/^    image: \(caddy:[^ ]*\).*/\1/p' compose.yaml)
+          hash=$(docker run --rm "$caddy_image" caddy hash-password --plaintext ci-pass)
+          echo "XERSCOPE_PASSWORD_HASH=$hash" >> "$GITHUB_ENV"
+          XERSCOPE_PASSWORD_HASH="$hash" docker compose config --quiet
+          docker run --rm -e XERSCOPE_USER -e XERSCOPE_PATH -e XERSCOPE_PASSWORD_HASH="$hash" \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          echo "caddy=$caddy_image" >> "$GITHUB_OUTPUT"
+          echo "tailscale=$(sed -n 's/^    image: \(tailscale\/[^ ]*\).*/\1/p' compose.yaml)" >> "$GITHUB_OUTPUT"
+      - name: tailscaled starts on a read-only root; the CLI finds it at its default socket
+        run: |
+          docker compose up -d tailscale caddy
+          for i in $(seq 1 30); do
+            docker compose exec -T tailscale tailscale status > status.txt 2>&1 || true
+            grep -q -i -E "logged out|log in at|needslogin" status.txt && break
+            sleep 2
+          done
+          cat status.txt
+          grep -q -i -E "logged out|log in at|needslogin" status.txt
+          docker compose logs tailscale > tailscale.log
+          ! grep -i "read-only file system" tailscale.log
+      - name: Caddy outside and inside the prefix
+        run: |  # one check per line: bash -e does not stop on a failure inside an && list
+          get() { docker compose exec -T caddy wget -S -q -O /dev/null "$1" 2>&1 || true; }
+          out=$(get "http://127.0.0.1:8080/"); echo "$out"
+          echo "$out" | grep -q " 404 "
+          out=$(get "http://127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"
+          echo "$out" | grep -q " 401 "
+          out=$(get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"
+          echo "$out" | grep -q " 502 "
+          docker compose logs --no-color caddy > caddy.log
+          # busybox wget prints no header of an error answer: Caddy's access log records what it sent
+          for code in 404 401; do
+            line=$(grep "\"status\": $code," caddy.log | tail -n 1)
+            echo "$line" | grep -q '"Referrer-Policy": \["no-referrer"\]'
+            echo "$line" | grep -q '"X-Content-Type-Options": \["nosniff"\]'
+            echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'\"\]"
+          done
+          ! grep -q "$XERSCOPE_PATH" caddy.log
+      - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.compose.outputs.caddy }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: deploy/caddy.trivyignore.yaml   # dated exceptions, each with its reason
+      - name: Known vulnerabilities in the Tailscale image, fixed ones only (main, Monday, manual)
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.compose.outputs.tailscale }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Container states and logs, when a step failed
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color
+      - if: always()
+        run: docker compose down -v

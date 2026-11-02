@@ -34,8 +34,10 @@ def test_funnel_stack_publishes_nothing_on_the_host():
     assert "--advertise-routes" not in compose and "exit-node" not in compose
     assert "STREAMLIT_SERVER_BASE_URL_PATH" not in compose  # Funnel strips the secret prefix: the app stays at "/"
     assert 'TS_AUTH_ONCE: "true"' in compose  # a single-use key must not be replayed on restart
+    # the node state is a named volume: root without DAC_OVERRIDE cannot write a host folder owned by a NAS user
+    assert "- tailscale-state:/var/lib/tailscale" in compose and "./tailscale-state" not in compose
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
-    assert "basic_auth" in caddy and "reverse_proxy xerscope:8501" in caddy and "auto_https off" in caddy
+    assert "basic_auth" in caddy and "reverse_proxy app:8501" in caddy and "auto_https off" in caddy
     assert "trusted_proxies static private_ranges" in caddy  # the visitor's IP, not tailscaled's loopback
     # userspace tailscaled relays tailnet traffic to loopback: Caddy's admin API (which can
     # rewrite the config, basic_auth included) must not exist
@@ -73,4 +75,125 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
+    assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
+    app = (ROOT / "compose.yaml").read_text()  # the app's writable dirs belong to its user, not root
+    assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app
+    nas = (ROOT / "deploy" / "compose.yaml").read_text()  # same user as `user:`, the image's nonroot by default
+    uid, gid = "${XERSCOPE_UID:-65532}", "${XERSCOPE_GID:-65532}"
+    assert f'user: "{uid}:{gid}"' in nas and "HOME: /home/nonroot" in nas
+    assert f"/home/nonroot:uid={uid},gid={gid}" in nas and f"/tmp:uid={uid},gid={gid}" in nas
+    assert "65532," not in nas.replace(uid, "").replace(gid, "")  # no uid written outside the variables
     assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c
+
+
+def test_runtime_image_carries_no_pip():
+    """pip in the managed CPython is never run and its vendored packages carry CVEs."""
+    df = (ROOT / "Dockerfile").read_text()
+    assert "site-packages/pip " in df and "site-packages/pip-*.dist-info" in df and "bin/pip*" in df
+
+
+def test_caddy_upstream_is_not_shadowed_by_the_tailscale_hostname():
+    """Caddy shares tailscale's namespace and its /etc/hosts, where tailscale's hostname maps to
+    tailscale itself: an upstream with that name reaches tailscale, not the app (502, refused)."""
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    hostnames = re.findall(r"^\s+hostname:\s*(\S+)", compose, re.M)
+    upstreams = re.findall(r"reverse_proxy\s+([\w.-]+):\d+", caddy)
+    assert hostnames == ["xerscope"] and upstreams == ["app"]
+    assert not set(hostnames) & set(upstreams)
+    assert re.search(r"internal:\n\s+aliases: \[app\]", compose)  # the name Caddy uses, on the app's only network
+
+
+def test_caddy_error_log_redacts_the_secret_prefix():
+    """The site's log block filters access logs only; proxy errors go to the default logger
+    with the request line, so the global log block filters it too."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    global_block = caddy[caddy.index("{") : caddy.index(":8080")]
+    assert "log {" in global_block and "format filter" in global_block
+    assert "request>uri replace REDACTED" in global_block and "request>headers>Referer delete" in global_block
+
+
+def test_tailscale_key_is_optional_once_the_node_exists():
+    """TS_AUTH_ONCE: the key is read on the first start only, so it can leave the NAS afterwards."""
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "TS_AUTHKEY: ${TS_AUTHKEY:-}" in compose and 'TS_AUTH_ONCE: "true"' in compose
+
+
+def test_funnel_stack_bounds_what_it_takes_from_the_nas():
+    """A memory and a PID cap per container and bounded tmpfs, so the app cannot starve the NAS.
+    No CPU quota: Docker refuses to create a container with one on a kernel without CFS
+    bandwidth control, while it only drops a memory or PID cap it cannot apply."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert c.count("mem_limit:") == 3 and c.count("pids_limit:") == 3
+    assert "mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}" in c
+    assert not re.search(r"^\s+(cpus|cpu_quota|cpu_period|cpuset):", c, re.M)
+    tmpfs = re.findall(r"^\s+- (/[\w/]+)(\S*)", c, re.M)  # tmpfs entries are the only "- /path" list items
+    assert len(tmpfs) == 7 and all("size=" in opts for _, opts in tmpfs), tmpfs
+    assert c.count("read_only: true") == 3  # tailscaled writes its socket to tmpfs, its state to the volume
+    assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
+
+
+def test_remote_app_settings_reach_streamlit():
+    """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
+    import os
+    import subprocess
+    import sys
+
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert 'XERSCOPE_DATA_LOCKED: "true"' in c
+    env = dict(re.findall(r"^\s+(STREAMLIT_[A-Z_]+): \"?([^\"\s#]+)", c, re.M))
+    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "64", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
+    app_dir = ROOT / "src" / "xerscope" / "app"  # `xerscope app` runs Streamlit from here (cli.py)
+    shown = subprocess.run(
+        [sys.executable, "-m", "streamlit", "config", "show"],
+        cwd=app_dir,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "\nmaxUploadSize = 64\n" in shown and '\nshowErrorDetails = "none"\n' in shown
+
+
+def test_caddy_security_headers_and_their_ci_check():
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    for line in ("Referrer-Policy no-referrer", "X-Content-Type-Options nosniff", "frame-ancestors 'self'"):
+        assert line in caddy, line
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job runs Caddy and reads them
+    assert "docker compose up -d tailscale caddy" in wf and "frame-ancestors 'self'" in wf
+
+
+def test_base_images_pinned_by_digest():
+    df = (ROOT / "Dockerfile").read_text()
+    froms = re.findall(r"^FROM (\S+)", df, re.M)
+    assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
+
+
+def test_caddy_scan_exceptions_are_dated_and_reasoned():
+    """Each Trivy exception for the Caddy image names its CVE, why it is not reachable here, and an expiry."""
+    import datetime
+
+    text = (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()
+    entries = re.findall(r"- id: (\S+)\n\s+statement: (.+)\n\s+expired_at: (\d{4}-\d{2}-\d{2})", text)
+    assert entries and len(entries) == text.count("- id:"), entries
+    for cve, statement, expiry in entries:
+        assert cve.startswith(("CVE-", "GHSA-")) and len(statement) > 20, cve
+        datetime.date.fromisoformat(expiry)
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert wf.count("trivyignores:") == 1 and "trivyignores: deploy/caddy.trivyignore.yaml" in wf
+
+
+def test_schedules_stay_out_of_git():
+    """Real exports never reach the public repository: the folders the compose files read and
+    every .xer are ignored, CI fails on a tracked one, and the remote app's log is bounded."""
+    import subprocess
+
+    probes = ["exports/a.xer", "deploy/a.xer", "a.XER", "data/a.xer", "export/a.csv"]
+    out = subprocess.run(["git", "check-ignore", *probes], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    assert out.split() == probes
+    tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    assert not re.search(r"\.(xer|parquet|xlsx?|csv)$", tracked, re.I | re.M)
+    assert "git ls-files | grep -iE" in (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "driver: local" in c and 'max-size: "5m"' in c

@@ -9,10 +9,16 @@
 #       go in a .env file next to this one (Container Manager's Environment fields do not
 #       feed the ${...} interpolation below; Compose reads .env by itself).
 #
-# Variables: TS_AUTHKEY (tagged key), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
-#   docker run --rm caddy:2.11.6 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
+# Variables: TS_AUTHKEY (tagged key, first start only), XERSCOPE_USER, XERSCOPE_PASSWORD_HASH (from
+#   docker run --rm caddy:2.11.7 caddy hash-password --plaintext '...'), XERSCOPE_PATH (the
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
-#   the .xer files, e.g. /volume1/<shared-folder>). Nothing in this folder is edited.
+#   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
+#   memory cap, default 2g), XERSCOPE_UID and XERSCOPE_GID (the account the app runs as,
+#   default 65532). Nothing in this folder is edited.
+# Limits keep the stack from starving the NAS it shares: a memory and a PID cap per
+# container (on a kernel without those cgroups Docker drops the limit with a warning, the
+# stack still starts) and bounded tmpfs. No CPU quota: Docker refuses to create a
+# container with one on a kernel without CFS bandwidth control.
 # The app answers at https://xerscope.<tailnet>.ts.net/<XERSCOPE_PATH>/ only: Caddy strips
 # the prefix and returns 404 for every other path before authentication (scanners find every
 # *.ts.net name within seconds from the public certificate logs). Streamlit serves "/".
@@ -20,14 +26,16 @@
 # no DNS change), no port is published, the only outbound traffic is Tailscale's own.
 # Funnel must be allowed for the node's tag in the tailnet ACL:
 #   "nodeAttrs": [{ "target": ["tag:xerscope"], "attr": ["funnel"] }]
-# tailscaled reads its state from the root of tailscale-state/ (a state kept in a node/
-# subfolder by an earlier setup is moved one level up first; one tailscaled per state).
+# tailscaled keeps its node identity in the named volume tailscale-state: Docker creates it
+# owned by root, the container's user, so it is writable without the capabilities this file
+# drops (a bind-mounted host folder belongs to a host user, and root without DAC_OVERRIDE
+# cannot write there). Removing the volume makes a new node, which needs a new key.
 services:
   tailscale:
     image: tailscale/tailscale:v1.104.4
     hostname: xerscope                              # https://xerscope.<tailnet>.ts.net
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:?tagged Tailscale auth key}
+      TS_AUTHKEY: ${TS_AUTHKEY:-}                    # first start only; then delete it here and in the admin console
       TS_USERSPACE: "true"
       TS_AUTH_ONCE: "true"                         # log in with the key once; later starts reuse the state
       TS_STATE_DIR: /var/lib/tailscale
@@ -35,15 +43,21 @@ services:
       TS_EXTRA_ARGS: --advertise-tags=tag:xerscope
       TS_NO_LOGS_NO_SUPPORT: "true"                # no diagnostic logs sent to Tailscale
     volumes:
-      - ./tailscale-state:/var/lib/tailscale        # create it empty, writable by the container's user
+      - tailscale-state:/var/lib/tailscale          # named volume: the node identity, kept across Builds
       - ./tailscale-serve.json:/config/serve.json:ro
     networks: [egress, internal]                    # egress: outbound to Tailscale only (nothing published)
+    read_only: true                                 # in userspace mode containerboot writes only:
+    tmpfs:
+      - /tmp:size=16m                               # the LocalAPI socket (TS_SOCKET default /tmp/tailscaled.sock)
+      - /var/run/tailscale:size=1m                  # its symlink at the CLI's default path (tailscale status)
     cap_drop: [ALL]                                 # userspace networking needs no capability
     security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.11.6
+    image: caddy:2.11.7
     network_mode: service:tailscale                 # listens on 127.0.0.1:8080 of that namespace only
     environment:
       XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}
@@ -54,29 +68,54 @@ services:
     depends_on: [tailscale]
     read_only: true
     tmpfs:
-      - /tmp
-      - /data                                       # Caddy's storage (unused: auto_https off)
-      - /config
-    cap_drop: [ALL]                                 # port 8080 needs none
+      - /tmp:size=16m
+      - /data:size=16m                              # Caddy's storage (unused: auto_https off)
+      - /config:size=16m
+    cap_drop: [ALL]                                 # port 8080 needs none, but the image's binary carries the
+    cap_add: [NET_BIND_SERVICE]                     # file capability cap_net_bind_service (setcap in its
+                                                    # Dockerfile): with an empty bounding set the kernel refuses
+                                                    # to exec it ("exec /usr/bin/caddy: operation not permitted")
     security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
     restart: unless-stopped
 
   xerscope:
     image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
                                                     # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
+    user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # NAS: a dedicated DSM account, the only one allowed to
+                                                    # read the exports folder; default: the image's nonroot user
     environment:
       XERSCOPE_DATA: /data
+      HOME: /home/nonroot                           # an uid outside the image's /etc/passwd would get HOME=/
+      XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field in the sidebar
+      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "64"        # MB per uploaded file; the largest export is about 40
+      STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
     volumes:
-      - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # read for Everyone on a NAS: the app runs as uid 65532
-    networks: [internal]                            # nothing published: reachable from Caddy only
+      - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
+    networks:                                       # nothing published: reachable from Caddy only
+      internal:
+        aliases: [app]                              # Caddy's upstream: in the tailscale namespace Caddy shares,
+                                                    # /etc/hosts maps "xerscope" (tailscale's hostname) to tailscale
     read_only: true
-    tmpfs:
-      - /tmp
-      - /home/nonroot
+    tmpfs:                                          # owned by the app's user: some Docker builds (Synology's)
+                                                    # mount a bare tmpfs root-only, and Streamlit then fails
+                                                    # reading ~/.streamlit/secrets.toml
+      - /tmp:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=1777,size=256m
+      - /home/nonroot:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=700,size=16m
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
+                                                    # past the cap the kernel kills the app alone and Docker restarts it
+    pids_limit: 256
+    logging:                                        # an unexpected traceback can quote a schedule value: keep
+      driver: local                                 # the log on the NAS, bounded and rotated (default json-file
+      options: { max-size: "5m", max-file: "2" }    # grows without limit)
     restart: unless-stopped
+
+volumes:
+  tailscale-state: {}
 
 networks:
   egress: {}                                      # ordinary bridge: tailscaled reaches the control plane

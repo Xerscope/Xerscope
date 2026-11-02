@@ -175,3 +175,37 @@ def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
     _ok(at)
     assert any("Folder not found" in e.value for e in at.sidebar.error)
     assert any("xerscope sample" in i.value for i in at.info)
+
+
+def test_locked_folder_gives_the_visitor_no_path_field(sample_dir, monkeypatch):
+    """Remote deployment (XERSCOPE_DATA_LOCKED): the server's folder is read, no field can point elsewhere."""
+    monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
+    at = _run(sample_dir, monkeypatch)
+    _ok(at)
+    assert "…or read a folder" in [t.label for t in at.sidebar.text_input]
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _run(sample_dir, monkeypatch)
+    _ok(at)
+    assert "…or read a folder" not in [t.label for t in at.sidebar.text_input]
+    assert any("8 snapshot(s)" in c.value for c in at.sidebar.caption)
+
+
+def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
+    """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
+    from xerscope.app import state
+
+    calls = []
+    real = state.load_snapshot
+
+    def counting(data, **kwargs):
+        calls.append(kwargs.get("name"))
+        return real(data, **kwargs)
+
+    monkeypatch.setattr(state, "load_snapshot", counting)
+    first = _run(sample_dir, monkeypatch)
+    _ok(first)
+    parsed_once = len(calls)
+    assert parsed_once == 8  # the eight demo weeks
+    second = _run(sample_dir, monkeypatch)  # another browser session, same files
+    _ok(second)
+    assert len(calls) == 2 * parsed_once

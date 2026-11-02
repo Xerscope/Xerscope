@@ -19,10 +19,17 @@ from xerscope.xer import XER_SUFFIXES, Snapshot, XerError, load_snapshot, xer_fi
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
 
 
-@st.cache_data(show_spinner=False, max_entries=512)
 def _parse(name: str, data: bytes, project: str | None = None) -> Snapshot:
-    # Cached on file content: re-opening the same week's export is free.
-    return load_snapshot(data, project_code=project, name=name)
+    """Parse once per session, keyed on content. The cache lives in the session's state, never in a
+    process-wide cache: when the session ends (server.disconnectedSessionTTL after the tab closes),
+    nothing of the files it read stays in the server."""
+    cache = st.session_state.setdefault("_parsed", {})
+    key = (name, hashlib.sha256(data).hexdigest(), project)
+    if key not in cache:
+        if len(cache) > 64:
+            cache.clear()
+        cache[key] = load_snapshot(data, project_code=project, name=name)
+    return cache[key]
 
 
 def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
@@ -86,9 +93,14 @@ def sidebar_loader() -> None:
     sidebar = st.sidebar
     sidebar.subheader("Weekly XER exports")
     uploads = sidebar.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
-    folder = sidebar.text_input(
-        "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
-    )
+    if os.environ.get("XERSCOPE_DATA_LOCKED", "").lower() in ("1", "true", "yes"):
+        # Remote deployment: the folder is the server's, a visitor cannot point the app elsewhere.
+        folder = os.environ.get("XERSCOPE_DATA", "")
+        sidebar.caption("…or the exports folder of this server")
+    else:
+        folder = sidebar.text_input(
+            "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
+        )
 
     items: list[tuple[str, bytes]] | None = None
     signature: tuple = ()
