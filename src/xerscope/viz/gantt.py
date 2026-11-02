@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from ..config import DEFAULT_SETTINGS, Settings
-from .charts import FONT, INK, SERIES, STATUS, TICK
+from ..config import DATE_FMT, DEFAULT_SETTINGS, Settings
+from .charts import DATE_AXIS, FONT, INK, SERIES, STATUS, TICK
 
 PALETTE = {
     mode: {
@@ -25,12 +25,14 @@ PALETTE = {
         "Complete": STATUS[mode]["complete"],
         "ink": INK[mode]["secondary"],
         "grid": INK[mode]["grid"],
-        "link": INK[mode]["axis"],
+        "link": INK[mode]["muted"],
     }
     for mode in ("light", "dark")
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
 MIN_BAR_MS = 4 * 3600 * 1000  # keep 1-hour tasks visible
+WEEK_MS = 7 * 86_400_000
+WEEK_WINDOW = (pd.Timedelta(weeks=2), pd.Timedelta(weeks=10))  # week timescale: before / after the data date
 
 
 def _bar_ms(frame: pd.DataFrame) -> pd.Series:
@@ -49,7 +51,7 @@ def categorise(tasks: pd.DataFrame, settings: Settings = DEFAULT_SETTINGS) -> pd
 
 
 def _fmt(ts: pd.Series) -> pd.Series:
-    return ts.dt.strftime("%Y-%m-%d %H:%M").fillna("-")
+    return ts.dt.strftime(DATE_FMT).fillna("-")
 
 
 def row_label(tasks: pd.DataFrame, width: int = 42) -> pd.Series:
@@ -93,8 +95,12 @@ def build_gantt(
     summaries: pd.DataFrame | None = None,
     row_order: list[str] | None = None,
     snapshot=None,
+    timescale: str = "month",
 ) -> go.Figure:
     """Rows are drawn top to bottom in the order of ``tasks`` (sort before calling).
+
+    ``timescale`` "month" shows the whole schedule with one tick per month; "week" ticks
+    every Monday and opens on 12 weeks around the data date (pan or zoom out for the rest).
 
     ``summaries`` (columns row, start, finish, pct_complete, activities) adds WBS summary
     bars; ``row_order`` then interleaves them with the activity rows (see wbs_rows).
@@ -287,7 +293,12 @@ def build_gantt(
         paper_bgcolor="rgba(0,0,0,0)",
         bargap=0.2,
     )
-    fig.update_xaxes(type="date", showgrid=True, gridcolor=pal["grid"], side="top", tickfont=TICK)
+    fig.update_xaxes(type="date", showgrid=True, gridcolor=pal["grid"], side="top", tickfont=TICK, **DATE_AXIS)
+    if timescale == "week":
+        window = None if data_date is None else [data_date - WEEK_WINDOW[0], data_date + WEEK_WINDOW[1]]
+        fig.update_xaxes(dtick=WEEK_MS, tick0="2000-01-03", tickformat="%d %b", range=window)  # 2000-01-03: a Monday
+    else:
+        fig.update_xaxes(dtick="M1", tickformat="%b %Y")
     fig.update_yaxes(
         categoryorder="array", categoryarray=rows, autorange="reversed", showgrid=False, tickfont=dict(size=13)
     )
