@@ -157,7 +157,7 @@ def test_caddy_security_headers_and_their_ci_check():
     for line in ("Referrer-Policy no-referrer", "X-Content-Type-Options nosniff", "frame-ancestors 'self'"):
         assert line in caddy, line
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job runs Caddy and reads them
-    assert "docker compose up -d tailscale caddy" in wf and "Content-Security-Policy: frame-ancestors 'self'" in wf
+    assert "docker compose up -d tailscale caddy" in wf and "frame-ancestors 'self'" in wf
 
 
 def test_base_images_pinned_by_digest():

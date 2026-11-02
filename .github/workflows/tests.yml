@@ -209,19 +209,19 @@ jobs:
         run: |  # one check per line: bash -e does not stop on a failure inside an && list
           get() { docker compose exec -T caddy wget -S -q -O /dev/null "$1" 2>&1 || true; }
           out=$(get "http://127.0.0.1:8080/"); echo "$out"
-          headers() {
-            echo "$1" | grep -q -i "Referrer-Policy: no-referrer"
-            echo "$1" | grep -q -i "X-Content-Type-Options: nosniff"
-            echo "$1" | grep -q -i "Content-Security-Policy: frame-ancestors 'self'"
-          }
           echo "$out" | grep -q " 404 "
-          headers "$out"
           out=$(get "http://127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"
           echo "$out" | grep -q " 401 "
-          headers "$out"
           out=$(get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"
           echo "$out" | grep -q " 502 "
-          docker compose logs caddy > caddy.log
+          docker compose logs --no-color caddy > caddy.log
+          # busybox wget prints no header of an error answer: Caddy's access log records what it sent
+          for code in 404 401; do
+            line=$(grep "\"status\": $code," caddy.log | tail -n 1)
+            echo "$line" | grep -q '"Referrer-Policy": \["no-referrer"\]'
+            echo "$line" | grep -q '"X-Content-Type-Options": \["nosniff"\]'
+            echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'\"\]"
+          done
           ! grep -q "$XERSCOPE_PATH" caddy.log
       - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
         if: github.event_name != 'pull_request'
