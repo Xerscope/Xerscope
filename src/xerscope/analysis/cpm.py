@@ -673,7 +673,7 @@ class _Run:
            tight (H10-02 A1360: an FF bound at Fri 18:00 on a Mon-Sat 08-16 resource,
            placed Fri 08:00-16:00).
 
-        ``exp``: the expected finish when the option applies (see below).
+        ``expected_date``: the expected finish when the option applies (see below).
         """
         axis = self.cal_ax[code]
         lower_start = axis.snap_start(max(start_bounds))

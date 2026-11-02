@@ -190,7 +190,7 @@ def _topo(activities: dict[str, Activity], links) -> list[str]:
 
 
 def _cpm(activities: dict[str, Activity], links, data_day: int) -> dict[str, dict]:
-    """Forward/backward pass in whole days from data date ``dd``."""
+    """Forward/backward pass in whole days from the data day ``data_day``."""
     order = _topo(activities, links)
     preds, succs = defaultdict(list), defaultdict(list)
     for predecessor, successor, link_type, lag in links:
@@ -285,7 +285,7 @@ def _progress(
     rng: random.Random,
     lost: dict[str, int] | None = None,
 ) -> None:
-    """Advance work from prev_dd to dd, respecting FS/SS logic with actual dates."""
+    """Advance work from previous_data_day to data_day, respecting FS/SS logic with actual dates."""
     order = _topo(activities, links)
     preds = defaultdict(list)
     for predecessor, successor, link_type, lag in links:
@@ -446,7 +446,7 @@ def _store_p6_dates(path: Path, tables: dict, export: date) -> None:
 
     recomputed = schedule(load_snapshot(path))
     frame = recomputed.frame
-    assignment_column = {code: day_index for day_index, code in enumerate(ASSIGNMENT_COLS)}
+    assignment_column = {code: column_index for column_index, code in enumerate(ASSIGNMENT_COLS)}
     assignment_dates = recomputed.assignments.set_index("taskrsrc_id")
     task_column = {code: day_index for day_index, code in enumerate(TASK_COLS)}
 
@@ -658,7 +658,7 @@ def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
             for index, code in enumerate(("P2030", "P2040"))
             if code in task_ids
         ]  # vendor supply, no hours
-        finish_day = max(day["ef"] for day in day_schedule.values())
+        finish_day = max(activity["ef"] for activity in day_schedule.values())
 
         tables = {
             "PROJECT": (
