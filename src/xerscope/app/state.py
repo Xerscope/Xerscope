@@ -85,9 +85,14 @@ def sidebar_loader() -> None:
     sidebar = st.sidebar
     sidebar.subheader("Weekly XER exports")
     uploads = sidebar.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
-    folder = sidebar.text_input(
-        "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
-    )
+    if os.environ.get("XERSCOPE_DATA_LOCKED", "").lower() in ("1", "true", "yes"):
+        # Remote deployment: the folder is the server's, a visitor cannot point the app elsewhere.
+        folder = os.environ.get("XERSCOPE_DATA", "")
+        sidebar.caption("…or the exports folder of this server")
+    else:
+        folder = sidebar.text_input(
+            "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
+        )
 
     items: list[tuple[str, bytes]] | None = None
     signature: tuple = ()
