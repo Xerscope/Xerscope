@@ -104,6 +104,9 @@ services:
     mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
                                                     # past the cap the kernel kills the app alone and Docker restarts it
     pids_limit: 256
+    logging:                                        # an unexpected traceback can quote a schedule value: keep
+      driver: local                                 # the log on the NAS, bounded and rotated (default json-file
+      options: { max-size: "5m", max-file: "2" }    # grows without limit)
     restart: unless-stopped
 
 volumes:
