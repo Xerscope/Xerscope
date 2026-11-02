@@ -21,7 +21,6 @@ Key decisions
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import cached_property
 from operator import attrgetter
 
 import numpy as np
@@ -401,11 +400,6 @@ class Snapshot:
     def activities(self) -> pd.DataFrame:
         """Tasks without WBS-summary rows: what every count and chart should use."""
         return self.tasks[~self.tasks["is_wbs_summary"]]
-
-    @cached_property
-    def by_code(self) -> pd.DataFrame:
-        """Activities indexed by task_code (the first row of a duplicated code)."""
-        return self.activities.drop_duplicates("task_code").set_index("task_code")
 
 
 @dataclass(frozen=True)

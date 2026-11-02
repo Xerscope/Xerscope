@@ -1378,9 +1378,7 @@ def _cycle_failure(error: CycleError, delayed: str | None = None) -> CptResult:
     return CptResult(False, str(error), delayed)
 
 
-def critical_path_test(
-    snapshot: Snapshot, delay_days: float = 600
-) -> CptResult:  # default kept until callers pass it (W1)
+def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     """Add ``delay_days`` to the first open activity of the critical path; the finish must move as much.
 
     The finish is measured on the project's end points (activities without successors),
