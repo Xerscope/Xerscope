@@ -33,10 +33,14 @@ def _parse(name: str, data: bytes, project: str | None = None) -> Snapshot:
 
 
 def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
+    """``project`` applies to the files that hold it; the others keep their default project
+    (the one with the most activities), so a project renamed between updates still loads."""
     snapshots, errors = [], []
     for name, data in items:
         try:
-            snapshot = _parse(name, data, project)
+            snapshot = _parse(name, data)
+            if project and project != snapshot.project_code and project in snapshot.projects_in_file:
+                snapshot = _parse(name, data, project)
         except XerError as exc:
             errors.append(str(exc))
             continue
@@ -300,7 +304,10 @@ def memo(key: tuple, function, *arguments):
     ``function(*arguments)`` runs only on a cache miss.
     """
     cache = st.session_state.setdefault("_memo", {})
-    full_key = (st.session_state.get("signature"),) + key
+    # the project picker re-reads the same files for another project: same signature, other data
+    store = st.session_state.get("store")
+    projects = tuple(snapshot.project_code for snapshot in store) if store is not None else ()
+    full_key = (st.session_state.get("signature"), projects) + key
     if full_key not in cache:
         if len(cache) > 64:
             cache.clear()
