@@ -117,12 +117,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       Hub login step now conditioned on a job-level secret; the tailscale state folder is
       a bind mount writable by uid 65532; the hardened sidecars (`cap_drop`, Caddy
       read-only) still start.
-- [ ] The password prompt has no rate limit (stock Caddy has no such module): a Caddy
-      build with `caddy-ratelimit`, or Tailscale Serve with a tailnet login once the viewer
-      can install Tailscale.
-- [ ] Sidecar images in `deploy/compose.yaml` pinned by tag, not digest (the Dockerfile's
-      are): `docker buildx imagetools inspect` the tailscale and caddy tags once and write
-      `@sha256:` after each (Dependabot keeps tag and digest together).
+- [ ] Tailscale in `deploy/compose.yaml` and the two caddy bases of `deploy/caddy/Dockerfile`
+      pinned by tag, not digest (the app's Dockerfile is): `docker buildx imagetools
+      inspect` each tag once and write `@sha256:` after it (Dependabot keeps tag and digest
+      together).
+- [ ] Verify on the NAS: the `xerscope-caddy` image starts with the capabilities of
+      `deploy/compose.yaml` (cap_drop ALL + NET_BIND_SERVICE, like the stock image), and a
+      wrong password in a loop from a PC ends in 429.
 - [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
       none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
       Caddy release that fixes them, or renew each entry with its reason.

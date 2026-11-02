@@ -169,12 +169,15 @@ jobs:
     # deploy/ as the NAS runs it, without the app and without a tailnet login: the compose
     # file is valid, tailscaled starts on its read-only root and the CLI reaches it, Caddy
     # answers 404 outside the prefix, 401 inside it, 502 once authenticated (no app here),
-    # the security headers on every answer, and the prefix never appears in its log.
+    # the security headers on every answer, the prefix never appears in its log, and a
+    # client over the rate limit gets 429. Caddy runs on deploy/caddy/Dockerfile built from
+    # this commit, the image image.yml publishes once merged.
     runs-on: ubuntu-latest
     env:
       XERSCOPE_USER: ci
       XERSCOPE_PATH: ci0prefix0for0the0log0check
       XERSCOPE_EXPORTS: /tmp/exports
+      XERSCOPE_CADDY_IMAGE: xerscope-caddy:ci
     defaults:
       run:
         working-directory: deploy
@@ -186,7 +189,8 @@ jobs:
         id: compose
         run: |
           mkdir -p "$XERSCOPE_EXPORTS"
-          caddy_image=$(sed -n 's/^    image: \(caddy:[^ ]*\).*/\1/p' compose.yaml)
+          docker build -t "$XERSCOPE_CADDY_IMAGE" caddy   # fails if rate_limit is not compiled in
+          caddy_image="$XERSCOPE_CADDY_IMAGE"
           hash=$(docker run --rm "$caddy_image" caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext ci-pass)
           echo "XERSCOPE_PASSWORD_HASH=$hash" >> "$GITHUB_ENV"
           XERSCOPE_PASSWORD_HASH="$hash" docker compose config --quiet
@@ -228,6 +232,18 @@ jobs:
           done
           ! grep -q "$XERSCOPE_PATH" caddy.log
           grep -q '"uri": "/<prefix>/"' caddy.log   # the prefix is masked, the rest of the path kept
+      - name: Rate limit, last (it blocks the runner's address for a minute)
+        run: |  # 120 requests a minute per visitor, counted before the password check
+          docker compose exec -T caddy sh -c '
+            i=0; while [ $i -lt 130 ]; do
+              wget -S -q -O /dev/null "http://127.0.0.1:8080/$XERSCOPE_PATH/" 2>&1 | grep -o "HTTP/1.1 [0-9]*"
+              i=$((i+1))
+            done' > codes.txt || true
+          sort codes.txt | uniq -c
+          grep -q "HTTP/1.1 401" codes.txt   # under the limit: the password prompt
+          grep -q "HTTP/1.1 429" codes.txt   # over it: refused before any bcrypt run
+          docker compose logs --no-color caddy > caddy.log
+          grep '"status": 429,' caddy.log | tail -n 1 | grep -q '"Retry-After"'
       - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

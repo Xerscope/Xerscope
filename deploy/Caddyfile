@@ -3,6 +3,7 @@
 # XERSCOPE_PATH is the secret URL prefix (no slashes): the app lives at /<prefix>/, every
 # other path answers 404 before authentication. Scanners find every *.ts.net name within
 # seconds from the public certificate logs; the prefix keeps them off the login prompt.
+# rate_limit is not in the stock caddy image: this file runs on deploy/caddy/Dockerfile's.
 #
 # The logs keep what a review needs (path, status, visitor IP) and drop what a reader of
 # them could reuse: the prefix becomes "<prefix>" wherever the URL appears, Streamlit's
@@ -37,6 +38,14 @@
                      # the block above, which must also reach the 401 (an error, where deferred ops do not run)
     redir /{$XERSCOPE_PATH} /{$XERSCOPE_PATH}/ 308   # the page's relative asset URLs need the trailing slash
     handle_path /{$XERSCOPE_PATH}/* {              # strips the prefix: Streamlit keeps serving "/"
+        rate_limit {                     # runs before basic_auth (the module's directive order): a client over
+            zone per_visitor {           # the limit gets 429 without a bcrypt run on the NAS's CPU
+                key {client_ip}          # the visitor (trusted_proxies), not tailscaled's 127.0.0.1
+                ipv6_prefix 64           # one bucket per IPv6 /64, which a single client can cycle through
+                events 120               # every request counts, not only wrong passwords: a page load is
+                window 1m                # about ten, a burst of downloads fifteen
+            }
+        }
         basic_auth {
             {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
         }

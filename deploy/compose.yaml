@@ -57,7 +57,9 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.11.7
+    image: ${XERSCOPE_CADDY_IMAGE:-ghcr.io/xerscope/xerscope-caddy:latest}   # caddy + rate_limit, built by
+                                                    # .github/workflows/image.yml from caddy/Dockerfile; a
+                                                    # Docker Hub copy: XERSCOPE_CADDY_IMAGE=<docker-hub-login>/xerscope-caddy:latest
     network_mode: service:tailscale                 # listens on 127.0.0.1:8080 of that namespace only
     environment:
       XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}

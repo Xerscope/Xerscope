@@ -5,17 +5,19 @@ Target: one person outside the home network, on a laptop that can install nothin
 everything goes out through Tailscale Funnel.
 
 ```
-GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest (public package, no login)
+GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest, xerscope-caddy:latest (public, no login)
                                    │ pull (Container Manager > Project)
       ┌─────────────── project "xerscope" on the DS918+ ───────────────┐
       │ tailscale (userspace, Funnel) ◀─── https ─── visitor's browser │
-      │   └─ caddy :8080 on 127.0.0.1 (basic_auth) ──▶ xerscope :8501   │
+      │   └─ caddy 127.0.0.1:8080 (rate_limit, basic_auth) ─▶ xerscope │
       │                                     └─ /volume1/<shared-folder>:ro │
       └──────────────────────────────────────────────────────────────────┘
 ```
 
-Three containers from three images; the app image is the only one built here. Container
-Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
+Three containers from three images: Tailscale's official one, and two built here by
+`.github/workflows/image.yml`, the app and Caddy with the `rate_limit` module
+(`deploy/caddy/Dockerfile`; the stock caddy image has no such module and the NAS cannot
+build). Container Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 
 ## 1. What DSM 7.4 changes
 
@@ -26,16 +28,16 @@ Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 | env vars typed in the container form (key, prefix, hash) | a **`.env`** file next to `compose.yaml` (key, login, hash, prefix, exports folder), read by Compose for its `${...}` interpolation; no other file is edited |
 | node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
 
-Caddy and Tailscale are now updated independently of the app (Dependabot bumps the pins
-in `deploy/`), and the app container runs read-only, non-root, on an internal network with
+Caddy and Tailscale are now updated independently of the app (Dependabot bumps the
+Tailscale pin in `deploy/compose.yaml` and the caddy tags in `deploy/caddy/Dockerfile`), and the app container runs read-only, non-root, on an internal network with
 no route to the internet.
 
 ## 2. Pre-flight (from your PC, once)
 
 1. **Image published.** GitHub → Actions → `image` → last run on `main` green. Package
    list: `github.com/orgs/Xerscope/packages`.
-2. **Package public.** Package `xerscope` → Package settings → Danger zone → visibility
-   **Public**. A public image pulls anonymously; the repository is public, the image adds
+2. **Packages public.** Packages `xerscope` and `xerscope-caddy` → Package settings → Danger
+   zone → visibility **Public**. A public image pulls anonymously; the repository is public, the image adds
    nothing to what is already readable. (A private package would need a classic PAT
    `read:packages`, and Container Manager cannot log in to `ghcr.io` — use the Docker Hub
    mirror instead, §8.)
@@ -46,6 +48,7 @@ no route to the internet.
    docker run --rm ghcr.io/xerscope/xerscope:latest --help          # distroless: no shell, only the CLI
    docker inspect ghcr.io/xerscope/xerscope:latest \
      --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'   # = commit sha
+   docker run --rm ghcr.io/xerscope/xerscope-caddy:latest caddy list-modules | grep rate_limit
    ```
 
    The DS918+ is x86-64: `linux/amd64` only, which is what the workflow builds.
@@ -151,6 +154,7 @@ XERSCOPE_EXPORTS=/volume1/<shared-folder>   # exact case
 XERSCOPE_UID=<uid>                          # the dedicated account (§5)
 XERSCOPE_GID=<gid>
 # XERSCOPE_IMAGE=<image>@sha256:<digest>    # the build to run, pinned (§7)
+# XERSCOPE_CADDY_IMAGE=<image>@sha256:<digest>   # the same for Caddy (§7, §8)
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
 ```
 
@@ -184,14 +188,16 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 
 | Want | Do |
 |---|---|
-| new app build | Container → Image → the app image (`ghcr.io/xerscope/xerscope` or the Docker Hub copy) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
+| new app or Caddy build | Container → Image → the image (`ghcr.io/xerscope/xerscope`, `ghcr.io/xerscope/xerscope-caddy`, or their Docker Hub copies) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
 | pin a build | `.env`: `XERSCOPE_IMAGE=<image>@sha256:<digest>`, Build. The `image` run prints the digest (`pushing manifest for …@sha256:…`); a tag (`sha-<short>`, `:0.1.0` from a git tag `v0.1.0`) can be pushed again by whoever holds the push token, a digest cannot change. Rollback = the previous digest, Build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only for a new node: Project → Stop, Container Manager → Volume → delete `xerscope_tailscale-state`, new key in `.env`, Build; delete the old machine in the admin console |
 
-Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`; after merge, change the two
-pins in `compose.yaml` on the NAS, Build.
+Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`. After merge, a Caddy bump is a
+new `xerscope-caddy` image (update it as above); a Tailscale bump is the pin in
+`compose.yaml`: copy it to the NAS, Build. The `caddy-ratelimit` version in
+`deploy/caddy/Dockerfile` is bumped by hand, with the caddy tags.
 
 **Memory.** Each container has a memory and a PID cap, and its tmpfs a size
 (`deploy/compose.yaml`): past its cap the kernel kills that container alone, Docker restarts
@@ -215,17 +221,20 @@ A private ghcr package needs a GitHub token on the NAS, which Container Manager 
 handle. Keep the image private on Docker Hub instead, where Container Manager logs in
 natively:
 
-1. hub.docker.com → Create repository `xerscope`, **Private** (the free plan includes one).
-   Account settings → Personal access tokens: one **Read & Write** for GitHub, one
-   **Read-only** for the NAS.
+1. hub.docker.com → Create repository `xerscope`, **Private** (the free plan includes one),
+   and `xerscope-caddy`, **Public**: Caddy and its module only, the Caddyfile and the
+   secrets are mounted at run time. Create both before the first run: a push to a missing
+   repository creates it with the account's default visibility. Account settings →
+   Personal access tokens: one **Read & Write** for GitHub, one **Read-only** for the NAS.
 2. GitHub → repository → Settings → Secrets and variables → Actions: secrets
    `DOCKERHUB_USERNAME` (`<docker-hub-login>`) and `DOCKERHUB_TOKEN` (the Read & Write one);
    variable `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow;
-   the run pushes to both registries.
+   the run pushes both images to both registries.
 3. NAS: Container Manager → Registry → Docker Hub → Settings → Edit → login + the read-only
    token → **Use**.
-4. `.env`: `XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest` (nothing to edit in
-   `compose.yaml`). Build.
+4. `.env`: `XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest` and, if ghcr is out of reach
+   for Caddy too, `XERSCOPE_CADDY_IMAGE=<docker-hub-login>/xerscope-caddy:latest` (nothing
+   to edit in `compose.yaml`). Build.
 
 If Build still answers `pull access denied`, the project's pull does not use the registry
 login: pull once from Container Manager → Registry (search the image) or Image → Add, then
@@ -245,6 +254,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
 - [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`, loopback only) and the path, with the prefix replaced by `<prefix>` in the request line, Referer and redirect, in the access log and in the error log (global `log` block); it drops Streamlit's XSRF token (WebSocket subprotocol) and the downloaded file's name (the tables export carries the project code).
+- [ ] Caddy refuses with 429, before the password check, a visitor over 120 requests a minute (per IPv4 address, per IPv6 /64; the CI job `deploy` checks it); the `caddy` container runs the `xerscope-caddy` image (§2 step 3: `list-modules` shows `rate_limit`).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
@@ -261,6 +271,8 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 | 502, Caddy log `dial tcp <ip>:8501: connection refused` with the app *Healthy* | Caddy resolves `xerscope` to the tailscale container (its hostname, in the `/etc/hosts` of the namespace Caddy shares) | upstream `app:8501`, the app's network alias, as in `deploy/` (check: caddy → Terminal → `getent hosts app`) |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
+| 429, Caddy log `"status": 429` | over 120 requests a minute from one address (a crawler, a retry loop, or many people behind one company proxy) | wait a minute; if it is real use, raise `events` in `deploy/Caddyfile`, Build |
+| caddy log `unrecognized directive: rate_limit` | the stock `caddy` image runs instead of `xerscope-caddy` | `compose.yaml` and `.env` (`XERSCOPE_CADDY_IMAGE`) as in `deploy/` |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | the app container restarts while files load (Container Manager: exited, then running) | the memory cap: the kernel killed it | load fewer weeks at once, or raise `XERSCOPE_MEM_LIMIT` in `.env` within the NAS's free RAM (§7), Build |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |

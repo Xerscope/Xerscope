@@ -191,6 +191,35 @@ def test_caddy_logs_keep_no_token_and_no_project_code():
     assert "resp_headers>Content-Disposition delete" in caddy
 
 
+def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
+    """The stock caddy image has no rate_limit: deploy/ runs Caddy built from deploy/caddy/Dockerfile,
+    published by image.yml next to the app (ghcr and the Docker Hub copy), at one Caddy release
+    and one caddy-ratelimit commit."""
+    df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
+    froms = re.findall(r"^FROM (\S+)", df, re.M)
+    assert len(froms) == 2 and froms[0].startswith("caddy:") and froms[0].endswith("-builder"), froms
+    assert froms[0].removesuffix("-builder") == froms[1]  # builder and runtime: the same Caddy release
+    assert re.search(r"^FROM caddy:\d+\.\d+\.\d+", df, re.M)  # a release, not a moving 2 or latest
+    module = re.search(r"--with github\.com/mholt/caddy-ratelimit@(\S+)", df).group(1)
+    # a tag or a pseudo-version (one commit), which Go checks against sum.golang.org; never a branch
+    assert re.fullmatch(r"v\d+\.\d+\.\d+(-0\.\d{14}-[0-9a-f]{12})?", module), module
+    assert "grep -qx http.handlers.rate_limit" in df  # the build fails without the module
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert "image: ${XERSCOPE_CADDY_IMAGE:-ghcr.io/xerscope/xerscope-caddy:" in compose
+    assert "XERSCOPE_CADDY_IMAGE=<docker-hub-login>/xerscope-caddy" in (ROOT / "deploy" / ".env.example").read_text()
+    image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    assert "{ image: xerscope-caddy, context: deploy/caddy, file: deploy/caddy/Dockerfile }" in image
+    assert "docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }}" in image  # the Docker Hub fallback
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    assert "directory: /deploy/caddy" in dependabot
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    block = caddy[caddy.index("rate_limit {") : caddy.index("basic_auth {")]
+    assert "key {client_ip}" in block  # the visitor; {remote_host} is tailscaled's 127.0.0.1 for everyone
+    assert "ipv6_prefix 64" in block and "events 120" in block and "window 1m" in block
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'docker build -t "$XERSCOPE_CADDY_IMAGE" caddy' in wf and "HTTP/1.1 429" in wf
+
+
 def test_base_images_pinned_by_digest():
     df = (ROOT / "Dockerfile").read_text()
     froms = re.findall(r"^FROM (\S+)", df, re.M)
