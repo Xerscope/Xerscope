@@ -18,8 +18,10 @@ from xerscope.analysis.evm import (
 )
 from xerscope.analysis.progress import (
     committed,
+    milestone_codes,
     milestone_slips,
     milestone_trend,
+    plotted_trend,
     ppc_series,
     progress_delta,
     rollup_delta,
@@ -360,6 +362,25 @@ def test_milestone_slip_in_working_days(tmp_path):
     store = SnapshotStore.from_folder(tmp_path)
     s = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M1"]
     assert s["slip_wd"] == 2  # Fri 10 -> Tue 14 April = Mon + Tue
+
+
+def test_mta_line_stops_at_completion(tmp_path):
+    ms = dict(task_type="TT_FinMile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
+    reached = dict(act_end_date="2026-03-12 17:00", **ms)
+    weeks = {  # data date: M1 reached in week 2, M0 reached before the series, M2 open throughout
+        "2026-03-02 08:00": [todo("M1", early_end_date="2026-03-12 17:00", **ms), done("M0", **ms)],
+        "2026-03-16 08:00": [done("M1", **reached), done("M0", **ms)],
+        "2026-03-23 08:00": [done("M1", **reached), done("M0", **ms)],
+    }
+    for i, (dd, tasks) in enumerate(weeks.items()):
+        rows = [*tasks, todo("M2", early_end_date="2026-05-29 17:00", **ms)]
+        (tmp_path / f"w{i}.xer").write_text(__import__("xerkit").xer_text(rows, data_date=dd), encoding="utf-8")
+    store = SnapshotStore.from_folder(tmp_path)
+    plotted = plotted_trend(milestone_trend(store))
+    assert plotted.groupby("task_code").size().to_dict() == {"M1": 2, "M2": 3}  # M1 ends in week 2, M0 dropped
+    assert milestone_codes(store, open_only=True) == ["M2"]
+    s = milestone_slips(milestone_trend(store), store).set_index("task_code")
+    assert s.loc["M1", "updates"] == 3  # the table keeps every update
 
 
 # --- CLI ---------------------------------------------------------------------------------------------
