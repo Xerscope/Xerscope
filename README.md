@@ -136,7 +136,7 @@ update (actuals changed, riding the status date) work too.
 | Page | What it shows |
 |---|---|
 | Overview | forecast finish per update, slips, snapshot table |
-| Gantt & WBS | WBS tree with roll-ups (% complete by hours, finish vs baseline); select a node to focus the Gantt; comparison outline (previous update, baseline, any file), logic links, month / week timescale |
+| Gantt & WBS | Gantt grouped by WBS as in P6: tree grid with roll-ups (% complete by hours, float) beside the timeline, WBS rows fold open and closed; a WBS picked in the list sets the KPIs and opens the Gantt on it; comparison outline (previous update, baseline, any file), logic links, month / week timescale |
 | Activity history | one activity across every update |
 | Schedule health | standard picker (P6, DECM, DCMA, Integrity, uploaded TOML), Check Summary, flagged items with the rule's definition, metric trend, CSV of every flagged item |
 | Changelog | any two files: headline counts, every change (filterable, CSV), weekly counts |
@@ -256,7 +256,7 @@ src/xerscope/
 │                   rules.py (registry, parameterised rules for your own standard), standards.py,
 │                   checks.py, explain.py, baseline.py, cpm.py, changelog.py, evm.py, progress.py, wbs.py
 ├── standards/      p6, decm, dcma, integrity, custom-template (.toml)
-├── viz/            Plotly figures: Gantt, S-curve, indices, MTA, PPC
+├── viz/            Plotly figures (S-curve, indices, MTA, PPC) and the WBS Gantt (HTML/JS)
 ├── app/            Streamlit, one file per page
 ├── verify/         independent checks: P6 corpus, MPXJ scheduler and reader, difference shapes
 ├── config.py       tunable defaults no standard owns

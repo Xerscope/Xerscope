@@ -45,9 +45,10 @@ def test_every_page_renders(app):
         assert app.title, f"{page} rendered no title"
 
 
-def _gantt_traces(at) -> list[str]:
-    figure = json.loads(at.get("plotly_chart")[0].proto.spec)
-    return [trace.get("name") for trace in figure["data"]]
+def _gantt_data(at) -> dict:
+    """The rows and options the Gantt page hands to its component."""
+    page = at.get("iframe")[0].proto.srcdoc
+    return json.loads(page.split("const DATA = ")[1].split(";</script>")[0])
 
 
 def _toggle(at, label: str, value: bool) -> None:
@@ -55,41 +56,31 @@ def _toggle(at, label: str, value: bool) -> None:
     _ok(at)
 
 
-def _gantt_rows(at) -> list[str]:
-    return json.loads(at.get("plotly_chart")[0].proto.spec)["layout"]["yaxis"]["categoryarray"]
-
-
-def test_gantt_opens_the_wbs_one_level_at_a_time(app):
+def test_gantt_wbs_choice_filters_and_options(app):
     app.switch_page("views/gantt.py").run()
-    top = _gantt_rows(app)  # project level: one collapsed row per top-level WBS node
-    assert top and all(row.startswith("▸ ") for row in top)
-    app.session_state["gantt_node"] = "7003"  # demo WBS "CIV": a leaf node, its own activities
-    app.run()
     _ok(app)
-    rows = _gantt_rows(app)
-    assert rows and not any(row.startswith("▸ ") for row in rows) and "C3020  Earthworks" in rows
-    app.button(key="crumb:__project__").click().run()  # breadcrumb back up
-    assert _gantt_rows(app) == top
-    app.text_input[0].set_value("earthworks").run()  # a search lists the matching activities, flat
-    assert _gantt_rows(app) == ["C3020  Earthworks"]
-
-
-def test_gantt_options(app):
-    app.switch_page("views/gantt.py").run()
-    assert "WBS summary" in _gantt_traces(app)
-    app.session_state["gantt_node"] = "7003"  # a level with activities linked to each other
-    app.run()
-    assert "Logic" not in _gantt_traces(app)
+    data = _gantt_data(app)
+    tasks = [r for r in data["rows"] if r["kind"] == "task"]
+    assert data["rows"][0]["id"] == "w:__project__" and data["open"] == ["w:__project__"]
+    assert {r["code"] for r in tasks} >= {"C3020", "M9999"} and data["links"] == []
+    app.selectbox(key="gantt_node").set_value("7003").run()  # demo WBS "CIV"
+    _ok(app)
+    data = _gantt_data(app)
+    assert data["rows"][0]["id"] == "w:7003" and data["selected"] == "w:7003"
+    assert {r["code"][0] for r in data["rows"] if r["kind"] == "task"} <= {"C", "M"}  # CIV only
+    assert any(m.label == "Focus" and m.value == "CIV" for m in app.metric)
     _toggle(app, "Logic links", True)
-    assert "Logic" in _gantt_traces(app)
-    _toggle(app, "Logic links", False)
-    assert "Logic" not in _gantt_traces(app)
-    _toggle(app, "Hide LOE", False)
+    assert _gantt_data(app)["links"]
+    app.text_input[0].set_value("earthworks").run()  # a search opens every branch on the matches
+    data = _gantt_data(app)
+    assert [r["code"] for r in data["rows"] if r["kind"] == "task"] == ["C3020"]
+    assert set(data["open"]) == {r["id"] for r in data["rows"] if r["kind"] == "wbs"}
+    app.get("button_group")[0].set_value("Week").run()
+    assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
     first = app.selectbox(key="gantt_snap").options[0]
     app.selectbox(key="gantt_snap").set_value(first).run()
     _ok(app)
-    assert len(app.get("plotly_chart")) == 1
 
 
 @pytest.mark.parametrize("std", ["P6", "DCMA", "INTEGRITY"])
