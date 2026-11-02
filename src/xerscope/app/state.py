@@ -11,6 +11,7 @@ import streamlit as st
 
 from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
+from xerscope.app import ui
 from xerscope.store import SnapshotStore
 from xerscope.xer import XER_SUFFIXES, Snapshot, XerError, load_snapshot, xer_files
 
@@ -122,7 +123,7 @@ def sidebar_loader() -> None:
         store = _project_picker(sidebar, store)
         sidebar.caption(
             f"{store.latest.project_code} · {len(store)} snapshot(s) · "
-            f"{store.first.data_date:%d %b %Y} → {store.latest.data_date:%d %b %Y}"
+            f"{ui.fmt_date(store.first.data_date)} → {ui.fmt_date(store.latest.data_date)}"
         )
     for error in st.session_state.get("errors", []):
         sidebar.error(error)
@@ -169,7 +170,8 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
     baseline_date, first_date = baseline.snapshot.data_date, store.first.data_date
     if baseline_date is not None and first_date is not None and baseline_date > first_date:
         sidebar.warning(
-            f"The baseline's data date ({baseline_date:%d %b %Y}) is after the first update's ({first_date:%d %b %Y}): "
+            f"The baseline's data date ({ui.fmt_date(baseline_date)}) is after the first update's "
+            f"({ui.fmt_date(first_date)}): "
             "BEI, missed tasks and PV before that date compare against a plan that did not exist yet.",
             icon=":material/warning:",
         )
@@ -271,7 +273,7 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     if choice == COMPARE_FIRST:
         return (store.first.activities if store.first is not current else None), "first snapshot"
     chosen = store.by_label(choice)
-    return chosen.activities, f"{chosen.data_date:%Y-%m-%d}"
+    return chosen.activities, ui.stamp(chosen.data_date)
 
 
 def memo(key: tuple, function, *arguments):

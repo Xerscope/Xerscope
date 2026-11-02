@@ -202,3 +202,31 @@ def active(code: str, **kw) -> dict:
 
 def todo(code: str, **kw) -> dict:
     return {"task_code": code, **kw}
+
+
+def hours(duration: int) -> dict:
+    """Original and remaining duration in hours, for ``todo(..., **hours(8))``."""
+    return dict(target_drtn_hr_cnt=str(duration), remain_drtn_hr_cnt=str(duration))
+
+
+FM = dict(task_type="TT_FinMile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
+SM = dict(task_type="TT_Mile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
+CONSTRAINT_TYPES = [
+    "CS_MSOA",
+    "CS_MEOB",
+    "CS_MSO",
+    "CS_MEO",
+    "CS_MSOB",
+    "CS_MEOA",
+    "CS_ALAP",
+    "CS_MANDSTART",
+    "CS_MANDFIN",
+]
+# Start no earlier than Tue 08:00 and finish no later than Tue 12:00, on an 8 h activity.
+SECONDARY_CONSTRAINTS = dict(
+    cstr_type="CS_MSOA",
+    cstr_date="2026-03-03 08:00",
+    cstr_type2="CS_MEOB",
+    cstr_date2="2026-03-03 12:00",
+    **hours(8),
+)

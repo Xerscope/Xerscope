@@ -26,7 +26,7 @@ import pandas as pd
 import pytest
 from conftest import missing, mpxj_or_skip
 from test_cpm_properties import random_network
-from xerkit import active, done, todo, xer_text
+from xerkit import CONSTRAINT_TYPES, FM, SECONDARY_CONSTRAINTS, SM, active, done, hours, todo, xer_text
 
 REF = Path(__file__).parent / "reference" / "data"
 LAG_PRED = {"sched_calendar_on_relationship_lag": "rcal_Predecessor"}
@@ -67,7 +67,6 @@ def unexplained(xc, snap, cmp) -> pd.DataFrame:
 # --- 1. P6 ------------------------------------------------------------------------------------
 
 
-@pytest.mark.reference
 @pytest.mark.parametrize("name", ["p6viewer/Hotel Project.xer", "p6viewer/TERMINAL BUILDING-AIRPORT.xer"])
 def test_p6_xerscope_and_mpxj(xc, require_reference, name):
     cmp = xc.cpm_crosscheck(require_reference(name))
@@ -86,7 +85,6 @@ RESOURCES = [
     {"rsrc_id": "R2", "rsrc_short_name": "CRANE", "rsrc_type": "RT_Equip", "clndr_id": "C7D"},
     {"rsrc_id": "R3", "rsrc_short_name": "CREW", "rsrc_type": "RT_Labor", "clndr_id": "C10"},
 ]
-CONSTRAINTS = ["CS_MSOA", "CS_MEOB", "CS_MSO", "CS_MEO", "CS_MSOB", "CS_MEOA", "CS_ALAP", "CS_MANDSTART", "CS_MANDFIN"]
 ELAPSED_H = {"2026-02-16 08:00": 80, "2026-02-25 13:00": 20}  # actual start -> working hours to the data date
 
 
@@ -134,7 +132,7 @@ def network(kind: str, seed: int):
         kw.update(resources=res, assign=assign)
     if kind == "constraints":
         t = rnd.choice([t for t in tasks if t.get("task_type", "TT_Task") == "TT_Task"])
-        t["cstr_type"] = CONSTRAINTS[seed % len(CONSTRAINTS)]
+        t["cstr_type"] = CONSTRAINT_TYPES[seed % len(CONSTRAINT_TYPES)]
         t["cstr_date"] = rnd.choice(["2026-03-09 08:00", "2026-03-20 17:00", "2026-04-06 08:00", "2026-03-11 13:00"])
     return tasks, links, kw
 
@@ -172,56 +170,41 @@ def test_random_networks_agree_with_mpxj(xc, tmp_path, kind):
 # --- 3. the hand cases of test_cpm.py, through MPXJ ---------------------------------------------
 
 
-def h(x):
-    return dict(target_drtn_hr_cnt=str(x), remain_drtn_hr_cnt=str(x))
-
-
-FM = dict(task_type="TT_FinMile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
-SM = dict(task_type="TT_Mile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
 ASG = dict(act_reg_qty="0", act_ot_qty="0", target_qty_per_hr="1", remain_qty_per_hr="1", rollup_dates_flag="Y")
 HAND = {
-    "fs chain": ([todo("A", **h(16)), todo("B", **h(8))], [("A", "B", "FS", 0)]),
+    "fs chain": ([todo("A", **hours(16)), todo("B", **hours(8))], [("A", "B", "FS", 0)]),
     "ss ff sf": (
-        [todo("A", **h(40)), todo("B", **h(16)), todo("C", **h(8)), todo("D", **h(8))],
+        [todo("A", **hours(40)), todo("B", **hours(16)), todo("C", **hours(8)), todo("D", **hours(8))],
         [("A", "B", "SS", 8), ("A", "C", "FF", 0), ("A", "D", "SF", 16)],
     ),
-    "holiday": ([todo("A", cstr_type="CS_MSOA", cstr_date="2026-04-02 08:00", **h(16))], []),
+    "holiday": ([todo("A", cstr_type="CS_MSOA", cstr_date="2026-04-02 08:00", **hours(16))], []),
     "milestones": (
-        [todo("A", **h(8)), todo("FM", **FM), todo("SM", **SM)],
+        [todo("A", **hours(8)), todo("FM", **FM), todo("SM", **SM)],
         [("A", "FM", "FS", 0), ("A", "SM", "FS", 0)],
     ),
     "snlt negative float": (
-        [todo("P", **h(16)), todo("A", cstr_type="CS_MSOB", cstr_date="2026-03-02 08:00", **h(8))],
+        [todo("P", **hours(16)), todo("A", cstr_type="CS_MSOB", cstr_date="2026-03-02 08:00", **hours(8))],
         [("P", "A", "FS", 0)],
     ),
     "fnlt": (
-        [todo("A", **h(16)), todo("Z", cstr_type="CS_MEOB", cstr_date="2026-03-02 17:00", **FM)],
+        [todo("A", **hours(16)), todo("Z", cstr_type="CS_MEOB", cstr_date="2026-03-02 17:00", **FM)],
         [("A", "Z", "FS", 0)],
     ),
     "alap": (
-        [todo("A", cstr_type="CS_ALAP", **h(8)), todo("B", **h(40)), todo("Z", **FM)],
+        [todo("A", cstr_type="CS_ALAP", **hours(8)), todo("B", **hours(40)), todo("Z", **FM)],
         [("A", "Z", "FS", 0), ("B", "Z", "FS", 0)],
     ),
-    "secondary constraint": (
-        [
-            todo(
-                "A",
-                cstr_type="CS_MSOA",
-                cstr_date="2026-03-03 08:00",
-                cstr_type2="CS_MEOB",
-                cstr_date2="2026-03-03 12:00",
-                **h(8),
-            )
-        ],
-        [],
-    ),
+    "secondary constraint": ([todo("A", **SECONDARY_CONSTRAINTS)], []),
     "mixed calendars, 24 h lag": (
-        [todo("A", cstr_type="CS_MSOA", cstr_date="2026-03-06 08:00", **h(8)), todo("B", clndr_id="C7D", **h(8))],
+        [
+            todo("A", cstr_type="CS_MSOA", cstr_date="2026-03-06 08:00", **hours(8)),
+            todo("B", clndr_id="C7D", **hours(8)),
+        ],
         [("A", "B", "FS", 16)],
         {"sched": {"sched_calendar_on_relationship_lag": "rcal_24Hour"}},
     ),
     "retained logic out of sequence": (
-        [todo("A", **h(16)), active("B", remain_drtn_hr_cnt="8")],
+        [todo("A", **hours(16)), active("B", remain_drtn_hr_cnt="8")],
         [("A", "B", "FS", 0)],
     ),
     "finished predecessor, unexpired lag": (
@@ -237,9 +220,9 @@ HAND = {
     # so the two differ here by design and the case checks that the difference is reported
     "sf from started work held back": (
         [
-            todo("A", **h(40)),
+            todo("A", **hours(40)),
             active("B", act_start_date="2026-02-25 13:00", remain_drtn_hr_cnt="16"),
-            todo("C", **h(8)),
+            todo("C", **hours(8)),
         ],
         [("A", "B", "FS", 0), ("B", "C", "SF", 8)],
     ),
@@ -248,13 +231,13 @@ HAND = {
         [],
         {"sched": {"sched_use_expect_end_flag": "Y"}},  # MPXJ reads a blank flag as off
     ),
-    "must finish by": ([todo("A", **h(16))], [], {"project": {"plan_end_date": "2026-03-06 00:00"}}),
+    "must finish by": ([todo("A", **hours(16))], [], {"project": {"plan_end_date": "2026-03-06 00:00"}}),
     "level of effort": (
-        [todo("A", **h(16)), todo("B", **h(24)), todo("L", task_type="TT_LOE", **h(8))],
+        [todo("A", **hours(16)), todo("B", **hours(24)), todo("L", task_type="TT_LOE", **hours(8))],
         [("A", "B", "FS", 0), ("A", "L", "SS", 0), ("L", "B", "FF", 0)],
     ),
     "resource dependent, two driving assignments": (
-        [todo("A", task_type="TT_Rsrc", **h(16)), todo("B", **h(8))],
+        [todo("A", task_type="TT_Rsrc", **hours(16)), todo("B", **hours(8))],
         [("A", "B", "FS", 0)],
         {
             "resources": [dict(r, clndr_id="C8") for r in RESOURCES],

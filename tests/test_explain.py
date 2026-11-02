@@ -45,7 +45,7 @@ def test_verdict_follows_status(results):
 def test_parameters_show_standard_and_defaults(results, store):
     late = next(r for r in results if r.metric.id == "P6-12")
     assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
-    assert any("Excludes: milestones" in line for line in explain(late).population)
+    assert any("milestones" in line for line in explain(late).population)
     assert all(not explain(r).parameters for r in results)  # no built-in check takes parameters
 
     custom = loads_standard(template_text())  # the parameterised rules live in the custom template
@@ -79,13 +79,12 @@ def test_explain_tables_match_registry():
     # the CPLI (ratio) and critical path test (pass/fail) rules have no numerator/denominator/flagged
     # list to word; explain() falls back to defaults for them.
     assert {name for name, rule in RULES.items() if rule.title} == set(RULES) - {
-        "critical_path_test",
         "dcma_12_critical_path_test",
         "dcma_13_cpli",
         "decm_06a401a_critical_path_test",
     }
     # the vocabularies carry their own labels: every key has one, so explain never falls back to the key
-    assert all(label and callable(test) for label, test in EXCLUDE.values())
+    assert all(EXCLUDE.values())
     assert all(EXEMPT.values())
 
 

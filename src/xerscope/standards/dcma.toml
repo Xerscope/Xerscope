@@ -26,7 +26,7 @@ name = "Logic"
 description = "Incomplete tasks missing a predecessor or a successor"
 rule = "dcma_01_logic"
 target = "<= 5%"
-source = "DCMA-EA PAM 200.1 §4.1: any incomplete task missing a predecessor and/or a successor; no project start/finish exemption and no dangling case; §4.0: milestones excluded; a link to another project counts as logic (rule default)"
+source = "DCMA-EA PAM 200.1 §4.1: any incomplete task missing a predecessor and/or a successor; no project start/finish exemption and no dangling case; §4.0: milestones excluded; a link to another project counts as logic (has_external_pred / has_external_succ)"
 
 [[metric]]
 id = "DCMA-02"

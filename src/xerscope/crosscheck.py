@@ -22,11 +22,10 @@ from .verify.mpxj_cpm import (
     unresolved_patterns,
 )
 from .verify.mpxj_reader import compare_file, compare_paths
-from .verify.p6_corpus import P6_FIELDS, p6_heldout_score
+from .verify.p6_corpus import p6_heldout_score
 
 __all__ = [
     "CPM_FIELDS",
-    "P6_FIELDS",
     "P6_SETTLED",
     "UNRESOLVED",
     "compare_file",

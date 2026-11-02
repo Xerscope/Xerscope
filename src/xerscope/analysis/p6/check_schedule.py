@@ -6,30 +6,41 @@ The Oracle pages are cited in each docstring. Threshold and pass/fail come from
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
+import operator
 
 from ...xer.model import CONSTRAINT as _CONSTRAINT
 from ...xer.model import forecast_dates
 from ..populations import (
+    LARGE_HOURS,
+    actual_after,
+    as_flag,
     constrained_by,
     flagged_activities,
     flagged_relationships,
+    has_driving_predecessor,
+    has_driving_successor,
     has_predecessor_in_project,
     has_successor_in_project,
+    invalid_date_reason,
+    lag_flagged,
+    links_between,
     open_activities,
     open_end_reason,
-    relationships_into,
+    predecessors_ahead,
+    with_baseline,
     without_level_of_effort,
     without_milestones,
 )
-from ..rules import RuleOutput, rule
+from ..rules import (
+    RuleOutput,
+    late_output,
+    link_population,
+    rule,
+    share_of_type,
+)
 
-HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"]
+P6_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"]
 SOFT_CONSTRAINTS = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"]
-LARGE_DURATION_HOURS = 352
-LARGE_FLOAT_HOURS = 352
-LONG_LAG_HOURS = 352
 
 
 @rule("p6_01_logic", "%")
@@ -65,7 +76,7 @@ def p6_02_hard_constraints(context) -> RuleOutput:
 
     46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"""
     activities = without_level_of_effort(open_activities(context))
-    has_hard_constraint = constrained_by(activities, HARD_CONSTRAINTS, ignore_started_starts=True)
+    has_hard_constraint = constrained_by(activities, P6_HARD_CONSTRAINTS, ignore_started_starts=True)
 
     flagged = activities[has_hard_constraint]
     return RuleOutput(
@@ -104,7 +115,7 @@ def p6_04_large_durations(context) -> RuleOutput:
     activities = without_milestones(without_level_of_effort(open_activities(context)))
     remaining_hours = activities["remain_drtn_hr_cnt"]
 
-    flagged = activities[(remaining_hours > LARGE_DURATION_HOURS).fillna(False)]
+    flagged = activities[remaining_hours > LARGE_HOURS]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
 
 
@@ -116,9 +127,9 @@ def p6_05_long_lags(context) -> RuleOutput:
     Flagged when lag > 352 hours.
 
     46288: links between two actual-finished activities removed"""
-    relationships = _relationships_not_both_complete(context)
+    relationships = link_population(context, "not_both_complete")
 
-    flagged = relationships[relationships["lag_hr"].fillna(0) > LONG_LAG_HOURS]
+    flagged = lag_flagged(relationships, operator.gt, LARGE_HOURS)
     return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
 
 
@@ -132,7 +143,7 @@ def p6_06_large_float(context) -> RuleOutput:
     46284: WBS summary, actual-finish and LOE removed"""
     activities = without_level_of_effort(open_activities(context))
 
-    flagged = activities[activities["total_float_hr_cnt"] > LARGE_FLOAT_HOURS]
+    flagged = activities[activities["total_float_hr_cnt"] > LARGE_HOURS]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
 
 
@@ -144,13 +155,7 @@ def p6_07_relationship_types(context) -> RuleOutput:
     Counts relationships of type FS; the list shows the others.
 
     46287: actual = share of FS links in the subset"""
-    relationships = _relationships_not_both_complete(context)
-    finish_to_start = relationships["type"] == "FS"
-
-    share = 100.0 * finish_to_start.sum() / len(relationships) if len(relationships) else None
-    mix = ", ".join(f"{kind} {count}" for kind, count in relationships["type"].value_counts().items())
-    others = flagged_relationships(relationships[~finish_to_start])
-    return RuleOutput(others, int(finish_to_start.sum()), len(relationships), share, note=mix)
+    return share_of_type(link_population(context, "not_both_complete"), "FS")
 
 
 @rule("p6_08_lags", "%", links=True)
@@ -161,9 +166,9 @@ def p6_08_lags(context) -> RuleOutput:
     Flagged when lag > 0 hours.
 
     46289"""
-    relationships = _relationships_not_both_complete(context)
+    relationships = link_population(context, "not_both_complete")
 
-    flagged = relationships[relationships["lag_hr"].fillna(0) > 0]
+    flagged = lag_flagged(relationships, operator.gt, 0)
     return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
 
 
@@ -175,9 +180,9 @@ def p6_09_negative_lags(context) -> RuleOutput:
     Flagged when lag < 0 hours.
 
     46290: links between two actual-finished activities removed"""
-    relationships = _relationships_not_both_complete(context)
+    relationships = link_population(context, "not_both_complete")
 
-    flagged = relationships[relationships["lag_hr"].fillna(0) < 0]
+    flagged = lag_flagged(relationships, operator.lt, 0)
     return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
 
 
@@ -199,19 +204,11 @@ def p6_10_invalid_progress_dates(context) -> RuleOutput:
     early_start, _early_finish = forecast_dates(activities)
 
     # a finish before the data date has its start before it too
-    forecast_before = ~activities["is_complete"] & (early_start < data_date)
-    actual_after = (activities["act_start_date"] > data_date) | (activities["act_end_date"] > data_date)
-    forecast_before = forecast_before.fillna(False).astype(bool)
-    actual_after = actual_after.fillna(False).astype(bool)
-
-    reason = np.select(
-        [forecast_before & actual_after, forecast_before],
-        ["forecast before and actual after data date", "forecast before data date"],
-        default="actual after data date",
-    )
-    invalid = forecast_before | actual_after
+    forecast = as_flag(~activities["is_complete"] & (early_start < data_date))
+    actual = actual_after(activities, data_date)
+    invalid = forecast | actual
     flagged = activities[invalid]
-    reasons = pd.Series(reason, index=activities.index)[invalid]
+    reasons = invalid_date_reason(forecast, actual)[invalid]
     return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), len(activities))
 
 
@@ -233,60 +230,102 @@ def p6_11_resource_cost(context) -> RuleOutput:
 def p6_12_late_activities(context) -> RuleOutput:
     """Forecast to finish after their baseline finish.
     Counts: late / checked
-    Excludes: milestones, level of effort.
+    Excludes: completed activities, milestones, level of effort.
     Variance is working time on the activity's calendar, as P6's Finish Variance.
     An activity with no baseline finish is late when its finish is later than its planned finish.
 
-    101248: milestones, WBS summary and LOE not included (completed stay in); no baseline counterpart =
-    late when the remaining early finish is later than the planned finish. 46278: finish variance in
-    working time"""
-    activities = without_level_of_effort(without_milestones(context.snapshot.activities))
-    activities = activities.join(context.baseline.frame[["bl_finish"]], on="task_code")
+    101248: milestones, WBS summary and LOE not included; a P6 Professional report checks the Large
+    Durations population here, so completed activities are out too. No baseline counterpart = late when
+    the remaining early finish is later than the planned finish. 46278: finish variance in working time"""
+    activities = without_level_of_effort(without_milestones(open_activities(context)))
+    activities = with_baseline(context, activities)
     activities["bl_finish"] = activities["bl_finish"].combine_first(activities["target_end_date"])
-    variance_hours = context.snapshot.work_hours(activities["clndr_id"], activities["bl_finish"], activities["finish"])
-
-    flagged = activities[variance_hours > 0]
-    variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
-    return RuleOutput(
-        flagged_activities(flagged, bl_finish=flagged["bl_finish"], finish_variance_wd=variance_days),
-        len(flagged),
-        len(activities),
-    )
+    return late_output(context, activities)
 
 
 @rule("p6_13_bei", "ratio", needs_baseline=True)
 def p6_13_bei(context) -> RuleOutput:
-    """Due by the data date but not completed.
-    Counts: completed / due by the data date
+    """Completed activities against the baseline's activities.
+    Counts: completed / baseline activities
     Excludes: level of effort, milestones.
-    Due = baseline activities finishing on or before the data date, counted in the baseline:
-        an activity added since is never due, one deleted since still is.
-        Completed = all completed activities in the population, early ones included.
+    The list shows the activities due by the data date in the baseline and not completed.
 
-    101248: completed activities of the open project / baseline activities finishing before its data
-    date; milestones, WBS summary and LOE not included on either side (EPPM's 46277 instead counts an
-    activity with no baseline finish as due)"""
+    101248 says baseline activities finishing before the data date, but a P6 Professional report prints
+    completed / baseline activities on a project whose Resources/Cost check also totals N:
+    P6 counts every baseline activity, whatever its finish date. The report wins. Milestones, WBS summary
+    and LOE not included on either side"""
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    activities = without_level_of_effort(without_milestones(context.snapshot.activities))
-    activities = activities.join(context.baseline.frame[["bl_finish"]], on="task_code")
+    activities = with_baseline(context, without_level_of_effort(without_milestones(context.snapshot.activities)))
+    baseline_activities = without_level_of_effort(without_milestones(context.baseline.snapshot.activities))
     completed = int(activities["is_complete"].sum())
+    due = activities[as_flag(activities["bl_finish"] <= data_date) & ~activities["is_complete"]]
+    total = len(baseline_activities)
+    gone = len(set(baseline_activities["task_code"]) - set(context.snapshot.activities["task_code"]))
+    note = f"{completed} completed / {total} baseline activities"
+    if gone:
+        note += f"; {gone} of them no longer in the schedule"
+    index = completed / total if total else None
+    return RuleOutput(flagged_activities(due, bl_finish=due["bl_finish"]), completed, total, index, note)
 
-    baseline = context.baseline
-    baseline_activities = without_level_of_effort(without_milestones(baseline.snapshot.activities))
-    baseline_frame = baseline.frame[baseline.frame.index.isin(baseline_activities["task_code"])]
-    due_codes = set(baseline_frame.index[baseline_frame["bl_finish"] <= data_date])
-    not_completed = activities[activities["task_code"].isin(due_codes) & ~activities["is_complete"]]
 
-    no_longer_scheduled = len(due_codes - set(context.snapshot.activities["task_code"]))
-    note = f"{completed} completed / {len(due_codes)} due in the baseline"
-    if no_longer_scheduled:
-        note += f"; {no_longer_scheduled} of them no longer in the schedule"
-    index = completed / len(due_codes) if due_codes else None
-    return RuleOutput(
-        flagged_activities(not_completed, bl_finish=not_completed["bl_finish"]), completed, len(due_codes), index, note
-    )
+@rule("p6_15_out_of_sequence", "%")
+def p6_15_out_of_sequence(context) -> RuleOutput:
+    """Progressed before a predecessor.
+    Counts: out of sequence / activities
+    One row per activity and predecessor, as P6 lists them.
+
+    P6 Professional report: 'Activities which are completed or in-progress before their predecessors',
+    one row per activity and predecessor, against the total of activities. Read as P6's scheduling log:
+    an FS predecessor not finished, or an SS predecessor not started, at the activity's actual start.
+    UNRESOLVED: whether P6 also reads FF and SF relationships here"""
+    activities = context.snapshot.activities
+    tasks = context.snapshot.by_code
+    started = activities[activities["is_started"]].drop_duplicates("task_code").set_index("task_code")
+    ahead = predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), started, tasks)
+    flagged = started.loc[ahead["succ_code"]].reset_index()
+    extra = {"predecessor": ahead["pred_code"].to_numpy(), "type": ahead["type"].to_numpy()}
+    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(activities))
+
+
+@rule("p6_16_dangling_start", "%")
+def p6_16_dangling_start(context) -> RuleOutput:
+    """Start not driven by any predecessor.
+    Counts: dangling / activities
+    Excludes: started activities (P6's 'Ignore In Progress Activities', checked).
+    An activity with no predecessor at all is the Logic check's, not this one's.
+
+    P6 Professional report: 'Activities with start dates that are not driven by predecessors', against the
+    total of activities; the report lists an activity without any predecessor under Logic only. Read as:
+    predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore activities with soft/hard constraints'
+    (unchecked by default) is not read"""
+    activities = context.snapshot.activities
+    relationships = context.snapshot.relationships
+    candidates = activities[~activities["is_started"]]
+    has_logic = candidates["task_code"].isin(relationships["succ_code"])
+    driven = has_driving_predecessor(candidates["task_code"], relationships)
+    flagged = candidates[has_logic & ~driven]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+
+
+@rule("p6_17_dangling_finish", "%")
+def p6_17_dangling_finish(context) -> RuleOutput:
+    """Finish that drives no successor.
+    Counts: dangling / activities
+    Excludes: completed activities.
+    An activity with no successor at all is the Logic check's, not this one's.
+
+    P6 Professional report: 'Activities with finish dates that do not drive successors', against the total
+    of activities; an activity without any successor is listed under Logic only. Read as: successors
+    exist, none of them FS or FF"""
+    activities = context.snapshot.activities
+    relationships = context.snapshot.relationships
+    candidates = activities[~activities["is_complete"]]
+    has_logic = candidates["task_code"].isin(relationships["pred_code"])
+    driving = has_driving_successor(candidates["task_code"], relationships)
+    flagged = candidates[has_logic & ~driving]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
 
 
 @rule("p6_14_negative_float", "%")
@@ -301,13 +340,3 @@ def p6_14_negative_float(context) -> RuleOutput:
 
     flagged = activities[activities["total_float_hr_cnt"] < 0]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
-
-
-def _relationships_not_both_complete(context) -> pd.DataFrame:
-    """Relationships into a scheduled activity, minus those between two completed activities."""
-    activities = context.snapshot.activities
-    relationships = relationships_into(context, activities)
-    is_complete = activities.set_index("task_code")["is_complete"]
-    predecessor_done = relationships["pred_code"].map(is_complete).fillna(False).astype(bool)
-    successor_done = relationships["succ_code"].map(is_complete).fillna(False).astype(bool)
-    return relationships[~(predecessor_done & successor_done)]

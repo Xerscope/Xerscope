@@ -1,18 +1,11 @@
 from functools import partial
 
-import pandas as pd
 import streamlit as st
 
 from xerscope.analysis.progress import milestone_codes, milestone_slips, milestone_trend, plotted_trend
 from xerscope.app import ui
 from xerscope.app.state import is_dark, memo, require_store
 from xerscope.viz.charts import SERIES, build_mta
-
-
-def milestone_label(names: pd.Series, task_code: str) -> str:
-    """Multiselect label for an Activity ID: the code and its latest name."""
-    return f"{task_code} · {names.get(task_code, '')}"
-
 
 store = require_store()
 ui.header(
@@ -26,7 +19,7 @@ ui.header(
 
 all_ms = milestone_codes(store)
 open_ms = milestone_codes(store, open_only=True)
-names = store.history.drop_duplicates("task_code", keep="last").set_index("task_code")["task_name"]
+names = ui.latest_names(store)
 others = sorted(set(store.history["task_code"]) - set(all_ms))
 cap = len(SERIES["light"])
 picked = st.multiselect(
@@ -34,7 +27,7 @@ picked = st.multiselect(
     all_ms + others,
     default=open_ms[:cap],
     max_selections=cap,
-    format_func=partial(milestone_label, names),
+    format_func=partial(ui.code_label, names),
     key="mta_pick",
 )
 if not picked:
@@ -42,6 +35,7 @@ if not picked:
     st.stop()
 if len(store) < 2:
     st.info("The trend needs at least two updates.")
+    st.stop()
 
 trend = memo(("mta", tuple(picked)), milestone_trend, store, picked)
 plotted = plotted_trend(trend)

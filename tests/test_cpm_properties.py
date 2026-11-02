@@ -25,7 +25,7 @@ import random
 
 import pandas as pd
 import pytest
-from xerkit import CALENDAR_IDS, snap
+from xerkit import CALENDAR_IDS, CONSTRAINT_TYPES, snap
 
 from xerscope.analysis.cpm import LATE_LIKE, MANDATORY, START_LIKE, _Axes, _date_range, schedule
 
@@ -165,7 +165,6 @@ def test_ss_lag_from_started_predecessor_leaves_no_negative_float():
     assert f.at["B", "longest_path"]
 
 
-CONSTRAINTS = ["CS_MSOA", "CS_MEOB", "CS_MSO", "CS_MEO", "CS_MSOB", "CS_MEOA", "CS_ALAP", "CS_MANDSTART", "CS_MANDFIN"]
 OPTIONS = [
     {},
     {"sched_retained_logic": "N", "sched_progress_override": "Y"},
@@ -186,7 +185,7 @@ def test_options_constraints_calendars(seed):
     for t in tasks:
         t["clndr_id"] = rnd.choice(["C8", "C8", "C10", "C7D"])
         if rnd.random() < 0.2 and t.get("status_code", "TK_NotStart") == "TK_NotStart":
-            t["cstr_type"] = rnd.choice(CONSTRAINTS)
+            t["cstr_type"] = rnd.choice(CONSTRAINT_TYPES)
             t["cstr_date"] = rnd.choice(["2026-03-09 08:00", "2026-03-20 17:00", "2026-04-06 08:00"])
         if rnd.random() < 0.08 and t.get("status_code", "TK_NotStart") == "TK_NotStart":
             t["task_type"] = "TT_LOE"

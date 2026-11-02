@@ -37,7 +37,6 @@ packages = ["src/xerscope"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-markers = ["reference: compares against third-party files with stated results (tests/reference)"]
 filterwarnings = ["ignore::DeprecationWarning:streamlit.*"]
 
 [tool.ruff]

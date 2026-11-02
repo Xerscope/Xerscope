@@ -28,7 +28,7 @@ code is right and this document is wrong.
 
 ### 1.2 Status words (boolean columns on `activities`)
 
-| Word | Definition | EXCLUDE key (rules.py) |
+| Word | Definition | EXCLUDE key (your own standard, rules.py) |
 |---|---|---|
 | complete | `status_code == TK_Complete` | `complete` |
 | started | `status_code != TK_NotStart` (in progress or complete) | `started` |
@@ -41,8 +41,9 @@ code is right and this document is wrong.
 | WBS summary | `task_type == TT_WBS` | always excluded |
 | critical | not complete, not WBS summary, and: `PROJECT.critical_path_type == CT_DrivPath` → `driving_path_flag == Y`; else `critical_drtn_hr_cnt` present → `total_float_hr_cnt <= critical_drtn_hr_cnt`; else `total_float_d <= 0` | LOE included, as P6 |
 
-A rule's `exclude` list removes activities matching any listed key (`rules.activities`).
-Link populations (`rules.link_population`): `all`; `not_both_complete` = drop links whose
+In your own standard, a rule's `exclude` list removes activities matching any listed key
+(`rules.activities`). Link populations (`rules.link_population`, also used by the explicit
+P6 and DCMA relationship checks): `all`; `not_both_complete` = drop links whose
 predecessor and successor are both complete; `succ_incomplete` = drop links whose
 successor is complete. Links whose successor is a WBS summary are always dropped.
 
@@ -84,8 +85,8 @@ to 2 decimals. Pinned by `test_reference.py::test_percent_complete_matches_p6_ex
 
 A metric's parameters are checked on load against the rule's signature (`Rule.validate`):
 unknown name, wrong choice, non-number, non-flag, string instead of list; a metric may
-swap `%` and `count`, no other unit. Value per unit (`checks.run_metric`): `%`: the rule's `value` if it set one (only
-`relationship_type`), else `100 × numerator / denominator`, none when the denominator
+swap `%` and `count`, no other unit. Value per unit (`checks.run_metric`): `%`: the rule's `value` if it set one (the relationship-type
+rules: `relationship_type`, `p6_07`, `dcma_04`), else `100 × numerator / denominator`, none when the denominator
 is 0; `count`: `numerator`; `ratio`, `pass/fail`: the rule's `value`.
 
 Status: `n/a` when the metric needs a baseline and none is loaded, or the value is none
@@ -141,7 +142,7 @@ against a P6 Check Schedule report (docs/backlog.md).
 | Id | Name | Population | Found | Unit | Target | Source (TOML) | Tests (test_rules.py) |
 |---|---|---|---|---|---|---|---|
 | 06A204b | Dangling logic | incomplete, not LOE | open start: milestone with no predecessor; task with no FS/SS predecessor (an external predecessor counts as FS/SS). Open finish: milestone with no successor; task with no FS/FF successor. Exempt: `bl_start == min bl_start` of the whole baseline (start side), `bl_finish == max bl_finish` (finish side); without a baseline, `target_start_date` / `target_end_date` over all activities of the file | % | <= 0% | 06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no successor (milestone: none); earliest baseline start / latest baseline finish exempt | test_decm_dangling_logic, test_decm_milestone_needs_only_one_link_per_side, test_decm_project_start_exemption_does_not_move_once_work_is_done, test_decm_open_ends_on_a_progressed_schedule |
-| 06A205a | Lags | incomplete (LOE included: `loe = true`) | at least one predecessor link with `lag_hr > 0` (`sign = "positive"`; `negative` counts leads, `any` both) | % | <= 10% | 06A205a: X/Y <= 10%; the sheet does not say whether LOE count or whether leads (negative lags) do: LOE kept, positive lags only | test_decm_lags_summary_logic_and_loe |
+| 06A205a | Lags | incomplete (LOE kept) | at least one predecessor link with `lag_hr > 0` (positive lags only) | % | <= 10% | 06A205a: X/Y <= 10%; the sheet does not say whether LOE count or whether leads (negative lags) do: LOE kept, positive lags only | test_decm_lags_summary_logic_and_loe |
 | 06A208a | Summary tasks with logic | WBS summary rows (`tasks`) | appears as predecessor or successor of any link | count | <= 0 | 06A208a: X = 0 | test_decm_lags_summary_logic_and_loe |
 | 06A209a | Hard constraints | not complete (LOE included) | `cstr_type` or `cstr_type2` in {CS_MANDSTART, CS_MANDFIN}; no started exemption | % | <= 0% | 06A209a: X/Y = 0%; Primavera P6 hard constraints = Mandatory Start, Mandatory Finish; the sheet does not say whether LOE count: kept | rule only: test_constraint_sets_differ_between_p6_and_dcma |
 | 06A210a | LOE with discrete successors | incomplete LOE | has a successor in the file that is not LOE | % | <= 0% | 06A210a: X = 0 | test_decm_lags_summary_logic_and_loe |
@@ -149,19 +150,19 @@ against a P6 Check Schedule report (docs/backlog.md).
 | 06A212a | Out of sequence | links whose successor is incomplete (LOE included) and whose predecessor is an activity | using `start` / `finish` (actual, else forecast): FS `S.start < P.finish`; SS `S.start < P.start`; FF `S.finish < P.finish`; SF `S.finish < P.start`; lags ignored | count | <= 0 | 06A212a: X = 0; FS (S.AS\|S.FS) < P.FF, SS (S.AS\|S.FS) < P.FS, FF (S.AF\|S.FF) < P.FF, SF (S.AF\|S.FF) < P.FS | test_decm_out_of_sequence_counts_relationships |
 | 06A401a | Critical path test | see §2.5 | +600 wd | pass/fail | pass | 06A401a: the schedule's critical path is the longest path (constraint method) | rule: test_critical_path_test_passes_on_clean_logic, test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay |
 | 06A501a | Missing baseline dates | all activities | no `bl_start` or no `bl_finish` (not in the baseline, or baseline dates blank) | % | <= 5% | 06A501a: X/Y <= 5%, summaries excluded | test_decm_baseline_and_actual_dates |
-| 06A504a | Actual starts changed | activities with an actual start in this update, plus those present in both updates with one in the earlier update; earlier = the latest update whose data date is <= this one − `period_days` (28; 0 = the preceding update) | present in both updates with an earlier actual start and a different (or now blank) actual start | % | <= 10% | 06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28 days) earlier | test_decm_actuals_changed_needs_the_previous_update, test_actuals_changed_counts_a_removed_date_on_both_sides |
+| 06A504a | Actual starts changed | activities with an actual start in this update, plus those present in both updates with one in the earlier update; earlier = the latest update whose data date is <= this one − 28 days (`STATUS_PERIOD_DAYS`) | present in both updates with an earlier actual start and a different (or now blank) actual start | % | <= 10% | 06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28 days) earlier | test_decm_actuals_changed_needs_the_previous_update, test_actuals_changed_counts_a_removed_date_on_both_sides |
 | 06A504b | Actual finishes changed | same, on actual finish | same | % | <= 10% | 06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period (28 days) earlier | test_decm_actuals_changed_needs_the_previous_update |
 | 06A505a | In progress without actual start | `pct_complete > 0` or started (LOE included) | no `act_start_date` | % | <= 5% | 06A505a: X/Y <= 5% | test_decm_baseline_and_actual_dates |
 | 06A505b | Complete without actual finish | `pct_complete >= 100` or complete | no `act_end_date` | % | <= 5% | 06A505b: X/Y <= 5% | none |
 | 06A506a | Actual dates after the status date | denominator: activities with an actual start (all activities examined) | `act_start_date > data date` or `act_end_date > data date` | % | <= 5% | 06A506a: X/Y <= 5%, Y = tasks with an actual start | test_decm_baseline_and_actual_dates |
-| 06A506b | Forecast dates before the status date | all activities | not complete and (not started and forecast start < data date, or forecast finish < data date); `include_data_date = false` | count | <= 0 | 06A506b: X = 0, forecast on or before the status date (= before P6's data date) | rule: test_invalid_progress_dates |
+| 06A506b | Forecast dates before the status date | all activities | not complete and (not started and forecast start < data date, or forecast finish < data date) | count | <= 0 | 06A506b: X = 0, forecast on or before the status date (= before P6's data date) | rule: test_invalid_progress_dates |
 | 06A506c | Riding the status date | incomplete, not LOE, present in the latest update whose data date is <= this data date − 28 days | not started in both and `0 <= work_hours(data date → start) <= 3 × hours_per_day` in both (each on its own data date); or started in both and `abs(remaining_d now − remaining_d then) <= 2` | % | <= 1% | 06A506c: X/Y <= 1%; start within 3 wd of the status date in both updates, or remaining duration within +/- 2 wd | test_decm_riding_the_status_date, test_decm_riding_the_status_date_started_work |
 
 ### 2.3 DCMA 14-Point (`standards/dcma.toml`, standard id `DCMA`)
 
 Authority: DCMA-EA PAM 200.1 (Oct 2012) section 4, 3.1.2.3, 3.1.2.4; each metric's `source`
 in the TOML cites its section. xerlock's published result is a comparison
-(`tests/reference/expected.py` notes the differences). Lag thresholds are in hours (rule default);
+(`tests/reference/expected.py` notes the differences). Lag thresholds are in hours;
 float and duration thresholds in working days of the activity's calendar.
 
 | Id | Name | Population | Found | Unit | Target | Tests |

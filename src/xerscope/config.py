@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+DATE_FMT = "%Y-%m-%d"
+DATETIME_FMT = "%Y-%m-%d %H:%M"  # P6's own XER and screen format
+
 
 @dataclass(frozen=True)
 class Settings:

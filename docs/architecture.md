@@ -89,7 +89,7 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 
 Standards are data in `standards/*.toml`:
 
-- `p6.toml`: P6 Professional 24 Check Schedule (14 checks, Oracle's groups);
+- `p6.toml`: P6 Professional 24 Check Schedule (17 checks: the 14 of the help plus out of sequence and dangling start/finish from a real report; Oracle's groups);
 - `decm.toml`: DCMA DECM v8.0, Guideline 6 schedule tests;
 - `dcma.toml`: DCMA 14-Point (legacy);
 - `integrity.toml`: recalculation of activities and assignments, out-of-sequence progress;
@@ -156,8 +156,8 @@ Outside `analysis/`:
   the calculation with its numbers (`analysis/explain.py`), the population (exclusions),
   the effective parameters (standard or default), the source, and the flagged items.
   All flagged items of all checks export as one CSV, the audit trail behind the scores.
-- **Pages:** one file per page in `views/`. Pages only compose analyses and figures; no
-  calculation lives in a page.
+- **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
+  Plotly figures are built in `viz/`.
 
 ## 8. `cli.py`
 
@@ -177,7 +177,7 @@ Outside `analysis/`:
 
 | File | What it pins |
 |---|---|
-| `rulekit.py` | shared helpers of the rule tests: the built-in standards loaded once (`STANDARDS`), `run(std, metric_id, snapshot, baseline)`, `codes(result)` (flagged Activity IDs), `counts(result)` (numerator, denominator) |
+| `rulekit.py` | shared helpers of the rule tests: the built-in standards loaded once (`STANDARDS`), `run(std, metric_id, snapshot, baseline)`, `run_on_store(store, index, metric_id)` (the first update as baseline), `codes(result)` (flagged Activity IDs), `counts(result)` (numerator, denominator) |
 | `test_characterization.py` + `golden/standards.json` | characterization (golden) test: status, numerator, denominator, value and flagged identifiers (Activity IDs or `pred->succ`, never names; a note only for an error) of every metric of every built-in standard, in four sections: `demo` (the demo series, no baseline), `demo-planned` (planned-dates baseline), `demo-first-as-baseline` (first update as baseline) and `reference` (the pinned third-party XERs, the large Hotel file excluded). A refactor must change no number. After an intended change, run with `XERSCOPE_UPDATE_GOLDEN=1`: that run rewrites the section and always fails by design, so a rewrite is never green; review the diff of `golden/standards.json`, then rerun without the variable |
 | `test_p6_check_schedule.py` | the P6 Check Schedule rules written from Oracle's help (P6 Professional 24 101248; EPPM 25 91574 for the default targets): one quoted sentence of the help per test (target strictness, the 352 h boundary, exclusions, the started exemption, the soft constraint set), with the DCMA reading as contrast where they differ |
 | `xerkit.py` | builds tiny XERs in code (numeric ids, full calendars, as P6 writes them), so each expected number is countable by hand and any reader sees the same file |
@@ -187,10 +187,10 @@ Outside `analysis/`:
 | `test_cpm_properties.py` | invariants on seeded random networks |
 | `test_rules.py` | each check, especially where P6 and DCMA differ (helpers from `rulekit.py`) |
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ crosscheck |
-| `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA, CLI |
+| `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
 | `test_app.py` | every page renders headless, key options work |
-| `test_parser.py`, `test_model.py`, `test_store.py` | format edge cases, P6 meaning of each column, the weekly series |
-| `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfile / Caddyfiles keep loopback-only, non-root, no published port |
+| `test_parser.py`, `test_model.py`, `test_store.py`, `test_shapes.py` | format edge cases, P6 meaning of each column, the weekly series, the shape of the frames |
+| `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfile / Caddyfiles keep loopback-only (8501 on 127.0.0.1 in `compose.yaml`, no port in `deploy/`), non-root |
 | `reference/` | pinned third-party files (`sources.py`: commit + SHA-256, downloaded by `fetch.py`; the held-out corpus by `fetch_p6_heldout.py`), their stated results (`expected.py`); MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |

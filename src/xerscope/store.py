@@ -13,9 +13,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from .config import DATE_FMT
 from .xer import Snapshot, load_snapshot, xer_files
-from .xer.model import LABOR_COLS
+from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL
 
+# The columns of fact_activity, in the order Power BI users know them: a subset of the model's
+# TASK_COLS + LABOR_COLS (tests/test_store.py checks it). Left out on purpose, the internal keys
+# and the raw P6 values that a derived column replaces: task_id, wbs_id, hours_per_day,
+# is_wbs_summary, status_code, ev_user_pct, cstr_date, cstr_type2, cstr_date2, total_float_hr_cnt,
+# free_float_hr_cnt, target_drtn_hr_cnt, remain_drtn_hr_cnt, restart_date, reend_date, constraint,
+# has_resource, has_expense, has_external_pred, has_external_succ.
 HISTORY_COLS = [
     "task_code",
     "task_name",
@@ -54,23 +61,9 @@ HISTORY_COLS = [
     *LABOR_COLS,
     "ev_compute_type",
 ]
-REL_COLS = ["pred_code", "succ_code", "type", "lag_hr", "lag_d", "is_external"]
-ASSIGNMENT_COLS = [
-    "taskrsrc_id",
-    "task_code",
-    "rsrc_id",
-    "rsrc_short_name",
-    "rsrc_name",
-    "rsrc_type",
-    "driving",
-    "target_qty",
-    "act_qty",
-    "remain_qty",
-    "restart_date",
-    "reend_date",
-    "act_start_date",
-    "act_end_date",
-]
+REL_COLS = REL_COLS_MODEL
+# every assignment column of the model but the internal keys
+ASSIGNMENT_COLS = [column for column in ASSIGNMENT_COLS_MODEL if column not in {"task_id", "role_id"}]
 
 
 def _sort_key(s: Snapshot):
@@ -88,7 +81,7 @@ class SnapshotStore:
         for s in snaps:
             kept = next((k for k in self._snaps if k.data_date == s.data_date), None)
             if kept is not None and s.data_date is not None:
-                self.warnings.append(f"{s.source}: same data date as {kept.source} ({s.data_date:%Y-%m-%d}), skipped")
+                self.warnings.append(f"{s.source}: same data date as {kept.source} ({s.data_date:{DATE_FMT}}), skipped")
             else:
                 self._snaps.append(s)
         codes = {s.project_code for s in self._snaps}
@@ -142,27 +135,19 @@ class SnapshotStore:
         return self._snaps[i - 1] if i > 0 else None
 
     # --- tidy frames -------------------------------------------------------------
-    def _stack(self, attr: str, cols: list[str]) -> pd.DataFrame:
+    def _stack(self, attribute: str, columns: list[str]) -> pd.DataFrame:
         frames = []
-        for i, s in enumerate(self._snaps):
-            df = getattr(s, attr)
-            df = df[cols].copy()
-            df.insert(0, "snapshot_idx", i)
-            df.insert(1, "data_date", s.data_date)
-            frames.append(df)
-        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols)
+        for index, snapshot in enumerate(self._snaps):
+            frame = getattr(snapshot, attribute)[columns].copy()
+            frame.insert(0, "snapshot_idx", index)
+            frame.insert(1, "data_date", snapshot.data_date)
+            frames.append(frame)
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
 
     @cached_property
     def history(self) -> pd.DataFrame:
         """One row per (snapshot, activity), WBS summary rows excluded."""
-        frames = []
-        for i, s in enumerate(self._snaps):
-            df = s.activities
-            df = df[HISTORY_COLS].copy()
-            df.insert(0, "snapshot_idx", i)
-            df.insert(1, "data_date", s.data_date)
-            frames.append(df)
-        return pd.concat(frames, ignore_index=True)
+        return self._stack("activities", HISTORY_COLS)
 
     @cached_property
     def relationship_history(self) -> pd.DataFrame:

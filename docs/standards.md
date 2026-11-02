@@ -3,8 +3,10 @@
 Built in: **P6 Check Schedule** (P6 Professional 24), **DCMA DECM v8.0** (the schedule
 metrics DCMA applies from FY2026), **DCMA 14-Point** (legacy, still the common screen),
 **Integrity** (does the file match a P6-exact recalculation) and **your own standard**.
-All are TOML files (`src/xerscope/standards/`) built on one rule library
-(`analysis/rules.py`), so they differ only in data: rule, parameters, population, target.
+All are TOML files (`src/xerscope/standards/`). The four built-in ones name one explicit
+function per check (`analysis/p6/`, `dcma/`, `decm/`, `integrity.py`) and the TOML only gives
+each its target; your own standard picks parameterised rules from `analysis/rules.py` and sets
+their parameters, population and target.
 
 GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 
@@ -25,7 +27,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.
 
-## P6 Check Schedule (P6 Professional 24: 14 checks)
+## P6 Check Schedule (P6 Professional 24: 17 checks)
 
 Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 101393).
 Populations from the P6 Professional 24 help of the Check Schedule dialog
@@ -102,7 +104,8 @@ Not included: 06A301a (vertical traceability), 06I101b (schedule margin), 06I201
 **Status date vs data date.** DECM 06A506b says "on or before the status date": the end
 of the reported period. P6's data date is the first instant of remaining work, so a
 forecast exactly on it is valid; the equivalent test is "before the data date"
-(`include_data_date = false`). Set it to `true` if your organisation reads it literally.
+(DECM 06A506b has no switch; only the `invalid_dates` rule of your own standard exposes it, as
+`include_data_date`, to read it literally.)
 
 ## DCMA 14-Point (legacy)
 
@@ -172,7 +175,7 @@ metric is in [formulas.md](formulas.md).
 
 - [Oracle P6 Professional 24 User Guide: Check Schedule](https://docs.oracle.com/cd/F88968_01/English/User_Guides/p6_pro_user/101393.htm)
 - [Oracle P6 Professional 24 client help 101248: Check Schedule dialog box](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)
-  (the source of the P6 populations, parameters `in_progress`, `no_baseline`, `due_from`)
+  (the source of the P6 populations)
 - [Oracle P6 Professional 24: Schedule Options, General tab](https://docs.oracle.com/cd/F88968_01/client_help/en_US/general_tab_-_schedule_options_dialog_box.htm)
 - [Oracle P6 help: Report tab of the Check Schedule dialog (section index)](https://docs.oracle.com/cd/G18294_01/p6help/en/101231.htm)
 - [Oracle P6 help: Logic section](https://docs.oracle.com/cd/G18294_01/p6help/en/46291.htm),

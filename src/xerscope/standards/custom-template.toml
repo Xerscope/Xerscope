@@ -114,9 +114,8 @@ params = { exclude = ["loe", "milestones"], missing_baseline = "ignore" }
 [[metric]]
 id = "CUS-13"
 name = "Critical path test"
-rule = "critical_path_test"
+rule = "dcma_12_critical_path_test"   # the built-in test, 600 working days
 target = "pass"
-params = { delay_days = 600 }
 
 # --- more rules (uncomment to use) -------------------------------------------------------
 # [[metric]]

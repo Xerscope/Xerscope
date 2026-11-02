@@ -25,7 +25,7 @@ def show_kpis(log: pd.DataFrame, counts: pd.DataFrame) -> None:
     project = log[log["category"] == "Project"].set_index("change")
     has_finish = "forecast finish" in project.index and bool(project.loc["forecast finish", "after"])
     shift = project.loc["forecast finish", "delta"] if "forecast finish" in project.index else None
-    finish_text = f"{pd.Timestamp(project.loc['forecast finish', 'after']):%d %b %Y}" if has_finish else "–"
+    finish_text = ui.fmt_date(pd.Timestamp(project.loc["forecast finish", "after"])) if has_finish else "–"
     ui.kpis(
         [
             (
@@ -82,7 +82,7 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
         view = view[ui.search_mask(view, SEARCH_COLUMNS, search)]
     st.caption(f"{len(view):,} change(s) shown")
     ui.table(view, max_height=640)
-    ui.csv_button(log, f"changelog_{old.data_date:%Y-%m-%d}_{new.data_date:%Y-%m-%d}.csv", "Download changelog (CSV)")
+    ui.csv_button(log, f"changelog_{ui.stamp(old.data_date)}_{ui.stamp(new.data_date)}.csv", "Download changelog (CSV)")
 
 
 def show_weekly(store) -> None:

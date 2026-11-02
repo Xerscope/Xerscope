@@ -33,9 +33,14 @@ from pathlib import Path
 
 import pandas as pd
 
+from .config import DATE_FMT, DATETIME_FMT
+
 HOURS_PER_DAY = 8
 PROJECT_ID = "4501"
 PROJECT_CODE = "PRJ-ALPHA"
+CREATED = "2026-08-24 09:00"  # create / add date of everything in the demo
+RSRC_CREW = "5001"
+RSRC_VENDOR = "5002"
 PROJECT_NAME = "Usine de traitement – Phase 1"  # en dash + accent: exercises cp1252
 CALENDAR_ID = "601"
 # every day 08:00-16:00, written in full (P6 exports always carry the blob; without it each
@@ -343,7 +348,7 @@ def _day(day_index: int) -> date:
 
 
 def _start_text(day_index: int | None) -> str:  # start-of-day timestamp
-    return "" if day_index is None else f"{_day(day_index):%Y-%m-%d} 08:00"
+    return "" if day_index is None else f"{_day(day_index):{DATE_FMT}} 08:00"
 
 
 def _constraint_text(activity: Activity) -> str:
@@ -356,7 +361,7 @@ def _constraint_text(activity: Activity) -> str:
 
 
 def _finish_text(day_index: int | None) -> str:  # end of the day before the exclusive day index
-    return "" if day_index is None else f"{_day(day_index - 1):%Y-%m-%d} 16:00"
+    return "" if day_index is None else f"{_day(day_index - 1):{DATE_FMT}} 16:00"
 
 
 def _finish(early_finish: int, duration: int, kind: str) -> str:
@@ -366,7 +371,7 @@ def _finish(early_finish: int, duration: int, kind: str) -> str:
 
 
 def _write(path: Path, tables: dict[str, tuple[list[str], list[list]]], export: date) -> None:
-    lines = [f"ERMHDR\t23.12\t{export:%Y-%m-%d}\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management\tEUR"]
+    lines = [f"ERMHDR\t23.12\t{export:{DATE_FMT}}\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management\tEUR"]
     for name, (columns, rows) in tables.items():
         lines.append(f"%T\t{name}")
         lines.append("%F\t" + "\t".join(columns))
@@ -377,7 +382,7 @@ def _write(path: Path, tables: dict[str, tuple[list[str], list[list]]], export: 
     path.write_bytes(("\r\n".join(lines) + "\r\n").encode("cp1252"))
 
 
-TASK_COLS = [
+XER_TASK_FIELDS = [
     "task_id",
     "proj_id",
     "wbs_id",
@@ -416,7 +421,7 @@ TASK_COLS = [
 ]
 
 
-ASSIGNMENT_COLS = [
+XER_TASKRSRC_FIELDS = [
     "taskrsrc_id",
     "task_id",
     "proj_id",
@@ -434,6 +439,10 @@ ASSIGNMENT_COLS = [
 ]
 
 
+def _stamp(timestamp) -> str:
+    return "" if timestamp is None or pd.isna(timestamp) else f"{timestamp:{DATETIME_FMT}}"
+
+
 def _store_p6_dates(path: Path, tables: dict, export: date) -> None:
     """Replace the simulation's dates by the validated P6-style CPM, as P6 would store them.
 
@@ -446,30 +455,25 @@ def _store_p6_dates(path: Path, tables: dict, export: date) -> None:
 
     recomputed = schedule(load_snapshot(path))
     frame = recomputed.frame
-    assignment_column = {code: column_index for column_index, code in enumerate(ASSIGNMENT_COLS)}
+    assignment_column = {code: column_index for column_index, code in enumerate(XER_TASKRSRC_FIELDS)}
     assignment_dates = recomputed.assignments.set_index("taskrsrc_id")
-    task_column = {code: day_index for day_index, code in enumerate(TASK_COLS)}
-
-    def format_timestamp(timestamp) -> str:
-        return "" if timestamp is None or pd.isna(timestamp) else f"{timestamp:%Y-%m-%d %H:%M}"
+    task_column = {code: day_index for day_index, code in enumerate(XER_TASK_FIELDS)}
 
     for row in tables["TASK"][1]:
         code, status = row[task_column["task_code"]], row[task_column["status_code"]]
         if code not in frame.index or status == "TK_Complete":
             continue
         dates = frame.loc[code]
-        row[task_column["early_start_date"]] = format_timestamp(
-            dates["remaining_start"]
-        )  # P6 stores the remaining start
-        row[task_column["early_end_date"]] = format_timestamp(dates["ef"])
-        row[task_column["late_start_date"]] = format_timestamp(dates["ls"])
-        row[task_column["late_end_date"]] = format_timestamp(dates["lf"])
+        row[task_column["early_start_date"]] = _stamp(dates["remaining_start"])  # P6 stores the remaining start
+        row[task_column["early_end_date"]] = _stamp(dates["ef"])
+        row[task_column["late_start_date"]] = _stamp(dates["ls"])
+        row[task_column["late_end_date"]] = _stamp(dates["lf"])
         row[task_column["total_float_hr_cnt"]] = f"{dates['tf_hr']:g}"
         row[task_column["free_float_hr_cnt"]] = f"{dates['ff_hr']:g}"
         if status == "TK_Active":
             row[task_column["restart_date"]], row[task_column["reend_date"]] = (
-                format_timestamp(dates["remaining_start"]),
-                format_timestamp(dates["ef"]),
+                _stamp(dates["remaining_start"]),
+                _stamp(dates["ef"]),
             )
         row[task_column["driving_path_flag"]] = "Y" if dates["longest_path"] else "N"
     for row in tables["TASKRSRC"][1]:  # assignment remaining dates, as P6 stores them
@@ -482,10 +486,258 @@ def _store_p6_dates(path: Path, tables: dict, export: date) -> None:
                 ("rem_late_start", "rem_late_start_date"),
                 ("rem_late_end", "rem_late_end_date"),
             ):
-                row[assignment_column[stored_name]] = format_timestamp(dates[computed_name])
+                row[assignment_column[stored_name]] = _stamp(dates[computed_name])
     project_columns, project_rows = tables["PROJECT"]
-    project_rows[0][project_columns.index("scd_end_date")] = format_timestamp(frame["ef"].max())
+    project_rows[0][project_columns.index("scd_end_date")] = _stamp(frame["ef"].max())
     _write(path, tables, export)
+
+
+def _task_id(snapshot_index: int, row_index: int) -> int:
+    return 100000 + snapshot_index * 1000 + row_index
+
+
+def _set_targets(activities: dict[str, Activity], day_schedule: dict) -> None:
+    """Planned dates and constraint dates are fixed the first time an activity is scheduled."""
+    for code, activity in activities.items():
+        if activity.target is None:
+            activity.target = (day_schedule[code]["es"], day_schedule[code]["ef"])
+            if activity.constraint:
+                anchor = activity.target[1] if activity.constraint == "CS_MEOB" else activity.target[0]
+                activity.constraint_day = anchor + activity.constraint_offset
+
+
+def _status(activity: Activity, dates: dict, data_day: int) -> tuple[str, int, int]:
+    """P6 status code, remaining days and percent complete of an activity at the data day."""
+    if activity.act_finish is not None:
+        return "TK_Complete", 0, 100
+    started = activity.act_start is not None
+    status = "TK_Active" if started else "TK_NotStart"
+    remaining_days = max(0, dates["ef"] - data_day) if activity.kind == "TT_LOE" else math.ceil(activity.remaining)
+    percent = 0
+    if started and activity.duration:
+        percent = min(99, max(0, round(100 * (activity.duration - activity.remaining) / activity.duration)))
+    return status, remaining_days, percent
+
+
+def _early_texts(activity: Activity, dates: dict, data_day: int) -> tuple[str, str]:
+    """Early start and finish as P6 writes them: actual, then remaining, then planned."""
+    done = activity.act_finish is not None
+    if done:
+        start = _start_text(activity.act_start)
+        finish = _finish(activity.act_finish, activity.duration, activity.kind)
+    elif activity.act_start is not None:
+        start = _start_text(data_day)
+        finish = _finish(dates["ef"], dates["ef"] - dates["es"], activity.kind)
+    else:
+        start = _start_text(dates["es"])
+        finish = _finish(dates["ef"], activity.duration, activity.kind)
+    if activity.kind == "TT_FinMile" and not done:
+        start = finish
+    return start, finish
+
+
+def _task_row(
+    snapshot_index: int, row_index: int, activity: Activity, dates: dict, data_day: int
+) -> tuple[list, tuple[int, int, int]]:
+    """One TASK row, and the (budget, actual, remaining) labour hours that go with it."""
+    done = activity.act_finish is not None
+    started = activity.act_start is not None
+    status, remaining_days, percent = _status(activity, dates, data_day)
+    early_start_text, early_finish_text = _early_texts(activity, dates, data_day)
+    actual_end_text = _finish(activity.act_finish, activity.duration, activity.kind) if done else ""
+    if snapshot_index >= 6 and activity.code == "C3010" and done:  # injected data-quality issue
+        actual_end_text = _finish_text(data_day + 3)  # two days after the data date
+    total_float = dates["tf"]
+    crew = CREW[activity.wbs] if activity.has_resource and activity.duration > 0 else 0
+    worked = 0 if not started else (min(data_day, activity.act_finish if done else data_day) - activity.act_start)
+    hours = (
+        activity.duration * HOURS_PER_DAY * crew,
+        worked * HOURS_PER_DAY * crew,
+        remaining_days * HOURS_PER_DAY * crew,
+    )
+    row = [
+        _task_id(snapshot_index, row_index),
+        PROJECT_ID,
+        WBS_ID[activity.wbs],
+        CALENDAR_ID,
+        percent,
+        "CP_Phys",
+        activity.kind,
+        "DT_FixedDUR2",
+        status,
+        activity.code,
+        activity.name,
+        "" if total_float is None else total_float * HOURS_PER_DAY,
+        "",
+        remaining_days * HOURS_PER_DAY,
+        activity.duration * HOURS_PER_DAY,
+        _constraint_text(activity),
+        _start_text(activity.act_start) if started else "",
+        actual_end_text,
+        "" if done else _start_text(dates["lf"] - remaining_days),
+        "" if done else _finish(dates["lf"], remaining_days, activity.kind),
+        "",
+        early_start_text,
+        early_finish_text,
+        _start_text(data_day) if started and not done else "",
+        early_finish_text if started and not done else "",
+        _start_text(activity.target[0]),
+        _finish(activity.target[1], activity.duration, activity.kind),
+        activity.constraint,
+        "Y" if (total_float is not None and total_float <= 0 and activity.kind != "TT_LOE") else "N",
+        "",
+        CREATED,
+        _start_text(data_day),
+        *hours,
+    ]
+    return row, hours
+
+
+def _link_rows(snapshot_index: int, links: list, task_ids: dict[str, int]) -> list[list]:
+    return [
+        [
+            900000 + snapshot_index * 1000 + index,
+            task_ids[successor],
+            task_ids[predecessor],
+            PROJECT_ID,
+            PROJECT_ID,
+            f"PR_{link_type}",
+            lag * HOURS_PER_DAY,
+        ]
+        for index, (predecessor, successor, link_type, lag) in enumerate(links)
+    ]
+
+
+def _assignment_rows(
+    snapshot_index: int, activities: dict[str, Activity], task_ids: dict[str, int], hours: dict[str, tuple]
+) -> list[list]:
+    # units per hour = crew size, so remaining units / rate = the activity's remaining hours
+    rows = [
+        [
+            800000 + snapshot_index * 1000 + index,
+            task_ids[code],
+            PROJECT_ID,
+            RSRC_CREW,
+            *hours[code],
+            CREW[activity.wbs],
+            CREW[activity.wbs],
+            "Y",
+            "",
+            "",
+            "",
+            "",
+        ]
+        for index, (code, activity) in enumerate(activities.items())
+        if activity.has_resource and activity.duration > 0
+    ]
+    rows += [
+        [
+            890000 + snapshot_index * 1000 + index,
+            task_ids[code],
+            PROJECT_ID,
+            RSRC_VENDOR,
+            1,
+            0,
+            1,
+            0,
+            0,
+            "N",
+            "",
+            "",
+            "",
+            "",
+        ]
+        for index, code in enumerate(("P2030", "P2040"))
+        if code in task_ids
+    ]  # vendor supply, no hours
+    return rows
+
+
+def _project_table(data_day: int, finish_day: int) -> tuple[list[str], list[list]]:
+    columns = [
+        "proj_id",
+        "proj_short_name",
+        "clndr_id",
+        "plan_start_date",
+        "plan_end_date",
+        "scd_end_date",
+        "last_recalc_date",
+        "add_date",
+    ]
+    row = [
+        PROJECT_ID,
+        PROJECT_CODE,
+        CALENDAR_ID,
+        _start_text(0),
+        "",
+        _finish_text(finish_day),
+        _start_text(data_day),
+        CREATED,
+    ]
+    return columns, [row]
+
+
+def _fixed_tables() -> dict[str, tuple[list[str], list[list]]]:
+    """The tables that are the same in every weekly file."""
+    return {
+        "CALENDAR": (
+            [
+                "clndr_id",
+                "default_flag",
+                "clndr_name",
+                "proj_id",
+                "base_clndr_id",
+                "clndr_type",
+                "day_hr_cnt",
+                "week_hr_cnt",
+                "month_hr_cnt",
+                "year_hr_cnt",
+                "clndr_data",
+            ],
+            [
+                [
+                    CALENDAR_ID,
+                    "Y",
+                    "7 jours / 8 h",
+                    "",
+                    "",
+                    "CA_Base",
+                    HOURS_PER_DAY,
+                    HOURS_PER_DAY * 7,
+                    HOURS_PER_DAY * 30,
+                    HOURS_PER_DAY * 365,
+                    CALENDAR_DATA,
+                ]
+            ],
+        ),
+        # P6's default scheduling options, written out so every reader applies the same
+        "SCHEDOPTIONS": (
+            [
+                "schedoptions_id",
+                "proj_id",
+                "sched_retained_logic",
+                "sched_progress_override",
+                "sched_lag_early_start_flag",
+                "sched_open_critical_flag",
+                "sched_float_type",
+                "sched_calendar_on_relationship_lag",
+                "sched_use_expect_end_flag",
+                "sched_outer_depend_type",
+            ],
+            [["1", PROJECT_ID, "Y", "N", "Y", "N", "FT_FF", "rcal_Predecessor", "Y", "SD_Both"]],
+        ),
+        "PROJWBS": (
+            ["wbs_id", "proj_id", "seq_num", "proj_node_flag", "wbs_short_name", "wbs_name", "parent_wbs_id"],
+            [[wid, PROJECT_ID, n, flag, short, name, parent] for n, (wid, short, name, parent, flag) in enumerate(WBS)],
+        ),
+        "RSRC": (
+            ["rsrc_id", "rsrc_short_name", "rsrc_name", "rsrc_type", "clndr_id"],
+            [
+                [RSRC_CREW, "CREW", "Site crew", "RT_Labor", CALENDAR_ID],
+                [RSRC_VENDOR, "VENDOR", "Vendor", "RT_Mat", CALENDAR_ID],
+            ],
+        ),
+    }
 
 
 def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
@@ -507,252 +759,28 @@ def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
         if snapshot_index == 5 and activities["P2030"].act_finish is None:
             activities["P2030"].remaining += 10  # vendor delay
         day_schedule = _cpm(activities, links, data_day)
+        _set_targets(activities, day_schedule)
 
-        for code, activity in activities.items():  # planned dates + constraint dates fixed on first schedule
-            if activity.target is None:
-                activity.target = (day_schedule[code]["es"], day_schedule[code]["ef"])
-                if activity.constraint:
-                    anchor = activity.target[1] if activity.constraint == "CS_MEOB" else activity.target[0]
-                    activity.constraint_day = anchor + activity.constraint_offset
-
-        data_date = _day(data_day)
         task_rows = []
         hours: dict[str, tuple[int, int, int]] = {}
         for row_index, (code, activity) in enumerate(activities.items()):
-            dates = day_schedule[code]
-            done = activity.act_finish is not None
-            started = activity.act_start is not None
-            if done:
-                status, remaining_days, percent = "TK_Complete", 0, 100
-            else:
-                status = "TK_Active" if started else "TK_NotStart"
-                remaining_days = (
-                    max(0, dates["ef"] - data_day) if activity.kind == "TT_LOE" else math.ceil(activity.remaining)
-                )
-                percent = (
-                    min(99, max(0, round(100 * (activity.duration - activity.remaining) / activity.duration)))
-                    if started and activity.duration
-                    else 0
-                )
-            constraint_text = _constraint_text(activity)
-            duration_for_dates = dates["ef"] - dates["es"]
-            if done:
-                early_start_text, early_finish_text = (
-                    _start_text(activity.act_start),
-                    _finish(activity.act_finish, activity.duration, activity.kind),
-                )
-            elif started:
-                early_start_text, early_finish_text = (
-                    _start_text(data_day),
-                    _finish(dates["ef"], duration_for_dates, activity.kind),
-                )
-            else:
-                early_start_text, early_finish_text = (
-                    _start_text(dates["es"]),
-                    _finish(dates["ef"], activity.duration, activity.kind),
-                )
-            if activity.kind == "TT_FinMile" and not done:
-                early_start_text = early_finish_text
-            actual_end_text = _finish(activity.act_finish, activity.duration, activity.kind) if done else ""
-            if snapshot_index >= 6 and code == "C3010" and done:  # injected data-quality issue
-                actual_end_text = f"{data_date + timedelta(days=2):%Y-%m-%d} 16:00"
-            total_float = dates["tf"]
-            crew = CREW[activity.wbs] if activity.has_resource and activity.duration > 0 else 0
-            worked = (
-                0 if not started else (min(data_day, activity.act_finish if done else data_day) - activity.act_start)
-            )
-            budget_hours, actual_hours, remaining_hours = (
-                activity.duration * HOURS_PER_DAY * crew,
-                worked * HOURS_PER_DAY * crew,
-                remaining_days * HOURS_PER_DAY * crew,
-            )
-            hours[code] = (budget_hours, actual_hours, remaining_hours)
-            task_rows.append(
-                [
-                    100000 + snapshot_index * 1000 + row_index,
-                    PROJECT_ID,
-                    WBS_ID[activity.wbs],
-                    CALENDAR_ID,
-                    percent,
-                    "CP_Phys",
-                    activity.kind,
-                    "DT_FixedDUR2",
-                    status,
-                    code,
-                    activity.name,
-                    "" if total_float is None else total_float * HOURS_PER_DAY,
-                    "",
-                    remaining_days * HOURS_PER_DAY,
-                    activity.duration * HOURS_PER_DAY,
-                    constraint_text,
-                    _start_text(activity.act_start) if started else "",
-                    actual_end_text,
-                    "" if done else _start_text(dates["lf"] - remaining_days),
-                    "" if done else _finish(dates["lf"], remaining_days, activity.kind),
-                    "",
-                    early_start_text,
-                    early_finish_text,
-                    _start_text(data_day) if started and not done else "",
-                    early_finish_text if started and not done else "",
-                    _start_text(activity.target[0]),
-                    _finish(activity.target[1], activity.duration, activity.kind),
-                    activity.constraint,
-                    "Y" if (total_float is not None and total_float <= 0 and activity.kind != "TT_LOE") else "N",
-                    "",
-                    "2026-08-24 09:00",
-                    f"{data_date:%Y-%m-%d} 08:00",
-                    budget_hours,
-                    actual_hours,
-                    remaining_hours,
-                ]
-            )
-        task_ids = {task_row[9]: task_row[0] for task_row in task_rows}
-        pred_rows = [
-            [
-                900000 + snapshot_index * 1000 + index,
-                task_ids[successor],
-                task_ids[predecessor],
-                PROJECT_ID,
-                PROJECT_ID,
-                f"PR_{link_type}",
-                lag * HOURS_PER_DAY,
-            ]
-            for index, (predecessor, successor, link_type, lag) in enumerate(links)
-        ]
-        # units per hour = crew size, so remaining units / rate = the activity's remaining hours
-        assignment_rows = [
-            [
-                800000 + snapshot_index * 1000 + index,
-                task_ids[code],
-                PROJECT_ID,
-                "5001",
-                *hours[code],
-                CREW[activity.wbs],
-                CREW[activity.wbs],
-                "Y",
-                "",
-                "",
-                "",
-                "",
-            ]
-            for index, (code, activity) in enumerate(activities.items())
-            if activity.has_resource and activity.duration > 0
-        ]
-        assignment_rows += [
-            [
-                890000 + snapshot_index * 1000 + index,
-                task_ids[code],
-                PROJECT_ID,
-                "5002",
-                1,
-                0,
-                1,
-                0,
-                0,
-                "N",
-                "",
-                "",
-                "",
-                "",
-            ]
-            for index, code in enumerate(("P2030", "P2040"))
-            if code in task_ids
-        ]  # vendor supply, no hours
+            row, hours[code] = _task_row(snapshot_index, row_index, activity, day_schedule[code], data_day)
+            task_rows.append(row)
+        task_ids = {code: _task_id(snapshot_index, row_index) for row_index, code in enumerate(activities)}
         finish_day = max(activity["ef"] for activity in day_schedule.values())
 
         tables = {
-            "PROJECT": (
-                [
-                    "proj_id",
-                    "proj_short_name",
-                    "clndr_id",
-                    "plan_start_date",
-                    "plan_end_date",
-                    "scd_end_date",
-                    "last_recalc_date",
-                    "add_date",
-                ],
-                [
-                    [
-                        PROJECT_ID,
-                        PROJECT_CODE,
-                        CALENDAR_ID,
-                        _start_text(0),
-                        "",
-                        _finish_text(finish_day),
-                        _start_text(data_day),
-                        "2026-08-24 09:00",
-                    ]
-                ],
-            ),
-            "CALENDAR": (
-                [
-                    "clndr_id",
-                    "default_flag",
-                    "clndr_name",
-                    "proj_id",
-                    "base_clndr_id",
-                    "clndr_type",
-                    "day_hr_cnt",
-                    "week_hr_cnt",
-                    "month_hr_cnt",
-                    "year_hr_cnt",
-                    "clndr_data",
-                ],
-                [
-                    [
-                        CALENDAR_ID,
-                        "Y",
-                        "7 jours / 8 h",
-                        "",
-                        "",
-                        "CA_Base",
-                        HOURS_PER_DAY,
-                        HOURS_PER_DAY * 7,
-                        HOURS_PER_DAY * 30,
-                        HOURS_PER_DAY * 365,
-                        CALENDAR_DATA,
-                    ]
-                ],
-            ),
-            # P6's default scheduling options, written out so every reader applies the same
-            "SCHEDOPTIONS": (
-                [
-                    "schedoptions_id",
-                    "proj_id",
-                    "sched_retained_logic",
-                    "sched_progress_override",
-                    "sched_lag_early_start_flag",
-                    "sched_open_critical_flag",
-                    "sched_float_type",
-                    "sched_calendar_on_relationship_lag",
-                    "sched_use_expect_end_flag",
-                    "sched_outer_depend_type",
-                ],
-                [["1", PROJECT_ID, "Y", "N", "Y", "N", "FT_FF", "rcal_Predecessor", "Y", "SD_Both"]],
-            ),
-            "PROJWBS": (
-                ["wbs_id", "proj_id", "seq_num", "proj_node_flag", "wbs_short_name", "wbs_name", "parent_wbs_id"],
-                [
-                    [wid, PROJECT_ID, n, flag, short, name, parent]
-                    for n, (wid, short, name, parent, flag) in enumerate(WBS)
-                ],
-            ),
-            "RSRC": (
-                ["rsrc_id", "rsrc_short_name", "rsrc_name", "rsrc_type", "clndr_id"],
-                [
-                    ["5001", "CREW", "Site crew", "RT_Labor", CALENDAR_ID],
-                    ["5002", "VENDOR", "Vendor", "RT_Mat", CALENDAR_ID],
-                ],
-            ),
-            "TASK": (TASK_COLS, task_rows),
+            "PROJECT": _project_table(data_day, finish_day),
+            **_fixed_tables(),
+            "TASK": (XER_TASK_FIELDS, task_rows),
             "TASKPRED": (
                 ["task_pred_id", "task_id", "pred_task_id", "proj_id", "pred_proj_id", "pred_type", "lag_hr_cnt"],
-                pred_rows,
+                _link_rows(snapshot_index, links, task_ids),
             ),
-            "TASKRSRC": (ASSIGNMENT_COLS, assignment_rows),
+            "TASKRSRC": (XER_TASKRSRC_FIELDS, _assignment_rows(snapshot_index, activities, task_ids, hours)),
         }
-        path = output_dir / f"{PROJECT_CODE}_{data_date:%Y-%m-%d}.xer"
+        data_date = _day(data_day)
+        path = output_dir / f"{PROJECT_CODE}_{data_date:{DATE_FMT}}.xer"
         _write(path, tables, data_date + timedelta(days=1))
         _store_p6_dates(path, tables, data_date + timedelta(days=1))
         paths.append(path)
