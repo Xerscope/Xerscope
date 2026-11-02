@@ -7,11 +7,11 @@ is done, add one when a check or a recalculation disagrees with P6.
 ## Proof: get an oracle for what has none
 
 - [ ] **P6 Check Schedule report** (P6 Professional 24) on a shareable file, with that
-      file's F9 export, under `tests/reference/`; one assertion per count. One P6
-      Professional report on a real schedule settled P6-12, P6-13 and P6-15 to P6-17
-      (`p6.toml` `source` fields), but it cannot enter the repository. Still a reading of Oracle's help only: LOE in P6-01,
-      remaining early start for in-progress work (P6-10), 352 h = 8 h/day, FF / SF links in
-      P6-15, the constraint options of P6-16 / P6-17.
+      file's F9 export, under `tests/reference/`; one assertion per count. Report R1
+      (docs/standards.md, Sources) settled P6-12, P6-13 and P6-15 to P6-17, but it cannot
+      enter the repository. Still a reading of Oracle's help only: LOE in P6-01,
+      remaining early start for in-progress work (P6-10), the hours per day behind `x`,
+      FF / SF links in P6-15, the constraint options of P6-16 / P6-17.
 - [ ] **DECM**: a DECM output on one real file, for `decm.toml`. The v8.0 sheets are read
       (docs/standards.md, Sources); what they leave open or contradict is under
       "DECM conformance" below.
@@ -80,7 +80,7 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       - P6-11: 101248 counts an expense as cost loading; Ten Six writes that fixed-price
         (lump sum) costs do not register. The help is followed.
       - P6-13: in that report P6 Professional showed BEI 6 / 6 = 1.0 where 11 activities
-        were due (P6 EPPM gave 0.55 on the same schedule); the P6 Professional report behind P6-12
+        were due (P6 EPPM gave 0.55 on the same schedule); R1
         divides by every baseline activity, which xerscope follows. The r22.12 figure fits
         neither reading and is not explained.
 
