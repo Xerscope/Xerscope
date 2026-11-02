@@ -8,7 +8,7 @@ from .parser import RawXer, XerError, parse_bytes, parse_text, read_xer
 XER_SUFFIXES = (".xer",)  # compared case-insensitively: P6 writes .XER on some setups
 
 
-def is_xer(path: str | Path) -> bool:
+def _is_xer(path: str | Path) -> bool:
     return Path(path).suffix.lower() in XER_SUFFIXES
 
 
@@ -23,7 +23,7 @@ def load_snapshot(source: str | Path | bytes, project_code=None, name: str | Non
 
 def xer_files(folder: str | Path) -> list[Path]:
     """The .xer files of a folder, sorted by name."""
-    return sorted(p for p in Path(folder).iterdir() if p.is_file() and is_xer(p))
+    return sorted(p for p in Path(folder).iterdir() if p.is_file() and _is_xer(p))
 
 
 __all__ = [
@@ -33,7 +33,6 @@ __all__ = [
     "Snapshot",
     "XerError",
     "build_snapshot",
-    "is_xer",
     "load_snapshot",
     "parse_bytes",
     "parse_text",

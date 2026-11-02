@@ -1,4 +1,14 @@
-"""P6 itself: the held-out corpus of cpp-cpm-engine, scored against the engine."""
+"""P6 itself: the held-out corpus of cpp-cpm-engine, scored against the engine.
+
+30 sets of 12 synthetic schedules, each frozen before P6 saw it, imported into P6
+Professional 23.12.1 and scheduled with F9, with P6's early/late dates and floats read
+back from its database (tests/reference/fetch_p6_heldout.py; the protocol is in the
+corpus). That is P6 output on progressed, constrained, multi-calendar and (from H8)
+resource-dependent work, which no public export covers. P6's import re-sizes
+resource-dependent work: the corpus records what P6 held after import
+(p6-imported/*.json) and ``p6_heldout_score`` lays it over the case before scheduling,
+as the corpus' own scorer does.
+"""
 
 from __future__ import annotations
 
@@ -6,18 +16,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from .mpxj_cpm import _same
+from .mpxj_cpm import same_value
 
-# dependent work; the corpus records what P6 held after import (p6-imported/*.json) and
-# ``p6_heldout_score`` lays it over the case before scheduling, as the corpus' own scorer does.
-
-P6_FIELDS = {
-    "early_start": "early_start",
-    "early_finish": "early_finish",
-    "late_start": "late_start",
-    "late_finish": "late_finish",
-    "total_float_hr": "total_float_hr",
-    "free_float_hr": "free_float_hr",
+# The corpus' name for each of verify.mpxj_cpm's CPM_FIELDS.
+P6_FIELD = {
+    "es": "early_start",
+    "ef": "early_finish",
+    "ls": "late_start",
+    "lf": "late_finish",
+    "tf_hr": "total_float_hr",
+    "ff_hr": "free_float_hr",
 }
 
 
@@ -104,17 +112,11 @@ def p6_heldout_score(set_dir: str | Path, overlay: bool = True) -> pd.DataFrame:
             if r.task_code not in f.index:
                 continue
             x = f.loc[r.task_code]
-            mine = {
-                "early_start": x["remaining_start"] if r.status == "TK_Active" else x["es"],
-                "early_finish": x["ef"],
-                "late_start": x["ls"],
-                "late_finish": x["lf"],
-                "total_float_hr": x["tf_hr"],
-                "free_float_hr": x["ff_hr"],
-            }
-            for field, v in mine.items():
+            for cpm_field, field in P6_FIELD.items():
+                # work under way: P6's early start is the remaining early start
+                v = x["remaining_start"] if cpm_field == "es" and r.status == "TK_Active" else x[cpm_field]
                 p6 = getattr(r, field)
-                agree = _same(v, p6)
+                agree = same_value(v, p6)
                 rows.append(
                     dict(
                         set=set_dir.name, case=case, task_code=r.task_code, status=r.status[3:], field=field,

@@ -12,7 +12,7 @@ The blob is a tree of nodes ``(0||<name>(<attrs>)(<children>))``::
         (0||1(d|43651)((0||0(s|08:00|f|12:00)())))  working day with its own hours
 
 Working periods are kept per day, so working hours between two timestamps are exact
-(CPLI, the CPM test axis); PV spreading works per day.
+(CPM, float, durations).
 """
 
 from __future__ import annotations
@@ -23,7 +23,14 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
+from ..config import DEFAULT_SETTINGS
+
 EXCEL_EPOCH = date(1899, 12, 30)
+DAY_START_MINUTE = 8 * 60  # a calendar without a blob works from 08:00
+MINUTES_PER_DAY = 24 * 60
+DEFAULT_WORKING_DAYS = 5  # a calendar with neither blob nor week hours is Monday to Friday
+AXIS_MARGIN_DAYS = 366  # the axis starts a year before the first exception date
+AXIS_SPAN_DAYS = 3 * 366  # and runs three years after it, then grows on demand
 
 
 @dataclass
@@ -93,8 +100,8 @@ def _interval(n: _Node) -> tuple[int, int] | None:
     h1, m1 = map(int, a["f"].split(":"))
     start, end = h0 * 60 + m0, h1 * 60 + m1
     if end <= start:  # "f|00:00" = midnight at the end of the day
-        end += 24 * 60
-    return start, min(end, 24 * 60)
+        end += MINUTES_PER_DAY
+    return start, min(end, MINUTES_PER_DAY)
 
 
 def _day(n: _Node) -> Intervals:
@@ -110,10 +117,6 @@ def _merge(periods) -> Intervals:
         else:
             out.append([a, b])
     return tuple((a, b) for a, b in out)
-
-
-def _hours(iv: Intervals) -> float:
-    return sum(b - a for a, b in iv) / 60
 
 
 def parse_clndr_data(text: str) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
@@ -142,8 +145,8 @@ def parse_clndr_data(text: str) -> tuple[tuple[Intervals, ...], dict[date, Inter
 
 def _default_day(hpd: float) -> Intervals:
     if hpd >= 24:
-        return ((0, 24 * 60),)
-    return ((8 * 60, min(24 * 60, 8 * 60 + int(round(hpd * 60)))),)
+        return ((0, MINUTES_PER_DAY),)
+    return ((DAY_START_MINUTE, min(MINUTES_PER_DAY, DAY_START_MINUTE + int(round(hpd * 60)))),)
 
 
 @dataclass(frozen=True)
@@ -158,7 +161,7 @@ class WorkCalendar:
     _axis: TimeAxis | None = field(default=None, init=False, repr=False, hash=False, compare=False)
 
     @classmethod
-    def from_row(cls, row: pd.Series, default_hpd: float = 8.0) -> WorkCalendar:
+    def from_row(cls, row: pd.Series, default_hpd: float = DEFAULT_SETTINGS.default_hours_per_day) -> WorkCalendar:
         hpd = pd.to_numeric(row.get("day_hr_cnt"), errors="coerce")
         hpd = float(hpd) if pd.notna(hpd) and hpd > 0 else default_hpd
         parsed = parse_clndr_data(row.get("clndr_data", ""))
@@ -167,7 +170,7 @@ class WorkCalendar:
             return cls(str(row["clndr_id"]), str(row.get("clndr_name", "")), hpd, week, exc)
         # No usable blob: infer the number of working days from the week's hour count.
         whc = pd.to_numeric(row.get("week_hr_cnt"), errors="coerce")
-        n = int(round(whc / hpd)) if pd.notna(whc) and whc > 0 else 5
+        n = int(round(whc / hpd)) if pd.notna(whc) and whc > 0 else DEFAULT_WORKING_DAYS
         n = min(max(n, 1), 7)
         day = _default_day(hpd)
         return cls(
@@ -180,19 +183,19 @@ class WorkCalendar:
         )
 
     @classmethod
-    def standard(cls, hpd: float = 8.0) -> WorkCalendar:
+    def standard(cls, hpd: float = DEFAULT_SETTINGS.default_hours_per_day) -> WorkCalendar:
         day = _default_day(hpd)
-        return cls("", "Standard (Mon-Fri)", hpd, (day,) * 5 + ((), ()), {}, from_data=False)
-
-    @property
-    def week_hours(self) -> tuple[float, ...]:
-        return tuple(_hours(d) for d in self.week)
+        return cls(
+            "",
+            "Standard (Mon-Fri)",
+            hpd,
+            (day,) * DEFAULT_WORKING_DAYS + ((),) * (7 - DEFAULT_WORKING_DAYS),
+            {},
+            from_data=False,
+        )
 
     def periods(self, d: date) -> Intervals:
         return self.exceptions.get(d, self.week[d.weekday()])
-
-    def hours_on(self, d: date) -> float:
-        return _hours(self.periods(d))
 
     def axis(self) -> TimeAxis:
         """This calendar's TimeAxis, built once and grown on demand: one arithmetic for all.
@@ -204,7 +207,7 @@ class WorkCalendar:
         """
         if self._axis is None:
             origin = min(self.exceptions) if self.exceptions else date(2020, 1, 1)
-            ax = TimeAxis(self, origin - timedelta(days=366), origin + timedelta(days=3 * 366))
+            ax = TimeAxis(self, origin - timedelta(days=AXIS_MARGIN_DAYS), origin + timedelta(days=AXIS_SPAN_DAYS))
             object.__setattr__(self, "_axis", ax)
         return self._axis
 

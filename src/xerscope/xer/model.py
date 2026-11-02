@@ -21,12 +21,13 @@ Key decisions
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from operator import attrgetter
 
 import numpy as np
 import pandas as pd
 
-from ..config import DEFAULT_SETTINGS, Settings
+from ..config import DATE_FMT, DEFAULT_SETTINGS, Settings
 from .calendar import TimeAxis, WorkCalendar
 from .parser import RawXer, XerError
 
@@ -146,9 +147,7 @@ def to_number(values: pd.Series) -> pd.Series:
 
 
 def _parse_date(value: object) -> pd.Timestamp | None:
-    if value is None or (isinstance(value, float) and np.isnan(value)) or str(value).strip() == "":
-        return None
-    timestamp = pd.to_datetime(str(value), format="ISO8601", errors="coerce")
+    timestamp = to_datetime(pd.Series([value])).iloc[0]
     return None if pd.isna(timestamp) else timestamp
 
 
@@ -395,13 +394,18 @@ class Snapshot:
 
     @property
     def label(self) -> str:
-        date_text = self.data_date.strftime("%Y-%m-%d") if self.data_date is not None else "no data date"
+        date_text = self.data_date.strftime(DATE_FMT) if self.data_date is not None else "no data date"
         return f"{date_text} · {self.source}"
 
     @property
     def activities(self) -> pd.DataFrame:
         """Tasks without WBS-summary rows: what every count and chart should use."""
         return self.tasks[~self.tasks["is_wbs_summary"]]
+
+    @cached_property
+    def by_code(self) -> pd.DataFrame:
+        """Activities indexed by task_code (the first row of a duplicated code)."""
+        return self.activities.drop_duplicates("task_code").set_index("task_code")
 
 
 @dataclass(frozen=True)
@@ -576,11 +580,14 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
     _require(calendars, raw.source, "CALENDAR", ["clndr_id"])
     calendars = _ensure_cols(calendars.copy(), ["clndr_name", "day_hr_cnt", "week_hr_cnt", "clndr_data"])
     calendars["day_hr_cnt"] = to_number(calendars["day_hr_cnt"])
-    hours_per_day = calendars.set_index("clndr_id")["day_hr_cnt"]
     work_calendars = {
         str(row["clndr_id"]): WorkCalendar.from_row(row, settings.default_hours_per_day)
         for _, row in calendars.iterrows()
     }
+    # one reading of "hours per day": the calendar's own (a missing or zero count is the default)
+    hours_per_day = pd.Series(
+        {clndr_id: calendar.hours_per_day for clndr_id, calendar in work_calendars.items()}, dtype=float
+    )
     return calendars.drop(columns=["clndr_data"]), hours_per_day, work_calendars  # parsed above; the blob is large
 
 
@@ -644,8 +651,7 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
         tasks[column] = to_number(tasks[column])
 
     default_hours = inputs.settings.default_hours_per_day
-    hours_per_day = tasks["clndr_id"].map(inputs.hours_per_day).astype(float).replace(0, np.nan)
-    tasks["hours_per_day"] = hours_per_day.fillna(default_hours)
+    tasks["hours_per_day"] = tasks["clndr_id"].map(inputs.hours_per_day).astype(float).fillna(default_hours)
     tasks["status"] = tasks["status_code"].map(STATUS).fillna(tasks["status_code"])
     tasks["type"] = tasks["task_type"].map(TASK_TYPE).fillna(tasks["task_type"])
     tasks["is_complete"] = tasks["status_code"] == "TK_Complete"
@@ -711,11 +717,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     all_tasks = _ensure_cols(inputs.all_tasks.copy(), ["clndr_id"])
     code_by_id = all_tasks.set_index("task_id")["task_code"]
     hours_per_day_by_id = (
-        all_tasks.set_index("task_id")["clndr_id"]
-        .map(inputs.hours_per_day)
-        .astype(float)
-        .replace(0, np.nan)
-        .fillna(default_hours)
+        all_tasks.set_index("task_id")["clndr_id"].map(inputs.hours_per_day).astype(float).fillna(default_hours)
     )
     relationships["succ_code"] = relationships["task_id"].map(code_by_id)
     relationships["pred_code"] = relationships["pred_task_id"].map(code_by_id)

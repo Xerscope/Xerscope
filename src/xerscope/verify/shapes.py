@@ -12,19 +12,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from xerscope.xer.model import Snapshot
-
-CONSTRAINT = {
-    "CS_MSO": "start on",
-    "CS_MSOA": "start on or after",
-    "CS_MSOB": "start on or before",
-    "CS_MEO": "finish on",
-    "CS_MEOA": "finish on or after",
-    "CS_MEOB": "finish on or before",
-    "CS_MANDSTART": "mandatory start",
-    "CS_MANDFIN": "mandatory finish",
-    "CS_ALAP": "as late as possible",
-}
+from xerscope.xer.model import CONSTRAINT, Snapshot
 
 
 def join_unique(types: pd.Series) -> str:
@@ -51,7 +39,8 @@ def shapes(snapshot: Snapshot) -> pd.Series:
         for constraint_column in ("cstr_type", "cstr_type2"):
             constraint = row.get(constraint_column)
             if isinstance(constraint, str) and constraint:
-                parts.append(CONSTRAINT.get(constraint, constraint))
+                label = CONSTRAINT.get(constraint)
+                parts.append(label.lower() if label else constraint)
         if row.get("expect_end_date") is not None and pd.notna(row.get("expect_end_date")):
             parts.append("expected finish")
         parts.append(f"pred {predecessors.get(code, 'none')}")

@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..config import DATETIME_FMT
 from ..xer import build_snapshot, read_xer
 
 _LAG = {
@@ -39,12 +40,9 @@ _PCT = {
 _STANDARD_TYPES = {"TT_Task", "TT_Rsrc", "TT_LOE", "TT_Mile", "TT_FinMile"}
 
 
-def _start_jvm():
+def start_jvm():
     try:
         import jpype
-    except ImportError as exc:
-        raise RuntimeError("crosscheck needs the optional extra: uv sync --extra crosscheck") from exc
-    try:
         import mpxj  # noqa: F401  (registers the MPXJ jars with jpype)
     except ImportError as exc:
         raise RuntimeError("crosscheck needs the optional extra: uv sync --extra crosscheck") from exc
@@ -59,7 +57,7 @@ def _start_jvm():
     return PrimaveraXERFileReader
 
 
-def _read_project(reader_cls, path: Path, project_code: str):
+def read_project(reader_cls, path: Path, project_code: str):
     """The project xerscope analyses: files can hold several, MPXJ reads the first by default."""
     projects = list(reader_cls().readAll(str(path)))
     for proj in projects:
@@ -72,7 +70,7 @@ def _ts(v) -> str | None:
     if v is None or v is pd.NaT:
         return None
     if isinstance(v, pd.Timestamp):
-        return v.strftime("%Y-%m-%d %H:%M")
+        return v.strftime(DATETIME_FMT)
     return str(v).replace("T", " ")[:16]
 
 
@@ -86,7 +84,7 @@ def _num(v) -> float | None:
     return None if math.isnan(f) else round(f, 2)
 
 
-def _hours(duration) -> float | None:
+def _duration_hours(duration) -> float | None:
     """MPXJ Duration -> hours, only when MPXJ reports it in hours (no calendar guessing)."""
     if duration is None or str(duration.getUnits()) != "h":
         return None
@@ -94,11 +92,11 @@ def _hours(duration) -> float | None:
 
 
 def compare_file(path: str | Path) -> pd.DataFrame:
-    reader = _start_jvm()
+    reader = start_jvm()
     path = Path(path)
     snap = build_snapshot(read_xer(path))
     ours = snap.activities.set_index("task_code")
-    proj = _read_project(reader, path, snap.project_code)
+    proj = read_project(reader, path, snap.project_code)
     rows: list[dict] = []
 
     def add(code, field, a, b):
@@ -132,8 +130,8 @@ def compare_file(path: str | Path) -> pd.DataFrame:
             ("act_end_date", "getActualFinish"),
         ]:
             add(code, col, _ts(o[col]), _ts(getattr(t, getter)()))
-        add(code, "remaining_hr", _num(o["remain_drtn_hr_cnt"]), _hours(t.getRemainingDuration()))
-        tf = _hours(t.getTotalSlack())
+        add(code, "remaining_hr", _num(o["remain_drtn_hr_cnt"]), _duration_hours(t.getRemainingDuration()))
+        tf = _duration_hours(t.getTotalSlack())
         if not o["is_complete"] and tf is not None and pd.notna(o["total_float_hr_cnt"]):
             add(code, "total_float_hr", _num(o["total_float_hr_cnt"]), tf)
         getter = _PCT.get(o["complete_pct_type"], "getPhysicalPercentComplete")
@@ -147,7 +145,7 @@ def compare_file(path: str | Path) -> pd.DataFrame:
         rel = snap.relationships[snap.relationships["succ_code"] == code]
         mine = sorted((r.pred_code, r.type, _num(r.lag_hr)) for r in rel.itertuples())
         ref = sorted(
-            (str(r.getPredecessorTask().getActivityID()), str(r.getType()), _hours(r.getLag()) or 0.0)
+            (str(r.getPredecessorTask().getActivityID()), str(r.getType()), _duration_hours(r.getLag()) or 0.0)
             for r in t.getPredecessors()
         )
         add(code, "predecessors", mine, ref)

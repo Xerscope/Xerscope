@@ -10,9 +10,13 @@ from xerscope.xer.calendar import WorkCalendar, parse_clndr_data
 # --- calendars ------------------------------------------------------------------------------
 
 
+def hours(periods):
+    return sum(end - start for start, end in periods) / 60
+
+
 def test_p6_day_numbers_start_on_sunday():
     week, exc = parse_clndr_data(MON_FRI_8H)
-    assert [sum(b - a for a, b in d) / 60 for d in week] == [8, 8, 8, 8, 8, 0, 0]  # Mon..Sun
+    assert [hours(day) for day in week] == [8, 8, 8, 8, 8, 0, 0]  # Mon..Sun
     assert exc == {date(2026, 4, 3): ()}  # Excel serial 46115, non-working
 
 
@@ -23,9 +27,9 @@ def test_working_exception_and_midnight_end():
         "(0||Exceptions()((0||0(d|46118)((0||0(s|08:00|f|12:00)())))))))"
     )
     cal = WorkCalendar.from_row(pd.Series({"clndr_id": "X", "day_hr_cnt": "24", "clndr_data": blob}))
-    assert cal.hours_on(date(2026, 3, 1)) == 24  # Sunday, 00:00 -> 00:00 = whole day
-    assert cal.hours_on(date(2026, 4, 6)) == 4  # Monday exception with its own hours
-    assert cal.hours_on(date(2026, 4, 7)) == 0
+    assert hours(cal.periods(date(2026, 3, 1))) == 24  # Sunday, 00:00 -> 00:00 = whole day
+    assert hours(cal.periods(date(2026, 4, 6))) == 4  # Monday exception with its own hours
+    assert hours(cal.periods(date(2026, 4, 7))) == 0
 
 
 def test_work_hours_are_exact_within_days():
@@ -39,14 +43,14 @@ def test_work_hours_are_exact_within_days():
 
 def test_missing_blob_infers_workweek_from_hour_counts():
     seven = WorkCalendar.from_row(pd.Series({"clndr_id": "7", "day_hr_cnt": "8", "week_hr_cnt": "56"}))
-    assert seven.week_hours == (8,) * 7 and not seven.from_data
+    assert [hours(day) for day in seven.week] == [8] * 7
     five = WorkCalendar.from_row(pd.Series({"clndr_id": "5", "day_hr_cnt": "10", "week_hr_cnt": ""}))
-    assert five.week_hours == (10,) * 5 + (0, 0)
+    assert [hours(day) for day in five.week] == [10] * 5 + [0, 0]
 
 
 def test_reference_calendars_parse(store):
     cal = store.first.calendar()
-    assert cal.week_hours == (8,) * 7  # sample: 7 days x 8 h, no blob
+    assert [hours(day) for day in cal.week] == [8] * 7  # sample: 7 days x 8 h, no blob
 
 
 # --- standards as data ---------------------------------------------------------------------

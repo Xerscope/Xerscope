@@ -17,6 +17,7 @@ from typing import Literal
 
 import pandas as pd
 
+from .config import DATETIME_FMT
 from .store import SnapshotStore
 
 Fmt = Literal["parquet", "csv"]
@@ -36,7 +37,7 @@ def _bytes(df: pd.DataFrame, fmt: Fmt) -> bytes:
     if fmt == "parquet":
         df.to_parquet(buf, index=False)
     else:
-        df.to_csv(buf, index=False, date_format="%Y-%m-%d %H:%M", encoding="utf-8-sig")
+        df.to_csv(buf, index=False, date_format=DATETIME_FMT, encoding="utf-8-sig")
     return buf.getvalue()
 
 
