@@ -161,6 +161,7 @@ work before either.
 | Start on / Start on or after | start ≥ date |
 | Finish on / Finish on or after | finish ≥ date |
 | Mandatory start / finish | the date, whatever the logic |
+| External early start (link to a project not in the file) | start ≥ date, also for work under way under Progress Override, which frees it from the links of this project only (observed: H8-08 A1020, H10-12 A1130, H15-09 A1110, H24-03 A1100, H29-10 A1200) |
 
 - **Lag calendar:** lags are added on the calendar the project names.
 - **SS lag of a started predecessor** (Oracle, "Calculate start-to-start lag from"):

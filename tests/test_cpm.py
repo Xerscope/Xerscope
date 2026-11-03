@@ -269,6 +269,19 @@ def test_external_early_start_bounds_the_start():
     assert dates(ignored, "A")[0] == T("2026-03-02 08:00")
 
 
+def test_external_early_start_binds_work_under_way_under_progress_override():
+    # The external date is not a link of this project: Progress Override, which frees work under
+    # way from its predecessors, does not release it (corpus H8-08 A1020, H10-12 A1130, H15-09 A1110).
+    tasks = [active("A", external_early_start_date="2026-03-04 08:00", **hours(8))]
+    override = snap(tasks, sched={"sched_retained_logic": "N", "sched_progress_override": "Y"})
+    assert dates(override, "A")[:2] == (T("2026-03-04 08:00"), T("2026-03-04 17:00"))
+    ignored = snap(
+        tasks,
+        sched={"sched_retained_logic": "N", "sched_progress_override": "Y", "sched_outer_depend_type": "SD_None"},
+    )
+    assert dates(ignored, "A")[0] == T("2026-03-02 08:00")
+
+
 def test_external_late_finish_bounds_the_late_dates():
     s = snap([todo("A", external_late_end_date="2026-03-02 17:00", **hours(8)), todo("B", **hours(40))])
     assert dates(s, "A")[3:5] == (T("2026-03-02 17:00"), 0)  # not the project finish (Fri 17:00)
