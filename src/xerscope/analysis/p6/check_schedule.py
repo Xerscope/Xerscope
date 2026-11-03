@@ -29,6 +29,7 @@ from ..populations import (
     not_level_of_effort,
     not_milestone,
     open_end_reason,
+    predecessors_ahead,
     with_baseline,
     without_level_of_effort,
     without_milestones,
@@ -345,10 +346,7 @@ def p6_15_out_of_sequence(context) -> RuleOutput:
     tasks = context.snapshot.by_code
     started = activities[activities["is_started"]]
     links = links_between(context.snapshot.relationships, started.set_index("task_code"), tasks)
-    predecessor_complete = links["pred_code"].map(tasks["is_complete"]).astype(bool)
-    predecessor_started = links["pred_code"].map(tasks["is_started"]).astype(bool)
-    still_open = ((links["type"] == "FS") & ~predecessor_complete) | ((links["type"] == "SS") & ~predecessor_started)
-    ahead = links[still_open].sort_values(["succ_code", "pred_code"])
+    ahead = predecessors_ahead(links, tasks).sort_values(["succ_code", "pred_code"])
     rows = started.drop_duplicates("task_code").set_index("task_code").loc[ahead["succ_code"]].reset_index()
     extra = {"predecessor": ahead["pred_code"].to_numpy(), "type": ahead["type"].to_numpy()}
     out_of_sequence = ahead["succ_code"].nunique()

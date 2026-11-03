@@ -136,6 +136,18 @@ def test_health_standards_and_baselines(app, std, baseline):
     assert app.dataframe[0].value["status"].notna().all()
 
 
+def test_integrity_page_states_its_purpose(app):
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+    assert not any("Integrity answers one question" in c.value for c in app.caption)
+    app.get("button_group")[0].set_value("INTEGRITY").run()
+    _ok(app)
+    purpose = [c.value for c in app.caption if "Integrity answers one question" in c.value]
+    assert purpose and "Schedule Project Log" in purpose[0] and "reschedule in P6 (F9)" in purpose[0]
+    summary = app.dataframe[0].value
+    assert list(summary["id"]) == [f"INT-0{n}" for n in range(1, 9)]
+
+
 def test_health_lists_culprits_of_every_check(app):
     app.switch_page("views/health.py").run()
     app.get("button_group")[0].set_value("P6").run()

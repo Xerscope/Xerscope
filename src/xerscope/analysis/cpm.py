@@ -84,7 +84,57 @@ H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_da
 
 
 class CycleError(ValueError):
-    pass
+    """The logic has a loop; ``members`` are the activities on a loop (not the ones downstream of it)."""
+
+    def __init__(self, message: str, members: tuple[str, ...] = ()):
+        super().__init__(message)
+        self.members = members
+
+
+def _loop_members(candidates: set[str], successors: dict[str, list]) -> list[str]:
+    """Activities of ``candidates`` that lie on a loop: strongly connected components of more than
+    one activity, or an activity linked to itself (Tarjan, iterative)."""
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    on_stack: set[str] = set()
+    stack: list[str] = []
+    members: list[str] = []
+    for root in sorted(candidates):
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(successors[root]))]
+        while work:
+            code, remaining = work[-1]
+            for successor, _, _ in remaining:
+                if successor not in candidates:
+                    continue
+                if successor not in index:
+                    index[successor] = low[successor] = len(index)
+                    stack.append(successor)
+                    on_stack.add(successor)
+                    work.append((successor, iter(successors[successor])))
+                    break
+                if successor in on_stack:
+                    low[code] = min(low[code], index[successor])
+            else:
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    low[parent] = min(low[parent], low[code])
+                if low[code] == index[code]:
+                    component = []
+                    while True:
+                        member = stack.pop()
+                        on_stack.discard(member)
+                        component.append(member)
+                        if member == code:
+                            break
+                    if len(component) > 1 or any(succ == code for succ, _, _ in successors[code]):
+                        members.extend(component)
+    return sorted(members)
 
 
 # SCHEDOPTIONS.sched_float_type -> which float "Compute Total Float as" reports, on the
@@ -336,8 +386,8 @@ class _Run:
                 if in_degree[successor] == 0:
                     queue.append(successor)
         if len(order) != len(self.nodes):
-            loop = sorted(set(self.nodes) - set(order))
-            raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}")
+            loop = _loop_members(set(self.nodes) - set(order), self.succs)
+            raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}", tuple(loop))
         self.order = order
 
     def _assignments(self) -> None:
@@ -1187,9 +1237,9 @@ class _Run:
                     assignment_finish = (
                         assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
                     )
-                    late_assignment_start = assignment.axis.snap_start(
-                        self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
-                    )
+                    late_shifted = self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
+                    # no work left: the late dates stay at the period end, as the task's (_late)
+                    late_assignment_start = late_shifted if not duration else assignment.axis.snap_start(late_shifted)
                     late_assignment_finish = (
                         assignment.axis.add(late_assignment_start, duration, finish=True)
                         if duration
