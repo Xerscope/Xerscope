@@ -298,3 +298,61 @@ def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch
     _ok(at)
     exported = [list(v["dim_snapshot"]["project"]) for k, v in at.session_state["_memo"].items() if k[-1] == "export"]
     assert ["OLD", "NEW"] in exported
+
+
+@pytest.fixture
+def downloads(monkeypatch):
+    """Every file the app hands to a download button, by its media id (AppTest keeps them in memory)."""
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+
+    saved: dict[str, bytes] = {}
+    real = MemoryMediaFileStorage.load_and_get_id
+
+    def keep(self, path_or_data, mimetype, kind, filename=None):
+        file_id = real(self, path_or_data, mimetype, kind, filename)
+        saved[file_id] = self._files_by_id[file_id].content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", keep)
+    return saved
+
+
+def _download(at, downloads: dict[str, bytes], label: str) -> bytes:
+    button = next(b for b in at.get("download_button") if b.proto.label == label)
+    return downloads[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
+
+
+def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloads):
+    """No download names an activity of the loaded files; the lists and the XER extract share the new IDs."""
+    import io
+    import zipfile
+
+    import pandas as pd
+
+    from xerscope.xer import load_snapshot
+
+    originals = set(store.history["task_code"]) | set(store.history["task_name"])
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+    _ok(app)
+    assert [b.proto.label for b in app.get("download_button")] == ["Summary (CSV)", "Download the template"]
+    next(b for b in app.button if b.label == "Prepare anonymised lists").click().run()
+    _ok(app)
+    flagged = pd.read_csv(
+        io.BytesIO(_download(app, downloads, "All flagged items (CSV, anonymised)")), encoding="utf-8-sig"
+    )
+    assert not set(flagged.astype(str).to_numpy().ravel()) & originals
+    codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
+    assert len(codes) and codes.str.fullmatch(r"XA\d{6}").all()
+
+    app.switch_page("views/export.py").run()
+    next(b for b in app.button if b.label == "Build anonymised extract").click().run()
+    _ok(app)
+    with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download anonymised XER (.zip)"))) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    assert len(files) == len(store)
+    for name, data in files.items():
+        text = data.decode("utf-8")
+        assert not [value for value in originals if len(value) >= 4 and value in text], name
+    latest = load_snapshot(files[max(files)], name="latest.xer")
+    assert set(codes) <= set(latest.activities["task_code"])

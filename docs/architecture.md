@@ -107,12 +107,12 @@ targets as data.
 Layer rules (imports, as the code has them):
 
 - `xer/` imports only `config.py`; it knows nothing of the layers above.
-- `store.py` imports `xer/`; `export.py` imports `store.py`.
+- `store.py` imports `xer/`; `export.py` imports `store.py`; `anonymize.py` imports `xer/` only.
 - `analysis/` imports `xer/`, `store.py` and `config.py`; never `viz/`, `app/` or `verify/`.
 - `viz/` imports `config.py` only: it draws frames, it does not compute schedule results.
 - `verify/` imports `xer/` and `analysis/cpm.py`; `crosscheck.py` re-exports it. Nothing in
   the app depends on it.
-- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/` and `export.py`, and is imported
+- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/`, `export.py` and `anonymize.py`, and is imported
   by nothing but Streamlit. Pages
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
@@ -124,6 +124,13 @@ Outside `analysis/`:
   `build_snapshot` time (`xer/model.py`) and by `viz/gantt`; analysis reads the derived columns.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
 - `sample.py`: the demo series generator, with the findings it plants week by week.
+- `anonymize.py`: anonymised copies of the loaded XER files and of the flagged lists, the only
+  form in which the app hands activities out (Schedule health lists, Export page). An allowlist
+  per table keeps keys, dates, durations, units, flags and P6 enumerations; codes get new
+  values (same original, same new code in every file of the session), names are rebuilt from
+  them, costs set to 0, user, database and free text removed, unknown tables and columns left
+  out and named. Every output field is compared with the originals' text values before it is
+  handed out. The mapping lives in the session only.
 
 ### `verify/`: independent checks, strongest source first
 
@@ -202,7 +209,8 @@ Outside `analysis/`:
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
-| `test_app.py` | every page renders headless, key options work |
+| `test_app.py` | every page renders headless, key options work, downloads leave anonymised |
+| `test_anonymize.py` | anonymised files give the same results (demo series, P6 exports) and hold no text of the originals |
 | `test_parser.py`, `test_model.py`, `test_store.py`, `test_shapes.py` | format edge cases, P6 meaning of each column, the weekly series, the shape of the frames |
 | `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfile / Caddyfiles keep loopback-only (8501 on 127.0.0.1 in `compose.yaml`, no port in `deploy/`), non-root |
 | `reference/` | pinned third-party files (`sources.py`: commit + SHA-256, downloaded by `fetch.py`; the held-out corpus by `fetch_p6_heldout.py`), their stated results (`expected.py`); MPXJ's scheduler built from a pinned commit by `mpxj_cpm.py` |

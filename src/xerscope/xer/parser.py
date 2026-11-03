@@ -35,6 +35,7 @@ class RawXer:
     export_date: str | None = None
     encoding: str = ""
     warnings: list[str] = field(default_factory=list)
+    header: list[str] = field(default_factory=list)  # ERMHDR fields after the tag
 
     def table(self, name: str) -> pd.DataFrame:
         """Return a table, or an empty frame if the export does not contain it."""
@@ -56,6 +57,7 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
     cols: dict[str, list[str]] = {}
     current: str | None = None
     version = export_date = None
+    header: list[str] = []
     saw_header = False
     orphans = 0  # %R rows outside any %T table
 
@@ -81,6 +83,7 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
                 cols[current] = [c.strip() for c in parts[1:]]
         elif tag == "ERMHDR":
             saw_header = True
+            header = parts[1:]
             version = parts[1] if len(parts) > 1 else None
             export_date = parts[2] if len(parts) > 2 else None
         elif tag == "%E":
@@ -110,7 +113,7 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
         fixed = [(r + [""] * n)[:n] for r in table_rows]
         tables[name] = pd.DataFrame(fixed, columns=names, dtype=object)
 
-    return RawXer(tables, source, version, export_date, encoding, warnings)
+    return RawXer(tables, source, version, export_date, encoding, warnings, header)
 
 
 def parse_bytes(data: bytes, source: str = "") -> RawXer:
