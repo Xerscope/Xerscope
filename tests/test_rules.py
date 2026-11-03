@@ -7,7 +7,7 @@ or exemption would silently shift a result.
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import active, done, snap, todo
+from xerkit import active, done, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
 
@@ -600,6 +600,21 @@ def test_recalculated_flags_stale_dates():
     r = run(INTEGRITY, "INT-01", s)
     assert codes(r) == ["B"] and r.status == "fail"
     assert "total_float_hr_cnt: 40 -> 0.0" in r.flagged.iloc[0]["differences"]
+
+
+def test_recalculated_note_gives_the_latest_early_finish_and_external_dates():
+    """Scheduling Results 'Latest Early Finish Date': stored (latest activity finish) against recalculated."""
+    s = snap(
+        [
+            todo("A", early_end_date="2026-03-02 17:00", **hours(8)),
+            todo("B", early_start_date="2026-03-03 08:00", early_end_date="2026-03-05 17:00", **hours(8)),
+            todo("C", external_early_start_date="2026-03-02 08:00", early_end_date="2026-03-02 17:00", **hours(8)),
+        ],
+        [("A", "B", "FS", 0)],
+    )
+    note = run(INTEGRITY, "INT-01", s).note
+    assert "latest early finish stored 2026-03-05 17:00, recalculated 2026-03-03 17:00" in note
+    assert "1 activities with external dates" in note
 
 
 def test_out_of_sequence_progress_is_listed():

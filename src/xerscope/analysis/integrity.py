@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .cpm import CycleError, compare_assignments, compare_with_stored
+from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
 from .populations import flagged_activities, links_between, predecessors_ahead, without_level_of_effort
 from .rules import RuleOutput, rule
 
@@ -41,12 +41,29 @@ def int_01_recalculated(context) -> RuleOutput:
     flagged = tasks.loc[sorted(differences)].reset_index()
     texts = ["; ".join(differences[task_code]) for task_code in flagged["task_code"]]
     different_values = sum(len(found) for found in differences.values())
-    return RuleOutput(
-        flagged_activities(flagged, differences=texts),
-        len(differences),
-        comparison["task_code"].nunique(),
-        note=f"{len(comparison) - different_values} of {len(comparison)} stored values reproduced",
+    note = (
+        f"{len(comparison) - different_values} of {len(comparison)} stored values reproduced; {_finish_note(context)}"
     )
+    return RuleOutput(
+        flagged_activities(flagged, differences=texts), len(differences), comparison["task_code"].nunique(), note=note
+    )
+
+
+def _finish_note(context) -> str:
+    """The log's 'Latest Early Finish Date' (stored vs recalculated) and its count of activities with external dates."""
+    snapshot = context.snapshot
+    stored, recalculated = snapshot.finish_date, schedule(snapshot).finish
+    external = (
+        snapshot.activities.reindex(columns=["external_early_start_date", "external_late_end_date"]).notna().any(axis=1)
+    )
+    return (
+        f"latest early finish stored {_date_text(stored)}, recalculated {_date_text(recalculated)}; "
+        f"{int(external.sum())} activities with external dates"
+    )
+
+
+def _date_text(date) -> str:
+    return "none" if date is None or pd.isna(date) else f"{date:%Y-%m-%d %H:%M}"
 
 
 def _predecessors_ahead(links: pd.DataFrame, started: pd.DataFrame, tasks: pd.DataFrame) -> pd.Series:
