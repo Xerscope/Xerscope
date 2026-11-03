@@ -264,7 +264,8 @@ predecessor and an FF successor to the same activity give the same finish, as Bo
 in P6 ("Constructing LOE activities in Primavera P6"). A start-type link from a started
 predecessor is measured from the data date plus the unexpired lag (H10-01 A1300); the
 late start never passes the late finish (same case). A finished task's actual finish
-holds the late start of an FS link (conventions below). It drives nothing.
+holds the late start of an FS link, the late date a finished activity passes back that of
+an SS link (conventions below). It drives nothing.
 
 **No data date.** P6 always stores one. A file without a data date and a planned start
 is scheduled from the earliest activity date it carries, with a warning.
@@ -300,10 +301,14 @@ Each rule below is pinned by a real file:
   early dates and by the corpus for late dates and float. LOE are excluded from INT-01.
 - **LOE late start behind a finished task:** an FS link from a finished task (not a start
   milestone) holds the late start at its actual finish plus the lag, written at the next
-  working start, never past the late finish; an SS link from a finished activity holds
-  nothing. Witnesses: H14-07 A1170, H18-09 A1340, H25-01 A1380, H9-04 A1390 (14 of 14 such tasks
-  with clean neighbours; observed, no Oracle page states it). A finished start milestone
-  holds nothing (H16-02 A1290, H10-11 A1210); H8-02 A1250 is still open.
+  working start, never past the late finish. Witnesses: H14-07 A1170, H18-09 A1340, H25-01 A1380,
+  H9-04 A1390 (14 of 14 such tasks with clean neighbours; observed, no Oracle page states
+  it). A finished start milestone holds nothing (H16-02 A1290, H10-11 A1210); H8-02 A1250
+  is still open.
+- **LOE late start behind a finished SS predecessor:** an SS link from a finished activity
+  holds the late start at the late date that activity passes back to its other successors
+  (`lcarry`, Retained Logic) plus the lag, never past the late finish. Witnesses: H8-07
+  A1230, H12-12 A1330, H26-11 A1220, H8-02 A1240 (observed, no Oracle page states it).
 - **An activity whose `clndr_id` is not in the file's CALENDAR table:** read on the
   project's calendar, then the file's first calendar, then the standard one
   (`Snapshot.calendar`, `_BuildInputs.fallback_hours_per_day`), and the file is flagged in

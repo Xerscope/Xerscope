@@ -996,7 +996,8 @@ class _Run:
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
         It runs from the earliest start to the latest finish. Its late dates come the same
         way from the late dates of the activities it is tied to; a finished task contributes
-        only through an FS link, by its actual finish plus the lag; with no start-type link
+        through an FS link by its actual finish plus the lag, and through an SS link by the
+        late date it passes back (``lcarry``) plus the lag; with no start-type link
         left, or one later than the late finish, the late start is the late finish. Float as
         for any activity, free float 0 (H8-01 A1160, H10-11 A1210).
         """
@@ -1051,6 +1052,8 @@ class _Run:
             lstarts, lends = [], []
             for predecessor, link_type, lag in self.loe_preds[code]:
                 if self.status[predecessor] == "TK_Complete":
+                    if link_type == "SS" and predecessor in self.lcarry:  # the late date it passes back
+                        lstarts.append(self.shift(self.lag_axis(predecessor, code), self.lcarry[predecessor], lag))
                     if link_type == "FS" and self.kind(predecessor) == "task":  # finished task: its actual finish holds
                         actual_finish = inputs[predecessor].get("act_end_date")
                         if actual_finish is not None and not pd.isna(actual_finish):
