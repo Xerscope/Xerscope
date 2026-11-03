@@ -253,13 +253,15 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
     Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
     whole chart and every milestone can meet it inside the frame; below it is the past.
 
-    A line's colour is its move in the last update (``last_shift_wd``, working days,
-    `milestone_slips.last_week_wd`): red later, green earlier, grey unchanged or complete.
-    The end label carries that move. Lines with the same dates hide each other: the
-    unified hover lists every line at a reporting date and their end labels merge.
+    Each line keeps its own series colour so milestones stay distinguishable. The move in
+    the last update (``last_shift_wd``, working days, `milestone_slips.last_week_wd`) marks
+    the last point and the end label: red later, green earlier, line colour unchanged.
+    Lines with the same dates hide each other: the unified hover lists every line at a
+    reporting date and their end labels merge.
     """
     status = STATUS[_mode(dark)]
     ink = INK[_mode(dark)]
+    series = SERIES[_mode(dark)]
     fig = go.Figure()
     pad = pd.Timedelta(days=10)
     lo = min(trend["data_date"].min(), trend["forecast"].min()) - 2 * pad
@@ -286,9 +288,10 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
         )
     )
     ends = []
-    for code, g in trend.groupby("task_code", sort=False):
+    for index, (code, g) in enumerate(trend.groupby("task_code", sort=False)):
+        color = series[index % len(series)]
         shift = last_shift_wd.get(code, 0.0)
-        color = status["critical"] if shift > 0 else status["good"] if shift < 0 else ink["muted"]
+        moved = status["critical"] if shift > 0 else status["good"] if shift < 0 else None
         done = g["is_complete"].to_numpy()
         fig.add_trace(
             go.Scatter(
@@ -297,11 +300,18 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
                 mode="lines+markers",
                 name=f"{code} {g['task_name'].iloc[-1]}",
                 line=dict(color=color, width=2),
-                marker=dict(size=9, symbol=["diamond" if d else "circle" for d in done]),
+                marker=dict(
+                    size=[9] * (len(g) - 1) + [13 if moved else 9],  # bigger: red / orange series stay apart
+                    symbol=["diamond" if d else "circle" for d in done],
+                    color=[color] * (len(g) - 1) + [moved or color],
+                ),
                 hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
             )
         )
-        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], code + (format_shift(shift) if shift else "")))
+        label = code + (format_shift(shift) if shift else "")
+        if moved:
+            label = f'<span style="color:{moved}">{label}</span>'
+        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value, ink["secondary"])
     fig = _layout(fig, dark, 640, "Forecast date")
     fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
