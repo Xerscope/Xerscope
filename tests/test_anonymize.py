@@ -6,6 +6,8 @@ Activity IDs), the same CPM differences against the stored dates, and the same s
 counts and flagged items for every check of every built-in standard.
 """
 
+import re
+import secrets
 from pathlib import Path
 
 import pandas as pd
@@ -131,14 +133,36 @@ def test_header_loses_user_and_database():
 def test_codes_follow_the_activity_across_files_whatever_their_order():
     week_1 = parse_text(_file([todo("FDN-020"), todo("FDN-010")]), source="w1.xer")
     week_2 = parse_text(_file([todo("FDN-010"), todo("ROOF-1")], data_date="2026-03-09 08:00"), source="w2.xer")
-    forward, backward = Anonymizer.from_raws([week_1, week_2]), Anonymizer.from_raws([week_2, week_1])
-    assert (
-        forward.codes["A"]
-        == backward.codes["A"]
-        == {"FDN-010": "XA000001", "FDN-020": "XA000002", "ROOF-1": "XA000003"}
-    )
+    key = bytes(32)
+    forward = Anonymizer.from_raws([week_1, week_2], key=key)
+    backward = Anonymizer.from_raws([week_2, week_1], key=key)
+    assert forward.codes["A"] == backward.codes["A"]
+    assert set(forward.codes["A"]) == {"FDN-010", "FDN-020", "ROOF-1"}
+    assert all(re.fullmatch(r"XA[0-9A-F]{8}", code) for code in forward.codes["A"].values())
+    assert len(set(forward.codes["A"].values())) == 3
     names = parse_bytes(forward.xer(week_2)).table("TASK")[["task_code", "task_name"]].values.tolist()
-    assert names == [["XA000001", "Activity XA000001"], ["XA000003", "Activity XA000003"]]
+    roof, fdn = forward.codes["A"]["ROOF-1"], forward.codes["A"]["FDN-010"]
+    assert names == [[fdn, f"Activity {fdn}"], [roof, f"Activity {roof}"]]
+
+
+def test_one_update_read_alone_gets_the_codes_of_the_whole_series():
+    """Same session key: a download made from one file names an activity as one made from all."""
+    week_1 = parse_text(_file([todo("FDN-020"), todo("FDN-010")]), source="w1.xer")
+    week_2 = parse_text(_file([todo("FDN-010"), todo("ROOF-1")], data_date="2026-03-09 08:00"), source="w2.xer")
+    key = secrets.token_bytes(32)
+    series, alone = Anonymizer.from_raws([week_1, week_2], key=key), Anonymizer.from_raws([week_2], key=key)
+    assert alone.codes["A"] == {code: series.codes["A"][code] for code in ("FDN-010", "ROOF-1")}
+    other_session = Anonymizer.from_raws([week_2])
+    assert set(other_session.codes["A"].values()).isdisjoint(alone.codes["A"].values())
+
+
+def test_two_ids_on_one_new_code_are_refused(monkeypatch):
+    from xerscope import anonymize
+
+    monkeypatch.setitem(anonymize.WIDTH, "A", 1)  # 16 possible codes for 40 activities
+    raw = parse_text(_file([todo(f"A{n}") for n in range(40)]), source="w.xer")
+    with pytest.raises(anonymize.CodeClash):
+        Anonymizer.from_raws([raw])
 
 
 def test_unknown_tables_and_columns_are_left_out_and_named():

@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.anonymize import LeakError
 from xerscope.app import ui
-from xerscope.app.state import anonymizer, memo, require_store
+from xerscope.app.state import ANONYMISED, anonymizer, anonymous_exports, export_anonymizer, memo, require_store
 from xerscope.export import export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
 
@@ -29,14 +29,30 @@ ui.table(
 )
 
 table_format = st.radio("Format", ["parquet", "csv"], horizontal=True)
-st.download_button(
-    f"Download {table_format.upper()} tables (.zip)",
-    data=zip_tables(store, table_format),
-    file_name=f"{store.latest.project_code}_xerscope_{table_format}.zip",
-    mime="application/zip",
-    type="primary",
-    icon=":material/download:",
-)
+label = f"Download {table_format.upper()} tables (.zip)"
+if not anonymous_exports():
+    st.download_button(
+        label,
+        data=zip_tables(store, table_format),
+        file_name=f"{store.latest.project_code}_xerscope_{table_format}.zip",
+        mime="application/zip",
+        type="primary",
+        icon=":material/download:",
+    )
+elif (anonymous := export_anonymizer("powerbi")) is not None:
+    try:
+        data = memo(("export_anonymised", table_format), zip_tables, store, table_format, anonymous.frame)
+    except LeakError as exc:
+        st.error(str(exc), icon=":material/block:")
+    else:
+        st.download_button(
+            label + ANONYMISED,
+            data=data,
+            file_name=f"xerscope_{table_format}.zip",  # the project code would name the project
+            mime="application/zip",
+            type="primary",
+            icon=":material/download:",
+        )
 
 with st.expander("Preview fact_activity"):
     ui.table(tables["fact_activity"].head(200), max_height=640)

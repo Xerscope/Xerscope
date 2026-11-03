@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
+from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
@@ -198,6 +200,13 @@ def sidebar_loader() -> None:
         sidebar.error(error)
     if store is not None:
         _baseline_picker(store)
+        sidebar.toggle(
+            "Anonymous exports",
+            value=True,
+            key="anon_exports",
+            help="Downloads (CSV, Power BI, Debug) carry new Activity IDs and names, other text emptied, "
+            "as in the anonymised XER extract. The pages always show the files' own data.",
+        )
 
 
 def _selection_panel(sidebar, store: SnapshotStore) -> None:
@@ -389,17 +398,77 @@ def memo(key: tuple, function, *arguments):
     return cache[full_key]
 
 
-def anonymizer(prepare: bool = False) -> Anonymizer | None:
-    """New codes for the loaded files, kept in the session only. Built on request: it reads every
-    loaded file again, so the pages do not pay for it until someone wants an anonymised download."""
+ANONYMISED = " · anonymised"  # suffix of an anonymised download's label
+
+
+def anonymous_exports() -> bool:
+    """The sidebar switch: downloads anonymised (default) or in the files' own names."""
+    return st.session_state.get("anon_exports", True)
+
+
+def export_anonymizer(key: str, sources: Iterable[str] | None = None) -> Anonymizer | None:
+    """The anonymizer for an anonymised download of ``sources`` (file names; None = every loaded
+    file), or None: a button builds it on request and the caller shows its download from then on."""
+    anonymous = anonymizer(sources=sources)
+    if anonymous is None and st.button(
+        "Prepare anonymised downloads",
+        icon=":material/visibility_off:",
+        key=f"prepare:{key}",
+        help="Reads the file(s) of this download again to give them new codes. The codes are the same "
+        "in every download of the session.",
+    ):
+        anonymous = anonymizer(prepare=True, sources=sources)
+    return anonymous
+
+
+def csv_download(
+    frame: pd.DataFrame,
+    filename: str,
+    label: str = "Download CSV",
+    key: str | None = None,
+    sources: Iterable[str] | None = None,
+) -> None:
+    """A table as CSV, anonymised or not as the sidebar switch says; ``sources`` are the files the
+    table comes from, the only ones read to anonymise it."""
+    if not anonymous_exports():
+        ui.csv_button(frame, filename, label, key=key)
+        return
+    anonymous = export_anonymizer(key or filename, sources)
+    if anonymous is not None:
+        ui.anonymised_csv_button(anonymous, frame, filename, f"{label}{ANONYMISED}", key=key)
+
+
+def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) -> list[str]:
+    """The files a download is made from: the updates shown and the baseline's file."""
+    found = [snapshot.source for snapshot in snapshots if snapshot is not None]
+    return found + ([baseline.snapshot.source] if baseline is not None else [])
+
+
+def anonymizer(prepare: bool = False, sources: Iterable[str] | None = None) -> Anonymizer | None:
+    """New codes for ``sources`` (file names; None = every loaded file), kept in the session only.
+
+    Built on request, from those files only: it reads them again. The codes come from one key per
+    session (HMAC), so an anonymizer of one update and one of the whole series name an activity
+    the same way. One built from more files also serves a download of fewer."""
     signature = st.session_state.get("signature")
-    held = st.session_state.get("_anonymizer")
-    if held is not None and held[0] == signature:
-        return held[1]
+    items = st.session_state.get("items") or []
+    wanted = frozenset(name for name, _ in items if sources is None or name in set(sources))
+    held = st.session_state.get("_anonymizers")
+    if held is None or held[0] != signature:
+        held = (signature, {})
+        st.session_state["_anonymizers"] = held
+    built = held[1]
+    for names, anonymous in built.items():
+        if wanted <= names:
+            return anonymous
     if not prepare:
         return None
-    items = st.session_state.get("items") or []
-    with st.spinner(f"Reading {len(items)} file(s) for the anonymised downloads…"):
-        built = Anonymizer.from_raws(parse_bytes(data, source=name) for name, data in items)
-    st.session_state["_anonymizer"] = (signature, built)
-    return built
+    key = st.session_state.setdefault("_anon_key", secrets.token_bytes(32))
+    with st.spinner(f"Reading {len(wanted)} file(s) for the anonymised downloads…"):
+        anonymous = Anonymizer.from_raws(
+            (parse_bytes(data, source=name) for name, data in items if name in wanted), key=key
+        )
+    if len(built) >= 4:  # a few sets per session: each holds the text values of its files
+        built.pop(next(iter(built)))
+    built[wanted] = anonymous
+    return anonymous

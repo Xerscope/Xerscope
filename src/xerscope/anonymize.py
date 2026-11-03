@@ -7,9 +7,11 @@ Allowlist, table by table (column meanings: Oracle "XER Import/Export Data Map G
 (Project)", P6 23):
 
 - ``KEEP``: copied as is. Keys, dates, durations, units, flags and P6 enumerations only.
-- ``CODES``: identifiers renamed X<kind><number>, the same original value getting the same
-  new code in every file of the set (task_code, WBS, project, resource, role, OBS codes).
-- ``LABELS``: names rebuilt from the row's new code ("Activity XA000001").
+- ``CODES``: identifiers renamed X<kind><hex>, the hex being an HMAC-SHA256 of the original
+  under a key drawn for the session: the same original value gets the same new code in every
+  file and every download of the session, whichever files were read to make it (task_code,
+  WBS, project, resource, role, OBS codes). Without the key the original cannot be found back.
+- ``LABELS``: names rebuilt from the row's new code ("Activity XA1F09C3B2").
 - ``MONEY``: costs and prices set to 0 (P6 counts an assignment or an expense, not its cost).
 - ``GUIDS``: replaced by new random GUIDs, the same original GUID getting the same new one.
 
@@ -23,6 +25,8 @@ value of the originals that was not kept (``Anonymizer.leaks``): one match and i
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import io
 import re
 import secrets
@@ -108,7 +112,9 @@ MONEY = {
     "PROJCOST": {"act_cost", "cost_per_qty", "remain_cost", "target_cost"},
 }
 GUIDS = {"guid"}
-DIGITS = {"A": 6, "W": 4, "P": 3, "R": 4, "L": 3, "O": 3}
+# Hex digits of each kind of new code. 8 for activities: ~4e9 values, so ~0.03 % chance of two
+# IDs sharing one among 50,000; a clash is refused (CodeClash), never written.
+WIDTH = {"A": 8, "W": 6, "P": 6, "R": 6, "L": 6, "O": 6}
 # What CalendarData is written with (P6 5.0 to 25.12, every reference file): nothing else may pass.
 CALENDAR_WORDS = frozenset({"CalendarData", "DaysOfWeek", "Exceptions", "ShowTotal", "VIEW"})
 GENERIC_HEADER = frozenset({"Project", "Project Management", "dbxDatabaseNoName"})
@@ -131,6 +137,10 @@ class LeakError(ValueError):
     """An output still holds a text value of the originals."""
 
 
+class CodeClash(LeakError):
+    """Two original values of one kind would get the same new code."""
+
+
 @dataclass
 class Anonymizer:
     """New codes and the text values to keep out, for one set of XER files (one session)."""
@@ -140,12 +150,15 @@ class Anonymizer:
     wbs_paths: dict[str, str] = field(default_factory=dict)  # original wbs_code -> new
     secrets_: dict[str, str] = field(default_factory=dict)  # text value -> "TABLE.column" it came from
     report: Report = field(default_factory=Report)
+    key: bytes = field(default_factory=lambda: secrets.token_bytes(32), repr=False)  # HMAC key of the codes
+    taken: dict[str, set[str]] = field(default_factory=dict, repr=False)  # kind -> new codes given
 
     @classmethod
-    def from_raws(cls, raws: Iterable[RawXer]) -> Anonymizer:
-        """One pass over the files: codes sorted per kind, so the numbering does not depend on file order."""
-        found: dict[str, set[str]] = {kind: set() for kind in DIGITS}
-        anonymizer = cls()
+    def from_raws(cls, raws: Iterable[RawXer], key: bytes | None = None) -> Anonymizer:
+        """One pass over the files given. With the session's ``key``, a code is the same whichever
+        files were read: an anonymizer of one update and one of the whole series agree."""
+        found: dict[str, set[str]] = {kind: set() for kind in WIDTH}
+        anonymizer = cls() if key is None else cls(key=key)
         project_nodes: list[tuple[pd.DataFrame, pd.DataFrame]] = []
         for raw in raws:
             anonymizer._collect_secrets(raw)
@@ -155,9 +168,8 @@ class Anonymizer:
                     found[kind].update(value for value in frame[column] if value)
             project_nodes.append((raw.table("PROJWBS"), raw.table("PROJECT")))
         for kind, values in found.items():
-            anonymizer.codes[kind] = {
-                value: f"X{kind}{n:0{DIGITS[kind]}d}" for n, value in enumerate(sorted(values), 1)
-            }
+            for value in sorted(values):
+                anonymizer.code(kind, value)
         for wbs, _project in project_nodes:
             anonymizer._map_wbs_paths(wbs)
         anonymizer._check_codes_are_new()
@@ -210,12 +222,18 @@ class Anonymizer:
     # --- codes -----------------------------------------------------------------------------
 
     def code(self, kind: str, original: str) -> str:
-        """The new code; one never seen in the files gets the next number of its kind."""
+        """The new code: X<kind> and the first hex digits of HMAC-SHA256(key, "<kind>:<original>")."""
         if not original:
             return ""
         mapping = self.codes.setdefault(kind, {})
         if original not in mapping:
-            mapping[original] = f"X{kind}{len(mapping) + 1:0{DIGITS[kind]}d}"
+            digest = hmac.new(self.key, f"{kind}:{original}".encode(), hashlib.sha256).hexdigest().upper()
+            new = f"X{kind}{digest[: WIDTH[kind]]}"
+            taken = self.taken.setdefault(kind, set())
+            if new in taken:
+                raise CodeClash(f"two {kind} codes would both become {new}: reload the page for a new key")
+            taken.add(new)
+            mapping[original] = new
         return mapping[original]
 
     def guid(self, original: str) -> str:
