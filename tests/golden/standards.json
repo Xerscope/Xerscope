@@ -752,7 +752,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1217,7 +1217,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1682,7 +1682,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2149,7 +2149,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2620,7 +2620,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -3106,7 +3106,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -3598,14 +3598,12 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 10,
-    "flagged": [
-     "C3020"
-    ],
+    "denominator": 11,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
+    "numerator": 0,
     "status": "info",
-    "value": 1.0
+    "value": 0.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 19,
@@ -4551,7 +4549,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5042,7 +5040,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5534,7 +5532,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6035,7 +6033,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6544,7 +6542,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7069,7 +7067,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7601,14 +7599,12 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 10,
-    "flagged": [
-     "C3020"
-    ],
+    "denominator": 11,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
+    "numerator": 0,
     "status": "info",
-    "value": 1.0
+    "value": 0.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 19,
@@ -8579,7 +8575,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9071,7 +9067,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9564,7 +9560,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10063,7 +10059,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10570,7 +10566,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11093,7 +11089,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11623,14 +11619,12 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 10,
-    "flagged": [
-     "C3020"
-    ],
+    "denominator": 11,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
+    "numerator": 0,
     "status": "info",
-    "value": 1.0
+    "value": 0.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 19,
@@ -16256,13 +16250,12 @@
    "INTEGRITY/INT-02": {
     "denominator": 6,
     "flagged": [
-     "EW-030",
      "ST-010"
     ],
     "note": null,
-    "numerator": 2,
+    "numerator": 1,
     "status": "info",
-    "value": 2.0
+    "value": 1.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 0,

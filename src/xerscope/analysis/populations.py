@@ -202,15 +202,15 @@ def flagged_relationships(relationships: pd.DataFrame) -> pd.DataFrame:
     return relationships[[column for column in LINK_COLS if column in relationships.columns]].copy()
 
 
-def predecessors_ahead(links: pd.DataFrame, started: pd.DataFrame, tasks: pd.DataFrame) -> pd.DataFrame:
-    """The links whose FS predecessor had not finished, or SS predecessor not started, at the successor's actual
-    start (``started`` and ``tasks`` indexed by task code): P6's out-of-sequence progress."""
+def predecessors_ahead(links: pd.DataFrame, tasks: pd.DataFrame) -> pd.DataFrame:
+    """The links into a started successor whose FS predecessor is not complete, or SS predecessor not started,
+    at the data date (``tasks`` indexed by task code): P6's out-of-sequence activities.
+
+    The link-type reading is calibrated on a P6 Check Schedule report: FF and SF links, and an SS
+    predecessor that has started, are not listed.
+    """
     if links.empty:
         return links
-    start = links["succ_code"].map(started["act_start_date"])
-    predecessor_finish = links["pred_code"].map(tasks["act_end_date"])
-    predecessor_start = links["pred_code"].map(tasks["act_start_date"])
-    # a predecessor with no actual date yet has certainly not happened before the successor's start
-    finish_after = (links["type"] == "FS") & (predecessor_finish.isna() | (predecessor_finish > start))
-    start_after = (links["type"] == "SS") & (predecessor_start.isna() | (predecessor_start > start))
-    return links[finish_after | start_after]
+    predecessor_complete = links["pred_code"].map(tasks["is_complete"]).astype(bool)
+    predecessor_started = links["pred_code"].map(tasks["is_started"]).astype(bool)
+    return links[((links["type"] == "FS") & ~predecessor_complete) | ((links["type"] == "SS") & ~predecessor_started)]
