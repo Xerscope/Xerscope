@@ -10,9 +10,10 @@ source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports"
 [[metric]]
 id = "INT-01"
 name = "Schedule recalculated"
-description = "Open activities whose stored dates or total float differ from a recalculation"
+description = "Open activities whose stored dates or total float differ from a recalculation. Mirrors the log's Scheduling Results (Latest Early Finish Date): the note gives it stored and recalculated, and the activities with external dates"
 rule = "int_01_recalculated"
 target = "<= 0%"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Scheduling Results: \"Latest Early Finish Date\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99351.htm); Exceptions: \"Activities with external dates\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm)"
 
 [[metric]]
 id = "INT-02"
