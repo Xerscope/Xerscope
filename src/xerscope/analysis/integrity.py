@@ -87,6 +87,26 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
     )
 
 
+@rule("int_04_relationship_loops", "count")
+def int_04_relationship_loops(context) -> RuleOutput:
+    """Activities in a relationship loop.
+    Counts: in a loop / activities
+    Excludes: activities downstream of a loop, level of effort (its links are not part of the network).
+
+    Mirrors the P6 log error 'Activities that have invalid relationship loops'. The loop is found by the
+    CPM's topological pass (analysis/cpm.py), narrowed to the activities that lie on a loop.
+    """
+    try:
+        schedule(context.snapshot)
+    except CycleError as exc:
+        members = list(exc.members)
+    else:
+        members = []
+    activities = context.snapshot.activities
+    flagged = activities[activities["task_code"].isin(members)]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+
+
 def _describe_differences(group: pd.DataFrame) -> str:
     """One assignment's stored-vs-recalculated fields as 'field: stored -> computed; ...'."""
     pairs = group[["field", "stored", "computed"]].itertuples(index=False)
