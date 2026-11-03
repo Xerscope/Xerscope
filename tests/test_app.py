@@ -7,11 +7,14 @@ without a browser. It checks that pages run; test_app_parity.py checks that they
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
+from conftest import P6_CORPUS_HINT, missing
 from streamlit.testing.v1 import AppTest
 from xerkit import xer_text
 
 import xerscope
+from xerscope.app import ui
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [
@@ -24,6 +27,7 @@ PAGES = [
     "views/milestones.py",
     "views/ppc.py",
     "views/export.py",
+    "views/debug.py",
 ]
 
 
@@ -43,6 +47,30 @@ def _tick_all(at):
     for box in _file_boxes(at):
         box.check()
     return at.run()
+
+
+def test_file_list_stays_open_while_files_are_ticked(sample_dir, monkeypatch):
+    # The expander label holds the tick count. Keyed on its label, Streamlit would redraw it as a
+    # new, closed expander at every tick; a fixed key keeps the one the user opened.
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    before = at.sidebar.expander[0]
+    _file_boxes(at)[0].check()
+    at.run()
+    after = at.sidebar.expander[0]
+    assert before.label != after.label  # "0 of 8 ticked" -> "1 of 8 ticked"
+    assert before.key is not None and after.key == before.key
+
+
+def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
+    # A widget key is written into the page as a CSS class (st-key-...). On the remote image the
+    # folder is the server's and the visitor never sees it (_data_locked), so no key may hold it.
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "1")
+    at = _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+    keys = [element.key for element in [*at.sidebar.checkbox, *at.sidebar.expander] if element.key]
+    assert len(_file_boxes(at)) == len(list(sample_dir.glob("*.xer")))
+    assert keys and not [key for key in keys if str(sample_dir) in key]
 
 
 def _ok(at):
@@ -442,3 +470,84 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
         assert not [value for value in originals if len(value) >= 4 and value in text], name
     latest = load_snapshot(files[max(files)], name="latest.xer")
     assert set(codes) <= set(latest.activities["task_code"])
+
+
+HELD_OUT_CASE = (
+    Path(__file__).parent
+    / "reference"
+    / "data"
+    / "p6-heldout"
+    / "validation"
+    / "held-out"
+    / "H1"
+    / "cases"
+    / "H1-02.xer"
+)
+
+
+def _debug_zip(at, downloads) -> dict[str, pd.DataFrame]:
+    import io
+    import zipfile
+
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    next(b for b in at.button if b.label == "Build anonymised diagnostic").click().run()
+    _ok(at)
+    assert not at.error, [e.value for e in at.error]
+    with zipfile.ZipFile(io.BytesIO(_download(at, downloads, "Download anonymised diagnostic (.zip)"))) as archive:
+        return {name: pd.read_csv(io.BytesIO(archive.read(name)), encoding="utf-8-sig") for name in archive.namelist()}
+
+
+def _assert_anonymised(tables: dict, store, anonymous) -> None:
+    """Nothing of the originals' text in any table; Activity IDs are the extract's codes."""
+    names = set(store.history["task_name"]) | set(store.history["task_code"]) | {store.latest.project_name}
+    cells = {str(value) for table in tables.values() for value in table.astype(str).to_numpy().ravel()}
+    assert anonymous.leaks(cells) == {}
+    assert not cells & {name for name in names if len(name) >= 3}
+    codes = pd.concat([table["task_code"].dropna() for table in tables.values() if "task_code" in table])
+    assert codes.str.fullmatch(r"XA\d{6}").all()
+
+
+def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
+    from xerscope.app.diagnostic import diagnostic_frames
+
+    tables = _debug_zip(app, downloads)
+    assert set(tables) == {f"{name}.csv" for name in diagnostic_frames(store.latest, None, _p6())}
+    assert tables["01_options.csv"]["option"].tolist()[0] == "use_expected_finish"
+    _assert_anonymised(tables, store, app.session_state["_anonymizer"][1])
+
+
+def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeypatch, downloads):
+    """H1-02 (corpus witness of ``expected_finish``): the page renders, block 2 lists A1170 with its
+    remaining brought to 0, and the diagnostic leaves anonymised."""
+    if not HELD_OUT_CASE.exists():
+        missing("p6-corpus", P6_CORPUS_HINT)
+    (tmp_path / HELD_OUT_CASE.name).write_bytes(HELD_OUT_CASE.read_bytes())
+    at = _run(tmp_path, monkeypatch)
+    tables = _debug_zip(at, downloads)
+    expected = tables["02_expected_finish.csv"]
+    assert len(expected) == 1 and bool(expected["remaining_set_to_0"].iloc[0])
+    _assert_anonymised(tables, at.session_state["store"], at.session_state["_anonymizer"][1])
+
+
+def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
+    """Debug columns carry the XER / analysis field names as written, to set beside P6; each block
+    is keyed, so a count in its label changing with the update does not redraw it closed."""
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    blocks = list(app.main.expander)
+    assert len(blocks) == 5 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert app.main.selectbox(key="debug_snap").label == "Update"
+
+
+def test_raw_labels_are_the_column_names():
+    frame = pd.DataFrame({"task_code": ["A1"], "remain_drtn_hr_cnt": [8.0]})
+    config = ui.column_config(frame, raw_labels=True)
+    assert [config[column]["label"] for column in frame] == ["task_code", "remain_drtn_hr_cnt"]
+    assert ui.column_config(frame)["task_code"]["label"] == "Activity ID"  # the default stays
+
+
+def _p6():
+    from xerscope.analysis import builtin_standards
+
+    return builtin_standards()["P6"]

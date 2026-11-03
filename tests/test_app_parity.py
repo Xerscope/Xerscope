@@ -174,3 +174,25 @@ def test_overview_kpis_equal_store_summary(app, store):
     assert int(shown["Critical activities"]) == int(last["critical"])
     critical = next(metric for metric in app.metric if metric.label == "Critical activities")
     assert critical.delta == f"{int(last['critical'] - before['critical']):+d} this week"
+
+
+def test_debug_page_shows_the_options_comparisons_and_targets_as_computed(app, store):
+    """Block 1 = ``Options.from_snapshot``, block 3 = the rows of ``compare_with_stored`` that
+    disagree, block 4 = the targets of standards/p6.toml, on the latest update."""
+    from xerscope.analysis.cpm import Options, compare_with_stored
+
+    app.switch_page("views/debug.py")
+    _run(app)
+    snapshot = store.latest
+    frames = [frame.value for frame in app.dataframe]
+    options = next(frame for frame in frames if "origin" in frame).set_index("option")["applied"]
+    expected = Options.from_snapshot(snapshot)
+    for name in ("float_type", "progressed", "lag_calendar", "use_expected_finish", "open_critical"):
+        assert options[name] == str(getattr(expected, name)), name
+    comparison = compare_with_stored(snapshot)
+    disagreeing = sorted(comparison[comparison["stored"].notna() & ~comparison["agree"]]["task_code"].unique())
+    listed = [frame for frame in frames if "differs" in frame and "taskrsrc_id" not in frame]
+    assert (sorted(listed[0]["task_code"]) if listed else []) == disagreeing
+    targets = next(frame for frame in frames if "tab" in frame).set_index("check")["target"]
+    for metric in STANDARDS["P6"].metrics:
+        assert targets[f"{metric.id} · {metric.name}"] == metric.threshold_label

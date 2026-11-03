@@ -136,7 +136,7 @@ class Options:
 
 @dataclass
 class Schedule:
-    frame: pd.DataFrame  # index task_code: es, ef, ls, lf, tf_hr, ff_hr, ...
+    frame: pd.DataFrame  # index task_code: es, ef, ls, lf, tf_hr, ff_hr, rem_override_hr, ...
     finish: pd.Timestamp | None
     options: Options
     warnings: list[str] = field(default_factory=list)
@@ -1196,6 +1196,10 @@ class _Run:
                 "ff_hr": self.free_float_hr.get(code),
                 "resource_dependent": code in self.rsrc_dep,
                 "longest_path": code in longest,
+                # remaining hours an expected finish set in place of the file's (0 = finish before the start)
+                "rem_override_hr": self.duration_override[code] / 60
+                if code in self.duration_override
+                else float("nan"),
             }
             for code in self.activities.index
             if code in self.early_start
