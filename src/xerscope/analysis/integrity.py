@@ -15,8 +15,10 @@ from .populations import (
     has_predecessor_in_project,
     has_successor_in_project,
     links_between,
+    open_activities,
     open_end_reason,
     predecessors_ahead,
+    without_level_of_effort,
 )
 from .rules import RuleOutput, rule
 
@@ -151,6 +153,60 @@ def int_06_actual_date_after_data_date(context) -> RuleOutput:
         len(flagged),
         len(activities),
     )
+
+
+# Constraint type -> (side of the activity it bounds, what its date requires of the recalculated date)
+CONSTRAINT_RULES = {
+    "CS_MSOB": ("start", "<=", "Start on or before"),
+    "CS_MSOA": ("start", ">=", "Start on or after"),
+    "CS_MSO": ("start", "==", "Start on"),
+    "CS_MANDSTART": ("start", "==", "Mandatory start"),
+    "CS_MEOB": ("finish", "<=", "Finish on or before"),
+    "CS_MEOA": ("finish", ">=", "Finish on or after"),
+    "CS_MEO": ("finish", "==", "Finish on"),
+    "CS_MANDFIN": ("finish", "==", "Mandatory finish"),
+}
+
+
+@rule("int_07_unsatisfied_constraints", "count")
+def int_07_unsatisfied_constraints(context) -> RuleOutput:
+    """Activities whose recalculated dates do not meet their constraint.
+    Counts: unsatisfied / constrained
+    Excludes: completed activities, level of effort, start constraints of started activities.
+
+    xerscope's reading of the P6 log exception 'Activities with unsatisfied constraints', not confirmed
+    against a P6 log: the recalculated early start (or finish) must be on the required side of the
+    constraint date (Start on or before: not later; Start on or after: not earlier; Start on, Finish on,
+    Mandatory start and finish: equal). Primary and secondary constraints are both read.
+    """
+    try:
+        dates = schedule(context.snapshot).frame
+    except CycleError as exc:
+        return RuleOutput(note=f"cannot schedule: {exc}")
+    activities = without_level_of_effort(open_activities(context)).drop_duplicates("task_code")
+    activities = activities[activities["task_code"].isin(dates.index)]
+    early = {
+        "start": activities["task_code"].map(dates["es"]),
+        "finish": activities["task_code"].map(dates["ef"]),
+    }
+    reasons: dict[str, list[str]] = {}
+    constrained: set[str] = set()
+    for type_column, date_column in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
+        for constraint_type, (side, requirement, label) in CONSTRAINT_RULES.items():
+            applies = (activities[type_column] == constraint_type) & activities[date_column].notna()
+            if side == "start":
+                applies &= ~activities["is_started"]
+            wanted, actual = activities[date_column], early[side]
+            met = {"<=": actual <= wanted, ">=": actual >= wanted, "==": actual == wanted}[requirement]
+            constrained |= set(activities.loc[applies, "task_code"])
+            for index in activities.index[applies & ~met.fillna(False)]:
+                code = activities.at[index, "task_code"]
+                reasons.setdefault(code, []).append(
+                    f"{label} {wanted[index]:%Y-%m-%d %H:%M}: early {side} {actual[index]}"
+                )
+    flagged = activities[activities["task_code"].isin(reasons)]
+    texts = flagged["task_code"].map(lambda code: "; ".join(reasons[code]))
+    return RuleOutput(flagged_activities(flagged, unsatisfied=texts), len(flagged), len(constrained))
 
 
 def _describe_differences(group: pd.DataFrame) -> str:
