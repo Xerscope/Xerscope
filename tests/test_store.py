@@ -74,6 +74,11 @@ def test_one_snapshot_per_data_date(store):
     assert len(s) == 8 and s.first.source == store.first.source
     first = store.first
     assert s.warnings == [f"zz-again.xer: same data date as {first.source} ({first.data_date:%Y-%m-%d}), skipped"]
+    assert s.skipped == [(twin, first)]
+    table = s.selection()
+    assert len(table) == 9 and table["status"].value_counts().to_dict() == {"in series": 8, "skipped": 1}
+    row = table.set_index("file").loc["zz-again.xer"]
+    assert row["reason"] == f"same data date as {first.source}"
 
 
 def test_store_column_lists_exist_in_snapshot_frames(store):

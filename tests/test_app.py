@@ -298,3 +298,42 @@ def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch
     _ok(at)
     exported = [list(v["dim_snapshot"]["project"]) for k, v in at.session_state["_memo"].items() if k[-1] == "export"]
     assert ["OLD", "NEW"] in exported
+
+
+def _selection(at):
+    return next(frame for frame in at.sidebar.dataframe).value
+
+
+def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, monkeypatch):
+    """w1 holds NEW (3 TASK rows) and OLD (2): NEW wins on TASK rows; w2 holds NEW only."""
+    at = _run(renamed_project, monkeypatch)
+    _ok(at)
+    table = _selection(at).set_index("file")
+    assert table.loc["w1.xer", ["project", "selected_by", "projects_in_file", "status"]].tolist() == [
+        "NEW",
+        "most TASK rows",
+        "NEW (3) · OLD (2)",
+        "in series",
+    ]
+    assert table.loc["w2.xer", ["project", "selected_by"]].tolist() == ["NEW", "only project"]
+    _pick_project(at, "OLD")
+    _ok(at)
+    table = _selection(at).set_index("file")
+    assert table.loc["w1.xer", ["project", "selected_by", "activities"]].tolist() == ["OLD", "chosen", 2]
+    assert table.loc["w2.xer", "project"] == "NEW"
+
+
+def test_selection_panel_names_the_file_skipped_for_its_data_date(tmp_path, monkeypatch):
+    """Two planners, same data date: the second by name is out of the series, and says why."""
+    tasks = [{"task_code": c} for c in ("A1", "A2")]
+    for name, code in (("a.xer", "PLAN-A"), ("b.xer", "PLAN-B")):
+        (tmp_path / name).write_text(xer_text(tasks, data_date="2026-03-02 08:00", project={"proj_short_name": code}))
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    table = _selection(at).set_index("file")
+    assert table.loc["a.xer", "status"] == "in series"
+    assert table.loc["b.xer", ["project", "status", "reason"]].tolist() == [
+        "PLAN-B",
+        "skipped",
+        "same data date as a.xer",
+    ]

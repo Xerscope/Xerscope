@@ -26,8 +26,9 @@ Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, 
 
 ## 2. `xer/model.py`: what P6 means
 
-`build_snapshot(raw)` picks one project (the one with the most activities, or
-`project_code`) and builds a typed `Snapshot`. Each P6 rule lives in one place:
+`build_snapshot(raw)` picks one project (`project_code` when given, otherwise the one with
+the most `TASK` rows) and builds a typed `Snapshot`; `project_task_counts` and `selected_by`
+record that choice. Each P6 rule lives in one place:
 
 | Concern | Rule |
 |---|---|
@@ -63,7 +64,10 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 
 ## 4. `store.py`: the weekly series
 
-`SnapshotStore` sorts snapshots by data date and exposes long-format frames:
+`SnapshotStore` sorts snapshots by data date and keeps one per data date (the first by file
+name; the others are in `skipped`). `selection()` lists every file read, the project taken
+from it and whether it is in the series: the app's sidebar Selection panel shows it. It
+exposes long-format frames:
 
 - `history`: one row per (snapshot, activity);
 - `relationship_history`;

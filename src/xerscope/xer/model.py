@@ -348,6 +348,8 @@ class Snapshot:
     calendars: pd.DataFrame
     assignments: pd.DataFrame  # TASKRSRC rows, may be empty
     projects_in_file: list[str] = field(default_factory=list)
+    project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by project code
+    selected_by: str = ""  # why this project of the file: chosen, only project, most TASK rows
     warnings: list[str] = field(default_factory=list)
     scheduled_finish: pd.Timestamp | None = None  # PROJECT.scd_end_date, as stored
     options: dict = field(default_factory=dict)  # P6 scheduling options that affect results
@@ -541,8 +543,10 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
 
 def _select_project(
     source: str, projects: pd.DataFrame, all_tasks: pd.DataFrame, project_code: str | None, warnings: list[str]
-) -> tuple[pd.Series, list[str]]:
-    """The PROJECT row to build the snapshot for, and the codes of every project that owns activities."""
+) -> tuple[pd.Series, dict[str, int], str]:
+    """The PROJECT row to build the snapshot for, the TASK row count of every project that owns
+    activities (by code, in file order), and how the row was selected: ``chosen`` (the
+    requested code), ``only project`` or ``most TASK rows``."""
     task_counts = all_tasks["proj_id"].value_counts()
     projects = _ensure_cols(
         projects[projects["proj_id"].isin(task_counts.index)].copy(),
@@ -559,17 +563,18 @@ def _select_project(
     )
     if projects.empty:
         raise XerError(f"{source}: no project owns any activity")
-    codes = projects["proj_short_name"].tolist()
+    projects["_n"] = projects["proj_id"].map(task_counts)
+    counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
     if project_code:
         selected = projects[projects["proj_short_name"] == project_code]
         if selected.empty:
-            raise XerError(f"{source}: project {project_code!r} not found (has {codes})")
-        return selected.iloc[0], codes
-    projects["_n"] = projects["proj_id"].map(task_counts)
+            raise XerError(f"{source}: project {project_code!r} not found (has {list(counts)})")
+        return selected.iloc[0], counts, "chosen"
     project_row = projects.sort_values("_n", ascending=False).iloc[0]
-    if len(projects) > 1:
-        warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
-    return project_row, codes
+    if len(projects) == 1:
+        return project_row, counts, "only project"
+    warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
+    return project_row, counts, "most TASK rows"
 
 
 def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
@@ -871,7 +876,7 @@ def build_snapshot(
     all_relationships = _taskpred_table(raw, all_tasks, warnings)
 
     # The project, its data date and its calendars
-    project_row, codes = _select_project(raw.source, projects, all_tasks, project_code, warnings)
+    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, project_code, warnings)
     planned_start = _parse_date(project_row["plan_start_date"])
     data_date = _parse_date(project_row["last_recalc_date"]) or planned_start
     if data_date is None:
@@ -921,7 +926,9 @@ def build_snapshot(
         wbs=wbs,
         calendars=calendars,
         assignments=assignments.reset_index(drop=True),
-        projects_in_file=codes,
+        projects_in_file=list(task_counts),
+        project_task_counts=task_counts,
+        selected_by=selected_by,
         warnings=warnings,
         scheduled_finish=scheduled_finish,
         options=options,

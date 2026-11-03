@@ -144,10 +144,38 @@ def sidebar_loader() -> None:
             f"{store.latest.project_code} · {len(store)} snapshot(s) · "
             f"{ui.fmt_date(store.first.data_date)} → {ui.fmt_date(store.latest.data_date)}"
         )
+    if store is not None:
+        _selection_panel(sidebar, store)
     for error in st.session_state.get("errors", []):
         sidebar.error(error)
     if store is not None:
         _baseline_picker(store)
+
+
+def _selection_panel(sidebar, store: SnapshotStore) -> None:
+    """What was taken from each file and why: the project, the rule that picked it, and whether
+    the file is in the series. Open by default when a file holds several projects or was skipped."""
+    table = store.selection()
+    attention = bool(store.skipped) or any(len(snapshot.project_task_counts) > 1 for snapshot in store)
+    with sidebar.expander(f"Selection · {len(store)} of {len(table)} file(s) in series", expanded=attention):
+        st.caption(
+            "One project per file: the one picked in Project when the file holds it, otherwise the one "
+            "with the most TASK rows. One file per data date: the first by name is kept."
+        )
+        st.dataframe(
+            table.assign(data_date=table["data_date"].map(ui.fmt_date)),
+            hide_index=True,
+            column_config={
+                "file": "File",
+                "project": "Project",
+                "selected_by": "Picked by",
+                "projects_in_file": "Projects in file (TASK rows)",
+                "data_date": "Data date",
+                "activities": "Activities",
+                "status": "Status",
+                "reason": "Reason",
+            },
+        )
 
 
 BL_NONE = "None"

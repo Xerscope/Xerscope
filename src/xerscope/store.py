@@ -78,10 +78,12 @@ class SnapshotStore:
         # histories are keyed on it. Of two files with the same data date the first by
         # name is kept.
         self._snaps: list[Snapshot] = []
+        self.skipped: list[tuple[Snapshot, Snapshot]] = []  # (skipped, the snapshot kept for its data date)
         for s in snaps:
             kept = next((k for k in self._snaps if k.data_date == s.data_date), None)
             if kept is not None and s.data_date is not None:
                 self.warnings.append(f"{s.source}: same data date as {kept.source} ({s.data_date:{DATE_FMT}}), skipped")
+                self.skipped.append((s, kept))
             else:
                 self._snaps.append(s)
         codes = {s.project_code for s in self._snaps}
@@ -133,6 +135,36 @@ class SnapshotStore:
     def previous(self, snap: Snapshot) -> Snapshot | None:
         i = self.index_of(snap)
         return self._snaps[i - 1] if i > 0 else None
+
+    def selection(self) -> pd.DataFrame:
+        """One row per file read: the project taken from it, why, and whether it is in the series."""
+        rows = [(s, "in series", "") for s in self._snaps]
+        rows += [(s, "skipped", f"same data date as {kept.source}") for s, kept in self.skipped]
+        return pd.DataFrame(
+            [
+                {
+                    "file": s.source,
+                    "project": s.project_code,
+                    "selected_by": s.selected_by,
+                    "projects_in_file": " · ".join(f"{code} ({n})" for code, n in s.project_task_counts.items()),
+                    "data_date": s.data_date,
+                    "activities": len(s.activities),
+                    "status": status,
+                    "reason": reason,
+                }
+                for s, status, reason in sorted(rows, key=lambda row: row[0].source)
+            ],
+            columns=[
+                "file",
+                "project",
+                "selected_by",
+                "projects_in_file",
+                "data_date",
+                "activities",
+                "status",
+                "reason",
+            ],
+        )
 
     # --- tidy frames -------------------------------------------------------------
     def _stack(self, attribute: str, columns: list[str]) -> pd.DataFrame:
