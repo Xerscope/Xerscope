@@ -103,7 +103,7 @@ Standards are data in `standards/*.toml`:
 - `p6.toml`: P6 Professional 24 Check Schedule (17 checks: the 14 of the help plus out of sequence and dangling start/finish from a P6 Professional report; Oracle's groups);
 - `decm.toml`: DCMA DECM v8.0, Guideline 6 schedule tests;
 - `dcma.toml`: DCMA 14-Point (legacy);
-- `integrity.toml`: recalculation of activities and assignments, out-of-sequence progress;
+- `integrity.toml`: recalculation of activities and assignments, and the warnings, errors and exceptions of the P6 scheduling log (loops, open ends, out-of-sequence progress, actual dates after the data date, unsatisfied constraints and relationships);
 - `custom-template.toml`: the commented starting point for your own.
 
 Why explicit functions plus TOML: P6's "Large Float" (`p6_06_large_float`) and DCMA-06
