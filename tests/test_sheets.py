@@ -53,3 +53,98 @@ def test_no_sheet_for_a_metric_that_is_not_the_built_in_one():
     metric = builtin_standards()["P6"]["P6-04"]
     assert sheet("P6", dataclasses.replace(metric, rule="p6_06_large_float")) is None
     assert sheet("CUSTOM", metric) is None
+
+
+# --- one population, three texts: the rule's steps, the sheet, the standard file, the docstring --------
+
+STEP_LINE = re.compile(r"^\d+\. (.+?): .*\((\S+(?: \S+)?)\)$")
+# the words of the docstring population line (explain.EXCLUDE / LINKS_TEXT) for each step label
+DOCSTRING_WORDS = {
+    "not complete": "completed activities",
+    "not level of effort": "level of effort",
+    "not milestone": "milestones",
+    "not completed before the data date": "activities completed before the data date",
+}
+
+
+def _section(text: str, title: str) -> str:
+    start = text.index(f"## {title}\n") + len(title) + 4
+    end = text.find("\n## ", start)
+    return text[start : end if end != -1 else len(text)]
+
+
+@pytest.fixture(scope="module")
+def p6_results(store):
+    from xerscope.analysis import AnalysisContext, Baseline, run_standard
+
+    context = AnalysisContext(store.latest, store, Baseline.from_snapshot(store.first))
+    return {result.metric.id: result for result in run_standard(builtin_standards()["P6"], context)}
+
+
+@pytest.mark.parametrize("metric_id", [m.id for m in builtin_standards()["P6"].metrics])
+def test_the_rule_the_sheet_and_the_standard_name_the_same_steps(p6_results, metric_id):
+    """Each population step of the rule is listed in the sheet in the same order with the same
+    source; the source is named in the metric's `source` in p6.toml and linked from the sheet."""
+    from xerscope.analysis.populations import STEP_SOURCES
+
+    result = p6_results[metric_id]
+    metric = result.metric
+    steps = [(step.label, step.source) for step in result.funnel.steps]
+    text = sheet("P6", metric)
+    written = [
+        match.groups()
+        for line in _section(text, "Population (denominator)").splitlines()
+        if (match := STEP_LINE.match(line))
+    ]
+    assert written == steps, "sheet steps differ from the rule's"
+    for _label, source in steps:
+        if source == "model":
+            continue
+        assert source in metric.source, f"p6.toml source of {metric_id} does not name {source}"
+        if STEP_SOURCES[source].startswith("http"):
+            assert STEP_SOURCES[source] in text, f"the sheet does not link {source}"
+
+
+@pytest.mark.parametrize("metric_id", [m.id for m in builtin_standards()["P6"].metrics])
+def test_the_rule_docstring_excludes_what_its_steps_remove(p6_results, metric_id):
+    """The 'Excludes:' line Schedule health shows lists exactly the activity steps (any order);
+    a link rule says which relationships it counts; a rule without step says nothing is excluded."""
+    from xerscope.analysis.explain import LINKS_TEXT
+
+    result = p6_results[metric_id]
+    lines = RULES_POPULATION(result.metric.rule)
+    labels = [step.label for step in result.funnel.steps]
+    excludes = [line for line in lines if line.startswith("Excludes: ")]
+    activity_steps = {DOCSTRING_WORDS[label] for label in labels if label in DOCSTRING_WORDS}
+    if activity_steps:
+        assert len(excludes) == 1, lines
+        assert set(excludes[0].removeprefix("Excludes: ").rstrip(".").split(", ")) == activity_steps
+    else:
+        assert not excludes, lines
+    if "not both ends complete" in labels:
+        assert f"Relationships counted: {LINKS_TEXT['not_both_complete']}." in lines
+
+
+def RULES_POPULATION(rule_name: str) -> tuple[str, ...]:
+    from xerscope.analysis.rules import RULES
+
+    return RULES[rule_name].population
+
+
+def test_funnel_ends_on_the_denominator_and_removes_the_excluded(store):
+    """start - every step's removals = denominator; the rows removed are the Audit page's Excluded tab."""
+    from xerscope.analysis import AnalysisContext, Baseline, run_standard
+    from xerscope.analysis.audit import split
+
+    for snapshot in store:
+        context = AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first))
+        for result in run_standard(builtin_standards()["P6"], context):
+            if result.funnel is None:
+                assert result.denominator is None, result.metric.id
+                continue
+            funnel = result.funnel
+            left = funnel.start - sum(len(step.removed) for step in funnel.steps)
+            assert left == result.denominator == (funnel.steps[-1].left if funnel.steps else funnel.start)
+            sets = split(result, snapshot)
+            if sets.excluded is not None and result.metric.id != "P6-13":
+                assert sum(len(step.removed) for step in funnel.steps) == len(sets.excluded), result.metric.id

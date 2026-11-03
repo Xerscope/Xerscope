@@ -19,6 +19,7 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from .baseline import Baseline
+from .populations import Funnel
 from .rules import RULES
 from .standards import Metric, Standard
 
@@ -36,6 +37,7 @@ class CheckResult:
     note: str = ""
     checked: pd.DataFrame | None = None  # rows behind the denominator (RuleOutput.checked)
     counted: pd.DataFrame | None = None  # rows behind the numerator when they are not ``flagged``
+    funnel: Funnel | None = None  # the named steps that cut ``checked`` from the file
 
 
 @dataclass
@@ -63,7 +65,7 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
     else:
         note = out.note
     return CheckResult(
-        metric, status, value, out.numerator, out.denominator, out.flagged, note, out.checked, out.counted
+        metric, status, value, out.numerator, out.denominator, out.flagged, note, out.checked, out.counted, out.funnel
     )
 
 

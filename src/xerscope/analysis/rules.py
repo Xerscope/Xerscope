@@ -42,6 +42,7 @@ from .cpm import critical_path_test
 from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     ACTIVITY_COLS,
     LINK_COLS,
+    Funnel,
     actual_after,
     as_flag,
     constrained_by,
@@ -73,6 +74,7 @@ class RuleOutput:
     value: float | None = None  # set by ratio / pass-fail rules; % and counts are derived
     note: str = ""
     checked: pd.DataFrame | None = None  # the rows behind the denominator
+    funnel: Funnel | None = None  # how ``checked`` was cut from the file, step by step
     counted: pd.DataFrame | None = None  # the rows behind the numerator, when they are not ``flagged``
 
 
@@ -225,30 +227,41 @@ def link_population(
     context: AnalysisContext, links: str, exclude_loe: bool = False, exclude: Names = ()
 ) -> pd.DataFrame:
     """Relationships into a scheduled activity, with both names, narrowed by ``links`` (see LinkPop)."""
+    return link_funnel(context, links, exclude_loe, exclude).rows
+
+
+def link_funnel(
+    context: AnalysisContext, links: str, exclude_loe: bool = False, exclude: Names = (), source: str = "model"
+) -> Funnel:
+    """``link_population`` step by step; ``source`` is the text the ``links`` step follows."""
     snapshot = context.snapshot
     tasks = snapshot.activities.set_index("task_code")
-    relationships = snapshot.relationships
-    relationships = relationships[relationships["succ_code"].isin(tasks.index)]
-    predecessor_done = as_flag(relationships["pred_code"].map(tasks["is_complete"]))
-    successor_done = as_flag(relationships["succ_code"].map(tasks["is_complete"]))
+    funnel = Funnel(snapshot.relationships)
+    funnel.keep("into an activity", "model", lambda rows: rows["succ_code"].isin(tasks.index))
+
+    def done(rows: pd.DataFrame, end: str) -> pd.Series:
+        return as_flag(rows[end].map(tasks["is_complete"]))
+
     if links == "not_both_complete":
-        relationships = relationships[~(predecessor_done & successor_done)]
+        funnel.keep("not both ends complete", source, lambda rows: ~(done(rows, "pred_code") & done(rows, "succ_code")))
     elif links == "succ_incomplete":
-        relationships = relationships[~successor_done]
+        funnel.keep("successor not complete", source, lambda rows: ~done(rows, "succ_code"))
     if exclude:
         # DCMA PAM 200.1 section 4.0 reading: a link counts when its successor is a retained
         # task; the predecessor may itself be excluded (a link out of a milestone counts).
         kept = _without(snapshot.activities, snapshot.data_date, list(exclude))
-        relationships = relationships[relationships["succ_code"].isin(kept["task_code"])]
+        funnel.keep("successor kept", source, lambda rows: rows["succ_code"].isin(kept["task_code"]))
     if exclude_loe:
-        touches_loe = as_flag(relationships["pred_code"].map(tasks["is_loe"])) | as_flag(
-            relationships["succ_code"].map(tasks["is_loe"])
+        loe = tasks["is_loe"]
+        funnel.keep(
+            "no level-of-effort end",
+            source,
+            lambda rows: ~(as_flag(rows["pred_code"].map(loe)) | as_flag(rows["succ_code"].map(loe))),
         )
-        relationships = relationships[~touches_loe]
     names = tasks["task_name"]
-    return relationships.assign(
-        pred_name=relationships["pred_code"].map(names), succ_name=relationships["succ_code"].map(names)
-    )
+    rows = funnel.rows
+    funnel.rows = rows.assign(pred_name=rows["pred_code"].map(names), succ_name=rows["succ_code"].map(names))
+    return funnel
 
 
 def _project_ends(context: AnalysisContext) -> tuple[set[str], set[str]]:

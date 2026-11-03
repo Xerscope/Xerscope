@@ -13,7 +13,8 @@
 # Targets: the defaults of the Check Schedule dialog as documented for P6 EPPM 25
 # (https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm: "should be less than 5%", "less
 # than 1%", "greater than 90%", BEI "0.95 or greater"); the P6 Professional help does not print
-# them. Set them to what your dialog shows so pass/fail matches your report.
+# them. BEI is "> 0.95" as report R1 prints it (P6-13). Set them to what your dialog shows so
+# pass/fail matches your report.
 # Constraint sets: P6 Professional help, Check Schedule dialog
 # (https://docs.oracle.com/cd/G18296_01/client_help/en_US/101248.htm): hard = Mandatory Start,
 # Start On, Mandatory Finish, Finish On; soft = Start/Finish On or Before/After, As Late As
@@ -43,7 +44,7 @@ name = "Hard constraints"
 description = "Constraints that prevent activities being moved (Mandatory Start, Start On, Mandatory Finish, Finish On)"
 rule = "p6_02_hard_constraints"
 target = "< 1%"
-source = "46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"
+source = "101248 (P6 Professional help, Hard Constraints) and 46286: completed, WBS summary and LOE removed; start constraints ignored once started"
 
 [[metric]]
 id = "P6-03"
@@ -52,7 +53,7 @@ name = "Soft constraints"
 description = "Constraints that do not prevent activities being moved"
 rule = "p6_03_soft_constraints"
 target = "< 5%"
-source = "46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"
+source = "101248 (P6 Professional help, Soft Constraints) and 46285: Start on or before / on or after, Finish on or before / on or after, As late as possible; completed, WBS summary and LOE removed; start constraints ignored once started"
 
 [[metric]]
 id = "P6-04"
@@ -72,7 +73,7 @@ description = "Relationships with a lag duration greater than 352 hours"
 rule = "p6_05_long_lags"
 params = { limit_hours = 352 }  # the dialog's "x", in hours
 target = "< 5%"
-source = "46288: links between two actual-finished activities removed"
+source = "101248 (P6 Professional help, Long Lags) and 46288: links between two actual-finished activities removed"
 
 [[metric]]
 id = "P6-06"
@@ -82,7 +83,7 @@ description = "Activities with total float greater than 352 hours"
 rule = "p6_06_large_float"
 params = { limit_hours = 352 }  # the dialog's "x", in hours
 target = "< 1%"
-source = "46284: WBS summary, actual-finish and LOE removed"
+source = "101248 (P6 Professional help, Large Float) and 46284: WBS summary, actual-finish and LOE removed"
 
 [[metric]]
 id = "P6-07"
@@ -91,7 +92,7 @@ name = "Relationship types"
 description = "The majority of relationships should be Finish to Start"
 rule = "p6_07_relationship_types"
 target = "> 90%"
-source = "46287: actual = share of FS links in the subset"
+source = "101248 (P6 Professional help, Relationship Types): relationships between completed activities not included; 46287: actual = share of FS links in the subset"
 
 [[metric]]
 id = "P6-08"
@@ -100,7 +101,7 @@ name = "Lags"
 description = "Relationships with a positive lag duration"
 rule = "p6_08_lags"
 target = "< 5%"
-source = "46289"
+source = "101248 (P6 Professional help, Lags): relationships between completed activities not included; 46289"
 
 # --- Inaccuracy -----------------------------------------------------------------------------
 
@@ -111,7 +112,7 @@ name = "Negative lags"
 description = "Relationships with a lag duration of less than 0"
 rule = "p6_09_negative_lags"
 target = "< 1%"
-source = "46290: links between two actual-finished activities removed"
+source = "101248 (P6 Professional help, Negative Lags) and 46290: links between two actual-finished activities removed"
 
 [[metric]]
 id = "P6-10"
@@ -129,7 +130,7 @@ name = "Resource / cost"
 description = "Activities that do not have an expense or a resource assigned"
 rule = "p6_11_resource_cost"
 target = "< 1%"
-source = "46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts"
+source = "101248 (P6 Professional help, Resource / Cost) and 46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts"
 
 # --- Lateness -----------------------------------------------------------------------------------
 
@@ -158,7 +159,7 @@ name = "Negative float"
 description = "Activities with a total float less than 0"
 rule = "p6_14_negative_float"
 target = "< 1%"
-source = "46283: WBS summary, actual-finish and LOE removed"
+source = "101248 (P6 Professional help, Negative Float) and 46283: WBS summary, actual-finish and LOE removed"
 
 [[metric]]
 id = "P6-15"

@@ -94,6 +94,12 @@ its rows (`checked`); `counted` holds the numerator's rows when they are not the
 (the share of FS links, BEI's completed activities). `tests/test_audit.py` holds every built-in
 metric to `len(checked) == denominator`, numerator rows = numerator, listed rows within `checked`.
 
+Steps (`CheckResult.funnel`, P6 checks): the population as the rule builds it, one filter at a
+time, each with a label, the text it follows (`populations.STEP_SOURCES`: 101248, 46282, R1,
+Ten Six, model) and the rows it removed. `tests/test_sheets.py` holds the rule's steps, the
+sheet's numbered population, the metric's `source` in p6.toml and the docstring's `Excludes:`
+line to the same list.
+
 Status: `n/a` when the metric needs a baseline and none is loaded, or the value is none
 (empty population, missing data date or previous update); `error` when the rule raised
 (the note carries the exception); `info` when the target is `info`; else `pass` if
@@ -113,8 +119,9 @@ value is noted where it differs).
 Thresholds in hours as P6 compares them: `x` is the `limit_hours` parameter of P6-04, P6-05
 and P6-06 in `p6.toml` (the dialog's "x", 352 h). DCMA-06, DCMA-08 and DECM 06A211a take
 `limit_days` (44 working days of the activity's calendar) the same way. Targets are the Check Schedule dialog defaults as the P6 EPPM 25 help
-states them (strict comparisons: "less than 5%", "greater than 90%", BEI "0.95 or
-greater"); the dialog's own values must be copied in for pass/fail to match a report.
+states them (strict comparisons: "less than 5%", "greater than 90%"), except BEI: the help
+says "0.95 or greater", `p6.toml` holds `> 0.95` as report R1 prints it, so exactly 0.95 fails.
+The dialog's own values must be copied in for pass/fail to match a report.
 Constraint sets follow the P6 Professional help: hard = Mandatory Start, Start On,
 Mandatory Finish, Finish On; soft = On or Before / On or After, As Late As Possible.
 
@@ -132,7 +139,7 @@ Mandatory Finish, Finish On; soft = On or Before / On or After, As Late As Possi
 | P6-10 | Invalid progress dates | not LOE, not complete before the data date | forecast: not complete and forecast start < data date (remaining early start once started; `in_progress = "start"`), forecast = `restart_date` else `early_start_date`; actual: `act_start_date > data date` or `act_end_date > data date` | % | < 1% | 101248 (P6 Professional 24 help, Check Schedule dialog): not started, start before the data date; in progress, remaining early start before it or actual start after it; completed, actual finish after it | test_invalid_progress_dates |
 | P6-11 | Resource / cost | not milestone, not LOE (complete stay in) | no `TASKRSRC` row and no `PROJCOST` row | % | < 1% | 46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts | test_resource_or_expense |
 | P6-12 | Late activities | not complete, not milestone, not LOE | `work_hours(bl_finish → finish) > 0` on the activity's current calendar, `bl_finish` else `target_end_date` (`no_baseline = "planned"`); `finish_variance_wd` = that / `hours_per_day` | % | < 5% | 101248 (P6 Professional 24 help, Check Schedule dialog): milestones, WBS summary and LOE not included; completed activities out as report R1 shows (same population as P6-04); no baseline counterpart = late when the remaining early finish is later than the planned finish; 46278: variance in working time | test_missed_tasks_and_late_activities, test_late_activities_use_working_time; test_p6_check_schedule: test_p6_12_milestone_loe_wbs_and_completed_are_excluded |
-| P6-13 | BEI | not LOE, not milestone; numerator: complete activities of the snapshot; denominator: every activity of the baseline, whatever its `bl_finish` | value = complete / baseline activities; listed: `bl_finish <= data date` and not complete | ratio | >= 0.95 | report R1 overrides 101248's "baseline activities finishing before the data date" | test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule, test_baseline_metrics_are_na_without_baseline; test_p6_check_schedule: test_p6_13_bei_is_completed_over_all_baseline_activities |
+| P6-13 | BEI | not LOE, not milestone; numerator: complete activities of the snapshot; denominator: every activity of the baseline, whatever its `bl_finish` | value = complete / baseline activities; listed: `bl_finish <= data date` and not complete | ratio | > 0.95 (R1) | report R1 overrides 101248's "baseline activities finishing before the data date" | test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule, test_baseline_metrics_are_na_without_baseline; test_p6_check_schedule: test_p6_13_bei_is_completed_over_all_baseline_activities |
 | P6-14 | Negative float | not complete, not LOE | `total_float_hr_cnt < 0` | % | < 1% | 46283: WBS summary, actual-finish and LOE removed | test_float_threshold_in_hours_vs_working_days |
 | P6-15 | Out of sequence | all activities (denominator); started activities examined | started, with an FS predecessor not complete or an SS predecessor not started; listed one row per (activity, predecessor), counted once per activity | % | `p6.toml` | R1: pairs listed, counted once per activity; FF and SF unresolved | test_p6_check_schedule: test_p6_15_out_of_sequence_is_progress_while_a_predecessor_is_still_open |
 | P6-16 | Dangling start | all activities (denominator); not started, not milestone examined | has a predecessor, none FS or SS (no predecessor at all is P6-01's) | % | `p6.toml` | R1, 'Ignore In Progress Activities' checked; the constraint options are not read | test_p6_check_schedule: test_p6_16_dangling_start_ignores_in_progress_and_activities_without_predecessor, test_p6_16_and_17_leave_milestones_out |

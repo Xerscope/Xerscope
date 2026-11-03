@@ -290,3 +290,35 @@ def test_audit_page_shows_the_calculation_sheet_of_a_p6_check(app, store):
     expected = sheet("P6", STANDARDS["P6"]["P6-04"])
     shown = [block.value for block in app.markdown if "remain_drtn_hr_cnt" in block.value]
     assert shown == [expected.strip()]
+
+
+@pytest.mark.parametrize("metric_id", [m.id for m in STANDARDS["P6"].metrics])
+def test_audit_funnel_equals_the_rule_steps(app, store, metric_id):
+    """The step table of the Audit page is the rule's funnel: start, removed and left per step, counted."""
+    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    _run(app)
+    _open_audit(app, "P6", metric_id)
+    result = run_metric(
+        STANDARDS["P6"][metric_id], AnalysisContext(store.latest, store, Baseline.from_snapshot(store.first))
+    )
+    shown = next(frame.value for frame in app.dataframe if "step" in frame.value.columns)
+    expected = [("start", "", None, result.funnel.start)]
+    expected += [(s.label, s.source, len(s.removed), s.left) for s in result.funnel.steps]
+    expected += [("counted", "", None, result.numerator)]
+    got = [
+        (row.step, row.source, None if pd.isna(row.removed) else int(row.removed), int(row.left))
+        for row in shown.itertuples()
+    ]
+    assert got == expected
+
+
+def test_audit_lists_the_rows_a_step_removed(app, store):
+    """P6-04, step 'not milestone': the table shown is the milestones the rule removed there."""
+    _open_audit(app, "P6", "P6-04")
+    result = run_metric(STANDARDS["P6"]["P6-04"], AnalysisContext(store.latest, store))
+    removed = next(step.removed for step in result.funnel.steps if step.label == "not milestone")
+    assert not removed.empty  # the demo has open milestones
+    app.selectbox(key="funnel_step:P6-04").set_value("not milestone")
+    _run(app)
+    shown = [frame.value for frame in app.dataframe if "task_code" in frame.value.columns]
+    assert any(sorted(frame["task_code"]) == sorted(removed["task_code"]) for frame in shown)

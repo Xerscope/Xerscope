@@ -206,7 +206,8 @@ Outside `analysis/`:
   the target and parameters set on the page (`analysis/audit.py` `with_settings`, validated
   as a standard file is), the three sets behind the count (counted, checked but not counted,
   excluded from the file; `audit.split` cuts them from `CheckResult.checked` / `counted`,
-  nothing is recomputed) and the `[[metric]]` table to paste into a standard file to make a
+  nothing is recomputed), and for P6 the population step by step (`populations.Funnel`: each
+  filter named, with the text it follows and the rows it removed) and the `[[metric]]` table to paste into a standard file to make a
   change permanent. Settings stay on the page and in the session; Schedule health keeps the
   loaded standards.
 - **`sheets/<standard>/<id>.md`:** one calculation sheet per check (P6 for now), shown on the

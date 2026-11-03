@@ -69,7 +69,7 @@ checked subset.
 | P6-10 | | Invalid progress dates (start, or remaining early start once started, before / actual after the data date) | WBS, LOE, finished-before-data-date removed | < 1 % |
 | P6-11 | | Resource / cost | WBS, milestones, LOE removed (completed stay in); a role assignment counts | < 1 % |
 | P6-12 | Lateness | Late activities (finish variance < 0, working time; no baseline: finish later than planned finish) | WBS, milestones, LOE, completed removed (R1) | < 5 % |
-| P6-13 | | BEI: completed / every baseline activity (R1); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | ≥ 0.95 |
+| P6-13 | | BEI: completed / every baseline activity (R1); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
 | P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
 | P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | `p6.toml` |
 | P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | `p6.toml` |
@@ -78,7 +78,8 @@ checked subset.
 **Targets** are those of the Check Schedule dialog as the P6 EPPM 25 help prints them
 ([91574](https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm): "should be less than 5 %",
 "less than 1 %", "greater than 90 %", BEI "0.95 or greater"); the P6 Professional help does not
-print them. P6-15 to P6-17 have no documented default, and the duration limit `x` of
+print them. BEI follows report R1 instead (`> 0.95`), so exactly 0.95 fails as it does in that
+report. P6-15 to P6-17 have no documented default, and the duration limit `x` of
 P6-04 to P6-06 is a setting of the dialog: their values are in `p6.toml` only. Edit
 `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
 

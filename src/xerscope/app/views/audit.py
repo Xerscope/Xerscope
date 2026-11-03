@@ -12,6 +12,7 @@ from xerscope.analysis import AnalysisContext
 from xerscope.analysis.audit import choices, is_list, sheet, split, toml_block, with_settings
 from xerscope.analysis.checks import run_metric
 from xerscope.analysis.explain import explain, fmt_value, noun
+from xerscope.analysis.populations import STEP_SOURCES, flagged_activities, flagged_relationships
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
 from xerscope.app.state import anonymizer, baseline_for, memo, require_store, snapshot_picker, standards
@@ -131,7 +132,57 @@ def show_set(frame: pd.DataFrame, title: str, filename: str, key: str) -> None:
     ui.anonymised_csv_button(anonymous, frame, filename, "Download (CSV, anonymised)", key=f"dl_{key}")
 
 
+def funnel_table(result) -> pd.DataFrame:
+    """Start, one row per population step (rows removed, rows left), then the counted items."""
+    funnel = result.funnel
+    rows = [{"step": "start", "source": "", "removed": None, "left": funnel.start}]
+    rows += [
+        {"step": step.label, "source": step.source, "removed": len(step.removed), "left": step.left}
+        for step in funnel.steps
+    ]
+    rows.append({"step": "counted", "source": "", "removed": None, "left": result.numerator})
+    return pd.DataFrame(rows)
+
+
+def show_funnel(result, snapshot) -> None:
+    """How the denominator was cut from the file, step by step, each step with the text it follows."""
+    funnel = result.funnel
+    if funnel is None:
+        return
+    st.markdown("**Population, step by step**")
+    ui.table(
+        funnel_table(result),
+        raw_labels=True,
+        key="funnel",
+        overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
+    )
+    used = sorted({step.source for step in funnel.steps})
+    if used:
+        st.caption(
+            " · ".join(
+                f"[{key}]({STEP_SOURCES[key]})"
+                if STEP_SOURCES[key].startswith("http")
+                else f"{key}: {STEP_SOURCES[key]}"
+                for key in used
+            )
+        )
+    removing = [step for step in funnel.steps if not step.removed.empty]
+    if not removing:
+        return
+    label = st.selectbox(
+        "Rows removed by", [step.label for step in removing], index=None, key=f"funnel_step:{result.metric.id}"
+    )
+    if label is not None:
+        step = next(step for step in removing if step.label == label)
+        subject = "relationships" if "pred_code" in step.removed.columns else "activities"
+        frame = flagged_relationships(step.removed) if subject == "relationships" else flagged_activities(step.removed)
+        show_set(
+            frame, f"{subject} removed", f"{result.metric.id}_{ui.stamp(snapshot.data_date)}_removed.csv", "removed"
+        )
+
+
 def show_sets(result, snapshot) -> None:
+    show_funnel(result, snapshot)
     sets = split(result, snapshot)
     if sets is None:
         st.caption("This check has no population to list (a ratio or a pass/fail test).")

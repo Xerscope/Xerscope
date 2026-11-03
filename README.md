@@ -119,7 +119,7 @@ Tools › Check Schedule on the same file and baseline, then compare line by lin
   Professional 24 dialog help, plus out of sequence and dangling start / finish as a P6
   Professional report prints them.
 - **Targets:** the dialog's documented defaults (< 5 %, < 1 % for the inaccuracy checks,
-  FS > 90 %, BEI ≥ 0.95). Copy `src/xerscope/standards/p6.toml` and set them to yours.
+  FS > 90 %, BEI > 0.95 as a P6 Professional report prints it). Copy `src/xerscope/standards/p6.toml` and set them to yours.
 - **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
   diffs the counts against the ones typed from P6's summary (exit 1 on a difference).
 - **Definitions:** each check cites the Oracle page or report it comes from. Differences
