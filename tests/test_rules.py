@@ -711,6 +711,25 @@ def test_log_lists_activities_without_predecessors_or_successors_unfiltered():
     assert codes(run(P6, "P6-01", s)) == ["B", "S"]
 
 
+def test_log_lists_every_actual_date_after_the_data_date():
+    """P6 log warning: 'The activities in which the data date is before the actual date'; no exclusion.
+
+    The data date is Mon 2026-03-02 08:00.
+    """
+    s = snap(
+        [
+            active("A", act_start_date="2026-03-05 08:00"),  # started after the data date
+            done("B", act_end_date="2026-03-04 17:00"),  # finished after it
+            done("C"),  # both actuals in February
+            active("L", task_type="TT_LOE", act_start_date="2026-03-05 08:00"),  # LOE: P6-10 leaves it out
+            todo("N"),
+        ]
+    )
+    r = run(INTEGRITY, "INT-06", s)
+    assert codes(r) == ["A", "B", "L"] and counts(r) == (3, 5) and r.status == "fail"
+    assert codes(run(P6, "P6-10", s)) == ["A", "B"]
+
+
 def test_late_activities_use_working_time():
     # Finished Fri 17:00 against a baseline of Mon 08:00: the same working minute, not late.
     bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 08:00")]))

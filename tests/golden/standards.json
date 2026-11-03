@@ -321,6 +321,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -807,6 +815,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 27,
     "flagged": [
@@ -1292,6 +1308,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 27,
     "flagged": [
@@ -1776,6 +1800,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 26,
@@ -2263,6 +2295,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 26,
@@ -2754,6 +2794,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 25,
@@ -3260,6 +3308,16 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
    },
    "P6/P6-01": {
     "denominator": 24,
@@ -3773,6 +3831,16 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
    "P6/P6-01": {
     "denominator": 23,
     "flagged": [
@@ -4275,6 +4343,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -4763,6 +4839,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 27,
@@ -5275,6 +5359,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 27,
     "flagged": [
@@ -5786,6 +5878,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 26,
@@ -6307,6 +6407,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 26,
@@ -6836,6 +6944,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 25,
@@ -7381,6 +7497,16 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
    },
    "P6/P6-01": {
     "denominator": 24,
@@ -7934,6 +8060,16 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
    "P6/P6-01": {
     "denominator": 23,
     "flagged": [
@@ -8460,6 +8596,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -8949,6 +9093,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 27,
@@ -9462,6 +9614,14 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 27,
     "flagged": [
@@ -9974,6 +10134,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 26,
@@ -10493,6 +10661,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 26,
@@ -11020,6 +11196,14 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 25,
@@ -11563,6 +11747,16 @@
     "numerator": 3,
     "status": "info",
     "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
    },
    "P6/P6-01": {
     "denominator": 24,
@@ -12114,6 +12308,16 @@
     "status": "info",
     "value": 3.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
    "P6/P6-01": {
     "denominator": 23,
     "flagged": [
@@ -12600,6 +12804,14 @@
     "status": "info",
     "value": 1.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 0,
     "flagged": [],
@@ -13021,6 +13233,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 0,
@@ -13444,6 +13664,14 @@
     "status": "info",
     "value": 1.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 0,
     "flagged": [],
@@ -13865,6 +14093,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 0,
@@ -14347,6 +14583,23 @@
     "status": "info",
     "value": 12.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 12,
+    "flagged": [
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1090",
+     "A1100"
+    ],
+    "note": null,
+    "numerator": 8,
+    "status": "fail",
+    "value": 8.0
+   },
    "P6/P6-01": {
     "denominator": 12,
     "flagged": [
@@ -14814,6 +15067,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 1,
@@ -15350,6 +15611,14 @@
     "numerator": 2,
     "status": "info",
     "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 66,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 66,
@@ -15888,6 +16157,14 @@
     "status": "info",
     "value": 2.0
    },
+   "INTEGRITY/INT-06": {
+    "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 25,
     "flagged": [
@@ -16396,6 +16673,14 @@
     "numerator": 2,
     "status": "info",
     "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 52,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 52,
@@ -16939,6 +17224,14 @@
     "numerator": 2,
     "status": "info",
     "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 24,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 21,
