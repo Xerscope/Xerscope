@@ -9,7 +9,14 @@ from __future__ import annotations
 import pandas as pd
 
 from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
-from .populations import flagged_activities, links_between, predecessors_ahead
+from .populations import (
+    flagged_activities,
+    has_predecessor_in_project,
+    has_successor_in_project,
+    links_between,
+    open_end_reason,
+    predecessors_ahead,
+)
 from .rules import RuleOutput, rule
 
 STORED_FIELDS = ["early_start_date", "early_end_date", "late_start_date", "late_end_date", "total_float_hr_cnt"]
@@ -109,6 +116,23 @@ def int_04_relationship_loops(context) -> RuleOutput:
     activities = context.snapshot.activities
     flagged = activities[activities["task_code"].isin(members)]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+
+
+@rule("int_05_without_predecessors_or_successors", "count")
+def int_05_without_predecessors_or_successors(context) -> RuleOutput:
+    """Activities without a predecessor or a successor.
+    Counts: without logic / activities
+
+    Mirrors the P6 log warnings 'Activities without predecessors' and 'Activities without successors': the
+    raw list, every activity (completed, started, milestones, level of effort) with no relationship in
+    that direction; a relationship to another project counts. P6-01 applies the Check Schedule exclusions.
+    """
+    activities = context.snapshot.activities
+    missing_predecessor = ~(has_predecessor_in_project(context, activities) | activities["has_external_pred"])
+    missing_successor = ~(has_successor_in_project(context, activities) | activities["has_external_succ"])
+    flagged = activities[missing_predecessor | missing_successor]
+    reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
+    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities))
 
 
 def _describe_differences(group: pd.DataFrame) -> str:
