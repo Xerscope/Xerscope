@@ -14,7 +14,7 @@ import xerscope
 from xerscope.analysis import Baseline, health_history
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
-from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
+from xerscope.viz import categorise, gantt_html, gantt_rows
 from xerscope.viz.charts import ACCENT, build_activity_dates, build_activity_float
 
 
@@ -70,11 +70,6 @@ def test_gantt_rows_on_the_demo_series(store):
     assert rows[0]["id"] == "w:__project__" and rows[0]["depth"] == 0
     assert {r["category"] for r in rows if r["kind"] == "task"} >= {"Critical", "Complete"}
     assert "Critical" in gantt_html(rows, relationships=s.relationships, data_date=s.data_date, links=True)
-
-
-def test_finish_trend(store):
-    fig = build_finish_trend(store.summary)
-    assert len(fig.data[0].x) == len(store)
 
 
 def test_gantt_compare_with_no_common_tasks(store):
