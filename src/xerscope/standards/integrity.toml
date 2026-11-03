@@ -65,3 +65,12 @@ rule = "int_07_unsatisfied_constraints"
 unit = "count"
 target = "info"
 source = "Oracle P6 EPPM 26 help, Schedule Project Log, Exceptions: \"Activities with unsatisfied constraints\", \"constraints that have not been addressed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm). Unconfirmed against a P6 log: the reading (recalculated early date on the required side of the constraint date) is xerscope's"
+
+[[metric]]
+id = "INT-08"
+name = "Unsatisfied relationships"
+description = "Relationships the successor's actual or recalculated dates break. Mirrors the log's Exceptions 'Activities with unsatisfied relationships'; xerscope's reading, info until confirmed against a P6 log"
+rule = "int_08_unsatisfied_relationships"
+unit = "count"
+target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Exceptions: \"Activities with unsatisfied relationships\", \"relationships that have not been addressed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm). Unconfirmed against a P6 log: the reading (successor date before the predecessor's, lag not applied) is xerscope's"

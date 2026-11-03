@@ -12,6 +12,7 @@ from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
 from .populations import (
     actual_after,
     flagged_activities,
+    flagged_relationships,
     has_predecessor_in_project,
     has_successor_in_project,
     links_between,
@@ -211,6 +212,53 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
     flagged = activities[activities["task_code"].isin(reasons)]
     texts = flagged["task_code"].map(lambda code: "; ".join(reasons[code]))
     return RuleOutput(flagged_activities(flagged, unsatisfied=texts), len(flagged), len(constrained))
+
+
+@rule("int_08_unsatisfied_relationships", "count", links=True)
+def int_08_unsatisfied_relationships(context) -> RuleOutput:
+    """Relationships the successor's dates break.
+    Counts: unsatisfied / relationships checked
+    Excludes: level of effort, relationships to other projects, relationships with a lead (negative lag).
+
+    xerscope's reading of the P6 log exception 'Activities with unsatisfied relationships', not confirmed
+    against a P6 log. Each activity is read at its actual date, else at its recalculated early date. FS: the
+    successor starts before the predecessor finishes; SS: before it starts; FF: the successor finishes
+    before the predecessor finishes; SF: before it starts. The lag is not added (it needs a calendar), so
+    a relationship with a positive lag is listed only when it is broken even at zero lag.
+    """
+    try:
+        dates = schedule(context.snapshot).frame
+    except CycleError as exc:
+        return RuleOutput(note=f"cannot schedule: {exc}")
+    tasks = context.snapshot.by_code
+    start = tasks["act_start_date"].combine_first(dates["es"])
+    finish = tasks["act_end_date"].combine_first(dates["ef"])
+    relationships = context.snapshot.relationships
+    links = relationships[
+        relationships["pred_code"].isin(dates.index)
+        & relationships["succ_code"].isin(dates.index)
+        & ~relationships["pred_code"].map(tasks["is_loe"]).astype(bool)
+        & ~relationships["succ_code"].map(tasks["is_loe"]).astype(bool)
+        & (relationships["lag_hr"].fillna(0) >= 0)
+    ]
+    successor_start = links["succ_code"].map(start)
+    successor_finish = links["succ_code"].map(finish)
+    broken = (
+        ((links["type"] == "FS") & (successor_start < links["pred_code"].map(finish)))
+        | ((links["type"] == "SS") & (successor_start < links["pred_code"].map(start)))
+        | ((links["type"] == "FF") & (successor_finish < links["pred_code"].map(finish)))
+        | ((links["type"] == "SF") & (successor_finish < links["pred_code"].map(start)))
+    )
+    flagged = links[broken]
+    successor_side = flagged["type"].map({"FS": "start", "SS": "start", "FF": "finish", "SF": "finish"})
+    reason = [
+        f"successor {side} {(start if side == 'start' else finish)[succ]} before predecessor "
+        f"{'finish' if kind in ('FS', 'FF') else 'start'} {(finish if kind in ('FS', 'FF') else start)[pred]}"
+        for side, succ, kind, pred in zip(
+            successor_side, flagged["succ_code"], flagged["type"], flagged["pred_code"], strict=True
+        )
+    ]
+    return RuleOutput(flagged_relationships(flagged).assign(reason=reason), len(flagged), len(links))
 
 
 def _describe_differences(group: pd.DataFrame) -> str:
