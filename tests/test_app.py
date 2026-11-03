@@ -58,6 +58,17 @@ def test_file_list_stays_open_while_files_are_ticked(sample_dir, monkeypatch):
     assert before.key is not None and after.key == before.key
 
 
+def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
+    # A widget key is written into the page as a CSS class (st-key-...). On the remote image the
+    # folder is the server's and the visitor never sees it (_data_locked), so no key may hold it.
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "1")
+    at = _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+    keys = [element.key for element in [*at.sidebar.checkbox, *at.sidebar.expander] if element.key]
+    assert len(_file_boxes(at)) == len(list(sample_dir.glob("*.xer")))
+    assert keys and not [key for key in keys if str(sample_dir) in key]
+
+
 def _ok(at):
     assert not at.exception, [e.value for e in at.exception]
 
