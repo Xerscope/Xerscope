@@ -337,6 +337,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -833,6 +841,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1340,6 +1356,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 27,
     "flagged": [
@@ -1835,6 +1859,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2338,6 +2370,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2852,6 +2892,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 25,
@@ -3378,6 +3426,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 24,
@@ -3911,6 +3967,16 @@
     "status": "info",
     "value": 1.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
    "P6/P6-01": {
     "denominator": 23,
     "flagged": [
@@ -4429,6 +4495,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -4928,6 +5002,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5461,6 +5543,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 27,
     "flagged": [
@@ -5983,6 +6073,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6520,6 +6618,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7072,6 +7178,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 25,
@@ -7637,6 +7751,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 24,
@@ -8210,6 +8332,16 @@
     "status": "info",
     "value": 1.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
    "P6/P6-01": {
     "denominator": 23,
     "flagged": [
@@ -8752,6 +8884,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -9252,6 +9392,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9780,6 +9928,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10315,6 +10471,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 26,
     "flagged": [
@@ -10844,6 +11008,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11394,6 +11566,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 25,
@@ -11957,6 +12137,14 @@
     "numerator": 1,
     "status": "info",
     "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 24,
@@ -12528,6 +12716,16 @@
     "status": "info",
     "value": 1.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
    "P6/P6-01": {
     "denominator": 23,
     "flagged": [
@@ -13030,6 +13228,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 0,
     "flagged": [],
@@ -13461,6 +13667,14 @@
     "value": 0.0
    },
    "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
     "denominator": 0,
     "flagged": [],
     "note": null,
@@ -13906,6 +14120,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 0,
     "flagged": [],
@@ -14337,6 +14559,14 @@
     "value": 0.0
    },
    "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
     "denominator": 0,
     "flagged": [],
     "note": null,
@@ -14850,6 +15080,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 12,
     "flagged": [
@@ -15327,6 +15565,14 @@
     "value": 0.0
    },
    "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
     "denominator": 0,
     "flagged": [],
     "note": null,
@@ -15886,6 +16132,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 84,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 66,
     "flagged": [
@@ -16439,6 +16693,14 @@
     "status": "info",
     "value": 0.0
    },
+   "INTEGRITY/INT-08": {
+    "denominator": 31,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 25,
     "flagged": [
@@ -16958,6 +17220,14 @@
    },
    "INTEGRITY/INT-07": {
     "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 41,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -17522,6 +17792,17 @@
     "numerator": 0,
     "status": "info",
     "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 29,
+    "flagged": [
+     "EW-020->EW-030",
+     "EW-030->ST-010"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
    },
    "P6/P6-01": {
     "denominator": 21,

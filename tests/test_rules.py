@@ -722,6 +722,25 @@ def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
     assert r.flagged.iloc[0]["unsatisfied"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
 
 
+def test_unsatisfied_relationship_is_a_link_the_successor_dates_break():
+    """B has a Mandatory start on Mon 2026-03-02, while its FS predecessor A (80 h) finishes Fri 2026-03-13 17:00."""
+    s = snap(
+        [
+            todo("A", **hours(80)),
+            todo("B", cstr_type="CS_MANDSTART", cstr_date="2026-03-02 08:00", **hours(8)),
+            todo("C", **hours(8)),
+            todo("D", **hours(8)),
+        ],
+        [("A", "B", "FS", 0), ("C", "D", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-08", s)
+    assert links(r) == [("A", "B")] and counts(r) == (1, 2) and r.status == "info"
+    assert (
+        r.flagged.iloc[0]["reason"]
+        == "successor start 2026-03-02 08:00:00 before predecessor finish 2026-03-13 17:00:00"
+    )
+
+
 def test_late_activities_use_working_time():
     # Finished Fri 17:00 against a baseline of Mon 08:00: the same working minute, not late.
     bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 08:00")]))
