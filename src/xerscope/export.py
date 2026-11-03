@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -52,9 +53,18 @@ def write_tables(store: SnapshotStore, out_dir: str | Path, fmt: Fmt = "parquet"
     return paths
 
 
-def zip_tables(store: SnapshotStore, fmt: Fmt = "parquet") -> bytes:
+def zip_tables(
+    store: SnapshotStore, fmt: Fmt = "parquet", transform: Callable[[pd.DataFrame], pd.DataFrame] | None = None
+) -> bytes:
+    """The export tables in one zip; ``transform`` (e.g. ``Anonymizer.frame``) is applied to each."""
+    tables = export_tables(store)
+    return zip_frames({name: transform(df) if transform else df for name, df in tables.items()}, fmt)
+
+
+def zip_frames(frames: dict[str, pd.DataFrame], fmt: Fmt = "csv") -> bytes:
+    """One ``<name>.<fmt>`` file per frame, in one zip."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, df in export_tables(store).items():
+        for name, df in frames.items():
             z.writestr(f"{name}.{fmt}", _bytes(df, fmt))
     return buf.getvalue()

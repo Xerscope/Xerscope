@@ -133,13 +133,21 @@ Outside `analysis/`:
   `build_snapshot` time (`xer/model.py`) and by `viz/gantt`; analysis reads the derived columns.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
 - `sample.py`: the demo series generator, with the findings it plants week by week.
-- `anonymize.py`: anonymised copies of the loaded XER files and of the flagged lists, the only
-  form in which the app hands activities out (Schedule health lists, Export page). An allowlist
+- `anonymize.py`: anonymised copies of the loaded XER files and of every table the app hands
+  out while the sidebar switch "Anonymous exports" is on (the default, per session): page CSVs,
+  Schedule health lists, the Power BI zip (`Anonymizer.frame` on each table, no project code in
+  the file name), the Debug diagnostic. Off, the same downloads carry the files' own codes and
+  names; the XER extract stays anonymised, the Schedule health summary (checks and results
+  only) stays as it is. The pages always show the files' own data. An allowlist
   per table keeps keys, dates, durations, units, flags and P6 enumerations; codes get new
-  values (same original, same new code in every file of the session), names are rebuilt from
-  them, costs set to 0, user, database and free text removed, unknown tables and columns left
-  out and named. Every output field is compared with the originals' text values before it is
-  handed out. The mapping lives in the session only.
+  values, `X<kind>` and the first hex digits of an HMAC-SHA256 of the original under a key
+  drawn for the session (8 for activities; two IDs on one code are refused), names are rebuilt
+  from them, costs set to 0, user, database and free text removed, unknown tables and columns
+  left out and named. A download reads only its own files (the update shown, W-1 and W for the
+  changelog and PPC, the baseline's file when it lists baseline fields, every file for Power BI
+  and the XER extract), and an activity keeps one code in every download of the session. Every
+  output field is compared with the text values of the files read before it is handed out. The
+  key and the mappings live in the session only.
 
 ### `verify/`: independent checks, strongest source first
 
@@ -158,14 +166,19 @@ Outside `analysis/`:
   Activities view: a tree grid (Activity / WBS, % complete, float) on the left and the
   timeline on the right, one row each. `gantt_rows` builds the rows in P6 order (each
   WBS node, its own activities, then its child nodes) with float-category colours,
-  comparison dates and finish shifts; `gantt_html` wraps them as JSON with the script.
+  comparison dates and finish shifts; `gantt_data` hands them, with the options, to a
+  Streamlit component (`app/ui.py: GANTT`, `st.components.v2`) mounted in the page.
   WBS rows open and close in the browser, without a rerun; only the rows in view are
   in the page, so a schedule of 15,000 activities scrolls like a small one. There is
-  no zoom, only a month or week timescale. Schedule text is never parsed as HTML (`textContent` only)
-  and the page's Content-Security-Policy blocks every network request.
+  no zoom, only a month or week timescale. Schedule text reaches the browser only as the
+  component's data and is never parsed as HTML (`textContent` only; `gantt.js` holds no
+  network call, checked by a test). Page colours and font come from the theme's `--st-*`
+  variables, so the Gantt follows a theme switch without a rerun.
 - **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
-  (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the
-  check-status colours in `app/ui.py` derive from them. The series palette is a fixed
+  (`ACCENT`, `STATUS`, `SERIES`, `NEUTRAL`), one set for both themes, each mark >= 3:1 on
+  the light and the dark background: the Gantt bars and the check-status labels in
+  `app/ui.py` derive from them. Text, grid and axes are left to Streamlit's Plotly theme,
+  applied in the browser, so the charts follow a theme switch without a rerun. The series palette is a fixed
   categorical order, validated for colour-blind separation; status hues never decorate.
   There is one y-axis per chart.
 
@@ -195,9 +208,9 @@ Outside `analysis/`:
   the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
   targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
-  end last). `app/diagnostic.py`
-  builds the tables from the existing results; `Anonymizer.zip_frames` hands them out with
-  the codes of the anonymised extract (dates unchanged).
+  end last). `app/diagnostic.py` builds the tables from the existing results; with anonymous
+  exports on, `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract
+  (dates unchanged).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
 
@@ -232,7 +245,7 @@ Outside `analysis/`:
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
-| `test_app.py` | every page renders headless, key options work, downloads leave anonymised |
+| `test_app.py` | every page renders headless, key options work, downloads leave anonymised by default and plain with the switch off |
 | `test_anonymize.py` | anonymised files give the same results (demo series, P6 exports) and hold no text of the originals |
 | `test_parser.py`, `test_model.py`, `test_store.py`, `test_shapes.py` | format edge cases, P6 meaning of each column, the weekly series, the shape of the frames |
 | `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfile / Caddyfiles keep loopback-only (8501 on 127.0.0.1 in `compose.yaml`, no port in `deploy/`), non-root |

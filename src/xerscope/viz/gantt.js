@@ -1,21 +1,19 @@
-// WBS Gantt drawn from DATA (built by viz/gantt.py: gantt_html).
-// Schedule text (activity and WBS names) comes from the XER file: it is only ever written
-// with textContent or as a DOM property, never parsed as HTML.
-(() => {
+// WBS Gantt, a Streamlit component (app/ui.py: GANTT) drawn from the data of viz/gantt.py:
+// gantt_data. Schedule text (activity and WBS names) comes from the XER file: it is only ever
+// written with textContent or as a DOM property, never parsed as HTML.
+export default function (component) {
   "use strict";
-  const D = DATA;
+  const D = component.data;
   const P = D.palette;
   const ROW = 26; // px, same as .row / .trow in gantt.css
   const GRID_W = 420; // px, tree grid width
   const DAY = 864e5;
-  const root = document.getElementById("gantt");
-
-  const cssVars = {
-    "--ink": P.ink, "--secondary": P.secondary, "--muted": P.muted, "--grid": P.grid,
-    "--axis": P.axis, "--background": P.background, "--band": P.band, "--Normal": P.Normal,
-    "--grid-w": GRID_W + "px",
-  };
-  for (const [name, value] of Object.entries(cssVars)) document.documentElement.style.setProperty(name, value);
+  const root = component.parentElement.querySelector("#gantt");
+  root.replaceChildren(); // drawn again from scratch when the data change
+  root.style.height = D.height + "px";
+  // page colours come from the theme in gantt.css; the bars' from the data
+  root.style.setProperty("--Normal", P.Normal);
+  root.style.setProperty("--grid-w", GRID_W + "px");
 
   // --- helpers -------------------------------------------------------------------------
   const el = (tag, cls, text) => {
@@ -387,7 +385,8 @@
     pending = true;
     requestAnimationFrame(() => { pending = false; drawWindow(false); });
   });
-  window.addEventListener("resize", () => render());
+  const onResize = () => render();
+  window.addEventListener("resize", onResize);
 
   render();
   const selectedIndex = index.get(D.selected);
@@ -395,4 +394,5 @@
     scroll.scrollTop = (selectedIndex - 1) * ROW;
     drawWindow(false);
   }
-})();
+  return () => window.removeEventListener("resize", onResize);
+}

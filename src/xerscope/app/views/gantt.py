@@ -3,8 +3,16 @@ import streamlit as st
 
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, compare_picker, is_dark, memo, require_store, snapshot_picker
-from xerscope.viz import categorise, gantt_html, gantt_rows
+from xerscope.app.state import (
+    baseline_for,
+    compare_picker,
+    csv_download,
+    memo,
+    require_store,
+    snapshot_picker,
+    sources_of,
+)
+from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER
 from xerscope.xer.model import STATUS
 
@@ -101,14 +109,13 @@ filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the 
 
 rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
 root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
-st.iframe(
-    gantt_html(
+ui.GANTT(
+    data=gantt_data(
         rows,
         relationships=snapshot.relationships,
         data_date=snapshot.data_date,
         span=(root_row["start"], root_row["finish"]),
         timescale="week" if timescale == "Week" else "month",
-        dark=is_dark(),
         # a filter opens every branch so each match shows; otherwise the chosen node opens
         open_ids={r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"},
         selected=f"w:{current}",
@@ -116,7 +123,7 @@ st.iframe(
         links=show_links,
         height=GANTT_HEIGHT,
     ),
-    height=GANTT_HEIGHT,
+    key="gantt_chart",
 )
 
 with st.expander("Table view"):
@@ -135,4 +142,4 @@ with st.expander("Table view"):
         "constraint",
     ]
     ui.table(tasks, columns=table_columns)
-    ui.csv_button(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv")
+    csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))

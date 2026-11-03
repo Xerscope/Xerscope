@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
-from xerscope.app.state import is_dark, require_store
+from xerscope.app.state import require_store
 from xerscope.viz import build_finish_trend
 
 store = require_store()
@@ -57,7 +57,7 @@ ui.section(
     "Each point is one weekly XER: where its schedule puts the project finish. "
     "A rising line means the end date is slipping.",
 )
-st.plotly_chart(build_finish_trend(summary, dark=is_dark()), width="stretch")
+st.plotly_chart(build_finish_trend(summary), width="stretch")
 
 ui.section("Updates loaded")
 ui.table(summary.drop(columns=["snapshot_idx", "project"]))

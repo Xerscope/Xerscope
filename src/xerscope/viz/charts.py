@@ -11,29 +11,17 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-# The app's colours, in one place, per theme. INK "primary" is the theme's textColor and
-# STATUS "info" its blueColor (app/.streamlit/config.toml, [theme.light] / [theme.dark]).
-# STATUS is reserved for meaning (critical / warning / pass / complete / info, and the
-# check statuses in app/ui.py) and never decorates; SERIES is the categorical palette for
-# lines and keeps clear of those hues.
-SERIES = {
-    "light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"],
-    "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"],
-}
-STATUS = {
-    "light": {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#9aa5b1", "info": "#1f4e79"},
-    "dark": {"critical": "#f05252", "warning": "#fab219", "good": "#22c55e", "complete": "#64748b", "info": "#22d3ee"},
-}
-INK = {
-    "light": {"primary": "#0f172a", "secondary": "#334155", "muted": "#5b6b82", "grid": "#e8edf3", "axis": "#cbd5e1"},
-    "dark": {"primary": "#e2e8f0", "secondary": "#cbd5e1", "muted": "#94a3b8", "grid": "#1a2438", "axis": "#2a3a5c"},
-}
-
-
-def _mode(dark: bool) -> str:
-    return "dark" if dark else "light"
-
-
+# The app's colours, in one place. One set for both themes: every mark in SERIES and STATUS
+# (except "info", used as a label background only) and NEUTRAL reaches 3:1 against the light
+# and the dark page backgrounds (WCAG 2.2 SC 1.4.11), so a chart need not be redrawn when the
+# viewer switches theme. Text, grid and axes are left to Streamlit's Plotly theme, which the
+# browser applies live. STATUS is reserved for meaning (critical / warning / pass / complete /
+# info, and the check statuses in app/ui.py) and never decorates; SERIES is the categorical
+# palette for lines and keeps clear of those hues.
+SERIES = ["#2a78d6", "#ea632e", "#19a070", "#be8100", "#e36092", "#6554d7"]
+STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#1f4e79"}
+NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
+ACCENT = "#0b7fa0"  # decoration (app/style.css)
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
 FONT_FAMILY = "IBM Plex Sans, sans-serif"
@@ -48,45 +36,33 @@ LABEL_SHORT_MAX = 40  # up to this many weeks they carry "63%", beyond none
 DATE_AXIS = dict(hoverformat="%Y-%m-%d", tickformatstops=[dict(dtickrange=[None, 86_400_000], value="%d %b")])
 
 
-def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
-    """House style: 13 px text, recessive grid, legend on top, room on the right for end labels."""
-    ink = INK[_mode(dark)]
+def _layout(fig: go.Figure, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
+    """House style: 13 px text, legend on top, room on the right for end labels. Text, grid and
+    axis colours come from the theme (st.plotly_chart's default theme="streamlit")."""
     fig.update_layout(
         height=height,
         margin=dict(l=10, r=110, t=56, b=10),
         showlegend=legend,
         legend=dict(orientation="h", yref="container", y=0.995, yanchor="top", x=0, font=FONT),
         hovermode="x unified",
-        font=dict(family=FONT_FAMILY, color=ink["secondary"], **FONT),
+        font=dict(family=FONT_FAMILY, **FONT),
         hoverlabel=dict(font=FONT, align="left"),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
     )
     fig.update_xaxes(
-        gridcolor=ink["grid"],
-        linecolor=ink["axis"],
         showspikes=True,
-        spikecolor=ink["muted"],
         spikethickness=1,
         spikedash="dot",
         tickfont=TICK,
         title_font=FONT,
         **DATE_AXIS,
     )
-    fig.update_yaxes(
-        title=y_title,
-        gridcolor=ink["grid"],
-        linecolor=ink["axis"],
-        zerolinecolor=ink["axis"],
-        tickfont=TICK,
-        title_font=FONT,
-    )
+    fig.update_yaxes(title=y_title, tickfont=TICK, title_font=FONT)
     return fig
 
 
-def _data_date(fig: go.Figure, when, dark: bool) -> None:
+def _data_date(fig: go.Figure, when) -> None:
     if when is not None:
-        fig.add_vline(x=when, line=dict(color=INK[_mode(dark)]["secondary"], width=1.5, dash="dash"))
+        fig.add_vline(x=when, line=dict(color=NEUTRAL, width=1.5, dash="dash"))
         fig.add_annotation(
             x=when,
             y=1,
@@ -99,15 +75,16 @@ def _data_date(fig: go.Figure, when, dark: bool) -> None:
         )
 
 
-def _end_label(fig: go.Figure, x, y, text: str, color: str) -> None:
-    fig.add_annotation(x=x, y=y, text=text, showarrow=False, xanchor="left", xshift=6, font=dict(size=12, color=color))
+def _end_label(fig: go.Figure, x, y, text: str) -> None:
+    """Text in the theme's colour (none given), so it follows a theme switch."""
+    fig.add_annotation(x=x, y=y, text=text, showarrow=False, xanchor="left", xshift=6, font=dict(size=12))
 
 
 def _as_number(y) -> float:
     return float(pd.Timestamp(y).value) if isinstance(y, pd.Timestamp) else float(y)
 
 
-def _end_labels(fig: go.Figure, ends: list[tuple], span: float, color: str) -> None:
+def _end_labels(fig: go.Figure, ends: list[tuple], span: float) -> None:
     """End labels for several lines, ``ends`` = (x, y, text) with y numeric or Timestamp.
 
     Plotly does not move colliding annotations: labels of lines ending on the same point
@@ -129,7 +106,7 @@ def _end_labels(fig: go.Figure, ends: list[tuple], span: float, color: str) -> N
             xanchor="left",
             xshift=6,
             yshift=shift,
-            font=dict(size=12, color=color),
+            font=dict(size=12),
         )
         last = value
 
@@ -143,10 +120,9 @@ def build_scurve(
     forecast: pd.DataFrame | None,
     data_date=None,
     percent: bool = False,
-    dark: bool = False,
 ) -> go.Figure:
     """PV (baseline), EV and AC per update, forecast of hours to completion."""
-    c = SERIES[_mode(dark)]
+    c = SERIES
     bac = float(series["bac_hr"].iloc[0]) if len(series) else 0.0
     k = (100 / bac) if (percent and bac) else 1.0
     unit = "% of BAC" if percent and bac else "labour hours"
@@ -196,7 +172,6 @@ def build_scurve(
             forecast["date"].iloc[-1],
             forecast["fc_cum_hr"].iloc[-1] * k,
             f"EAC {forecast['fc_cum_hr'].iloc[-1] * k:,.0f}",
-            INK[_mode(dark)]["secondary"],
         )
     if len(curve):
         _end_label(
@@ -204,17 +179,15 @@ def build_scurve(
             curve["date"].iloc[-1],
             curve["pv_cum_hr"].iloc[-1] * k,
             f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f}",
-            INK[_mode(dark)]["secondary"],
         )
-    _data_date(fig, data_date, dark)
+    _data_date(fig, data_date)
     fig.update_traces(hovertemplate="%{y:,.1f}")
-    return _layout(fig, dark, 500, unit)
+    return _layout(fig, 500, unit)
 
 
-def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool = False) -> go.Figure:
+def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figure:
     """Performance indices per update on one ratio axis, 1.0 and the alert threshold marked."""
-    c = SERIES[_mode(dark)]
-    ink = INK[_mode(dark)]
+    c = SERIES
     fig = go.Figure()
     ends = []
     for i, (col, name) in enumerate(columns.items()):
@@ -236,23 +209,21 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
     span = max((float(series[c].max()) for c in columns if series[c].notna().any()), default=1.0) - min(
         (float(series[c].min()) for c in columns if series[c].notna().any()), default=0.0
     )
-    _end_labels(fig, ends, max(span, 0.1), ink["secondary"])
-    fig.add_hline(y=1.0, line=dict(color=ink["muted"], width=1))
+    _end_labels(fig, ends, max(span, 0.1))
+    fig.add_hline(y=1.0, line=dict(color=NEUTRAL, width=1))
     fig.add_hline(
         y=INDEX_ALERT,
-        line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
+        line=dict(color=STATUS["critical"], width=1, dash="dot"),
         annotation_text=f"{INDEX_ALERT:g}",
         annotation_position="bottom left",
     )
-    return _layout(fig, dark, 380, "index")
+    return _layout(fig, 380, "index")
 
 
 # --- milestones ---------------------------------------------------------------------------------
 
 
-def build_mta(
-    trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool = False, order: list[str] | None = None
-) -> go.Figure:
+def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[str] | None = None) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
     Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
@@ -266,9 +237,8 @@ def build_mta(
     Lines with the same dates hide each other: the unified hover lists every line at a
     reporting date and their end labels merge.
     """
-    status = STATUS[_mode(dark)]
-    ink = INK[_mode(dark)]
-    series = SERIES[_mode(dark)]
+    status = STATUS
+    series = SERIES
     fig = go.Figure()
     pad = pd.Timedelta(days=10)
     lo = min(trend["data_date"].min(), trend["forecast"].min()) - 2 * pad
@@ -278,7 +248,7 @@ def build_mta(
             x=[lo, hi, hi],
             y=[lo, hi, lo],
             fill="toself",
-            fillcolor=ink["grid"],
+            fillcolor="rgba(123, 135, 148, 0.12)",  # NEUTRAL, faint: the past, below the reporting line
             line=dict(width=0),
             hoverinfo="skip",
             showlegend=False,
@@ -290,7 +260,7 @@ def build_mta(
             y=[lo, hi],
             mode="lines",
             name="Reporting line (forecast = data date)",
-            line=dict(color=ink["primary"], width=3),
+            line=dict(color=NEUTRAL, width=3),
             hoverinfo="skip",
         )
     )
@@ -317,11 +287,11 @@ def build_mta(
             )
         )
         label = code + (format_shift(shift) if shift else "")
-        if moved:
-            label = f'<span style="color:{moved}">{label}</span>'
+        if moved:  # the arrow carries the colour (a mark, 3:1 on both themes); the text keeps the theme's
+            label = f'<span style="color:{moved}">{"▲" if shift > 0 else "▼"}</span> {label}'
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
-    _end_labels(fig, ends, (hi - lo).value, ink["secondary"])
-    fig = _layout(fig, dark, 640, "Forecast date")
+    _end_labels(fig, ends, (hi - lo).value)
+    fig = _layout(fig, 640, "Forecast date")
     fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
     fig.update_yaxes(range=[lo, hi], scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
     return fig
@@ -342,12 +312,12 @@ def _line(history: pd.DataFrame, column: str, name: str, colour: str, **options)
     )
 
 
-def build_activity_dates(history: pd.DataFrame, dark: bool = False) -> go.Figure:
+def build_activity_dates(history: pd.DataFrame) -> go.Figure:
     """Forecast start and finish of one activity in every update."""
-    colours = SERIES[_mode(dark)]
+    colours = SERIES
     fig = go.Figure([_line(history, "start", "Start", colours[0]), _line(history, "finish", "Finish", colours[1])])
     fig.update_xaxes(title="Data date")
-    fig = _layout(fig, dark, 380, "Forecast date")
+    fig = _layout(fig, 380, "Forecast date")
     fig.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
     if pd.notna(low) and high - low < pd.Timedelta(days=14):
@@ -356,24 +326,22 @@ def build_activity_dates(history: pd.DataFrame, dark: bool = False) -> go.Figure
     return fig
 
 
-def build_activity_float(history: pd.DataFrame, dark: bool = False) -> go.Figure:
+def build_activity_float(history: pd.DataFrame) -> go.Figure:
     """Total float of one activity in every update, zero marked as critical."""
-    fig = go.Figure(
-        _line(history, "total_float_d", "Total float", SERIES[_mode(dark)][0], hovertemplate="%{y} d<extra></extra>")
-    )
+    fig = go.Figure(_line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} d<extra></extra>"))
     fig.add_hline(
         y=0,
-        line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
+        line=dict(color=STATUS["critical"], width=1, dash="dot"),
         annotation_text="critical",
         annotation_position="bottom left",
     )
     fig.update_xaxes(title="Data date")
-    return _layout(fig, dark, 380, "Working days")
+    return _layout(fig, 380, "Working days")
 
 
-def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
+def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
     """Forecast project finish per weekly update: the single most-watched planning trend."""
-    colour = SERIES[_mode(dark)][0]
+    colour = SERIES[0]
     updates = summary.dropna(subset=["data_date", "forecast_finish"])
     shift = updates["finish_shift_wd"].map(format_shift)
     fig = go.Figure(
@@ -389,7 +357,7 @@ def build_finish_trend(summary: pd.DataFrame, dark: bool = False) -> go.Figure:
         )
     )
     fig.update_xaxes(title="Data date")
-    fig = _layout(fig, dark, 380, "Forecast finish", legend=False)
+    fig = _layout(fig, 380, "Forecast finish", legend=False)
     fig.update_yaxes(**DATE_AXIS)
     fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
     return fig
@@ -402,8 +370,8 @@ def format_shift(shift_wd: float) -> str:
 # --- PPC ---------------------------------------------------------------------------------------
 
 
-def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET, dark: bool = False) -> go.Figure:
-    c = SERIES[_mode(dark)]
+def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
+    c = SERIES
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
     text = [
@@ -428,7 +396,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET, dark: bool = False)
             hovertemplate="Week to %{x}: %{customdata}<extra></extra>",
         )
     )
-    critical = STATUS[_mode(dark)]["critical"]
+    critical = STATUS["critical"]
     fig.add_hline(y=target, line=dict(color=critical, width=1, dash="dot"))
     # in the right margin: inside the plot it sits on the last bar
     fig.add_annotation(
@@ -439,9 +407,9 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET, dark: bool = False)
         showarrow=False,
         xanchor="left",
         xshift=6,
-        font=dict(size=12, color=critical),
+        font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
-    fig = _layout(fig, dark, 400, "PPC (%)", legend=False)
+    fig = _layout(fig, 400, "PPC (%)", legend=False)
     fig.update_layout(hovermode="closest")
     fig.update_yaxes(range=[0, 115])
     fig.update_xaxes(title="Week ending (data date)", showspikes=False, type="category")
@@ -452,9 +420,9 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET, dark: bool = False)
 
 
 def build_metric_trend(
-    h: pd.DataFrame, name: str, threshold: float | None, threshold_label: str, unit: str, dark: bool = False
+    h: pd.DataFrame, name: str, threshold: float | None, threshold_label: str, unit: str
 ) -> go.Figure:
-    c = SERIES[_mode(dark)]
+    c = SERIES
     fig = go.Figure(
         go.Scatter(
             x=h["data_date"],
@@ -470,10 +438,10 @@ def build_metric_trend(
     if threshold is not None and unit != "pass/fail":
         fig.add_hline(
             y=threshold,
-            line=dict(color=STATUS[_mode(dark)]["critical"], width=1, dash="dot"),
+            line=dict(color=STATUS["critical"], width=1, dash="dot"),
             annotation_text=f"target {threshold_label}",
             annotation_position="top left",
         )
-    fig = _layout(fig, dark, 360, unit, legend=False)
+    fig = _layout(fig, 360, unit, legend=False)
     fig.update_layout(hovermode="closest")
     return fig
