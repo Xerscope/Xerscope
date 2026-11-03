@@ -33,9 +33,7 @@ def test_mta_identical_lines_share_one_end_label():
 
 
 def test_mta_close_end_labels_are_pushed_apart():
-    fig = build_mta(
-        _mta_frame({"M1": ["2026-06-01"] * 3, "M2": ["2026-06-02"] * 3, "M3": ["2026-12-01"] * 3}), {}
-    )
+    fig = build_mta(_mta_frame({"M1": ["2026-06-01"] * 3, "M2": ["2026-06-02"] * 3, "M3": ["2026-12-01"] * 3}), {})
     shift = {a.text: a.yshift or 0 for a in fig.layout.annotations}
     assert shift["M1"] != shift["M2"]  # one day apart on a 6-month axis: same pixel row
     assert shift["M3"] == 0
