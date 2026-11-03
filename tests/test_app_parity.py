@@ -26,13 +26,20 @@ APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 STANDARDS = builtin_standards()
 
 
+def _tick_all(at):
+    """Nothing is read until ticked: tick every file of the folder."""
+    for box in (box for box in at.sidebar.checkbox if box.key.startswith("read:")):
+        box.check()
+    return at.run()
+
+
 @pytest.fixture(scope="module")
 def app(sample_dir):
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("XERSCOPE_DATA", str(sample_dir))
         patch.delenv("XERSCOPE_BASELINE", raising=False)
         patch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
-        yield AppTest.from_file(APP, default_timeout=180).run()
+        yield _tick_all(AppTest.from_file(APP, default_timeout=180).run())
 
 
 def _run(at):
@@ -150,8 +157,8 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     (tmp_path / "w2.xer").write_text(xer_text(week_2, data_date="2026-03-09 08:00"))
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = AppTest.from_file(APP, default_timeout=120)
-    _run(at)
+    at = _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+    assert not at.exception, [e.value for e in at.exception]
     at.switch_page("views/ppc.py")
     _run(at)
     shown = _metrics(at)
