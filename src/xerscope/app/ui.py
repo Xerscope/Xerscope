@@ -18,13 +18,12 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
-from xerscope.viz.charts import INK, SERIES, STATUS
-from xerscope.viz.gantt import BAND
+from xerscope.viz.charts import ACCENT, SERIES, STATUS
 
 
 class StatusStyle(NamedTuple):
     label: str
-    tone: str  # key of the colour in status_colours()
+    tone: str  # key of the label's background in BADGE
     mark: str  # Markdown, coloured by the theme
 
 
@@ -38,10 +37,9 @@ STATUS_STYLE = {
 }
 
 
-def status_colours(dark: bool) -> dict[str, str]:
-    """Text colour of each status tone on the page background of the theme."""
-    mode = "dark" if dark else "light"
-    return {**STATUS[mode], "muted": INK[mode]["muted"]}
+# Background of each status label in tables, white text on it (>= 4.5:1). A label carries its
+# own background, so it reads the same on the light and the dark theme without a redraw.
+BADGE = {**STATUS, "muted": "#5b6b82"}
 
 
 def is_dark() -> bool:
@@ -55,15 +53,10 @@ def is_dark() -> bool:
 STYLE = Path(__file__).parent / "style.css"
 
 
-def apply_style(dark: bool) -> None:
-    """style.css with the colours of the light or dark theme (sent once per run, takes no space)."""
-    mode = "dark" if dark else "light"
-    colours = {
-        "accent": STATUS[mode]["info"],
-        "ink": INK[mode]["primary"],
-        "axis": INK[mode]["axis"],
-        "band": BAND[mode],
-    } | {f"s{index}": colour for index, colour in enumerate(SERIES[mode], start=1)}
+def apply_style() -> None:
+    """style.css with the app's colours (sent once per run, takes no space). The colours hold on
+    both themes and the rest follows the page's text colour, so a theme switch needs no rerun."""
+    colours = {"accent": ACCENT} | {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
     variables = "".join(f"--{name}: {value};" for name, value in colours.items())
     st.html(f"<style>:root {{{variables}}}\n{STYLE.read_text(encoding='utf-8')}</style>")
 
@@ -332,14 +325,16 @@ def csv_button(frame: pd.DataFrame, filename: str, label: str = "Download CSV", 
 
 
 def status_style(frame: pd.DataFrame, column: str = "status"):
-    """Styler colouring the status column (pass green, fail red…), labels capitalised."""
+    """Styler drawing the status column as labels (pass green, fail red…), capitalised."""
     out = frame.copy()
     out[column] = out[column].map(status_label)
-    colours = status_colours(is_dark())
-    colour_of_label = {style.label: colours[style.tone] for style in STATUS_STYLE.values()}
+    background_of_label = {style.label: BADGE[style.tone] for style in STATUS_STYLE.values()}
 
     def colour_cell(label: str) -> str:
-        return f"color: {colour_of_label.get(label, 'inherit')}; font-weight: 600"
+        background = background_of_label.get(label)
+        if background is None:
+            return ""
+        return f"background-color: {background}; color: #ffffff; font-weight: 600"
 
     return out.style.map(colour_cell, subset=[column])
 

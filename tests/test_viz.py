@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from xerkit import snap, todo
 
 from xerscope.analysis.wbs import rollup
@@ -53,20 +54,23 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
     fig = build_mta(_mta_frame(lines), {"LATE": 2.0, "EARLY": -1.5, "SAME": 0.0})
     traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
-    red, green = STATUS["light"]["critical"], STATUS["light"]["good"]
+    red, green = STATUS["critical"], STATUS["good"]
     # one series colour per milestone, in order, so lines stay distinguishable
-    assert [traces[code].line.color for code in lines] == SERIES["light"][:3]
+    assert [traces[code].line.color for code in lines] == SERIES[:3]
     # earlier points in the line colour, the last one red (later) / green (earlier) / unchanged
-    assert list(traces["LATE"].marker.color) == [SERIES["light"][0]] * 2 + [red]
-    assert list(traces["EARLY"].marker.color) == [SERIES["light"][1]] * 2 + [green]
-    assert list(traces["SAME"].marker.color) == [SERIES["light"][2]] * 3
+    assert list(traces["LATE"].marker.color) == [SERIES[0]] * 2 + [red]
+    assert list(traces["EARLY"].marker.color) == [SERIES[1]] * 2 + [green]
+    assert list(traces["SAME"].marker.color) == [SERIES[2]] * 3
     assert list(traces["LATE"].marker.size) == [9, 9, 13] and list(traces["SAME"].marker.size) == [9, 9, 9]
     texts = sorted(a.text for a in fig.layout.annotations)
-    assert texts == [
-        f'<span style="color:{green}">EARLY (-1.5 wd)</span>',
-        f'<span style="color:{red}">LATE (+2 wd)</span>',
-        "SAME",
-    ]
+    # the arrow carries the colour; the text keeps the theme's, so it follows a theme switch
+    assert texts == sorted(
+        [
+            "SAME",
+            f'<span style="color:{red}">▲</span> LATE (+2 wd)',
+            f'<span style="color:{green}">▼</span> EARLY (-1.5 wd)',
+        ]
+    )
 
 
 def test_mta_colour_follows_pick_order_even_with_a_line_missing():
@@ -74,7 +78,24 @@ def test_mta_colour_follows_pick_order_even_with_a_line_missing():
     lines = {"B": ["2026-06-01"] * 3, "C": ["2026-07-01"] * 3}
     fig = build_mta(_mta_frame(lines), {}, order=["C", "A", "B"])
     colour = {t.name.split()[0]: t.line.color for t in fig.data if t.name and t.name.split()[0] in lines}
-    assert colour == {"C": SERIES["light"][0], "B": SERIES["light"][2]}
+    assert colour == {"C": SERIES[0], "B": SERIES[2]}
+
+
+@pytest.mark.parametrize(
+    "fig",
+    [
+        build_mta(_mta_frame({"M1": ["2026-08-03"] * 3}), {"M1": 1.0}),
+        build_ppc(pd.DataFrame({"data_date": pd.date_range("2026-03-02", periods=2, freq="7D"),
+                                "ppc": [100.0, 50], "completed": [1, 1], "committed": [1, 2]}), 80),
+    ],
+)  # fmt: skip
+def test_charts_leave_text_grid_and_axes_to_the_theme(fig):
+    """Streamlit's Plotly theme colours text, grid and axes in the browser, live on a theme
+    switch; a colour set here would stay the one of the theme the page was drawn with."""
+    assert fig.layout.font.color is None and fig.layout.paper_bgcolor is None
+    for axis in (fig.layout.xaxis, fig.layout.yaxis):
+        assert axis.gridcolor is None and axis.linecolor is None and axis.zerolinecolor is None
+    assert all(a.font.color is None for a in fig.layout.annotations)
 
 
 def test_ppc_target_label_sits_outside_the_bars():

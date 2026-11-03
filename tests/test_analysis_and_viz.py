@@ -15,7 +15,16 @@ from xerscope.analysis import Baseline, health_history
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
 from xerscope.viz import categorise, gantt_html, gantt_rows
-from xerscope.viz.charts import FONT_FAMILY, INK, STATUS, build_activity_dates, build_activity_float
+from xerscope.viz.charts import (
+    ACCENT,
+    FONT_FAMILY,
+    INK,
+    NEUTRAL,
+    SERIES,
+    STATUS,
+    build_activity_dates,
+    build_activity_float,
+)
 from xerscope.viz.gantt import BACKGROUND, BAND
 
 
@@ -118,15 +127,23 @@ def _contrast(foreground: str, background: str) -> float:
     return (high + 0.05) / (low + 0.05)
 
 
-def test_chart_and_gantt_colours_are_the_streamlit_theme_colours():
+def test_gantt_colours_are_the_streamlit_theme_colours():
+    # the Gantt iframe cannot read the theme in the browser: it is drawn with the theme's page colours
     for mode, theme in _themes().items():
-        assert theme["blueColor"].lower() == STATUS[mode]["info"], mode
-        assert theme["redColor"].lower() == STATUS[mode]["critical"], mode
-        assert theme["orangeColor"].lower() == STATUS[mode]["warning"], mode
-        assert theme["greenColor"].lower() == STATUS[mode]["good"], mode
         assert theme["textColor"].lower() == INK[mode]["primary"], mode
         assert theme["backgroundColor"].lower() == BACKGROUND[mode], mode
         assert theme["secondaryBackgroundColor"].lower() == BAND[mode], mode
+
+
+def test_marks_reach_3_to_1_on_both_themes():
+    # One set for both themes (WCAG 2.2 SC 1.4.11, non-text contrast): lines, markers, bars and the
+    # reference lines read on every page background, so nothing needs redrawing on a theme switch.
+    backgrounds = [colour for theme in _themes().values() for colour in
+                   (theme["backgroundColor"], theme["secondaryBackgroundColor"])]  # fmt: skip
+    marks = [*SERIES, NEUTRAL, ACCENT] + [colour for tone, colour in STATUS.items() if tone != "info"]
+    for colour in marks:
+        for background in backgrounds:
+            assert _contrast(colour, background) >= 3, (colour, background)
 
 
 def test_fonts_are_served_by_the_app_and_used_everywhere():
@@ -155,11 +172,12 @@ def test_menu_offers_the_theme_switch_and_no_developer_options():
 
 
 def test_text_colours_reach_wcag_aa_on_both_backgrounds():
-    # 4.5:1 for normal text (WCAG 2.2 SC 1.4.3): page text, links, status labels in tables.
+    # 4.5:1 for normal text (WCAG 2.2 SC 1.4.3): page text, links, table headers per theme; status
+    # labels are white on their own background, the same on both themes.
     for mode, theme in _themes().items():
         texts = [theme["textColor"], theme["linkColor"], theme["dataframeHeaderTextColor"], INK[mode]["secondary"]]
-        colours = ui.status_colours(mode == "dark")
-        texts += [colours[style.tone] for style in ui.STATUS_STYLE.values()]
         for background in (theme["backgroundColor"], theme["secondaryBackgroundColor"]):
             for colour in texts:
                 assert _contrast(colour, background) >= 4.5, (mode, colour, background)
+    for style in ui.STATUS_STYLE.values():
+        assert _contrast("#ffffff", ui.BADGE[style.tone]) >= 4.5, style.label

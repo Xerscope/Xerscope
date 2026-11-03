@@ -4,7 +4,7 @@ import streamlit as st
 
 from xerscope.analysis.progress import milestone_codes, milestone_slips, milestone_trend, plotted_trend
 from xerscope.app import ui
-from xerscope.app.state import is_dark, memo, require_store
+from xerscope.app.state import memo, require_store
 from xerscope.viz.charts import SERIES, build_mta
 
 store = require_store()
@@ -21,7 +21,7 @@ all_ms = milestone_codes(store)
 open_ms = milestone_codes(store, open_only=True)
 names = ui.latest_names(store)
 others = sorted(set(store.history["task_code"]) - set(all_ms))
-cap = len(SERIES["light"])
+cap = len(SERIES)
 picked = st.multiselect(
     f"Milestones and key activities (up to {cap})",
     all_ms + others,
@@ -44,7 +44,7 @@ if hidden := sorted(set(picked) - set(plotted["task_code"])):
 slips = milestone_slips(trend, store)
 if not plotted.empty:
     last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))
-    st.plotly_chart(build_mta(plotted, last_shift, is_dark(), order=picked), width="stretch")
+    st.plotly_chart(build_mta(plotted, last_shift, order=picked), width="stretch")
     st.caption(
         "One colour per milestone, as on its tag above. Last point and label = move in the last update: "
         "red later, green earlier."

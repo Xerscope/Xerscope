@@ -33,10 +33,10 @@ BACKGROUND = {"light": "#ffffff", "dark": "#0b1120"}
 BAND = {"light": "#f4f6f9", "dark": "#131c31"}
 PALETTE = {
     mode: {
-        "Critical": STATUS[mode]["critical"],
-        "Near critical": STATUS[mode]["warning"],
-        "Normal": SERIES[mode][0],
-        "Complete": STATUS[mode]["complete"],
+        "Critical": STATUS["critical"],
+        "Near critical": STATUS["warning"],
+        "Normal": SERIES[0],
+        "Complete": STATUS["complete"],
         "ink": INK[mode]["primary"],
         "secondary": INK[mode]["secondary"],
         "muted": INK[mode]["muted"],
