@@ -170,11 +170,25 @@ the float to the contract finish is unknown). The other stated values, the criti
 
 ## Integrity
 
-| ID | Check |
-|---|---|
-| INT-01 | stored early/late dates and total float = a P6-exact recalculation |
-| INT-02 | out-of-sequence progress (info) |
-| INT-03 | stored resource-assignment remaining dates = the recalculation |
+Integrity answers one question before any other standard is read: are the dates in this file the ones
+P6 would produce from its own logic? INT-01 and INT-03 recalculate the schedule and compare; INT-02 and
+INT-04..08 reproduce the warnings, errors and exceptions of the P6 scheduling log (P6 EPPM 26 help,
+[Schedule Project Log](https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm), written at each F9 with
+"Log to file"). A failure means: reschedule in P6 (F9) and read its log, or a P6 rule xerscope does not
+reproduce yet. The Schedule health page prints this text above the results.
+
+| ID | Check | Log section | Source | Target |
+|---|---|---|---|---|
+| INT-01 | stored early/late dates and total float = a P6-exact recalculation; the note gives the latest early finish stored and recalculated, and the activities with external dates | Scheduling Results: "Latest Early Finish Date"; Exceptions: "Activities with external dates" | [99351](https://docs.oracle.com/cd/G48897_01/p6help/en/99351.htm), [99352](https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm) | <= 0% |
+| INT-02 | started activities whose FS predecessor is not complete or SS predecessor not started at the data date (same reading as P6-15; FF and SF not listed) | Warnings: "Out of sequence activities" | [99350](https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm); link types calibrated on a P6 Check Schedule report | info |
+| INT-03 | stored resource-assignment remaining dates = the recalculation | none (xerscope) | `analysis/cpm.py` | <= 0% |
+| INT-04 | activities on a relationship loop (not those downstream of it) | Errors: "Activities that have invalid relationship loops" | [99374](https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm) | <= 0 |
+| INT-05 | activities with no predecessor or no successor, unfiltered (P6-01 applies the Check Schedule exclusions) | Warnings: "Activities without predecessors", "Activities without successors" | [99350](https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm) | info |
+| INT-06 | activities with an actual start or finish after the data date, unfiltered (P6-10 / 06A506a apply exclusions) | Warnings: "Activities with actual date later than data date" | [99350](https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm) | <= 0 |
+| INT-07 | open, non-LOE activities whose recalculated early start or finish is on the wrong side of a constraint date. Unconfirmed against a P6 log | Exceptions: "Activities with unsatisfied constraints" | [99352](https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm) | info |
+| INT-08 | relationships whose successor starts (FS, SS) or finishes (FF, SF) before the predecessor finishes (FS, FF) or starts (SS, SF), at actual dates else recalculated early dates; lag not applied, leads not evaluated. Unconfirmed against a P6 log | Exceptions: "Activities with unsatisfied relationships" | [99352](https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm) | info |
+
+INT-07 and INT-08 stay at info until a P6 log of the same file confirms or corrects the reading.
 
 ## Your own standard
 
