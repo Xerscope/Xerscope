@@ -79,6 +79,19 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(frames["05_baseline"])
     table(frames["05_calendars"])
 
+with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled activities)", key="debug_load_warnings"):
+    st.caption(
+        "The activities behind the warnings raised while reading the file. Leveling: open activities "
+        "whose remaining early start (restart_date) differs from the early start. Project finish: "
+        "PROJECT.scd_end_date against the activities that end last."
+    )
+    for warning in snapshot.warnings:
+        st.caption(warning)
+    if not frames["06_leveling"].empty:
+        table(frames["06_leveling"], max_height=480)
+    table(frames["06_project_finish"])
+    table(frames["06_latest_finishes"])
+
 
 def build_diagnostic() -> None:
     anonymous = anonymizer(prepare=True)
@@ -92,7 +105,7 @@ def build_diagnostic() -> None:
 
 ui.section(
     "Anonymised diagnostic",
-    "Blocks 1 to 5 as CSV, Activity IDs and resource codes renamed as in the anonymised XER extract; "
+    "Blocks 1 to 6 as CSV, Activity IDs and resource codes renamed as in the anonymised XER extract; "
     "no name, WBS or project name. Dates are left as they are.",
 )
 if st.button("Build anonymised diagnostic", icon=":material/visibility_off:", key="debug_build"):

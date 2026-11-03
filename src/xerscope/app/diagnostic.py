@@ -14,7 +14,7 @@ from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_as
 from xerscope.analysis.populations import LARGE_HOURS
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
-from xerscope.xer.model import Snapshot
+from xerscope.xer.model import Snapshot, leveled
 
 FROM_FILE, DEFAULTED, BLANK = "file", "default (blank in file)", "blank in file (no default)"
 
@@ -231,8 +231,25 @@ def calendars_table(snapshot: Snapshot) -> pd.DataFrame:
     return calendars.reset_index(drop=True)
 
 
+def leveling_table(snapshot: Snapshot) -> pd.DataFrame:
+    """The activities the leveling load warning counts (``xer.model.leveled``)."""
+    tasks = snapshot.tasks
+    columns = ["task_code", "status_code", "early_start_date", "restart_date", "act_start_date"]
+    return tasks.loc[leveled(tasks), columns].reset_index(drop=True)
+
+
+def finish_table(snapshot: Snapshot, latest: int = 5) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """PROJECT.scd_end_date against the latest activity finish, and the activities that end last."""
+    project = pd.DataFrame(
+        [{"scd_end_date": snapshot.scheduled_finish, "latest_activity_finish": snapshot.finish_date}]
+    )
+    activities = snapshot.activities[["task_code", "task_type", "status_code", "finish"]]
+    return project, activities.nlargest(latest, "finish").reset_index(drop=True)
+
+
 def diagnostic_frames(snapshot: Snapshot, baseline: Baseline | None, standard: Standard) -> dict[str, pd.DataFrame]:
-    """The five blocks, named as the files of the diagnostic zip."""
+    """The six blocks, named as the files of the diagnostic zip."""
+    project_finish, latest_finishes = finish_table(snapshot)
     return {
         "01_options": options_table(snapshot),
         "02_expected_finish": expected_finish_table(snapshot),
@@ -241,4 +258,7 @@ def diagnostic_frames(snapshot: Snapshot, baseline: Baseline | None, standard: S
         "04_check_parameters": check_parameters(standard),
         "05_baseline": baseline_table(snapshot, baseline),
         "05_calendars": calendars_table(snapshot),
+        "06_leveling": leveling_table(snapshot),
+        "06_project_finish": project_finish,
+        "06_latest_finishes": latest_finishes,
     }

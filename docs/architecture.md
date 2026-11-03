@@ -193,7 +193,9 @@ Outside `analysis/`:
   file: the scheduling options (raw XER value, value applied, blank-in-file defaults), the
   activities with an expected finish and the remaining duration it set (`rem_override_hr`),
   the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
-  targets on the tabs of the P6 dialog, the baseline and the calendars. `app/diagnostic.py`
+  targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities
+  behind the load warnings (leveled activities, `scd_end_date` against the activities that
+  end last). `app/diagnostic.py`
   builds the tables from the existing results; `Anonymizer.zip_frames` hands them out with
   the codes of the anonymised extract (dates unchanged).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
