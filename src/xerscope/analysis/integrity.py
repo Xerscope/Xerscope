@@ -10,6 +10,7 @@ import pandas as pd
 
 from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
 from .populations import (
+    actual_after,
     flagged_activities,
     has_predecessor_in_project,
     has_successor_in_project,
@@ -129,6 +130,27 @@ def int_05_without_predecessors_or_successors(context) -> RuleOutput:
     flagged = activities[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
     return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities))
+
+
+@rule("int_06_actual_date_after_data_date", "count")
+def int_06_actual_date_after_data_date(context) -> RuleOutput:
+    """Activities with an actual date after the data date.
+    Counts: with an actual date after the data date / activities
+
+    Mirrors the P6 log warning 'Activities with actual date later than data date': any actual start or actual
+    finish later than the data date, every activity (level of effort and milestones included). P6-10
+    reads the same dates with the Check Schedule exclusions (06A506a for DECM).
+    """
+    data_date = context.snapshot.data_date
+    if data_date is None:
+        return RuleOutput(note="no data date")
+    activities = context.snapshot.activities
+    flagged = activities[actual_after(activities, data_date)]
+    return RuleOutput(
+        flagged_activities(flagged, actual_start=flagged["act_start_date"], actual_finish=flagged["act_end_date"]),
+        len(flagged),
+        len(activities),
+    )
 
 
 def _describe_differences(group: pd.DataFrame) -> str:

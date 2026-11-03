@@ -47,3 +47,12 @@ rule = "int_05_without_predecessors_or_successors"
 unit = "count"
 target = "info"
 source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities without predecessors\", \"Activities without successors\" (activities that \"do not have predecessors or successors\") (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm)"
+
+[[metric]]
+id = "INT-06"
+name = "Actual date later than data date"
+description = "Activities with an actual start or finish after the data date, unfiltered. Mirrors the log's Warnings 'Activities with actual date later than data date'; P6-10 (DECM 06A506a) reads the same dates with exclusions"
+rule = "int_06_actual_date_after_data_date"
+unit = "count"
+target = "<= 0"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities with actual date later than data date\", \"The activities in which the data date is before the actual date\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm)"
