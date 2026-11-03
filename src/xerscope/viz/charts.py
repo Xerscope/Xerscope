@@ -11,22 +11,22 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-# The app's colours, in one place. ACCENT is the theme's primaryColor
-# (app/.streamlit/config.toml). STATUS is reserved for meaning (critical / warning /
-# pass / complete, and the check statuses in app/ui.py) and never decorates; SERIES is
-# the categorical palette for lines and keeps clear of those hues.
-ACCENT = "#1f4e79"
+# The app's colours, in one place, per theme. INK "primary" is the theme's textColor and
+# STATUS "info" its blueColor (app/.streamlit/config.toml, [theme.light] / [theme.dark]).
+# STATUS is reserved for meaning (critical / warning / pass / complete / info, and the
+# check statuses in app/ui.py) and never decorates; SERIES is the categorical palette for
+# lines and keeps clear of those hues.
 SERIES = {
     "light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"],
     "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"],
 }
 STATUS = {
-    "light": {"critical": "#c0392b", "warning": "#b26a00", "good": "#2e7d32", "complete": "#9aa5b1"},
-    "dark": {"critical": "#d03b3b", "warning": "#fab219", "good": "#0ca30c", "complete": "#898781"},
+    "light": {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#9aa5b1", "info": "#1f4e79"},
+    "dark": {"critical": "#f05252", "warning": "#fab219", "good": "#22c55e", "complete": "#64748b", "info": "#22d3ee"},
 }
 INK = {
-    "light": {"primary": "#1f2933", "secondary": "#3e4c59", "muted": "#7b8794", "grid": "#e6e9ee", "axis": "#c9d0d8"},
-    "dark": {"primary": "#f0efec", "secondary": "#c3c2b7", "muted": "#898781", "grid": "#2c2c2a", "axis": "#383835"},
+    "light": {"primary": "#0f172a", "secondary": "#334155", "muted": "#5b6b82", "grid": "#e8edf3", "axis": "#cbd5e1"},
+    "dark": {"primary": "#e2e8f0", "secondary": "#cbd5e1", "muted": "#94a3b8", "grid": "#1a2438", "axis": "#2a3a5c"},
 }
 
 

@@ -327,11 +327,7 @@ def require_store() -> SnapshotStore:
     return store
 
 
-def is_dark() -> bool:
-    try:
-        return st.context.theme.type == "dark"
-    except Exception:
-        return False
+is_dark = ui.is_dark
 
 
 def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "snap") -> Snapshot:

@@ -177,7 +177,7 @@ Outside `analysis/`:
 - **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
   cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
-- **`.streamlit/config.toml`:** the theme (white page, navy accent) and server settings
+- **`.streamlit/config.toml`:** the light and dark themes (slate neutrals, navy accent, cyan in dark mode) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
 - **Schedule health:** a summary row per check, then one panel per check: what it measures,
