@@ -5,6 +5,7 @@ from .baseline import Baseline
 from .checks import (
     AnalysisContext,
     CheckResult,
+    compare_counts,
     health_history,
     results_frame,
     run_metric,
@@ -31,6 +32,7 @@ __all__ = [
     "RuleOutput",
     "Standard",
     "builtin_standards",
+    "compare_counts",
     "discover_standards",
     "health_history",
     "load_standard",
