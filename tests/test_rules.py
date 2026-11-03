@@ -7,7 +7,7 @@ or exemption would silently shift a result.
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import active, done, hours, snap, todo
+from xerkit import SM, active, done, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
 
@@ -666,6 +666,24 @@ def test_relationship_loop_lists_the_activities_on_the_loop():
     assert codes(r) == ["A", "B", "C"] and counts(r) == (3, 5) and r.status == "fail"
     clean = snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])
     assert counts(run(INTEGRITY, "INT-04", clean)) == (0, 2) and run(INTEGRITY, "INT-04", clean).status == "pass"
+
+
+def test_log_lists_activities_without_predecessors_or_successors_unfiltered():
+    """P6 log warnings: the raw list. P6-01 exempts started activities and start milestones and skips completed ones."""
+    s = snap(
+        [todo("M", **SM), todo("A"), todo("B"), active("S"), done("D")],
+        [("M", "A", "FS", 0), ("A", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-05", s)
+    reasons = dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))
+    assert reasons == {
+        "M": "no predecessor",
+        "B": "no successor",
+        "S": "no predecessor, no successor",
+        "D": "no predecessor, no successor",
+    }
+    assert counts(r) == (4, 5) and r.status == "info"
+    assert codes(run(P6, "P6-01", s)) == ["B", "S"]
 
 
 def test_late_activities_use_working_time():

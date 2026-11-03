@@ -38,3 +38,12 @@ rule = "int_04_relationship_loops"
 unit = "count"
 target = "<= 0"
 source = "Oracle P6 EPPM 26 help, Schedule Project Log, Errors: \"Activities that have invalid relationship loops\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm)"
+
+[[metric]]
+id = "INT-05"
+name = "Without predecessors or successors"
+description = "Activities with no predecessor or no successor, unfiltered. Mirrors the log's Warnings 'Activities without predecessors' and 'Activities without successors'; P6-01 applies the Check Schedule exclusions (completed, started, start milestones)"
+rule = "int_05_without_predecessors_or_successors"
+unit = "count"
+target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities without predecessors\", \"Activities without successors\" (activities that \"do not have predecessors or successors\") (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm)"
