@@ -109,7 +109,13 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
     keys = {path.name: f"read:{root}:{path.name}" for path in files}
     ticked = sum(bool(st.session_state.get(key)) for key in keys.values())
     picked = []
-    with sidebar.expander(f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked):
+    # a fixed key keeps the expander open while files are ticked: without it Streamlit keys it on
+    # its label, which holds the count, and redraws it closed at every tick. Hashed: a key shows
+    # in the page as a CSS class, and the folder path is the server's.
+    folder_id = hashlib.sha256(str(root).encode()).hexdigest()[:12]
+    with sidebar.expander(
+        f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked, key=f"files:{folder_id}"
+    ):
         for path in files:
             label, details = _describe_file(path)
             if st.checkbox(label, value=False, key=keys[path.name], help=details):

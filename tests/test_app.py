@@ -45,6 +45,19 @@ def _tick_all(at):
     return at.run()
 
 
+def test_file_list_stays_open_while_files_are_ticked(sample_dir, monkeypatch):
+    # The expander label holds the tick count. Keyed on its label, Streamlit would redraw it as a
+    # new, closed expander at every tick; a fixed key keeps the one the user opened.
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    before = at.sidebar.expander[0]
+    _file_boxes(at)[0].check()
+    at.run()
+    after = at.sidebar.expander[0]
+    assert before.label != after.label  # "0 of 8 ticked" -> "1 of 8 ticked"
+    assert before.key is not None and after.key == before.key
+
+
 def _ok(at):
     assert not at.exception, [e.value for e in at.exception]
 
