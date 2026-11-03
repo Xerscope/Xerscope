@@ -339,17 +339,13 @@ def test_activity_codes_are_read_per_activity_with_their_hierarchy():
     ]  # fmt: skip
 
 
-def test_a_code_value_selects_its_own_activities_and_those_of_its_children():
+def test_a_code_value_selects_the_activities_assigned_that_exact_value():
+    # as P6's "equals": a parent value does not take the activities of its sub-values
     s = snap([todo("A"), todo("B"), todo("C"), todo("D")], codes=CODES)
-    assert s.tasks_with_codes("Zone", [_value_id(s, "Zone", "B1")]) == {"A", "B"}  # B1 holds L1 and L2
-    assert s.tasks_with_codes("Zone", [_value_id(s, "Zone", "L2")]) == {"B"}
+    assert s.tasks_with_codes("Zone", [_value_id(s, "Zone", "L1")]) == {"A"}
+    assert s.tasks_with_codes("Zone", [_value_id(s, "Zone", "B1")]) == set()  # B1 holds L1, L2: none is B1 itself
     assert s.tasks_with_codes("Discipline", [_value_id(s, "Discipline", v) for v in ("CIV", "MEC")]) == {"A", "C"}
     assert s.tasks_with_codes("Zone", []) == set()
-
-
-def test_code_values_are_labelled_with_their_path():
-    s = snap([todo("A"), todo("B"), todo("C")], codes=CODES)
-    assert list(s.code_paths("Zone").values()) == ["B1", "B1 / L1", "B1 / L2", "B2"]
 
 
 def test_a_file_without_activity_codes_has_none():

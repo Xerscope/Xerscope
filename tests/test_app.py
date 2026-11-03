@@ -197,24 +197,50 @@ def _run(data_dir, monkeypatch, baseline=None):
     return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
 
 
-def test_gantt_filters_by_p6_activity_code_with_its_sub_values(app, tmp_path, monkeypatch):
+def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeypatch):
+    """Two steps: the code type, then values picked from the suggestions (exact, as P6's
+    "equals") or text typed (every value containing it, as "contains")."""
     app.switch_page("views/gantt.py").run()
     assert not [box for box in app.selectbox if box.label == "Activity code"]  # the demo has no codes
 
-    codes = [("A", "Zone", "B1/L1"), ("B", "Zone", "B1/L2"), ("C", "Zone", "B2")]
-    (tmp_path / "codes.xer").write_text(xer_text([todo("A"), todo("B"), todo("C")], codes=codes), encoding="utf-8")
+    codes = [("A", "Zone", "B1/L1"), ("B", "Zone", "B1/L2"), ("C", "Zone", "B2"), ("D", "Zone", "B1")]
+    tasks = [todo(code) for code in "ABCD"]
+    (tmp_path / "codes.xer").write_text(xer_text(tasks, codes=codes), encoding="utf-8")
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/gantt.py").run()
     _ok(at)
     code_type = next(box for box in at.selectbox if box.label == "Activity code")
     assert code_type.value is None  # nothing picked by default
     code_type.set_value("Zone").run()
-    values = at.multiselect(key="gantt_code_values:Zone")
-    paths = at.session_state["store"].latest.code_paths("Zone")
-    values.set_value([next(i for i, path in paths.items() if path == "B1")]).run()
+    search = at.multiselect(key="gantt_code_values:Zone")
+    labels = search.options
+
+    def shown(picks):
+        search.set_value(picks).run()
+        _ok(at)
+        return {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"}
+
+    b1 = next(label for label in labels if label.split(" · ")[0] == "B1")  # path · description
+    assert shown([b1]) == {"D"}  # picked value: exactly B1, not its sub-values L1, L2
+    assert shown(["l"]) == {"A", "B"}  # typed text: values L1, L2 (case ignored)
+
+
+def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
+    """1,000 values of one code: all offered as suggestions, and one typed text keeps every
+    value containing it without ticking them one by one."""
+    tasks = [todo(f"T{n:04d}") for n in range(1000)]
+    codes = [(f"T{n:04d}", "Room", f"R{n:04d}") for n in range(1000)]
+    (tmp_path / "rooms.xer").write_text(xer_text(tasks, codes=codes), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    next(box for box in at.selectbox if box.label == "Activity code").set_value("Room").run()
+    search = at.multiselect(key="gantt_code_values:Room")
+    assert len(search.options) == 1000
+    search.set_value(["r012"]).run()  # R0120..R0129
     _ok(at)
-    shown = {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"}
-    assert shown == {"A", "B"}  # B1 and its sub-values L1, L2; not B2
+    assert {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"} == {
+        f"T{n:04d}" for n in range(120, 130)
+    }
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):

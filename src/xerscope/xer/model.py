@@ -424,14 +424,10 @@ class Snapshot:
         return dict(sorted(paths.items(), key=lambda item: item[1]))
 
     def tasks_with_codes(self, code_type: str, code_ids: Iterable[str]) -> set[str]:
-        """Activity IDs assigned one of ``code_ids`` of ``code_type``, or a value below one of
-        them in the code's hierarchy (picking "B1" selects the activities of "B1 / L1" too)."""
-        values = self.code_values[self.code_values["code_type"] == code_type]
-        parent = dict(zip(values["code_id"], values["parent_id"], strict=True))
-        picked = set(code_ids)
-        selected = {code_id for code_id in parent if picked.intersection(_chain(code_id, parent))}
+        """Activity IDs assigned one of ``code_ids`` of ``code_type``, exactly, as P6's filter
+        "Activity code equals": a parent value does not take its sub-values' activities."""
         assigned = self.task_codes[self.task_codes["code_type"] == code_type]
-        return set(assigned.loc[assigned["code_id"].isin(selected), "task_code"])
+        return set(assigned.loc[assigned["code_id"].isin(set(code_ids)), "task_code"])
 
     @cached_property
     def by_code(self) -> pd.DataFrame:
