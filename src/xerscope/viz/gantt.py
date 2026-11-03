@@ -26,6 +26,10 @@ from ..analysis.wbs import ROOT
 from ..config import DEFAULT_SETTINGS, Settings
 from .charts import INK, SERIES, STATUS
 
+# Page and band colours: the theme's backgroundColor and secondaryBackgroundColor
+# (app/.streamlit/config.toml), so the Gantt frame blends into the page.
+BACKGROUND = {"light": "#ffffff", "dark": "#0b1120"}
+BAND = {"light": "#f4f6f9", "dark": "#131c31"}
 PALETTE = {
     mode: {
         "Critical": STATUS[mode]["critical"],
@@ -37,8 +41,8 @@ PALETTE = {
         "muted": INK[mode]["muted"],
         "grid": INK[mode]["grid"],
         "axis": INK[mode]["axis"],
-        "background": "#0e1117" if mode == "dark" else "#ffffff",
-        "band": "#1a1d24" if mode == "dark" else "#f3f5f8",
+        "background": BACKGROUND[mode],
+        "band": BAND[mode],
     }
     for mode in ("light", "dark")
 }

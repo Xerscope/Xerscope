@@ -15,7 +15,8 @@ from xerscope.analysis import Baseline, health_history
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
 from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
-from xerscope.viz.charts import ACCENT, build_activity_dates, build_activity_float
+from xerscope.viz.charts import INK, STATUS, build_activity_dates, build_activity_float
+from xerscope.viz.gantt import BACKGROUND, BAND
 
 
 def test_planted_lead_open_end_and_missing_resources(store):
@@ -104,7 +105,41 @@ def test_fmt_date_shows_a_dash_for_missing_dates():
     assert ui.stamp(pd.Timestamp("2026-11-02")) == "2026-11-02"
 
 
-def test_chart_accent_is_the_streamlit_theme_colour():
+def _themes() -> dict:
     config = Path(xerscope.__file__).parent / "app" / ".streamlit" / "config.toml"
     theme = tomllib.loads(config.read_text(encoding="utf-8"))["theme"]
-    assert theme["primaryColor"].lower() == ACCENT.lower()
+    return {mode: theme[mode] for mode in ("light", "dark")}
+
+
+def _contrast(foreground: str, background: str) -> float:
+    """WCAG 2.2 contrast ratio (https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio)."""
+
+    def luminance(colour: str) -> float:
+        channels = [int(colour.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+        r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    high, low = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_chart_and_gantt_colours_are_the_streamlit_theme_colours():
+    for mode, theme in _themes().items():
+        assert theme["blueColor"].lower() == STATUS[mode]["info"], mode
+        assert theme["redColor"].lower() == STATUS[mode]["critical"], mode
+        assert theme["orangeColor"].lower() == STATUS[mode]["warning"], mode
+        assert theme["greenColor"].lower() == STATUS[mode]["good"], mode
+        assert theme["textColor"].lower() == INK[mode]["primary"], mode
+        assert theme["backgroundColor"].lower() == BACKGROUND[mode], mode
+        assert theme["secondaryBackgroundColor"].lower() == BAND[mode], mode
+
+
+def test_text_colours_reach_wcag_aa_on_both_backgrounds():
+    # 4.5:1 for normal text (WCAG 2.2 SC 1.4.3): page text, links, status labels in tables.
+    for mode, theme in _themes().items():
+        texts = [theme["textColor"], theme["linkColor"], theme["dataframeHeaderTextColor"], INK[mode]["secondary"]]
+        colours = ui.status_colours(mode == "dark")
+        texts += [colours[style.tone] for style in ui.STATUS_STYLE.values()]
+        for background in (theme["backgroundColor"], theme["secondaryBackgroundColor"]):
+            for colour in texts:
+                assert _contrast(colour, background) >= 4.5, (mode, colour, background)
