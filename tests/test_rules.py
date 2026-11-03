@@ -730,6 +730,23 @@ def test_log_lists_every_actual_date_after_the_data_date():
     assert codes(run(P6, "P6-10", s)) == ["A", "B"]
 
 
+def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
+    """B follows A (8 h each, FS), so its early start is Tue 2026-03-03 08:00 and its early finish Tue 17:00."""
+    s = snap(
+        [
+            todo("A", **hours(8)),
+            todo("B", cstr_type="CS_MSOB", cstr_date="2026-03-02 08:00", **hours(8)),  # Start on or before Mon: missed
+            todo("C", cstr_type="CS_MSOA", cstr_date="2026-03-02 08:00", **hours(8)),  # no earlier than Mon: met
+            todo("D", cstr_type="CS_MSOB", cstr_date="2026-03-10 08:00", **hours(8)),  # met
+            todo("E", cstr_type="CS_ALAP", **hours(8)),  # no date to meet
+        ],
+        [("A", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-07", s)
+    assert codes(r) == ["B"] and counts(r) == (1, 3) and r.status == "info"
+    assert r.flagged.iloc[0]["unsatisfied"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
+
+
 def test_late_activities_use_working_time():
     # Finished Fri 17:00 against a baseline of Mon 08:00: the same working minute, not late.
     bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 08:00")]))
