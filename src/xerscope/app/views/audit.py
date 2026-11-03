@@ -15,7 +15,7 @@ from xerscope.analysis.explain import explain, fmt_value, noun
 from xerscope.analysis.populations import STEP_SOURCES, flagged_activities, flagged_relationships
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
-from xerscope.app.state import anonymizer, baseline_for, memo, require_store, snapshot_picker, standards
+from xerscope.app.state import baseline_for, csv_download, memo, require_store, snapshot_picker, sources_of, standards
 
 
 def value_text(result) -> str:
@@ -123,13 +123,8 @@ def show_set(frame: pd.DataFrame, title: str, filename: str, key: str) -> None:
         st.caption(f"No {title.lower()}.")
         return
     ui.table(frame, max_height=480, key=f"table_{key}")
-    anonymous = anonymizer()
-    if anonymous is None:
-        if st.button("Prepare anonymised lists", icon=":material/visibility_off:", key=f"anon_{key}"):
-            anonymizer(prepare=True)
-            st.rerun()
-        return
-    ui.anonymised_csv_button(anonymous, frame, filename, "Download (CSV, anonymised)", key=f"dl_{key}")
+    # anonymised or raw as the sidebar switch says; only the files behind this result are read
+    csv_download(frame, filename, "Download CSV", key=f"dl_{key}", sources=SOURCES)
 
 
 def funnel_table(result) -> pd.DataFrame:
@@ -284,6 +279,7 @@ if metric_id is None:
 
 metric = standard[metric_id]
 prefix = f"audit:{standard_id}:{metric_id}"
+SOURCES = sources_of(snapshot, baseline=baseline)  # the files a download of this page comes from
 context = AnalysisContext(snapshot, store, baseline)
 baseline_key = st.session_state.get("bl_choice"), baseline.label if baseline else None
 
