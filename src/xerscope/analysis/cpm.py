@@ -67,6 +67,7 @@ projects not in the file.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
@@ -95,6 +96,18 @@ class CycleError(ValueError):
 FLOAT_TYPE = {"FT_FF": "finish", "FT_SS": "start", "FT_Min": "min", "FT_Start": "finish", "FT_Total": "finish"}
 
 
+# First ERMHDR major version whose files keep the stored remaining when the expected finish is
+# earlier than the early start. Evidence: P6 23.12 corpus, 94 of 94 cases collapse to remaining 0;
+# P6 26.5 / 26.8 project exports (Project Management Cloud), 112 cases over 14 updates, none
+# collapses. Versions 24 and 25 are unverified; an absent or unreadable version keeps the corpus rule.
+KEEP_EARLY_EXPECTED_FINISH_FROM = 26
+
+
+def collapses_early_expected_finish(version: str) -> bool:
+    match = re.match(r"\s*(\d+)", version or "")
+    return match is None or int(match.group(1)) < KEEP_EARLY_EXPECTED_FINISH_FROM
+
+
 @dataclass(frozen=True)
 class Options:
     """P6 scheduling options (SCHEDOPTIONS / PROJECT) the computation depends on."""
@@ -109,6 +122,9 @@ class Options:
     # "Ignore relationships to and from other projects" unchecked (SD_Both): the external
     # early start / late finish P6 stored for lost links to other projects bound the dates
     honor_external: bool = True
+    # An expected finish earlier than the early start brings the remaining duration to 0
+    # (False: the stored remaining is kept and the expected finish is ignored for that activity)
+    collapse_early_expected_finish: bool = True
 
     def __post_init__(self):
         if self.progressed not in PROGRESSED:
@@ -116,6 +132,7 @@ class Options:
 
     @classmethod
     def from_snapshot(cls, snapshot: Snapshot) -> Options:
+        export_version = (snapshot.options.get("export", {}) or {}).get("version", "")
         sched_options = snapshot.options.get("sched", {}) or {}
 
         def flag(key, default):
@@ -131,6 +148,7 @@ class Options:
             use_expected_finish=flag("sched_use_expect_end_flag", True),
             must_finish_by=snapshot.options.get("must_finish_by"),
             honor_external=(sched_options.get("sched_outer_depend_type") or "SD_Both") == "SD_Both",
+            collapse_early_expected_finish=collapses_early_expected_finish(export_version),
         )
 
 
@@ -579,6 +597,7 @@ class _Run:
                         finish_time,
                         use_logic,
                         finish_linked,
+                        options.collapse_early_expected_finish,
                     )
             early_start[code], early_finish[code], remaining_start[code] = (
                 (inputs[code].get("act_start_date") if started and activity_kind == "task" else start),
@@ -634,7 +653,17 @@ class _Run:
         return pinned
 
     def expected_finish(
-        self, code, axis, expected_date, start_bounds, finish_bounds, start, finish_time, use_logic, finish_linked
+        self,
+        code,
+        axis,
+        expected_date,
+        start_bounds,
+        finish_bounds,
+        start,
+        finish_time,
+        use_logic,
+        finish_linked,
+        collapse_early=True,
     ):
         """Early dates of task-dependent work with an expected finish, as P6 23.12 places them
         (corpus witnesses: H1-02 A1170, H4-10 A1040, H24-07 A1210).
@@ -653,6 +682,8 @@ class _Run:
         """
         early_start_time = axis.snap_start(max(start_bounds)) if start_bounds else start
         if not use_logic and finish_linked and expected_date < early_start_time:
+            return start, finish_time
+        if not collapse_early and expected_date < early_start_time:  # P6 26.x: expected finish ignored
             return start, finish_time
         exp_fin = max(expected_date, early_start_time)
         finish_bound = axis.keep_or_next(max(finish_bounds)) if finish_bounds else None
