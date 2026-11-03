@@ -14,18 +14,16 @@ import xerscope
 from xerscope.analysis import Baseline, health_history
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
-from xerscope.viz import categorise, gantt_html, gantt_rows
+from xerscope.viz import categorise, gantt_assets, gantt_data, gantt_rows
 from xerscope.viz.charts import (
     ACCENT,
     FONT_FAMILY,
-    INK,
     NEUTRAL,
     SERIES,
     STATUS,
     build_activity_dates,
     build_activity_float,
 )
-from xerscope.viz.gantt import BACKGROUND, BAND
 
 
 def test_planted_lead_open_end_and_missing_resources(store):
@@ -79,7 +77,8 @@ def test_gantt_rows_on_the_demo_series(store):
     assert sorted(drawn) == sorted(s.activities["task_code"])  # every activity once
     assert rows[0]["id"] == "w:__project__" and rows[0]["depth"] == 0
     assert {r["category"] for r in rows if r["kind"] == "task"} >= {"Critical", "Complete"}
-    assert "Critical" in gantt_html(rows, relationships=s.relationships, data_date=s.data_date, links=True)
+    data = gantt_data(rows, relationships=s.relationships, data_date=s.data_date, links=True)
+    assert "Critical" in data["palette"] and data["links"]
 
 
 def test_gantt_compare_with_no_common_tasks(store):
@@ -127,12 +126,12 @@ def _contrast(foreground: str, background: str) -> float:
     return (high + 0.05) / (low + 0.05)
 
 
-def test_gantt_colours_are_the_streamlit_theme_colours():
-    # the Gantt iframe cannot read the theme in the browser: it is drawn with the theme's page colours
-    for mode, theme in _themes().items():
-        assert theme["textColor"].lower() == INK[mode]["primary"], mode
-        assert theme["backgroundColor"].lower() == BACKGROUND[mode], mode
-        assert theme["secondaryBackgroundColor"].lower() == BAND[mode], mode
+def test_gantt_page_colours_and_font_follow_the_theme_in_the_browser():
+    # a component in the page reads the theme's --st-* variables, which Streamlit updates live
+    css = gantt_assets()["css"]
+    for variable in ("--st-background-color", "--st-secondary-background-color", "--st-text-color", "--st-font"):
+        assert f"var({variable})" in css, variable
+    assert "#" not in css.split("#gantt {", 1)[1].split("}", 1)[0]  # no colour written in the root rule
 
 
 def test_marks_reach_3_to_1_on_both_themes():
@@ -161,8 +160,7 @@ def test_fonts_are_served_by_the_app_and_used_everywhere():
         assert (static / f"OFL-{family.replace(' ', '')}.txt").is_file(), family
     body = config["theme"]["font"].split(",")[0].strip()
     assert FONT_FAMILY.split(",")[0] == body  # Plotly charts
-    assert f'"{body}"' in (Path(xerscope.__file__).parent / "viz" / "gantt.css").read_text()  # Gantt
-    assert f"font-family: '{body}'" in gantt_html([], dark=False)  # embedded: the iframe has no page fonts
+    # the Gantt takes the theme's font through --st-font (test_gantt_page_colours_and_font_follow_the_theme…)
 
 
 def test_menu_offers_the_theme_switch_and_no_developer_options():
@@ -175,7 +173,7 @@ def test_text_colours_reach_wcag_aa_on_both_backgrounds():
     # 4.5:1 for normal text (WCAG 2.2 SC 1.4.3): page text, links, table headers per theme; status
     # labels are white on their own background, the same on both themes.
     for mode, theme in _themes().items():
-        texts = [theme["textColor"], theme["linkColor"], theme["dataframeHeaderTextColor"], INK[mode]["secondary"]]
+        texts = [theme["textColor"], theme["linkColor"], theme["dataframeHeaderTextColor"]]
         for background in (theme["backgroundColor"], theme["secondaryBackgroundColor"]):
             for colour in texts:
                 assert _contrast(colour, background) >= 4.5, (mode, colour, background)

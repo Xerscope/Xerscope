@@ -22,14 +22,6 @@ SERIES = ["#2a78d6", "#ea632e", "#19a070", "#be8100", "#e36092", "#6554d7"]
 STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#1f4e79"}
 NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
 ACCENT = "#0b7fa0"  # decoration (app/style.css)
-# Page colours per theme (app/.streamlit/config.toml): the Gantt iframe (viz/gantt.py) is drawn
-# with them, as it cannot read the theme in the browser.
-INK = {
-    "light": {"primary": "#0f172a", "secondary": "#334155", "muted": "#5b6b82", "grid": "#e8edf3", "axis": "#cbd5e1"},
-    "dark": {"primary": "#e2e8f0", "secondary": "#cbd5e1", "muted": "#94a3b8", "grid": "#1a2438", "axis": "#2a3a5c"},
-}
-
-
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
 FONT_FAMILY = "IBM Plex Sans, sans-serif"

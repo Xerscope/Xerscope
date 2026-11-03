@@ -18,6 +18,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
+from xerscope.viz import gantt_assets
 from xerscope.viz.charts import ACCENT, SERIES, STATUS
 
 
@@ -42,12 +43,9 @@ STATUS_STYLE = {
 BADGE = {**STATUS, "muted": "#5b6b82"}
 
 
-def is_dark() -> bool:
-    """Whether the page uses the dark theme (Streamlit infers it from the background)."""
-    try:
-        return st.context.theme.type == "dark"
-    except Exception:
-        return False
+# The WBS Gantt (viz/gantt.js), registered once: this module is imported once per process. A
+# component, not an iframe, so its colours follow the theme's --st-* variables in the browser.
+GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())
 
 
 STYLE = Path(__file__).parent / "style.css"

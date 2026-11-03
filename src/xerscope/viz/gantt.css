@@ -1,9 +1,17 @@
-/* WBS Gantt (gantt.js). Colours come from the data (--ink, --grid…), set on the root element. */
+/* WBS Gantt (gantt.js), a Streamlit component mounted in the page (Shadow DOM). Page colours and
+   font come from the theme's --st-* variables, which Streamlit updates live when the viewer
+   switches theme; bar colours (--Normal and the categories) come from the data. */
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--background); }
 #gantt {
-  height: 100vh; display: flex; flex-direction: column;
-  font: 13px/1.3 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink);
+  --ink: var(--st-text-color);
+  --secondary: color-mix(in srgb, var(--st-text-color) 75%, var(--st-background-color));
+  --muted: color-mix(in srgb, var(--st-text-color) 60%, var(--st-background-color));
+  --background: var(--st-background-color);
+  --band: var(--st-secondary-background-color);
+  --axis: var(--st-border-color);
+  --grid: color-mix(in srgb, var(--st-border-color) 55%, var(--st-background-color));
+  display: flex; flex-direction: column;
+  font: 13px/1.3 var(--st-font); color: var(--ink); background: var(--background);
 }
 .toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 2px 8px; flex-wrap: wrap; }
 .toolbar button {

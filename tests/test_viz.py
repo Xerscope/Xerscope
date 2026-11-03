@@ -9,7 +9,7 @@ import pytest
 from xerkit import snap, todo
 
 from xerscope.analysis.wbs import rollup
-from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
+from xerscope.viz import build_finish_trend, categorise, gantt_assets, gantt_data, gantt_rows
 from xerscope.viz import gantt as gantt_module
 from xerscope.viz.charts import SERIES, STATUS, build_activity_dates, build_mta, build_ppc
 
@@ -227,13 +227,13 @@ def test_gantt_rows_compare_dates_and_shift():
     assert row["shift_wd"] == 1  # Thu 12 -> Fri 13 March, Mon-Fri calendar
 
 
-def test_gantt_html_keeps_schedule_text_out_of_the_markup():
+def test_gantt_keeps_schedule_text_out_of_the_markup():
     hostile = "</script><img src=x onerror=alert(1)>"
     s = _wbs_snapshot(B=hostile)
-    page = gantt_html(_rows(s), data_date=s.data_date)
-    assert hostile not in page and "<img" not in page  # the name travels as escaped JSON only
-    assert json.loads(page.split("const DATA = ")[1].split(";</script>")[0])["rows"][3]["name"] == hostile
-    assert "default-src 'none'" in page  # no network request, no external resource
+    data = gantt_data(_rows(s), data_date=s.data_date)
+    assert not [part for part in gantt_assets().values() if "<img" in part]  # markup, style, script: fixed text
+    sent = json.dumps(data, allow_nan=False)  # what the browser receives: data only, written with textContent
+    assert json.loads(sent)["rows"][3]["name"] == hostile
 
 
 def test_gantt_script_never_parses_text_as_html_nor_calls_out():
@@ -254,21 +254,20 @@ def test_gantt_script_never_parses_text_as_html_nor_calls_out():
         assert unsafe not in script
 
 
-def test_gantt_html_timescales_and_links():
+def test_gantt_timescales_and_links():
     s = _wbs_snapshot()
     rows = _rows(s)
-    data = lambda page: json.loads(page.split("const DATA = ")[1].split(";</script>")[0])  # noqa: E731
     span = (pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-31"))
-    month = data(gantt_html(rows, data_date=s.data_date, span=span))
+    month = gantt_data(rows, data_date=s.data_date, span=span)
     assert month["window"] == ["2026-02-23T00:00", "2026-04-07T00:00"]  # the span, 7 days each side
-    week = data(gantt_html(rows, data_date=s.data_date, timescale="week"))
+    week = gantt_data(rows, data_date=s.data_date, timescale="week")
     low, high = (pd.Timestamp(w) for w in week["window"])
     assert high - low == pd.Timedelta(weeks=12) and low < s.data_date < high
-    assert data(gantt_html(rows, relationships=s.relationships))["links"] == []  # off unless asked
-    linked = data(gantt_html(rows, relationships=s.relationships, links=True))["links"]
+    assert gantt_data(rows, relationships=s.relationships)["links"] == []  # off unless asked
+    linked = gantt_data(rows, relationships=s.relationships, links=True)["links"]
     assert linked == [["a:A", "a:B", "FS"], ["a:B", "a:C", "FS"]]
     no_c = [r for r in rows if r["id"] != "a:C"]
-    assert data(gantt_html(no_c, relationships=s.relationships, links=True))["links"] == [["a:A", "a:B", "FS"]]
+    assert gantt_data(no_c, relationships=s.relationships, links=True)["links"] == [["a:A", "a:B", "FS"]]
 
 
 def test_gantt_rows_scale_to_a_large_schedule():
