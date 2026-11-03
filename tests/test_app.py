@@ -31,7 +31,18 @@ PAGES = [
 def app(sample_dir, monkeypatch):
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    return AppTest.from_file(APP, default_timeout=120).run()
+    return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+
+
+def _file_boxes(at):
+    return [box for box in at.sidebar.checkbox if box.key.startswith("read:")]
+
+
+def _tick_all(at):
+    """Nothing is read until files are ticked: tick every file of the folder."""
+    for box in _file_boxes(at):
+        box.check()
+    return at.run()
 
 
 def _ok(at):
@@ -143,7 +154,7 @@ def _run(data_dir, monkeypatch, baseline=None):
         monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     else:
         monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline))
-    return AppTest.from_file(APP, default_timeout=120).run()
+    return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):
@@ -234,13 +245,17 @@ def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch)
 
 
 def test_folder_files_can_be_picked(sample_dir, monkeypatch):
-    """Every XER of the folder is read by default; unticking files leaves them out of the series."""
-    at = _run(sample_dir, monkeypatch)
+    """No file is read until ticked; only the ticked files enter the series."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
     _ok(at)
-    boxes = [box for box in at.sidebar.checkbox if box.key.startswith("read:")]
-    assert len(boxes) == 8 and all(box.value for box in boxes)
-    for box in boxes[3:]:
-        box.uncheck()
+    boxes = _file_boxes(at)
+    assert len(boxes) == 8 and not any(box.value for box in boxes)
+    assert "store" not in at.session_state or at.session_state["store"] is None
+    assert any("Tick at least one file" in i.value for i in at.sidebar.info)
+    for box in boxes[:3]:
+        box.check()
     at.run()
     _ok(at)
     assert any("3 snapshot(s)" in c.value for c in at.sidebar.caption)

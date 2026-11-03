@@ -70,11 +70,13 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
         sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
         st.session_state.update(store=None, signature=(), errors=[])
         return (), None, False
-    # every file ticked by default; a file left out (another project, a draft) stays out of the series
+    # nothing ticked by default: a file is read (up to ~1 GB for a 40 MB export) only once asked for
+    keys = {path.name: f"read:{root}:{path.name}" for path in files}
+    ticked = sum(bool(st.session_state.get(key)) for key in keys.values())
     picked = []
-    with sidebar.expander(f"Files to read · {len(files)} in folder"):
+    with sidebar.expander(f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked):
         for path in files:
-            if st.checkbox(path.name, value=True, key=f"read:{root}:{path.name}"):
+            if st.checkbox(path.name, value=False, key=keys[path.name]):
                 picked.append(path.name)
     if not picked:
         sidebar.info("Tick at least one file to read")
