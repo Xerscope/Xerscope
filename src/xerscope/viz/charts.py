@@ -250,6 +250,9 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
 def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
+    Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
+    whole chart and every milestone can meet it inside the frame; below it is the past.
+
     Colours follow ``colour_order`` among the plotted lines only, so up to len(SERIES)
     lines never share a colour; a line keeps its colour while the lines before it in
     ``colour_order`` stay picked. Lines with the same dates hide each other: the unified
@@ -258,15 +261,27 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
     c = SERIES[_mode(dark)]
     ink = INK[_mode(dark)]
     fig = go.Figure()
-    lo = min(trend["data_date"].min(), trend["forecast"].min())
-    hi = max(trend["data_date"].max(), trend["forecast"].max())
+    pad = pd.Timedelta(days=10)
+    lo = min(trend["data_date"].min(), trend["forecast"].min()) - 2 * pad
+    hi = max(trend["data_date"].max(), trend["forecast"].max()) + 2 * pad
+    fig.add_trace(
+        go.Scatter(
+            x=[lo, hi, hi],
+            y=[lo, hi, lo],
+            fill="toself",
+            fillcolor=ink["grid"],
+            line=dict(width=0),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
     fig.add_trace(
         go.Scatter(
             x=[lo, hi],
             y=[lo, hi],
             mode="lines",
-            name="Reporting date = forecast",
-            line=dict(color=ink["muted"], width=1, dash="dot"),
+            name="Reporting line (forecast = data date)",
+            line=dict(color=ink["primary"], width=3),
             hoverinfo="skip",
         )
     )
@@ -287,13 +302,10 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
             )
         )
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], code))
-    pad = pd.Timedelta(days=10)
-    _end_labels(fig, ends, (trend["forecast"].max() - trend["forecast"].min() + 4 * pad).value, ink["secondary"])
-    fig = _layout(fig, dark, 540, "Forecast date")
-    fig.update_xaxes(
-        title="Reporting date (data date)", range=[trend["data_date"].min() - pad, trend["data_date"].max() + 3 * pad]
-    )
-    fig.update_yaxes(range=[trend["forecast"].min() - 2 * pad, trend["forecast"].max() + 2 * pad], **DATE_AXIS)
+    _end_labels(fig, ends, (hi - lo).value, ink["secondary"])
+    fig = _layout(fig, dark, 640, "Forecast date")
+    fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
+    fig.update_yaxes(range=[lo, hi], scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
     return fig
 
 

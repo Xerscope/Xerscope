@@ -41,6 +41,16 @@ def test_mta_close_end_labels_are_pushed_apart():
     assert shift["M3"] == 0
 
 
+def test_mta_reporting_line_stays_in_view_for_far_milestones():
+    # updates on 2026-03-02..16, milestones forecast 5 and 9 months later
+    fig = build_mta(_mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3}), ["M1", "M2"])
+    x_lo, x_hi = (pd.Timestamp(v) for v in fig.layout.xaxis.range)
+    y_lo, y_hi = (pd.Timestamp(v) for v in fig.layout.yaxis.range)
+    assert (x_lo, x_hi) == (y_lo, y_hi)  # same span on both axes: the 45° line crosses the whole chart
+    assert fig.layout.yaxis.scaleanchor == "x"
+    assert y_hi > pd.Timestamp("2026-12-01")  # every milestone can meet the line inside the frame
+
+
 def test_mta_picked_lines_never_share_a_colour():
     order = [f"A{i}" for i in range(12)]
     fig = build_mta(_mta_frame({"A0": ["2026-06-01"] * 3, "A6": ["2026-07-01"] * 3}), order)
