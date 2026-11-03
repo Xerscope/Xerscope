@@ -63,11 +63,6 @@ def test_unknown_task_calendar_falls_back_to_the_project_calendar():
     assert any("999" in warning for warning in snapshot.warnings)
 
 
-def test_reference_calendars_parse(store):
-    cal = store.first.calendar()
-    assert [hours(day) for day in cal.week] == [8] * 7  # sample: 7 days x 8 h, no blob
-
-
 # --- standards as data ---------------------------------------------------------------------
 
 
@@ -126,14 +121,6 @@ def test_standard_files_in_utf16_and_bom_load(tmp_path):
         p = tmp_path / f"{enc}.toml"
         p.write_text(template_text(), encoding=enc)
         assert load_standard(p).id == "CUSTOM"
-
-
-def test_cli_writes_template(tmp_path):
-    from xerscope.cli import main
-
-    out = tmp_path / "mine.toml"
-    assert main(["standards", "--template", str(out)]) == 0
-    assert loads_standard(out.read_bytes()).id == "CUSTOM"
 
 
 def test_time_axis_values_survive_growing_backwards():

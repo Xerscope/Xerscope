@@ -17,23 +17,39 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
-from xerscope.viz.charts import ACCENT, INK, STATUS
+from xerscope.viz.charts import INK, STATUS
 
 
 class StatusStyle(NamedTuple):
     label: str
-    colour: str  # for text on white
-    mark: str  # Markdown
+    tone: str  # key of the colour in status_colours()
+    mark: str  # Markdown, coloured by the theme
 
 
 # Check status -> style. Red / amber / green are reserved for status.
 STATUS_STYLE = {
-    "pass": StatusStyle("Pass", STATUS["light"]["good"], ":green[**PASS**]"),
-    "fail": StatusStyle("Fail", STATUS["light"]["critical"], ":red[**FAIL**]"),
-    "info": StatusStyle("Info", ACCENT, ":blue[**INFO**]"),
-    "n/a": StatusStyle("N/A", INK["light"]["muted"], ":gray[**N/A**]"),
-    "error": StatusStyle("Error", STATUS["light"]["warning"], ":orange[**ERROR**]"),
+    "pass": StatusStyle("Pass", "good", ":green[**PASS**]"),
+    "fail": StatusStyle("Fail", "critical", ":red[**FAIL**]"),
+    "info": StatusStyle("Info", "info", ":blue[**INFO**]"),
+    "n/a": StatusStyle("N/A", "muted", ":gray[**N/A**]"),
+    "error": StatusStyle("Error", "warning", ":orange[**ERROR**]"),
 }
+
+
+def status_colours(dark: bool) -> dict[str, str]:
+    """Text colour of each status tone on the page background of the theme."""
+    mode = "dark" if dark else "light"
+    return {**STATUS[mode], "muted": INK[mode]["muted"]}
+
+
+def is_dark() -> bool:
+    """Whether the page uses the dark theme (Streamlit infers it from the background)."""
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:
+        return False
+
+
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
 HEADER_HEIGHT = 38
 
@@ -296,7 +312,8 @@ def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler colouring the status column (pass green, fail red…), labels capitalised."""
     out = frame.copy()
     out[column] = out[column].map(status_label)
-    colour_of_label = {style.label: style.colour for style in STATUS_STYLE.values()}
+    colours = status_colours(is_dark())
+    colour_of_label = {style.label: colours[style.tone] for style in STATUS_STYLE.values()}
 
     def colour_cell(label: str) -> str:
         return f"color: {colour_of_label.get(label, 'inherit')}; font-weight: 600"

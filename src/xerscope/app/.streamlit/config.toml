@@ -13,34 +13,57 @@ gatherUsageStats = false
 [client]
 toolbarMode = "minimal"
 
-# Sober corporate theme: white page, light grey panels, one navy accent.
-# Red, amber and green are reserved for status (fail / warning / pass) and never decorate.
+# Light and dark themes; Streamlit follows the browser and the user can switch in Settings.
+# Slate neutrals, one navy accent (deep cyan in dark mode, dark enough under the white
+# text of selected chips), neon-cyan links. Red, amber and green are
+# reserved for status (fail / warning / pass) and never decorate. The chart and Gantt
+# colours in viz/charts.py and viz/gantt.py must match these (tests/test_analysis_and_viz.py).
 [theme]
-base = "light"
-primaryColor = "#1F4E79"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F3F5F8"
-textColor = "#1F2933"
-linkColor = "#1F4E79"
-borderColor = "#D5DBE3"
-dataframeBorderColor = "#E3E7ED"
-dataframeHeaderBackgroundColor = "#F3F5F8"
-dataframeHeaderTextColor = "#3E4C59"
 showWidgetBorder = true
 showSidebarBorder = true
-baseRadius = "4px"
-buttonRadius = "4px"
+baseRadius = "8px"
+buttonRadius = "6px"
 baseFontSize = 15
 headingFontSizes = ["1.75rem", "1.3rem", "1.1rem", "1rem", "0.95rem", "0.9rem"]
-headingFontWeights = [600, 600, 600, 600, 600, 600]
+headingFontWeights = [650, 600, 600, 600, 600, 600]
 metricValueFontSize = "1.55rem"
 metricValueFontWeight = 600
 paddingTop = "2.5rem"
+
+[theme.light]
+primaryColor = "#1F4E79"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F9"
+textColor = "#0F172A"
+linkColor = "#0E7490"
+borderColor = "#E2E8F0"
+dataframeBorderColor = "#E2E8F0"
+dataframeHeaderBackgroundColor = "#F4F6F9"
+dataframeHeaderTextColor = "#334155"
 redColor = "#C0392B"
 greenColor = "#2E7D32"
-orangeColor = "#B26A00"
+orangeColor = "#A15C00"
 blueColor = "#1F4E79"
 
-[theme.sidebar]
-backgroundColor = "#F7F8FA"
+[theme.light.sidebar]
+backgroundColor = "#F8FAFC"
 secondaryBackgroundColor = "#FFFFFF"
+
+[theme.dark]
+primaryColor = "#0B7FA0"
+backgroundColor = "#0B1120"
+secondaryBackgroundColor = "#131C31"
+textColor = "#E2E8F0"
+linkColor = "#22D3EE"
+borderColor = "#1E2A44"
+dataframeBorderColor = "#1E2A44"
+dataframeHeaderBackgroundColor = "#131C31"
+dataframeHeaderTextColor = "#CBD5E1"
+redColor = "#F05252"
+greenColor = "#22C55E"
+orangeColor = "#FAB219"
+blueColor = "#22D3EE"
+
+[theme.dark.sidebar]
+backgroundColor = "#0E1628"
+secondaryBackgroundColor = "#131C31"

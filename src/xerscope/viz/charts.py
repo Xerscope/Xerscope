@@ -11,22 +11,22 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-# The app's colours, in one place. ACCENT is the theme's primaryColor
-# (app/.streamlit/config.toml). STATUS is reserved for meaning (critical / warning /
-# pass / complete, and the check statuses in app/ui.py) and never decorates; SERIES is
-# the categorical palette for lines and keeps clear of those hues.
-ACCENT = "#1f4e79"
+# The app's colours, in one place, per theme. INK "primary" is the theme's textColor and
+# STATUS "info" its blueColor (app/.streamlit/config.toml, [theme.light] / [theme.dark]).
+# STATUS is reserved for meaning (critical / warning / pass / complete / info, and the
+# check statuses in app/ui.py) and never decorates; SERIES is the categorical palette for
+# lines and keeps clear of those hues.
 SERIES = {
     "light": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6"],
     "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"],
 }
 STATUS = {
-    "light": {"critical": "#c0392b", "warning": "#b26a00", "good": "#2e7d32", "complete": "#9aa5b1"},
-    "dark": {"critical": "#d03b3b", "warning": "#fab219", "good": "#0ca30c", "complete": "#898781"},
+    "light": {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#9aa5b1", "info": "#1f4e79"},
+    "dark": {"critical": "#f05252", "warning": "#fab219", "good": "#22c55e", "complete": "#64748b", "info": "#22d3ee"},
 }
 INK = {
-    "light": {"primary": "#1f2933", "secondary": "#3e4c59", "muted": "#7b8794", "grid": "#e6e9ee", "axis": "#c9d0d8"},
-    "dark": {"primary": "#f0efec", "secondary": "#c3c2b7", "muted": "#898781", "grid": "#2c2c2a", "axis": "#383835"},
+    "light": {"primary": "#0f172a", "secondary": "#334155", "muted": "#5b6b82", "grid": "#e8edf3", "axis": "#cbd5e1"},
+    "dark": {"primary": "#e2e8f0", "secondary": "#cbd5e1", "muted": "#94a3b8", "grid": "#1a2438", "axis": "#2a3a5c"},
 }
 
 
@@ -253,13 +253,15 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
     Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
     whole chart and every milestone can meet it inside the frame; below it is the past.
 
-    A line's colour is its move in the last update (``last_shift_wd``, working days,
-    `milestone_slips.last_week_wd`): red later, green earlier, grey unchanged or complete.
-    The end label carries that move. Lines with the same dates hide each other: the
-    unified hover lists every line at a reporting date and their end labels merge.
+    Each line keeps its own series colour so milestones stay distinguishable. The move in
+    the last update (``last_shift_wd``, working days, `milestone_slips.last_week_wd`) marks
+    the last point and the end label: red later, green earlier, line colour unchanged.
+    Lines with the same dates hide each other: the unified hover lists every line at a
+    reporting date and their end labels merge.
     """
     status = STATUS[_mode(dark)]
     ink = INK[_mode(dark)]
+    series = SERIES[_mode(dark)]
     fig = go.Figure()
     pad = pd.Timedelta(days=10)
     lo = min(trend["data_date"].min(), trend["forecast"].min()) - 2 * pad
@@ -286,9 +288,10 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
         )
     )
     ends = []
-    for code, g in trend.groupby("task_code", sort=False):
+    for index, (code, g) in enumerate(trend.groupby("task_code", sort=False)):
+        color = series[index % len(series)]
         shift = last_shift_wd.get(code, 0.0)
-        color = status["critical"] if shift > 0 else status["good"] if shift < 0 else ink["muted"]
+        moved = status["critical"] if shift > 0 else status["good"] if shift < 0 else None
         done = g["is_complete"].to_numpy()
         fig.add_trace(
             go.Scatter(
@@ -297,11 +300,18 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
                 mode="lines+markers",
                 name=f"{code} {g['task_name'].iloc[-1]}",
                 line=dict(color=color, width=2),
-                marker=dict(size=9, symbol=["diamond" if d else "circle" for d in done]),
+                marker=dict(
+                    size=[9] * (len(g) - 1) + [13 if moved else 9],  # bigger: red / orange series stay apart
+                    symbol=["diamond" if d else "circle" for d in done],
+                    color=[color] * (len(g) - 1) + [moved or color],
+                ),
                 hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
             )
         )
-        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], code + (format_shift(shift) if shift else "")))
+        label = code + (format_shift(shift) if shift else "")
+        if moved:
+            label = f'<span style="color:{moved}">{label}</span>'
+        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value, ink["secondary"])
     fig = _layout(fig, dark, 640, "Forecast date")
     fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")

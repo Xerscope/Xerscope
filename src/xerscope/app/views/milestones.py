@@ -45,7 +45,7 @@ slips = milestone_slips(trend, store)
 if not plotted.empty:
     last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))
     st.plotly_chart(build_mta(plotted, last_shift, is_dark()), width="stretch")
-    st.caption("Line colour = move in the last update: red later, green earlier, grey unchanged or complete.")
+    st.caption("One colour per milestone. Last point and label = move in the last update: red later, green earlier.")
 
 ui.section("Slippage", "Working days on each milestone's own calendar.")
 ui.table(

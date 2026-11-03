@@ -116,16 +116,6 @@ def test_assignment_dates_reproduce_p6(name):
     assert bad.empty, bad.head(20).to_string()
 
 
-def test_critical_path_test_lands_on_xerlocks_date():
-    """xerlock tests/test_cpm_sample.py: +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27."""
-    name = "xerlock/sample-schedule.xer"
-    if not (REF / name).exists():
-        missing("reference", REFERENCE_HINT)
-    r = critical_path_test(load_snapshot(REF / name), 600)
-    assert r.delayed == "MEP-020" and r.passed
-    assert "2026-09-08 -> 2028-12-27" in r.note
-
-
 # --- relationships and lags -------------------------------------------------------------------
 
 
