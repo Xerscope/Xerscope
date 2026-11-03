@@ -396,6 +396,12 @@ def test_expected_finish_reports_the_remaining_it_set():
     assert row["rem_override_hr"] == 0.0 and row["ef"] == row["remaining_start"]
 
 
+def test_expected_finish_off_the_calendar_ends_the_previous_working_period():
+    """Expected finish on Saturday 7: the finish is Friday 6 17:00 (P6 26.8 export, Christmas break case)."""
+    t = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-07 17:00")]
+    assert dates(snap(t), "A")[1] == T("2026-03-06 17:00")
+
+
 def _early_expected_finish(header):
     """P (40 h) pushes A's early start to Mon 9 08:00, past A's expected finish (Wed 4)."""
     t = [todo("P", **hours(40)), todo("A", **hours(16), expect_end_date="2026-03-04 17:00")]

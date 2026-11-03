@@ -685,7 +685,8 @@ class _Run:
             return start, finish_time
         if not collapse_early and expected_date < early_start_time:  # P6 26.x: expected finish ignored
             return start, finish_time
-        exp_fin = max(expected_date, early_start_time)
+        # an expected finish off the calendar ends the previous working period (P6 26.x exports)
+        exp_fin = max(axis.keep_or_previous(expected_date), early_start_time)
         finish_bound = axis.keep_or_next(max(finish_bounds)) if finish_bounds else None
         if finish_bound is not None and exp_fin < finish_bound:
             return start, finish_time
