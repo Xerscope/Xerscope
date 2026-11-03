@@ -1,11 +1,12 @@
 # Integrity: is the file what P6 would calculate from its own logic?
 # Not a published standard: checks that make the other standards trustworthy.
+# INT-02 and INT-04..08 mirror the Schedule Project Log P6 writes at each F9 with "Log to file".
 
 [standard]
 id = "INTEGRITY"
 name = "Integrity"
-description = "Stored dates reproduce a recalculation; progress respects logic"
-source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports"
+description = "Integrity answers one question before any other standard is read: are the dates in this file the ones P6 would produce from its own logic? INT-01 and INT-03 recalculate the schedule and compare; INT-02 and INT-04..08 reproduce the warnings, errors and exceptions of the P6 scheduling log (P6 EPPM 26 help, Schedule Project Log). A failure means: reschedule in P6 (F9) and read its log, or a P6 rule xerscope does not reproduce yet."
+source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports; Oracle P6 EPPM 26 help, Schedule Project Log (https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm)"
 
 [[metric]]
 id = "INT-01"
