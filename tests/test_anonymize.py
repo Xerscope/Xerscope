@@ -1,0 +1,196 @@
+"""Anonymised XER and tables: nothing of the original comes out, every result stays the same.
+
+Same results = on the demo series and on the pinned third-party P6 exports, the anonymised
+file gives the same activity dates, floats, durations and progress (matched through the new
+Activity IDs), the same CPM differences against the stored dates, and the same status,
+counts and flagged items for every check of every built-in standard.
+"""
+
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from conftest import REFERENCE_HINT, missing
+from xerkit import DD, done, todo, xer_text
+
+from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
+from xerscope.analysis.cpm import compare_with_stored
+from xerscope.analysis.evm import evm_series
+from xerscope.analysis.progress import ppc_series
+from xerscope.anonymize import Anonymizer, LeakError
+from xerscope.store import SnapshotStore
+from xerscope.xer import load_snapshot
+from xerscope.xer.parser import parse_bytes, parse_text, read_xer
+
+STANDARDS = builtin_standards()
+REFERENCE = Path(__file__).parent / "reference" / "data"
+REFERENCE_FILES = [
+    "pv/20-kW-residential-pv-p6.xer",  # P6 25.12
+    "p6viewer/TERMINAL BUILDING-AIRPORT.xer",  # P6 5.0, resources, activity codes
+    "xereditor/sample.xer",  # P6 20.12
+    "p6-heldout/validation/held-out/H16/import/H16-all.xer",  # P6 23.12, 12 projects
+]
+SAME_COLUMNS = ["status", "start", "finish", "total_float_hr_cnt", "free_float_hr_cnt", "remain_drtn_hr_cnt",
+                "target_drtn_hr_cnt", "pct_complete", "labor_budget_hr", "labor_actual_hr", "is_critical"]  # fmt: skip
+
+
+def anonymised(raws):
+    anonymizer = Anonymizer.from_raws(raws)
+    return anonymizer, [load_snapshot(anonymizer.xer(raw), name=f"anon{i}.xer") for i, raw in enumerate(raws)]
+
+
+def check_rows(results, anonymizer=None):
+    rows = []
+    for result in results:
+        flagged = result.flagged
+        if anonymizer is not None and not flagged.empty:
+            flagged = anonymizer.frame(flagged)
+        links = zip(flagged.get("pred_code", []), flagged.get("succ_code", []), strict=True)
+        codes = sorted(f"{pred}->{succ}" for pred, succ in links) or sorted(map(str, flagged.get("task_code", [])))
+        rows.append((result.metric.id, result.status, result.numerator, result.denominator, codes))
+    return rows
+
+
+def assert_same_snapshot(anonymizer, original, copy):
+    mapped = original.activities.assign(task_code=original.activities["task_code"].map(anonymizer.codes["A"]))
+    left = mapped.set_index("task_code")[SAME_COLUMNS].sort_index()
+    right = copy.activities.set_index("task_code")[SAME_COLUMNS].sort_index()
+    pd.testing.assert_frame_equal(left, right, check_index_type=False)
+    assert (original.data_date, original.finish_date) == (copy.data_date, copy.finish_date)
+    assert len(compare_with_stored(original)) == len(compare_with_stored(copy))
+
+
+def assert_same_checks(anonymizer, original, copy, store=None, copy_store=None, baseline=None, copy_baseline=None):
+    for standard in STANDARDS.values():
+        before = run_standard(standard, AnalysisContext(original, store, baseline))
+        after = run_standard(standard, AnalysisContext(copy, copy_store, copy_baseline))
+        assert check_rows(before, anonymizer) == check_rows(after), standard.id
+
+
+def test_demo_series_gives_the_same_results(sample_dir):
+    paths = sorted(sample_dir.glob("*.xer"))
+    raws = [read_xer(path) for path in paths]
+    anonymizer, copies = anonymised(raws)
+    store, copy_store = SnapshotStore.from_paths(paths), SnapshotStore(copies)
+    baseline, copy_baseline = Baseline.from_snapshot(store.first), Baseline.from_snapshot(copy_store.first)
+    for original, copy in zip(store, copy_store, strict=True):
+        assert_same_snapshot(anonymizer, original, copy)
+        assert_same_checks(anonymizer, original, copy, store, copy_store, baseline, copy_baseline)
+    numbers = ["pv_hr", "ev_hr", "ac_hr", "eac_hr", "spi"]
+    pd.testing.assert_frame_equal(evm_series(store, baseline)[numbers], evm_series(copy_store, copy_baseline)[numbers])
+    pd.testing.assert_series_equal(ppc_series(store)["ppc"], ppc_series(copy_store)["ppc"])
+
+
+@pytest.mark.parametrize("name", REFERENCE_FILES)
+def test_p6_exports_give_the_same_results(name):
+    path = REFERENCE / name
+    if not path.exists():
+        missing("reference", REFERENCE_HINT)
+    raw = read_xer(path)
+    anonymizer, (copy,) = anonymised([raw])
+    original = load_snapshot(path)
+    assert len(copy.warnings) == len(original.warnings)
+    assert_same_snapshot(anonymizer, original, copy)
+    assert_same_checks(anonymizer, original, copy)
+
+
+@pytest.mark.parametrize("name", REFERENCE_FILES)
+def test_no_text_value_of_the_original_is_left(name):
+    """Searched as substrings of the whole file, not only as whole fields."""
+    path = REFERENCE / name
+    if not path.exists():
+        missing("reference", REFERENCE_HINT)
+    raw = read_xer(path)
+    anonymizer = Anonymizer.from_raws([raw])
+    text = anonymizer.xer(raw).decode("cp1252" if raw.encoding.startswith("cp1252") else "utf-8")
+    names = set(raw.table("TASK")["task_name"]) | set(raw.table("PROJWBS")["wbs_name"]) | set(raw.header[3:6])
+    assert [value for value in names if len(value) >= 4 and value in text and value != "dbxDatabaseNoName"] == []
+    generated = {"Activity", "WBS", "Resource", "Role", "Calendar", "Project", "ANON"}  # words of the new labels
+    assert not [value for value in anonymizer.secrets_ if len(value) >= 6 and value in text and value not in generated]
+
+
+def _file(
+    tasks,
+    preds=(),
+    header="ERMHDR\t23.12\t2026-03-02\tProject\tjdoe\tJane Doe\tACME_PROD\tProject Management\tEUR",
+    **kw,
+):
+    lines = xer_text(tasks, preds, **kw).splitlines()
+    return "\n".join([header, *lines[1:]]) + "\n"
+
+
+def test_header_loses_user_and_database():
+    raw = parse_text(_file([todo("A1")]), source="Site Nord - planning.xer")
+    out = Anonymizer.from_raws([raw]).xer(raw).decode()
+    assert out.splitlines()[0].split("\t") == [
+        "ERMHDR", "23.12", "2026-03-02", "Project", "ANON", "ANON", "dbxDatabaseNoName", "Project Management", "EUR",
+    ]  # fmt: skip
+    assert "jdoe" not in out and "Jane Doe" not in out and "ACME_PROD" not in out and "Site Nord" not in out
+
+
+def test_codes_follow_the_activity_across_files_whatever_their_order():
+    week_1 = parse_text(_file([todo("FDN-020"), todo("FDN-010")]), source="w1.xer")
+    week_2 = parse_text(_file([todo("FDN-010"), todo("ROOF-1")], data_date="2026-03-09 08:00"), source="w2.xer")
+    forward, backward = Anonymizer.from_raws([week_1, week_2]), Anonymizer.from_raws([week_2, week_1])
+    assert (
+        forward.codes["A"]
+        == backward.codes["A"]
+        == {"FDN-010": "XA000001", "FDN-020": "XA000002", "ROOF-1": "XA000003"}
+    )
+    names = parse_bytes(forward.xer(week_2)).table("TASK")[["task_code", "task_name"]].values.tolist()
+    assert names == [["XA000001", "Activity XA000001"], ["XA000003", "Activity XA000003"]]
+
+
+def test_unknown_tables_and_columns_are_left_out_and_named():
+    text = _file([todo("A1", wbs_id="")]) + "%T\tTASKMEMO\n%F\tmemo_id\ttask_memo\n%R\t1\tCall Jane re. crane\n"
+    raw = parse_text(text, source="x.xer")
+    raw.tables["TASK"]["new_p6_column"] = "Crane hire by Smith Ltd"
+    anonymizer = Anonymizer.from_raws([raw])
+    out = parse_bytes(anonymizer.xer(raw))
+    assert "TASKMEMO" not in out.tables and anonymizer.report.dropped_tables == {"TASKMEMO"}
+    assert "TASK.new_p6_column" in anonymizer.report.emptied_columns
+    assert "Call Jane" not in anonymizer.xer(raw).decode() and "Smith" not in anonymizer.xer(raw).decode()
+
+
+def test_costs_are_zeroed_and_the_expense_kept():
+    raw = parse_text(_file([todo("A1")], costs=["A1"]), source="x.xer")
+    raw.tables["PROJCOST"]["target_cost"] = "1250.50"
+    out = parse_bytes(Anonymizer.from_raws([raw]).xer(raw)).table("PROJCOST")
+    assert out["target_cost"].tolist() == ["0"]
+
+
+def test_calendar_data_with_unknown_words_is_refused():
+    raw = parse_text(_file([todo("A1")]), source="x.xer")
+    calendars = raw.tables["CALENDAR"]
+    calendars["clndr_data"] = "(0||CalendarData()(Christmas at ACME))"
+    with pytest.raises(LeakError, match="clndr_data"):
+        Anonymizer.from_raws([raw]).xer(raw)
+
+
+def test_a_table_with_original_text_is_refused():
+    raw = parse_text(_file([todo("PUMP-7", task_name="Pump house")]), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    flagged = pd.DataFrame({"task_code": ["PUMP-7"], "task_name": ["Pump house"], "reason": ["Pump house"]})
+    with pytest.raises(LeakError, match="TASK.task_name"):
+        anonymizer.frame(flagged)  # "reason" is kept as written: here it carries a name
+
+
+def test_flagged_csv_matches_check_on_the_anonymised_file():
+    """What the app hands out for a check equals what xerscope finds in the anonymised file."""
+    tasks = [done("A1"), todo("B2", early_start_date="2026-02-23 08:00"), todo("C3")]
+    raw = parse_text(_file(tasks, [("A1", "B2", "PR_FS", 0)], data_date=DD), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    original, copy = load_snapshot(_file(tasks, [("A1", "B2", "PR_FS", 0)]).encode(), name="o.xer"), None
+    copy = load_snapshot(anonymizer.xer(raw), name="a.xer")
+    for standard in STANDARDS.values():
+        for before, after in zip(
+            run_standard(standard, AnalysisContext(original)),
+            run_standard(standard, AnalysisContext(copy)),
+            strict=True,
+        ):
+            if before.flagged.empty:
+                continue
+            shown = anonymizer.frame(before.flagged).reset_index(drop=True)
+            expected = after.flagged.reset_index(drop=True)
+            columns = [c for c in ("task_code", "task_name", "pred_code", "succ_code", "status") if c in shown.columns]
+            pd.testing.assert_frame_equal(shown[columns], expected[columns], check_dtype=False)

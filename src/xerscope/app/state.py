@@ -11,9 +11,11 @@ import streamlit as st
 
 from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
+from xerscope.anonymize import Anonymizer
 from xerscope.app import ui
 from xerscope.store import SnapshotStore
 from xerscope.xer import XER_SUFFIXES, FileHeader, Snapshot, XerError, load_header, load_snapshot, xer_files
+from xerscope.xer.parser import parse_bytes
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
@@ -382,3 +384,19 @@ def memo(key: tuple, function, *arguments):
             cache.clear()
         cache[full_key] = function(*arguments)
     return cache[full_key]
+
+
+def anonymizer(prepare: bool = False) -> Anonymizer | None:
+    """New codes for the loaded files, kept in the session only. Built on request: it reads every
+    loaded file again, so the pages do not pay for it until someone wants an anonymised download."""
+    signature = st.session_state.get("signature")
+    held = st.session_state.get("_anonymizer")
+    if held is not None and held[0] == signature:
+        return held[1]
+    if not prepare:
+        return None
+    items = st.session_state.get("items") or []
+    with st.spinner(f"Reading {len(items)} file(s) for the anonymised downloads…"):
+        built = Anonymizer.from_raws(parse_bytes(data, source=name) for name, data in items)
+    st.session_state["_anonymizer"] = (signature, built)
+    return built

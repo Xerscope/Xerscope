@@ -295,6 +295,18 @@ Each rule below is pinned by a real file:
   on resource-dependent work only, where the float-type option decides.
 - **LOE dates:** Oracle's and Boyle's descriptions, confirmed by the P6 20.12 export for
   early dates and by the corpus for late dates and float. LOE are excluded from INT-01.
+- **An activity whose `clndr_id` is not in the file's CALENDAR table:** read on the
+  project's calendar, then the file's first calendar, then the standard one
+  (`Snapshot.calendar`, `_BuildInputs.fallback_hours_per_day`), and the file is flagged in
+  `warnings`. No Oracle page states this case, and no reference file contains it (0 of 394,
+  every one of which carries a CALENDAR row for each calendar its activities name), so a
+  real P6 export is not expected to produce it. MPXJ resolves it the same way:
+  `PrimaveraReader` leaves the task calendar null for an unknown id
+  (`primavera/TableProjectReader.java`), and `Task.getEffectiveCalendar` falls back to
+  `ProjectFile.getDefaultCalendar`, then `ProjectCalendarContainer.findOrCreateDefaultCalendar`
+  (named calendar, else the first one, else a created default). A P6 Professional 24 export
+  of such a file would settle it; until then the rule comes from a reimplementation, not
+  from Oracle.
 
 ## Property tests
 
