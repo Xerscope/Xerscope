@@ -23,7 +23,8 @@ The XER format is tab-separated:
 - **Values:** everything is kept as **strings**. The parser knows the format, not P6.
 
 Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings)`.
-`tables=` keeps only the named tables (the rows of the others are read and dropped).
+`keep=` keeps only the named tables, each with the listed columns (the rows of the others
+are not split).
 
 ## 2. `xer/model.py`: what P6 means
 

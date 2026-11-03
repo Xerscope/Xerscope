@@ -867,8 +867,8 @@ def _data_date(project_row: pd.Series) -> tuple[pd.Timestamp | None, str]:
     return None, ""
 
 
-# What read_header needs from a file: the rows of every other table are not kept.
-HEADER_TABLES = frozenset({"PROJECT", "TASK"})
+# What read_header needs from a file: PROJECT (a few rows) whole, the identity columns of TASK.
+HEADER_TABLES = {"PROJECT": None, "TASK": ("task_id", "task_code", "proj_id")}
 
 
 @dataclass(frozen=True)
@@ -885,7 +885,7 @@ class FileHeader:
 
 def read_header(raw: RawXer) -> FileHeader:
     """The default project and data date of a file, by the rules of build_snapshot, from
-    PROJECT and TASK alone (a RawXer parsed with ``tables=HEADER_TABLES`` is enough)."""
+    PROJECT and TASK alone (a RawXer parsed with ``keep=HEADER_TABLES`` is enough)."""
     projects = raw.table("PROJECT")
     if projects.empty or raw.table("TASK").empty:
         raise XerError(f"{raw.source}: PROJECT or TASK table missing")

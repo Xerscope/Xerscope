@@ -23,8 +23,8 @@ def load_snapshot(source: str | Path | bytes, project_code=None, name: str | Non
 
 def load_header(path: str | Path) -> FileHeader:
     """Default project and data date of an XER file, without building the snapshot: only the
-    PROJECT and TASK rows are kept while reading."""
-    return read_header(read_xer(path, tables=HEADER_TABLES))
+    PROJECT rows and the TASK identity columns are kept while reading."""
+    return read_header(read_xer(path, keep=HEADER_TABLES))
 
 
 def xer_files(folder: str | Path) -> list[Path]:

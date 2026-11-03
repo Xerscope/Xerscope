@@ -14,6 +14,7 @@ so this layer never has to change when the analysis does.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,6 +22,9 @@ import pandas as pd
 
 # P6 writes the Windows ANSI code page; newer exports may be UTF-8.
 ENCODINGS = ("utf-8-sig", "cp1252")
+
+
+Columns = Collection[str] | None  # columns to keep from a table, None for all
 
 
 class XerError(ValueError):
@@ -51,12 +55,14 @@ def decode_xer(data: bytes) -> tuple[str, str]:
     return data.decode("cp1252", errors="replace"), "cp1252 (lossy)"
 
 
-def parse_text(text: str, source: str = "", encoding: str = "", tables: frozenset[str] | None = None) -> RawXer:
-    """Every table of the file, or only ``tables`` when given (the rows of the others are not kept)."""
+def parse_text(text: str, source: str = "", encoding: str = "", keep: Mapping[str, Columns] | None = None) -> RawXer:
+    """Every table of the file, or only the tables named in ``keep``, each with the listed
+    columns (``None``: all of them). Rows of the other tables are not split."""
     rows: dict[str, list[list[str]]] = {}
     cols: dict[str, list[str]] = {}
+    picked: dict[str, list[int]] = {}  # positions of the kept columns, for a projected table
     current: str | None = None
-    skipping = False  # inside a table left out by ``tables``
+    skipping = False  # inside a table left out by ``keep``
     version = export_date = None
     saw_header = False
     orphans = 0  # %R rows outside any %T table
@@ -65,27 +71,35 @@ def parse_text(text: str, source: str = "", encoding: str = "", tables: frozense
     # that splitlines() treats as line breaks (\x0b, \x1c,  ...).
     for raw in text.split("\n"):
         line = raw.rstrip("\r")
-        if not line:
+        if not line or (skipping and line.startswith("%R\t")):
             continue
         parts = line.split("\t")
         tag = parts[0]
         if tag == "%R":
             if skipping:
                 continue
-            if current is not None:
+            if current in picked:
+                rows[current].append([parts[i + 1] if i + 1 < len(parts) else "" for i in picked[current]])
+            elif current is not None:
                 rows[current].append(parts[1:])
             else:
                 orphans += 1
         elif tag == "%T":
             current = parts[1].strip() if len(parts) > 1 else None
-            skipping = bool(current) and tables is not None and current not in tables
+            skipping = bool(current) and keep is not None and current not in keep
             if skipping:
                 current = None
             elif current:
                 rows.setdefault(current, [])
         elif tag == "%F":
             if current:
-                cols[current] = [c.strip() for c in parts[1:]]
+                names = [c.strip() for c in parts[1:]]
+                wanted = keep.get(current) if keep is not None else None
+                if wanted is None:
+                    cols[current] = names
+                else:
+                    picked[current] = [i for i, name in enumerate(names) if name in wanted]
+                    cols[current] = [names[i] for i in picked[current]]
         elif tag == "ERMHDR":
             saw_header = True
             version = parts[1] if len(parts) > 1 else None
@@ -120,11 +134,11 @@ def parse_text(text: str, source: str = "", encoding: str = "", tables: frozense
     return RawXer(tables, source, version, export_date, encoding, warnings)
 
 
-def parse_bytes(data: bytes, source: str = "", tables: frozenset[str] | None = None) -> RawXer:
+def parse_bytes(data: bytes, source: str = "", keep: Mapping[str, Columns] | None = None) -> RawXer:
     text, encoding = decode_xer(data)
-    return parse_text(text, source=source, encoding=encoding, tables=tables)
+    return parse_text(text, source=source, encoding=encoding, keep=keep)
 
 
-def read_xer(path: str | Path, tables: frozenset[str] | None = None) -> RawXer:
+def read_xer(path: str | Path, keep: Mapping[str, Columns] | None = None) -> RawXer:
     path = Path(path)
-    return parse_bytes(path.read_bytes(), source=path.name, tables=tables)
+    return parse_bytes(path.read_bytes(), source=path.name, keep=keep)

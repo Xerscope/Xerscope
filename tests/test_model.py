@@ -225,9 +225,12 @@ def test_missing_column_never_leaks_a_key_error(table, column):
 
 def test_parser_keeps_only_the_tables_asked_for():
     text = xer_text([{"task_code": "A"}, {"task_code": "B"}])
-    full, light = parse_text(text), parse_text(text, tables=HEADER_TABLES)
+    full, light = parse_text(text), parse_text(text, keep=HEADER_TABLES)
     assert set(light.tables) == {"PROJECT", "TASK"} < set(full.tables)
-    assert light.table("TASK").equals(full.table("TASK")) and light.warnings == full.warnings
+    assert light.table("PROJECT").equals(full.table("PROJECT"))
+    task = full.table("TASK")  # projected columns stay in file order
+    assert light.table("TASK").equals(task[[c for c in task.columns if c in ("task_id", "task_code", "proj_id")]])
+    assert light.warnings == full.warnings
 
 
 def _two_projects(main: dict, other: dict) -> str:
@@ -267,7 +270,7 @@ def _same_as_snapshot(raw_full, raw_light):
 @pytest.mark.parametrize("case", HEADER_CASES)
 def test_header_takes_what_build_snapshot_takes(case):
     text = HEADER_CASES[case]
-    header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, tables=HEADER_TABLES))
+    header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, keep=HEADER_TABLES))
     if case == "two projects":
         assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
     if case == "no recalc date":
@@ -288,8 +291,8 @@ def test_header_matches_build_snapshot_on_sample_and_reference_files(sample_dir)
             build_snapshot(full)
         except XerError:
             with pytest.raises(XerError):
-                read_header(read_xer(path, tables=HEADER_TABLES))
+                read_header(read_xer(path, keep=HEADER_TABLES))
             continue
-        _same_as_snapshot(full, read_xer(path, tables=HEADER_TABLES))
+        _same_as_snapshot(full, read_xer(path, keep=HEADER_TABLES))
         checked += 1
     assert checked >= len(xer_files(sample_dir))
