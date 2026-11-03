@@ -1,0 +1,45 @@
+/* The two looks .streamlit/config.toml cannot set: KPI cards drawn as a HUD readout, and the
+   milestone picker's tags in the colour of their line. Colours are CSS variables written by
+   ui.apply_style() from viz/charts.py for the light or dark theme. Selectors under a widget's
+   key class (st-key-…, documented) and Streamlit's data-testid / data-tag attributes, which a
+   Streamlit upgrade can move: the app then shows the plain theme, nothing else changes. */
+
+/* KPI cards: corner brackets, accent-tinted edge, uppercase label */
+[data-testid="stMetric"] {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--axis)) !important;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 8%, var(--band)), var(--band) 65%);
+}
+[data-testid="stMetric"]::before,
+[data-testid="stMetric"]::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+}
+[data-testid="stMetric"]::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: 8px; }
+[data-testid="stMetric"]::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: 8px; }
+[data-testid="stMetricLabel"] p {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+[data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
+
+/* milestone picker: outlined tags, each in the colour of its line (pick order, at most 6) */
+.st-key-mta_pick [data-tag] {
+  background: color-mix(in srgb, var(--tag) 14%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--tag) 60%, transparent);
+  border-left: 3px solid var(--tag);
+  border-radius: 4px !important;
+  color: var(--ink) !important;
+}
+.st-key-mta_pick [data-tag] button { color: var(--ink); }
+.st-key-mta_pick [data-tag-index="0"] { --tag: var(--s1); }
+.st-key-mta_pick [data-tag-index="1"] { --tag: var(--s2); }
+.st-key-mta_pick [data-tag-index="2"] { --tag: var(--s3); }
+.st-key-mta_pick [data-tag-index="3"] { --tag: var(--s4); }
+.st-key-mta_pick [data-tag-index="4"] { --tag: var(--s5); }
+.st-key-mta_pick [data-tag-index="5"] { --tag: var(--s6); }

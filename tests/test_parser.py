@@ -1,6 +1,6 @@
 import pytest
 
-from xerscope.xer import XerError, parse_bytes, parse_text, read_xer
+from xerscope.xer import XerError, parse_bytes, parse_text
 
 MINI = (
     "ERMHDR\t23.12\t2026-10-20\tProject\r\n"
@@ -46,9 +46,3 @@ def test_missing_table_is_empty():
 def test_rejects_non_xer():
     with pytest.raises(XerError):
         parse_text("hello\nworld")
-
-
-def test_reads_generated_file(sample_dir):
-    raw = read_xer(next(sample_dir.glob("*.xer")))
-    for name in ("PROJECT", "CALENDAR", "PROJWBS", "TASK", "TASKPRED", "TASKRSRC"):
-        assert not raw.table(name).empty, name

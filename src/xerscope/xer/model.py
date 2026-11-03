@@ -644,6 +644,8 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         "critical_float_hr": None if pd.isna(critical_hours) else float(critical_hours),
         "has_schedoptions": not schedule_options.empty,
         "sched": schedule_row,  # the raw SCHEDOPTIONS row: read by analysis.cpm
+        # the raw PROJECT fields the three values above come from: "" when the file leaves them blank
+        "project": {key: project_row[key] for key in ("critical_path_type", "critical_drtn_hr_cnt", "plan_end_date")},
         "must_finish_by": _parse_date(project_row["plan_end_date"]),
     }
 

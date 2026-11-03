@@ -10,7 +10,7 @@ from xerkit import snap, todo
 from xerscope.analysis.wbs import rollup
 from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
 from xerscope.viz import gantt as gantt_module
-from xerscope.viz.charts import INK, STATUS, build_activity_dates, build_mta, build_ppc
+from xerscope.viz.charts import SERIES, STATUS, build_activity_dates, build_mta, build_ppc
 
 
 def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
@@ -49,13 +49,32 @@ def test_mta_reporting_line_stays_in_view_for_far_milestones():
     assert y_hi > pd.Timestamp("2026-12-01")  # every milestone can meet the line inside the frame
 
 
-def test_mta_line_colour_follows_last_update_move():
+def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
     fig = build_mta(_mta_frame(lines), {"LATE": 2.0, "EARLY": -1.5, "SAME": 0.0})
+    traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
+    red, green = STATUS["light"]["critical"], STATUS["light"]["good"]
+    # one series colour per milestone, in order, so lines stay distinguishable
+    assert [traces[code].line.color for code in lines] == SERIES["light"][:3]
+    # earlier points in the line colour, the last one red (later) / green (earlier) / unchanged
+    assert list(traces["LATE"].marker.color) == [SERIES["light"][0]] * 2 + [red]
+    assert list(traces["EARLY"].marker.color) == [SERIES["light"][1]] * 2 + [green]
+    assert list(traces["SAME"].marker.color) == [SERIES["light"][2]] * 3
+    assert list(traces["LATE"].marker.size) == [9, 9, 13] and list(traces["SAME"].marker.size) == [9, 9, 9]
+    texts = sorted(a.text for a in fig.layout.annotations)
+    assert texts == [
+        f'<span style="color:{green}">EARLY (-1.5 wd)</span>',
+        f'<span style="color:{red}">LATE (+2 wd)</span>',
+        "SAME",
+    ]
+
+
+def test_mta_colour_follows_pick_order_even_with_a_line_missing():
+    # picked C, A, B; A has no trend to plot: B and C keep the colours of their picker tags
+    lines = {"B": ["2026-06-01"] * 3, "C": ["2026-07-01"] * 3}
+    fig = build_mta(_mta_frame(lines), {}, order=["C", "A", "B"])
     colour = {t.name.split()[0]: t.line.color for t in fig.data if t.name and t.name.split()[0] in lines}
-    red, green, grey = STATUS["light"]["critical"], STATUS["light"]["good"], INK["light"]["muted"]
-    assert colour == {"LATE": red, "EARLY": green, "SAME": grey}
-    assert sorted(a.text for a in fig.layout.annotations) == ["EARLY (-1.5 wd)", "LATE (+2 wd)", "SAME"]
+    assert colour == {"C": SERIES["light"][0], "B": SERIES["light"][2]}
 
 
 def test_ppc_target_label_sits_outside_the_bars():
@@ -83,6 +102,7 @@ def test_activity_dates_axis_keeps_days_when_dates_never_move():
 def test_finish_trend_shows_dates_to_the_day(store):
     """Weekly reporting reads dates, not times: no hour in hovers or tick labels."""
     trend = build_finish_trend(store.summary)
+    assert len(trend.data[0].x) == len(store)  # one point per update
     for axis in (trend.layout.xaxis, trend.layout.yaxis):
         assert axis.hoverformat == "%Y-%m-%d"
         assert axis.tickformatstops[0].dtickrange[1] == 86_400_000  # below a day: day labels

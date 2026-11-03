@@ -105,11 +105,18 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
         sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
         st.session_state.update(store=None, signature=(), errors=[])
         return (), None, False
+    # Widget keys name the folder by a hash: a key shows in the page as a CSS class, and the
+    # folder path is the server's.
+    folder_id = hashlib.sha256(str(root).encode()).hexdigest()[:12]
     # nothing ticked by default: a file is read (up to ~1 GB for a 40 MB export) only once asked for
-    keys = {path.name: f"read:{root}:{path.name}" for path in files}
+    keys = {path.name: f"read:{folder_id}:{path.name}" for path in files}
     ticked = sum(bool(st.session_state.get(key)) for key in keys.values())
     picked = []
-    with sidebar.expander(f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked):
+    # a fixed key keeps the expander open while files are ticked: without it Streamlit keys it on
+    # its label, which holds the count, and redraws it closed at every tick
+    with sidebar.expander(
+        f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked, key=f"files:{folder_id}"
+    ):
         for path in files:
             label, details = _describe_file(path)
             if st.checkbox(label, value=False, key=keys[path.name], help=details):
@@ -327,11 +334,7 @@ def require_store() -> SnapshotStore:
     return store
 
 
-def is_dark() -> bool:
-    try:
-        return st.context.theme.type == "dark"
-    except Exception:
-        return False
+is_dark = ui.is_dark
 
 
 def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "snap") -> Snapshot:

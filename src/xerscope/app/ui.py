@@ -12,28 +12,62 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 
-from xerscope.viz.charts import ACCENT, INK, STATUS
+from xerscope.viz.charts import INK, SERIES, STATUS
+from xerscope.viz.gantt import BAND
 
 
 class StatusStyle(NamedTuple):
     label: str
-    colour: str  # for text on white
-    mark: str  # Markdown
+    tone: str  # key of the colour in status_colours()
+    mark: str  # Markdown, coloured by the theme
 
 
 # Check status -> style. Red / amber / green are reserved for status.
 STATUS_STYLE = {
-    "pass": StatusStyle("Pass", STATUS["light"]["good"], ":green[**PASS**]"),
-    "fail": StatusStyle("Fail", STATUS["light"]["critical"], ":red[**FAIL**]"),
-    "info": StatusStyle("Info", ACCENT, ":blue[**INFO**]"),
-    "n/a": StatusStyle("N/A", INK["light"]["muted"], ":gray[**N/A**]"),
-    "error": StatusStyle("Error", STATUS["light"]["warning"], ":orange[**ERROR**]"),
+    "pass": StatusStyle("Pass", "good", ":green[**PASS**]"),
+    "fail": StatusStyle("Fail", "critical", ":red[**FAIL**]"),
+    "info": StatusStyle("Info", "info", ":blue[**INFO**]"),
+    "n/a": StatusStyle("N/A", "muted", ":gray[**N/A**]"),
+    "error": StatusStyle("Error", "warning", ":orange[**ERROR**]"),
 }
+
+
+def status_colours(dark: bool) -> dict[str, str]:
+    """Text colour of each status tone on the page background of the theme."""
+    mode = "dark" if dark else "light"
+    return {**STATUS[mode], "muted": INK[mode]["muted"]}
+
+
+def is_dark() -> bool:
+    """Whether the page uses the dark theme (Streamlit infers it from the background)."""
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:
+        return False
+
+
+STYLE = Path(__file__).parent / "style.css"
+
+
+def apply_style(dark: bool) -> None:
+    """style.css with the colours of the light or dark theme (sent once per run, takes no space)."""
+    mode = "dark" if dark else "light"
+    colours = {
+        "accent": STATUS[mode]["info"],
+        "ink": INK[mode]["primary"],
+        "axis": INK[mode]["axis"],
+        "band": BAND[mode],
+    } | {f"s{index}": colour for index, colour in enumerate(SERIES[mode], start=1)}
+    variables = "".join(f"--{name}: {value};" for name, value in colours.items())
+    st.html(f"<style>:root {{{variables}}}\n{STYLE.read_text(encoding='utf-8')}</style>")
+
+
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
 HEADER_HEIGHT = 38
 
@@ -241,10 +275,13 @@ def _column_for(label: str, kind: str, values: pd.Series):
     return st.column_config.TextColumn(label)
 
 
-def column_config(frame: pd.DataFrame, overrides: dict | None = None) -> dict:
+def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels: bool = False) -> dict:
+    """Label and format of each column. ``raw_labels`` keeps the field names as written (the XER
+    field, the analysis column), for tables read beside P6; formats are unchanged."""
     config: dict = {}
     for column in frame.columns:
         label, kind = COLUMNS.get(column, (str(column).replace("_", " ").capitalize(), ""))
+        label = str(column) if raw_labels else label
         config[column] = _column_for(label, kind or _infer_kind(frame[column]), frame[column])
     config.update(overrides or {})
     return config
@@ -257,11 +294,13 @@ def table(
     max_height: int = 560,
     overrides: dict | None = None,
     status: str | None = None,
+    raw_labels: bool = False,
     **kwargs,
 ):
     """A labelled, formatted dataframe; height follows the rows up to ``max_height``.
 
-    ``status`` names a pass/fail column to show as coloured labels.
+    ``status`` names a pass/fail column to show as coloured labels; ``raw_labels`` keeps the
+    column names as headers (see ``column_config``).
     """
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
@@ -269,7 +308,7 @@ def table(
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
-    config = column_config(frame, overrides)
+    config = column_config(frame, overrides, raw_labels)
     data = status_style(frame, status) if status else frame
     return st.dataframe(data, column_config=config, **kwargs)
 
@@ -296,7 +335,8 @@ def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler colouring the status column (pass green, fail red…), labels capitalised."""
     out = frame.copy()
     out[column] = out[column].map(status_label)
-    colour_of_label = {style.label: style.colour for style in STATUS_STYLE.values()}
+    colours = status_colours(is_dark())
+    colour_of_label = {style.label: colours[style.tone] for style in STATUS_STYLE.values()}
 
     def colour_cell(label: str) -> str:
         return f"color: {colour_of_label.get(label, 'inherit')}; font-weight: 600"
