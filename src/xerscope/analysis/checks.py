@@ -89,6 +89,24 @@ def results_frame(results: list[CheckResult]) -> pd.DataFrame:
     return frame
 
 
+def compare_counts(got: pd.DataFrame, expected: pd.DataFrame, keys: list[str] | None = None) -> pd.DataFrame:
+    """found / total typed from a report (P6 Check Schedule summary) against ``results_frame``.
+
+    ``expected`` has ``id``, ``found``, ``total`` (and ``file`` when ``keys`` names it). A line
+    with neither count typed is not part of the report and is left out. ``match`` is False
+    when either count differs or the check is not in ``got``.
+    """
+    keys = keys or ["id"]
+    typed = expected.dropna(subset=["found", "total"], how="all")
+    typed = typed.astype({"found": "Int64", "total": "Int64"})
+    merged = typed[keys + ["found", "total"]].merge(
+        got[keys + ["check", "found", "total"]], on=keys, how="left", suffixes=("_exp", "")
+    )
+    same = (merged["found_exp"] == merged["found"]) & (merged["total_exp"] == merged["total"])
+    merged["match"] = same.fillna(False).astype(bool)
+    return merged[keys + ["check", "found_exp", "found", "total_exp", "total", "match"]]
+
+
 def health_history(
     store: SnapshotStore, standard: Standard, baseline: Baseline | Callable[[Snapshot], Baseline | None] | None = None
 ) -> pd.DataFrame:

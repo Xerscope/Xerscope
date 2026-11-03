@@ -121,6 +121,24 @@ def test_health_lists_culprits_of_every_check(app):
         assert frames and len(frames[-1].value) == row["flagged"], row["id"]
 
 
+def test_health_compares_counts_typed_from_a_p6_report(app):
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+
+    def report():
+        return next(u for u in app.file_uploader if u.key == "report_csv_P6")
+
+    report().set_value(("report.csv", b"id,found,total\nP6-01,99999,99999\n", "text/csv")).run()
+    _ok(app)
+    assert [e.value for e in app.error] == ["1 of 1 checks differ from the report"]
+    compared = next(d.value for d in app.dataframe if "match" in d.value.columns)
+    row = compared.iloc[0]  # xerscope's own counts, typed back as the report
+    text = f"id,found,total\nP6-01,{row['found']},{row['total']}\n".encode()
+    report().set_value(("report.csv", text, "text/csv")).run()
+    _ok(app)
+    assert not app.error and [s.value for s in app.success] == ["All 1 checks match the report"]
+
+
 def test_earned_value_needs_hours_and_baseline(app):
     app.switch_page("views/earned_value.py").run()
     _ok(app)

@@ -90,6 +90,11 @@ check with the activities (or relationships) found, to diff against the report's
 when several files are checked) typed from the report's summary; every line is printed as
 expected / got and the command exits 1 on any difference.
 
+On the Schedule health page, "Compare with a P6 Check Schedule report" does the same on the
+update and baseline picked there: type the report's counts or upload that CSV; lines left empty are
+not compared (`compare_counts` in `analysis/checks.py`, shared with `check --expect`). Nothing typed
+or uploaded is kept on the server.
+
 The Schedule health page shows the same results as `xerscope check` when both read the same
 series with the same baseline (`tests/test_app_parity.py`). Two defaults differ: the app takes
 the first loaded update as baseline, `check` none unless `--baseline` or `--planned-baseline` is

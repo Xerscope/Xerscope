@@ -7,7 +7,7 @@ import pytest
 from xerkit import todo, xer_text
 
 from xerscope import cli
-from xerscope.analysis import builtin_standards
+from xerscope.analysis import builtin_standards, compare_counts
 
 
 def run(capsys, *argv) -> str:
@@ -47,6 +47,15 @@ def test_check_flagged_and_expect(capsys, sample_dir, tmp_path):
     bad.write_text(f"id,found,total\nP6-01,{int(row['found']) + 1},{row['total']}\n")
     assert cli.main(["check", str(first), "--standard", "P6", "--expect", str(bad)]) == 1
     assert "1 difference(s)" in capsys.readouterr().err
+
+
+def test_compare_counts_leaves_untyped_lines_out():
+    got = pd.DataFrame({"id": ["A", "B", "C"], "check": ["a", "b", "c"], "found": [1, 2, None], "total": [9, 9, None]})
+    got[["found", "total"]] = got[["found", "total"]].astype("Int64")
+    typed = pd.DataFrame({"id": ["A", "B", "C", "D"], "found": [1, 3, None, 0], "total": [9, 9, None, 5]})
+    r = compare_counts(got, typed)
+    assert list(r["id"]) == ["A", "B", "D"]  # C: nothing typed, not part of the report
+    assert list(r["match"]) == [True, False, False]  # B: found differs; D: no such check
 
 
 def test_check_with_baseline_file(capsys, sample_dir):

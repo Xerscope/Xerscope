@@ -3,7 +3,15 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import AnalysisContext, health_history, loads_standard, run_standard, template_text
+from xerscope.analysis import (
+    AnalysisContext,
+    compare_counts,
+    health_history,
+    loads_standard,
+    results_frame,
+    run_standard,
+    template_text,
+)
 from xerscope.analysis.checks import health_wide
 from xerscope.analysis.explain import explain, fmt_value, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
@@ -219,6 +227,60 @@ def show_trend(store, standard, baseline_key) -> None:
         )
 
 
+def show_report_comparison(results, standard) -> None:
+    """Counts typed from a P6 Check Schedule report (or its id,found,total CSV) against this
+    page's results, on the update and baseline picked above. Nothing typed is kept on the server."""
+    with st.expander("Compare with a P6 Check Schedule report"):
+        st.markdown(
+            "Type the report's *found* and *total* for each check, or upload them as a CSV "
+            "(`id,found,total`). Lines left empty are not compared. Run the report on the same "
+            "update and baseline as this page."
+        )
+        got = results_frame(results)
+        upload = st.file_uploader("Report counts (.csv)", type=["csv"], key=f"report_csv_{standard.id}")
+        if upload is not None:
+            try:
+                typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
+                missing = {"id", "found", "total"} - set(typed.columns)
+                if missing:
+                    st.error(f"Columns missing: {', '.join(sorted(missing))}")
+                    return
+            except (ValueError, UnicodeDecodeError) as exc:
+                st.error(f"Unreadable CSV: {exc}")
+                return
+            typed = got[["id", "check"]].merge(typed[["id", "found", "total"]], on="id", how="left")
+        else:
+            typed = got[["id", "check"]].assign(found=pd.NA, total=pd.NA).astype({"found": "Int64", "total": "Int64"})
+        edited = st.data_editor(
+            typed,
+            disabled=["id", "check"],
+            hide_index=True,
+            column_config={
+                "found": st.column_config.NumberColumn("Found (report)", min_value=0, step=1),
+                "total": st.column_config.NumberColumn("Total (report)", min_value=0, step=1),
+            },
+            key=f"report_counts_{standard.id}_{upload.file_id if upload else 'typed'}",  # a new upload resets the edits
+        )
+        compared = compare_counts(got, edited)
+        if compared.empty:
+            return
+        bad = int((~compared["match"]).sum())
+        if bad:
+            st.error(f"{bad} of {len(compared)} checks differ from the report", icon=":material/error:")
+        else:
+            st.success(f"All {len(compared)} checks match the report", icon=":material/check_circle:")
+        ui.table(
+            compared,
+            overrides={
+                "found_exp": st.column_config.NumberColumn("Found (report)", format="%d"),
+                "found": st.column_config.NumberColumn("Found (xerscope)", format="%d"),
+                "total_exp": st.column_config.NumberColumn("Total (report)", format="%d"),
+                "total": st.column_config.NumberColumn("Total (xerscope)", format="%d"),
+                "match": st.column_config.CheckboxColumn("Match"),
+            },
+        )
+
+
 def show_own_standard() -> None:
     with st.expander("Use your own standard"):
         st.markdown(
@@ -305,4 +367,5 @@ if baseline is not None:
             f"{ui.md_text(', '.join(missing[:10]))}{'…' if len(missing) > 10 else ''}"
         )
 
+show_report_comparison(results, standard)
 show_own_standard()
