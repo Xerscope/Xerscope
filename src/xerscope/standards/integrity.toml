@@ -29,3 +29,12 @@ name = "Assignments recalculated"
 description = "Open resource assignments whose stored remaining early/late dates differ from a recalculation"
 rule = "int_03_assignments_recalculated"
 target = "<= 0%"
+
+[[metric]]
+id = "INT-04"
+name = "Relationship loops"
+description = "Activities on a relationship loop. Mirrors the log's Errors 'Activities that have invalid relationship loops'; P6 cannot schedule the file until the loop is cut"
+rule = "int_04_relationship_loops"
+unit = "count"
+target = "<= 0"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Errors: \"Activities that have invalid relationship loops\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm)"

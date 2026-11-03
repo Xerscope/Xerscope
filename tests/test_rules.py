@@ -681,6 +681,18 @@ def test_out_of_sequence_follows_the_status_at_the_data_date():
     assert dict(zip(r.flagged["task_code"], r.flagged["ahead_of"], strict=True)) == {"B": "A (FS)", "F": "E (SS)"}
 
 
+def test_relationship_loop_lists_the_activities_on_the_loop():
+    """P6 log error 'Activities that have invalid relationship loops': A -> B -> C -> A, D hangs off C."""
+    s = snap(
+        [todo("A"), todo("B"), todo("C"), todo("D"), todo("E")],
+        [("A", "B", "FS", 0), ("B", "C", "FS", 0), ("C", "A", "FS", 0), ("C", "D", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-04", s)
+    assert codes(r) == ["A", "B", "C"] and counts(r) == (3, 5) and r.status == "fail"
+    clean = snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])
+    assert counts(run(INTEGRITY, "INT-04", clean)) == (0, 2) and run(INTEGRITY, "INT-04", clean).status == "pass"
+
+
 def test_late_activities_use_working_time():
     # Finished Fri 17:00 against a baseline of Mon 08:00: the same working minute, not late.
     bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 08:00")]))
