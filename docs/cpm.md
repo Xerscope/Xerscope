@@ -289,6 +289,7 @@ Each rule below is pinned by a real file:
 | finish milestone, late | a period end | Hotel |
 | task with no remaining duration (not a milestone) | early dates at a period start, late dates at a period end: the evening before an FS successor's 08:00 late start | P6 Professional 24 export (three open activities, FS successors); SS / FF / SF bounds unverified |
 | expected finish earlier than the early start (task-dependent, no FF / SF predecessor, no ALAP) | ERMHDR major version < 26 (or absent): remaining brought to 0, EF = ES; ≥ 26: expected finish ignored, EF = ES + the stored remaining (`Options.collapse_early_expected_finish`) | < 26: P6 23.12 corpus, H1-02 A1170 (94 of 94 cases). ≥ 26: 26.x project exports (26.5 / 26.8, Project Management Cloud), 112 cases over 14 updates, all FS lag 0, no ALAP; source level observed. 24 / 25 unverified |
+| expected finish off the activity's calendar (a holiday, a weekend, after hours) | the expected finish ends the previous working period before the remaining is derived from it | 26.x project exports: 4 activities on 2 calendars (finish 31 Dec in a Christmas break stored 24 Dec 17:00; 17:48 stored 17:00); source level observed |
 
 ## Conventions no reference file settles
 
