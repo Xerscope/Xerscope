@@ -34,6 +34,7 @@ pages = st.navigation(
         ],
         "Data": [
             st.Page(VIEWS / "export.py", title="Export for Power BI", icon=":material/download:"),
+            st.Page(VIEWS / "debug.py", title="Debug", icon=":material/bug_report:"),
         ],
     }
 )
