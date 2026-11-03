@@ -193,9 +193,13 @@ def test_debug_page_shows_the_options_comparisons_and_targets_as_computed(app, s
     disagreeing = sorted(comparison[comparison["stored"].notna() & ~comparison["agree"]]["task_code"].unique())
     listed = [frame for frame in frames if "differs" in frame and "taskrsrc_id" not in frame]
     assert (sorted(listed[0]["task_code"]) if listed else []) == disagreeing
-    targets = next(frame for frame in frames if "tab" in frame).set_index("check")["target"]
+    parameters = next(frame for frame in frames if "tab" in frame).set_index("check")
     for metric in STANDARDS["P6"].metrics:
-        assert targets[f"{metric.id} · {metric.name}"] == metric.threshold_label
+        row = parameters.loc[f"{metric.id} · {metric.name}"]
+        assert row["target"] == metric.threshold_label
+        # x is read from p6.toml (limit_hours), not from a constant: 352 on P6-04/05/06, blank elsewhere
+        expected_x = metric.params.get("limit_hours")
+        assert (None if pd.isna(row["x_hours"]) else row["x_hours"]) == expected_x, metric.id
 
 
 def _open_audit(app, standard_id: str, metric_id: str):
