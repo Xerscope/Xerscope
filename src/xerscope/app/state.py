@@ -343,9 +343,6 @@ def require_store() -> SnapshotStore:
     return store
 
 
-is_dark = ui.is_dark
-
-
 def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "snap") -> Snapshot:
     labels = store.labels
     choice = st.selectbox(label, labels, index=len(labels) - 1, key=key)

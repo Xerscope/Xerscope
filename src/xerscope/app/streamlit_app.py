@@ -40,6 +40,6 @@ pages = st.navigation(
     }
 )
 
-ui.apply_style(ui.is_dark())
+ui.apply_style()
 sidebar_loader()
 pages.run()

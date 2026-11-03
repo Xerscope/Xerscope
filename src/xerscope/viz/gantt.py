@@ -1,22 +1,20 @@
 """Gantt grouped by WBS, as in P6's Activities view: a tree grid on the left, the
 timeline on the right, one row each, WBS rows folding open and closed in the browser.
 
-Python builds the rows (``gantt_rows``) and the page (``gantt_html``); ``gantt.js`` and
-``gantt.css`` draw them. Encoding:
+Python builds the rows (``gantt_rows``) and the data (``gantt_data``); ``gantt.js`` and
+``gantt.css`` draw them as a Streamlit component (app/ui.py: GANTT). Encoding:
 - Bar colour = float category (critical / near critical / normal / complete), legend shown.
 - Hollow outline behind a bar = the same activity in the comparison snapshot (previous
   update or baseline), so slippage reads as the bar leaving its outline.
 - Diamonds = milestones. Dark thin bar = WBS summary. Dashed vertical line = data date.
 
-The page is built from schedule text (activity and WBS names come from the XER file):
-values reach the browser only as JSON data, the script writes them with ``textContent``,
-and a Content-Security-Policy forbids any network request or external resource.
+Schedule text (activity and WBS names come from the XER file) reaches the browser only as
+the component's data, never in its markup, and the script writes it with ``textContent``.
+Page colours and font follow the theme in the browser (gantt.css, --st-* variables).
 """
 
 from __future__ import annotations
 
-import base64
-import json
 import math
 from importlib.resources import files
 
@@ -25,34 +23,18 @@ import pandas as pd
 
 from ..analysis.wbs import ROOT
 from ..config import DEFAULT_SETTINGS, Settings
-from .charts import INK, SERIES, STATUS
+from .charts import SERIES, STATUS
 
-# Page and band colours: the theme's backgroundColor and secondaryBackgroundColor
-# (app/.streamlit/config.toml), so the Gantt frame blends into the page.
-BACKGROUND = {"light": "#ffffff", "dark": "#0b1120"}
-BAND = {"light": "#f4f6f9", "dark": "#131c31"}
+# Bar colours, the same on both themes (viz/charts.py: >= 3:1 on either background).
 PALETTE = {
-    mode: {
-        "Critical": STATUS[mode]["critical"],
-        "Near critical": STATUS[mode]["warning"],
-        "Normal": SERIES[mode][0],
-        "Complete": STATUS[mode]["complete"],
-        "ink": INK[mode]["primary"],
-        "secondary": INK[mode]["secondary"],
-        "muted": INK[mode]["muted"],
-        "grid": INK[mode]["grid"],
-        "axis": INK[mode]["axis"],
-        "background": BACKGROUND[mode],
-        "band": BAND[mode],
-    }
-    for mode in ("light", "dark")
+    "Critical": STATUS["critical"],
+    "Near critical": STATUS["warning"],
+    "Normal": SERIES[0],
+    "Complete": STATUS["complete"],
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
 WEEK_WINDOW = (pd.Timedelta(weeks=2), pd.Timedelta(weeks=10))  # week timescale: before / after the data date
 SPAN_PAD = pd.Timedelta(days=7)  # month timescale: margin around the schedule
-# data: fonts only: the theme's body font, embedded below (the iframe cannot use the page's fonts)
-CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:"
-FONT_FILE = files("xerscope.app").joinpath("static", "IBMPlexSans-latin-wght.woff2")
 
 
 def categorise(tasks: pd.DataFrame, settings: Settings = DEFAULT_SETTINGS) -> pd.Series:
@@ -175,14 +157,6 @@ def gantt_rows(
     return rows
 
 
-def _safe_json(payload) -> str:
-    """JSON that cannot close the <script> element it sits in."""
-    text = json.dumps(payload, ensure_ascii=False, allow_nan=False)
-    for raw, escaped in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"), (" ", "\\u2028"), (" ", "\\u2029")):
-        text = text.replace(raw, escaped)
-    return text
-
-
 def _window(rows: list[dict], timescale: str, data_date, span) -> tuple[pd.Timestamp, pd.Timestamp]:
     if timescale == "week" and data_date is not None:
         return data_date - WEEK_WINDOW[0], data_date + WEEK_WINDOW[1]
@@ -192,21 +166,20 @@ def _window(rows: list[dict], timescale: str, data_date, span) -> tuple[pd.Times
     return (dates.min() - SPAN_PAD, dates.max() + SPAN_PAD) if len(dates) else (pd.Timestamp.now(),) * 2
 
 
-def gantt_html(
+def gantt_data(
     rows: list[dict],
     *,
     relationships: pd.DataFrame | None = None,
     data_date: pd.Timestamp | None = None,
     span: tuple[pd.Timestamp, pd.Timestamp] | None = None,
     timescale: str = "month",
-    dark: bool = False,
     open_ids: set[str] | None = None,
     selected: str | None = None,
     compare_label: str = "",
     links: bool = False,
     height: int = 640,
-) -> str:
-    """The component page: ``gantt.css``, ``gantt.js`` and the rows as JSON.
+) -> dict:
+    """The component's data: rows, links, window and options, all plain JSON values.
 
     ``open_ids`` are the row ids drawn open (default: the top row). ``span`` (start,
     finish) sets the month timescale; "week" shows WEEK_WINDOW around the data date.
@@ -225,25 +198,21 @@ def gantt_html(
         "dataDate": _iso(data_date),
         "window": [_iso(window[0]), _iso(window[1])],
         "timescale": timescale,
-        "palette": PALETTE["dark" if dark else "light"],
+        "palette": PALETTE,
         "categories": CATEGORY_ORDER,
         "open": sorted(open_ids if open_ids is not None else {r["id"] for r in rows[:1]}),
         "selected": selected,
         "compareLabel": compare_label,
         "height": height,
     }
+    return payload
+
+
+def gantt_assets() -> dict[str, str]:
+    """The component's markup, stylesheet and script (app/ui.py registers them once)."""
     assets = files(__package__)
-    font = base64.b64encode(FONT_FILE.read_bytes()).decode("ascii")
-    font_face = (
-        "@font-face { font-family: 'IBM Plex Sans'; font-weight: 100 700; "
-        f"src: url(data:font/woff2;base64,{font}) format('woff2'); }}\n"
-    )
-    css = font_face + assets.joinpath("gantt.css").read_text(encoding="utf-8")
-    js = assets.joinpath("gantt.js").read_text(encoding="utf-8")
-    return (
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
-        f"<style>{css}</style></head><body><div id='gantt'></div>"
-        f"<script>const DATA = {_safe_json(payload)};</script>"
-        f"<script>{js}</script></body></html>"
-    )
+    return {
+        "html": '<div id="gantt"></div>',
+        "css": assets.joinpath("gantt.css").read_text(encoding="utf-8"),
+        "js": assets.joinpath("gantt.js").read_text(encoding="utf-8"),
+    }

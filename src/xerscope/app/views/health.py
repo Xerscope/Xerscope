@@ -13,7 +13,6 @@ from xerscope.app.state import (
     anonymous_exports,
     baseline_for,
     csv_download,
-    is_dark,
     memo,
     require_store,
     snapshot_picker,
@@ -209,7 +208,6 @@ def show_trend(store, standard, baseline_key) -> None:
             metric.threshold,
             metric.threshold_label,
             metric.unit,
-            is_dark(),
         ),
         width="stretch",
     )

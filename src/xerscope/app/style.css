@@ -1,14 +1,16 @@
 /* The two looks .streamlit/config.toml cannot set: KPI cards drawn as a HUD readout, and the
-   milestone picker's tags in the colour of their line. Colours are CSS variables written by
-   ui.apply_style() from viz/charts.py for the light or dark theme. Selectors under a widget's
-   key class (st-key-…, documented) and Streamlit's data-testid / data-tag attributes, which a
-   Streamlit upgrade can move: the app then shows the plain theme, nothing else changes. */
+   milestone picker's tags in the colour of their line. --accent and --s1..--s6 are written by
+   ui.apply_style() from viz/charts.py and hold on both themes; everything else is mixed with
+   transparency or inherits the page's text colour, so a theme switch needs no rerun.
+   Selectors under a widget's key class (st-key-…, documented) and Streamlit's data-testid /
+   data-tag attributes, which a Streamlit upgrade can move: the app then shows the plain theme,
+   nothing else changes. */
 
 /* KPI cards: corner brackets, accent-tinted edge, uppercase label */
 [data-testid="stMetric"] {
   position: relative;
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--axis)) !important;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 8%, var(--band)), var(--band) 65%);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 65%);
 }
 [data-testid="stMetric"]::before,
 [data-testid="stMetric"]::after {
@@ -34,9 +36,9 @@
   border: 1px solid color-mix(in srgb, var(--tag) 60%, transparent);
   border-left: 3px solid var(--tag);
   border-radius: 4px !important;
-  color: var(--ink) !important;
+  color: inherit !important;
 }
-.st-key-mta_pick [data-tag] button { color: var(--ink); }
+.st-key-mta_pick [data-tag] button { color: inherit; }
 .st-key-mta_pick [data-tag-index="0"] { --tag: var(--s1); }
 .st-key-mta_pick [data-tag-index="1"] { --tag: var(--s2); }
 .st-key-mta_pick [data-tag-index="2"] { --tag: var(--s3); }

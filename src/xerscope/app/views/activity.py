@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import is_dark, require_store
+from xerscope.app.state import require_store
 from xerscope.viz.charts import build_activity_dates, build_activity_float
 
 LIST_COLUMNS = [
@@ -44,14 +44,13 @@ def show_kpis(store, history: pd.DataFrame) -> None:
 
 
 def show_charts(history: pd.DataFrame) -> None:
-    dark = is_dark()
     dates_column, float_column = st.columns(2, gap="large")
     with dates_column:
         ui.section("Forecast start and finish")
-        st.plotly_chart(build_activity_dates(history, dark), width="stretch")
+        st.plotly_chart(build_activity_dates(history), width="stretch")
     with float_column:
         ui.section("Total float (working days)")
-        st.plotly_chart(build_activity_float(history, dark), width="stretch")
+        st.plotly_chart(build_activity_float(history), width="stretch")
 
 
 store = require_store()

@@ -5,10 +5,11 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from xerkit import snap, todo
 
 from xerscope.analysis.wbs import rollup
-from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
+from xerscope.viz import build_finish_trend, categorise, gantt_assets, gantt_data, gantt_rows
 from xerscope.viz import gantt as gantt_module
 from xerscope.viz.charts import SERIES, STATUS, build_activity_dates, build_mta, build_ppc
 
@@ -53,20 +54,23 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
     fig = build_mta(_mta_frame(lines), {"LATE": 2.0, "EARLY": -1.5, "SAME": 0.0})
     traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
-    red, green = STATUS["light"]["critical"], STATUS["light"]["good"]
+    red, green = STATUS["critical"], STATUS["good"]
     # one series colour per milestone, in order, so lines stay distinguishable
-    assert [traces[code].line.color for code in lines] == SERIES["light"][:3]
+    assert [traces[code].line.color for code in lines] == SERIES[:3]
     # earlier points in the line colour, the last one red (later) / green (earlier) / unchanged
-    assert list(traces["LATE"].marker.color) == [SERIES["light"][0]] * 2 + [red]
-    assert list(traces["EARLY"].marker.color) == [SERIES["light"][1]] * 2 + [green]
-    assert list(traces["SAME"].marker.color) == [SERIES["light"][2]] * 3
+    assert list(traces["LATE"].marker.color) == [SERIES[0]] * 2 + [red]
+    assert list(traces["EARLY"].marker.color) == [SERIES[1]] * 2 + [green]
+    assert list(traces["SAME"].marker.color) == [SERIES[2]] * 3
     assert list(traces["LATE"].marker.size) == [9, 9, 13] and list(traces["SAME"].marker.size) == [9, 9, 9]
     texts = sorted(a.text for a in fig.layout.annotations)
-    assert texts == [
-        f'<span style="color:{green}">EARLY (-1.5 wd)</span>',
-        f'<span style="color:{red}">LATE (+2 wd)</span>',
-        "SAME",
-    ]
+    # the arrow carries the colour; the text keeps the theme's, so it follows a theme switch
+    assert texts == sorted(
+        [
+            "SAME",
+            f'<span style="color:{red}">▲</span> LATE (+2 wd)',
+            f'<span style="color:{green}">▼</span> EARLY (-1.5 wd)',
+        ]
+    )
 
 
 def test_mta_colour_follows_pick_order_even_with_a_line_missing():
@@ -74,7 +78,24 @@ def test_mta_colour_follows_pick_order_even_with_a_line_missing():
     lines = {"B": ["2026-06-01"] * 3, "C": ["2026-07-01"] * 3}
     fig = build_mta(_mta_frame(lines), {}, order=["C", "A", "B"])
     colour = {t.name.split()[0]: t.line.color for t in fig.data if t.name and t.name.split()[0] in lines}
-    assert colour == {"C": SERIES["light"][0], "B": SERIES["light"][2]}
+    assert colour == {"C": SERIES[0], "B": SERIES[2]}
+
+
+@pytest.mark.parametrize(
+    "fig",
+    [
+        build_mta(_mta_frame({"M1": ["2026-08-03"] * 3}), {"M1": 1.0}),
+        build_ppc(pd.DataFrame({"data_date": pd.date_range("2026-03-02", periods=2, freq="7D"),
+                                "ppc": [100.0, 50], "completed": [1, 1], "committed": [1, 2]}), 80),
+    ],
+)  # fmt: skip
+def test_charts_leave_text_grid_and_axes_to_the_theme(fig):
+    """Streamlit's Plotly theme colours text, grid and axes in the browser, live on a theme
+    switch; a colour set here would stay the one of the theme the page was drawn with."""
+    assert fig.layout.font.color is None and fig.layout.paper_bgcolor is None
+    for axis in (fig.layout.xaxis, fig.layout.yaxis):
+        assert axis.gridcolor is None and axis.linecolor is None and axis.zerolinecolor is None
+    assert all(a.font.color is None for a in fig.layout.annotations)
 
 
 def test_ppc_target_label_sits_outside_the_bars():
@@ -206,13 +227,13 @@ def test_gantt_rows_compare_dates_and_shift():
     assert row["shift_wd"] == 1  # Thu 12 -> Fri 13 March, Mon-Fri calendar
 
 
-def test_gantt_html_keeps_schedule_text_out_of_the_markup():
+def test_gantt_keeps_schedule_text_out_of_the_markup():
     hostile = "</script><img src=x onerror=alert(1)>"
     s = _wbs_snapshot(B=hostile)
-    page = gantt_html(_rows(s), data_date=s.data_date)
-    assert hostile not in page and "<img" not in page  # the name travels as escaped JSON only
-    assert json.loads(page.split("const DATA = ")[1].split(";</script>")[0])["rows"][3]["name"] == hostile
-    assert "default-src 'none'" in page  # no network request, no external resource
+    data = gantt_data(_rows(s), data_date=s.data_date)
+    assert not [part for part in gantt_assets().values() if "<img" in part]  # markup, style, script: fixed text
+    sent = json.dumps(data, allow_nan=False)  # what the browser receives: data only, written with textContent
+    assert json.loads(sent)["rows"][3]["name"] == hostile
 
 
 def test_gantt_script_never_parses_text_as_html_nor_calls_out():
@@ -233,21 +254,20 @@ def test_gantt_script_never_parses_text_as_html_nor_calls_out():
         assert unsafe not in script
 
 
-def test_gantt_html_timescales_and_links():
+def test_gantt_timescales_and_links():
     s = _wbs_snapshot()
     rows = _rows(s)
-    data = lambda page: json.loads(page.split("const DATA = ")[1].split(";</script>")[0])  # noqa: E731
     span = (pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-31"))
-    month = data(gantt_html(rows, data_date=s.data_date, span=span))
+    month = gantt_data(rows, data_date=s.data_date, span=span)
     assert month["window"] == ["2026-02-23T00:00", "2026-04-07T00:00"]  # the span, 7 days each side
-    week = data(gantt_html(rows, data_date=s.data_date, timescale="week"))
+    week = gantt_data(rows, data_date=s.data_date, timescale="week")
     low, high = (pd.Timestamp(w) for w in week["window"])
     assert high - low == pd.Timedelta(weeks=12) and low < s.data_date < high
-    assert data(gantt_html(rows, relationships=s.relationships))["links"] == []  # off unless asked
-    linked = data(gantt_html(rows, relationships=s.relationships, links=True))["links"]
+    assert gantt_data(rows, relationships=s.relationships)["links"] == []  # off unless asked
+    linked = gantt_data(rows, relationships=s.relationships, links=True)["links"]
     assert linked == [["a:A", "a:B", "FS"], ["a:B", "a:C", "FS"]]
     no_c = [r for r in rows if r["id"] != "a:C"]
-    assert data(gantt_html(no_c, relationships=s.relationships, links=True))["links"] == [["a:A", "a:B", "FS"]]
+    assert gantt_data(no_c, relationships=s.relationships, links=True)["links"] == [["a:A", "a:B", "FS"]]
 
 
 def test_gantt_rows_scale_to_a_large_schedule():

@@ -166,14 +166,19 @@ Outside `analysis/`:
   Activities view: a tree grid (Activity / WBS, % complete, float) on the left and the
   timeline on the right, one row each. `gantt_rows` builds the rows in P6 order (each
   WBS node, its own activities, then its child nodes) with float-category colours,
-  comparison dates and finish shifts; `gantt_html` wraps them as JSON with the script.
+  comparison dates and finish shifts; `gantt_data` hands them, with the options, to a
+  Streamlit component (`app/ui.py: GANTT`, `st.components.v2`) mounted in the page.
   WBS rows open and close in the browser, without a rerun; only the rows in view are
   in the page, so a schedule of 15,000 activities scrolls like a small one. There is
-  no zoom, only a month or week timescale. Schedule text is never parsed as HTML (`textContent` only)
-  and the page's Content-Security-Policy blocks every network request.
+  no zoom, only a month or week timescale. Schedule text reaches the browser only as the
+  component's data and is never parsed as HTML (`textContent` only; `gantt.js` holds no
+  network call, checked by a test). Page colours and font come from the theme's `--st-*`
+  variables, so the Gantt follows a theme switch without a rerun.
 - **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
-  (`ACCENT`, `STATUS`, `SERIES`, `INK`, light and dark): the Gantt palette and the
-  check-status colours in `app/ui.py` derive from them. The series palette is a fixed
+  (`ACCENT`, `STATUS`, `SERIES`, `NEUTRAL`), one set for both themes, each mark >= 3:1 on
+  the light and the dark background: the Gantt bars and the check-status labels in
+  `app/ui.py` derive from them. Text, grid and axes are left to Streamlit's Plotly theme,
+  applied in the browser, so the charts follow a theme switch without a rerun. The series palette is a fixed
   categorical order, validated for colour-blind separation; status hues never decorate.
   There is one y-axis per chart.
 

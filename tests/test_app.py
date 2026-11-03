@@ -86,9 +86,8 @@ def test_every_page_renders(app):
 
 
 def _gantt_data(at) -> dict:
-    """The rows and options the Gantt page hands to its component."""
-    page = at.get("iframe")[0].proto.srcdoc
-    return json.loads(page.split("const DATA = ")[1].split(";</script>")[0])
+    """The Gantt component's data, as the browser receives it."""
+    return json.loads(at.get("bidi_component")[0].proto.json)
 
 
 def _toggle(at, label: str, value: bool) -> None:
