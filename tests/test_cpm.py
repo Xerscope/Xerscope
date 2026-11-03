@@ -402,6 +402,22 @@ def test_expected_finish_off_the_calendar_ends_the_previous_working_period():
     assert dates(snap(t), "A")[1] == T("2026-03-06 17:00")
 
 
+def test_expected_finish_on_a_period_start_ends_the_previous_period():
+    """Expected finish Wed 4 08:00: the finish is Tue 3 17:00 (P6 26.8 exports, 12 of 12 cases)."""
+    t = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-04 08:00")]
+    assert dates(snap(t), "A")[1] == T("2026-03-03 17:00")
+
+
+def test_expected_finish_equal_in_working_time_to_an_ff_bound_wins():
+    """FF from a milestone at Wed 4 08:00, expected finish Wed 4 08:00: same working instant,
+    the expected finish holds, Tue 3 17:00 (P6 26.8 export, XA001418)."""
+    t = [
+        todo("M", task_type="TT_Mile", cstr_type="CS_MSOA", cstr_date="2026-03-04 08:00", **hours(0)),
+        active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-04 08:00"),
+    ]
+    assert dates(snap(t, [("M", "A", "FF", 0)]), "A")[1] == T("2026-03-03 17:00")
+
+
 def _early_expected_finish(header):
     """P (40 h) pushes A's early start to Mon 9 08:00, past A's expected finish (Wed 4)."""
     t = [todo("P", **hours(40)), todo("A", **hours(16), expect_end_date="2026-03-04 17:00")]
