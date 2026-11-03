@@ -39,7 +39,7 @@ FLOORS = {
     "H16": 0.89,
     "H17": 0.95,
     "H18": 0.97,
-    "H19": 0.97,
+    "H19": 0.98,
     "H20": 0.94,
     "H21": 0.99,
     "H22": 0.99,
@@ -236,6 +236,12 @@ PINNED = {
         ("H12", "H12-08", "A1290", "early_start"),
     ],
     "LOE: the late start never passes the late finish": [("H10", "H10-01", "A1300", "late_start")],
+    "LOE: a finished task's actual finish holds the late start of an FS link": [
+        ("H14", "H14-07", "A1170", "late_start"),
+        ("H18", "H18-09", "A1340", "late_start"),
+        ("H25", "H25-01", "A1380", "late_start"),
+        ("H9", "H9-04", "A1390", "late_start"),
+    ],
     "resource dependent: a late start from an SS bound is written at the bound's instant": [
         ("H26", "H26-04", "A1440", "late_start")
     ],

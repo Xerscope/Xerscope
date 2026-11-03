@@ -995,10 +995,10 @@ class _Run:
         predecessors; FF, FS successors) its finish. An FF predecessor and an FF successor to
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
         It runs from the earliest start to the latest finish. Its late dates come the same
-        way from the late dates of the activities it is tied to, finished ones contributing
-        nothing; with no start-type link left, or one later than the late finish, the late
-        start is the late finish. Float as for any activity, free float 0 (H8-01 A1160,
-        H10-11 A1210).
+        way from the late dates of the activities it is tied to; a finished task contributes
+        only through an FS link, by its actual finish plus the lag; with no start-type link
+        left, or one later than the late finish, the late start is the late finish. Float as
+        for any activity, free float 0 (H8-01 A1160, H10-11 A1210).
         """
         inputs, data_date, early_start, early_finish, remaining_start = (
             self.inputs,
@@ -1050,7 +1050,12 @@ class _Run:
             remaining_start[code] = axis.snap_start(data_date) if active else loe_start
             lstarts, lends = [], []
             for predecessor, link_type, lag in self.loe_preds[code]:
-                if self.status[predecessor] != "TK_Complete":
+                if self.status[predecessor] == "TK_Complete":
+                    if link_type == "FS" and self.kind(predecessor) == "task":  # finished task: its actual finish holds
+                        actual_finish = inputs[predecessor].get("act_end_date")
+                        if actual_finish is not None and not pd.isna(actual_finish):
+                            lstarts.append(self.shift(self.lag_axis(predecessor, code), actual_finish, lag))
+                else:
                     measured_from = (
                         self.late_start[predecessor] if link_type in ("SS", "SF") else self.late_finish[predecessor]
                     )
