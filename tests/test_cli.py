@@ -129,3 +129,13 @@ def test_paths_with_nothing_to_read_stop_with_a_message(tmp_path):
         cli.main(["check", str(tmp_path)])
     with pytest.raises(SystemExit, match="no such file"):
         cli.main(["info", str(tmp_path / "missing.xer")])
+
+
+def test_same_data_date_twice_stops_with_the_files(sample_dir, tmp_path):
+    first = sorted(sample_dir.glob("*.xer"))[0]
+    folder = tmp_path / "exports"
+    folder.mkdir()
+    for name in (first.name, "zz-copy.xer"):
+        (folder / name).write_bytes(first.read_bytes())
+    with pytest.raises(SystemExit, match=f"several files per data date.*{first.name}, zz-copy.xer"):
+        cli.main(["export", str(folder), "--out", str(tmp_path / "bi")])

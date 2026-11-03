@@ -212,15 +212,16 @@ def test_baseline_file_from_env_and_its_date_check(sample_dir, tmp_path, monkeyp
     assert any("after the first update" in w.value for w in at.sidebar.warning)
 
 
-def test_same_data_date_twice_is_one_update(sample_dir, tmp_path, monkeypatch):
+def test_same_data_date_twice_is_refused(sample_dir, tmp_path, monkeypatch):
+    """No series is built while two ticked files share a data date: the user unticks one."""
     files = sorted(sample_dir.glob("*.xer"))
     for f in files[:2]:
         (tmp_path / f.name).write_bytes(f.read_bytes())
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     at = _run(tmp_path, monkeypatch)
     _ok(at)
-    assert any("2 snapshot(s)" in c.value for c in at.sidebar.caption)
-    assert any("same data date" in w.value for w in at.warning)
+    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
+    assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
 
 
 def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
@@ -355,11 +356,10 @@ def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, mo
     at = _run(renamed_project, monkeypatch)
     _ok(at)
     table = _selection(at).set_index("file")
-    assert table.loc["w1.xer", ["project", "selected_by", "projects_in_file", "status"]].tolist() == [
+    assert table.loc["w1.xer", ["project", "selected_by", "projects_in_file"]].tolist() == [
         "NEW",
         "most TASK rows",
         "NEW (3) · OLD (2)",
-        "in series",
     ]
     assert table.loc["w2.xer", ["project", "selected_by", "data_date_from"]].tolist() == [
         "NEW",
@@ -371,22 +371,6 @@ def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, mo
     table = _selection(at).set_index("file")
     assert table.loc["w1.xer", ["project", "selected_by", "activities"]].tolist() == ["OLD", "chosen", 2]
     assert table.loc["w2.xer", "project"] == "NEW"
-
-
-def test_selection_panel_names_the_file_skipped_for_its_data_date(tmp_path, monkeypatch):
-    """Two planners, same data date: the second by name is out of the series, and says why."""
-    tasks = [{"task_code": c} for c in ("A1", "A2")]
-    for name, code in (("a.xer", "PLAN-A"), ("b.xer", "PLAN-B")):
-        (tmp_path / name).write_text(xer_text(tasks, data_date="2026-03-02 08:00", project={"proj_short_name": code}))
-    at = _run(tmp_path, monkeypatch)
-    _ok(at)
-    table = _selection(at).set_index("file")
-    assert table.loc["a.xer", "status"] == "in series"
-    assert table.loc["b.xer", ["project", "status", "reason"]].tolist() == [
-        "PLAN-B",
-        "skipped",
-        "same data date as a.xer",
-    ]
 
 
 def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkeypatch):

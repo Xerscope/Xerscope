@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from xerscope.config import DATE_FMT, DATETIME_FMT
+from xerscope.store import DuplicateDataDate
 from xerscope.xer import xer_files
 
 APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
@@ -529,7 +530,10 @@ def main(argv: list[str] | None = None) -> int:
         add_arguments(command_parser)
         command_parser.set_defaults(fn=run)
     args = parser.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except DuplicateDataDate as exc:
+        raise SystemExit(f"xerscope: {exc}") from None
 
 
 if __name__ == "__main__":

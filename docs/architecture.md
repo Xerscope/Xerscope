@@ -69,9 +69,10 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 
 ## 4. `store.py`: the weekly series
 
-`SnapshotStore` sorts snapshots by data date and keeps one per data date (the first by file
-name; the others are in `skipped`). `selection()` lists every file read, the project taken
-from it and whether it is in the series: the app's sidebar Selection panel shows it. It
+`SnapshotStore` sorts snapshots by data date and holds one per data date: given two files
+with the same data date (versions of one draft, an update and its baseline copy) it raises
+`DuplicateDataDate` naming them, and the user keeps one. `selection()` lists the files of the
+series and the project taken from each: the app's sidebar Selection panel shows it. It
 exposes long-format frames:
 
 - `history`: one row per (snapshot, activity);
