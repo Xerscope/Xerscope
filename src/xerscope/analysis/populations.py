@@ -8,6 +8,7 @@ few of these combined with ``&``, ``|`` and ``~``.
 from __future__ import annotations
 
 from collections.abc import Callable, Collection
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -41,6 +42,63 @@ CRITICAL_PATH_SLIP_DAYS = 600
 # A link drives the successor's start through FS / SS, and the predecessor's finish through FS / FF.
 START_DRIVING_TYPES = ("FS", "SS")
 FINISH_DRIVING_TYPES = ("FS", "FF")
+
+
+# --- funnel ------------------------------------------------------------------------------
+
+# The texts a population step follows, by the token a step cites (docs/standards.md, Sources).
+STEP_SOURCES = {
+    "101248": "https://docs.oracle.com/cd/G18296_01/client_help/en_US/101248.htm",
+    "46278": "https://docs.oracle.com/cd/G18294_01/p6help/en/46278.htm",
+    "46282": "https://docs.oracle.com/cd/G18294_01/p6help/en/46282.htm",
+    "Ten Six": "https://tensix.com/using-the-p6-check-schedule-tool/",
+    "R1": "docs/standards.md: P6 Professional Check Schedule report R1",
+    "model": "docs/formulas.md 1.1: a relationship counts when both ends are activities of the file",
+}
+
+
+@dataclass
+class Step:
+    label: str  # what the step keeps, e.g. "not complete"
+    source: str  # a key of STEP_SOURCES
+    removed: pd.DataFrame  # the rows this step took out
+    left: int  # rows kept after it
+
+
+@dataclass
+class Funnel:
+    """A population built one named, sourced filter at a time, so a reviewer sees what each removed.
+
+    funnel = Funnel(context.snapshot.activities).keep("not complete", "101248", not_complete)
+    funnel.rows   # the population;  funnel.steps  # [Step("not complete", "101248", ..., 790)]
+    """
+
+    rows: pd.DataFrame
+    start: int = 0
+    steps: list[Step] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.start = len(self.rows)
+
+    def keep(self, label: str, source: str, predicate: Callable[[pd.DataFrame], pd.Series]) -> Funnel:
+        if source not in STEP_SOURCES:
+            raise ValueError(f"step {label!r}: unknown source {source!r}")
+        kept = as_flag(predicate(self.rows))
+        self.steps.append(Step(label, source, self.rows[~kept], int(kept.sum())))
+        self.rows = self.rows[kept]
+        return self
+
+
+def not_complete(rows: pd.DataFrame) -> pd.Series:
+    return ~as_flag(rows["is_complete"])
+
+
+def not_level_of_effort(rows: pd.DataFrame) -> pd.Series:
+    return ~as_flag(rows["is_loe"])
+
+
+def not_milestone(rows: pd.DataFrame) -> pd.Series:
+    return ~as_flag(rows["is_milestone"])
 
 
 # --- activities --------------------------------------------------------------------------

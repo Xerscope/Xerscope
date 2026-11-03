@@ -22,6 +22,7 @@ PAGES = [
     "views/gantt.py",
     "views/activity.py",
     "views/health.py",
+    "views/audit.py",
     "views/changelog.py",
     "views/earned_value.py",
     "views/milestones.py",
@@ -633,3 +634,24 @@ def _p6():
     from xerscope.analysis import builtin_standards
 
     return builtin_standards()["P6"]
+
+
+def test_audit_downloads_follow_the_anonymous_exports_switch(app, store, downloads):
+    """Audit's set downloads (Counted tab): on, new IDs after Prepare and nothing original; off, the file's own."""
+    originals = set(store.history["task_code"]) | set(store.history["task_name"])
+    app.sidebar.toggle(key="anon_exports").set_value(True).run()
+    app.switch_page("views/audit.py").run()
+    _ok(app)
+    app.get("button_group")[0].set_value("P6").run()
+    app.selectbox(key="audit_check:P6").set_value("P6-01").run()
+    _ok(app)
+    assert not [b for b in app.get("download_button") if b.proto.label == "Download CSV"]
+    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    _ok(app)
+    counted = _csv(_download(app, downloads, "Download CSV · anonymised"))
+    assert len(counted) and not set(counted.astype(str).to_numpy().ravel()) & originals
+
+    app.sidebar.toggle(key="anon_exports").set_value(False).run()
+    _ok(app)
+    counted = _csv(_download(app, downloads, "Download CSV"))
+    assert set(counted["task_code"]) <= set(store.history["task_code"])

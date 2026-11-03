@@ -119,7 +119,7 @@ Tools › Check Schedule on the same file and baseline, then compare line by lin
   Professional 24 dialog help, plus out of sequence and dangling start / finish as a P6
   Professional report prints them.
 - **Targets:** the dialog's documented defaults (< 5 %, < 1 % for the inaccuracy checks,
-  FS > 90 %, BEI ≥ 0.95). Copy `src/xerscope/standards/p6.toml` and set them to yours.
+  FS > 90 %, BEI > 0.95 as a P6 Professional report prints it). Copy `src/xerscope/standards/p6.toml` and set them to yours.
 - **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
   diffs the counts against the ones typed from P6's summary (exit 1 on a difference).
 - **Definitions:** each check cites the Oracle page or report it comes from. Differences
@@ -139,6 +139,7 @@ update (actuals changed, riding the status date) work too.
 | Gantt & WBS | Gantt grouped by WBS as in P6: tree grid with roll-ups (% complete by hours, float) beside the timeline, WBS rows fold open and closed; a WBS picked in the list sets the KPIs and opens the Gantt on it; comparison outline (previous update, baseline, any file), logic links, month / week timescale |
 | Activity history | one activity across every update |
 | Schedule health | standard picker (P6, DECM, DCMA, Integrity, uploaded TOML), Check Summary, flagged items with the rule's definition, metric trend, CSV of every flagged item |
+| Audit | one check: the sets behind its count (counted, checked not counted, excluded), the check re-run with another target or threshold (this page only), the `[[metric]]` table to make it permanent |
 | Changelog | any two files: headline counts, every change (filterable, CSV), weekly counts |
 | Earned value | PV, EV, AC, forecast S-curve (hours or % BAC); SPI, BEI (P6 / DCMA), EV/AC per update; Schedule %, Performance % and EV technique per activity |
 | Milestone trend | MTA chart, slip since first forecast and since last week in working days |

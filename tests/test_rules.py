@@ -264,6 +264,31 @@ def test_float_threshold_in_hours_vs_working_days():
     assert codes(run(P6, "P6-14", s)) == ["N"]
 
 
+def test_the_x_threshold_of_the_built_in_checks_is_a_parameter():
+    """The dialog's x (P6, hours) and DCMA's 44 days are parameters: the default is the standard's
+    value, another value moves the count. Float 400 h (C10 = 40 d), 353 h (44.1 d), 352 h, 160 h (20 d)."""
+    import dataclasses
+
+    s = snap(
+        [
+            todo("A", clndr_id="C10", total_float_hr_cnt="400"),
+            todo("B", total_float_hr_cnt="353"),
+            todo("C", total_float_hr_cnt="352"),
+            todo("D", total_float_hr_cnt="160"),
+        ]
+    )
+
+    def with_limit(std, metric_id, **params):
+        metric = dataclasses.replace(std[metric_id], params=params)
+        return run_metric(metric, AnalysisContext(s))
+
+    assert codes(run(P6, "P6-06", s)) == ["A", "B"]  # default x = 352 h
+    assert codes(with_limit(P6, "P6-06", limit_hours=200)) == ["A", "B", "C"]
+    assert codes(with_limit(P6, "P6-06", limit_hours=400)) == []
+    assert codes(run(DCMA, "DCMA-06", s)) == ["B"]  # default 44 d
+    assert codes(with_limit(DCMA, "DCMA-06", limit_days=20)) == ["A", "B", "C"]  # 40, 44.1, 44 > 20; D = 20 is not
+
+
 def test_dcma_06_07_follow_pam_200_1():
     """DCMA-EA PAM 200.1 (Oct 2012) 4.6: "An incomplete task with total float greater than 44 working
     days (2 months) is counted in this metric." 4.7: "An incomplete task with total float less than 0

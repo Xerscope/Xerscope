@@ -31,7 +31,7 @@ def int_01_recalculated(context) -> RuleOutput:
         return RuleOutput(note=f"cannot schedule: {exc}")
     comparison = comparison[comparison["field"].isin(STORED_FIELDS) & comparison["stored"].notna()]
     if comparison.empty:
-        return RuleOutput(numerator=0, denominator=0, note="no stored dates to compare")
+        return RuleOutput(numerator=0, denominator=0, note="no stored dates to compare", checked=pd.DataFrame())
     differences: dict[str, list[str]] = {}
     columns = ["task_code", "field", "stored", "computed", "agree"]
     for task_code, field_name, stored, computed, agrees in comparison[columns].itertuples(index=False):
@@ -41,11 +41,13 @@ def int_01_recalculated(context) -> RuleOutput:
     flagged = tasks.loc[sorted(differences)].reset_index()
     texts = ["; ".join(differences[task_code]) for task_code in flagged["task_code"]]
     different_values = sum(len(found) for found in differences.values())
+    compared = tasks.loc[sorted(comparison["task_code"].unique())].reset_index()
     return RuleOutput(
         flagged_activities(flagged, differences=texts),
         len(differences),
-        comparison["task_code"].nunique(),
+        len(compared),
         note=f"{len(comparison) - different_values} of {len(comparison)} stored values reproduced",
+        checked=compared,
     )
 
 
@@ -72,7 +74,9 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
     ahead_of = _predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), started, tasks)
     flagged = started.loc[ahead_of.index].reset_index()
     texts = flagged["task_code"].map(ahead_of)
-    return RuleOutput(flagged_activities(flagged, ahead_of=texts), len(flagged), len(started))
+    return RuleOutput(
+        flagged_activities(flagged, ahead_of=texts), len(flagged), len(started), checked=started.reset_index()
+    )
 
 
 def _describe_differences(group: pd.DataFrame) -> str:
@@ -98,7 +102,9 @@ def int_03_assignments_recalculated(context) -> RuleOutput:
         return RuleOutput(note=f"cannot schedule: {exc}")
     comparison = comparison[comparison["stored"].notna()]
     if comparison.empty:
-        return RuleOutput(numerator=0, denominator=0, note="no stored assignment dates to compare")
+        return RuleOutput(
+            numerator=0, denominator=0, note="no stored assignment dates to compare", checked=pd.DataFrame()
+        )
     different = comparison[~comparison["agree"]]
     flagged = pd.DataFrame()
     if not different.empty:
@@ -110,9 +116,11 @@ def int_03_assignments_recalculated(context) -> RuleOutput:
                 "differences": by_assignment.apply(_describe_differences, include_groups=False),
             }
         ).reset_index()
+    compared = comparison.groupby("taskrsrc_id")[["task_code", "rsrc"]].first().reset_index()
     return RuleOutput(
         flagged,
         different["taskrsrc_id"].nunique(),
-        comparison["taskrsrc_id"].nunique(),
+        len(compared),
         note=f"{len(comparison) - len(different)} of {len(comparison)} stored assignment dates reproduced",
+        checked=compared.rename(columns={"rsrc": "resource"}),
     )

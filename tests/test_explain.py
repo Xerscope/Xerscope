@@ -46,7 +46,11 @@ def test_parameters_show_standard_and_defaults(results, store):
     late = next(r for r in results if r.metric.id == "P6-12")
     assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
     assert any("milestones" in line for line in explain(late).population)
-    assert all(not explain(r).parameters for r in results)  # no built-in check takes parameters
+    # a built-in check takes no parameter but its x threshold, shown with its default and its sentence
+    with_parameters = {r.metric.id: explain(r) for r in results if explain(r).parameters}
+    assert set(with_parameters) == {"P6-04", "P6-05", "P6-06", "DCMA-06", "DCMA-08", "06A211a"}
+    assert with_parameters["P6-04"].parameters == [("limit_hours", "352", "standard")]
+    assert "Flagged when remaining duration > 352 hours." in with_parameters["P6-04"].population
 
     custom = loads_standard(template_text())  # the parameterised rules live in the custom template
     lines = explain(run_metric(custom["CUS-04"], AnalysisContext(store.latest))).parameters

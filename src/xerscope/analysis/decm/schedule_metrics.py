@@ -93,7 +93,9 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     note = "first/last by baseline dates"
     if context.baseline is None:
         note = "no baseline: first/last by planned dates"
-    return RuleOutput(flagged_activities(flagged, reason=reason[flagged.index]), len(flagged), len(tasks), note=note)
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason[flagged.index]), len(flagged), len(tasks), note=note, checked=tasks
+    )
 
 
 @rule("decm_06a205a_lags", "%")
@@ -112,7 +114,10 @@ def decm_06a205a_lags(context) -> RuleOutput:
     lagged_from = lags.groupby("succ_code")["pred_code"].agg(joined_sorted)
     flagged = tasks[tasks["task_code"].isin(lagged_from.index)]
     return RuleOutput(
-        flagged_activities(flagged, lagged_from=flagged["task_code"].map(lagged_from)), len(flagged), len(tasks)
+        flagged_activities(flagged, lagged_from=flagged["task_code"].map(lagged_from)),
+        len(flagged),
+        len(tasks),
+        checked=tasks,
     )
 
 
@@ -131,7 +136,7 @@ def decm_06a208a_summary_logic(context) -> RuleOutput:
         relationships["succ_code"]
     )
     flagged = summaries[has_logic]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(summaries))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(summaries), checked=summaries)
 
 
 @rule("decm_06a209a_hard_constraints", "%")
@@ -146,7 +151,9 @@ def decm_06a209a_hard_constraints(context) -> RuleOutput:
     """
     tasks = open_activities(context)
     hard = tasks[constrained_by(tasks, DECM_HARD_CONSTRAINTS, ignore_started_starts=False)]
-    return RuleOutput(flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks))
+    return RuleOutput(
+        flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks), checked=tasks
+    )
 
 
 @rule("decm_06a210a_loe_successors", "%")
@@ -167,22 +174,26 @@ def decm_06a210a_loe_successors(context) -> RuleOutput:
     successor_is_loe = as_flag(from_loe["succ_code"].map(is_loe_by_code))
     drives = from_loe[~successor_is_loe].groupby("pred_code")["succ_code"].agg(joined_sorted)
     flagged = open_loe[open_loe["task_code"].isin(drives.index)]
-    return RuleOutput(flagged_activities(flagged, drives=flagged["task_code"].map(drives)), len(flagged), len(open_loe))
+    return RuleOutput(
+        flagged_activities(flagged, drives=flagged["task_code"].map(drives)),
+        len(flagged),
+        len(open_loe),
+        checked=open_loe,
+    )
 
 
 @rule("decm_06a211a_high_float", "%")
-def decm_06a211a_high_float(context) -> RuleOutput:
+def decm_06a211a_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
     """Activities outside the float limit.
     Counts: flagged / checked
     Excludes: completed activities, level of effort.
-    Flagged when total float > 44 days.
 
     06A211a: the population DECM samples; X/Y <= 20% of the sample with inadequate rationale. The
     rationale review is yours
     """
     tasks = without_level_of_effort(open_activities(context))
-    high_float = tasks[tasks["total_float_d"] > DCMA_HIGH_DAYS]
-    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks))
+    high_float = tasks[tasks["total_float_d"] > limit_days]
+    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks)
 
 
 @rule("decm_06a212a_out_of_sequence", "count", links=True)
@@ -201,7 +212,7 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
     relationships = context.snapshot.relationships
     links = links_between(relationships, successors, tasks)
     if successors.empty:
-        return RuleOutput(flagged_relationships(links), 0, 0)
+        return RuleOutput(flagged_relationships(links), 0, 0, checked=links)
     pred_start, pred_finish = links["pred_code"].map(tasks["start"]), links["pred_code"].map(tasks["finish"])
     succ_start, succ_finish = links["succ_code"].map(successors["start"]), links["succ_code"].map(successors["finish"])
     kind = links["type"]
@@ -222,7 +233,7 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
         succ_start=succ_start[flagged.index],
         succ_finish=succ_finish[flagged.index],
     )
-    return RuleOutput(shown, len(flagged), len(links))
+    return RuleOutput(shown, len(flagged), len(links), checked=links)
 
 
 # --- critical path -------------------------------------------------------------------------
@@ -250,7 +261,7 @@ def decm_06a501a_missing_baseline(context) -> RuleOutput:
     """
     tasks = with_baseline(context, context.snapshot.activities)
     flagged = tasks[tasks["bl_start"].isna() | tasks["bl_finish"].isna()]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks), checked=tasks)
 
 
 def _actual_date_changed(context, column: str) -> RuleOutput:
@@ -269,7 +280,8 @@ def _actual_date_changed(context, column: str) -> RuleOutput:
     flagged = now.loc[changed].reset_index()
     shown = flagged_activities(flagged, previous=[before[code] for code in changed], now=flagged.get(column))
     dated = set(now.index[now[column].notna()]) | set(common)
-    return RuleOutput(shown, len(flagged), len(dated))
+    checked = now.loc[sorted(dated)].reset_index()
+    return RuleOutput(shown, len(flagged), len(checked), checked=checked)
 
 
 @rule("decm_06a504a_actual_starts_changed", "%")
@@ -304,7 +316,7 @@ def decm_06a505a_in_progress_without_actual_start(context) -> RuleOutput:
     tasks = context.snapshot.activities
     in_progress = tasks[(tasks["pct_complete"] > 0) | tasks["is_started"]]
     flagged = in_progress[in_progress["act_start_date"].isna()]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(in_progress))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(in_progress), checked=in_progress)
 
 
 @rule("decm_06a505b_complete_without_actual_finish", "%")
@@ -317,7 +329,7 @@ def decm_06a505b_complete_without_actual_finish(context) -> RuleOutput:
     tasks = context.snapshot.activities
     complete = tasks[(tasks["pct_complete"] >= 100) | tasks["is_complete"]]
     flagged = complete[complete["act_end_date"].isna()]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(complete))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(complete), checked=complete)
 
 
 @rule("decm_06a506a_actual_dates_after_status_date", "%")
@@ -332,8 +344,10 @@ def decm_06a506a_actual_dates_after_status_date(context) -> RuleOutput:
         return RuleOutput(note="no data date")
     tasks = context.snapshot.activities
     flagged = tasks[actual_after(tasks, data_date)]
-    started = int(tasks["act_start_date"].notna().sum())
-    return RuleOutput(flagged_activities(flagged, reason="actual after data date"), len(flagged), started)
+    started = tasks[tasks["act_start_date"].notna()]
+    return RuleOutput(
+        flagged_activities(flagged, reason="actual after data date"), len(flagged), len(started), checked=started
+    )
 
 
 @rule("decm_06a506b_forecast_dates_before_status_date", "%")
@@ -349,7 +363,9 @@ def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
         return RuleOutput(note="no data date")
     tasks = context.snapshot.activities
     flagged = tasks[forecast_before(tasks, data_date)]
-    return RuleOutput(flagged_activities(flagged, reason="forecast before data date"), len(flagged), len(tasks))
+    return RuleOutput(
+        flagged_activities(flagged, reason="forecast before data date"), len(flagged), len(tasks), checked=tasks
+    )
 
 
 def _start_near_data_date(snapshot, activities: pd.DataFrame) -> pd.Series:
@@ -394,4 +410,5 @@ def decm_06a506c_riding_status_date(context) -> RuleOutput:
         len(flagged),
         len(tasks),
         note=f"vs update of {previous.data_date:%Y-%m-%d}",
+        checked=tasks,
     )
