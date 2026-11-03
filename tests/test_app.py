@@ -529,13 +529,29 @@ def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeyp
     _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
 
 
+def test_debug_block_6_lists_the_leveled_activities_anonymised(tmp_path, monkeypatch, downloads):
+    """One activity moved by leveling: the warning, block 6 and the zip name it, the zip by its
+    extract code only."""
+    tasks = [
+        {"task_code": "LEVELED-1", "early_start_date": "2026-03-02 08:00", "restart_date": "2026-03-09 08:00"},
+        {"task_code": "PLAIN-2"},
+    ]
+    (tmp_path / "w1.xer").write_text(xer_text(tasks))
+    at = _run(tmp_path, monkeypatch)
+    tables = _debug_zip(at, downloads)
+    assert any("1 open activities have a remaining early start" in c.value for c in at.main.caption)
+    leveling = tables["06_leveling.csv"]
+    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{8}").all()
+    _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
+
+
 def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     """Debug columns carry the XER / analysis field names as written, to set beside P6; each block
     is keyed, so a count in its label changing with the update does not redraw it closed."""
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 5 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 6 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 

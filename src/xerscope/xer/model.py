@@ -854,18 +854,25 @@ def _labor_hours(tasks: pd.DataFrame, assignments: pd.DataFrame) -> str:
     return "TASKRSRC"
 
 
-def _warn_leveling(tasks: pd.DataFrame, inputs: _BuildInputs) -> None:
-    # Leveling with "preserve scheduled early and late dates" leaves the remaining early
-    # dates (restart/reend) apart from the early dates; a plain CPM cannot reproduce them.
-    open_tasks = tasks[tasks["status_code"] != "TK_Complete"]
-    leveled = (
-        open_tasks["restart_date"].notna()
-        & open_tasks["early_start_date"].notna()
-        & (open_tasks["restart_date"] != open_tasks["early_start_date"])
+def leveled(tasks: pd.DataFrame) -> pd.Series:
+    """Open activities whose remaining early start (restart_date) differs from their early start.
+
+    Leveling with "preserve scheduled early and late dates" leaves the remaining early dates
+    (restart/reend) apart from the early dates; a plain CPM cannot reproduce them.
+    """
+    return (
+        (tasks["status_code"] != "TK_Complete")
+        & tasks["restart_date"].notna()
+        & tasks["early_start_date"].notna()
+        & (tasks["restart_date"] != tasks["early_start_date"])
     )
-    if leveled.any():
+
+
+def _warn_leveling(tasks: pd.DataFrame, inputs: _BuildInputs) -> None:
+    count = int(leveled(tasks).sum())
+    if count:
         inputs.warnings.append(
-            f"{inputs.source}: {int(leveled.sum())} open activities have a remaining early start "
+            f"{inputs.source}: {count} open activities have a remaining early start "
             "different from their early start (resource leveling?)"
         )
 
