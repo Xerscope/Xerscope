@@ -41,11 +41,13 @@ trend = memo(("mta", tuple(picked)), milestone_trend, store, picked)
 plotted = plotted_trend(trend)
 if hidden := sorted(set(picked) - set(plotted["task_code"])):
     st.caption(f"Complete in the first update, no trend to plot: {', '.join(hidden)}")
+slips = milestone_slips(trend, store)
 if not plotted.empty:
-    st.plotly_chart(build_mta(plotted, all_ms + others, is_dark()), width="stretch")
+    last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))
+    st.plotly_chart(build_mta(plotted, last_shift, is_dark()), width="stretch")
+    st.caption("Line colour = move in the last update: red later, green earlier, grey unchanged or complete.")
 
 ui.section("Slippage", "Working days on each milestone's own calendar.")
-slips = milestone_slips(trend, store)
 ui.table(
     slips,
     overrides={
