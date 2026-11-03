@@ -91,6 +91,21 @@ def test_critical_can_be_longest_path():
     assert crit == {"A": True, "B": False, "C": True}  # driving_path_flag, not float
 
 
+def test_options_keep_the_raw_project_fields_they_derive_from():
+    """``options["project"]`` holds the PROJECT strings as written, "" when absent, so a page
+    can tell a stored CT_TotFloat from the default one."""
+    s = build_snapshot(
+        parse_text(_xer({"critical_path_type": "CT_TotFloat", "critical_drtn_hr_cnt": "40"}, tasks=TASKS))
+    )
+    assert s.options["project"] == {
+        "critical_path_type": "CT_TotFloat",
+        "critical_drtn_hr_cnt": "40",
+        "plan_end_date": "",
+    }
+    s = build_snapshot(parse_text(_xer({}, tasks=TASKS)))
+    assert s.options["project"]["critical_path_type"] == "" and s.options["critical_path_type"] == "CT_TotFloat"
+
+
 def test_critical_defaults_to_zero_float_when_project_is_silent():
     s = build_snapshot(parse_text(_xer({}, tasks=TASKS)))
     assert s.activities.set_index("task_code")["is_critical"].to_dict() == {"A": True, "B": False, "C": False}

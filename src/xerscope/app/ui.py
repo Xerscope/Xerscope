@@ -275,10 +275,13 @@ def _column_for(label: str, kind: str, values: pd.Series):
     return st.column_config.TextColumn(label)
 
 
-def column_config(frame: pd.DataFrame, overrides: dict | None = None) -> dict:
+def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels: bool = False) -> dict:
+    """Label and format of each column. ``raw_labels`` keeps the field names as written (the XER
+    field, the analysis column), for tables read beside P6; formats are unchanged."""
     config: dict = {}
     for column in frame.columns:
         label, kind = COLUMNS.get(column, (str(column).replace("_", " ").capitalize(), ""))
+        label = str(column) if raw_labels else label
         config[column] = _column_for(label, kind or _infer_kind(frame[column]), frame[column])
     config.update(overrides or {})
     return config
@@ -291,11 +294,13 @@ def table(
     max_height: int = 560,
     overrides: dict | None = None,
     status: str | None = None,
+    raw_labels: bool = False,
     **kwargs,
 ):
     """A labelled, formatted dataframe; height follows the rows up to ``max_height``.
 
-    ``status`` names a pass/fail column to show as coloured labels.
+    ``status`` names a pass/fail column to show as coloured labels; ``raw_labels`` keeps the
+    column names as headers (see ``column_config``).
     """
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
@@ -303,7 +308,7 @@ def table(
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
-    config = column_config(frame, overrides)
+    config = column_config(frame, overrides, raw_labels)
     data = status_style(frame, status) if status else frame
     return st.dataframe(data, column_config=config, **kwargs)
 

@@ -355,6 +355,21 @@ def test_expected_finish_sets_remaining_work():
     assert dates(snap(t, sched={"sched_use_expect_end_flag": "N"}), "A")[1] == T("2026-03-06 17:00")
 
 
+def test_expected_finish_reports_the_remaining_it_set():
+    """``rem_override_hr``: the remaining hours the expected finish stands in for (data date
+    Mon 2 08:00 to Wed 4 17:00 = 24 h on C8); 0 when it falls before the early start; NaN when
+    the option is off or there is no expected finish (the file's remaining duration applies)."""
+    t = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-04 17:00"), todo("B", **hours(8))]
+    frame = schedule(snap(t)).frame
+    assert frame.at["A", "rem_override_hr"] == 24.0
+    assert pd.isna(frame.at["B", "rem_override_hr"])
+    frame = schedule(snap(t, sched={"sched_use_expect_end_flag": "N"})).frame
+    assert pd.isna(frame.at["A", "rem_override_hr"])
+    early = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-02-27 17:00")]
+    row = schedule(snap(early)).frame.loc["A"]
+    assert row["rem_override_hr"] == 0.0 and row["ef"] == row["remaining_start"]
+
+
 @pytest.mark.parametrize(
     "sched,start",
     [
