@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.progress import committed, ppc_series, progress_delta, rollup_delta
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, csv_download, is_dark, memo, require_store
+from xerscope.app.state import baseline_for, csv_download, is_dark, memo, require_store, sources_of
 from xerscope.viz.charts import PPC_TARGET, build_ppc
 
 COMMITMENT_COLUMNS = [
@@ -75,12 +75,12 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
         ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS)
 
 
-def show_progress_by_activity(progress: pd.DataFrame, current) -> None:
+def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by activity", "Activities whose % complete, earned or actual hours moved this week.")
     moved_mask = (progress["pct_delta"] != 0) | (progress["earned_hr_week"] != 0) | (progress["actual_hr_week"] != 0)
     moved = progress[moved_mask].sort_values("earned_hr_week", ascending=False)
     ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS)
-    csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv")
+    csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
 store = require_store()
@@ -118,4 +118,4 @@ wbs_progress = rollup_delta(progress)
 project_progress = wbs_progress[wbs_progress["wbs_l1"] == "Project"].iloc[0]
 done, due = show_kpis(commitments, project_progress)
 show_commitments_and_wbs(commitments, wbs_progress, done, due)
-show_progress_by_activity(progress, current)
+show_progress_by_activity(progress, previous, current)

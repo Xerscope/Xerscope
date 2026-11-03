@@ -17,6 +17,7 @@ from xerscope.app.state import (
     memo,
     require_store,
     snapshot_picker,
+    sources_of,
     standards,
 )
 from xerscope.viz.charts import build_metric_trend
@@ -69,7 +70,7 @@ def show_kpis(results) -> None:
     )
 
 
-def show_summary(results, standard, snapshot) -> None:
+def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     summary = pd.DataFrame(
         [
             {
@@ -125,10 +126,11 @@ def show_summary(results, standard, snapshot) -> None:
             f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
             "All flagged items (CSV)",
             key="dl_trail",
+            sources=sources,
         )
 
 
-def show_check(result, explanation, snapshot, expanded: bool) -> None:
+def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]) -> None:
     """One expander: what the check measures, its calculation, method and the flagged items."""
     metric = result.metric
     counts = f" ({count_text(result)})" if result.numerator is not None and result.denominator else ""
@@ -169,7 +171,7 @@ def show_check(result, explanation, snapshot, expanded: bool) -> None:
                 f"{noun(explanation.subject, len(result.flagged))}"
             )
             ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
-            if anonymous_exports() and anonymizer() is None:
+            if anonymous_exports() and anonymizer(sources=sources) is None:
                 st.caption("Download: prepare the anonymised downloads under Results.")
             else:
                 csv_download(
@@ -177,10 +179,11 @@ def show_check(result, explanation, snapshot, expanded: bool) -> None:
                     f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
                     "Download list (CSV)",
                     key=f"dl_{metric.id}",
+                    sources=sources,
                 )
 
 
-def show_details(results, snapshot, only_failed: bool) -> None:
+def show_details(results, snapshot, only_failed: bool, sources: list[str]) -> None:
     ui.section("Detail by check")
     expand_all = st.toggle("Expand all", value=False, key="health_expand")
     group = None
@@ -190,7 +193,7 @@ def show_details(results, snapshot, only_failed: bool) -> None:
         if result.metric.group and result.metric.group != group:
             group = result.metric.group
             st.markdown(f"##### {group}")
-        show_check(result, explain(result), snapshot, expand_all)
+        show_check(result, explain(result), snapshot, expand_all, sources)
 
 
 def show_trend(store, standard, baseline_key) -> None:
@@ -293,8 +296,9 @@ results = memo(
     AnalysisContext(snapshot, store, baseline),
 )
 show_kpis(results)
-show_summary(results, standard, snapshot)
-show_details(results, snapshot, only_failed)
+sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
+show_summary(results, standard, snapshot, sources)
+show_details(results, snapshot, only_failed, sources)
 if len(store) > 1:
     show_trend(store, standard, baseline_key)
 

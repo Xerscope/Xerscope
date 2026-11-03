@@ -457,7 +457,7 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     )
     assert not set(flagged.astype(str).to_numpy().ravel()) & originals
     codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
-    assert len(codes) and codes.str.fullmatch(r"XA\d{6}").all()
+    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
 
     app.switch_page("views/export.py").run()
     next(b for b in app.button if b.label == "Build anonymised extract").click().run()
@@ -505,7 +505,7 @@ def _assert_anonymised(tables: dict, store, anonymous) -> None:
     assert anonymous.leaks(cells) == {}
     assert not cells & {name for name in names if len(name) >= 3}
     codes = pd.concat([table["task_code"].dropna() for table in tables.values() if "task_code" in table])
-    assert codes.str.fullmatch(r"XA\d{6}").all()
+    assert codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
 
 
 def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
@@ -514,7 +514,7 @@ def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
     tables = _debug_zip(app, downloads)
     assert set(tables) == {f"{name}.csv" for name in diagnostic_frames(store.latest, None, _p6())}
     assert tables["01_options.csv"]["option"].tolist()[0] == "use_expected_finish"
-    _assert_anonymised(tables, store, app.session_state["_anonymizer"][1])
+    _assert_anonymised(tables, store, _session_anonymizer(app))
 
 
 def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeypatch, downloads):
@@ -527,7 +527,7 @@ def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeyp
     tables = _debug_zip(at, downloads)
     expected = tables["02_expected_finish.csv"]
     assert len(expected) == 1 and bool(expected["remaining_set_to_0"].iloc[0])
-    _assert_anonymised(tables, at.session_state["store"], at.session_state["_anonymizer"][1])
+    _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
 
 
 def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
@@ -572,9 +572,12 @@ def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, stor
     _ok(app)
     gantt = _csv(_download(app, downloads, "Download CSV · anonymised"))
     assert not set(gantt.astype(str).to_numpy().ravel()) & originals
-    assert gantt["task_code"].dropna().str.fullmatch(r"XA\d{6}").all()
+    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
 
     app.switch_page("views/export.py").run()
+    _ok(app)
+    # the Gantt's anonymizer read one update; the Power BI tables cover the series: prepared again
+    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
     _ok(app)
     tables = _zip(_download(app, downloads, "Download PARQUET tables (.zip) · anonymised"))
     activity = pd.read_parquet(__import__("io").BytesIO(tables["fact_activity.parquet"]))
@@ -599,6 +602,32 @@ def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, do
     _ok(app)
     tables = _zip(_download(app, downloads, "Download diagnostic (.zip)"))
     assert set(tables) >= {"01_options.csv", "04_check_parameters.csv"}
+
+
+def _session_anonymizer(at):
+    """The anonymizer the session built last (one per set of files read)."""
+    return list(at.session_state["_anonymizers"][1].values())[-1]
+
+
+def test_a_page_download_reads_its_update_only_and_keeps_the_series_codes(app, store, downloads):
+    """Preparing the Gantt download reads the update shown, not the series; its codes are those
+    of the anonymised XER extract of every file, made later in the same session."""
+    app.switch_page("views/gantt.py").run()
+    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    _ok(app)
+    shown = app.session_state["gantt_snap"]
+    assert list(app.session_state["_anonymizers"][1]) == [frozenset({store.by_label(shown).source})]
+    gantt = _csv(_download(app, downloads, "Download CSV · anonymised"))
+
+    app.switch_page("views/export.py").run()
+    next(b for b in app.button if b.label == "Build anonymised extract").click().run()
+    _ok(app)
+    series = _session_anonymizer(app)
+    assert len(app.session_state["_anonymizers"][1]) == 2  # the update alone, then every file
+    new_of = series.codes["A"]
+    original = store.by_label(shown).activities.sort_values("task_code")["task_code"]
+    shown_codes = set(gantt["task_code"])  # LOE hidden by default: a part of the update
+    assert shown_codes and shown_codes <= {new_of[code] for code in original}
 
 
 def _p6():

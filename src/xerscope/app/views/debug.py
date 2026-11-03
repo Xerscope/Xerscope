@@ -13,6 +13,7 @@ from xerscope.app.state import (
     memo,
     require_store,
     snapshot_picker,
+    sources_of,
     standards,
 )
 from xerscope.export import zip_frames
@@ -93,7 +94,8 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
 def build_diagnostic(anonymous: bool) -> None:
     held = (st.session_state.get("signature"), snapshot.source, anonymous)
     try:
-        data = anonymizer(prepare=True).zip_frames(frames) if anonymous else zip_frames(frames, "csv")
+        sources = sources_of(snapshot, baseline=baseline)
+        data = anonymizer(prepare=True, sources=sources).zip_frames(frames) if anonymous else zip_frames(frames, "csv")
     except LeakError as exc:
         st.session_state["debug_zip"] = (*held, None, str(exc))
         return

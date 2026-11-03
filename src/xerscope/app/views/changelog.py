@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.changelog import category_totals, changelog, summary, weekly_change_counts, weekly_change_matrix
 from xerscope.app import ui
-from xerscope.app.state import csv_download, memo, require_store
+from xerscope.app.state import csv_download, memo, require_store, sources_of
 
 RETROACTIVE_ACTUALS = (
     "actual start changed (retroactive)",
@@ -82,7 +82,12 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
         view = view[ui.search_mask(view, SEARCH_COLUMNS, search)]
     st.caption(f"{len(view):,} change(s) shown")
     ui.table(view, max_height=640)
-    csv_download(log, f"changelog_{ui.stamp(old.data_date)}_{ui.stamp(new.data_date)}.csv", "Download changelog (CSV)")
+    csv_download(
+        log,
+        f"changelog_{ui.stamp(old.data_date)}_{ui.stamp(new.data_date)}.csv",
+        "Download changelog (CSV)",
+        sources=sources_of(old, new),
+    )
 
 
 def show_weekly(store) -> None:

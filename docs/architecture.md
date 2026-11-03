@@ -140,10 +140,14 @@ Outside `analysis/`:
   names; the XER extract stays anonymised, the Schedule health summary (checks and results
   only) stays as it is. The pages always show the files' own data. An allowlist
   per table keeps keys, dates, durations, units, flags and P6 enumerations; codes get new
-  values (same original, same new code in every file of the session), names are rebuilt from
-  them, costs set to 0, user, database and free text removed, unknown tables and columns left
-  out and named. Every output field is compared with the originals' text values before it is
-  handed out. The mapping lives in the session only.
+  values, `X<kind>` and the first hex digits of an HMAC-SHA256 of the original under a key
+  drawn for the session (8 for activities; two IDs on one code are refused), names are rebuilt
+  from them, costs set to 0, user, database and free text removed, unknown tables and columns
+  left out and named. A download reads only its own files (the update shown, W-1 and W for the
+  changelog and PPC, the baseline's file when it lists baseline fields, every file for Power BI
+  and the XER extract), and an activity keeps one code in every download of the session. Every
+  output field is compared with the text values of the files read before it is handed out. The
+  key and the mappings live in the session only.
 
 ### `verify/`: independent checks, strongest source first
 
