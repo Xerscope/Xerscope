@@ -236,6 +236,12 @@ PINNED = {
         ("H12", "H12-08", "A1290", "early_start"),
     ],
     "LOE: the late start never passes the late finish": [("H10", "H10-01", "A1300", "late_start")],
+    "LOE: a finished predecessor's passed-back late date holds the late start of an SS link": [
+        ("H8", "H8-07", "A1230", "late_start"),
+        ("H12", "H12-12", "A1330", "late_start"),
+        ("H26", "H26-11", "A1220", "late_start"),
+        ("H8", "H8-02", "A1240", "late_start"),
+    ],
     "LOE: a finished task's actual finish holds the late start of an FS link": [
         ("H14", "H14-07", "A1170", "late_start"),
         ("H18", "H18-09", "A1340", "late_start"),

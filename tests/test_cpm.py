@@ -602,3 +602,15 @@ def test_loe_late_start_follows_the_actual_finish_of_a_finished_fs_predecessor()
     f = schedule(snap(tasks, [("P", "C", "FS", 0), ("P", "L", "FS", 0), ("L", "C", "FF", 0)])).frame
     assert f.at["L", "ls"] == pd.Timestamp("2026-02-16 08:00")  # Friday 17:00 -> Monday morning
     assert f.at["L", "lf"] == f.at["C", "lf"] == pd.Timestamp("2026-03-13 17:00")
+
+
+def test_loe_late_start_follows_the_late_date_a_finished_predecessor_passes_back():
+    """SS from a finished task: the LOE's late start is the late date the finished task passes
+    back, i.e. its other successor's late start (P6 23.12 corpus: H8-07 A1230 takes the late
+    start of A1020, FS successor of its predecessor). Q, 8 h, ends the project on 13 March:
+    late start Friday 08:00."""
+    tasks = [done("P"), todo("Q", **hours(8)), todo("C"), todo("L", task_type="TT_LOE")]
+    f = schedule(snap(tasks, [("P", "Q", "FS", 0), ("P", "L", "SS", 0), ("L", "C", "FF", 0)])).frame
+    assert f.at["Q", "ls"] == pd.Timestamp("2026-03-13 08:00")
+    assert f.at["L", "ls"] == pd.Timestamp("2026-03-13 08:00")
+    assert f.at["L", "lf"] == f.at["C", "lf"] == pd.Timestamp("2026-03-13 17:00")
