@@ -1,9 +1,11 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.anonymize import LeakError
 from xerscope.app import ui
-from xerscope.app.state import memo, require_store
+from xerscope.app.state import anonymizer, memo, require_store
 from xerscope.export import export_tables, zip_tables
+from xerscope.xer.parser import parse_bytes
 
 store = require_store()
 ui.header(
@@ -38,3 +40,49 @@ st.download_button(
 
 with st.expander("Preview fact_activity"):
     ui.table(tables["fact_activity"].head(200), max_height=640)
+
+
+def build_anonymised_extract(store) -> None:
+    anonymous = anonymizer(prepare=True)
+    data_dates = {snapshot.source: snapshot.data_date for snapshot in store}
+    items = st.session_state.get("items") or []
+    with st.spinner(f"Anonymising {len(items)} file(s)…"):
+        try:
+            extract = anonymous.zip_xers((parse_bytes(data, source=name), data_dates.get(name)) for name, data in items)
+        except LeakError as exc:
+            st.session_state["anon_extract"] = (st.session_state.get("signature"), None, str(exc))
+            return
+    st.session_state["anon_extract"] = (st.session_state.get("signature"), extract, "")
+
+
+ui.section(
+    "Anonymised XER extract",
+    "Every loaded file with new Activity IDs, WBS, project, resource and calendar names; no user, "
+    "free text or cost. Dates, durations, units and logic are unchanged, so P6 and xerscope compute "
+    "the same results on it. The new IDs match the anonymised lists of Schedule health.",
+)
+if st.button("Build anonymised extract", icon=":material/visibility_off:", key="anon_build"):
+    build_anonymised_extract(store)
+held = st.session_state.get("anon_extract")
+if held is not None and held[0] == st.session_state.get("signature"):
+    _, extract, refused = held
+    if refused:
+        st.error(refused, icon=":material/block:")
+    else:
+        st.download_button(
+            "Download anonymised XER (.zip)",
+            data=extract,
+            file_name="xerscope_anonymised_xer.zip",
+            mime="application/zip",
+            icon=":material/download:",
+            key="anon_download",
+        )
+        report = anonymizer().report
+        if report.dropped_tables or report.emptied_columns:
+            st.caption(
+                "Left out: tables "
+                + (", ".join(sorted(report.dropped_tables)) or "none")
+                + "; columns emptied "
+                + (", ".join(sorted(report.emptied_columns)) or "none")
+                + "."
+            )

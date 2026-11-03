@@ -8,7 +8,7 @@ from xerscope.analysis.checks import health_wide
 from xerscope.analysis.explain import explain, fmt_value, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, is_dark, memo, require_store, snapshot_picker, standards
+from xerscope.app.state import anonymizer, baseline_for, is_dark, memo, require_store, snapshot_picker, standards
 from xerscope.viz.charts import build_metric_trend
 
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
@@ -106,14 +106,23 @@ def show_summary(results, standard, snapshot) -> None:
             summary, f"{standard.id}_{ui.stamp(snapshot.data_date)}_summary.csv", "Summary (CSV)", key="dl_sum"
         )
     with trail_column:
-        if not trail.empty:
-            front = ["check_id", "check", "check_status"]
-            ui.csv_button(
-                trail[front + [column for column in trail.columns if column not in front]],
-                f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
-                "All flagged items (CSV)",
-                key="dl_trail",
-            )
+        if trail.empty:
+            return
+        anonymous = anonymizer()
+        if anonymous is None:
+            # flagged lists name activities: they leave the app anonymised only
+            if st.button("Prepare anonymised lists", icon=":material/visibility_off:", key="anon_prepare"):
+                anonymizer(prepare=True)
+                st.rerun()
+            return
+        front = ["check_id", "check", "check_status"]
+        ui.anonymised_csv_button(
+            anonymous,
+            trail[front + [column for column in trail.columns if column not in front]],
+            f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
+            "All flagged items (CSV, anonymised)",
+            key="dl_trail",
+        )
 
 
 def show_check(result, explanation, snapshot, expanded: bool) -> None:
@@ -157,12 +166,17 @@ def show_check(result, explanation, snapshot, expanded: bool) -> None:
                 f"{noun(explanation.subject, len(result.flagged))}"
             )
             ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
-            ui.csv_button(
-                result.flagged,
-                f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
-                "Download list (CSV)",
-                key=f"dl_{metric.id}",
-            )
+            anonymous = anonymizer()
+            if anonymous is None:
+                st.caption("Download: prepare the anonymised lists under Results.")
+            else:
+                ui.anonymised_csv_button(
+                    anonymous,
+                    result.flagged,
+                    f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
+                    "Download list (CSV, anonymised)",
+                    key=f"dl_{metric.id}",
+                )
 
 
 def show_details(results, snapshot, only_failed: bool) -> None:
