@@ -17,10 +17,11 @@ source = "Oracle P6 EPPM 26 help, Schedule Project Log, Scheduling Results: \"La
 
 [[metric]]
 id = "INT-02"
-name = "Out-of-sequence progress"
-description = "Started before an FS predecessor finished or an SS predecessor started"
+name = "Out of sequence activities"
+description = "Started activities whose FS predecessor is not complete or SS predecessor not started. Mirrors the log's Warnings 'Out of sequence activities'; P6-15 applies the same reading in the Check Schedule"
 rule = "int_02_out_of_sequence_progress"
 target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Out of sequence activities\", \"The activities that have started before their predecessor activity has completed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm). The link-type reading (FS predecessor not complete, SS predecessor not started, FF and SF not listed) is calibrated on a P6 Check Schedule report (R1: 6 activities, 7 pairs)"
 
 [[metric]]
 id = "INT-03"

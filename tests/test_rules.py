@@ -649,6 +649,38 @@ def test_out_of_sequence_progress_is_listed():
     assert r.flagged.iloc[0]["ahead_of"] == "A (FS)"
 
 
+def test_out_of_sequence_follows_the_status_at_the_data_date():
+    """P6 log 'Out of sequence activities': started before the predecessor has completed.
+
+    Calibrated on a P6 Check Schedule report: FS predecessor not complete, SS predecessor not started;
+    FF and SF links, and a predecessor that completed after the successor's start, are not listed.
+    """
+    s = snap(
+        [
+            todo("A"),  # not started, FS -> B: listed
+            active("B"),
+            active("C", act_start_date="2026-02-23 08:00"),  # started, SS -> D: D started earlier, not listed
+            active("D", act_start_date="2026-02-20 08:00"),
+            todo("E"),  # not started, SS -> F: listed
+            active("F"),
+            active("G"),  # not complete, FF -> H: not listed
+            active("H"),
+            done("I", act_end_date="2026-02-25 17:00"),  # completed after J started, FS -> J: not listed
+            active("J", act_start_date="2026-02-23 08:00"),
+        ],
+        [
+            ("A", "B", "FS", 0),
+            ("C", "D", "SS", 0),
+            ("E", "F", "SS", 0),
+            ("G", "H", "FF", 0),
+            ("I", "J", "FS", 0),
+        ],
+    )
+    r = run(INTEGRITY, "INT-02", s)
+    assert codes(r) == ["B", "F"] and counts(r) == (2, 8)
+    assert dict(zip(r.flagged["task_code"], r.flagged["ahead_of"], strict=True)) == {"B": "A (FS)", "F": "E (SS)"}
+
+
 def test_late_activities_use_working_time():
     # Finished Fri 17:00 against a baseline of Mon 08:00: the same working minute, not late.
     bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 08:00")]))

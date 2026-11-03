@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
-from .populations import flagged_activities, links_between, predecessors_ahead, without_level_of_effort
+from .populations import flagged_activities, links_between, predecessors_ahead
 from .rules import RuleOutput, rule
 
 STORED_FIELDS = ["early_start_date", "early_end_date", "late_start_date", "late_end_date", "total_float_hr_cnt"]
@@ -67,31 +67,27 @@ def _date_text(date) -> str:
     return "none" if date is None or pd.isna(date) else f"{date:%Y-%m-%d %H:%M}"
 
 
-def _predecessors_ahead(links: pd.DataFrame, started: pd.DataFrame, tasks: pd.DataFrame) -> pd.Series:
-    """For each started successor, its predecessors ahead of it as 'CODE (FS), CODE (SS)'."""
-    ahead = predecessors_ahead(links, started, tasks)
-    if ahead.empty:
-        return pd.Series(dtype=object)
-    return (ahead["pred_code"] + " (" + ahead["type"] + ")").groupby(ahead["succ_code"]).agg(", ".join)
-
-
 @rule("int_02_out_of_sequence_progress", "count")
 def int_02_out_of_sequence_progress(context) -> RuleOutput:
-    """Progressed out of logic sequence.
-    Counts: out of sequence /
-    Excludes: level of effort.
+    """Out of sequence activities.
+    Counts: out of sequence / started
 
-    Started activities whose FS predecessor had not finished, or SS predecessor not started, at their
-    actual start (P6 lists them in its scheduling log). Counts activities.
+    Mirrors the P6 log warning 'Out of sequence activities': activities that have started before their
+    predecessor has completed. Read at the data date, as P6 Check Schedule (P6-15) does: a started activity
+    whose FS predecessor is not complete, or whose SS predecessor has not started. FF and SF links, and
+    predecessors that finished after the successor's actual start, are not listed. Counts activities.
     """
-    activities = without_level_of_effort(context.snapshot.activities)
     tasks = context.snapshot.by_code
-    started = activities[activities["is_started"]].drop_duplicates("task_code").set_index("task_code")
-    ahead_of = _predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), started, tasks)
+    started = context.snapshot.activities[context.snapshot.activities["is_started"]]
+    started = started.drop_duplicates("task_code").set_index("task_code")
+    ahead = predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), tasks)
+    ahead_of = (ahead["pred_code"] + " (" + ahead["type"] + ")").groupby(ahead["succ_code"]).agg(", ".join)
     flagged = started.loc[ahead_of.index].reset_index()
-    texts = flagged["task_code"].map(ahead_of)
     return RuleOutput(
-        flagged_activities(flagged, ahead_of=texts), len(flagged), len(started), checked=started.reset_index()
+        flagged_activities(flagged, ahead_of=flagged["task_code"].map(ahead_of)),
+        len(flagged),
+        len(started),
+        checked=started.reset_index(),
     )
 
 
