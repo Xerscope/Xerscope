@@ -263,7 +263,8 @@ finish-type ends (FF / SF predecessors, FF / FS successors) its finish, the late
 predecessor and an FF successor to the same activity give the same finish, as Boyle shows
 in P6 ("Constructing LOE activities in Primavera P6"). A start-type link from a started
 predecessor is measured from the data date plus the unexpired lag (H10-01 A1300); the
-late start never passes the late finish (same case). It drives nothing.
+late start never passes the late finish (same case). A finished task's actual finish
+holds the late start of an FS link (conventions below). It drives nothing.
 
 **No data date.** P6 always stores one. A file without a data date and a planned start
 is scheduled from the earliest activity date it carries, with a warning.
@@ -297,6 +298,12 @@ Each rule below is pinned by a real file:
   on resource-dependent work only, where the float-type option decides.
 - **LOE dates:** Oracle's and Boyle's descriptions, confirmed by the P6 20.12 export for
   early dates and by the corpus for late dates and float. LOE are excluded from INT-01.
+- **LOE late start behind a finished task:** an FS link from a finished task (not a start
+  milestone) holds the late start at its actual finish plus the lag, written at the next
+  working start, never past the late finish; an SS link from a finished activity holds
+  nothing. Witnesses: H14-07 A1170, H18-09 A1340, H25-01 A1380, H9-04 A1390 (14 of 14 such tasks
+  with clean neighbours; observed, no Oracle page states it). A finished start milestone
+  holds nothing (H16-02 A1290, H10-11 A1210); H8-02 A1250 is still open.
 - **An activity whose `clndr_id` is not in the file's CALENDAR table:** read on the
   project's calendar, then the file's first calendar, then the standard one
   (`Snapshot.calendar`, `_BuildInputs.fallback_hours_per_day`), and the file is flagged in

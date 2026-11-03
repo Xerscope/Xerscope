@@ -597,3 +597,13 @@ def test_loe_spans_from_its_start_driver_to_its_finish_driver(finish_link):
     assert f.at["L", "es"] == f.at["A", "es"] == pd.Timestamp("2026-03-02 08:00")
     assert f.at["L", "ef"] == f.at["C", "ef"] == pd.Timestamp("2026-03-27 17:00")
     assert schedule(snap(tasks, links)).finish == f.at["D", "ef"] > f.at["L", "ef"]
+
+
+def test_loe_late_start_follows_the_actual_finish_of_a_finished_fs_predecessor():
+    """FS from a finished task: the LOE's late start is the predecessor's actual finish plus the
+    lag, written at the next working start (P6 23.12 corpus: H14-07 A1170, H18-09 A1340,
+    H25-01 A1380). It is not the late finish, which a finished predecessor would leave."""
+    tasks = [done("P", act_end_date="2026-02-13 17:00"), todo("C"), todo("L", task_type="TT_LOE")]
+    f = schedule(snap(tasks, [("P", "C", "FS", 0), ("P", "L", "FS", 0), ("L", "C", "FF", 0)])).frame
+    assert f.at["L", "ls"] == pd.Timestamp("2026-02-16 08:00")  # Friday 17:00 -> Monday morning
+    assert f.at["L", "lf"] == f.at["C", "lf"] == pd.Timestamp("2026-03-13 17:00")
