@@ -14,6 +14,7 @@ from streamlit.testing.v1 import AppTest
 from xerkit import xer_text
 
 import xerscope
+from xerscope.app import ui
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [
@@ -503,6 +504,23 @@ def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeyp
     expected = tables["02_expected_finish.csv"]
     assert len(expected) == 1 and bool(expected["remaining_set_to_0"].iloc[0])
     _assert_anonymised(tables, at.session_state["store"], at.session_state["_anonymizer"][1])
+
+
+def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
+    """Debug columns carry the XER / analysis field names as written, to set beside P6; each block
+    is keyed, so a count in its label changing with the update does not redraw it closed."""
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    blocks = list(app.main.expander)
+    assert len(blocks) == 5 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert app.main.selectbox(key="debug_snap").label == "Update"
+
+
+def test_raw_labels_are_the_column_names():
+    frame = pd.DataFrame({"task_code": ["A1"], "remain_drtn_hr_cnt": [8.0]})
+    config = ui.column_config(frame, raw_labels=True)
+    assert [config[column]["label"] for column in frame] == ["task_code", "remain_drtn_hr_cnt"]
+    assert ui.column_config(frame)["task_code"]["label"] == "Activity ID"  # the default stays
 
 
 def _p6():
