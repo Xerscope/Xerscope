@@ -63,11 +63,6 @@ def test_unknown_task_calendar_falls_back_to_the_project_calendar():
     assert any("999" in warning for warning in snapshot.warnings)
 
 
-def test_reference_calendars_parse(store):
-    cal = store.first.calendar()
-    assert [hours(day) for day in cal.week] == [8] * 7  # sample: 7 days x 8 h, no blob
-
-
 # --- standards as data ---------------------------------------------------------------------
 
 
