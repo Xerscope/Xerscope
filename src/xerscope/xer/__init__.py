@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .model import HARD_CONSTRAINTS, Snapshot, build_snapshot, percent_complete
+from .model import HARD_CONSTRAINTS, HEADER_TABLES, FileHeader, Snapshot, build_snapshot, percent_complete, read_header
 from .parser import RawXer, XerError, parse_bytes, parse_text, read_xer
 
 XER_SUFFIXES = (".xer",)  # compared case-insensitively: P6 writes .XER on some setups
@@ -21,6 +21,12 @@ def load_snapshot(source: str | Path | bytes, project_code=None, name: str | Non
     return build_snapshot(raw, project_code=project_code)
 
 
+def load_header(path: str | Path) -> FileHeader:
+    """Default project and data date of an XER file, without building the snapshot: only the
+    PROJECT rows and the TASK identity columns are kept while reading."""
+    return read_header(read_xer(path, keep=HEADER_TABLES))
+
+
 def xer_files(folder: str | Path) -> list[Path]:
     """The .xer files of a folder, sorted by name."""
     return sorted(p for p in Path(folder).iterdir() if p.is_file() and _is_xer(p))
@@ -29,10 +35,12 @@ def xer_files(folder: str | Path) -> list[Path]:
 __all__ = [
     "XER_SUFFIXES",
     "HARD_CONSTRAINTS",
+    "FileHeader",
     "RawXer",
     "Snapshot",
     "XerError",
     "build_snapshot",
+    "load_header",
     "load_snapshot",
     "parse_bytes",
     "parse_text",

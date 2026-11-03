@@ -31,7 +31,18 @@ PAGES = [
 def app(sample_dir, monkeypatch):
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    return AppTest.from_file(APP, default_timeout=120).run()
+    return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+
+
+def _file_boxes(at):
+    return [box for box in at.sidebar.checkbox if box.key.startswith("read:")]
+
+
+def _tick_all(at):
+    """Nothing is read until files are ticked: tick every file of the folder."""
+    for box in _file_boxes(at):
+        box.check()
+    return at.run()
 
 
 def _ok(at):
@@ -143,7 +154,7 @@ def _run(data_dir, monkeypatch, baseline=None):
         monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     else:
         monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline))
-    return AppTest.from_file(APP, default_timeout=120).run()
+    return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):
@@ -234,14 +245,21 @@ def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch)
 
 
 def test_folder_files_can_be_picked(sample_dir, monkeypatch):
-    """Every XER of the folder is read by default; unticking files leaves them out of the series."""
-    at = _run(sample_dir, monkeypatch)
+    """No file is read until ticked; only the ticked files enter the series."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
     _ok(at)
-    picker = next(m for m in at.sidebar.multiselect if m.label == "Files to read")
-    assert len(picker.value) == 8
-    picker.set_value(picker.value[:3]).run()
+    boxes = _file_boxes(at)
+    assert len(boxes) == 8 and not any(box.value for box in boxes)
+    assert "store" not in at.session_state or at.session_state["store"] is None
+    assert any("Tick at least one file" in i.value for i in at.sidebar.info)
+    for box in boxes[:3]:
+        box.check()
+    at.run()
     _ok(at)
     assert any("3 snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert len(_selection(at)) == 3  # unticked files are not read at all
 
 
 def _with_second_project(main: str, code: str, task_codes: list[str], data_date: str) -> str:
@@ -298,6 +316,74 @@ def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch
     _ok(at)
     exported = [list(v["dim_snapshot"]["project"]) for k, v in at.session_state["_memo"].items() if k[-1] == "export"]
     assert ["OLD", "NEW"] in exported
+
+
+def _selection(at):
+    return next(frame for frame in at.sidebar.dataframe).value
+
+
+def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, monkeypatch):
+    """w1 holds NEW (3 TASK rows) and OLD (2): NEW wins on TASK rows; w2 holds NEW only."""
+    at = _run(renamed_project, monkeypatch)
+    _ok(at)
+    table = _selection(at).set_index("file")
+    assert table.loc["w1.xer", ["project", "selected_by", "projects_in_file", "status"]].tolist() == [
+        "NEW",
+        "most TASK rows",
+        "NEW (3) · OLD (2)",
+        "in series",
+    ]
+    assert table.loc["w2.xer", ["project", "selected_by", "data_date_from"]].tolist() == [
+        "NEW",
+        "only project",
+        "last_recalc_date",
+    ]
+    _pick_project(at, "OLD")
+    _ok(at)
+    table = _selection(at).set_index("file")
+    assert table.loc["w1.xer", ["project", "selected_by", "activities"]].tolist() == ["OLD", "chosen", 2]
+    assert table.loc["w2.xer", "project"] == "NEW"
+
+
+def test_selection_panel_names_the_file_skipped_for_its_data_date(tmp_path, monkeypatch):
+    """Two planners, same data date: the second by name is out of the series, and says why."""
+    tasks = [{"task_code": c} for c in ("A1", "A2")]
+    for name, code in (("a.xer", "PLAN-A"), ("b.xer", "PLAN-B")):
+        (tmp_path / name).write_text(xer_text(tasks, data_date="2026-03-02 08:00", project={"proj_short_name": code}))
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    table = _selection(at).set_index("file")
+    assert table.loc["a.xer", "status"] == "in series"
+    assert table.loc["b.xer", ["project", "status", "reason"]].tolist() == [
+        "PLAN-B",
+        "skipped",
+        "same data date as a.xer",
+    ]
+
+
+def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkeypatch):
+    """Unticked files are described from PROJECT and TASK only: default project, data date,
+    projects in the file; none of them is parsed into a snapshot."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(renamed_project))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    _ok(at)
+    boxes = {box.key.rsplit(":", 1)[1]: box for box in _file_boxes(at)}
+    assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 2 projects"
+    assert boxes["w2.xer"].label == "w2.xer — NEW · 09 Mar 2026"
+    assert "NEW (3) · OLD (2)" in boxes["w1.xer"].help and "most TASK rows" in boxes["w1.xer"].help
+    assert "from last_recalc_date" in boxes["w2.xer"].help
+    assert "_parsed" not in at.session_state or not at.session_state["_parsed"]
+
+
+def test_unreadable_file_is_named_in_the_picker(tmp_path, monkeypatch):
+    (tmp_path / "broken.xer").write_text("ERMHDR\t23.12\t2026-03-02\n%T\tPROJECT\n%F\tproj_id\n%R\t1\n")
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    _ok(at)
+    (box,) = _file_boxes(at)
+    assert box.label == "broken.xer — unreadable" and "TASK table missing" in box.help
 
 
 @pytest.fixture

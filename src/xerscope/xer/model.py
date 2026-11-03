@@ -348,6 +348,9 @@ class Snapshot:
     calendars: pd.DataFrame
     assignments: pd.DataFrame  # TASKRSRC rows, may be empty
     projects_in_file: list[str] = field(default_factory=list)
+    project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by project code
+    selected_by: str = ""  # why this project of the file: chosen, only project, most TASK rows
+    data_date_source: str = ""  # PROJECT column the data date was read from
     warnings: list[str] = field(default_factory=list)
     scheduled_finish: pd.Timestamp | None = None  # PROJECT.scd_end_date, as stored
     options: dict = field(default_factory=dict)  # P6 scheduling options that affect results
@@ -557,8 +560,10 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
 
 def _select_project(
     source: str, projects: pd.DataFrame, all_tasks: pd.DataFrame, project_code: str | None, warnings: list[str]
-) -> tuple[pd.Series, list[str]]:
-    """The PROJECT row to build the snapshot for, and the codes of every project that owns activities."""
+) -> tuple[pd.Series, dict[str, int], str]:
+    """The PROJECT row to build the snapshot for, the TASK row count of every project that owns
+    activities (by code, in file order), and how the row was selected: ``chosen`` (the
+    requested code), ``only project`` or ``most TASK rows``."""
     task_counts = all_tasks["proj_id"].value_counts()
     projects = _ensure_cols(
         projects[projects["proj_id"].isin(task_counts.index)].copy(),
@@ -575,17 +580,18 @@ def _select_project(
     )
     if projects.empty:
         raise XerError(f"{source}: no project owns any activity")
-    codes = projects["proj_short_name"].tolist()
+    projects["_n"] = projects["proj_id"].map(task_counts)
+    counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
     if project_code:
         selected = projects[projects["proj_short_name"] == project_code]
         if selected.empty:
-            raise XerError(f"{source}: project {project_code!r} not found (has {codes})")
-        return selected.iloc[0], codes
-    projects["_n"] = projects["proj_id"].map(task_counts)
+            raise XerError(f"{source}: project {project_code!r} not found (has {list(counts)})")
+        return selected.iloc[0], counts, "chosen"
     project_row = projects.sort_values("_n", ascending=False).iloc[0]
-    if len(projects) > 1:
-        warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
-    return project_row, codes
+    if len(projects) == 1:
+        return project_row, counts, "only project"
+    warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
+    return project_row, counts, "most TASK rows"
 
 
 def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
@@ -875,6 +881,45 @@ def _project_finish(tasks: pd.DataFrame, inputs: _BuildInputs) -> tuple[pd.Times
     return finish, scheduled_finish
 
 
+def _data_date(project_row: pd.Series) -> tuple[pd.Timestamp | None, str]:
+    """The data date and the PROJECT column it comes from: last_recalc_date, else plan_start_date."""
+    for column in ("last_recalc_date", "plan_start_date"):
+        date = _parse_date(project_row[column])
+        if date is not None:
+            return date, column
+    return None, ""
+
+
+# What read_header needs from a file: PROJECT (a few rows) whole, the identity columns of TASK.
+HEADER_TABLES = {"PROJECT": None, "TASK": ("task_id", "task_code", "proj_id")}
+
+
+@dataclass(frozen=True)
+class FileHeader:
+    """What build_snapshot would take from a file, read from PROJECT and TASK only."""
+
+    source: str
+    project_code: str  # the project build_snapshot takes by default
+    selected_by: str
+    project_task_counts: dict[str, int]  # TASK rows by project code
+    data_date: pd.Timestamp | None
+    data_date_source: str
+
+
+def read_header(raw: RawXer) -> FileHeader:
+    """The default project and data date of a file, by the rules of build_snapshot, from
+    PROJECT and TASK alone (a RawXer parsed with ``keep=HEADER_TABLES`` is enough)."""
+    projects = raw.table("PROJECT")
+    if projects.empty or raw.table("TASK").empty:
+        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    _require(projects, raw.source, "PROJECT", ["proj_id"])
+    warnings: list[str] = []
+    all_tasks = _task_table(raw, projects, warnings)
+    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, None, warnings)
+    data_date, data_date_source = _data_date(project_row)
+    return FileHeader(raw.source, project_row["proj_short_name"], selected_by, task_counts, data_date, data_date_source)
+
+
 def build_snapshot(
     raw: RawXer,
     project_code: str | None = None,
@@ -894,9 +939,9 @@ def build_snapshot(
     all_relationships = _taskpred_table(raw, all_tasks, warnings)
 
     # The project, its data date and its calendars
-    project_row, codes = _select_project(raw.source, projects, all_tasks, project_code, warnings)
+    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, project_code, warnings)
     planned_start = _parse_date(project_row["plan_start_date"])
-    data_date = _parse_date(project_row["last_recalc_date"]) or planned_start
+    data_date, data_date_source = _data_date(project_row)
     if data_date is None:
         warnings.append(f"{raw.source}: no data date (last_recalc_date / plan_start_date blank)")
     calendars, hours_per_day, work_calendars = _calendars(raw, settings)
@@ -936,6 +981,7 @@ def build_snapshot(
         project_code=project_row["proj_short_name"],
         project_name=project_name or project_row["proj_short_name"],
         data_date=data_date,
+        data_date_source=data_date_source,
         finish_date=finish,
         planned_start=planned_start,
         export_date=raw.export_date,
@@ -944,7 +990,9 @@ def build_snapshot(
         wbs=wbs,
         calendars=calendars,
         assignments=assignments.reset_index(drop=True),
-        projects_in_file=codes,
+        projects_in_file=list(task_counts),
+        project_task_counts=task_counts,
+        selected_by=selected_by,
         warnings=warnings,
         scheduled_finish=scheduled_finish,
         options=options,

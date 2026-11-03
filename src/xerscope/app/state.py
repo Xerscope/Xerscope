@@ -14,7 +14,7 @@ from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
 from xerscope.anonymize import Anonymizer
 from xerscope.app import ui
 from xerscope.store import SnapshotStore
-from xerscope.xer import XER_SUFFIXES, Snapshot, XerError, load_snapshot, xer_files
+from xerscope.xer import XER_SUFFIXES, FileHeader, Snapshot, XerError, load_header, load_snapshot, xer_files
 from xerscope.xer.parser import parse_bytes
 
 # Streamlit wants extensions without the dot.
@@ -64,6 +64,39 @@ def _items_from_uploads(uploads) -> tuple[tuple, list[tuple[str, bytes]] | None]
     return signature, [(upload.name, upload.getvalue()) for upload in uploads]
 
 
+def _header(path: Path) -> FileHeader | str:
+    """The file's header (PROJECT and TASK only), or why it cannot be read. Kept in the session's
+    state like the parsed files, keyed on name, size and modification time."""
+    cache = st.session_state.setdefault("_headers", {})
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in cache:
+        if len(cache) > 256:
+            cache.clear()
+        try:
+            cache[key] = load_header(path)
+        except XerError as exc:
+            cache[key] = str(exc)
+    return cache[key]
+
+
+def _describe_file(path: Path) -> tuple[str, str]:
+    """Tick box label and help for a file not read yet: what build_snapshot would take from it."""
+    header = _header(path)
+    if isinstance(header, str):
+        return f"{path.name} — unreadable", header
+    counts = header.project_task_counts
+    label = f"{path.name} — {header.project_code} · {ui.fmt_date(header.data_date)}"
+    if len(counts) > 1:
+        label += f" · {len(counts)} projects"
+    details = (
+        f"Project: {header.project_code} ({header.selected_by})  \n"
+        f"Projects in file (TASK rows): {' · '.join(f'{code} ({n})' for code, n in counts.items())}  \n"
+        f"Data date: {ui.fmt_date(header.data_date)} (from {header.data_date_source or 'nothing'})"
+    )
+    return label, details
+
+
 def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, bytes]] | None, bool]:
     """Signature of the folder's XER files, their contents when changed, and whether the folder is usable."""
     root = Path(folder).expanduser()
@@ -72,9 +105,15 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
         sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
         st.session_state.update(store=None, signature=(), errors=[])
         return (), None, False
-    names = [path.name for path in files]
-    # every file by default; a file left out (another project, a draft) stays out of the series
-    picked = sidebar.multiselect("Files to read", names, default=names, key=f"folder_files:{root}")
+    # nothing ticked by default: a file is read (up to ~1 GB for a 40 MB export) only once asked for
+    keys = {path.name: f"read:{root}:{path.name}" for path in files}
+    ticked = sum(bool(st.session_state.get(key)) for key in keys.values())
+    picked = []
+    with sidebar.expander(f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked):
+        for path in files:
+            label, details = _describe_file(path)
+            if st.checkbox(label, value=False, key=keys[path.name], help=details):
+                picked.append(path.name)
     if not picked:
         sidebar.info("Tick at least one file to read")
         st.session_state.update(store=None, signature=(), errors=[])
@@ -146,10 +185,40 @@ def sidebar_loader() -> None:
             f"{store.latest.project_code} · {len(store)} snapshot(s) · "
             f"{ui.fmt_date(store.first.data_date)} → {ui.fmt_date(store.latest.data_date)}"
         )
+    if store is not None:
+        _selection_panel(sidebar, store)
     for error in st.session_state.get("errors", []):
         sidebar.error(error)
     if store is not None:
         _baseline_picker(store)
+
+
+def _selection_panel(sidebar, store: SnapshotStore) -> None:
+    """What was taken from each file and why: the project, the rule that picked it, and whether
+    the file is in the series. Open by default when a file holds several projects or was skipped."""
+    table = store.selection()
+    attention = bool(store.skipped) or any(len(snapshot.project_task_counts) > 1 for snapshot in store)
+    with sidebar.expander(f"Selection · {len(store)} of {len(table)} file(s) in series", expanded=attention):
+        st.caption(
+            "One project per file: the one picked in Project when the file holds it, otherwise the one "
+            "with the most TASK rows. Data date: PROJECT.last_recalc_date, else plan_start_date. "
+            "One file per data date: the first by name is kept."
+        )
+        st.dataframe(
+            table.assign(data_date=table["data_date"].map(ui.fmt_date)),
+            hide_index=True,
+            column_config={
+                "file": "File",
+                "project": "Project",
+                "selected_by": "Picked by",
+                "projects_in_file": "Projects in file (TASK rows)",
+                "data_date": "Data date",
+                "data_date_from": "Data date from",
+                "activities": "Activities",
+                "status": "Status",
+                "reason": "Reason",
+            },
+        )
 
 
 BL_NONE = "None"
