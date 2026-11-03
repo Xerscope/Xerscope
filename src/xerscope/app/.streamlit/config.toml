@@ -17,6 +17,9 @@ gatherUsageStats = false
 # viewer: the ⋮ menu keeps the visitor's options (theme System / Light / Dark, print) and hides
 # the developer ones (rerun, clear cache, deploy). Charts take the new theme at the next rerun.
 toolbarMode = "viewer"
+# No CSV download or clipboard copy from the tables: they show the real schedule. Exports
+# go through the app's own buttons (anonymised lists, Debug diagnostic, XER extract, Power BI).
+disableDataExport = true
 
 # Light and dark themes; Streamlit follows the browser and the user can switch in Settings.
 # Slate neutrals, one navy accent (deep cyan in dark mode, dark enough under the white

@@ -169,6 +169,12 @@ def test_menu_offers_the_theme_switch_and_no_developer_options():
     assert tomllib.loads(config.read_text(encoding="utf-8"))["client"]["toolbarMode"] == "viewer"
 
 
+def test_tables_offer_no_raw_data_export():
+    # The tables show real schedule data; sharing goes through the app's anonymised exports.
+    config = Path(xerscope.__file__).parent / "app" / ".streamlit" / "config.toml"
+    assert tomllib.loads(config.read_text(encoding="utf-8"))["client"]["disableDataExport"] is True
+
+
 def test_text_colours_reach_wcag_aa_on_both_backgrounds():
     # 4.5:1 for normal text (WCAG 2.2 SC 1.4.3): page text, links, table headers per theme; status
     # labels are white on their own background, the same on both themes.
