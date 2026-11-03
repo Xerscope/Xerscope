@@ -1,7 +1,7 @@
 """Smoke test of the Streamlit UI: every page renders, key options don't crash.
 
 Uses Streamlit's headless AppTest, so it runs the same on Linux, Windows and macOS
-without a browser. It checks that pages run; the numbers are tested elsewhere.
+without a browser. It checks that pages run; test_app_parity.py checks that they show the analyses' numbers.
 """
 
 import json

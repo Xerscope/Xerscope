@@ -90,6 +90,13 @@ check with the activities (or relationships) found, to diff against the report's
 when several files are checked) typed from the report's summary; every line is printed as
 expected / got and the command exits 1 on any difference.
 
+The Schedule health page shows the same results as `xerscope check` when both read the same
+series with the same baseline (`tests/test_app_parity.py`). Two defaults differ: the app takes
+the first loaded update as baseline, `check` none unless `--baseline` or `--planned-baseline` is
+given; and the checks against an update one status period older (DECM 06A504a/b, 06A506c)
+depend on which files are read, so `check` must get the whole folder, not a single week. To compare on real exports,
+download "Summary (CSV)" from the page and run `check` on the same folder and baseline file.
+
 ## DCMA DECM v8.0, Guideline 6 (schedule)
 
 EVMS Test Metric Specification v8.0 (21 Aug 2025). Only the automated tests an XER can
