@@ -119,7 +119,7 @@ def int_04_relationship_loops(context) -> RuleOutput:
         members = []
     activities = context.snapshot.activities
     flagged = activities[activities["task_code"].isin(members)]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
 
 
 @rule("int_05_without_predecessors_or_successors", "count")
@@ -136,7 +136,7 @@ def int_05_without_predecessors_or_successors(context) -> RuleOutput:
     missing_successor = ~(has_successor_in_project(context, activities) | activities["has_external_succ"])
     flagged = activities[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
-    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities), checked=activities)
 
 
 @rule("int_06_actual_date_after_data_date", "count")
@@ -157,6 +157,7 @@ def int_06_actual_date_after_data_date(context) -> RuleOutput:
         flagged_activities(flagged, actual_start=flagged["act_start_date"], actual_finish=flagged["act_end_date"]),
         len(flagged),
         len(activities),
+        checked=activities,
     )
 
 
@@ -211,7 +212,8 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
                 )
     flagged = activities[activities["task_code"].isin(reasons)]
     texts = flagged["task_code"].map(lambda code: "; ".join(reasons[code]))
-    return RuleOutput(flagged_activities(flagged, unsatisfied=texts), len(flagged), len(constrained))
+    checked = activities[activities["task_code"].isin(constrained)]
+    return RuleOutput(flagged_activities(flagged, unsatisfied=texts), len(flagged), len(constrained), checked=checked)
 
 
 @rule("int_08_unsatisfied_relationships", "count", links=True)
@@ -258,7 +260,7 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
             successor_side, flagged["succ_code"], flagged["type"], flagged["pred_code"], strict=True
         )
     ]
-    return RuleOutput(flagged_relationships(flagged).assign(reason=reason), len(flagged), len(links))
+    return RuleOutput(flagged_relationships(flagged).assign(reason=reason), len(flagged), len(links), checked=links)
 
 
 def _describe_differences(group: pd.DataFrame) -> str:
