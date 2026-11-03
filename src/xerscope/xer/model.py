@@ -613,6 +613,10 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
     return calendars.drop(columns=["clndr_data"]), hours_per_day, work_calendars  # parsed above; the blob is large
 
 
+def _header_field(header: list[str], index: int) -> str:
+    return header[index].strip() if index < len(header) else ""
+
+
 def _scheduling_options(inputs: _BuildInputs) -> dict:
     """P6 scheduling options that change how stored numbers must be read."""
     schedule_options = inputs.raw.table("SCHEDOPTIONS")
@@ -644,6 +648,8 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         "critical_float_hr": None if pd.isna(critical_hours) else float(critical_hours),
         "has_schedoptions": not schedule_options.empty,
         "sched": schedule_row,  # the raw SCHEDOPTIONS row: read by analysis.cpm
+        # ERMHDR: P6 version and product that wrote the file ("" when the header leaves them out)
+        "export": {"version": _header_field(inputs.raw.header, 0), "product": _header_field(inputs.raw.header, 6)},
         # the raw PROJECT fields the three values above come from: "" when the file leaves them blank
         "project": {key: project_row[key] for key in ("critical_path_type", "critical_drtn_hr_cnt", "plan_end_date")},
         "must_finish_by": _parse_date(project_row["plan_end_date"]),

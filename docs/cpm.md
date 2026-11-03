@@ -288,6 +288,7 @@ Each rule below is pinned by a real file:
 | finish milestone, early | kept as is if working time or a period edge, else next working time | Hotel: 16:00 right after its predecessor |
 | finish milestone, late | a period end | Hotel |
 | task with no remaining duration (not a milestone) | early dates at a period start, late dates at a period end: the evening before an FS successor's 08:00 late start | P6 Professional 24 export (three open activities, FS successors); SS / FF / SF bounds unverified |
+| expected finish earlier than the early start (task-dependent, no FF / SF predecessor, no ALAP) | ERMHDR major version < 26 (or absent): remaining brought to 0, EF = ES; ≥ 26: expected finish ignored, EF = ES + the stored remaining (`Options.collapse_early_expected_finish`) | < 26: P6 23.12 corpus, H1-02 A1170 (94 of 94 cases). ≥ 26: 26.x project exports (26.5 / 26.8, Project Management Cloud), 112 cases over 14 updates, all FS lag 0, no ALAP; source level observed. 24 / 25 unverified |
 
 ## Conventions no reference file settles
 

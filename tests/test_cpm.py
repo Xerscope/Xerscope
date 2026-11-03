@@ -396,6 +396,48 @@ def test_expected_finish_reports_the_remaining_it_set():
     assert row["rem_override_hr"] == 0.0 and row["ef"] == row["remaining_start"]
 
 
+def _early_expected_finish(header):
+    """P (40 h) pushes A's early start to Mon 9 08:00, past A's expected finish (Wed 4)."""
+    t = [todo("P", **hours(40)), todo("A", **hours(16), expect_end_date="2026-03-04 17:00")]
+    kw = {} if header is None else {"header": header}
+    return dates(snap(t, [("P", "A", "FS", 0)], **kw), "A")
+
+
+@pytest.mark.parametrize(
+    "header,finish",
+    [
+        # P6 23.12 corpus (H1-02 A1170): remaining brought to 0, EF = ES
+        ("23.12\t2026-03-02", "2026-03-09 08:00"),
+        # P6 26.x project exports: expected finish ignored, EF = ES + remaining (16 h)
+        (
+            "26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR",
+            "2026-03-10 17:00",
+        ),
+        ("", "2026-03-09 08:00"),  # no version in the header: the corpus rule
+    ],
+)
+def test_expected_finish_before_the_early_start_follows_the_export_version(header, finish):
+    assert _early_expected_finish(header)[1] == T(finish)
+
+
+def test_export_version_and_product_are_kept_on_the_options():
+    s = snap(
+        [todo("A", **hours(8))],
+        header="26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR",
+    )
+    assert s.options["export"] == {"version": "26.8", "product": "Project Management Cloud"}
+    assert snap([todo("A", **hours(8))], header="").options["export"] == {"version": "", "product": ""}
+
+
+@pytest.mark.parametrize(
+    "version,collapses", [("23.12", True), ("25.12", True), ("26.5", False), ("", True), ("x", True)]
+)
+def test_collapse_threshold(version, collapses):
+    from xerscope.analysis.cpm import collapses_early_expected_finish
+
+    assert collapses_early_expected_finish(version) is collapses
+
+
 @pytest.mark.parametrize(
     "sched,start",
     [

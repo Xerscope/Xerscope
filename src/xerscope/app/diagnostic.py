@@ -86,6 +86,8 @@ def options_table(snapshot: Snapshot) -> pd.DataFrame:
     read = snapshot.options
     retained, override = sched.get("sched_retained_logic", ""), sched.get("sched_progress_override", "")
     critical_hr = read.get("critical_float_hr")
+    export = read.get("export", {}) or {}
+    export_raw = " / ".join(part for part in (export.get("version"), export.get("product")) if part)
     rows = [
         _row("use_expected_finish", "SCHEDOPTIONS.sched_use_expect_end_flag", sched.get("sched_use_expect_end_flag"),
              options.use_expected_finish, True),
@@ -96,6 +98,8 @@ def options_table(snapshot: Snapshot) -> pd.DataFrame:
              sched.get("sched_lag_early_start_flag"), options.lag_from_early_start, True),
         _row("honor_external", "SCHEDOPTIONS.sched_outer_depend_type", sched.get("sched_outer_depend_type"),
              options.honor_external, "SD_Both"),
+        _row("export_version", "ERMHDR.version + product", export_raw,
+             f"collapse_early_expected_finish={options.collapse_early_expected_finish}", None),
         _row("progressed", "SCHEDOPTIONS.sched_retained_logic + sched_progress_override",
              f"{retained}+{override}" if retained or override else "", options.progressed, "retained_logic"),
         _row("lag_calendar", "SCHEDOPTIONS.sched_calendar_on_relationship_lag",

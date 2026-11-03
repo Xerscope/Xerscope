@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from conftest import P6_CORPUS_HINT, missing
 from streamlit.testing.v1 import AppTest
-from xerkit import xer_text
+from xerkit import hours, todo, xer_text
 
 import xerscope
 from xerscope.app import ui
@@ -528,6 +528,17 @@ def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeyp
     expected = tables["02_expected_finish.csv"]
     assert len(expected) == 1 and bool(expected["remaining_set_to_0"].iloc[0])
     _assert_anonymised(tables, at.session_state["store"], at.session_state["_anonymizer"][1])
+
+
+def test_debug_page_shows_the_export_version(tmp_path, monkeypatch, downloads):
+    """Block 1 lists the ERMHDR version and product with the rule applied; the anonymised zip keeps the row."""
+    header = "26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR"
+    (tmp_path / "u1.xer").write_text(xer_text([todo("A", **hours(8))], header=header), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    tables = _debug_zip(at, downloads)
+    row = tables["01_options.csv"].set_index("option").loc["export_version"]
+    assert row["raw"] == "26.8 / Project Management Cloud"
+    assert row["applied"] == "collapse_early_expected_finish=False"
 
 
 def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
