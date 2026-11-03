@@ -112,6 +112,20 @@ def is_list(rule_name: str, parameter: str) -> bool:
     return typing.get_type_hints(RULES[rule_name].fn).get(parameter) == Names
 
 
+def sheet(standard_id: str, metric: Metric) -> str | None:
+    """The calculation sheet of a built-in metric (``sheets/<standard>/<id>.md``), None when there is
+    none or when ``metric`` is not the built-in one (an uploaded standard reusing the id)."""
+    from importlib.resources import files
+
+    from .standards import builtin_standards
+
+    builtin = builtin_standards().get(standard_id)
+    if builtin is None or metric.id not in {m.id for m in builtin.metrics} or builtin[metric.id].rule != metric.rule:
+        return None
+    path = files("xerscope") / "sheets" / standard_id / f"{metric.id}.md"
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
 def _toml_value(value) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"

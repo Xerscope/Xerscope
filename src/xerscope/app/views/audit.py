@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext
-from xerscope.analysis.audit import choices, is_list, split, toml_block, with_settings
+from xerscope.analysis.audit import choices, is_list, sheet, split, toml_block, with_settings
 from xerscope.analysis.checks import run_metric
 from xerscope.analysis.explain import explain, fmt_value, noun
 from xerscope.analysis.rules import RULES
@@ -162,7 +162,7 @@ def show_sets(result, snapshot) -> None:
 def show_sheet(standard, metric) -> None:
     """How the check is set and where to change it for good."""
     rule = RULES[metric.rule]
-    with st.expander("Calculation sheet: how to change this check for good"):
+    with st.expander("Settings: how to change this check for good"):
         rows = [
             {
                 "setting": "target",
@@ -261,6 +261,10 @@ same = (audited.params, audited.comparator, audited.threshold) == (metric.params
 audit_result = standard_result if same else run_metric(audited, context)
 
 show_results(standard_result, audit_result)
+written = sheet(standard.id, metric)
+if written is not None:
+    with st.expander("Calculation sheet: population, fields, sources, worked example"):
+        st.markdown(written)
 ui.section("Calculation", "With the settings of this page.")
 show_explanation(audit_result)
 ui.section("Sets", "Every item the check looked at, so the count can be redone by hand.")

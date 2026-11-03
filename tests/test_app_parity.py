@@ -280,3 +280,13 @@ def test_audit_settings_rerun_the_check_and_leave_schedule_health_alone(app, sto
     app.button(key="audit:P6:P6-06:reset").click()
     _run(app)
     assert "Audit" not in _metrics(app)
+
+
+def test_audit_page_shows_the_calculation_sheet_of_a_p6_check(app, store):
+    """The sheet shown is the file's text (the P6-04 sheet names its field and x)."""
+    from xerscope.analysis.audit import sheet
+
+    _open_audit(app, "P6", "P6-04")
+    expected = sheet("P6", STANDARDS["P6"]["P6-04"])
+    shown = [block.value for block in app.markdown if "remain_drtn_hr_cnt" in block.value]
+    assert shown == [expected.strip()]

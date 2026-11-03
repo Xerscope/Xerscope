@@ -209,6 +209,10 @@ Outside `analysis/`:
   nothing is recomputed) and the `[[metric]]` table to paste into a standard file to make a
   change permanent. Settings stay on the page and in the session; Schedule health keeps the
   loaded standards.
+- **`sheets/<standard>/<id>.md`:** one calculation sheet per check (P6 for now), shown on the
+  Audit page: population and counted items with their XER fields, the Oracle text it follows,
+  a worked example, the key to change. `tests/test_sheets.py` keeps each sheet on the TOML's
+  target and parameters, on fields and codes the model reads, on tests that exist.
 - **Debug:** what xerscope read and decided for one update, to hold against P6 without the
   file: the scheduling options (raw XER value, value applied, blank-in-file defaults), the
   activities with an expected finish and the remaining duration it set (`rem_override_hr`),
