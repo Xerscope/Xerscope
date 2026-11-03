@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
-from xerkit import CALENDAR_IDS, MON_FRI_8H
+from xerkit import CALENDAR_IDS, MON_FRI_8H, snap
 
 from xerscope.analysis import builtin_standards, loads_standard, template_text
 from xerscope.xer.calendar import WorkCalendar, parse_clndr_data
@@ -47,6 +47,20 @@ def test_missing_blob_infers_workweek_from_hour_counts():
     assert [hours(day) for day in seven.week] == [8] * 7
     five = WorkCalendar.from_row(pd.Series({"clndr_id": "5", "day_hr_cnt": "10", "week_hr_cnt": ""}))
     assert [hours(day) for day in five.week] == [10] * 5 + [0, 0]
+
+
+def test_unknown_task_calendar_falls_back_to_the_project_calendar():
+    """A clndr_id absent from CALENDAR: hours per day from the project's calendar, as
+    Snapshot.calendar resolves it, and the file is flagged."""
+    snapshot = snap(
+        [{"task_code": "A", "clndr_id": "999"}, {"task_code": "B", "clndr_id": "C10"}],
+        project={"clndr_id": "C10"},
+    )
+    tasks = snapshot.tasks.set_index("task_code")
+    assert snapshot.calendar("999").hours_per_day == 10.0  # the project's calendar, not 8 h
+    assert tasks.at["A", "hours_per_day"] == 10.0
+    assert tasks.at["A", "original_d"] == tasks.at["B", "original_d"]  # same stored duration
+    assert any("999" in warning for warning in snapshot.warnings)
 
 
 def test_reference_calendars_parse(store):

@@ -428,6 +428,22 @@ class _BuildInputs:
     def project_id(self) -> str:
         return self.project_row["proj_id"]
 
+    @property
+    def fallback_hours_per_day(self) -> float:
+        """Hours per day for an activity whose calendar is not in the file.
+
+        The chain of ``Snapshot.calendar``: the project's calendar, then the file's first
+        calendar, then the standard one. MPXJ resolves it the same way
+        (``Task.getEffectiveCalendar`` -> ``ProjectFile.getDefaultCalendar`` ->
+        ``ProjectCalendarContainer.findOrCreateDefaultCalendar``); no Oracle page states it.
+        """
+        project_clndr_id = str(self.project_row.get("clndr_id") or "")
+        if project_clndr_id in self.hours_per_day.index:
+            return float(self.hours_per_day[project_clndr_id])
+        if not self.hours_per_day.empty:
+            return float(self.hours_per_day.iloc[0])
+        return self.settings.default_hours_per_day
+
 
 def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
     wbs = raw.table("PROJWBS")
@@ -650,8 +666,15 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     for column in TASK_NUM_COLS:
         tasks[column] = to_number(tasks[column])
 
-    default_hours = inputs.settings.default_hours_per_day
-    tasks["hours_per_day"] = tasks["clndr_id"].map(inputs.hours_per_day).astype(float).fillna(default_hours)
+    default_hours = inputs.fallback_hours_per_day
+    task_hours_per_day = tasks["clndr_id"].map(inputs.hours_per_day).astype(float)
+    unknown_calendars = sorted(set(tasks.loc[task_hours_per_day.isna(), "clndr_id"].astype(str)))
+    if unknown_calendars:
+        inputs.warnings.append(
+            f"{source}: activity calendars not in the file {unknown_calendars[:5]}; "
+            f"read on the project's calendar ({default_hours} h/day)"
+        )
+    tasks["hours_per_day"] = task_hours_per_day.fillna(default_hours)
     tasks["status"] = tasks["status_code"].map(STATUS).fillna(tasks["status_code"])
     tasks["type"] = tasks["task_type"].map(TASK_TYPE).fillna(tasks["task_type"])
     tasks["is_complete"] = tasks["status_code"] == "TK_Complete"
@@ -709,7 +732,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     if all_relationships.empty:
         columns = ["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
         return pd.DataFrame(columns=columns), set()
-    project_id, default_hours = inputs.project_id, inputs.settings.default_hours_per_day
+    project_id, default_hours = inputs.project_id, inputs.fallback_hours_per_day
     relationships = _ensure_cols(
         all_relationships[all_relationships["proj_id"] == project_id].copy(),
         ["pred_proj_id", "pred_type", "lag_hr_cnt"],
