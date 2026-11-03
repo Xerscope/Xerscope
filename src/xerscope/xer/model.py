@@ -440,9 +440,11 @@ class Snapshot:
 
 
 def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """P6 activity codes of the project's activities (Oracle XER data map: ACTVTYPE = code
-    types, ACTVCODE = their values, a value's parent in ``parent_actv_code_id``, TASKACTV =
-    the value assigned to an activity).
+    """P6 activity codes of the project's activities. Oracle, "P6 EPPM XER Import/Export Data
+    Map Guide (Project)", v23: ACTVTYPE (Activity Codes: ``actv_code_type`` is the code's name),
+    ACTVCODE (Activity Code Values: ``short_name`` the value, ``actv_code_name`` its
+    description, ``parent_actv_code_id`` its parent value, ``seq_num`` the sort order),
+    TASKACTV (Activity Code Assignments: ``task_id``, ``actv_code_id``).
 
     ``task_codes``: one row per activity and value (TASKACTV rows of the project's TASK
     rows; the type is the value's own). ``code_values``: every value of the types those rows
