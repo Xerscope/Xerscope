@@ -448,7 +448,8 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
 
 def test_missed_tasks_and_late_activities():
     bl = Baseline.from_snapshot(BL)
-    assert codes(run(DCMA, "DCMA-11", NOW, bl)) == ["B", "C"]
+    r = run(DCMA, "DCMA-11", NOW, bl)
+    assert codes(r) == ["B", "C"] and "1 without baseline dates" in r.note  # NEW is not in BL
     assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # B: Sat 17:00 vs Fri 17:00, no working time
     # P6 Professional report: completed activities are out (Late Activities checks the Large Durations
     # population); no baseline -> against the planned finish
@@ -522,6 +523,17 @@ def test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay():
     s = snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)])
     r = run(DCMA, "DCMA-12", s)
     assert r.status == "fail" and "Z" in r.note
+
+
+def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
+    # a finished activity cannot absorb a delay: its mandatory date is not listed
+    chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]
+    s = snap(
+        chain + [done("D", cstr_type="CS_MANDSTART", cstr_date="2026-02-02 08:00")],
+        [("A", "B", "FS", 0), ("B", "Z", "FS", 0)],
+    )
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and codes(r) == ["Z"]
 
 
 MFB = {"project": {"plan_end_date": "2026-03-25 17:00"}}  # Must Finish By: the float's reference
@@ -726,6 +738,22 @@ def test_decm_out_of_sequence_counts_relationships():
     assert r.status == "fail"
 
 
+def test_decm_out_of_sequence_ignores_a_completed_predecessor():
+    # the sheet counts relationships with an incomplete predecessor: a successor started
+    # before a predecessor that has since finished is no longer out of sequence
+    s = snap(
+        [
+            done("P1", act_end_date="2026-02-27 17:00"),
+            active("S1", act_start_date="2026-02-23 08:00"),
+            active("P2", act_start_date="2026-02-23 08:00"),
+            active("S2", act_start_date="2026-02-25 08:00"),
+        ],
+        [("P1", "S1", "FS", 0), ("P2", "S2", "FS", 0)],
+    )
+    r = run(DECM, "06A212a", s)
+    assert links(r) == [("P2", "S2")] and r.denominator == 1
+
+
 def test_decm_baseline_and_actual_dates():
     bl = Baseline.from_snapshot(snap([todo("A"), todo("B")]))
     now = snap(
@@ -737,7 +765,8 @@ def test_decm_baseline_and_actual_dates():
             done("F", act_end_date="2026-03-04 17:00"),
         ]
     )  # actual after the data date
-    assert codes(run(DECM, "06A501a", now, bl)) == ["F", "NEW", "P"]
+    r = run(DECM, "06A501a", now, bl)
+    assert codes(r) == ["F", "NEW", "P"] and "2 of 5 activities" in r.note
     assert codes(run(DECM, "06A505a", now)) == ["P"]
     r = run(DECM, "06A506a", now)
     assert codes(r) == ["F"] and r.denominator == 1  # of the activities with an actual start
