@@ -685,10 +685,12 @@ class _Run:
             return start, finish_time
         if not collapse_early and expected_date < early_start_time:  # P6 26.x: expected finish ignored
             return start, finish_time
-        # an expected finish off the calendar ends the previous working period (P6 26.x exports)
-        exp_fin = max(axis.keep_or_previous(expected_date), early_start_time)
+        # an expected finish off the calendar or on a period start ends the previous working
+        # period (P6 26.x exports: 31 Dec in a break -> 24 Dec 17:00, 08:00 -> 17:00 the day before)
+        exp_fin = max(axis.snap_finish(expected_date), early_start_time)
         finish_bound = axis.keep_or_next(max(finish_bounds)) if finish_bounds else None
-        if finish_bound is not None and exp_fin < finish_bound:
+        # compared in working time: 17:00 and the next 08:00 are the same instant of work
+        if finish_bound is not None and axis.work(exp_fin) < axis.work(finish_bound):
             return start, finish_time
         self.duration_override[code] = float(axis.between(early_start_time, exp_fin))
         return early_start_time, exp_fin
