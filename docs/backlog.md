@@ -25,8 +25,6 @@ Where the official sheet (index in docs/standards.md, Sources) contradicts the c
 rule; none is fixed. The 06A205a and 06A209a sheets name no LOE exclusion, so LOE stays
 in, as coded (the `source` strings in `decm.toml` still call it unsaid).
 
-- [ ] **06A212a**: the sheet's population is the FS, SS, FF and SF relationships with an
-      incomplete predecessor; the code uses an incomplete successor (`decm/schedule_metrics.py`).
 - [ ] **06A401a**: the sheet compares the constraint-method critical path with the
       contractor's critical path; the code runs the delay-injection test (`cpm.py`
       `critical_path_test`).

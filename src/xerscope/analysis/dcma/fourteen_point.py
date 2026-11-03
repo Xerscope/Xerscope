@@ -239,10 +239,13 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     if data_date is None:
         return RuleOutput(note="no data date")
     tasks = with_baseline(context, discrete_tasks(context.snapshot.activities))
+    unmatched = int((tasks["bl_start"].isna() | tasks["bl_finish"].isna()).sum())
     due = tasks[tasks["bl_start"].notna() & (tasks["bl_finish"] <= data_date)]
     finishes_later = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
     missed = due[as_flag(finishes_later)]
-    return RuleOutput(flagged_activities(missed, bl_finish=missed["bl_finish"]), len(missed), len(due))
+    # a baseline that matches few activities shrinks the due population silently: say so
+    note = f"{unmatched} without baseline dates left out of {len(tasks)} tasks" if unmatched else ""
+    return RuleOutput(flagged_activities(missed, bl_finish=missed["bl_finish"]), len(missed), len(due), note=note)
 
 
 @rule("dcma_12_critical_path_test", "pass/fail")

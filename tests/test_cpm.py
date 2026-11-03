@@ -186,6 +186,19 @@ def test_milestone_conventions():
     assert dates(s, "SM")[:2] == (T("2026-03-03 08:00"),) * 2  # start milestone: the next morning
 
 
+def test_zero_duration_task_late_dates_end_the_previous_period():
+    # A task-dependent activity with no remaining duration: early dates like a start
+    # milestone (next morning), late dates like a finish milestone (the evening before the
+    # successor's late start). P6 Professional 24 export, FS successor.
+    s = snap(
+        [todo("Z", **hours(0)), todo("S", cstr_type="CS_MSOA", cstr_date="2026-03-10 08:00", **hours(8))],
+        [("Z", "S", "FS", 0)],
+    )
+    z = dates(s, "Z")
+    assert z[:2] == (T("2026-03-02 08:00"),) * 2
+    assert z[2:4] == (T("2026-03-09 17:00"),) * 2
+
+
 # --- constraints ----------------------------------------------------------------------------
 
 

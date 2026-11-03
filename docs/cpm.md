@@ -284,6 +284,7 @@ Each rule below is pinned by a real file:
 | start milestone, late | kept as is if on a period edge, else the previous working time | Hotel HCMEB4000 16:00; xerlock MS-020 08:00 |
 | finish milestone, early | kept as is if working time or a period edge, else next working time | Hotel: 16:00 right after its predecessor |
 | finish milestone, late | a period end | Hotel |
+| task with no remaining duration (not a milestone) | early dates at a period start, late dates at a period end: the evening before an FS successor's 08:00 late start | P6 Professional 24 export (three open activities, FS successors); SS / FF / SF bounds unverified |
 
 ## Conventions no reference file settles
 

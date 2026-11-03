@@ -1256,11 +1256,15 @@ def _late(
     - start milestone: the bound as it is when working time or a period edge, else the
       previous working time (Hotel HCMEB4000: 16:00; xerlock MS-020: 08:00)
     - finish milestone: a period end
+    - task with no remaining duration: a period end, like a finish milestone, although its
+      early dates sit at a period start (P6 Professional 24 export: an open activity with
+      remaining 0 and an FS successor starting 08:00 shows late start = late finish at the
+      previous 17:00)
     """
-    if kind == "start_ms" or (kind == "task" and duration == 0):
+    if kind == "start_ms":
         value = axis.keep_or_previous(min(late_start_bounds + late_finish_bounds))
         return value, value
-    if kind == "finish_ms":
+    if kind == "finish_ms" or (kind == "task" and duration == 0):
         value = axis.snap_finish(min(late_start_bounds + late_finish_bounds))
         return value, value
     finish_time = axis.snap_finish(min(late_finish_bounds)) if late_finish_bounds else None
@@ -1428,7 +1432,9 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     )
     blocking = []
     if not passed:
-        pinned = activities[activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)]
+        # only open work can absorb a delay: a finished activity's mandatory date is history
+        mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
+        pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
         blocking = pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
         if blocking:
             note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"

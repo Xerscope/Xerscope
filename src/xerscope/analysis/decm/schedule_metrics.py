@@ -189,7 +189,9 @@ def decm_06a211a_high_float(context) -> RuleOutput:
 def decm_06a212a_out_of_sequence(context) -> RuleOutput:
     """Progressed out of logic sequence.
     Counts: out of sequence /
-    Relationships counted: relationships into an incomplete successor.
+    Relationships counted: relationships from an incomplete predecessor (the sheet's population;
+        once the predecessor has finished, a successor that started before it is no longer out of
+        sequence, as in P6's own check).
     Actual dates first, else forecast; lags are not added, so a lead that lets work overlap is also an
         out-of-sequence condition.
 
@@ -197,13 +199,13 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
     P.FS
     """
     tasks = context.snapshot.by_code
-    successors = open_activities(context).drop_duplicates("task_code").set_index("task_code")
+    predecessors = open_activities(context).drop_duplicates("task_code").set_index("task_code")
     relationships = context.snapshot.relationships
-    links = links_between(relationships, successors, tasks)
-    if successors.empty:
+    links = links_between(relationships, tasks, predecessors)
+    if links.empty:
         return RuleOutput(flagged_relationships(links), 0, 0)
     pred_start, pred_finish = links["pred_code"].map(tasks["start"]), links["pred_code"].map(tasks["finish"])
-    succ_start, succ_finish = links["succ_code"].map(successors["start"]), links["succ_code"].map(successors["finish"])
+    succ_start, succ_finish = links["succ_code"].map(tasks["start"]), links["succ_code"].map(tasks["finish"])
     kind = links["type"]
     out_of_sequence = (
         ((kind == "FS") & (succ_start < pred_finish))
@@ -250,7 +252,9 @@ def decm_06a501a_missing_baseline(context) -> RuleOutput:
     """
     tasks = with_baseline(context, context.snapshot.activities)
     flagged = tasks[tasks["bl_start"].isna() | tasks["bl_finish"].isna()]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks))
+    # a low match rate means the wrong baseline file or project, not a schedule defect
+    note = f"{len(tasks) - len(flagged)} of {len(tasks)} activities matched in {context.baseline.label}"
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks), note=note)
 
 
 def _actual_date_changed(context, column: str) -> RuleOutput:

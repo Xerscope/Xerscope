@@ -21,7 +21,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > `x` hours, milestones out | original > 44 wd | n/a |
-| Out of sequence | n/a | n/a | 06A212a: relationships, actual else forecast dates, X = 0 |
+| Out of sequence | n/a | n/a | 06A212a: relationships from an incomplete predecessor, actual else forecast dates, X = 0 |
 | BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
 
 These differences change results on real files: see `tests/test_rules.py` for one
