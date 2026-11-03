@@ -210,6 +210,7 @@ Outside `analysis/`:
 | `test_p6_check_schedule.py` | the P6 Check Schedule rules written from Oracle's help (P6 Professional 24 101248; EPPM 25 91574 for the default targets): one quoted sentence of the help per test (target strictness, the `x` boundary, exclusions, the started exemption, the soft constraint set), with the DCMA reading as contrast where they differ |
 | `xerkit.py` | builds tiny XERs in code (numeric ids, full calendars, as P6 writes them), so each expected number is countable by hand and any reader sees the same file |
 | `test_cpm.py` | real P6 files to the minute (dates, floats, longest path, assignments); each rule of the engine by hand, including a predecessor in another project of the file that shares a local Activity ID |
+| `test_p6_witness.py` | the P6 Check Schedule against P6 Professional 24 reports on real schedules: anonymised `.xer` and the report's counts in a local folder under `tests/reference/data/witness/`, never committed; skipped without it, so CI never runs it: run before merging a change to the checks or the CPM |
 | `test_p6_heldout.py` | the CPM against P6 23.12's held-out corpus: a floor per set that never drops, one pinned witness activity per rule, the float-type codes read on P6's own dates |
 | `test_crosscheck_mpxj.py` | the CPM against MPXJ's independent scheduler: P6 files three ways, random networks of every kind, the hand cases, the demo; open questions named in `crosscheck.UNRESOLVED`, P6-settled shapes in `P6_SETTLED` |
 | `test_cpm_properties.py` | invariants on seeded random networks |
