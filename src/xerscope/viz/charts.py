@@ -226,8 +226,9 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
 def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[str] | None = None) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
-    Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
-    whole chart and every milestone can meet it inside the frame; below it is the past.
+    The x axis runs over the updates, from the first data date, so they fill the page width;
+    the y axis holds every forecast. The reporting line (forecast = data date) crosses the
+    chart at the slope these ranges give; below it is the past.
 
     Each line keeps its own series colour so milestones stay distinguishable: the colour of
     its position in ``order`` (the user's pick order, so the picker's tags can match), else
@@ -240,13 +241,18 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     status = STATUS
     series = SERIES
     fig = go.Figure()
-    pad = pd.Timedelta(days=10)
-    lo = min(trend["data_date"].min(), trend["forecast"].min()) - 2 * pad
-    hi = max(trend["data_date"].max(), trend["forecast"].max()) + 2 * pad
+    # x: the reporting dates, from the first update, a little room after the last for the end
+    # labels; y: every forecast and the reporting line. No 1:1 scale, so the updates fill the
+    # page width; the reporting line is still forecast = data date, at the slope that gives.
+    x0, x1 = trend["data_date"].min(), trend["data_date"].max()
+    x1 = x1 + max((x1 - x0) * 0.08, pd.Timedelta(days=3))
+    lo, hi = min(x0, trend["forecast"].min()), max(x1, trend["forecast"].max())
+    pad = max((hi - lo) * 0.05, pd.Timedelta(days=3))
+    lo, hi = lo - pad, hi + pad
     fig.add_trace(
         go.Scatter(
-            x=[lo, hi, hi],
-            y=[lo, hi, lo],
+            x=[x0, x1, x1, x0],
+            y=[x0, x1, lo, lo],
             fill="toself",
             fillcolor="rgba(123, 135, 148, 0.12)",  # NEUTRAL, faint: the past, below the reporting line
             line=dict(width=0),
@@ -256,8 +262,8 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     )
     fig.add_trace(
         go.Scatter(
-            x=[lo, hi],
-            y=[lo, hi],
+            x=[x0, x1],
+            y=[x0, x1],
             mode="lines",
             name="Reporting line (forecast = data date)",
             line=dict(color=NEUTRAL, width=3),
@@ -284,6 +290,7 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
                     color=[color] * (len(g) - 1) + [moved or color],
                 ),
                 hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
+                cliponaxis=False,  # the first update's points sit on the left edge: drawn whole
             )
         )
         label = code + (format_shift(shift) if shift else "")
@@ -292,8 +299,8 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value)
     fig = _layout(fig, 640, "Forecast date")
-    fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
-    fig.update_yaxes(range=[lo, hi], scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
+    fig.update_xaxes(title="Reporting date (data date)", range=[x0, x1])
+    fig.update_yaxes(range=[lo, hi], **DATE_AXIS)
     return fig
 
 

@@ -40,14 +40,20 @@ def test_mta_close_end_labels_are_pushed_apart():
     assert shift["M3"] == 0
 
 
-def test_mta_reporting_line_stays_in_view_for_far_milestones():
+def test_mta_x_axis_runs_over_the_updates_from_the_first_data_date():
+    """The reporting dates fill the page width, from the first update: no 1:1 scale (the
+    reporting line is still forecast = data date, at whatever slope), every forecast in view."""
     # updates on 2026-03-02..16, milestones forecast 5 and 9 months later
-    fig = build_mta(_mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3}), {})
+    trend = _mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3})
+    fig = build_mta(trend, {})
     x_lo, x_hi = (pd.Timestamp(v) for v in fig.layout.xaxis.range)
     y_lo, y_hi = (pd.Timestamp(v) for v in fig.layout.yaxis.range)
-    assert (x_lo, x_hi) == (y_lo, y_hi)  # same span on both axes: the 45° line crosses the whole chart
-    assert fig.layout.yaxis.scaleanchor == "x"
-    assert y_hi > pd.Timestamp("2026-12-01")  # every milestone can meet the line inside the frame
+    assert x_lo == trend["data_date"].min() and x_hi > trend["data_date"].max()
+    assert x_hi - x_lo < pd.Timedelta(weeks=4)  # the update period, not the forecast span
+    assert fig.layout.yaxis.scaleanchor is None
+    assert y_lo <= x_lo and y_hi > pd.Timestamp("2026-12-01")  # the line's start and every forecast in view
+    line = next(t for t in fig.data if t.name and t.name.startswith("Reporting line"))
+    assert list(line.x) == list(line.y) and pd.Timestamp(line.x[0]) == x_lo and pd.Timestamp(line.x[-1]) == x_hi
 
 
 def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():

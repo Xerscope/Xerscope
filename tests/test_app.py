@@ -74,6 +74,18 @@ def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
     assert keys and not [key for key in keys if str(sample_dir) in key]
 
 
+def test_milestone_trend_starts_empty_then_plots_the_picks(app, store):
+    from xerscope.analysis.progress import milestone_codes
+
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    picker = app.multiselect(key="mta_pick")
+    assert picker.value == [] and not app.get("plotly_chart")  # nothing picked, nothing drawn
+    picker.set_value(milestone_codes(store, open_only=True)[:2]).run()
+    _ok(app)
+    assert len(app.get("plotly_chart")) == 1
+
+
 def _ok(at):
     assert not at.exception, [e.value for e in at.exception]
 
