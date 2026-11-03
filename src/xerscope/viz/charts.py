@@ -34,6 +34,9 @@ def _mode(dark: bool) -> str:
     return "dark" if dark else "light"
 
 
+# The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
+# drawn in the page, so the font the theme loads applies to them.
+FONT_FAMILY = "IBM Plex Sans, sans-serif"
 FONT = dict(size=13)
 TICK = dict(size=12)
 INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC)
@@ -54,7 +57,7 @@ def _layout(fig: go.Figure, dark: bool, height: int = 380, y_title: str = "", le
         showlegend=legend,
         legend=dict(orientation="h", yref="container", y=0.995, yanchor="top", x=0, font=FONT),
         hovermode="x unified",
-        font=dict(color=ink["secondary"], **FONT),
+        font=dict(family=FONT_FAMILY, color=ink["secondary"], **FONT),
         hoverlabel=dict(font=FONT, align="left"),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -247,13 +250,17 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
 # --- milestones ---------------------------------------------------------------------------------
 
 
-def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool = False) -> go.Figure:
+def build_mta(
+    trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool = False, order: list[str] | None = None
+) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
     Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
     whole chart and every milestone can meet it inside the frame; below it is the past.
 
-    Each line keeps its own series colour so milestones stay distinguishable. The move in
+    Each line keeps its own series colour so milestones stay distinguishable: the colour of
+    its position in ``order`` (the user's pick order, so the picker's tags can match), else
+    of its position in ``trend``. The move in
     the last update (``last_shift_wd``, working days, `milestone_slips.last_week_wd`) marks
     the last point and the end label: red later, green earlier, line colour unchanged.
     Lines with the same dates hide each other: the unified hover lists every line at a
@@ -288,8 +295,9 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool =
         )
     )
     ends = []
-    for index, (code, g) in enumerate(trend.groupby("task_code", sort=False)):
-        color = series[index % len(series)]
+    order = order or list(dict.fromkeys(trend["task_code"]))
+    for code, g in trend.groupby("task_code", sort=False):
+        color = series[order.index(code) % len(series)]
         shift = last_shift_wd.get(code, 0.0)
         moved = status["critical"] if shift > 0 else status["good"] if shift < 0 else None
         done = g["is_complete"].to_numpy()

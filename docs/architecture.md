@@ -180,6 +180,11 @@ Outside `analysis/`:
 - **`.streamlit/config.toml`:** the light and dark themes (slate neutrals, navy accent, cyan in dark mode) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
+- **`static/`:** the fonts the theme loads (IBM Plex Sans, Space Grotesk, JetBrains Mono;
+  variable woff2, latin subset, SIL OFL 1.1 with their licences), served by the app itself
+  (`enableStaticServing`).
+- **`style.css`:** what the theme cannot set (HUD KPI cards, the milestone picker's tags in
+  their line colour), sent by `ui.apply_style()` with the active mode's colours.
 - **Schedule health:** a summary row per check, then one panel per check: what it measures,
   the calculation with its numbers (`analysis/explain.py`), the population (exclusions),
   the effective parameters (standard or default), the source, and the flagged items.

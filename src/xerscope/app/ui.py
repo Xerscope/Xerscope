@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 
-from xerscope.viz.charts import INK, STATUS
+from xerscope.viz.charts import INK, SERIES, STATUS
+from xerscope.viz.gantt import BAND
 
 
 class StatusStyle(NamedTuple):
@@ -48,6 +50,22 @@ def is_dark() -> bool:
         return st.context.theme.type == "dark"
     except Exception:
         return False
+
+
+STYLE = Path(__file__).parent / "style.css"
+
+
+def apply_style(dark: bool) -> None:
+    """style.css with the colours of the light or dark theme (sent once per run, takes no space)."""
+    mode = "dark" if dark else "light"
+    colours = {
+        "accent": STATUS[mode]["info"],
+        "ink": INK[mode]["primary"],
+        "axis": INK[mode]["axis"],
+        "band": BAND[mode],
+    } | {f"s{index}": colour for index, colour in enumerate(SERIES[mode], start=1)}
+    variables = "".join(f"--{name}: {value};" for name, value in colours.items())
+    st.html(f"<style>:root {{{variables}}}\n{STYLE.read_text(encoding='utf-8')}</style>")
 
 
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT

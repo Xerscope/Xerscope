@@ -3,7 +3,7 @@
 html, body { margin: 0; height: 100%; background: var(--background); }
 #gantt {
   height: 100vh; display: flex; flex-direction: column;
-  font: 13px/1.3 "Source Sans 3", "Source Sans Pro", system-ui, sans-serif; color: var(--ink);
+  font: 13px/1.3 "IBM Plex Sans", system-ui, sans-serif; color: var(--ink);
 }
 .toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 2px 8px; flex-wrap: wrap; }
 .toolbar button {

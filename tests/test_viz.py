@@ -69,6 +69,14 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     ]
 
 
+def test_mta_colour_follows_pick_order_even_with_a_line_missing():
+    # picked C, A, B; A has no trend to plot: B and C keep the colours of their picker tags
+    lines = {"B": ["2026-06-01"] * 3, "C": ["2026-07-01"] * 3}
+    fig = build_mta(_mta_frame(lines), {}, order=["C", "A", "B"])
+    colour = {t.name.split()[0]: t.line.color for t in fig.data if t.name and t.name.split()[0] in lines}
+    assert colour == {"C": SERIES["light"][0], "B": SERIES["light"][2]}
+
+
 def test_ppc_target_label_sits_outside_the_bars():
     ppc = pd.DataFrame(
         {
