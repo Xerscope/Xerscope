@@ -359,3 +359,28 @@ def test_selection_panel_names_the_file_skipped_for_its_data_date(tmp_path, monk
         "skipped",
         "same data date as a.xer",
     ]
+
+
+def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkeypatch):
+    """Unticked files are described from PROJECT and TASK only: default project, data date,
+    projects in the file; none of them is parsed into a snapshot."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(renamed_project))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    _ok(at)
+    boxes = {box.key.rsplit(":", 1)[1]: box for box in _file_boxes(at)}
+    assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 2 projects"
+    assert boxes["w2.xer"].label == "w2.xer — NEW · 09 Mar 2026"
+    assert "NEW (3) · OLD (2)" in boxes["w1.xer"].help and "most TASK rows" in boxes["w1.xer"].help
+    assert "from last_recalc_date" in boxes["w2.xer"].help
+    assert "_parsed" not in at.session_state or not at.session_state["_parsed"]
+
+
+def test_unreadable_file_is_named_in_the_picker(tmp_path, monkeypatch):
+    (tmp_path / "broken.xer").write_text("ERMHDR\t23.12\t2026-03-02\n%T\tPROJECT\n%F\tproj_id\n%R\t1\n")
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    _ok(at)
+    (box,) = _file_boxes(at)
+    assert box.label == "broken.xer — unreadable" and "TASK table missing" in box.help

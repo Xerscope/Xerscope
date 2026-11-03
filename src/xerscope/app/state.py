@@ -13,7 +13,7 @@ from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
 from xerscope.app import ui
 from xerscope.store import SnapshotStore
-from xerscope.xer import XER_SUFFIXES, Snapshot, XerError, load_snapshot, xer_files
+from xerscope.xer import XER_SUFFIXES, FileHeader, Snapshot, XerError, load_header, load_snapshot, xer_files
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
@@ -62,6 +62,39 @@ def _items_from_uploads(uploads) -> tuple[tuple, list[tuple[str, bytes]] | None]
     return signature, [(upload.name, upload.getvalue()) for upload in uploads]
 
 
+def _header(path: Path) -> FileHeader | str:
+    """The file's header (PROJECT and TASK only), or why it cannot be read. Kept in the session's
+    state like the parsed files, keyed on name, size and modification time."""
+    cache = st.session_state.setdefault("_headers", {})
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    if key not in cache:
+        if len(cache) > 256:
+            cache.clear()
+        try:
+            cache[key] = load_header(path)
+        except XerError as exc:
+            cache[key] = str(exc)
+    return cache[key]
+
+
+def _describe_file(path: Path) -> tuple[str, str]:
+    """Tick box label and help for a file not read yet: what build_snapshot would take from it."""
+    header = _header(path)
+    if isinstance(header, str):
+        return f"{path.name} — unreadable", header
+    counts = header.project_task_counts
+    label = f"{path.name} — {header.project_code} · {ui.fmt_date(header.data_date)}"
+    if len(counts) > 1:
+        label += f" · {len(counts)} projects"
+    details = (
+        f"Project: {header.project_code} ({header.selected_by})  \n"
+        f"Projects in file (TASK rows): {' · '.join(f'{code} ({n})' for code, n in counts.items())}  \n"
+        f"Data date: {ui.fmt_date(header.data_date)} (from {header.data_date_source or 'nothing'})"
+    )
+    return label, details
+
+
 def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, bytes]] | None, bool]:
     """Signature of the folder's XER files, their contents when changed, and whether the folder is usable."""
     root = Path(folder).expanduser()
@@ -76,7 +109,8 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
     picked = []
     with sidebar.expander(f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked):
         for path in files:
-            if st.checkbox(path.name, value=False, key=keys[path.name]):
+            label, details = _describe_file(path)
+            if st.checkbox(label, value=False, key=keys[path.name], help=details):
                 picked.append(path.name)
     if not picked:
         sidebar.info("Tick at least one file to read")

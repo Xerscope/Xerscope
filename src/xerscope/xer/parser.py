@@ -51,10 +51,12 @@ def decode_xer(data: bytes) -> tuple[str, str]:
     return data.decode("cp1252", errors="replace"), "cp1252 (lossy)"
 
 
-def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
+def parse_text(text: str, source: str = "", encoding: str = "", tables: frozenset[str] | None = None) -> RawXer:
+    """Every table of the file, or only ``tables`` when given (the rows of the others are not kept)."""
     rows: dict[str, list[list[str]]] = {}
     cols: dict[str, list[str]] = {}
     current: str | None = None
+    skipping = False  # inside a table left out by ``tables``
     version = export_date = None
     saw_header = False
     orphans = 0  # %R rows outside any %T table
@@ -68,13 +70,18 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
         parts = line.split("\t")
         tag = parts[0]
         if tag == "%R":
+            if skipping:
+                continue
             if current is not None:
                 rows[current].append(parts[1:])
             else:
                 orphans += 1
         elif tag == "%T":
             current = parts[1].strip() if len(parts) > 1 else None
-            if current:
+            skipping = bool(current) and tables is not None and current not in tables
+            if skipping:
+                current = None
+            elif current:
                 rows.setdefault(current, [])
         elif tag == "%F":
             if current:
@@ -113,11 +120,11 @@ def parse_text(text: str, source: str = "", encoding: str = "") -> RawXer:
     return RawXer(tables, source, version, export_date, encoding, warnings)
 
 
-def parse_bytes(data: bytes, source: str = "") -> RawXer:
+def parse_bytes(data: bytes, source: str = "", tables: frozenset[str] | None = None) -> RawXer:
     text, encoding = decode_xer(data)
-    return parse_text(text, source=source, encoding=encoding)
+    return parse_text(text, source=source, encoding=encoding, tables=tables)
 
 
-def read_xer(path: str | Path) -> RawXer:
+def read_xer(path: str | Path, tables: frozenset[str] | None = None) -> RawXer:
     path = Path(path)
-    return parse_bytes(path.read_bytes(), source=path.name)
+    return parse_bytes(path.read_bytes(), source=path.name, tables=tables)

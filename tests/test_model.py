@@ -1,10 +1,11 @@
 import contextlib
+from pathlib import Path
 
 import pandas as pd
 import pytest
 from xerkit import active, snap, todo, xer_text
 
-from xerscope.xer import XerError, build_snapshot, parse_text
+from xerscope.xer import HEADER_TABLES, XerError, build_snapshot, parse_text, read_header, read_xer, xer_files
 
 
 def test_snapshot_identity(store):
@@ -220,3 +221,75 @@ def test_missing_column_never_leaks_a_key_error(table, column):
     )
     with contextlib.suppress(XerError):  # a clear XerError is fine, a KeyError is not
         build_snapshot(parse_text(drop_column(text, table, column), source="t.xer"))
+
+
+def test_parser_keeps_only_the_tables_asked_for():
+    text = xer_text([{"task_code": "A"}, {"task_code": "B"}])
+    full, light = parse_text(text), parse_text(text, tables=HEADER_TABLES)
+    assert set(light.tables) == {"PROJECT", "TASK"} < set(full.tables)
+    assert light.table("TASK").equals(full.table("TASK")) and light.warnings == full.warnings
+
+
+def _two_projects(main: dict, other: dict) -> str:
+    """One file, two projects: ``main`` (proj_id 1, 3 tasks) and ``other`` (proj_id 2, 2 tasks)."""
+    tasks = [{"task_code": c} for c in ("A1", "A2", "A3")]
+    tasks += [{"task_code": c, "task_id": str(100 + i), "proj_id": "2"} for i, c in enumerate(("B1", "B2"))]
+    text = xer_text(tasks, project=main)
+    second = xer_text([], project={"proj_id": "2", **other}).splitlines()
+    row = second[second.index("%T\tPROJECT") + 2]
+    lines = text.splitlines()
+    lines.insert(lines.index("%T\tPROJECT") + 3, row)
+    return "\n".join(lines) + "\n"
+
+
+HEADER_CASES = {
+    "one project": xer_text([{"task_code": "A"}], data_date="2026-03-02 08:00"),
+    "no recalc date": xer_text(
+        [{"task_code": "A"}], project={"last_recalc_date": "", "plan_start_date": "2026-01-05 08:00"}
+    ),
+    "two projects": _two_projects(
+        {"proj_short_name": "UPD"}, {"proj_short_name": "BL", "last_recalc_date": "2025-12-01 08:00"}
+    ),
+}
+
+
+def _same_as_snapshot(raw_full, raw_light):
+    header, snapshot = read_header(raw_light), build_snapshot(raw_full)
+    assert (header.project_code, header.selected_by, header.project_task_counts) == (
+        snapshot.project_code,
+        snapshot.selected_by,
+        snapshot.project_task_counts,
+    )
+    assert (header.data_date, header.data_date_source) == (snapshot.data_date, snapshot.data_date_source)
+    return header
+
+
+@pytest.mark.parametrize("case", HEADER_CASES)
+def test_header_takes_what_build_snapshot_takes(case):
+    text = HEADER_CASES[case]
+    header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, tables=HEADER_TABLES))
+    if case == "two projects":
+        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
+    if case == "no recalc date":
+        assert header.data_date_source == "plan_start_date"
+
+
+def test_header_matches_build_snapshot_on_sample_and_reference_files(sample_dir):
+    from reference.sources import FILES
+
+    data = Path(__file__).parent / "reference" / "data"
+    paths = xer_files(sample_dir) + [data / name for name in FILES if (data / name).suffix.lower() == ".xer"]
+    checked = 0
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            full = read_xer(path)
+            build_snapshot(full)
+        except XerError:
+            with pytest.raises(XerError):
+                read_header(read_xer(path, tables=HEADER_TABLES))
+            continue
+        _same_as_snapshot(full, read_xer(path, tables=HEADER_TABLES))
+        checked += 1
+    assert checked >= len(xer_files(sample_dir))

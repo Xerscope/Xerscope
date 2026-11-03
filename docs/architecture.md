@@ -23,12 +23,16 @@ The XER format is tab-separated:
 - **Values:** everything is kept as **strings**. The parser knows the format, not P6.
 
 Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings)`.
+`tables=` keeps only the named tables (the rows of the others are read and dropped).
 
 ## 2. `xer/model.py`: what P6 means
 
 `build_snapshot(raw)` picks one project (`project_code` when given, otherwise the one with
 the most `TASK` rows) and builds a typed `Snapshot`; `project_task_counts` and `selected_by`
-record that choice. Each P6 rule lives in one place:
+record that choice. `read_header(raw)` applies the same project and data-date rules to
+`PROJECT` and `TASK` alone (`HEADER_TABLES`): the folder picker describes each file with it
+before the file is read, and a test checks it against `build_snapshot` on the sample and
+reference files. Each P6 rule lives in one place:
 
 | Concern | Rule |
 |---|---|

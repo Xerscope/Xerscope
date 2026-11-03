@@ -858,6 +858,45 @@ def _project_finish(tasks: pd.DataFrame, inputs: _BuildInputs) -> tuple[pd.Times
     return finish, scheduled_finish
 
 
+def _data_date(project_row: pd.Series) -> tuple[pd.Timestamp | None, str]:
+    """The data date and the PROJECT column it comes from: last_recalc_date, else plan_start_date."""
+    for column in ("last_recalc_date", "plan_start_date"):
+        date = _parse_date(project_row[column])
+        if date is not None:
+            return date, column
+    return None, ""
+
+
+# What read_header needs from a file: the rows of every other table are not kept.
+HEADER_TABLES = frozenset({"PROJECT", "TASK"})
+
+
+@dataclass(frozen=True)
+class FileHeader:
+    """What build_snapshot would take from a file, read from PROJECT and TASK only."""
+
+    source: str
+    project_code: str  # the project build_snapshot takes by default
+    selected_by: str
+    project_task_counts: dict[str, int]  # TASK rows by project code
+    data_date: pd.Timestamp | None
+    data_date_source: str
+
+
+def read_header(raw: RawXer) -> FileHeader:
+    """The default project and data date of a file, by the rules of build_snapshot, from
+    PROJECT and TASK alone (a RawXer parsed with ``tables=HEADER_TABLES`` is enough)."""
+    projects = raw.table("PROJECT")
+    if projects.empty or raw.table("TASK").empty:
+        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    _require(projects, raw.source, "PROJECT", ["proj_id"])
+    warnings: list[str] = []
+    all_tasks = _task_table(raw, projects, warnings)
+    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, None, warnings)
+    data_date, data_date_source = _data_date(project_row)
+    return FileHeader(raw.source, project_row["proj_short_name"], selected_by, task_counts, data_date, data_date_source)
+
+
 def build_snapshot(
     raw: RawXer,
     project_code: str | None = None,
@@ -879,9 +918,7 @@ def build_snapshot(
     # The project, its data date and its calendars
     project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, project_code, warnings)
     planned_start = _parse_date(project_row["plan_start_date"])
-    last_recalc = _parse_date(project_row["last_recalc_date"])
-    data_date = last_recalc or planned_start
-    data_date_source = "last_recalc_date" if last_recalc else "plan_start_date" if planned_start else ""
+    data_date, data_date_source = _data_date(project_row)
     if data_date is None:
         warnings.append(f"{raw.source}: no data date (last_recalc_date / plan_start_date blank)")
     calendars, hours_per_day, work_calendars = _calendars(raw, settings)
