@@ -1,0 +1,37 @@
+name: attribution
+
+# Commits and pull requests carry their authors' own identity and project context only
+# (CONTRIBUTING.md, "Commits and pull requests"): no tool identity as author or committer,
+# no attribution trailer, no generated-by line. Squash-merging turns commit authors into
+# Co-authored-by lines on main, so a tool identity must be caught before the merge.
+# A separate workflow: re-run when the description is edited, without re-running the tests.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Commits of the pull request
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          found=$(git log --format='%h %an <%ae> | %cn <%ce>%n%B' "$BASE..$HEAD" \
+            | grep -i -E 'noreply@anthropic\.com|<[^>]*> \| Claude |^[0-9a-f]+ Claude |co-authored-by:.*claude|claude-session:|generated (with|by) \[?claude' || true)
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi
+      - name: Title and description of the pull request
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          found=$(printf '%s\n%s\n' "$TITLE" "$BODY" | grep -i -E 'generated (with|by) \[?claude|claude\.(ai|com)/code|co-authored-by:.*claude' || true)
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi

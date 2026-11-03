@@ -120,6 +120,10 @@ rewrites the file and fails by design; review the diff, then rerun without the v
 - Commit messages, pull requests, comments and docs carry project context only: what the
   code does, why, which source. No session logs, no tool attribution trailers, no
   generated-by lines.
+- Author and committer are the contributor's own name and email, never a tool's: set
+  `git config user.name` / `user.email` in the clone before the first commit. The
+  `attribution` workflow fails a pull request whose commits, title or description break
+  these two rules.
 - Pull requests are squash-merged: edit the squash message so the subject describes the
   change, not the branch name.
 - Before merging a Dependabot pull request, comment `@dependabot rebase` so it builds on
