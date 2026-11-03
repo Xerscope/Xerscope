@@ -133,8 +133,12 @@ Outside `analysis/`:
   `build_snapshot` time (`xer/model.py`) and by `viz/gantt`; analysis reads the derived columns.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
 - `sample.py`: the demo series generator, with the findings it plants week by week.
-- `anonymize.py`: anonymised copies of the loaded XER files and of the flagged lists, the only
-  form in which the app hands activities out (Schedule health lists, Export page). An allowlist
+- `anonymize.py`: anonymised copies of the loaded XER files and of every table the app hands
+  out while the sidebar switch "Anonymous exports" is on (the default, per session): page CSVs,
+  Schedule health lists, the Power BI zip (`Anonymizer.frame` on each table, no project code in
+  the file name), the Debug diagnostic. Off, the same downloads carry the files' own codes and
+  names; the XER extract stays anonymised, the Schedule health summary (checks and results
+  only) stays as it is. The pages always show the files' own data. An allowlist
   per table keeps keys, dates, durations, units, flags and P6 enumerations; codes get new
   values (same original, same new code in every file of the session), names are rebuilt from
   them, costs set to 0, user, database and free text removed, unknown tables and columns left
@@ -194,8 +198,9 @@ Outside `analysis/`:
   activities with an expected finish and the remaining duration it set (`rem_override_hr`),
   the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
   targets on the tabs of the P6 dialog, the baseline and the calendars. `app/diagnostic.py`
-  builds the tables from the existing results; `Anonymizer.zip_frames` hands them out with
-  the codes of the anonymised extract (dates unchanged).
+  builds the tables from the existing results; with anonymous exports on,
+  `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
+  unchanged).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
 
@@ -230,7 +235,7 @@ Outside `analysis/`:
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
-| `test_app.py` | every page renders headless, key options work, downloads leave anonymised |
+| `test_app.py` | every page renders headless, key options work, downloads leave anonymised by default and plain with the switch off |
 | `test_anonymize.py` | anonymised files give the same results (demo series, P6 exports) and hold no text of the originals |
 | `test_parser.py`, `test_model.py`, `test_store.py`, `test_shapes.py` | format edge cases, P6 meaning of each column, the weekly series, the shape of the frames |
 | `test_explain.py`, `test_cli.py`, `test_docker.py` | explanations match results; every command; compose / Dockerfile / Caddyfiles keep loopback-only (8501 on 127.0.0.1 in `compose.yaml`, no port in `deploy/`), non-root |

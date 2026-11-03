@@ -198,6 +198,13 @@ def sidebar_loader() -> None:
         sidebar.error(error)
     if store is not None:
         _baseline_picker(store)
+        sidebar.toggle(
+            "Anonymous exports",
+            value=True,
+            key="anon_exports",
+            help="Downloads (CSV, Power BI, Debug) carry new Activity IDs and names, other text emptied, "
+            "as in the anonymised XER extract. The pages always show the files' own data.",
+        )
 
 
 def _selection_panel(sidebar, store: SnapshotStore) -> None:
@@ -387,6 +394,38 @@ def memo(key: tuple, function, *arguments):
             cache.clear()
         cache[full_key] = function(*arguments)
     return cache[full_key]
+
+
+ANONYMISED = " · anonymised"  # suffix of an anonymised download's label
+
+
+def anonymous_exports() -> bool:
+    """The sidebar switch: downloads anonymised (default) or in the files' own names."""
+    return st.session_state.get("anon_exports", True)
+
+
+def export_anonymizer(key: str) -> Anonymizer | None:
+    """The anonymizer for an anonymised download, or None: a button builds it on request (it reads the
+    files again, once per session) and the caller shows its download from the next run."""
+    anonymous = anonymizer()
+    if anonymous is None and st.button(
+        "Prepare anonymised downloads",
+        icon=":material/visibility_off:",
+        key=f"prepare:{key}",
+        help="Reads the loaded files again to give them new codes, once per session.",
+    ):
+        anonymous = anonymizer(prepare=True)
+    return anonymous
+
+
+def csv_download(frame: pd.DataFrame, filename: str, label: str = "Download CSV", key: str | None = None) -> None:
+    """A table as CSV, anonymised or not as the sidebar switch says."""
+    if not anonymous_exports():
+        ui.csv_button(frame, filename, label, key=key)
+        return
+    anonymous = export_anonymizer(key or filename)
+    if anonymous is not None:
+        ui.anonymised_csv_button(anonymous, frame, filename, f"{label}{ANONYMISED}", key=key)
 
 
 def anonymizer(prepare: bool = False) -> Anonymizer | None:

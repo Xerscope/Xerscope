@@ -5,7 +5,7 @@ from xerscope.analysis import builtin_standards
 from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import bei_series, earned, evm_series, forecast_curve, pv_curve
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, is_dark, memo, require_store, snapshot_picker
+from xerscope.app.state import baseline_for, csv_download, is_dark, memo, require_store, snapshot_picker
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 
 BEI_METRIC_IDS = {"P6": "P6-13", "DCMA": "DCMA-14"}  # the BEI check of each built-in standard
@@ -160,7 +160,7 @@ def show_activity_detail(snapshot, baseline) -> None:
     with st.expander(f"Earned hours by activity ({ui.stamp(snapshot.data_date)})"):
         activities = earned(snapshot, baseline).reset_index()
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
-        ui.csv_button(activities[ACTIVITY_COLUMNS], f"earned_{ui.stamp(snapshot.data_date)}.csv")
+        csv_download(activities[ACTIVITY_COLUMNS], f"earned_{ui.stamp(snapshot.data_date)}.csv")
         fallback_mask = activities["ev_technique"].isin(["wbs_milestones", "resource_curves"])
         fallback = sorted(activities.loc[fallback_mask, "task_code"])
         if fallback:

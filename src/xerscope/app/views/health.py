@@ -8,7 +8,17 @@ from xerscope.analysis.checks import health_wide
 from xerscope.analysis.explain import explain, fmt_value, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
-from xerscope.app.state import anonymizer, baseline_for, is_dark, memo, require_store, snapshot_picker, standards
+from xerscope.app.state import (
+    anonymizer,
+    anonymous_exports,
+    baseline_for,
+    csv_download,
+    is_dark,
+    memo,
+    require_store,
+    snapshot_picker,
+    standards,
+)
 from xerscope.viz.charts import build_metric_trend
 
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
@@ -102,25 +112,18 @@ def show_summary(results, standard, snapshot) -> None:
     )
     summary_column, trail_column, _ = st.columns([1, 1.3, 4])
     with summary_column:
+        # check names, targets and results only, no schedule data: the same with the switch on or off
         ui.csv_button(
             summary, f"{standard.id}_{ui.stamp(snapshot.data_date)}_summary.csv", "Summary (CSV)", key="dl_sum"
         )
     with trail_column:
         if trail.empty:
             return
-        anonymous = anonymizer()
-        if anonymous is None:
-            # flagged lists name activities: they leave the app anonymised only
-            if st.button("Prepare anonymised lists", icon=":material/visibility_off:", key="anon_prepare"):
-                anonymizer(prepare=True)
-                st.rerun()
-            return
         front = ["check_id", "check", "check_status"]
-        ui.anonymised_csv_button(
-            anonymous,
+        csv_download(
             trail[front + [column for column in trail.columns if column not in front]],
             f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
-            "All flagged items (CSV, anonymised)",
+            "All flagged items (CSV)",
             key="dl_trail",
         )
 
@@ -166,15 +169,13 @@ def show_check(result, explanation, snapshot, expanded: bool) -> None:
                 f"{noun(explanation.subject, len(result.flagged))}"
             )
             ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
-            anonymous = anonymizer()
-            if anonymous is None:
-                st.caption("Download: prepare the anonymised lists under Results.")
+            if anonymous_exports() and anonymizer() is None:
+                st.caption("Download: prepare the anonymised downloads under Results.")
             else:
-                ui.anonymised_csv_button(
-                    anonymous,
+                csv_download(
                     result.flagged,
                     f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
-                    "Download list (CSV, anonymised)",
+                    "Download list (CSV)",
                     key=f"dl_{metric.id}",
                 )
 

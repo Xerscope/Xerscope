@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, compare_picker, is_dark, memo, require_store, snapshot_picker
+from xerscope.app.state import baseline_for, compare_picker, csv_download, is_dark, memo, require_store, snapshot_picker
 from xerscope.viz import categorise, gantt_html, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER
 from xerscope.xer.model import STATUS
@@ -135,4 +135,4 @@ with st.expander("Table view"):
         "constraint",
     ]
     ui.table(tasks, columns=table_columns)
-    ui.csv_button(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv")
+    csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv")

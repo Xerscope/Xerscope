@@ -450,10 +450,10 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     app.get("button_group")[0].set_value("P6").run()
     _ok(app)
     assert [b.proto.label for b in app.get("download_button")] == ["Summary (CSV)", "Download the template"]
-    next(b for b in app.button if b.label == "Prepare anonymised lists").click().run()
+    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
     _ok(app)
     flagged = pd.read_csv(
-        io.BytesIO(_download(app, downloads, "All flagged items (CSV, anonymised)")), encoding="utf-8-sig"
+        io.BytesIO(_download(app, downloads, "All flagged items (CSV) · anonymised")), encoding="utf-8-sig"
     )
     assert not set(flagged.astype(str).to_numpy().ravel()) & originals
     codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
@@ -491,10 +491,10 @@ def _debug_zip(at, downloads) -> dict[str, pd.DataFrame]:
 
     at.switch_page("views/debug.py").run()
     _ok(at)
-    next(b for b in at.button if b.label == "Build anonymised diagnostic").click().run()
+    next(b for b in at.button if b.label == "Build diagnostic").click().run()
     _ok(at)
     assert not at.error, [e.value for e in at.error]
-    with zipfile.ZipFile(io.BytesIO(_download(at, downloads, "Download anonymised diagnostic (.zip)"))) as archive:
+    with zipfile.ZipFile(io.BytesIO(_download(at, downloads, "Download diagnostic (.zip) · anonymised"))) as archive:
         return {name: pd.read_csv(io.BytesIO(archive.read(name)), encoding="utf-8-sig") for name in archive.namelist()}
 
 
@@ -545,6 +545,60 @@ def test_raw_labels_are_the_column_names():
     config = ui.column_config(frame, raw_labels=True)
     assert [config[column]["label"] for column in frame] == ["task_code", "remain_drtn_hr_cnt"]
     assert ui.column_config(frame)["task_code"]["label"] == "Activity ID"  # the default stays
+
+
+def _csv(data: bytes):
+    import io
+
+    return pd.read_csv(io.BytesIO(data), encoding="utf-8-sig")
+
+
+def _zip(data: bytes) -> dict[str, bytes]:
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, store, downloads):
+    """The sidebar switch decides every export: on (default) new IDs and names, off the file's own."""
+    originals = set(store.history["task_code"]) | set(store.history["task_name"])
+    assert app.sidebar.toggle(key="anon_exports").value is True
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    assert not [b for b in app.get("download_button") if b.proto.label.startswith("Download CSV")]
+    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    _ok(app)
+    gantt = _csv(_download(app, downloads, "Download CSV · anonymised"))
+    assert not set(gantt.astype(str).to_numpy().ravel()) & originals
+    assert gantt["task_code"].dropna().str.fullmatch(r"XA\d{6}").all()
+
+    app.switch_page("views/export.py").run()
+    _ok(app)
+    tables = _zip(_download(app, downloads, "Download PARQUET tables (.zip) · anonymised"))
+    activity = pd.read_parquet(__import__("io").BytesIO(tables["fact_activity.parquet"]))
+    assert not set(activity.astype(str).to_numpy().ravel()) & originals
+    assert len(activity) == len(store.history)  # same rows, renamed
+
+    app.sidebar.toggle(key="anon_exports").set_value(False).run()
+    _ok(app)
+    tables = _zip(_download(app, downloads, "Download PARQUET tables (.zip)"))
+    activity = pd.read_parquet(__import__("io").BytesIO(tables["fact_activity.parquet"]))
+    assert set(activity["task_code"]) == set(store.history["task_code"])
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    assert set(_csv(_download(app, downloads, "Download CSV"))["task_code"]) <= set(store.history["task_code"])
+
+
+def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, downloads):
+    app.sidebar.toggle(key="anon_exports").set_value(False).run()
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    next(b for b in app.button if b.label == "Build diagnostic").click().run()
+    _ok(app)
+    tables = _zip(_download(app, downloads, "Download diagnostic (.zip)"))
+    assert set(tables) >= {"01_options.csv", "04_check_parameters.csv"}
 
 
 def _p6():
