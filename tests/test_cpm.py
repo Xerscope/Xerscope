@@ -189,6 +189,19 @@ def test_zero_duration_task_late_dates_end_the_previous_period():
     assert z[2:4] == (T("2026-03-09 17:00"),) * 2
 
 
+def test_zero_duration_task_assignment_late_dates_follow_the_task():
+    # P6 26.8 export: the assignment of a task with no remaining work keeps the task's late
+    # dates at the previous period end (17:00), not the next morning.
+    s = snap(
+        [todo("Z", **hours(0)), todo("S", cstr_type="CS_MSOA", cstr_date="2026-03-10 08:00", **hours(8))],
+        [("Z", "S", "FS", 0)],
+        resources=RSRCS,
+        assign=[_asg("Z", "R8", 0)],
+    )
+    a = schedule(s).assignments.iloc[0]
+    assert (a["rem_late_start"], a["rem_late_end"]) == (T("2026-03-09 17:00"),) * 2
+
+
 # --- constraints ----------------------------------------------------------------------------
 
 

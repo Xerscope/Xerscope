@@ -1235,9 +1235,9 @@ class _Run:
                     assignment_finish = (
                         assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
                     )
-                    late_assignment_start = assignment.axis.snap_start(
-                        self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
-                    )
+                    late_shifted = self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
+                    # no work left: the late dates stay at the period end, as the task's (_late)
+                    late_assignment_start = late_shifted if not duration else assignment.axis.snap_start(late_shifted)
                     late_assignment_finish = (
                         assignment.axis.add(late_assignment_start, duration, finish=True)
                         if duration
