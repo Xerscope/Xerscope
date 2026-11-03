@@ -5,6 +5,7 @@ Without them these tests are skipped (with that instruction), never silently pas
 """
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -178,6 +179,55 @@ def test_cpl_matches_xerlock_hand_calculation(xl):
 
 
 # --- Independent reader: MPXJ (optional: uv sync --extra crosscheck, needs Java) -------------
+
+
+def _mpxj_calendars(path: Path) -> dict[str, tuple]:
+    """{clndr_id: (week Mon..Sun, {exception date: periods})} as MPXJ reads the file; periods in
+    minutes from midnight, an end at midnight written 1440 as xerscope does."""
+    import jpype
+
+    from xerscope.verify.mpxj_reader import start_jvm
+
+    reader = start_jvm()
+    DayOfWeek = jpype.JClass("java.time.DayOfWeek")  # noqa: N806
+
+    def periods(ranges):
+        out = []
+        for r in ranges:
+            start = r.getStart().toSecondOfDay() // 60
+            end = r.getEnd().toSecondOfDay() // 60
+            out.append((start, end or 1440))
+        return tuple(sorted(out))
+
+    days = [
+        getattr(DayOfWeek, d) for d in ("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")
+    ]
+    out = {}
+    for cal in reader().read(str(path)).getCalendars():
+        week = tuple(periods(cal.getHours(d) or []) for d in days)
+        exceptions = {}
+        for exc in cal.getCalendarExceptions():
+            day, last = exc.getFromDate(), exc.getToDate()
+            while not day.isAfter(last):
+                exceptions[date(day.getYear(), day.getMonthValue(), day.getDayOfMonth())] = periods(exc)
+                day = day.plusDays(1)
+        out[str(cal.getUniqueID())] = (week, exceptions)
+    return out
+
+
+@pytest.mark.parametrize("name", [n for n in FILES if n.endswith(".xer")])
+def test_mpxj_reads_every_calendar_like_xerscope(name):
+    """Each calendar of each real P6 export: working periods of every weekday and every exception
+    date, xerscope against MPXJ's reader."""
+    mpxj_or_skip()
+    theirs = _mpxj_calendars(DATA / name)
+    mine = snap(name).work_calendars
+    assert mine and set(mine) <= set(theirs), sorted(set(mine) - set(theirs))
+    for clndr_id, cal in mine.items():
+        assert cal.from_data, clndr_id  # every P6 export writes the calendar's definition
+        week, exceptions = theirs[clndr_id]
+        assert tuple(tuple(sorted(day)) for day in cal.week) == week, clndr_id
+        assert {d: tuple(sorted(p)) for d, p in cal.exceptions.items()} == exceptions, clndr_id
 
 
 def test_mpxj_reads_every_reference_file_like_xerscope():
