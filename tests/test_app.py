@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from conftest import P6_CORPUS_HINT, missing
 from streamlit.testing.v1 import AppTest
-from xerkit import xer_text
+from xerkit import todo, xer_text
 
 import xerscope
 from xerscope.app import ui
@@ -195,6 +195,26 @@ def _run(data_dir, monkeypatch, baseline=None):
     else:
         monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline))
     return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+
+
+def test_gantt_filters_by_p6_activity_code_with_its_sub_values(app, tmp_path, monkeypatch):
+    app.switch_page("views/gantt.py").run()
+    assert not [box for box in app.selectbox if box.label == "Activity code"]  # the demo has no codes
+
+    codes = [("A", "Zone", "B1/L1"), ("B", "Zone", "B1/L2"), ("C", "Zone", "B2")]
+    (tmp_path / "codes.xer").write_text(xer_text([todo("A"), todo("B"), todo("C")], codes=codes), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    _ok(at)
+    code_type = next(box for box in at.selectbox if box.label == "Activity code")
+    assert code_type.value is None  # nothing picked by default
+    code_type.set_value("Zone").run()
+    values = at.multiselect(key="gantt_code_values:Zone")
+    paths = at.session_state["store"].latest.code_paths("Zone")
+    values.set_value([next(i for i, path in paths.items() if path == "B1")]).run()
+    _ok(at)
+    shown = {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"}
+    assert shown == {"A", "B"}  # B1 and its sub-values L1, L2; not B2
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):

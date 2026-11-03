@@ -237,3 +237,14 @@ def test_mpxj_reads_every_reference_file_like_xerscope():
     df = compare_paths(sorted(DATA.glob("*/*.xer")))
     bad = df[~df["agree"]]
     assert len(df) > 500 and bad.empty, bad.to_string()
+
+
+@pytest.mark.parametrize("name", ["p6viewer/Hotel Project.xer", "p6viewer/TERMINAL BUILDING-AIRPORT.xer"])
+def test_activity_codes_keep_every_assignment_of_the_project(name):
+    """Every TASKACTV row of the project's activities is read, and names a listed value."""
+    raw = read_xer(DATA / name)
+    s = build_snapshot(raw)
+    links = raw.table("TASKACTV")
+    assert len(s.task_codes) == links["task_id"].isin(s.tasks["task_id"]).sum() > 0
+    assert set(s.task_codes["code_id"]) <= set(s.code_values["code_id"])
+    assert set(s.task_codes["task_code"]) <= set(s.tasks["task_code"])

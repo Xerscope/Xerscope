@@ -20,6 +20,7 @@ Key decisions
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import cached_property
 from operator import attrgetter
@@ -332,6 +333,10 @@ def _check_snapshot_columns(snap: Snapshot) -> None:
             raise XerError(f"{snap.source}: snapshot.{name} lacks declared columns {missing}")
 
 
+CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]
+TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
+
+
 @dataclass
 class Snapshot:
     source: str
@@ -359,6 +364,10 @@ class Snapshot:
     expenses: pd.DataFrame = field(default_factory=pd.DataFrame)  # PROJCOST rows, may be empty
     external_tasks: pd.DataFrame = field(default_factory=pd.DataFrame)  # other projects' linked tasks
     external_links: pd.DataFrame = field(default_factory=pd.DataFrame)  # links to/from them
+    # P6 activity codes: the values of each code type the project's activities use, and which
+    # value each activity is assigned (_activity_codes)
+    code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
+    task_codes: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=TASK_CODE_COLUMNS))
 
     def calendar(self, clndr_id: str | None = None) -> WorkCalendar:
         """Calendar by id; the project's default calendar when id is blank or unknown."""
@@ -405,10 +414,84 @@ class Snapshot:
         """Tasks without WBS-summary rows: what every count and chart should use."""
         return self.tasks[~self.tasks["is_wbs_summary"]]
 
+    def code_paths(self, code_type: str) -> dict[str, str]:
+        """Values of one activity code type, by id, each labelled with its path in the code's
+        hierarchy ("B1 / L1"), sorted by that path."""
+        values = self.code_values[self.code_values["code_type"] == code_type]
+        parent = dict(zip(values["code_id"], values["parent_id"], strict=True))
+        short = dict(zip(values["code_id"], values["value"], strict=True))
+        paths = {code_id: " / ".join(short[c] for c in reversed(_chain(code_id, parent))) for code_id in short}
+        return dict(sorted(paths.items(), key=lambda item: item[1]))
+
+    def tasks_with_codes(self, code_type: str, code_ids: Iterable[str]) -> set[str]:
+        """Activity IDs assigned one of ``code_ids`` of ``code_type``, or a value below one of
+        them in the code's hierarchy (picking "B1" selects the activities of "B1 / L1" too)."""
+        values = self.code_values[self.code_values["code_type"] == code_type]
+        parent = dict(zip(values["code_id"], values["parent_id"], strict=True))
+        picked = set(code_ids)
+        selected = {code_id for code_id in parent if picked.intersection(_chain(code_id, parent))}
+        assigned = self.task_codes[self.task_codes["code_type"] == code_type]
+        return set(assigned.loc[assigned["code_id"].isin(selected), "task_code"])
+
     @cached_property
     def by_code(self) -> pd.DataFrame:
         """Activities indexed by task_code (first row wins); treat as read-only, it is cached."""
         return self.activities.drop_duplicates("task_code").set_index("task_code")
+
+
+def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """P6 activity codes of the project's activities (Oracle XER data map: ACTVTYPE = code
+    types, ACTVCODE = their values, a value's parent in ``parent_actv_code_id``, TASKACTV =
+    the value assigned to an activity).
+
+    ``task_codes``: one row per activity and value (TASKACTV rows of the project's TASK
+    rows; the type is the value's own). ``code_values``: every value of the types those rows
+    use, parents included, ordered as in P6 (type, then ``seq_num``). Rows naming an unknown
+    task, value or type are left out.
+    """
+    types, values, links = raw.table("ACTVTYPE"), raw.table("ACTVCODE"), raw.table("TASKACTV")
+    empty = (pd.DataFrame(columns=CODE_VALUE_COLUMNS), pd.DataFrame(columns=TASK_CODE_COLUMNS))
+    needed = {
+        "ACTVTYPE": (types, ["actv_code_type_id", "actv_code_type"]),
+        "ACTVCODE": (values, ["actv_code_id", "actv_code_type_id", "short_name"]),
+        "TASKACTV": (links, ["task_id", "actv_code_id"]),
+    }
+    if any(frame.empty or not set(columns) <= set(frame.columns) for frame, columns in needed.values()):
+        return empty
+    type_name = types.drop_duplicates("actv_code_type_id").set_index("actv_code_type_id")["actv_code_type"]
+    values = values.assign(code_type=values["actv_code_type_id"].map(type_name)).dropna(subset=["code_type"])
+    code_of_task = tasks.drop_duplicates("task_id").set_index("task_id")["task_code"]
+    type_of_value = values.drop_duplicates("actv_code_id").set_index("actv_code_id")["code_type"]
+    task_codes = pd.DataFrame(
+        {
+            "task_code": links["task_id"].map(code_of_task),
+            "code_type": links["actv_code_id"].map(type_of_value),
+            "code_id": links["actv_code_id"],
+        }
+    ).dropna()
+    task_codes = task_codes.drop_duplicates().reset_index(drop=True)
+    used = values[values["code_type"].isin(set(task_codes["code_type"]))]
+    code_values = pd.DataFrame(
+        {
+            "code_type": used["code_type"],
+            "code_id": used["actv_code_id"],
+            "parent_id": used.get("parent_actv_code_id", pd.Series("", index=used.index)).fillna(""),
+            "value": used["short_name"],
+            "name": used.get("actv_code_name", used["short_name"]),
+            "seq": pd.to_numeric(used.get("seq_num", pd.Series(0, index=used.index)), errors="coerce").fillna(0),
+        }
+    )
+    code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])
+    return code_values.reset_index(drop=True), task_codes
+
+
+def _chain(code_id: str, parent: dict[str, str]) -> list[str]:
+    """``code_id`` then its parents up to the top value; a cycle in a broken file ends it."""
+    chain, current = [], code_id
+    while current in parent and current not in chain:
+        chain.append(current)
+        current = parent[current]
+    return chain
 
 
 @dataclass(frozen=True)
@@ -981,6 +1064,7 @@ def build_snapshot(
         expenses = expenses[expenses["proj_id"] == inputs.project_id].copy()
     tasks["has_expense"] = tasks["task_id"].isin(expenses["task_id"])
     tasks["constraint"] = tasks["cstr_type"].map(CONSTRAINT).fillna(tasks["cstr_type"])
+    code_values, task_codes = _activity_codes(raw, tasks)
 
     finish, scheduled_finish = _project_finish(tasks, inputs)
 
@@ -1010,6 +1094,8 @@ def build_snapshot(
         external_links=external_links.reset_index(drop=True),
         project_clndr_id=str(project_row["clndr_id"] or ""),
         expenses=expenses.reset_index(drop=True),
+        code_values=code_values,
+        task_codes=task_codes,
     )
     _check_snapshot_columns(snapshot)
     return snapshot
