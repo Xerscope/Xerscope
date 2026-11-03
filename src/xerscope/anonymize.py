@@ -380,3 +380,29 @@ class Anonymizer:
             for raw, data_date in files:
                 archive.writestr(self.xer_name(raw, data_date), self.xer(raw))
         return buffer.getvalue()
+
+    # --- diagnostic tables (Debug page) -------------------------------------------------------
+
+    DIAGNOSTIC_CODES = {"task_code": "A", "pred_code": "A", "succ_code": "A", "rsrc_short_name": "R"}
+
+    def zip_frames(self, frames: dict[str, pd.DataFrame]) -> bytes:
+        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES`` renamed as in the XER extract.
+
+        No other column changes: the caller selects ids, dates, durations, flags and P6
+        enumerations only. Every cell of every table is still checked against the originals'
+        text values; one match and nothing is written (``LeakError``).
+        """
+        outputs = {}
+        for name, frame in frames.items():
+            out = frame.copy()
+            for column, kind in self.DIAGNOSTIC_CODES.items():
+                if column in out.columns:
+                    mapping = self.codes.get(kind, {})
+                    out[column] = [mapping.get(value, "") if isinstance(value, str) else "" for value in out[column]]
+            self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), f"table {name}")
+            outputs[f"{name}.csv"] = out.to_csv(index=False).encode("utf-8-sig")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for file_name, data in outputs.items():
+                archive.writestr(file_name, data)
+        return buffer.getvalue()

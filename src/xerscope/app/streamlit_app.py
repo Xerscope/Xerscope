@@ -13,6 +13,7 @@ import streamlit as st
 # Allow `streamlit run src/xerscope/app/streamlit_app.py` without installing the package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from xerscope.app import ui  # noqa: E402
 from xerscope.app.state import sidebar_loader  # noqa: E402
 
 st.set_page_config(page_title="xerscope", page_icon=":material/calendar_month:", layout="wide")
@@ -34,9 +35,11 @@ pages = st.navigation(
         ],
         "Data": [
             st.Page(VIEWS / "export.py", title="Export for Power BI", icon=":material/download:"),
+            st.Page(VIEWS / "debug.py", title="Debug", icon=":material/bug_report:"),
         ],
     }
 )
 
+ui.apply_style(ui.is_dark())
 sidebar_loader()
 pages.run()

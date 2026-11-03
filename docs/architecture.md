@@ -50,7 +50,7 @@ reference files. Each P6 rule lives in one place:
 | EV technique | `ev_compute_type` / `ev_user_pct` of each activity's WBS |
 | Links | `relationships`: codes and both lags (hours and days); `is_external` flags a predecessor in another project. A predecessor that is a `TASK` row of another project of the same file is named `[ext]{task_id}` in `pred_code`, as in `external_links`, never by its own Activity ID: that ID may also exist in this project and would read as a link from the local activity. Links whose other end has no `TASK` row in the file are dropped from `relationships`. `external_links` keeps the links to and from other projects (same `[ext]` naming) |
 | Calendars | `work_calendars` (parsed `clndr_data`), `calendar(id)` falls back to the project's |
-| Options | `options["sched"]` = the raw SCHEDOPTIONS row, `progressed` (retained logic / progress override / actual dates), `must_finish_by`, `lag_calendar` (successor when blank, per Oracle), `critical_*` |
+| Options | `options["sched"]` = the raw SCHEDOPTIONS row, `options["project"]` = the raw PROJECT critical-path and plan-end fields, `progressed` (retained logic / progress override / actual dates), `must_finish_by`, `lag_calendar` (successor when blank, per Oracle), `critical_*` |
 
 `Snapshot.activities` excludes WBS summary rows: every count and chart uses it.
 
@@ -91,7 +91,7 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 | `standards.py` | TOML → `Standard(metrics)` | validated on load (rule, parameter names, population keywords, target syntax) |
 | `checks.py` | standard + `AnalysisContext` → `CheckResult` per metric; `health_history` over the series | a failing rule returns status "error", never crashes the page |
 | `baseline.py` | BL snapshot (or planned dates) → frame `bl_start, bl_finish, bl_labor_hr…` | shared by BEI, missed, late, PV |
-| `cpm.py` | snapshot → early/late dates, floats, longest path, assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
+| `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique) |
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = Last Planner (W-1 commitments, W outcome) |
@@ -177,13 +177,25 @@ Outside `analysis/`:
 - **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
   cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
-- **`.streamlit/config.toml`:** the theme (white page, navy accent) and server settings
+- **`.streamlit/config.toml`:** the light and dark themes (slate neutrals, navy accent, cyan in dark mode) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
+- **`static/`:** the fonts the theme loads (IBM Plex Sans, Space Grotesk, JetBrains Mono;
+  variable woff2, latin subset, SIL OFL 1.1 with their licences), served by the app itself
+  (`enableStaticServing`).
+- **`style.css`:** what the theme cannot set (HUD KPI cards, the milestone picker's tags in
+  their line colour), sent by `ui.apply_style()` with the active mode's colours.
 - **Schedule health:** a summary row per check, then one panel per check: what it measures,
   the calculation with its numbers (`analysis/explain.py`), the population (exclusions),
   the effective parameters (standard or default), the source, and the flagged items.
   All flagged items of all checks export as one CSV, the audit trail behind the scores.
+- **Debug:** what xerscope read and decided for one update, to hold against P6 without the
+  file: the scheduling options (raw XER value, value applied, blank-in-file defaults), the
+  activities with an expected finish and the remaining duration it set (`rem_override_hr`),
+  the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
+  targets on the tabs of the P6 dialog, the baseline and the calendars. `app/diagnostic.py`
+  builds the tables from the existing results; `Anonymizer.zip_frames` hands them out with
+  the codes of the anonymised extract (dates unchanged).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
 

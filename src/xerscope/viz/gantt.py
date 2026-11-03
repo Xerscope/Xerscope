@@ -15,6 +15,7 @@ and a Content-Security-Policy forbids any network request or external resource.
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 from importlib.resources import files
@@ -26,6 +27,10 @@ from ..analysis.wbs import ROOT
 from ..config import DEFAULT_SETTINGS, Settings
 from .charts import INK, SERIES, STATUS
 
+# Page and band colours: the theme's backgroundColor and secondaryBackgroundColor
+# (app/.streamlit/config.toml), so the Gantt frame blends into the page.
+BACKGROUND = {"light": "#ffffff", "dark": "#0b1120"}
+BAND = {"light": "#f4f6f9", "dark": "#131c31"}
 PALETTE = {
     mode: {
         "Critical": STATUS[mode]["critical"],
@@ -37,15 +42,17 @@ PALETTE = {
         "muted": INK[mode]["muted"],
         "grid": INK[mode]["grid"],
         "axis": INK[mode]["axis"],
-        "background": "#0e1117" if mode == "dark" else "#ffffff",
-        "band": "#1a1d24" if mode == "dark" else "#f3f5f8",
+        "background": BACKGROUND[mode],
+        "band": BAND[mode],
     }
     for mode in ("light", "dark")
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
 WEEK_WINDOW = (pd.Timedelta(weeks=2), pd.Timedelta(weeks=10))  # week timescale: before / after the data date
 SPAN_PAD = pd.Timedelta(days=7)  # month timescale: margin around the schedule
-CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"
+# data: fonts only: the theme's body font, embedded below (the iframe cannot use the page's fonts)
+CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:"
+FONT_FILE = files("xerscope.app").joinpath("static", "IBMPlexSans-latin-wght.woff2")
 
 
 def categorise(tasks: pd.DataFrame, settings: Settings = DEFAULT_SETTINGS) -> pd.Series:
@@ -226,7 +233,12 @@ def gantt_html(
         "height": height,
     }
     assets = files(__package__)
-    css = assets.joinpath("gantt.css").read_text(encoding="utf-8")
+    font = base64.b64encode(FONT_FILE.read_bytes()).decode("ascii")
+    font_face = (
+        "@font-face { font-family: 'IBM Plex Sans'; font-weight: 100 700; "
+        f"src: url(data:font/woff2;base64,{font}) format('woff2'); }}\n"
+    )
+    css = font_face + assets.joinpath("gantt.css").read_text(encoding="utf-8")
     js = assets.joinpath("gantt.js").read_text(encoding="utf-8")
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
