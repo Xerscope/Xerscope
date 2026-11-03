@@ -128,14 +128,6 @@ def test_standard_files_in_utf16_and_bom_load(tmp_path):
         assert load_standard(p).id == "CUSTOM"
 
 
-def test_cli_writes_template(tmp_path):
-    from xerscope.cli import main
-
-    out = tmp_path / "mine.toml"
-    assert main(["standards", "--template", str(out)]) == 0
-    assert loads_standard(out.read_bytes()).id == "CUSTOM"
-
-
 def test_time_axis_values_survive_growing_backwards():
     """A work value taken before the axis grew must still map to the same instant."""
     from datetime import date

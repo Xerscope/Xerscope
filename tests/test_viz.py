@@ -83,6 +83,7 @@ def test_activity_dates_axis_keeps_days_when_dates_never_move():
 def test_finish_trend_shows_dates_to_the_day(store):
     """Weekly reporting reads dates, not times: no hour in hovers or tick labels."""
     trend = build_finish_trend(store.summary)
+    assert len(trend.data[0].x) == len(store)  # one point per update
     for axis in (trend.layout.xaxis, trend.layout.yaxis):
         assert axis.hoverformat == "%Y-%m-%d"
         assert axis.tickformatstops[0].dtickrange[1] == 86_400_000  # below a day: day labels

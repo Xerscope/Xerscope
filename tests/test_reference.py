@@ -161,13 +161,14 @@ def test_dcma_matches_stated_result(metric_id, xl):
 
 
 def test_critical_path_test_delays_the_same_activity_as_xerlock(xl):
-    """xerlock tests/test_cpm_sample.py: +600 wd on MEP-020 moves the finish by 600 wd."""
+    """xerlock tests/test_cpm_sample.py: +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27."""
     from xerscope.analysis.cpm import critical_path_test
 
     s, _ = xl
     r = critical_path_test(s, 600)
     assert r.delayed == "MEP-020"
     assert r.passed and r.shift_h == pytest.approx(600 * 8)
+    assert "2026-09-08 -> 2028-12-27" in r.note
 
 
 def test_cpl_matches_xerlock_hand_calculation(xl):
