@@ -34,6 +34,8 @@ class CheckResult:
     denominator: int | None = None
     flagged: pd.DataFrame = field(default_factory=pd.DataFrame)
     note: str = ""
+    checked: pd.DataFrame | None = None  # rows behind the denominator (RuleOutput.checked)
+    counted: pd.DataFrame | None = None  # rows behind the numerator when they are not ``flagged``
 
 
 @dataclass
@@ -60,7 +62,9 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
         status, note = "n/a", out.note or "nothing to check"
     else:
         note = out.note
-    return CheckResult(metric, status, value, out.numerator, out.denominator, out.flagged, note)
+    return CheckResult(
+        metric, status, value, out.numerator, out.denominator, out.flagged, note, out.checked, out.counted
+    )
 
 
 def run_standard(standard: Standard, context: AnalysisContext) -> list[CheckResult]:

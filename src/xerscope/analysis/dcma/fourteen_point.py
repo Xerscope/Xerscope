@@ -60,7 +60,7 @@ def dcma_01_logic(context) -> RuleOutput:
     missing_successor = ~has_successor
     flagged = tasks[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
-    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(tasks))
+    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(tasks), checked=tasks)
 
 
 @rule("dcma_02_leads", "%", links=True)
@@ -78,7 +78,7 @@ def dcma_02_leads(context) -> RuleOutput:
     relationships = _relationships_into_open_tasks(context)
 
     leads = lag_flagged(relationships, operator.lt, 0)
-    return RuleOutput(flagged_relationships(leads), len(leads), len(relationships))
+    return RuleOutput(flagged_relationships(leads), len(leads), len(relationships), checked=relationships)
 
 
 @rule("dcma_03_lags", "%", links=True)
@@ -96,7 +96,7 @@ def dcma_03_lags(context) -> RuleOutput:
     relationships = _relationships_into_open_tasks(context)
 
     lags = lag_flagged(relationships, operator.gt, 0)
-    return RuleOutput(flagged_relationships(lags), len(lags), len(relationships))
+    return RuleOutput(flagged_relationships(lags), len(lags), len(relationships), checked=relationships)
 
 
 @rule("dcma_04_relationship_types", "%", links=True)
@@ -127,22 +127,23 @@ def dcma_05_hard_constraints(context) -> RuleOutput:
     """
     tasks = open_tasks(context)
     hard = tasks[constrained_by(tasks, DCMA_HARD_CONSTRAINTS, ignore_started_starts=False)]
-    return RuleOutput(flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks))
+    return RuleOutput(
+        flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks), checked=tasks
+    )
 
 
 @rule("dcma_06_high_float", "%")
-def dcma_06_high_float(context) -> RuleOutput:
+def dcma_06_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
     """Activities outside the float limit.
     Counts: flagged / checked
     Excludes: completed activities, level of effort, milestones.
-    Flagged when total float > 44 days.
 
     DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months);
     §4.0: milestones excluded
     """
     tasks = open_tasks(context)
-    high_float = tasks[tasks["total_float_d"] > DCMA_HIGH_DAYS]
-    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks))
+    high_float = tasks[tasks["total_float_d"] > limit_days]
+    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks)
 
 
 @rule("dcma_07_negative_float", "%")
@@ -157,15 +158,14 @@ def dcma_07_negative_float(context) -> RuleOutput:
     """
     tasks = open_tasks(context)
     negative_float = tasks[tasks["total_float_d"] < 0]
-    return RuleOutput(flagged_activities(negative_float), len(negative_float), len(tasks))
+    return RuleOutput(flagged_activities(negative_float), len(negative_float), len(tasks), checked=tasks)
 
 
 @rule("dcma_08_high_duration", "%")
-def dcma_08_high_duration(context) -> RuleOutput:
+def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
     """Activities outside the duration limit.
     Counts: flagged / checked
     Excludes: completed activities, level of effort, milestones.
-    Flagged when baseline duration > 44 days.
 
     DCMA-EA PAM 200.1 §4.8: an incomplete task with a baseline duration greater than 44 working days (2
     months) and a baseline start within the detail planning period or rolling wave; §4.0: LOE and
@@ -178,8 +178,8 @@ def dcma_08_high_duration(context) -> RuleOutput:
         return RuleOutput(note="needs a baseline")
     tasks = open_tasks(context)
     baseline_hours = tasks["task_code"].map(context.baseline.frame["bl_duration_hr"])
-    long_tasks = tasks[baseline_hours / tasks["hours_per_day"] > DCMA_HIGH_DAYS]
-    return RuleOutput(flagged_activities(long_tasks), len(long_tasks), len(tasks))
+    long_tasks = tasks[baseline_hours / tasks["hours_per_day"] > limit_days]
+    return RuleOutput(flagged_activities(long_tasks), len(long_tasks), len(tasks), checked=tasks)
 
 
 @rule("dcma_09_invalid_dates", "%")
@@ -202,7 +202,7 @@ def dcma_09_invalid_dates(context) -> RuleOutput:
     actual = actual_after(tasks, data_date)
     invalid = forecast | actual
     reasons = invalid_date_reason(forecast, actual)[invalid]
-    return RuleOutput(flagged_activities(tasks[invalid], reason=reasons), int(invalid.sum()), len(tasks))
+    return RuleOutput(flagged_activities(tasks[invalid], reason=reasons), int(invalid.sum()), len(tasks), checked=tasks)
 
 
 @rule("dcma_10_resources", "%")
@@ -218,7 +218,7 @@ def dcma_10_resources(context) -> RuleOutput:
     tasks = open_tasks(context)
     tasks = tasks[tasks["target_drtn_hr_cnt"].fillna(0) > 0]
     without_cost = tasks[~(tasks["has_resource"] | tasks["has_expense"])]
-    return RuleOutput(flagged_activities(without_cost), len(without_cost), len(tasks))
+    return RuleOutput(flagged_activities(without_cost), len(without_cost), len(tasks), checked=tasks)
 
 
 @rule("dcma_11_missed_tasks", "%", needs_baseline=True)
@@ -242,7 +242,7 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     due = tasks[tasks["bl_start"].notna() & (tasks["bl_finish"] <= data_date)]
     finishes_later = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
     missed = due[as_flag(finishes_later)]
-    return RuleOutput(flagged_activities(missed, bl_finish=missed["bl_finish"]), len(missed), len(due))
+    return RuleOutput(flagged_activities(missed, bl_finish=missed["bl_finish"]), len(missed), len(due), checked=due)
 
 
 @rule("dcma_12_critical_path_test", "pass/fail")

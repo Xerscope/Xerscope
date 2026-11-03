@@ -196,3 +196,87 @@ def test_debug_page_shows_the_options_comparisons_and_targets_as_computed(app, s
     targets = next(frame for frame in frames if "tab" in frame).set_index("check")["target"]
     for metric in STANDARDS["P6"].metrics:
         assert targets[f"{metric.id} · {metric.name}"] == metric.threshold_label
+
+
+def _open_audit(app, standard_id: str, metric_id: str):
+    app.switch_page("views/audit.py")
+    _run(app)
+    app.get("button_group")[0].set_value(standard_id)
+    _run(app)
+    app.selectbox(key=f"audit_check:{standard_id}").set_value(metric_id)
+    _run(app)
+
+
+def _shown_sets(app) -> dict[str, int]:
+    """Tab label 'Counted (12)' -> {'Counted': 12}."""
+    return {tab.label.rsplit(" (", 1)[0]: int(tab.label.rsplit("(", 1)[1].rstrip(")")) for tab in app.tabs}
+
+
+@pytest.mark.parametrize("standard_id", sorted(STANDARDS))
+def test_audit_page_equals_run_metric_for_every_check(app, store, standard_id):
+    """Every check of every standard on the latest update, first update as baseline: the value, the
+    counts and the size of each set shown are those of run_metric and audit.split."""
+    from xerscope.analysis.audit import split
+
+    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    _run(app)
+    snapshot = store.latest
+    context = AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first))
+    for metric in STANDARDS[standard_id].metrics:
+        _open_audit(app, standard_id, metric.id)
+        result = run_metric(metric, context)
+        shown = _metrics(app)
+        expected_value = "–" if result.status in ("n/a", "error") else fmt_value(result.value, metric.unit)
+        assert shown["Standard"] == expected_value, metric.id
+        assert shown["Standard status"] == status_label(result.status), metric.id
+        assert "Audit" not in shown, metric.id  # nothing changed: one result only
+        sets = split(result, snapshot)
+        if sets is None:
+            assert not app.tabs, metric.id
+            continue
+        tabs = _shown_sets(app)
+        assert tabs["Checked, not counted"] == len(sets.not_counted), metric.id
+        if result.numerator is not None:
+            assert tabs["Counted"] == result.numerator, metric.id
+        if sets.excluded is not None:
+            assert tabs["Excluded"] == len(sets.excluded), metric.id
+
+
+def test_audit_settings_rerun_the_check_and_leave_schedule_health_alone(app, store):
+    """x = 100 h on P6-06: the Audit column is run_metric with that parameter; Schedule health and the
+    standard keep x = 352 h; Reset brings the standard back."""
+    from xerscope.analysis.audit import with_settings
+
+    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    _run(app)
+    _open_audit(app, "P6", "P6-06")
+    app.number_input(key="audit:P6:P6-06:limit_hours").set_value(100.0)
+    app.text_input(key="audit:P6:P6-06:target").set_value("< 10%")
+    _run(app)
+    metric = STANDARDS["P6"]["P6-06"]
+    context = AnalysisContext(store.latest, store, Baseline.from_snapshot(store.first))
+    audited = run_metric(with_settings(metric, "< 10%", {"limit_hours": 100.0}), context)
+    standard = run_metric(metric, context)
+    assert audited.numerator != standard.numerator  # the demo has float between 100 and 352 h
+    shown = _metrics(app)
+    assert shown["Audit"] == fmt_value(audited.value, "%")
+    assert shown["Audit status"] == status_label(audited.status)
+    assert shown["Standard"] == fmt_value(standard.value, "%")
+    assert _shown_sets(app)["Counted"] == audited.numerator
+    assert any("limit_hours = 100" in code.value for code in app.code)
+    assert builtin_standards()["P6"]["P6-06"].params == {"limit_hours": 352}
+
+    app.switch_page("views/health.py")
+    _run(app)
+    app.get("button_group")[0].set_value("P6")
+    _run(app)
+    app.selectbox(key="health_snap").set_value(store.labels[-1])
+    _run(app)
+    row = app.dataframe[0].value.set_index("id").loc["P6-06"]
+    assert row["count"] == f"{standard.numerator} / {standard.denominator}"
+
+    _open_audit(app, "P6", "P6-06")
+    assert "Audit" in _metrics(app)  # the session keeps the audit settings while it lasts
+    app.button(key="audit:P6:P6-06:reset").click()
+    _run(app)
+    assert "Audit" not in _metrics(app)

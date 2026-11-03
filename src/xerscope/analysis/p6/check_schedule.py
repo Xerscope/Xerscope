@@ -63,7 +63,7 @@ def p6_01_logic(context) -> RuleOutput:
     missing_successor = ~has_successor
     flagged = activities[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
-    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_02_hard_constraints", "%")
@@ -79,7 +79,10 @@ def p6_02_hard_constraints(context) -> RuleOutput:
 
     flagged = activities[has_hard_constraint]
     return RuleOutput(
-        flagged_activities(flagged, constraint2=flagged["cstr_type2"].map(_CONSTRAINT)), len(flagged), len(activities)
+        flagged_activities(flagged, constraint2=flagged["cstr_type2"].map(_CONSTRAINT)),
+        len(flagged),
+        len(activities),
+        checked=activities,
     )
 
 
@@ -97,16 +100,18 @@ def p6_03_soft_constraints(context) -> RuleOutput:
 
     flagged = activities[has_soft_constraint]
     return RuleOutput(
-        flagged_activities(flagged, constraint2=flagged["cstr_type2"].map(_CONSTRAINT)), len(flagged), len(activities)
+        flagged_activities(flagged, constraint2=flagged["cstr_type2"].map(_CONSTRAINT)),
+        len(flagged),
+        len(activities),
+        checked=activities,
     )
 
 
 @rule("p6_04_large_durations", "%")
-def p6_04_large_durations(context) -> RuleOutput:
+def p6_04_large_durations(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
     """Activities outside the duration limit.
     Counts: flagged / checked
     Excludes: completed activities, level of effort, milestones.
-    Flagged when remaining duration > 352 hours.
 
     101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional
     r22.12 report shows (Ten Six) and EPPM's 46282 states
@@ -114,36 +119,34 @@ def p6_04_large_durations(context) -> RuleOutput:
     activities = without_milestones(without_level_of_effort(open_activities(context)))
     remaining_hours = activities["remain_drtn_hr_cnt"]
 
-    flagged = activities[remaining_hours > LARGE_HOURS]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    flagged = activities[remaining_hours > limit_hours]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_05_long_lags", "%", links=True)
-def p6_05_long_lags(context) -> RuleOutput:
+def p6_05_long_lags(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
     """Relationships with the lag in question.
     Counts: flagged / checked
     Relationships counted: relationships where predecessor and successor are not both complete.
-    Flagged when lag > 352 hours.
 
     46288: links between two actual-finished activities removed"""
     relationships = link_population(context, "not_both_complete")
 
-    flagged = lag_flagged(relationships, operator.gt, LARGE_HOURS)
-    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
+    flagged = lag_flagged(relationships, operator.gt, limit_hours)
+    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships)
 
 
 @rule("p6_06_large_float", "%")
-def p6_06_large_float(context) -> RuleOutput:
+def p6_06_large_float(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
     """Activities outside the float limit.
     Counts: flagged / checked
     Excludes: completed activities, level of effort.
-    Flagged when total float > 352 hours.
 
     46284: WBS summary, actual-finish and LOE removed"""
     activities = without_level_of_effort(open_activities(context))
 
-    flagged = activities[activities["total_float_hr_cnt"] > LARGE_HOURS]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    flagged = activities[activities["total_float_hr_cnt"] > limit_hours]
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_07_relationship_types", "%", links=True)
@@ -168,7 +171,7 @@ def p6_08_lags(context) -> RuleOutput:
     relationships = link_population(context, "not_both_complete")
 
     flagged = lag_flagged(relationships, operator.gt, 0)
-    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
+    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships)
 
 
 @rule("p6_09_negative_lags", "%", links=True)
@@ -182,7 +185,7 @@ def p6_09_negative_lags(context) -> RuleOutput:
     relationships = link_population(context, "not_both_complete")
 
     flagged = lag_flagged(relationships, operator.lt, 0)
-    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
+    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships)
 
 
 @rule("p6_10_invalid_progress_dates", "%")
@@ -208,7 +211,7 @@ def p6_10_invalid_progress_dates(context) -> RuleOutput:
     invalid = forecast | actual
     flagged = activities[invalid]
     reasons = invalid_date_reason(forecast, actual)[invalid]
-    return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_11_resource_cost", "%")
@@ -222,7 +225,7 @@ def p6_11_resource_cost(context) -> RuleOutput:
     has_resource_or_expense = activities["has_resource"] | activities["has_expense"]
 
     flagged = activities[~has_resource_or_expense]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_12_late_activities", "%", needs_baseline=True)
@@ -266,7 +269,15 @@ def p6_13_bei(context) -> RuleOutput:
     if gone:
         note += f"; {gone} of them no longer in the schedule"
     index = completed / total if total else None
-    return RuleOutput(flagged_activities(due, bl_finish=due["bl_finish"]), completed, total, index, note)
+    return RuleOutput(
+        flagged_activities(due, bl_finish=due["bl_finish"]),
+        completed,
+        total,
+        index,
+        note,
+        checked=baseline_activities,
+        counted=activities[activities["is_complete"]],
+    )
 
 
 @rule("p6_15_out_of_sequence", "%")
@@ -290,7 +301,7 @@ def p6_15_out_of_sequence(context) -> RuleOutput:
     rows = started.drop_duplicates("task_code").set_index("task_code").loc[ahead["succ_code"]].reset_index()
     extra = {"predecessor": ahead["pred_code"].to_numpy(), "type": ahead["type"].to_numpy()}
     out_of_sequence = ahead["succ_code"].nunique()
-    return RuleOutput(flagged_activities(rows, **extra), out_of_sequence, len(activities))
+    return RuleOutput(flagged_activities(rows, **extra), out_of_sequence, len(activities), checked=activities)
 
 
 @rule("p6_16_dangling_start", "%")
@@ -311,7 +322,7 @@ def p6_16_dangling_start(context) -> RuleOutput:
     has_logic = candidates["task_code"].isin(relationships["succ_code"])
     driven = has_driving_predecessor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driven]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_17_dangling_finish", "%")
@@ -330,7 +341,7 @@ def p6_17_dangling_finish(context) -> RuleOutput:
     has_logic = candidates["task_code"].isin(relationships["pred_code"])
     driving = has_driving_successor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driving]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
 
 
 @rule("p6_14_negative_float", "%")
@@ -344,4 +355,4 @@ def p6_14_negative_float(context) -> RuleOutput:
     activities = without_level_of_effort(open_activities(context))
 
     flagged = activities[activities["total_float_hr_cnt"] < 0]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)

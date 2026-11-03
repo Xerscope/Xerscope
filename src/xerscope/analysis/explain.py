@@ -140,8 +140,19 @@ def _bei_notes(params: dict) -> list[str]:
     return [due_text + " Completed = all completed activities in the population, early ones included."]
 
 
+def _limit_note(measure: str, key: str, unit: str) -> Callable[[dict], list[str]]:
+    """'Flagged when <measure> > <limit> <unit>.' for the built-in checks with an x threshold."""
+    return lambda params: [f"Flagged when {measure} > {params[key]:g} {unit}."]
+
+
 # rule name -> sentences that depend on the rule's parameters
 NOTES: dict[str, Callable[[dict], list[str]]] = {
+    "p6_04_large_durations": _limit_note("remaining duration", "limit_hours", "hours"),
+    "p6_05_long_lags": _limit_note("lag", "limit_hours", "hours"),
+    "p6_06_large_float": _limit_note("total float", "limit_hours", "hours"),
+    "dcma_06_high_float": _limit_note("total float", "limit_days", "days"),
+    "dcma_08_high_duration": _limit_note("baseline duration", "limit_days", "days"),
+    "decm_06a211a_high_float": _limit_note("total float", "limit_days", "days"),
     "relationship_type": _relationship_type_notes,
     "invalid_dates": _invalid_dates_notes,
     "late_vs_baseline": _late_vs_baseline_notes,

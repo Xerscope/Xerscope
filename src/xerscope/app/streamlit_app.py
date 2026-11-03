@@ -28,6 +28,7 @@ pages = st.navigation(
         ],
         "Analysis": [
             st.Page(VIEWS / "health.py", title="Schedule health", icon=":material/fact_check:"),
+            st.Page(VIEWS / "audit.py", title="Audit", icon=":material/manage_search:"),
             st.Page(VIEWS / "changelog.py", title="Changelog", icon=":material/difference:"),
             st.Page(VIEWS / "earned_value.py", title="Earned value", icon=":material/stacked_line_chart:"),
             st.Page(VIEWS / "milestones.py", title="Milestone trend", icon=":material/flag:"),

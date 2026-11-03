@@ -22,6 +22,7 @@ PAGES = [
     "views/gantt.py",
     "views/activity.py",
     "views/health.py",
+    "views/audit.py",
     "views/changelog.py",
     "views/earned_value.py",
     "views/milestones.py",

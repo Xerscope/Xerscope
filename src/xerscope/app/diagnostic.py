@@ -11,7 +11,7 @@ import pandas as pd
 
 from xerscope.analysis.baseline import Baseline
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
-from xerscope.analysis.populations import LARGE_HOURS
+from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.model import Snapshot
@@ -191,7 +191,7 @@ def check_parameters(standard: Standard) -> pd.DataFrame:
             "tab": P6_TABS.get(metric.id, ""),
             "check": f"{metric.id} · {metric.name}",
             "target": metric.threshold_label,
-            "x_hours": LARGE_HOURS if metric.id in ("P6-04", "P6-05", "P6-06") else None,
+            "x_hours": {**RULES[metric.rule].params, **metric.params}.get("limit_hours"),
         }
         for metric in standard.metrics
     ]

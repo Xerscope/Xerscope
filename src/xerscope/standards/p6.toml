@@ -60,6 +60,7 @@ group = "Inflexibility and Inefficiency"
 name = "Large durations"
 description = "Activities that have a remaining duration greater than 352 hours"
 rule = "p6_04_large_durations"
+params = { limit_hours = 352 }  # the dialog's "x", in hours
 target = "< 5%"
 source = "101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional r22.12 report shows (Ten Six) and EPPM's 46282 states"
 
@@ -69,6 +70,7 @@ group = "Inflexibility and Inefficiency"
 name = "Long lags"
 description = "Relationships with a lag duration greater than 352 hours"
 rule = "p6_05_long_lags"
+params = { limit_hours = 352 }  # the dialog's "x", in hours
 target = "< 5%"
 source = "46288: links between two actual-finished activities removed"
 
@@ -78,6 +80,7 @@ group = "Inflexibility and Inefficiency"
 name = "Large float"
 description = "Activities with total float greater than 352 hours"
 rule = "p6_06_large_float"
+params = { limit_hours = 352 }  # the dialog's "x", in hours
 target = "< 1%"
 source = "46284: WBS summary, actual-finish and LOE removed"
 

@@ -89,6 +89,11 @@ swap `%` and `count`, no other unit. Value per unit (`checks.run_metric`): `%`: 
 rules: `relationship_type`, `p6_07`, `dcma_04`), else `100 × numerator / denominator`, none when the denominator
 is 0; `count`: `numerator`; `ratio`, `pass/fail`: the rule's `value`.
 
+Sets (`CheckResult.checked`, `counted`): every rule that returns a denominator also returns
+its rows (`checked`); `counted` holds the numerator's rows when they are not the listed ones
+(the share of FS links, BEI's completed activities). `tests/test_audit.py` holds every built-in
+metric to `len(checked) == denominator`, numerator rows = numerator, listed rows within `checked`.
+
 Status: `n/a` when the metric needs a baseline and none is loaded, or the value is none
 (empty population, missing data date or previous update); `error` when the rule raised
 (the note carries the exception); `info` when the target is `info`; else `pass` if
@@ -105,8 +110,9 @@ value is noted where it differs).
 
 ### 2.1 P6 Check Schedule (`standards/p6.toml`, standard id `P6`)
 
-Thresholds in hours as P6 compares them: `x` is the duration limit set in `p6.toml`
-(the dialog's "x"). Targets are the Check Schedule dialog defaults as the P6 EPPM 25 help
+Thresholds in hours as P6 compares them: `x` is the `limit_hours` parameter of P6-04, P6-05
+and P6-06 in `p6.toml` (the dialog's "x", 352 h). DCMA-06, DCMA-08 and DECM 06A211a take
+`limit_days` (44 working days of the activity's calendar) the same way. Targets are the Check Schedule dialog defaults as the P6 EPPM 25 help
 states them (strict comparisons: "less than 5%", "greater than 90%", BEI "0.95 or
 greater"); the dialog's own values must be copied in for pass/fail to match a report.
 Constraint sets follow the P6 Professional help: hard = Mandatory Start, Start On,
@@ -376,7 +382,7 @@ Check Schedule report (R1, not in the repository) has.
   source for P6-15 to P6-17 (backlog). Open readings: LOE kept in P6-01 (101248 is silent
   on LOE there); FF and SF links in P6-15; the constraint options of the dangling checks;
   a baseline activity whose finish is blank is never listed as due in P6-13.
-- `x` is an hour count (p6.toml): it assumes the calendar's hours per day; P6 targets are the EPPM 25 help's dialog defaults,
+- `x` is an hour count (`limit_hours` in p6.toml): it assumes the calendar's hours per day; P6 targets are the EPPM 25 help's dialog defaults,
   not read from a Professional 24 dialog.
 - DECM: the specification sheets (index in docs/standards.md, Sources) have been read.
   The 06A205a and 06A209a sheets name no LOE exclusion, so LOE stays in, as coded. Where a sheet contradicts a

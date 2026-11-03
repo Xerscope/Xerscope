@@ -71,6 +71,7 @@ group = "Constraints and float"
 name = "High total float"
 description = "Incomplete non-LOE tasks and milestones with total float > 44 working days (to sample for rationale)"
 rule = "decm_06a211a_high_float"
+params = { limit_days = 44 }  # working days of the activity's calendar
 target = "info"
 source = "06A211a: the population DECM samples; X/Y <= 20% of the sample with inadequate rationale"
 

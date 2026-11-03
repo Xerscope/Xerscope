@@ -72,6 +72,8 @@ class RuleOutput:
     denominator: int | None = None
     value: float | None = None  # set by ratio / pass-fail rules; % and counts are derived
     note: str = ""
+    checked: pd.DataFrame | None = None  # the rows behind the denominator
+    counted: pd.DataFrame | None = None  # the rows behind the numerator, when they are not ``flagged``
 
 
 COMPARE = {"<": operator.lt, ">": operator.gt, "<=": operator.le, ">=": operator.ge, "==": operator.eq}
@@ -329,7 +331,9 @@ def missing_logic(
         reason = reason.mask((reason == "") & dangling_start, "dangling start (no FS/SS predecessor)")
         reason = reason.mask((reason == "") & dangling_finish, "dangling finish (no FS/FF successor)")
     flagged = population[reason != ""]
-    return RuleOutput(flagged_activities(flagged, reason=reason[reason != ""]), len(flagged), len(population))
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason[reason != ""]), len(flagged), len(population), checked=population
+    )
 
 
 @rule("dangling", "%")
@@ -353,7 +357,7 @@ def dangling(context, end: Literal["start", "finish"] = "finish", exclude: Names
         has_logic = population["task_code"].isin(relationships["pred_code"])
         driving = has_driving_successor(population["task_code"], relationships)
     flagged = population[has_logic & ~driving]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
 
 
 @rule("lag", "%", links=True)
@@ -377,7 +381,7 @@ def lag(
     relationships = link_population(context, links, exclude_loe, exclude)
     column = {"hours": "lag_hr", "days": "lag_d"}[unit]
     flagged = lag_flagged(relationships, COMPARE[op], value, column)
-    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships))
+    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships)
 
 
 @rule("relationship_type", "%", links=True)
@@ -412,7 +416,7 @@ def constraints(
     population = activities(context, exclude)
     flagged = population[constrained_by(population, types, ignore_start_when_started)]
     extra = {"constraint2": flagged["cstr_type2"].map(CONSTRAINT)}
-    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population))
+    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population), checked=population)
 
 
 @rule("float", "%")
@@ -427,7 +431,7 @@ def total_float(
     population = activities(context, exclude)
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
     flagged = population[as_flag(COMPARE[op](population[column], value))]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
 
 
 @rule("duration", "%")
@@ -464,7 +468,7 @@ def duration(
         }[(field, unit)]
         measured = population[column]
     flagged = population[as_flag(COMPARE[op](measured, value))]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
 
 
 # --- progress --------------------------------------------------------------------------
@@ -507,9 +511,9 @@ def invalid_dates(
     forecast, actual = as_flag(forecast), actual_after(population, data_date)
     hit = {"forecast": forecast, "actual": actual, "both": forecast | actual}[kind]
     flagged = population[hit]
-    total = int(population["act_start_date"].notna().sum()) if denominator == "started" else len(population)
+    checked = population[population["act_start_date"].notna()] if denominator == "started" else population
     reasons = invalid_date_reason(forecast, actual)[hit]
-    return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), total)
+    return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), len(checked), checked=checked)
 
 
 @rule("no_resource", "%")
@@ -522,7 +526,7 @@ def no_resource(context, exclude: Names = ("complete", "loe", "milestones"), exp
     population = activities(context, exclude)
     has_cost = population["has_resource"] | (population["has_expense"] if expenses_count else False)
     flagged = population[~has_cost]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population))
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
 
 
 # --- baseline ---------------------------------------------------------------------------------
@@ -587,7 +591,15 @@ def share_of_type(relationships: pd.DataFrame, link_type: str) -> RuleOutput:
     share = 100.0 * of_type.sum() / len(relationships) if len(relationships) else None
     mix = ", ".join(f"{kind} {count}" for kind, count in relationships["type"].value_counts().items())
     others = flagged_relationships(relationships[~of_type])
-    return RuleOutput(others, int(of_type.sum()), len(relationships), share, note=mix)
+    return RuleOutput(
+        others,
+        int(of_type.sum()),
+        len(relationships),
+        share,
+        note=mix,
+        checked=relationships,
+        counted=relationships[of_type],
+    )
 
 
 def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_hours: float = 0) -> RuleOutput:
@@ -596,7 +608,7 @@ def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_ho
     flagged = population[as_flag(variance_hours > tolerance_hours)]
     variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
     extra = {"bl_finish": flagged["bl_finish"], "finish_variance_wd": variance_days}
-    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population))
+    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population), checked=population)
 
 
 def bei_from_baseline(
@@ -614,7 +626,17 @@ def bei_from_baseline(
     if gone:
         note += f"; {gone} of them no longer in the schedule"
     index = done / len(due_codes) if due_codes else None
-    return RuleOutput(flagged_activities(late, bl_finish=late["bl_finish"]), done, len(due_codes), index, note)
+    checked = kept.loc[sorted(due_codes)].rename_axis("task_code").reset_index()
+    completed = population[population["is_complete"]]
+    return RuleOutput(
+        flagged_activities(late, bl_finish=late["bl_finish"]),
+        done,
+        len(due_codes),
+        index,
+        note,
+        checked=checked,
+        counted=completed,
+    )
 
 
 def bei_from_snapshot(population: pd.DataFrame, data_date, missing_baseline_is_due: bool) -> RuleOutput:
@@ -630,7 +652,16 @@ def bei_from_snapshot(population: pd.DataFrame, data_date, missing_baseline_is_d
     if without_baseline.any():
         note += f"; {int(without_baseline.sum())} without baseline finish"
     index = done / len(due) if len(due) else None
-    return RuleOutput(flagged_activities(late, bl_finish=late["bl_finish"]), done, len(due), index, note)
+    completed = population[population["is_complete"]]
+    return RuleOutput(
+        flagged_activities(late, bl_finish=late["bl_finish"]),
+        done,
+        len(due),
+        index,
+        note,
+        checked=due,
+        counted=completed,
+    )
 
 
 def critical_path_output(context: AnalysisContext, slip_days: float) -> RuleOutput:

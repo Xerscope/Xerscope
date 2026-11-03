@@ -184,6 +184,10 @@ keyword, unit or target is rejected on load with the exact name, so a typo canno
 change a result. `group` (optional) gives a section title. The formula behind every
 metric is in [formulas.md](formulas.md).
 
+To try a target or a threshold before writing it down, open the check on the Audit page:
+it re-runs the check with the values set there, shows the sets behind the count, and gives
+the `[[metric]]` table to paste here.
+
 ## Out of scope for now (research notes, Oct 2026)
 
 | Standard | Current version | Note |

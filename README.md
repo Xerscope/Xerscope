@@ -139,6 +139,7 @@ update (actuals changed, riding the status date) work too.
 | Gantt & WBS | Gantt grouped by WBS as in P6: tree grid with roll-ups (% complete by hours, float) beside the timeline, WBS rows fold open and closed; a WBS picked in the list sets the KPIs and opens the Gantt on it; comparison outline (previous update, baseline, any file), logic links, month / week timescale |
 | Activity history | one activity across every update |
 | Schedule health | standard picker (P6, DECM, DCMA, Integrity, uploaded TOML), Check Summary, flagged items with the rule's definition, metric trend, CSV of every flagged item |
+| Audit | one check: the sets behind its count (counted, checked not counted, excluded), the check re-run with another target or threshold (this page only), the `[[metric]]` table to make it permanent |
 | Changelog | any two files: headline counts, every change (filterable, CSV), weekly counts |
 | Earned value | PV, EV, AC, forecast S-curve (hours or % BAC); SPI, BEI (P6 / DCMA), EV/AC per update; Schedule %, Performance % and EV technique per activity |
 | Milestone trend | MTA chart, slip since first forecast and since last week in working days |
