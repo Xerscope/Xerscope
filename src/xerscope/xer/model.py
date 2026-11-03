@@ -350,6 +350,7 @@ class Snapshot:
     projects_in_file: list[str] = field(default_factory=list)
     project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by project code
     selected_by: str = ""  # why this project of the file: chosen, only project, most TASK rows
+    data_date_source: str = ""  # PROJECT column the data date was read from
     warnings: list[str] = field(default_factory=list)
     scheduled_finish: pd.Timestamp | None = None  # PROJECT.scd_end_date, as stored
     options: dict = field(default_factory=dict)  # P6 scheduling options that affect results
@@ -878,7 +879,9 @@ def build_snapshot(
     # The project, its data date and its calendars
     project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, project_code, warnings)
     planned_start = _parse_date(project_row["plan_start_date"])
-    data_date = _parse_date(project_row["last_recalc_date"]) or planned_start
+    last_recalc = _parse_date(project_row["last_recalc_date"])
+    data_date = last_recalc or planned_start
+    data_date_source = "last_recalc_date" if last_recalc else "plan_start_date" if planned_start else ""
     if data_date is None:
         warnings.append(f"{raw.source}: no data date (last_recalc_date / plan_start_date blank)")
     calendars, hours_per_day, work_calendars = _calendars(raw, settings)
@@ -918,6 +921,7 @@ def build_snapshot(
         project_code=project_row["proj_short_name"],
         project_name=project_name or project_row["proj_short_name"],
         data_date=data_date,
+        data_date_source=data_date_source,
         finish_date=finish,
         planned_start=planned_start,
         export_date=raw.export_date,

@@ -59,6 +59,7 @@ def test_blank_data_date_falls_back_to_planned_start():
     )
     s = build_snapshot(parse_text(xer))
     assert s.data_date == pd.Timestamp("2026-09-01 08:00")
+    assert s.data_date_source == "plan_start_date"
 
 
 def _xer(project_extra: dict, sched: dict | None = None, tasks=None, preds=None):

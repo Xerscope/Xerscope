@@ -70,9 +70,12 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
         sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
         st.session_state.update(store=None, signature=(), errors=[])
         return (), None, False
-    names = [path.name for path in files]
-    # every file by default; a file left out (another project, a draft) stays out of the series
-    picked = sidebar.multiselect("Files to read", names, default=names, key=f"folder_files:{root}")
+    # every file ticked by default; a file left out (another project, a draft) stays out of the series
+    picked = []
+    with sidebar.expander(f"Files to read · {len(files)} in folder"):
+        for path in files:
+            if st.checkbox(path.name, value=True, key=f"read:{root}:{path.name}"):
+                picked.append(path.name)
     if not picked:
         sidebar.info("Tick at least one file to read")
         st.session_state.update(store=None, signature=(), errors=[])
@@ -160,7 +163,8 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
     with sidebar.expander(f"Selection · {len(store)} of {len(table)} file(s) in series", expanded=attention):
         st.caption(
             "One project per file: the one picked in Project when the file holds it, otherwise the one "
-            "with the most TASK rows. One file per data date: the first by name is kept."
+            "with the most TASK rows. Data date: PROJECT.last_recalc_date, else plan_start_date. "
+            "One file per data date: the first by name is kept."
         )
         st.dataframe(
             table.assign(data_date=table["data_date"].map(ui.fmt_date)),
@@ -171,6 +175,7 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
                 "selected_by": "Picked by",
                 "projects_in_file": "Projects in file (TASK rows)",
                 "data_date": "Data date",
+                "data_date_from": "Data date from",
                 "activities": "Activities",
                 "status": "Status",
                 "reason": "Reason",

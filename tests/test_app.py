@@ -237,11 +237,14 @@ def test_folder_files_can_be_picked(sample_dir, monkeypatch):
     """Every XER of the folder is read by default; unticking files leaves them out of the series."""
     at = _run(sample_dir, monkeypatch)
     _ok(at)
-    picker = next(m for m in at.sidebar.multiselect if m.label == "Files to read")
-    assert len(picker.value) == 8
-    picker.set_value(picker.value[:3]).run()
+    boxes = [box for box in at.sidebar.checkbox if box.key.startswith("read:")]
+    assert len(boxes) == 8 and all(box.value for box in boxes)
+    for box in boxes[3:]:
+        box.uncheck()
+    at.run()
     _ok(at)
     assert any("3 snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert len(_selection(at)) == 3  # unticked files are not read at all
 
 
 def _with_second_project(main: str, code: str, task_codes: list[str], data_date: str) -> str:
@@ -315,7 +318,11 @@ def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, mo
         "NEW (3) · OLD (2)",
         "in series",
     ]
-    assert table.loc["w2.xer", ["project", "selected_by"]].tolist() == ["NEW", "only project"]
+    assert table.loc["w2.xer", ["project", "selected_by", "data_date_from"]].tolist() == [
+        "NEW",
+        "only project",
+        "last_recalc_date",
+    ]
     _pick_project(at, "OLD")
     _ok(at)
     table = _selection(at).set_index("file")
