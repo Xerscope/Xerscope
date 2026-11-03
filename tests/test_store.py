@@ -64,21 +64,29 @@ def test_load_snapshot_from_bytes_equals_from_path(sample_dir):
     assert a.data_date == b.data_date
 
 
-def test_one_snapshot_per_data_date(store):
+def test_same_data_date_twice_is_refused(store):
+    """Two files with one data date (a draft and its next version, an update and its baseline
+    copy): the store does not guess which one is the update, it names every file of the date."""
     from dataclasses import replace
 
-    from xerscope.store import SnapshotStore
+    import pytest
 
-    twin = replace(store.first, source="zz-again.xer")
-    s = SnapshotStore([twin, *store])
-    assert len(s) == 8 and s.first.source == store.first.source
+    from xerscope.store import DuplicateDataDate, SnapshotStore
+
     first = store.first
-    assert s.warnings == [f"zz-again.xer: same data date as {first.source} ({first.data_date:%Y-%m-%d}), skipped"]
-    assert s.skipped == [(twin, first)]
-    table = s.selection()
-    assert len(table) == 9 and table["status"].value_counts().to_dict() == {"in series": 8, "skipped": 1}
-    row = table.set_index("file").loc["zz-again.xer"]
-    assert row["reason"] == f"same data date as {first.source}"
+    twins = [replace(first, source="v0.8.xer"), replace(first, source="v0.5.xer")]
+    with pytest.raises(DuplicateDataDate) as caught:
+        SnapshotStore([*twins, *store])
+    assert str(caught.value) == (
+        f"several files per data date, keep one per date: "
+        f"{first.data_date:%Y-%m-%d}: {first.source}, v0.5.xer, v0.8.xer"
+    )
+
+
+def test_selection_lists_every_file_in_the_series(store):
+    table = store.selection()
+    assert table["file"].tolist() == sorted(s.source for s in store)
+    assert "status" not in table and "reason" not in table
 
 
 def test_store_column_lists_exist_in_snapshot_frames(store):

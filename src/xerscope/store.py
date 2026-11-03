@@ -70,22 +70,29 @@ def _sort_key(s: Snapshot):
     return (s.data_date if s.data_date is not None else pd.Timestamp.max, s.source)
 
 
+class DuplicateDataDate(ValueError):
+    """Several files share a data date: the series holds one update per data date."""
+
+
 class SnapshotStore:
     def __init__(self, snapshots: Iterable[Snapshot]):
         snaps = sorted(snapshots, key=_sort_key)
-        self.warnings: list[str] = [w for s in snaps for w in s.warnings]
-        # One update per data date: the weekly series, the earned-value and health
-        # histories are keyed on it. Of two files with the same data date the first by
-        # name is kept.
-        self._snaps: list[Snapshot] = []
-        self.skipped: list[tuple[Snapshot, Snapshot]] = []  # (skipped, the snapshot kept for its data date)
+        # One update per data date: the weekly series, the earned-value and health histories
+        # are keyed on it. Files sharing a data date are usually versions of one draft or an
+        # update and its baseline copy; which one is the update is the user's call, not the
+        # file name's.
+        by_date: dict[pd.Timestamp, list[str]] = {}
         for s in snaps:
-            kept = next((k for k in self._snaps if k.data_date == s.data_date), None)
-            if kept is not None and s.data_date is not None:
-                self.warnings.append(f"{s.source}: same data date as {kept.source} ({s.data_date:{DATE_FMT}}), skipped")
-                self.skipped.append((s, kept))
-            else:
-                self._snaps.append(s)
+            if s.data_date is not None:
+                by_date.setdefault(s.data_date, []).append(s.source)
+        duplicates = {date: sources for date, sources in by_date.items() if len(sources) > 1}
+        if duplicates:
+            raise DuplicateDataDate(
+                "several files per data date, keep one per date: "
+                + "; ".join(f"{date:{DATE_FMT}}: {', '.join(sources)}" for date, sources in duplicates.items())
+            )
+        self._snaps: list[Snapshot] = snaps
+        self.warnings: list[str] = [w for s in snaps for w in s.warnings]
         codes = {s.project_code for s in self._snaps}
         if len(codes) > 1:
             self.warnings.append(f"project code differs across snapshots (renamed or other project): {sorted(codes)}")
@@ -137,9 +144,7 @@ class SnapshotStore:
         return self._snaps[i - 1] if i > 0 else None
 
     def selection(self) -> pd.DataFrame:
-        """One row per file read: the project taken from it, why, and whether it is in the series."""
-        rows = [(s, "in series", "") for s in self._snaps]
-        rows += [(s, "skipped", f"same data date as {kept.source}") for s, kept in self.skipped]
+        """One row per file in the series: the project taken from it and why."""
         return pd.DataFrame(
             [
                 {
@@ -150,10 +155,8 @@ class SnapshotStore:
                     "data_date": s.data_date,
                     "data_date_from": s.data_date_source,
                     "activities": len(s.activities),
-                    "status": status,
-                    "reason": reason,
                 }
-                for s, status, reason in sorted(rows, key=lambda row: row[0].source)
+                for s in sorted(self._snaps, key=lambda snap: snap.source)
             ],
             columns=[
                 "file",
@@ -163,8 +166,6 @@ class SnapshotStore:
                 "data_date",
                 "data_date_from",
                 "activities",
-                "status",
-                "reason",
             ],
         )
 

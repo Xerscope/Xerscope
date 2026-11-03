@@ -15,7 +15,7 @@ from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
 from xerscope.anonymize import Anonymizer
 from xerscope.app import ui
-from xerscope.store import SnapshotStore
+from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import XER_SUFFIXES, FileHeader, Snapshot, XerError, load_header, load_snapshot, xer_files
 from xerscope.xer.parser import parse_bytes
 
@@ -52,7 +52,12 @@ def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[
             errors.append(f"{name}: no data date (PROJECT.last_recalc_date); the file is skipped")
             continue
         snapshots.append(snapshot)
-    return (SnapshotStore(snapshots) if snapshots else None), errors
+    if not snapshots:
+        return None, errors
+    try:
+        return SnapshotStore(snapshots), errors
+    except DuplicateDataDate as exc:
+        return None, [*errors, f"{exc}. Untick the others."]
 
 
 def _items_from_uploads(uploads) -> tuple[tuple, list[tuple[str, bytes]] | None]:
@@ -210,15 +215,15 @@ def sidebar_loader() -> None:
 
 
 def _selection_panel(sidebar, store: SnapshotStore) -> None:
-    """What was taken from each file and why: the project, the rule that picked it, and whether
-    the file is in the series. Open by default when a file holds several projects or was skipped."""
+    """What was taken from each file and why: the project, the rule that picked it, and the
+    data date. Open by default when a file holds several projects."""
     table = store.selection()
-    attention = bool(store.skipped) or any(len(snapshot.project_task_counts) > 1 for snapshot in store)
-    with sidebar.expander(f"Selection · {len(store)} of {len(table)} file(s) in series", expanded=attention):
+    attention = any(len(snapshot.project_task_counts) > 1 for snapshot in store)
+    with sidebar.expander(f"Selection · {len(store)} file(s) in series", expanded=attention):
         st.caption(
             "One project per file: the one picked in Project when the file holds it, otherwise the one "
             "with the most TASK rows. Data date: PROJECT.last_recalc_date, else plan_start_date. "
-            "One file per data date: the first by name is kept."
+            "One file per data date."
         )
         st.dataframe(
             table.assign(data_date=table["data_date"].map(ui.fmt_date)),
@@ -231,8 +236,6 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
                 "data_date": "Data date",
                 "data_date_from": "Data date from",
                 "activities": "Activities",
-                "status": "Status",
-                "reason": "Reason",
             },
         )
 
