@@ -247,18 +247,18 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str], dark: bool 
 # --- milestones ---------------------------------------------------------------------------------
 
 
-def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) -> go.Figure:
+def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], dark: bool = False) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
     Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
     whole chart and every milestone can meet it inside the frame; below it is the past.
 
-    Colours follow ``colour_order`` among the plotted lines only, so up to len(SERIES)
-    lines never share a colour; a line keeps its colour while the lines before it in
-    ``colour_order`` stay picked. Lines with the same dates hide each other: the unified
-    hover lists every line at a reporting date and their end labels merge.
+    A line's colour is its move in the last update (``last_shift_wd``, working days,
+    `milestone_slips.last_week_wd`): red later, green earlier, grey unchanged or complete.
+    The end label carries that move. Lines with the same dates hide each other: the
+    unified hover lists every line at a reporting date and their end labels merge.
     """
-    c = SERIES[_mode(dark)]
+    status = STATUS[_mode(dark)]
     ink = INK[_mode(dark)]
     fig = go.Figure()
     pad = pd.Timedelta(days=10)
@@ -285,10 +285,10 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
             hoverinfo="skip",
         )
     )
-    ranked = sorted((code for code in trend["task_code"].unique() if code in colour_order), key=colour_order.index)
     ends = []
     for code, g in trend.groupby("task_code", sort=False):
-        color = c[ranked.index(code) % len(c)] if code in ranked else ink["muted"]
+        shift = last_shift_wd.get(code, 0.0)
+        color = status["critical"] if shift > 0 else status["good"] if shift < 0 else ink["muted"]
         done = g["is_complete"].to_numpy()
         fig.add_trace(
             go.Scatter(
@@ -301,7 +301,7 @@ def build_mta(trend: pd.DataFrame, colour_order: list[str], dark: bool = False) 
                 hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
             )
         )
-        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], code))
+        ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], code + (format_shift(shift) if shift else "")))
     _end_labels(fig, ends, (hi - lo).value, ink["secondary"])
     fig = _layout(fig, dark, 640, "Forecast date")
     fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")

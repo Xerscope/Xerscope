@@ -293,6 +293,8 @@ The chart (`plotted_trend`) draws each line up to the first update that reports 
 complete, where it meets the diagonal, and leaves out a line complete in its first
 update; the slippage table keeps every update. Pinned by
 test_mta_line_stops_at_completion.
+Line colour is the sign of `last_week_wd`: red > 0 (later), green < 0 (earlier),
+grey = 0 (unchanged, or complete). Pinned by test_mta_line_colour_follows_last_update_move.
 
 **Finish shift** (`SnapshotStore.summary.finish_shift_wd`):
 `round(working_days(previous finish_date, this finish_date), 1)` on this (newer)

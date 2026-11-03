@@ -10,7 +10,7 @@ from xerkit import snap, todo
 from xerscope.analysis.wbs import rollup
 from xerscope.viz import build_finish_trend, categorise, gantt_html, gantt_rows
 from xerscope.viz import gantt as gantt_module
-from xerscope.viz.charts import build_activity_dates, build_mta, build_ppc
+from xerscope.viz.charts import INK, STATUS, build_activity_dates, build_mta, build_ppc
 
 
 def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
@@ -26,7 +26,7 @@ def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
 
 def test_mta_identical_lines_share_one_end_label():
     same = ["2026-06-01", "2026-06-05", "2026-06-10"]
-    fig = build_mta(_mta_frame({"M1": same, "K2": same}), ["M1", "K2"])
+    fig = build_mta(_mta_frame({"M1": same, "K2": same}), {})
     labels = [a.text for a in fig.layout.annotations]
     assert labels == ["M1 · K2"]  # two labels on one point would print on top of each other
     assert fig.layout.hovermode == "x unified"  # hover lists both hidden lines
@@ -34,7 +34,7 @@ def test_mta_identical_lines_share_one_end_label():
 
 def test_mta_close_end_labels_are_pushed_apart():
     fig = build_mta(
-        _mta_frame({"M1": ["2026-06-01"] * 3, "M2": ["2026-06-02"] * 3, "M3": ["2026-12-01"] * 3}), ["M1", "M2", "M3"]
+        _mta_frame({"M1": ["2026-06-01"] * 3, "M2": ["2026-06-02"] * 3, "M3": ["2026-12-01"] * 3}), {}
     )
     shift = {a.text: a.yshift or 0 for a in fig.layout.annotations}
     assert shift["M1"] != shift["M2"]  # one day apart on a 6-month axis: same pixel row
@@ -43,7 +43,7 @@ def test_mta_close_end_labels_are_pushed_apart():
 
 def test_mta_reporting_line_stays_in_view_for_far_milestones():
     # updates on 2026-03-02..16, milestones forecast 5 and 9 months later
-    fig = build_mta(_mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3}), ["M1", "M2"])
+    fig = build_mta(_mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3}), {})
     x_lo, x_hi = (pd.Timestamp(v) for v in fig.layout.xaxis.range)
     y_lo, y_hi = (pd.Timestamp(v) for v in fig.layout.yaxis.range)
     assert (x_lo, x_hi) == (y_lo, y_hi)  # same span on both axes: the 45° line crosses the whole chart
@@ -51,11 +51,13 @@ def test_mta_reporting_line_stays_in_view_for_far_milestones():
     assert y_hi > pd.Timestamp("2026-12-01")  # every milestone can meet the line inside the frame
 
 
-def test_mta_picked_lines_never_share_a_colour():
-    order = [f"A{i}" for i in range(12)]
-    fig = build_mta(_mta_frame({"A0": ["2026-06-01"] * 3, "A6": ["2026-07-01"] * 3}), order)
-    colours = [t.line.color for t in fig.data if t.name and t.name[0] == "A"]
-    assert len(set(colours)) == 2  # slot 0 and slot 6 of a 6-colour palette would collide
+def test_mta_line_colour_follows_last_update_move():
+    lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
+    fig = build_mta(_mta_frame(lines), {"LATE": 2.0, "EARLY": -1.5, "SAME": 0.0})
+    colour = {t.name.split()[0]: t.line.color for t in fig.data if t.name and t.name.split()[0] in lines}
+    red, green, grey = STATUS["light"]["critical"], STATUS["light"]["good"], INK["light"]["muted"]
+    assert colour == {"LATE": red, "EARLY": green, "SAME": grey}
+    assert sorted(a.text for a in fig.layout.annotations) == ["EARLY (-1.5 wd)", "LATE (+2 wd)", "SAME"]
 
 
 def test_ppc_target_label_sits_outside_the_bars():
