@@ -15,7 +15,7 @@ from xerscope.analysis import Baseline, health_history
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
 from xerscope.viz import categorise, gantt_html, gantt_rows
-from xerscope.viz.charts import INK, STATUS, build_activity_dates, build_activity_float
+from xerscope.viz.charts import FONT_FAMILY, INK, STATUS, build_activity_dates, build_activity_float
 from xerscope.viz.gantt import BACKGROUND, BAND
 
 
@@ -127,6 +127,25 @@ def test_chart_and_gantt_colours_are_the_streamlit_theme_colours():
         assert theme["textColor"].lower() == INK[mode]["primary"], mode
         assert theme["backgroundColor"].lower() == BACKGROUND[mode], mode
         assert theme["secondaryBackgroundColor"].lower() == BAND[mode], mode
+
+
+def test_fonts_are_served_by_the_app_and_used_everywhere():
+    config_file = Path(xerscope.__file__).parent / "app" / ".streamlit" / "config.toml"
+    config = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    static = config_file.parent.parent / "static"
+    assert config["server"]["enableStaticServing"] is True
+    faces = config["theme"]["fontFaces"]
+    for face in faces:  # every declared face is a file of app/static/, no font host
+        assert face["url"].startswith("app/static/") and (static / face["url"].removeprefix("app/static/")).is_file()
+    families = {face["family"] for face in faces}
+    for option in ("font", "headingFont", "codeFont"):
+        assert config["theme"][option].split(",")[0].strip() in families, option
+    for family in families:  # each family ships with its licence
+        assert (static / f"OFL-{family.replace(' ', '')}.txt").is_file(), family
+    body = config["theme"]["font"].split(",")[0].strip()
+    assert FONT_FAMILY.split(",")[0] == body  # Plotly charts
+    assert f'"{body}"' in (Path(xerscope.__file__).parent / "viz" / "gantt.css").read_text()  # Gantt
+    assert f"font-family: '{body}'" in gantt_html([], dark=False)  # embedded: the iframe has no page fonts
 
 
 def test_text_colours_reach_wcag_aa_on_both_backgrounds():

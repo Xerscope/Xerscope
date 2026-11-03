@@ -6,6 +6,9 @@ address = "localhost"
 enableXsrfProtection = true
 enableCORS = true
 maxUploadSize = 200  # MB, per file
+# Serves app/static/ (the fonts below, nothing else) at app/static/: the fonts come from the
+# app itself, no request leaves for a font host.
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
@@ -19,6 +22,11 @@ toolbarMode = "minimal"
 # reserved for status (fail / warning / pass) and never decorate. The chart and Gantt
 # colours in viz/charts.py and viz/gantt.py must match these (tests/test_analysis_and_viz.py).
 [theme]
+# Variable fonts (weight axis in the file), latin subset, SIL OFL 1.1: app/static/OFL-*.txt.
+# The same families are set on the Plotly charts (viz/charts.py) and the Gantt (viz/gantt.css).
+font = "IBM Plex Sans, sans-serif"
+headingFont = "Space Grotesk, IBM Plex Sans, sans-serif"
+codeFont = "JetBrains Mono, monospace"
 showWidgetBorder = true
 showSidebarBorder = true
 baseRadius = "8px"
@@ -67,3 +75,23 @@ blueColor = "#22D3EE"
 [theme.dark.sidebar]
 backgroundColor = "#0E1628"
 secondaryBackgroundColor = "#131C31"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/IBMPlexSans-latin-wght.woff2"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/IBMPlexSans-latin-wght-italic.woff2"
+style = "italic"
+
+[[theme.fontFaces]]
+family = "Space Grotesk"
+url = "app/static/SpaceGrotesk-latin-wght.woff2"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "JetBrains Mono"
+url = "app/static/JetBrainsMono-latin-wght.woff2"
+style = "normal"
