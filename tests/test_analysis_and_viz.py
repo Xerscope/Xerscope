@@ -148,6 +148,12 @@ def test_fonts_are_served_by_the_app_and_used_everywhere():
     assert f"font-family: '{body}'" in gantt_html([], dark=False)  # embedded: the iframe has no page fonts
 
 
+def test_menu_offers_the_theme_switch_and_no_developer_options():
+    config = Path(xerscope.__file__).parent / "app" / ".streamlit" / "config.toml"
+    # "minimal" hides the whole menu, theme switch included; "developer" / "auto" add rerun and deploy
+    assert tomllib.loads(config.read_text(encoding="utf-8"))["client"]["toolbarMode"] == "viewer"
+
+
 def test_text_colours_reach_wcag_aa_on_both_backgrounds():
     # 4.5:1 for normal text (WCAG 2.2 SC 1.4.3): page text, links, status labels in tables.
     for mode, theme in _themes().items():
