@@ -528,8 +528,10 @@ class _Run:
             for bounded_end, bound in self.pred_bounds(code, started, finish_only=not use_logic):
                 (start_bounds if bounded_end == "start" else finish_bounds).append(bound)
             external_date = inputs[code].get("external_early_start_date")
-            if use_logic and options.honor_external and external_date is not None and pd.notna(external_date):
-                start_bounds.append(pd.Timestamp(external_date))  # a lost link to a project not in the database
+            if options.honor_external and external_date is not None and pd.notna(external_date):
+                # a lost link to a project not in the database: not a link of this project, so Progress
+                # Override does not release work under way from it (H8-08 A1020, H10-12 A1130, H15-09 A1110)
+                start_bounds.append(pd.Timestamp(external_date))
                 self.external.add(code)
             pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
             # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
