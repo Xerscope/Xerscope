@@ -192,6 +192,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
     ends = []
     for i, (col, name) in enumerate(columns.items()):
         s = series.dropna(subset=[col])
+        digits = 3 if col == "spi" else 2  # SPI: 1.002 ahead of plan would read 1.00
         fig.add_trace(
             go.Scatter(
                 x=s["data_date"],
@@ -200,12 +201,12 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
                 name=name,
                 line=dict(color=c[i], width=2),
                 marker=dict(size=8),
-                hovertemplate="%{y:.2f}",
+                hovertemplate=f"%{{y:.{digits}f}}",
             )
         )
         if len(s):
             y = float(s[col].iloc[-1])
-            ends.append((s["data_date"].iloc[-1], y, f"{name} {y:.2f}"))
+            ends.append((s["data_date"].iloc[-1], y, f"{name} {y:.{digits}f}"))
     span = max((float(series[c].max()) for c in columns if series[c].notna().any()), default=1.0) - min(
         (float(series[c].min()) for c in columns if series[c].notna().any()), default=0.0
     )

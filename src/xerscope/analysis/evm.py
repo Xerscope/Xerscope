@@ -153,7 +153,7 @@ def schedule_pct(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
             (group["ev_finish"].to_numpy("datetime64[ns]") <= np.datetime64(when)).astype(float),
         )
         percent.loc[group.index] = 100 * fraction
-    return percent.round(2)
+    return percent  # unrounded: per-activity PV must sum to ev_point's PV; tables round on display
 
 
 @dataclass

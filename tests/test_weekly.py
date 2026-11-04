@@ -118,8 +118,15 @@ def test_pv_is_schedule_pct_complete_in_working_time():
     at 13:00 has done 4 of its 12 working hours by the evening, not a third of a day."""
     bl = _bl(early_start_date="2026-03-02 13:00", early_end_date="2026-03-03 17:00", target_drtn_hr_cnt="12")
     assert _pv_at(bl, "2026-03-02 17:00") == pytest.approx(80 * 4 / 12)
-    assert schedule_pct(bl, pd.Timestamp("2026-03-03 08:00")).loc["A"] == pytest.approx(33.33)
+    assert schedule_pct(bl, pd.Timestamp("2026-03-03 08:00")).loc["A"] == pytest.approx(100 / 3)
     assert pv_curve(bl).set_index("date").loc["2026-03-02", "pv_hr"] == pytest.approx(80 / 3)
+
+
+def test_per_activity_pv_sums_to_the_headline_pv():
+    """A third of 80 h: a Schedule % rounded to 33.33 would give 26.664 h, not 26.667 h."""
+    bl = _bl(early_start_date="2026-03-02 13:00", early_end_date="2026-03-03 17:00", target_drtn_hr_cnt="12")
+    now = snap([todo("A")], data_date="2026-03-02 17:00")
+    assert earned(now, bl)["pv_hr"].sum() == pytest.approx(ev_point(now, bl).pv_hr, abs=1e-9)
 
 
 def test_pv_skips_calendar_holiday():

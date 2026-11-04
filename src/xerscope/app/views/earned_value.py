@@ -30,7 +30,7 @@ def format_points(change: float) -> str:
 
 
 def format_index_change(change: float) -> str:
-    return f"{change:+.2f}"
+    return f"{change:+.3f}"
 
 
 def format_number(value: float, template: str = "{:,.0f}") -> str:
@@ -56,7 +56,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
             ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
             (
                 "SPI",
-                format_number(row["spi"], "{:.2f}"),
+                format_number(row["spi"], "{:.3f}"),
                 change_since_previous(row, previous, "spi", format_index_change),
                 "EV / PV (hours)",
             ),
@@ -81,33 +81,35 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
 def show_calculation(row: pd.Series, baseline, snapshot) -> None:
     with st.expander("How it is calculated", icon=":material/calculate:"):
         bac, planned, earned_hours, actual = row["bac_hr"], row["pv_hr"], row["ev_hr"], row["ac_hr"]
+        baselined_actual = actual - row["ac_unbaselined_hr"]
+        # one decimal: a result and the operands shown beside it agree to 0.1 h
         calculation = pd.DataFrame(
             [
-                ("BAC", f"Σ baseline labour hours ({EV_BASES[baseline.ev_basis]})", f"{bac:,.0f} h"),
+                ("BAC", f"Σ baseline labour hours ({EV_BASES[baseline.ev_basis]})", f"{bac:,.1f} h"),
                 (
                     "PV",
                     "Σ BL hours × Schedule % Complete (working time elapsed between BL start and BL finish, "
                     "on the activity's calendar, at the data date)",
-                    f"{planned:,.0f} h  ({row['pv_pct']:.1f} % of BAC)",
+                    f"{planned:,.1f} h  ({row['pv_pct']:.1f} % of BAC)",
                 ),
                 (
                     "EV",
                     "Σ BL hours × Performance % Complete (WBS EV technique: activity %, 0/100, 50/50 or custom)",
-                    f"{earned_hours:,.0f} h  ({row['ev_pct']:.1f} % of BAC)",
+                    f"{earned_hours:,.1f} h  ({row['ev_pct']:.1f} % of BAC)",
                 ),
-                ("AC", "Σ actual labour hours", f"{actual:,.0f} h"),
+                ("AC", "Σ actual labour hours", f"{actual:,.1f} h"),
                 (
                     "SPI",
                     "EV / PV",
-                    f"{earned_hours:,.0f} / {planned:,.0f} = {format_number(row['spi'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.3f}')}",
                 ),
-                ("SV", "EV − PV", f"{earned_hours:,.0f} − {planned:,.0f} = {row['sv_hr']:+,.0f} h"),
-                ("ETC", "Σ remaining labour hours", f"{row['etc_hr']:,.0f} h"),
-                ("EAC", "AC + ETC", f"{actual:,.0f} + {row['etc_hr']:,.0f} = {row['eac_hr']:,.0f} h"),
+                ("SV", "EV − PV", f"{earned_hours:,.1f} − {planned:,.1f} = {row['sv_hr']:+,.1f} h"),
+                ("ETC", "Σ remaining labour hours", f"{row['etc_hr']:,.1f} h"),
+                ("EAC", "AC + ETC", f"{actual:,.1f} + {row['etc_hr']:,.1f} = {row['eac_hr']:,.1f} h"),
                 (
                     "EV / AC",
-                    "Earned hours per hour spent on baselined work",
-                    format_number(row["productivity"], "{:.2f}"),
+                    "EV / AC on baselined work (AC less the hours of activities the baseline does not have)",
+                    f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
                 ),
             ],
             columns=["measure", "formula", "this update"],

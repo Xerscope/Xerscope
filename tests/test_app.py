@@ -5,6 +5,7 @@ without a browser. It checks that pages run; test_app_parity.py checks that they
 """
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -198,6 +199,29 @@ def test_earned_value_needs_hours_and_baseline(app):
     app.sidebar.selectbox(key="bl_choice").set_value("None").run()
     _ok(app)
     assert any("Choose a baseline" in i.value for i in app.info)
+
+
+def test_ev_calculation_rows_add_up_as_shown(app):
+    """The operands shown, one decimal, give the result shown to the last digit: an
+    independently rounded pair could otherwise read 186,420 − 186,110 = +311."""
+    app.switch_page("views/earned_value.py").run()
+    for label in app.selectbox(key="ev_snap").options:
+        app.selectbox(key="ev_snap").set_value(label).run()
+        table = next(d.value for d in app.dataframe if "measure" in d.value.columns).set_index("measure")
+        shown = table.iloc[:, -1]
+        numbers = {
+            measure: [float(n.replace(",", "")) for n in re.findall(r"[+-]?[\d,]+\.\d+", text)]
+            for measure, text in shown.items()
+        }
+        ev, pv, sv = numbers["SV"]
+        assert sv == pytest.approx(ev - pv, abs=0.1 + 1e-9), label
+        ac, etc, eac = numbers["EAC"]
+        assert eac == pytest.approx(ac + etc, abs=0.1 + 1e-9), label
+        if shown["SPI"].endswith("–"):
+            continue
+        ev, pv, spi = numbers["SPI"]
+        assert len(shown["SPI"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
+        assert spi == pytest.approx(ev / pv, abs=0.001), label
 
 
 def test_changelog_and_ppc_pick_weeks(app):
