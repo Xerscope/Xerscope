@@ -20,6 +20,9 @@ ERMHDR line loses the exporting user, his full name and the database name.
 
 Before a file or a table is handed out, every one of its fields is compared with every text
 value of the originals that was not kept (``Anonymizer.leaks``): one match and it is refused.
+The names of the source files (``PROJ-01.xer``) and their stems (``PROJ-01``) are refused the same
+way, but anywhere in a field: they carry the project code and are written into labels
+("planned dates of <date> · <file>").
 """
 
 from __future__ import annotations
@@ -149,6 +152,7 @@ class Anonymizer:
     guids: dict[str, str] = field(default_factory=dict)
     wbs_paths: dict[str, str] = field(default_factory=dict)  # original wbs_code -> new
     secrets_: dict[str, str] = field(default_factory=dict)  # text value -> "TABLE.column" it came from
+    file_names: set[str] = field(default_factory=set)  # source file names and their stems, found anywhere in a field
     report: Report = field(default_factory=Report)
     key: bytes = field(default_factory=lambda: secrets.token_bytes(32), repr=False)  # HMAC key of the codes
     taken: dict[str, set[str]] = field(default_factory=dict, repr=False)  # kind -> new codes given
@@ -182,8 +186,10 @@ class Anonymizer:
             if len(raw.header) > position and raw.header[position] not in GENERIC_HEADER:
                 self.secrets_.setdefault(raw.header[position], "ERMHDR")
         if raw.source:
-            stem = raw.source.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            name = re.split(r"[/\\]", raw.source)[-1]
+            stem = name.rsplit(".", 1)[0]
             self.secrets_.setdefault(stem, "file name")
+            self.file_names.update(part for part in (name, stem) if _is_text(part))
         kept_values: set[str] = set()
         for table, frame in raw.tables.items():
             keep = KEEP.get(table, frozenset())
@@ -207,10 +213,18 @@ class Anonymizer:
     def leaks(self, fields: Iterable[str]) -> dict[str, int]:
         """Original text values found among ``fields``, counted by the column they came from."""
         found: dict[str, int] = {}
-        for value in fields:
+        values = list(fields)
+        for value in values:
             origin = self.secrets_.get(value.strip())
             if origin is not None:
                 found[origin] = found.get(origin, 0) + 1
+        if self.file_names:
+            # a name is not a word of the output: found whole, whatever surrounds it, in any case
+            names = "|".join(re.escape(name) for name in sorted(self.file_names, key=len, reverse=True))
+            pattern = re.compile(rf"(?<![A-Za-z0-9])(?:{names})(?![A-Za-z0-9])", re.IGNORECASE)
+            hits = sum(1 for value in values if pattern.search(value))
+            if hits:
+                found["file name"] = max(found.get("file name", 0), hits)
         return found
 
     def _refuse_leaks(self, fields: Iterable[str], what: str) -> None:

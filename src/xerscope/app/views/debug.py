@@ -111,7 +111,9 @@ def build_diagnostic(anonymous: bool) -> None:
     fetched = fetch(
         st.session_state,
         lambda: zip_frames(frames, "csv"),
-        lambda anonymizer: anonymizer.zip_frames(frames),
+        lambda anonymizer: anonymizer.zip_frames(
+            diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True)
+        ),
         sources,
         prepare=True,
     )
