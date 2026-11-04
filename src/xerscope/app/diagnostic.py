@@ -206,16 +206,21 @@ def check_parameters(standard: Standard) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def baseline_table(snapshot: Snapshot, baseline: Baseline | None) -> pd.DataFrame:
-    """The baseline in use: label, kind, activities of the update it covers."""
+def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: bool = False) -> pd.DataFrame:
+    """The baseline in use: label, kind, activities of the update it covers. ``anonymous``: the label
+    names no file (the file name carries the project code), only the kind of baseline."""
     if baseline is None:
         return pd.DataFrame([{"baseline": "none", "kind": "", "matched": 0, "activities": len(snapshot.by_code)}])
     codes = snapshot.by_code.index
+    planned = baseline.snapshot is snapshot
+    label = baseline.label
+    if anonymous:
+        label = "planned dates of the update" if planned else "baseline file"
     return pd.DataFrame(
         [
             {
-                "baseline": baseline.label,
-                "kind": "planned dates (target_*)" if baseline.snapshot is snapshot else "separate file",
+                "baseline": label,
+                "kind": "planned dates (target_*)" if planned else "separate file",
                 "matched": int(codes.isin(baseline.frame.index).sum()),
                 "activities": len(codes),
             }
@@ -251,8 +256,10 @@ def finish_table(snapshot: Snapshot, latest: int = 5) -> tuple[pd.DataFrame, pd.
     return project, activities.nlargest(latest, "finish").reset_index(drop=True)
 
 
-def diagnostic_frames(snapshot: Snapshot, baseline: Baseline | None, standard: Standard) -> dict[str, pd.DataFrame]:
-    """The six blocks, named as the files of the diagnostic zip."""
+def diagnostic_frames(
+    snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
+) -> dict[str, pd.DataFrame]:
+    """The six blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
     return {
         "01_options": options_table(snapshot),
@@ -260,7 +267,7 @@ def diagnostic_frames(snapshot: Snapshot, baseline: Baseline | None, standard: S
         "03_int01_recalculation": recalculation_table(snapshot),
         "03_int03_assignments": assignments_table(snapshot),
         "04_check_parameters": check_parameters(standard),
-        "05_baseline": baseline_table(snapshot, baseline),
+        "05_baseline": baseline_table(snapshot, baseline, anonymous),
         "05_calendars": calendars_table(snapshot),
         "06_leveling": leveling_table(snapshot),
         "06_project_finish": project_finish,
