@@ -118,6 +118,10 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
     folder_id = hashlib.sha256(str(root).encode()).hexdigest()[:12]
     # nothing ticked by default: a file is read (up to ~1 GB for a 40 MB export) only once asked for
     keys = {path.name: f"read:{folder_id}:{path.name}" for path in files}
+
+    def tick_all(value: bool) -> None:
+        st.session_state.update(dict.fromkeys(keys.values(), value))
+
     ticked = sum(bool(st.session_state.get(key)) for key in keys.values())
     picked = []
     # a fixed key keeps the expander open while files are ticked: without it Streamlit keys it on
@@ -125,6 +129,9 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
     with sidebar.expander(
         f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked, key=f"files:{folder_id}"
     ):
+        select, clear = st.columns(2)
+        select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
+        clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
         for path in files:
             label, details = _describe_file(path)
             if st.checkbox(label, value=False, key=keys[path.name], help=details):
