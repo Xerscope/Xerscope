@@ -245,6 +245,18 @@ def test_earned_value_warns_when_a_wbs_computes_its_etc_with_a_performance_facto
     assert "WREM" not in warnings[0]
 
 
+def test_earned_value_shows_the_cpi_beside_ev_per_ac_on_baselined_work(app):
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    table = next(d.value for d in app.dataframe if "measure" in d.value.columns).set_index("measure")
+    assert table.loc["CPI (labour units)", "P6 column"] == "Cost Performance Index - Labor Units"
+    ev, ac, cpi = (
+        float(n.replace(",", "")) for n in re.findall(r"[\d,]+\.\d+", table.loc["CPI (labour units)"].iloc[-1])
+    )
+    assert cpi == pytest.approx(ev / ac, abs=0.005)
+    assert "not a P6 column" in table.loc["EV / AC (baselined work)", "P6 column"]
+
+
 def test_ev_calculation_rows_add_up_as_shown(app):
     """The operands shown, one decimal, give the result shown to the last digit: an
     independently rounded pair could otherwise read 186,420 − 186,110 = +311."""

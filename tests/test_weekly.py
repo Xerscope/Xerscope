@@ -165,6 +165,37 @@ def test_ev_spi_and_unbaselined():
     assert p.unbaselined == ["X"]
 
 
+def test_cpi_divides_by_all_actual_hours_and_ev_per_ac_by_the_baselined_ones():
+    """A (in the baseline) earns 20 h for 30 h spent; X (not in the baseline) spent 10 h more.
+    P6's Cost Performance Index - Labor Units uses every actual hour: 20 / 40; EV / AC on
+    baselined work leaves X out: 20 / 30. The denominators differ by exactly X's 10 h."""
+    bl = _bl(early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")
+    now = snap(
+        [
+            active(
+                "A",
+                phys_complete_pct="25",
+                complete_pct_type="CP_Phys",
+                target_work_qty="80",
+                act_work_qty="30",
+                remain_work_qty="60",
+            ),
+            active("X", target_work_qty="40", act_work_qty="10", remain_work_qty="40"),
+        ],
+        data_date="2026-03-04 08:00",
+    )
+    p = ev_point(now, bl)
+    assert (p.ev_hr, p.ac_hr, p.ac_unbaselined_hr) == (20, 40, 10)
+    assert p.cpi == pytest.approx(20 / 40) and p.productivity == pytest.approx(20 / 30)
+    assert 20 / p.cpi - 20 / p.productivity == pytest.approx(10)
+    row = evm_series(SnapshotStore([now]), bl).iloc[0]
+    assert row["cpi"] == pytest.approx(0.5) and row["productivity"] == pytest.approx(20 / 30)
+    assert list(row.index[:14]) == [
+        "data_date", "bac_hr", "pv_hr", "ev_hr", "ac_hr", "etc_hr", "eac_hr", "pv_pct", "ev_pct", "sv_hr",
+        "spi", "productivity", "cpi", "unbaselined",
+    ]  # fmt: skip
+
+
 @pytest.mark.parametrize(
     "code,state,pct",
     [

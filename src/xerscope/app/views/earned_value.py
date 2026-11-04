@@ -149,10 +149,17 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                     "Estimate At Completion - Labor Units",
                 ),
                 (
-                    "EV / AC",
-                    "EV / AC on baselined work (AC less the hours of activities the baseline does not have)",
+                    "CPI (labour units)",
+                    "EV / AC, all actual hours",
+                    f"{earned_hours:,.1f} / {actual:,.1f} = {format_number(row['cpi'], '{:.2f}')}",
+                    "Cost Performance Index - Labor Units",
+                ),
+                (
+                    "EV / AC (baselined work)",
+                    "EV / AC without the hours of activities the baseline does not have: EV exists only for "
+                    "baselined activities, so those hours would lower the ratio",
                     f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
-                    "Cost Performance Index - Labor Units, on baselined work only (P6 divides by all actual units)",
+                    "not a P6 column: P6 divides by all actual units (CPI above)",
                 ),
             ],
             columns=["measure", "formula", "this update", "P6 column"],
@@ -200,7 +207,9 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
     st.plotly_chart(
-        build_index_trend(series, {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC"}),
+        build_index_trend(
+            series, {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
+        ),
         width="stretch",
     )
     ui.table(series.drop(columns=["bac_hr"]))

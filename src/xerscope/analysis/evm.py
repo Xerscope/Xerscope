@@ -20,8 +20,9 @@
   units, or a performance factor PF with ETC = PF x (BAC - EV) (Oracle Pro 25, Earned Value
   tab - WBS Details). xerscope always uses the remaining units; ``etc_settings`` reports
   the WBS that use a PF.
-- SPI = EV / PV, SV = EV - PV; EV / AC is measured on baselined work only (EV exists
-  for nothing else), the hours spent outside the baseline being reported apart.
+- SPI = EV / PV, SV = EV - PV; CPI = EV / AC as P6 gives it (all actual labour units);
+  ``productivity`` = EV / AC measured on baselined work only (EV exists for nothing else),
+  the hours spent outside the baseline being reported apart.
 """
 
 from __future__ import annotations
@@ -232,6 +233,11 @@ class EvPoint:
         baselined_actual_hr = self.ac_hr - self.ac_unbaselined_hr
         return self.ev_hr / baselined_actual_hr if baselined_actual_hr else None
 
+    @property
+    def cpi(self) -> float | None:
+        """P6 "Cost Performance Index - Labor Units": EV / all actual labour units."""
+        return self.ev_hr / self.ac_hr if self.ac_hr else None
+
     def as_row(self) -> dict:
         def percent_of_bac(hours: float) -> float | None:
             return 100 * hours / self.bac_hr if self.bac_hr else None
@@ -249,6 +255,7 @@ class EvPoint:
             "sv_hr": self.ev_hr - self.pv_hr,
             "spi": self.spi,
             "productivity": self.productivity,
+            "cpi": self.cpi,
             "unbaselined": len(self.unbaselined),
             "ac_unbaselined_hr": self.ac_unbaselined_hr,
         }
