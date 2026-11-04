@@ -206,3 +206,20 @@ def test_pv_labor_check_is_empty_without_baseline_and_in_the_diagnostic_zip():
     s = snap([todo("A")])
     frames = diagnostic_frames(s, None, builtin_standards()["P6"])
     assert frames["09_pv_labor_check"].empty and frames["09_pv_labor_by_status"].empty
+
+
+def test_pv_labor_check_variants_calendar_time_and_end_of_the_data_date():
+    """B, 40 h, Mon 08:00 to Fri 17:00 (40 working hours, 105 calendar hours), data date Wed 08:00.
+    Working time at the data date: 16 of 40 h -> 16. Calendar time: 48 of 105 h -> 40 x 48 / 105.
+    End of the data date's day (Thu 00:00), working time: Mon to Wed, 24 of 40 h -> 24; calendar
+    time: 64 of 105 h -> 40 x 64 / 105."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import pv_labor_check
+
+    tasks = [todo("B", **WEEK, target_work_qty="40")]
+    totals, _ = pv_labor_check(snap(tasks, data_date=WED), Baseline.from_snapshot(snap(tasks)))
+    row = totals.iloc[0]
+    assert row["pv_activity_hr"] == pytest.approx(16)
+    assert row["pv_calendar_time_hr"] == pytest.approx(40 * 48 / 105)
+    assert row["pv_end_of_day_hr"] == pytest.approx(24)
+    assert row["pv_calendar_time_end_of_day_hr"] == pytest.approx(40 * 64 / 105)

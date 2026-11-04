@@ -256,6 +256,7 @@ def planned_value_cost(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
 PV_LABOR_COLUMNS = [
     "data_date", "activities", "assignments", "labor_assignments", "labor_assignments_with_curve",
     "bl_hr_with_curve", "bac_activity_hr", "bac_assignment_hr", "pv_activity_hr", "pv_assignment_hr", "gap_hr",
+    "pv_calendar_time_hr", "pv_end_of_day_hr", "pv_calendar_time_end_of_day_hr",
 ]  # fmt: skip
 PV_LABOR_STATUS_COLUMNS = ["status", "activities", "pv_activity_hr", "pv_assignment_hr", "gap_hr"]
 SCHEDULE_STATUSES = ["not started", "in progress", "complete"]
@@ -269,7 +270,10 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     labour assignments x the share of their own start-to-finish elapsed, with the convention of the
     PV cost (``PV_COST_WORKING_TIME``); an activity without labour assignment keeps its activity
     value. The glossary's resource-curve distribution is not modelled; assignments naming a curve
-    are counted. ``gap_hr`` = assignment - activity. Returns the totals (one row) and the split by
+    are counted. ``gap_hr`` = assignment - activity. Variants of the activity value, to tell which
+    convention P6 uses: ``pv_calendar_time_hr`` (Schedule % in calendar time, the glossary writes a
+    date difference), ``pv_end_of_day_hr`` (working time, at the end of the data date's day) and
+    both together. Returns the totals (one row) and the split by
     Schedule % (0 not started, 100 complete). No activity code in either.
     """
     if baseline is None or snapshot.data_date is None:
@@ -288,6 +292,13 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     percent = values["schedule_pct"].fillna(0.0)
     values["status"] = np.where(percent <= 0, "not started", np.where(percent >= 100, "complete", "in progress"))
     curved = labor[labor["curve"].astype(bool)]
+    end_of_day = snapshot.data_date.normalize() + pd.Timedelta(days=1)
+
+    def activity_pv(when: pd.Timestamp, working_time: bool) -> float:
+        frame = baseline.frame
+        share = _elapsed(baseline.snapshot, frame, "ev_start", "ev_finish", "bl_clndr_id", when, working_time)
+        return float((frame["ev_labor_hr"] * share.fillna(0.0)).sum())
+
     totals = pd.DataFrame(
         [
             {
@@ -302,6 +313,9 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
                 "pv_activity_hr": float(values["pv_hr"].sum()),
                 "pv_assignment_hr": float(values["pv_assignment_hr"].sum()),
                 "gap_hr": float(values["gap_hr"].sum()),
+                "pv_calendar_time_hr": activity_pv(snapshot.data_date, working_time=False),
+                "pv_end_of_day_hr": activity_pv(end_of_day, working_time=True),
+                "pv_calendar_time_end_of_day_hr": activity_pv(end_of_day, working_time=False),
             }
         ]
     )
