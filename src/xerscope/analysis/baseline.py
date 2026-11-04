@@ -65,6 +65,7 @@ class Baseline:
     snapshot: Snapshot  # source file, for its calendars (PV spreading)
     ev_basis: str = DEFAULT_EV_BASIS
     is_planned: bool = False  # the planned dates (target_*) of the snapshot itself, no baseline file
+    source: str = ""  # where it comes from, when the app chose it for an update (shown with every result)
 
     @classmethod
     def from_snapshot(cls, baseline_snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:

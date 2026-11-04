@@ -43,7 +43,7 @@ def two_projects(
             {"task_code": code, "task_id": str(100 + i), "proj_id": "2", "early_end_date": baseline_finish}
             for i, code in enumerate(baseline_ids)
         ]
-    lines = xer_text(tasks, project=analysed).splitlines()
+    lines = xer_text(tasks, project=analysed, data_date=data_date).splitlines()
     if with_baseline:
         fields = lines[lines.index("%T\tPROJECT") + 1].split("\t")[1:]
         lines.insert(lines.index("%T\tPROJECT") + 3, "%R\t" + "\t".join(baseline.get(f, "") for f in fields))

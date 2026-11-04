@@ -355,6 +355,7 @@ class FileBaseline:
     code: str
     usable: bool
     note: str
+    updated: str = ""  # last_baseline_update_date of the baseline project, as stored
 
     @property
     def text(self) -> str:
@@ -380,7 +381,7 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     if origin and origin != project_id:
         note = f"project {pointer} was copied from project {origin}, not from the analysed project {project_id}"
         return FileBaseline(pointer, target["proj_short_name"], False, note)
-    return FileBaseline(pointer, target["proj_short_name"], True, "")
+    return FileBaseline(pointer, target["proj_short_name"], True, "", str(target["last_baseline_update_date"]))
 
 
 CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]

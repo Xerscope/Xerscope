@@ -75,6 +75,7 @@ def show_kpis(results) -> None:
 
 def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> None:
     full = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
+    full["note"] = [result.note_with_baseline for result in results]  # the export names the baseline
     full["target"] = full["target"].map(typeset)
     columns = ["status", "id", "group", "check", "result", "count", "target", "flagged"]
     if not full["group"].astype(bool).any():
@@ -205,6 +206,8 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
                 st.markdown("\n".join(f"- {line}" for line in explanation.population))
             if result.note and result.note not in explanation.formula:
                 st.markdown(f"**Note** · {ui.md_text(result.note)}")
+            if explanation.baseline:
+                st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
         with right:
             st.markdown("**Method**")
             st.caption(explanation.method.replace("``", "`"))

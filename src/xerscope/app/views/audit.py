@@ -97,6 +97,8 @@ def show_explanation(result) -> None:
             st.markdown("\n".join(f"- {line}" for line in explanation.population))
         if result.note and result.note not in explanation.formula:
             st.markdown(f"**Note** · {ui.md_text(result.note)}")
+        if explanation.baseline:
+            st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
     with right:
         st.markdown("**Method**")
         st.caption(explanation.method.replace("``", "`"))

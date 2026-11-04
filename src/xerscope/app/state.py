@@ -301,6 +301,21 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
         )
 
 
+def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
+    """What an update whose file has no usable baseline is measured against: chosen, never imposed."""
+    options = [BL_FILE] + store.labels + [BL_PLANNED, BL_NONE]
+    choice = sidebar.selectbox(
+        "When a file has no baseline",
+        options,
+        index=len(options) - 1,
+        key="bl_fallback",
+        help="Applies update by update: an update uses the baseline of its own file when it has a usable one, "
+        "otherwise this. None: the checks that need a baseline are n/a for that update.",
+    )
+    st.session_state["fallback_choice"] = choice
+    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, "")
+
+
 def _baseline_picker(store: SnapshotStore) -> None:
     sidebar = st.sidebar
     sidebar.subheader("Baseline")
@@ -331,12 +346,27 @@ def _baseline_picker(store: SnapshotStore) -> None:
     st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
     baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
     st.session_state["baseline"] = baseline
+    st.session_state["fallback"], st.session_state["fallback_choice"] = None, BL_NONE
+    if baseline == BL_EACH:
+        _fallback_picker(sidebar, store, basis)
     if isinstance(baseline, Baseline):
         _describe_baseline(sidebar, store, baseline)
     if baseline == BL_EACH:
         for snapshot in store:
             if not snapshot.file_baseline.usable:
                 sidebar.caption(f"{snapshot.source}: {snapshot.file_baseline.text}. Its baseline checks are n/a.")
+
+
+def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
+    """The fallback chosen in the sidebar, as it applies to ``snapshot`` (a file with no usable baseline)."""
+    fallback, choice = st.session_state.get("fallback"), st.session_state.get("fallback_choice", BL_NONE)
+    if fallback == BL_PLANNED:
+        built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
+        return replace(built, source=f"fallback ({BL_PLANNED})")
+    if isinstance(fallback, Baseline):
+        kind = "separate baseline file" if choice == BL_FILE else "loaded update"
+        return replace(fallback, source=f"fallback ({kind}): {fallback.label}")
+    return None
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -359,7 +389,12 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
         except XerError:
             return None
         built = Baseline.from_snapshot(source, basis)
-        cache[key] = replace(built, label=f"BL {pointer.code} (project baseline in {snapshot.source})")
+        updated = pointer.updated[:10] or "not recorded"
+        cache[key] = replace(
+            built,
+            label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
+            source=f"P6 Project Baseline in the file (proj_id {pointer.proj_id}, last update {updated})",
+        )
     st.session_state["_file_baselines"] = (signature, cache)
     return cache[key]
 
@@ -368,7 +403,7 @@ def baseline_for(snapshot: Snapshot) -> Baseline | None:
     """The sidebar's baseline, as it applies to ``snapshot``."""
     baseline = st.session_state.get("baseline")
     if baseline == BL_EACH:
-        return _file_baseline(snapshot)
+        return _file_baseline(snapshot) or _fallback_baseline(snapshot)
     if baseline == BL_PLANNED:
         return Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
     return baseline if isinstance(baseline, Baseline) else None
@@ -438,7 +473,8 @@ def _baseline_identity() -> tuple:
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
         store = st.session_state.get("store")
         pointers = tuple((s.source, s.file_baseline.proj_id, s.file_baseline.usable) for s in store or ())
-        return baseline, st.session_state.get("ev_basis"), pointers
+        fallback = (st.session_state.get("fallback_choice"), st.session_state.get("baseline_digest"))
+        return baseline, st.session_state.get("ev_basis"), pointers, fallback
     return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
 
 

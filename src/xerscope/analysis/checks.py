@@ -38,15 +38,35 @@ class CheckResult:
     checked: pd.DataFrame | None = None  # rows behind the denominator (RuleOutput.checked)
     counted: pd.DataFrame | None = None  # rows behind the numerator when they are not ``flagged``
     funnel: Funnel | None = None  # the named steps that cut ``checked`` from the file
+    baseline: str = ""  # the baseline the result was computed on ("none" when it needs one and has none)
+
+    @property
+    def note_with_baseline(self) -> str:
+        """``note`` followed by the baseline, for the exports."""
+        if not self.baseline:
+            return self.note
+        return f"{self.note} · baseline: {self.baseline}" if self.note else f"baseline: {self.baseline}"
+
+
+# Rules that read the baseline without needing one (they fall back on the planned dates), by name
+BASELINE_READERS = {"decm_06a204b_dangling_logic", "dcma_08_high_duration"}
+
+
+def uses_baseline(metric: Metric) -> bool:
+    """Whether the baseline changes this metric's result."""
+    effective = {**RULES[metric.rule].params, **metric.params}
+    return metric.needs_baseline or metric.rule in BASELINE_READERS or effective.get("field") == "baseline"
 
 
 def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
+    used = context.baseline
+    baseline = ("none" if used is None else used.source or used.label) if uses_baseline(metric) else ""
     if metric.needs_baseline and context.baseline is None:
-        return CheckResult(metric, "n/a", note="needs a baseline")
+        return CheckResult(metric, "n/a", note="needs a baseline", baseline=baseline)
     try:
         out = RULES[metric.rule].fn(context, **metric.params)
     except Exception as exc:  # noqa: BLE001 - reported in the result
-        return CheckResult(metric, "error", note=f"{type(exc).__name__}: {exc}")
+        return CheckResult(metric, "error", note=f"{type(exc).__name__}: {exc}", baseline=baseline)
     value = out.value
     if metric.unit == "count":
         value = None if out.numerator is None else float(out.numerator)
@@ -58,7 +78,17 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
     else:
         note = out.note
     return CheckResult(
-        metric, status, value, out.numerator, out.denominator, out.flagged, note, out.checked, out.counted, out.funnel
+        metric,
+        status,
+        value,
+        out.numerator,
+        out.denominator,
+        out.flagged,
+        note,
+        out.checked,
+        out.counted,
+        out.funnel,
+        baseline,
     )
 
 

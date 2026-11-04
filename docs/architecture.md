@@ -104,7 +104,14 @@ same file that owns activities and, when its `orig_proj_id` is filled, names the
 copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
 Start / Finish). The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
 without one has no baseline for that update (checks that need one are n/a), stated in the Selection panel.
-The memo key holds the project each file names. P6-12 and P6-13 read `context.baseline` like every rule that
+The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
+has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never
+chosen for the user), gives the baseline of the updates whose file has no usable one, update by update.
+`Baseline.source` says where the baseline of an update comes from; `run_metric` copies it to
+`CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
+readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
+Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
+`baseline: <source>`. P6-12 and P6-13 read `context.baseline` like every rule that
 needs one: they get the baseline of the sidebar choice (the file's, a separate XER, the planned dates) and
 carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
