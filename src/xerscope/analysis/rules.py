@@ -4,7 +4,7 @@ The built-in standards (P6, DCMA, DECM, INTEGRITY) are one explicit function per
 (``p6/``, ``dcma/``, ``decm/``, ``integrity.py``); the TOML only gives each its target.
 The rules below take parameters instead, so a company standard
 (``standards/custom-template.toml``) can pick a rule, set its parameters and a target:
-``Rule.params`` / ``Rule.validate``, ``EXCLUDE`` and ``ALLOWED`` exist for them alone.
+``Rule.params`` / ``Rule.validate``, ``EXEMPT`` and ``ALLOWED`` exist for them alone.
 The helpers after the generic rules (``share_of_type``, ``late_output``, ...) are shared
 with the explicit checks.
 
@@ -33,14 +33,18 @@ import operator
 import typing
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import pandas as pd
 
+from ..store import SnapshotStore
+from ..xer import Snapshot
 from ..xer.model import CONSTRAINT, forecast_dates
+from .baseline import Baseline
 from .cpm import critical_path_test
 from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     ACTIVITY_COLS,
+    EXCLUSIONS,
     LINK_COLS,
     Funnel,
     actual_after,
@@ -55,15 +59,20 @@ from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     lag_flagged,
     open_end_reason,
     with_baseline,
+    without,
 )
-
-if TYPE_CHECKING:
-    from .checks import AnalysisContext
 
 Unit = Literal["%", "ratio", "count", "days", "pass/fail"]
 Names = Sequence[str]  # TOML gives lists, defaults are tuples
 Op = Literal["<", "<=", ">", ">="]
 LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
+
+
+@dataclass
+class AnalysisContext:
+    snapshot: Snapshot
+    store: SnapshotStore | None = None
+    baseline: Baseline | None = None
 
 
 @dataclass
@@ -173,15 +182,7 @@ def rule(name: str, unit: Unit, needs_baseline: bool = False, links: bool = Fals
 # --- populations -------------------------------------------------------------------------
 
 
-# Each closed vocabulary is declared once: key -> label for explain.
-EXCLUDE: dict[str, str] = {
-    "complete": "completed activities",
-    "complete_before_data_date": "activities completed before the data date",
-    "started": "started activities",
-    "loe": "level of effort",
-    "milestones": "milestones",
-    "no_duration": "activities with no original duration",
-}
+# Each closed vocabulary is declared once: key -> label for explain (exclusions: populations.EXCLUSIONS).
 EXEMPT: dict[str, str] = {
     "started": "started activities",
     "start_milestone": "start milestones",
@@ -190,7 +191,7 @@ EXEMPT: dict[str, str] = {
     "project_finish": "the project's last activity",
 }
 ALLOWED: dict[str, set[str]] = {
-    "exclude": set(EXCLUDE),
+    "exclude": set(EXCLUSIONS),
     "pred_exempt": set(EXEMPT),
     "succ_exempt": set(EXEMPT),
     "types": set(CONSTRAINT),
@@ -198,29 +199,7 @@ ALLOWED: dict[str, set[str]] = {
 
 
 def activities(context: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
-    return _without(context.snapshot.activities, context.snapshot.data_date, exclude)
-
-
-def _exclude_masks(tasks: pd.DataFrame, data_date) -> dict[str, pd.Series]:
-    """One boolean mask per EXCLUDE key: the activities that vocabulary removes."""
-    completed_before = tasks["is_complete"] if data_date is None else tasks["act_end_date"] < data_date
-    masks = {
-        "complete": tasks["is_complete"],
-        "complete_before_data_date": completed_before,
-        "started": tasks["is_started"],
-        "loe": tasks["is_loe"],
-        "milestones": tasks["is_milestone"],
-        "no_duration": ~(tasks["target_drtn_hr_cnt"].fillna(0) > 0),
-    }
-    return {key: as_flag(masks[key]) for key in EXCLUDE}
-
-
-def _without(tasks: pd.DataFrame, data_date, exclude: Sequence[str]) -> pd.DataFrame:
-    masks = _exclude_masks(tasks, data_date)
-    excluded = pd.Series(False, index=tasks.index)
-    for key in exclude:
-        excluded |= masks[key]
-    return tasks[~excluded]
+    return without(context.snapshot.activities, context.snapshot.data_date, exclude)
 
 
 def link_population(
@@ -249,7 +228,7 @@ def link_funnel(
     if exclude:
         # DCMA PAM 200.1 section 4.0 reading: a link counts when its successor is a retained
         # task; the predecessor may itself be excluded (a link out of a milestone counts).
-        kept = _without(snapshot.activities, snapshot.data_date, list(exclude))
+        kept = without(snapshot.activities, snapshot.data_date, exclude)
         funnel.keep("successor kept", source, lambda rows: rows["succ_code"].isin(kept["task_code"]))
     if exclude_loe:
         loe = tasks["is_loe"]
@@ -562,7 +541,7 @@ def late_vs_baseline(
     ``no_baseline``: an activity with no baseline finish passes, or (``"planned"``, P6
     Professional) is late when its finish is later than its planned finish.
     """
-    population = with_baseline(context, activities(context, exclude))
+    population = with_baseline(context.baseline, activities(context, exclude))
     if no_baseline == "planned":
         population["bl_finish"] = population["bl_finish"].combine_first(population["target_end_date"])
     return late_output(context, population, tolerance_hours)
@@ -588,9 +567,9 @@ def bei(
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    population = with_baseline(context, activities(context, exclude))
+    population = with_baseline(context.baseline, activities(context, exclude))
     if due_from == "baseline":
-        baseline_population = _without(context.baseline.snapshot.activities, data_date, exclude)
+        baseline_population = without(context.baseline.snapshot.activities, data_date, exclude)
         return bei_from_baseline(context, population, baseline_population)
     return bei_from_snapshot(population, data_date, missing_baseline == "due")
 
@@ -681,7 +660,7 @@ def critical_path_output(context: AnalysisContext, slip_days: float) -> RuleOutp
     """The critical path test: slip the first open critical activity by ``slip_days``; the finish must follow."""
     if context.snapshot.data_date is None:
         return RuleOutput(note="no data date")
-    if finish_driver(context) is None:
+    if finish_driver(context.snapshot) is None:
         return RuleOutput(note="no remaining work")
     test = critical_path_test(context.snapshot, slip_days)
     return RuleOutput(value=1.0 if test.passed else 0.0, note=test.note, flagged=pd.DataFrame(test.blocking))

@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 
 from ..xer.model import CONSTRAINT
 from .checks import CheckResult
-from .rules import EXCLUDE, EXEMPT, RULES, Rule
+from .populations import EXCLUSIONS
+from .rules import EXEMPT, RULES, Rule
 
 LINKS_TEXT = {
     "all": "all relationships",
@@ -78,8 +79,8 @@ def _show(value) -> str:
 
 
 def _exclude_line(links: bool, exclude: list[str]) -> str:
-    what = ", ".join(EXCLUDE.get(key, key) for key in exclude)
-    return f"Relationships whose successor is excluded: {what}." if links else f"Excludes: {what}."
+    excluded_text = ", ".join(EXCLUSIONS[key].text for key in exclude)
+    return f"Relationships whose successor is excluded: {excluded_text}." if links else f"Excludes: {excluded_text}."
 
 
 def _scope_lines(rule: Rule, params: dict) -> list[str]:

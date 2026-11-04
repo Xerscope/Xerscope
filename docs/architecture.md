@@ -87,10 +87,10 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 | Module | Input → output | Notes |
 |---|---|---|
 | `p6/check_schedule.py`, `dcma/fourteen_point.py`, `decm/schedule_metrics.py`, `integrity.py` | context → `RuleOutput(flagged, numerator, denominator, value)` | the built-in standards: one explicit function per check, its docstring quoting the source |
-| `populations.py` | snapshot → activity or link subsets (open, with a predecessor, into open work…) | the building blocks those functions combine |
-| `rules.py` | the `@rule` registry; context + parameters → `RuleOutput` | parameterised rules (`exclude`, `links`, `op`, `value`, `unit`…) for your own standard, and helpers shared with the explicit checks |
+| `populations.py` | snapshot → named, sourced population steps (`EXCLUSIONS`, `Funnel`) and the other building blocks (with a predecessor, into open work…) | the one vocabulary of exclusions (complete, LOE, milestones…) that every standard's checks and the parameterised rules use |
+| `rules.py` | the `@rule` registry; `AnalysisContext` + parameters → `RuleOutput` | parameterised rules (`exclude`, `links`, `op`, `value`, `unit`…) for your own standard, and helpers shared with the explicit checks |
 | `standards.py` | TOML → `Standard(metrics)` | validated on load (rule, parameter names, population keywords, target syntax) |
-| `checks.py` | standard + `AnalysisContext` → `CheckResult` per metric; `health_history` over the series | a failing rule returns status "error", never crashes the page |
+| `checks.py` | standard + `AnalysisContext` (defined in `rules.py`) → `CheckResult` per metric; `health_history` over the series | a failing rule returns status "error", never crashes the page |
 | `baseline.py` | BL snapshot (or planned dates) → frame `bl_start, bl_finish, bl_labor_hr…` | shared by BEI, missed, late, PV |
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
@@ -207,7 +207,7 @@ Outside `analysis/`:
   the target and parameters set on the page (`analysis/audit.py` `with_settings`, validated
   as a standard file is), the three sets behind the count (counted, checked but not counted,
   excluded from the file; `audit.split` cuts them from `CheckResult.checked` / `counted`,
-  nothing is recomputed), and for P6 the population step by step (`populations.Funnel`: each
+  nothing is recomputed), and the population step by step for every check with a row population (`populations.Funnel`: each
   filter named, with the text it follows and the rows it removed) and the `[[metric]]` table to paste into a standard file to make a
   change permanent. Settings stay on the page and in the session; Schedule health keeps the
   loaded standards.

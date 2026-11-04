@@ -15,6 +15,8 @@ import pandas as pd
 from ...xer.model import CONSTRAINT
 from ..baseline import Baseline
 from ..populations import (
+    Funnel,
+    activity_funnel,
     actual_after,
     as_flag,
     constrained_by,
@@ -24,10 +26,7 @@ from ..populations import (
     has_driving_predecessor,
     has_driving_successor,
     joined_sorted,
-    links_between,
-    open_activities,
     with_baseline,
-    without_level_of_effort,
 )
 from ..rules import RuleOutput, critical_path_output, rule
 
@@ -66,7 +65,8 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no
     successor (milestone: none); earliest baseline start / latest baseline finish exempt
     """
-    tasks = without_level_of_effort(open_activities(context))
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0").exclude("loe", "DECM 8.0")
+    tasks = funnel.rows
     relationships = context.snapshot.relationships
     codes = tasks["task_code"]
     external_predecessor, external_successor = tasks["has_external_pred"], tasks["has_external_succ"]
@@ -95,7 +95,12 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     if context.baseline is None:
         note = "no baseline: first/last by planned dates"
     return RuleOutput(
-        flagged_activities(flagged, reason=reason[flagged.index]), len(flagged), len(tasks), note=note, checked=tasks
+        flagged_activities(flagged, reason=reason[flagged.index]),
+        len(flagged),
+        len(tasks),
+        note=note,
+        checked=tasks,
+        funnel=funnel,
     )
 
 
@@ -109,7 +114,8 @@ def decm_06a205a_lags(context) -> RuleOutput:
     06A205a: X/Y <= 10%; the sheet does not say whether LOE count or whether leads (negative lags) do:
     LOE kept, positive lags only
     """
-    tasks = open_activities(context)
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0")
+    tasks = funnel.rows
     relationships = context.snapshot.relationships
     lags = relationships[relationships["lag_hr"].fillna(0) > 0]
     lagged_from = lags.groupby("succ_code")["pred_code"].agg(joined_sorted)
@@ -119,6 +125,7 @@ def decm_06a205a_lags(context) -> RuleOutput:
         len(flagged),
         len(tasks),
         checked=tasks,
+        funnel=funnel,
     )
 
 
@@ -130,14 +137,14 @@ def decm_06a208a_summary_logic(context) -> RuleOutput:
     06A208a: X = 0 (summary activities are the P6 WBS summaries; flagged when they have a predecessor or
     a successor)
     """
-    tasks = context.snapshot.tasks
-    summaries = tasks[tasks["is_wbs_summary"]]
+    funnel = Funnel(context.snapshot.tasks).keep("WBS summary", "DECM 8.0", lambda rows: rows["is_wbs_summary"])
+    summaries = funnel.rows
     relationships = context.snapshot.relationships
     has_logic = summaries["task_code"].isin(relationships["pred_code"]) | summaries["task_code"].isin(
         relationships["succ_code"]
     )
     flagged = summaries[has_logic]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(summaries), checked=summaries)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(summaries), checked=summaries, funnel=funnel)
 
 
 @rule("decm_06a209a_hard_constraints", "%")
@@ -150,10 +157,15 @@ def decm_06a209a_hard_constraints(context) -> RuleOutput:
     06A209a: X/Y = 0%; Primavera P6 hard constraints = Mandatory Start, Mandatory Finish; the sheet does
     not say whether LOE count: kept
     """
-    tasks = open_activities(context)
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0")
+    tasks = funnel.rows
     hard = tasks[constrained_by(tasks, DECM_HARD_CONSTRAINTS, ignore_started_starts=False)]
     return RuleOutput(
-        flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks), checked=tasks
+        flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)),
+        len(hard),
+        len(tasks),
+        checked=tasks,
+        funnel=funnel,
     )
 
 
@@ -165,8 +177,9 @@ def decm_06a210a_loe_successors(context) -> RuleOutput:
 
     06A210a: X = 0 (incomplete LOE activities with a discrete, non-LOE, successor)
     """
-    open_tasks = open_activities(context)
-    open_loe = open_tasks[open_tasks["is_loe"]]
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0")
+    funnel.keep("level of effort", "DECM 8.0", lambda rows: as_flag(rows["is_loe"]))
+    open_loe = funnel.rows
     is_loe_by_code = context.snapshot.by_code["is_loe"]
     relationships = context.snapshot.relationships
     from_loe = relationships[
@@ -180,6 +193,7 @@ def decm_06a210a_loe_successors(context) -> RuleOutput:
         len(flagged),
         len(open_loe),
         checked=open_loe,
+        funnel=funnel,
     )
 
 
@@ -192,9 +206,10 @@ def decm_06a211a_high_float(context, limit_days: float = HIGH_FLOAT_DAYS) -> Rul
     06A211a: the population DECM samples; X/Y <= 20% of the sample with inadequate rationale. The
     rationale review is yours
     """
-    tasks = without_level_of_effort(open_activities(context))
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0").exclude("loe", "DECM 8.0")
+    tasks = funnel.rows
     high_float = tasks[tasks["total_float_d"] > limit_days]
-    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks)
+    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks, funnel=funnel)
 
 
 @rule("decm_06a212a_out_of_sequence", "count", links=True)
@@ -211,11 +226,13 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
     P.FS
     """
     tasks = context.snapshot.by_code
-    predecessors = open_activities(context).drop_duplicates("task_code").set_index("task_code")
-    relationships = context.snapshot.relationships
-    links = links_between(relationships, tasks, predecessors)
+    open_codes = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0").rows["task_code"]
+    funnel = Funnel(context.snapshot.relationships)
+    funnel.keep("into an activity", "model", lambda rows: rows["succ_code"].isin(tasks.index))
+    funnel.keep("predecessor not complete", "DECM 8.0", lambda rows: rows["pred_code"].isin(open_codes))
+    links = funnel.rows
     if links.empty:
-        return RuleOutput(flagged_relationships(links), 0, 0, checked=links)
+        return RuleOutput(flagged_relationships(links), 0, 0, checked=links, funnel=funnel)
     pred_start, pred_finish = links["pred_code"].map(tasks["start"]), links["pred_code"].map(tasks["finish"])
     succ_start, succ_finish = links["succ_code"].map(tasks["start"]), links["succ_code"].map(tasks["finish"])
     kind = links["type"]
@@ -236,7 +253,7 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
         succ_start=succ_start[flagged.index],
         succ_finish=succ_finish[flagged.index],
     )
-    return RuleOutput(shown, len(flagged), len(links), checked=links)
+    return RuleOutput(shown, len(flagged), len(links), checked=links, funnel=funnel)
 
 
 # --- critical path -------------------------------------------------------------------------
@@ -262,11 +279,12 @@ def decm_06a501a_missing_baseline(context) -> RuleOutput:
 
     06A501a: X/Y <= 5%, summaries excluded
     """
-    tasks = with_baseline(context, context.snapshot.activities)
+    funnel = Funnel(with_baseline(context.baseline, context.snapshot.activities))
+    tasks = funnel.rows
     flagged = tasks[tasks["bl_start"].isna() | tasks["bl_finish"].isna()]
     # a low match rate means the wrong baseline file or project, not a schedule defect
     note = f"{len(tasks) - len(flagged)} of {len(tasks)} activities matched in {context.baseline.label}"
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks), note=note, checked=tasks)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks), note=note, checked=tasks, funnel=funnel)
 
 
 def _actual_date_changed(context, column: str, status_period_days: float) -> RuleOutput:
@@ -285,8 +303,11 @@ def _actual_date_changed(context, column: str, status_period_days: float) -> Rul
     flagged = now.loc[changed].reset_index()
     shown = flagged_activities(flagged, previous=[before[code] for code in changed], now=flagged.get(column))
     dated = set(now.index[now[column].notna()]) | set(common)
-    checked = now.loc[sorted(dated)].reset_index()
-    return RuleOutput(shown, len(flagged), len(checked), checked=checked)
+    funnel = Funnel(now.reset_index().sort_values("task_code")).keep(
+        "with that actual date in either update", "DECM 8.0", lambda rows: rows["task_code"].isin(dated)
+    )
+    checked = funnel.rows
+    return RuleOutput(shown, len(flagged), len(checked), checked=checked, funnel=funnel)
 
 
 @rule("decm_06a504a_actual_starts_changed", "%")
@@ -318,10 +339,14 @@ def decm_06a505a_in_progress_without_actual_start(context) -> RuleOutput:
 
     06A505a: X/Y <= 5% (% complete > 0, or status in progress, but no actual start)
     """
-    tasks = context.snapshot.activities
-    in_progress = tasks[(tasks["pct_complete"] > 0) | tasks["is_started"]]
+    funnel = activity_funnel(context.snapshot).keep(
+        "progress reported",
+        "DECM 8.0",
+        lambda rows: as_flag(rows["pct_complete"] > 0) | as_flag(rows["is_started"]),
+    )
+    in_progress = funnel.rows
     flagged = in_progress[in_progress["act_start_date"].isna()]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(in_progress), checked=in_progress)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(in_progress), checked=in_progress, funnel=funnel)
 
 
 @rule("decm_06a505b_complete_without_actual_finish", "%")
@@ -331,10 +356,14 @@ def decm_06a505b_complete_without_actual_finish(context) -> RuleOutput:
 
     06A505b: X/Y <= 5% (100 % complete, or status complete, but no actual finish)
     """
-    tasks = context.snapshot.activities
-    complete = tasks[(tasks["pct_complete"] >= 100) | tasks["is_complete"]]
+    funnel = activity_funnel(context.snapshot).keep(
+        "completion reported",
+        "DECM 8.0",
+        lambda rows: as_flag(rows["pct_complete"] >= 100) | as_flag(rows["is_complete"]),
+    )
+    complete = funnel.rows
     flagged = complete[complete["act_end_date"].isna()]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(complete), checked=complete)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(complete), checked=complete, funnel=funnel)
 
 
 @rule("decm_06a506a_actual_dates_after_status_date", "%")
@@ -349,9 +378,16 @@ def decm_06a506a_actual_dates_after_status_date(context) -> RuleOutput:
         return RuleOutput(note="no data date")
     tasks = context.snapshot.activities
     flagged = tasks[actual_after(tasks, data_date)]
-    started = tasks[tasks["act_start_date"].notna()]
+    funnel = activity_funnel(context.snapshot).keep(
+        "with an actual start", "DECM 8.0", lambda rows: rows["act_start_date"].notna()
+    )
+    started = funnel.rows
     return RuleOutput(
-        flagged_activities(flagged, reason="actual after data date"), len(flagged), len(started), checked=started
+        flagged_activities(flagged, reason="actual after data date"),
+        len(flagged),
+        len(started),
+        checked=started,
+        funnel=funnel,
     )
 
 
@@ -366,10 +402,15 @@ def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    tasks = context.snapshot.activities
+    funnel = activity_funnel(context.snapshot)
+    tasks = funnel.rows
     flagged = tasks[forecast_before(tasks, data_date)]
     return RuleOutput(
-        flagged_activities(flagged, reason="forecast before data date"), len(flagged), len(tasks), checked=tasks
+        flagged_activities(flagged, reason="forecast before data date"),
+        len(flagged),
+        len(tasks),
+        checked=tasks,
+        funnel=funnel,
     )
 
 
@@ -401,8 +442,9 @@ def decm_06a506c_riding_status_date(
     if previous is None:
         return RuleOutput(note=f"needs an update {status_period_days:g} days older")
     previous_tasks = previous.by_code
-    tasks = without_level_of_effort(open_activities(context))
-    tasks = tasks[tasks["task_code"].isin(previous_tasks.index)]
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0").exclude("loe", "DECM 8.0")
+    funnel.keep("in the earlier update", "DECM 8.0", lambda rows: rows["task_code"].isin(previous_tasks.index))
+    tasks = funnel.rows
     before = previous_tasks.loc[tasks["task_code"]].set_index(tasks.index)
 
     start_rides = _start_near_data_date(context.snapshot, tasks, riding_window_wd) & ~tasks["is_started"]
@@ -421,4 +463,5 @@ def decm_06a506c_riding_status_date(
         len(tasks),
         note=f"vs update of {previous.data_date:%Y-%m-%d}",
         checked=tasks,
+        funnel=funnel,
     )
