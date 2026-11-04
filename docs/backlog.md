@@ -89,13 +89,14 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       allow it.
 
 - [ ] **Earned value against Oracle P6** (pages under docs.oracle.com/cd/F88968_01/client_help/en_US/):
-      - PV: P6 computes it per resource assignment with a date ratio; the code per activity,
-        in working time (`evm.py`).
+      - PV: Oracle 47224 (P6 EPPM help v25) defines Planned Value Labor Units per activity, as computed here (`evm.py`,
+        in working time); the per-assignment reading is unverified.
       - Manual future-period buckets are not modelled.
       - BAC and AC are labour hours only.
       - Resource curves are treated as a technique (`EvPoint.not_modelled`); curves under
         Units are not reported.
-      - The ETC technique "PF x (BAC - EV)" is ignored (EAC = AC + remaining).
+      - The ETC technique "PF x (BAC - EV)" is not applied (EAC = AC + remaining); the technique
+        of each WBS is read and reported (Debug block 8, warning on the Earned value page).
       - 0/100 and 50/50 with a non-physical % complete are untested.
       - The quote for the EV-basis Admin Preference ("When calculating earned value from a
         baseline use") is unverified.

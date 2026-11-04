@@ -47,7 +47,7 @@ reference files. Each P6 rule lives in one place:
 | Forecast finish | latest activity finish (`scd_end_date` can be stale: kept, with a warning) |
 | Labour hours | TASK budgeted/actual/remaining labour units (nonlabor in `nonlabor_*_qty`), else assignments by resource type |
 | Assignments | `assignments` = TASKRSRC typed: resource type (TASKRSRC, else RSRC; `role` for role-only), name, resource calendar, driving flag, units, rates, lags, dates |
-| EV technique | `ev_compute_type` / `ev_user_pct` of each activity's WBS |
+| EV technique | `ev_compute_type` / `ev_user_pct` of each activity's WBS; `Snapshot.wbs` also holds `ev_etc_compute_type` / `ev_etc_user_value` (ETC technique, reported, not applied) |
 | Links | `relationships`: codes and both lags (hours and days); `is_external` flags a predecessor in another project. A predecessor that is a `TASK` row of another project of the same file is named `[ext]{task_id}` in `pred_code`, as in `external_links`, never by its own Activity ID: that ID may also exist in this project and would read as a link from the local activity. Links whose other end has no `TASK` row in the file are dropped from `relationships`. `external_links` keeps the links to and from other projects (same `[ext]` naming) |
 | Calendars | `work_calendars` (parsed `clndr_data`), `calendar(id)` falls back to the project's |
 | Options | `options["sched"]` = the raw SCHEDOPTIONS row, `options["project"]` = the raw PROJECT critical-path and plan-end fields, `progressed` (retained logic / progress override / actual dates), `must_finish_by`, `lag_calendar` (successor when blank, per Oracle), `critical_*` |

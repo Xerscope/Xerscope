@@ -8,12 +8,16 @@ from xerscope.analysis import Baseline
 from xerscope.analysis.changelog import changelog, summary
 from xerscope.analysis.evm import (
     earned,
+    etc_settings,
+    etc_technique,
+    etc_technique_counts,
     ev_point,
     ev_technique,
     evm_series,
     forecast_curve,
     pv_curve,
     schedule_pct,
+    uses_pf,
 )
 from xerscope.analysis.progress import (
     committed,
@@ -161,6 +165,37 @@ def test_ev_spi_and_unbaselined():
     assert p.unbaselined == ["X"]
 
 
+def test_cpi_divides_by_all_actual_hours_and_ev_per_ac_by_the_baselined_ones():
+    """A (in the baseline) earns 20 h for 30 h spent; X (not in the baseline) spent 10 h more.
+    P6's Cost Performance Index - Labor Units uses every actual hour: 20 / 40; EV / AC on
+    baselined work leaves X out: 20 / 30. The denominators differ by exactly X's 10 h."""
+    bl = _bl(early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")
+    now = snap(
+        [
+            active(
+                "A",
+                phys_complete_pct="25",
+                complete_pct_type="CP_Phys",
+                target_work_qty="80",
+                act_work_qty="30",
+                remain_work_qty="60",
+            ),
+            active("X", target_work_qty="40", act_work_qty="10", remain_work_qty="40"),
+        ],
+        data_date="2026-03-04 08:00",
+    )
+    p = ev_point(now, bl)
+    assert (p.ev_hr, p.ac_hr, p.ac_unbaselined_hr) == (20, 40, 10)
+    assert p.cpi == pytest.approx(20 / 40) and p.productivity == pytest.approx(20 / 30)
+    assert 20 / p.cpi - 20 / p.productivity == pytest.approx(10)
+    row = evm_series(SnapshotStore([now]), bl).iloc[0]
+    assert row["cpi"] == pytest.approx(0.5) and row["productivity"] == pytest.approx(20 / 30)
+    assert list(row.index[:14]) == [
+        "data_date", "bac_hr", "pv_hr", "ev_hr", "ac_hr", "etc_hr", "eac_hr", "pv_pct", "ev_pct", "sv_hr",
+        "spi", "productivity", "cpi", "unbaselined",
+    ]  # fmt: skip
+
+
 @pytest.mark.parametrize(
     "code,state,pct",
     [
@@ -193,6 +228,56 @@ def test_performance_pct_follows_the_wbs_ev_technique(code, state, pct):
     bl = _bl(early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")
     e = earned(snap([a], wbs=wbs), bl).loc["A"]
     assert e["perf_pct"] == pct and e["ev_hr"] == pytest.approx(80 * pct / 100)
+
+
+def _wbs(code, etc, user_value="0.88"):
+    return {
+        "wbs_id": code,
+        "proj_id": "1",
+        "wbs_short_name": code,
+        "wbs_name": code,
+        "proj_node_flag": "N",
+        "parent_wbs_id": "",
+        "seq_num": "1",
+        "ev_compute_type": "EC_Cmp_pct",
+        "ev_etc_compute_type": etc,
+        "ev_etc_user_value": user_value,
+    }
+
+
+def test_etc_settings_count_the_wbs_by_etc_technique():
+    """W1 on remaining units with two activities, W2 on PF = 1 with one: one WBS of each, W2 alone uses a PF,
+    and the ETC, EAC and EV do not move with the technique."""
+    wbs = [_wbs("W1", "EE_Rem_hr"), _wbs("W2", "EE_PF_1", "1"), _wbs("W3", "EE_Rem_hr")]
+    tasks = [
+        todo("A", wbs_id="W1", target_work_qty="80", remain_work_qty="80"),
+        todo("B", wbs_id="W1", target_work_qty="40", remain_work_qty="40"),
+        active("C", wbs_id="W2", target_work_qty="60", remain_work_qty="30", act_work_qty="30"),
+    ]
+    s = snap(tasks, wbs=wbs)
+    settings = etc_settings(s).set_index("wbs_code")
+    assert settings["activities"].to_dict() == {"W1": 2, "W2": 1, "W3": 0}
+    assert settings.loc["W2", "etc_technique"] == "PF = 1" and settings.loc["W2", "ev_etc_user_value"] == "1"
+    counts = etc_technique_counts(etc_settings(s)).set_index("etc_technique")
+    assert counts["wbs"].to_dict() == {"remaining units": 2, "PF = 1": 1}
+    assert counts["activities"].to_dict() == {"remaining units": 2, "PF = 1": 1}
+    assert settings.index[settings["ev_etc_compute_type"].map(uses_pf)].tolist() == ["W2"]
+    plain = snap(tasks, wbs=[_wbs("W1", "EE_Rem_hr"), _wbs("W2", "EE_Rem_hr"), _wbs("W3", "EE_Rem_hr")])
+    bl = _bl(early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")
+    for field in ("etc_hr", "eac_hr", "ev_hr", "pv_hr"):
+        assert getattr(ev_point(s, bl), field) == getattr(ev_point(plain, bl), field)
+
+
+def test_etc_technique_labels_known_codes_and_shows_the_others_as_stored():
+    assert [etc_technique(c) for c in ["EE_Rem_hr", "EE_PF_1", "EE_PF_cpi", "EE_PF_cpi_spi", "", None]] == [
+        "remaining units",
+        "PF = 1",
+        "PF = 1/CPI",
+        "EE_PF_cpi_spi",
+        "(blank)",
+        "(blank)",
+    ]
+    assert [uses_pf(c) for c in ["EE_Rem_hr", "EE_PF_1", "EE_PF_cpi_spi", ""]] == [False, True, True, False]
 
 
 def test_ev_technique_codes():

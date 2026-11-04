@@ -284,10 +284,12 @@ per code kept).
 | AC | `Σ labor_actual_hr` over all snapshot activities (unbaselined, LOE, complete included) |
 | `ac_unbaselined_hr` | `Σ labor_actual_hr` over `unbaselined` |
 | ETC | `Σ labor_remaining_hr` over all snapshot activities |
+| ETC technique (`etc_technique`) | `PROJWBS.ev_etc_compute_type` of each WBS (project node left out): `EE_Rem_hr` remaining units, `EE_PF_1` PF = 1, `EE_PF_cpi` PF = 1/CPI (the codes of the reference files; the 1/(CPI × SPI) and entered-PF codes are not identified, any other code is shown as stored). Oracle (Pro 25, Earned Value tab - WBS Details): ETC = PF × (BAC − EV). Reported only: ETC above stays the remaining hours, and the page warns when a WBS has a code starting `EE_PF` |
 | EAC | `AC + ETC` |
 | SV | `EV − PV` |
 | SPI | `EV / PV`; none when PV = 0 |
-| `productivity` (EV/AC) | `EV / (AC − ac_unbaselined_hr)`; none when that is 0 |
+| CPI (`cpi`) | `EV / AC`, all actual hours; none when AC = 0. P6 column "Cost Performance Index - Labor Units" = Earned Value Labor Units / Actual Labor Units (Oracle P6 EPPM help v25, page 47224, docs.oracle.com/cd/G18294_01/p6help/en/47224.htm) |
+| `productivity` (EV/AC on baselined work) | `EV / (AC − ac_unbaselined_hr)`; none when that is 0 |
 | `pv_pct`, `ev_pct` | `100 × PV / BAC`, `100 × EV / BAC`; none when BAC = 0 |
 | Forecast curve (`forecast_curve`) | per calendar day from the data date's day to the last open finish: `AC + Σ labor_remaining_hr` of not complete activities with remaining hours > 0, spread linearly in working time (activity's own calendar) from `max(start, data date)` to `max(finish, that start)`; a row names a day and holds the cumulative at its end, as `pv_curve` |
 | BEI | P6-13: `complete / (every baseline activity)`; DCMA-14: `complete / (bl_finish <= data date)`; both over activities not LOE, not milestone; `complete` counts every complete activity in that population, due or not |

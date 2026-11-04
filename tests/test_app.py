@@ -211,6 +211,52 @@ def test_earned_value_names_the_spi_as_the_labour_units_column(app):
     assert not [m for m in app.metric if m.label == "SPI"]
 
 
+def test_earned_value_warns_when_a_wbs_computes_its_etc_with_a_performance_factor(tmp_path, monkeypatch):
+    """Two WBS, one on remaining units and one on PF = 1: the calculation table counts 1 / 1 and
+    the warning names the second."""
+    wbs = [
+        {
+            "wbs_id": code,
+            "proj_id": "1",
+            "wbs_short_name": code,
+            "wbs_name": code,
+            "proj_node_flag": "N",
+            "parent_wbs_id": "",
+            "seq_num": "1",
+            "ev_compute_type": "EC_Cmp_pct",
+            "ev_etc_compute_type": etc,
+            "ev_etc_user_value": "1",
+        }
+        for code, etc in (("WREM", "EE_Rem_hr"), ("WPF", "EE_PF_1"))
+    ]
+    labour = {"target_start_date": "2026-03-02 08:00", "target_end_date": "2026-03-13 17:00"}
+    tasks = [
+        todo("A", wbs_id="WREM", target_work_qty="80", remain_work_qty="80", **labour),
+        todo("B", wbs_id="WPF", target_work_qty="40", remain_work_qty="40", **labour),
+    ]
+    (tmp_path / "w1.xer").write_text(xer_text(tasks, wbs=wbs))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/earned_value.py").run()
+    _ok(at)
+    table = next(d.value for d in at.dataframe if "measure" in d.value.columns).set_index("measure")
+    assert table.loc["ETC technique"].iloc[-1] == "PF = 1: 1 WBS · remaining units: 1 WBS"
+    warnings = [w.value for w in at.warning if "performance factor" in w.value]
+    assert len(warnings) == 1 and "1 WBS use a performance factor" in warnings[0] and "WPF" in warnings[0]
+    assert "WREM" not in warnings[0]
+
+
+def test_earned_value_shows_the_cpi_beside_ev_per_ac_on_baselined_work(app):
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    table = next(d.value for d in app.dataframe if "measure" in d.value.columns).set_index("measure")
+    assert table.loc["CPI (labour units)", "P6 column"] == "Cost Performance Index - Labor Units"
+    ev, ac, cpi = (
+        float(n.replace(",", "")) for n in re.findall(r"[\d,]+\.\d+", table.loc["CPI (labour units)"].iloc[-1])
+    )
+    assert cpi == pytest.approx(ev / ac, abs=0.005)
+    assert "not a P6 column" in table.loc["EV / AC (baselined work)", "P6 column"]
+
+
 def test_ev_calculation_rows_add_up_as_shown(app):
     """The operands shown, one decimal, give the result shown to the last digit: an
     independently rounded pair could otherwise read 186,420 − 186,110 = +311."""
@@ -669,7 +715,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 7 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 8 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
