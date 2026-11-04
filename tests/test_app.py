@@ -1087,4 +1087,4 @@ def test_health_summary_file_gains_the_notes(app, store, downloads):
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
         assert (got if isinstance(got, str) else "") == result.note
-    assert "Must Finish By" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]
+    assert "BL finish" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]  # margin to the baseline finish
