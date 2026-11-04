@@ -1,9 +1,8 @@
 import pandas as pd
 import streamlit as st
 
-from xerscope.anonymize import LeakError
 from xerscope.app import ui
-from xerscope.app.state import ANONYMISED, anonymizer, anonymous_exports, export_anonymizer, memo, require_store
+from xerscope.app.state import anonymizer, download, fetch, held, hold, memo, require_store, show_download
 from xerscope.export import export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
 
@@ -29,46 +28,35 @@ ui.table(
 )
 
 table_format = st.radio("Format", ["parquet", "csv"], horizontal=True)
-label = f"Download {table_format.upper()} tables (.zip)"
-if not anonymous_exports():
-    st.download_button(
-        label,
-        data=zip_tables(store, table_format),
-        file_name=f"{store.latest.project_code}_xerscope_{table_format}.zip",
-        mime="application/zip",
-        type="primary",
-        icon=":material/download:",
-    )
-elif (anonymous := export_anonymizer("powerbi")) is not None:
-    try:
-        data = memo(("export_anonymised", table_format), zip_tables, store, table_format, anonymous.frame)
-    except LeakError as exc:
-        st.error(str(exc), icon=":material/block:")
-    else:
-        st.download_button(
-            label + ANONYMISED,
-            data=data,
-            file_name=f"xerscope_{table_format}.zip",  # the project code would name the project
-            mime="application/zip",
-            type="primary",
-            icon=":material/download:",
-        )
+download(
+    f"Download {table_format.upper()} tables (.zip)",
+    f"{store.latest.project_code}_xerscope_{table_format}.zip",
+    "application/zip",
+    lambda: zip_tables(store, table_format),
+    lambda anonymous: memo(("export_anonymised", table_format), zip_tables, store, table_format, anonymous.frame),
+    prepare_key="powerbi",
+    anon_file_name=f"xerscope_{table_format}.zip",  # the project code would name the project
+    type="primary",
+)
 
 with st.expander("Preview fact_activity"):
     ui.table(tables["fact_activity"].head(200), max_height=640)
 
 
 def build_anonymised_extract(store) -> None:
-    anonymous = anonymizer(prepare=True)
     data_dates = {snapshot.source: snapshot.data_date for snapshot in store}
     items = st.session_state.get("items") or []
     with st.spinner(f"Anonymising {len(items)} file(s)…"):
-        try:
-            extract = anonymous.zip_xers((parse_bytes(data, source=name), data_dates.get(name)) for name, data in items)
-        except LeakError as exc:
-            st.session_state["anon_extract"] = (st.session_state.get("signature"), None, str(exc))
-            return
-    st.session_state["anon_extract"] = (st.session_state.get("signature"), extract, "")
+        extract = fetch(
+            st.session_state,
+            None,
+            lambda anonymous: anonymous.zip_xers(
+                (parse_bytes(data, source=name), data_dates.get(name)) for name, data in items
+            ),
+            prepare=True,
+            anonymous=True,
+        )
+    hold(st.session_state, "anon_extract", None, extract)
 
 
 ui.section(
@@ -79,20 +67,17 @@ ui.section(
 )
 if st.button("Build anonymised extract", icon=":material/visibility_off:", key="anon_build"):
     build_anonymised_extract(store)
-held = st.session_state.get("anon_extract")
-if held is not None and held[0] == st.session_state.get("signature"):
-    _, extract, refused = held
-    if refused:
-        st.error(refused, icon=":material/block:")
-    else:
-        st.download_button(
-            "Download anonymised XER (.zip)",
-            data=extract,
-            file_name="xerscope_anonymised_xer.zip",
-            mime="application/zip",
-            icon=":material/download:",
-            key="anon_download",
-        )
+extract = held(st.session_state, "anon_extract", None)
+if extract is not None:
+    show_download(
+        extract,
+        "Download anonymised XER (.zip)",
+        "xerscope_anonymised_xer.zip",
+        "application/zip",
+        suffix=False,
+        key="anon_download",
+    )
+    if not extract.refused:
         report = anonymizer().report
         if report.dropped_tables or report.emptied_columns:
             st.caption(
