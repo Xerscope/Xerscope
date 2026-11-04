@@ -9,7 +9,8 @@ is done, add one when a check or a recalculation disagrees with P6.
 - [ ] **P6 Check Schedule report** (P6 Professional 24) on a shareable file, with that
       file's F9 export, under `tests/reference/`; one assertion per count. Report R1
       (docs/standards.md, Sources) settled P6-12, P6-13 and P6-15 to P6-17, but it cannot
-      enter the repository. Still a reading of Oracle's help only: LOE in P6-01,
+      enter the repository; its counts are checked locally by `tests/test_p6_witness.py`
+      (anonymised file, outside git). Still a reading of Oracle's help only: LOE in P6-01,
       remaining early start for in-progress work (P6-10), the hours per day behind `x`,
       FF / SF links in P6-15, the constraint options of P6-16 / P6-17.
 - [ ] **DECM**: a DECM output on one real file, for `decm.toml`. The v8.0 sheets are read
@@ -25,8 +26,6 @@ Where the official sheet (index in docs/standards.md, Sources) contradicts the c
 rule; none is fixed. The 06A205a and 06A209a sheets name no LOE exclusion, so LOE stays
 in, as coded (the `source` strings in `decm.toml` still call it unsaid).
 
-- [ ] **06A212a**: the sheet's population is the FS, SS, FF and SF relationships with an
-      incomplete predecessor; the code uses an incomplete successor (`decm/schedule_metrics.py`).
 - [ ] **06A401a**: the sheet compares the constraint-method critical path with the
       contractor's critical path; the code runs the delay-injection test (`cpm.py`
       `critical_path_test`).

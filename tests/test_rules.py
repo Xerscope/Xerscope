@@ -7,7 +7,7 @@ or exemption would silently shift a result.
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import active, done, snap, todo
+from xerkit import SM, active, done, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
 
@@ -448,7 +448,8 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
 
 def test_missed_tasks_and_late_activities():
     bl = Baseline.from_snapshot(BL)
-    assert codes(run(DCMA, "DCMA-11", NOW, bl)) == ["B", "C"]
+    r = run(DCMA, "DCMA-11", NOW, bl)
+    assert codes(r) == ["B", "C"] and "1 without baseline dates" in r.note  # NEW is not in BL
     assert codes(run(P6, "P6-12", NOW, bl)) == ["C"]  # B: Sat 17:00 vs Fri 17:00, no working time
     # P6 Professional report: completed activities are out (Late Activities checks the Large Durations
     # population); no baseline -> against the planned finish
@@ -522,6 +523,17 @@ def test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay():
     s = snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)])
     r = run(DCMA, "DCMA-12", s)
     assert r.status == "fail" and "Z" in r.note
+
+
+def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
+    # a finished activity cannot absorb a delay: its mandatory date is not listed
+    chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]
+    s = snap(
+        chain + [done("D", cstr_type="CS_MANDSTART", cstr_date="2026-02-02 08:00")],
+        [("A", "B", "FS", 0), ("B", "Z", "FS", 0)],
+    )
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and codes(r) == ["Z"]
 
 
 MFB = {"project": {"plan_end_date": "2026-03-25 17:00"}}  # Must Finish By: the float's reference
@@ -615,11 +627,143 @@ def test_recalculated_flags_stale_dates():
     assert "total_float_hr_cnt: 40 -> 0.0" in r.flagged.iloc[0]["differences"]
 
 
+def test_recalculated_note_gives_the_latest_early_finish_and_external_dates():
+    """Scheduling Results 'Latest Early Finish Date': stored (latest activity finish) against recalculated."""
+    s = snap(
+        [
+            todo("A", early_end_date="2026-03-02 17:00", **hours(8)),
+            todo("B", early_start_date="2026-03-03 08:00", early_end_date="2026-03-05 17:00", **hours(8)),
+            todo("C", external_early_start_date="2026-03-02 08:00", early_end_date="2026-03-02 17:00", **hours(8)),
+        ],
+        [("A", "B", "FS", 0)],
+    )
+    note = run(INTEGRITY, "INT-01", s).note
+    assert "latest early finish stored 2026-03-05 17:00, recalculated 2026-03-03 17:00" in note
+    assert "1 activities with external dates" in note
+
+
 def test_out_of_sequence_progress_is_listed():
     s = snap([todo("A"), active("B"), done("C"), active("D")], [("A", "B", "FS", 0), ("C", "D", "FS", 0)])
     r = run(INTEGRITY, "INT-02", s)
     assert codes(r) == ["B"] and r.denominator == 3  # B, C, D started; D follows a finished C
     assert r.flagged.iloc[0]["ahead_of"] == "A (FS)"
+
+
+def test_out_of_sequence_follows_the_status_at_the_data_date():
+    """P6 log 'Out of sequence activities': started before the predecessor has completed.
+
+    Calibrated on a P6 Check Schedule report: FS predecessor not complete, SS predecessor not started;
+    FF and SF links, and a predecessor that completed after the successor's start, are not listed.
+    """
+    s = snap(
+        [
+            todo("A"),  # not started, FS -> B: listed
+            active("B"),
+            active("C", act_start_date="2026-02-23 08:00"),  # started, SS -> D: D started earlier, not listed
+            active("D", act_start_date="2026-02-20 08:00"),
+            todo("E"),  # not started, SS -> F: listed
+            active("F"),
+            active("G"),  # not complete, FF -> H: not listed
+            active("H"),
+            done("I", act_end_date="2026-02-25 17:00"),  # completed after J started, FS -> J: not listed
+            active("J", act_start_date="2026-02-23 08:00"),
+        ],
+        [
+            ("A", "B", "FS", 0),
+            ("C", "D", "SS", 0),
+            ("E", "F", "SS", 0),
+            ("G", "H", "FF", 0),
+            ("I", "J", "FS", 0),
+        ],
+    )
+    r = run(INTEGRITY, "INT-02", s)
+    assert codes(r) == ["B", "F"] and counts(r) == (2, 8)
+    assert dict(zip(r.flagged["task_code"], r.flagged["ahead_of"], strict=True)) == {"B": "A (FS)", "F": "E (SS)"}
+
+
+def test_relationship_loop_lists_the_activities_on_the_loop():
+    """P6 log error 'Activities that have invalid relationship loops': A -> B -> C -> A, D hangs off C."""
+    s = snap(
+        [todo("A"), todo("B"), todo("C"), todo("D"), todo("E")],
+        [("A", "B", "FS", 0), ("B", "C", "FS", 0), ("C", "A", "FS", 0), ("C", "D", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-04", s)
+    assert codes(r) == ["A", "B", "C"] and counts(r) == (3, 5) and r.status == "fail"
+    clean = snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])
+    assert counts(run(INTEGRITY, "INT-04", clean)) == (0, 2) and run(INTEGRITY, "INT-04", clean).status == "pass"
+
+
+def test_log_lists_activities_without_predecessors_or_successors_unfiltered():
+    """P6 log warnings: the raw list. P6-01 exempts started activities and start milestones and skips completed ones."""
+    s = snap(
+        [todo("M", **SM), todo("A"), todo("B"), active("S"), done("D")],
+        [("M", "A", "FS", 0), ("A", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-05", s)
+    reasons = dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))
+    assert reasons == {
+        "M": "no predecessor",
+        "B": "no successor",
+        "S": "no predecessor, no successor",
+        "D": "no predecessor, no successor",
+    }
+    assert counts(r) == (4, 5) and r.status == "info"
+    assert codes(run(P6, "P6-01", s)) == ["B", "S"]
+
+
+def test_log_lists_every_actual_date_after_the_data_date():
+    """P6 log warning: 'The activities in which the data date is before the actual date'; no exclusion.
+
+    The data date is Mon 2026-03-02 08:00.
+    """
+    s = snap(
+        [
+            active("A", act_start_date="2026-03-05 08:00"),  # started after the data date
+            done("B", act_end_date="2026-03-04 17:00"),  # finished after it
+            done("C"),  # both actuals in February
+            active("L", task_type="TT_LOE", act_start_date="2026-03-05 08:00"),  # LOE: P6-10 leaves it out
+            todo("N"),
+        ]
+    )
+    r = run(INTEGRITY, "INT-06", s)
+    assert codes(r) == ["A", "B", "L"] and counts(r) == (3, 5) and r.status == "fail"
+    assert codes(run(P6, "P6-10", s)) == ["A", "B"]
+
+
+def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
+    """B follows A (8 h each, FS), so its early start is Tue 2026-03-03 08:00 and its early finish Tue 17:00."""
+    s = snap(
+        [
+            todo("A", **hours(8)),
+            todo("B", cstr_type="CS_MSOB", cstr_date="2026-03-02 08:00", **hours(8)),  # Start on or before Mon: missed
+            todo("C", cstr_type="CS_MSOA", cstr_date="2026-03-02 08:00", **hours(8)),  # no earlier than Mon: met
+            todo("D", cstr_type="CS_MSOB", cstr_date="2026-03-10 08:00", **hours(8)),  # met
+            todo("E", cstr_type="CS_ALAP", **hours(8)),  # no date to meet
+        ],
+        [("A", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-07", s)
+    assert codes(r) == ["B"] and counts(r) == (1, 3) and r.status == "info"
+    assert r.flagged.iloc[0]["unsatisfied"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
+
+
+def test_unsatisfied_relationship_is_a_link_the_successor_dates_break():
+    """B has a Mandatory start on Mon 2026-03-02, while its FS predecessor A (80 h) finishes Fri 2026-03-13 17:00."""
+    s = snap(
+        [
+            todo("A", **hours(80)),
+            todo("B", cstr_type="CS_MANDSTART", cstr_date="2026-03-02 08:00", **hours(8)),
+            todo("C", **hours(8)),
+            todo("D", **hours(8)),
+        ],
+        [("A", "B", "FS", 0), ("C", "D", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-08", s)
+    assert links(r) == [("A", "B")] and counts(r) == (1, 2) and r.status == "info"
+    assert (
+        r.flagged.iloc[0]["reason"]
+        == "successor start 2026-03-02 08:00:00 before predecessor finish 2026-03-13 17:00:00"
+    )
 
 
 def test_late_activities_use_working_time():
@@ -726,6 +870,22 @@ def test_decm_out_of_sequence_counts_relationships():
     assert r.status == "fail"
 
 
+def test_decm_out_of_sequence_ignores_a_completed_predecessor():
+    # the sheet counts relationships with an incomplete predecessor: a successor started
+    # before a predecessor that has since finished is no longer out of sequence
+    s = snap(
+        [
+            done("P1", act_end_date="2026-02-27 17:00"),
+            active("S1", act_start_date="2026-02-23 08:00"),
+            active("P2", act_start_date="2026-02-23 08:00"),
+            active("S2", act_start_date="2026-02-25 08:00"),
+        ],
+        [("P1", "S1", "FS", 0), ("P2", "S2", "FS", 0)],
+    )
+    r = run(DECM, "06A212a", s)
+    assert links(r) == [("P2", "S2")] and r.denominator == 1
+
+
 def test_decm_baseline_and_actual_dates():
     bl = Baseline.from_snapshot(snap([todo("A"), todo("B")]))
     now = snap(
@@ -737,7 +897,8 @@ def test_decm_baseline_and_actual_dates():
             done("F", act_end_date="2026-03-04 17:00"),
         ]
     )  # actual after the data date
-    assert codes(run(DECM, "06A501a", now, bl)) == ["F", "NEW", "P"]
+    r = run(DECM, "06A501a", now, bl)
+    assert codes(r) == ["F", "NEW", "P"] and "2 of 5 activities" in r.note
     assert codes(run(DECM, "06A505a", now)) == ["P"]
     r = run(DECM, "06A506a", now)
     assert codes(r) == ["F"] and r.denominator == 1  # of the activities with an actual start

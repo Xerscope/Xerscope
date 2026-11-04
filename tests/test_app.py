@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from conftest import P6_CORPUS_HINT, missing
 from streamlit.testing.v1 import AppTest
-from xerkit import todo, xer_text
+from xerkit import hours, todo, xer_text
 
 import xerscope
 from xerscope.app import ui
@@ -148,6 +148,18 @@ def test_health_standards_and_baselines(app, std, baseline):
     assert app.dataframe[0].value["status"].notna().all()
 
 
+def test_integrity_page_states_its_purpose(app):
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+    assert not any("Integrity answers one question" in c.value for c in app.caption)
+    app.get("button_group")[0].set_value("INTEGRITY").run()
+    _ok(app)
+    purpose = [c.value for c in app.caption if "Integrity answers one question" in c.value]
+    assert purpose and "Schedule Project Log" in purpose[0] and "reschedule in P6 (F9)" in purpose[0]
+    summary = app.dataframe[0].value
+    assert list(summary["id"]) == [f"INT-0{n}" for n in range(1, 9)]
+
+
 def test_health_lists_culprits_of_every_check(app):
     app.switch_page("views/health.py").run()
     app.get("button_group")[0].set_value("P6").run()
@@ -159,6 +171,24 @@ def test_health_lists_culprits_of_every_check(app):
     for _, row in listed.iterrows():
         frames = tables[row["id"]].dataframe
         assert frames and len(frames[-1].value) == row["flagged"], row["id"]
+
+
+def test_health_compares_counts_typed_from_a_p6_report(app):
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+
+    def report():
+        return next(u for u in app.file_uploader if u.key == "report_csv_P6")
+
+    report().set_value(("report.csv", b"id,found,total\nP6-01,99999,99999\n", "text/csv")).run()
+    _ok(app)
+    assert [e.value for e in app.error] == ["1 of 1 checks differ from the report"]
+    compared = next(d.value for d in app.dataframe if "match" in d.value.columns)
+    row = compared.iloc[0]  # xerscope's own counts, typed back as the report
+    text = f"id,found,total\nP6-01,{row['found']},{row['total']}\n".encode()
+    report().set_value(("report.csv", text, "text/csv")).run()
+    _ok(app)
+    assert not app.error and [s.value for s in app.success] == ["All 1 checks match the report"]
 
 
 def test_earned_value_needs_hours_and_baseline(app):
@@ -586,6 +616,17 @@ def test_debug_block_6_lists_the_leveled_activities_anonymised(tmp_path, monkeyp
     leveling = tables["06_leveling.csv"]
     assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{8}").all()
     _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
+
+
+def test_debug_page_shows_the_export_version(tmp_path, monkeypatch, downloads):
+    """Block 1 lists the ERMHDR version and product with the rule applied; the anonymised zip keeps the row."""
+    header = "26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR"
+    (tmp_path / "u1.xer").write_text(xer_text([todo("A", **hours(8))], header=header), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    tables = _debug_zip(at, downloads)
+    row = tables["01_options.csv"].set_index("option").loc["export_version"]
+    assert row["raw"] == "26.8 / Project Management Cloud"
+    assert row["applied"] == "collapse_early_expected_finish=False"
 
 
 def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):

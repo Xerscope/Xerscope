@@ -161,6 +161,7 @@ work before either.
 | Start on / Start on or after | start ≥ date |
 | Finish on / Finish on or after | finish ≥ date |
 | Mandatory start / finish | the date, whatever the logic |
+| External early start (link to a project not in the file) | start ≥ date, also for work under way under Progress Override, which frees it from the links of this project only (observed: H8-08 A1020, H10-12 A1130, H15-09 A1110, H24-03 A1100, H29-10 A1200) |
 
 - **Lag calendar:** lags are added on the calendar the project names.
 - **SS lag of a started predecessor** (Oracle, "Calculate start-to-start lag from"):
@@ -262,7 +263,9 @@ finish-type ends (FF / SF predecessors, FF / FS successors) its finish, the late
 predecessor and an FF successor to the same activity give the same finish, as Boyle shows
 in P6 ("Constructing LOE activities in Primavera P6"). A start-type link from a started
 predecessor is measured from the data date plus the unexpired lag (H10-01 A1300); the
-late start never passes the late finish (same case). It drives nothing.
+late start never passes the late finish (same case). A finished task's actual finish
+holds the late start of an FS link, the late date a finished activity passes back that of
+an SS link (conventions below). It drives nothing.
 
 **No data date.** P6 always stores one. A file without a data date and a planned start
 is scheduled from the earliest activity date it carries, with a warning.
@@ -284,6 +287,9 @@ Each rule below is pinned by a real file:
 | start milestone, late | kept as is if on a period edge, else the previous working time | Hotel HCMEB4000 16:00; xerlock MS-020 08:00 |
 | finish milestone, early | kept as is if working time or a period edge, else next working time | Hotel: 16:00 right after its predecessor |
 | finish milestone, late | a period end | Hotel |
+| task with no remaining duration (not a milestone) | early dates at a period start, late dates at a period end: the evening before an FS successor's 08:00 late start | P6 Professional 24 export (three open activities, FS successors); SS / FF / SF bounds unverified |
+| expected finish earlier than the early start (task-dependent, no FF / SF predecessor, no ALAP) | ERMHDR major version < 26 (or absent): remaining brought to 0, EF = ES; ≥ 26: expected finish ignored, EF = ES + the stored remaining (`Options.collapse_early_expected_finish`) | < 26: P6 23.12 corpus, H1-02 A1170 (94 of 94 cases). ≥ 26: 26.x project exports (26.5 / 26.8, Project Management Cloud), 112 cases over 14 updates, all FS lag 0, no ALAP; source level observed. 24 / 25 unverified |
+| expected finish off the activity's calendar (a holiday, a weekend, after hours) or on a period start | the expected finish ends the previous working period before the remaining is derived from it (08:00 -> 17:00 the day before); an FF bound is compared with it in working time | 26.x project exports: 4 activities on 2 calendars (finish 31 Dec in a Christmas break stored 24 Dec 17:00; 17:48 stored 17:00); source level observed |
 
 ## Conventions no reference file settles
 
@@ -295,6 +301,16 @@ Each rule below is pinned by a real file:
   on resource-dependent work only, where the float-type option decides.
 - **LOE dates:** Oracle's and Boyle's descriptions, confirmed by the P6 20.12 export for
   early dates and by the corpus for late dates and float. LOE are excluded from INT-01.
+- **LOE late start behind a finished task:** an FS link from a finished task (not a start
+  milestone) holds the late start at its actual finish plus the lag, written at the next
+  working start, never past the late finish. Witnesses: H14-07 A1170, H18-09 A1340, H25-01 A1380,
+  H9-04 A1390 (14 of 14 such tasks with clean neighbours; observed, no Oracle page states
+  it). A finished start milestone holds nothing (H16-02 A1290, H10-11 A1210); H8-02 A1250
+  is still open.
+- **LOE late start behind a finished SS predecessor:** an SS link from a finished activity
+  holds the late start at the late date that activity passes back to its other successors
+  (`lcarry`, Retained Logic) plus the lag, never past the late finish. Witnesses: H8-07
+  A1230, H12-12 A1330, H26-11 A1220, H8-02 A1240 (observed, no Oracle page states it).
 - **An activity whose `clndr_id` is not in the file's CALENDAR table:** read on the
   project's calendar, then the file's first calendar, then the standard one
   (`Snapshot.calendar`, `_BuildInputs.fallback_hours_per_day`), and the file is flagged in

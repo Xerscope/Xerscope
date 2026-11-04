@@ -1,25 +1,28 @@
 # Integrity: is the file what P6 would calculate from its own logic?
 # Not a published standard: checks that make the other standards trustworthy.
+# INT-02 and INT-04..08 mirror the Schedule Project Log P6 writes at each F9 with "Log to file".
 
 [standard]
 id = "INTEGRITY"
 name = "Integrity"
-description = "Stored dates reproduce a recalculation; progress respects logic"
-source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports"
+description = "Integrity answers one question before any other standard is read: are the dates in this file the ones P6 would produce from its own logic? INT-01 and INT-03 recalculate the schedule and compare; INT-02 and INT-04..08 reproduce the warnings, errors and exceptions of the P6 scheduling log (P6 EPPM 26 help, Schedule Project Log). A failure means: reschedule in P6 (F9) and read its log, or a P6 rule xerscope does not reproduce yet."
+source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports; Oracle P6 EPPM 26 help, Schedule Project Log (https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm)"
 
 [[metric]]
 id = "INT-01"
 name = "Schedule recalculated"
-description = "Open activities whose stored dates or total float differ from a recalculation"
+description = "Open activities whose stored dates or total float differ from a recalculation. Mirrors the log's Scheduling Results (Latest Early Finish Date): the note gives it stored and recalculated, and the activities with external dates"
 rule = "int_01_recalculated"
 target = "<= 0%"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Scheduling Results: \"Latest Early Finish Date\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99351.htm); Exceptions: \"Activities with external dates\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm)"
 
 [[metric]]
 id = "INT-02"
-name = "Out-of-sequence progress"
-description = "Started before an FS predecessor finished or an SS predecessor started"
+name = "Out of sequence activities"
+description = "Started activities whose FS predecessor is not complete or SS predecessor not started. Mirrors the log's Warnings 'Out of sequence activities'; P6-15 applies the same reading in the Check Schedule"
 rule = "int_02_out_of_sequence_progress"
 target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Out of sequence activities\", \"The activities that have started before their predecessor activity has completed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm). The link-type reading (FS predecessor not complete, SS predecessor not started, FF and SF not listed) is calibrated on a P6 Check Schedule report (R1: 6 activities, 7 pairs)"
 
 [[metric]]
 id = "INT-03"
@@ -27,3 +30,48 @@ name = "Assignments recalculated"
 description = "Open resource assignments whose stored remaining early/late dates differ from a recalculation"
 rule = "int_03_assignments_recalculated"
 target = "<= 0%"
+
+[[metric]]
+id = "INT-04"
+name = "Relationship loops"
+description = "Activities on a relationship loop. Mirrors the log's Errors 'Activities that have invalid relationship loops'; P6 cannot schedule the file until the loop is cut"
+rule = "int_04_relationship_loops"
+unit = "count"
+target = "<= 0"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Errors: \"Activities that have invalid relationship loops\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm)"
+
+[[metric]]
+id = "INT-05"
+name = "Without predecessors or successors"
+description = "Activities with no predecessor or no successor, unfiltered. Mirrors the log's Warnings 'Activities without predecessors' and 'Activities without successors'; P6-01 applies the Check Schedule exclusions (completed, started, start milestones)"
+rule = "int_05_without_predecessors_or_successors"
+unit = "count"
+target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities without predecessors\", \"Activities without successors\" (activities that \"do not have predecessors or successors\") (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm)"
+
+[[metric]]
+id = "INT-06"
+name = "Actual date later than data date"
+description = "Activities with an actual start or finish after the data date, unfiltered. Mirrors the log's Warnings 'Activities with actual date later than data date'; P6-10 (DECM 06A506a) reads the same dates with exclusions"
+rule = "int_06_actual_date_after_data_date"
+unit = "count"
+target = "<= 0"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities with actual date later than data date\", \"The activities in which the data date is before the actual date\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm)"
+
+[[metric]]
+id = "INT-07"
+name = "Unsatisfied constraints"
+description = "Open activities whose recalculated start or finish misses the date of a constraint. Mirrors the log's Exceptions 'Activities with unsatisfied constraints'; xerscope's reading, info until confirmed against a P6 log"
+rule = "int_07_unsatisfied_constraints"
+unit = "count"
+target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Exceptions: \"Activities with unsatisfied constraints\", \"constraints that have not been addressed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm). Unconfirmed against a P6 log: the reading (recalculated early date on the required side of the constraint date) is xerscope's"
+
+[[metric]]
+id = "INT-08"
+name = "Unsatisfied relationships"
+description = "Relationships the successor's actual or recalculated dates break. Mirrors the log's Exceptions 'Activities with unsatisfied relationships'; xerscope's reading, info until confirmed against a P6 log"
+rule = "int_08_unsatisfied_relationships"
+unit = "count"
+target = "info"
+source = "Oracle P6 EPPM 26 help, Schedule Project Log, Exceptions: \"Activities with unsatisfied relationships\", \"relationships that have not been addressed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm). Unconfirmed against a P6 log: the reading (successor date before the predecessor's, lag not applied) is xerscope's"

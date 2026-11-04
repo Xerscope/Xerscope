@@ -80,6 +80,7 @@ def xer_text(
     assign=(),
     resources=(),
     codes=(),
+    header: str = "23.12\t2026-03-02",
 ) -> str:
     """tasks: dicts with at least task_code; preds: (pred, succ, type, lag_hours[, pred_proj]).
 
@@ -102,7 +103,7 @@ def xer_text(
         "clndr_id": "C8",
         **(project or {}),
     }
-    lines = ["ERMHDR\t23.12\t2026-03-02"]
+    lines = [f"ERMHDR\t{header}"]
     lines += _table(
         "CALENDAR",
         [

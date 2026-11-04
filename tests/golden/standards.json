@@ -301,6 +301,50 @@
     "status": "pass",
     "value": 0.0
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -664,7 +708,7 @@
     "value": 11.538462
    },
    "DECM/06A212a": {
-    "denominator": 37,
+    "denominator": 34,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -752,7 +796,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -765,6 +809,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -1129,7 +1217,7 @@
     "value": 11.538462
    },
    "DECM/06A212a": {
-    "denominator": 37,
+    "denominator": 34,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1217,7 +1305,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1230,6 +1318,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -1594,7 +1726,7 @@
     "value": 12.0
    },
    "DECM/06A212a": {
-    "denominator": 36,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1682,7 +1814,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1695,6 +1827,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -2061,7 +2237,7 @@
     "value": 16.0
    },
    "DECM/06A212a": {
-    "denominator": 36,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2149,7 +2325,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2162,6 +2338,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -2532,7 +2752,7 @@
     "value": 16.666667
    },
    "DECM/06A212a": {
-    "denominator": 35,
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2620,7 +2840,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2633,6 +2853,52 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -3014,7 +3280,7 @@
     "value": 13.043478
    },
    "DECM/06A212a": {
-    "denominator": 34,
+    "denominator": 28,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -3106,7 +3372,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -3119,6 +3385,54 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -3506,14 +3820,12 @@
     "value": 13.636364
    },
    "DECM/06A212a": {
-    "denominator": 33,
-    "flagged": [
-     "C3010->C3020"
-    ],
+    "denominator": 26,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DECM/06A401a": {
     "denominator": null,
@@ -3600,14 +3912,12 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 10,
-    "flagged": [
-     "C3020"
-    ],
+    "denominator": 11,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
+    "numerator": 0,
     "status": "info",
-    "value": 1.0
+    "value": 0.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 19,
@@ -3616,6 +3926,56 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
    },
    "P6/P6-01": {
     "denominator": 23,
@@ -4099,6 +4459,50 @@
     "status": "pass",
     "value": 0.0
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -4465,7 +4869,7 @@
     "value": 11.538462
    },
    "DECM/06A212a": {
-    "denominator": 37,
+    "denominator": 34,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -4553,7 +4957,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -4566,6 +4970,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -4956,7 +5404,7 @@
     "value": 11.538462
    },
    "DECM/06A212a": {
-    "denominator": 37,
+    "denominator": 34,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5044,7 +5492,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5057,6 +5505,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -5448,7 +5940,7 @@
     "value": 12.0
    },
    "DECM/06A212a": {
-    "denominator": 36,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5536,7 +6028,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5549,6 +6041,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -5947,7 +6483,7 @@
     "value": 16.0
    },
    "DECM/06A212a": {
-    "denominator": 36,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6037,7 +6573,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6050,6 +6586,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -6456,7 +7036,7 @@
     "value": 16.666667
    },
    "DECM/06A212a": {
-    "denominator": 35,
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6546,7 +7126,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6559,6 +7139,52 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -6977,7 +7603,7 @@
     "value": 13.043478
    },
    "DECM/06A212a": {
-    "denominator": 34,
+    "denominator": 28,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7071,7 +7697,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7084,6 +7710,54 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -7509,14 +8183,12 @@
     "value": 13.636364
    },
    "DECM/06A212a": {
-    "denominator": 33,
-    "flagged": [
-     "C3010->C3020"
-    ],
+    "denominator": 26,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DECM/06A401a": {
     "denominator": null,
@@ -7605,14 +8277,12 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 10,
-    "flagged": [
-     "C3020"
-    ],
+    "denominator": 11,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
+    "numerator": 0,
     "status": "info",
-    "value": 1.0
+    "value": 0.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 19,
@@ -7621,6 +8291,56 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
    },
    "P6/P6-01": {
     "denominator": 23,
@@ -8128,6 +8848,50 @@
     "status": "pass",
     "value": 0.0
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 29,
     "flagged": [
@@ -8495,7 +9259,7 @@
     "value": 11.538462
    },
    "DECM/06A212a": {
-    "denominator": 37,
+    "denominator": 34,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8583,7 +9347,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8596,6 +9360,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -8987,7 +9795,7 @@
     "value": 11.538462
    },
    "DECM/06A212a": {
-    "denominator": 37,
+    "denominator": 34,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9075,7 +9883,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 4,
+    "denominator": 5,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9088,6 +9896,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -9480,7 +10332,7 @@
     "value": 12.0
    },
    "DECM/06A212a": {
-    "denominator": 36,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9568,7 +10420,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 7,
+    "denominator": 8,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -9581,6 +10433,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 29,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 29,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 35,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -9979,7 +10875,7 @@
     "value": 16.0
    },
    "DECM/06A212a": {
-    "denominator": 36,
+    "denominator": 30,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10067,7 +10963,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10080,6 +10976,50 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -10486,7 +11426,7 @@
     "value": 16.666667
    },
    "DECM/06A212a": {
-    "denominator": 35,
+    "denominator": 29,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10574,7 +11514,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10587,6 +11527,52 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -11005,7 +11991,7 @@
     "value": 13.043478
    },
    "DECM/06A212a": {
-    "denominator": 34,
+    "denominator": 28,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11097,7 +12083,7 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11110,6 +12096,54 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -11535,14 +12569,12 @@
     "value": 13.636364
    },
    "DECM/06A212a": {
-    "denominator": 33,
-    "flagged": [
-     "C3010->C3020"
-    ],
+    "denominator": 26,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DECM/06A401a": {
     "denominator": null,
@@ -11629,14 +12661,12 @@
     "value": 0.0
    },
    "INTEGRITY/INT-02": {
-    "denominator": 10,
-    "flagged": [
-     "C3020"
-    ],
+    "denominator": 11,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
+    "numerator": 0,
     "status": "info",
-    "value": 1.0
+    "value": 0.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 19,
@@ -11645,6 +12675,56 @@
     "numerator": 0,
     "status": "pass",
     "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 30,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 30,
+    "flagged": [
+     "K5040",
+     "M1000",
+     "M9999"
+    ],
+    "note": null,
+    "numerator": 3,
+    "status": "info",
+    "value": 3.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 30,
+    "flagged": [
+     "C3010"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [
+     "X4050"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 36,
+    "flagged": [
+     "C3010->C3020"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
    },
    "P6/P6-01": {
     "denominator": 23,
@@ -12114,6 +13194,48 @@
     "status": "n/a",
     "value": null
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 0,
     "flagged": [],
@@ -12517,6 +13639,48 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 0,
@@ -12922,6 +14086,48 @@
     "status": "n/a",
     "value": null
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 0,
     "flagged": [],
@@ -13325,6 +14531,48 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
    },
    "P6/P6-01": {
     "denominator": 0,
@@ -13778,6 +15026,68 @@
     "status": "n/a",
     "value": null
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 12,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 12,
+    "flagged": [
+     "A1000",
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1040",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1080",
+     "A1090",
+     "A1100",
+     "A1110"
+    ],
+    "note": null,
+    "numerator": 12,
+    "status": "info",
+    "value": 12.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 12,
+    "flagged": [
+     "A1010",
+     "A1020",
+     "A1030",
+     "A1050",
+     "A1060",
+     "A1070",
+     "A1090",
+     "A1100"
+    ],
+    "note": null,
+    "numerator": 8,
+    "status": "fail",
+    "value": 8.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 12,
     "flagged": [
@@ -14226,6 +15536,48 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 1,
+    "flagged": [
+     "A1000"
+    ],
+    "note": null,
+    "numerator": 1,
+    "status": "info",
+    "value": 1.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -14743,6 +16095,49 @@
     "note": null,
     "numerator": 0,
     "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 66,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 66,
+    "flagged": [
+     "A1010",
+     "A5800"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 66,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 1,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 84,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
     "value": 0.0
    },
    "P6/P6-01": {
@@ -15263,6 +16658,49 @@
     "status": "n/a",
     "value": null
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 25,
+    "flagged": [
+     "A1000",
+     "A4050"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 25,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 31,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 25,
     "flagged": [
@@ -15753,6 +17191,49 @@
     "status": "n/a",
     "value": null
    },
+   "INTEGRITY/INT-04": {
+    "denominator": 52,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 52,
+    "flagged": [
+     "EM00",
+     "SM00"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 52,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 0,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 41,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
    "P6/P6-01": {
     "denominator": 52,
     "flagged": [
@@ -16168,15 +17649,14 @@
     "value": 23.809524
    },
    "DECM/06A212a": {
-    "denominator": 27,
+    "denominator": 24,
     "flagged": [
-     "EW-020->EW-030",
      "EW-030->ST-010"
     ],
     "note": null,
-    "numerator": 2,
+    "numerator": 1,
     "status": "fail",
-    "value": 2.0
+    "value": 1.0
    },
    "DECM/06A401a": {
     "denominator": null,
@@ -16263,13 +17743,12 @@
    "INTEGRITY/INT-02": {
     "denominator": 6,
     "flagged": [
-     "EW-030",
      "ST-010"
     ],
     "note": null,
-    "numerator": 2,
+    "numerator": 1,
     "status": "info",
-    "value": 2.0
+    "value": 1.0
    },
    "INTEGRITY/INT-03": {
     "denominator": 0,
@@ -16278,6 +17757,52 @@
     "numerator": 0,
     "status": "n/a",
     "value": null
+   },
+   "INTEGRITY/INT-04": {
+    "denominator": 24,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-05": {
+    "denominator": 24,
+    "flagged": [
+     "MS-010",
+     "MS-030"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
+   },
+   "INTEGRITY/INT-06": {
+    "denominator": 24,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-07": {
+    "denominator": 2,
+    "flagged": [],
+    "note": null,
+    "numerator": 0,
+    "status": "info",
+    "value": 0.0
+   },
+   "INTEGRITY/INT-08": {
+    "denominator": 29,
+    "flagged": [
+     "EW-020->EW-030",
+     "EW-030->ST-010"
+    ],
+    "note": null,
+    "numerator": 2,
+    "status": "info",
+    "value": 2.0
    },
    "P6/P6-01": {
     "denominator": 21,

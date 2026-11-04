@@ -67,6 +67,7 @@ projects not in the file.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
@@ -83,7 +84,57 @@ H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_da
 
 
 class CycleError(ValueError):
-    pass
+    """The logic has a loop; ``members`` are the activities on a loop (not the ones downstream of it)."""
+
+    def __init__(self, message: str, members: tuple[str, ...] = ()):
+        super().__init__(message)
+        self.members = members
+
+
+def _loop_members(candidates: set[str], successors: dict[str, list]) -> list[str]:
+    """Activities of ``candidates`` that lie on a loop: strongly connected components of more than
+    one activity, or an activity linked to itself (Tarjan, iterative)."""
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    on_stack: set[str] = set()
+    stack: list[str] = []
+    members: list[str] = []
+    for root in sorted(candidates):
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(successors[root]))]
+        while work:
+            code, remaining = work[-1]
+            for successor, _, _ in remaining:
+                if successor not in candidates:
+                    continue
+                if successor not in index:
+                    index[successor] = low[successor] = len(index)
+                    stack.append(successor)
+                    on_stack.add(successor)
+                    work.append((successor, iter(successors[successor])))
+                    break
+                if successor in on_stack:
+                    low[code] = min(low[code], index[successor])
+            else:
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    low[parent] = min(low[parent], low[code])
+                if low[code] == index[code]:
+                    component = []
+                    while True:
+                        member = stack.pop()
+                        on_stack.discard(member)
+                        component.append(member)
+                        if member == code:
+                            break
+                    if len(component) > 1 or any(succ == code for succ, _, _ in successors[code]):
+                        members.extend(component)
+    return sorted(members)
 
 
 # SCHEDOPTIONS.sched_float_type -> which float "Compute Total Float as" reports, on the
@@ -93,6 +144,18 @@ class CycleError(ValueError):
 # tells the two floats apart; on task-dependent work the late dates are placed by
 # duration on the same calendar, so they are equal (test_float_type_codes_read_as_p6_does).
 FLOAT_TYPE = {"FT_FF": "finish", "FT_SS": "start", "FT_Min": "min", "FT_Start": "finish", "FT_Total": "finish"}
+
+
+# First ERMHDR major version whose files keep the stored remaining when the expected finish is
+# earlier than the early start. Evidence: P6 23.12 corpus, 94 of 94 cases collapse to remaining 0;
+# P6 26.5 / 26.8 project exports (Project Management Cloud), 112 cases over 14 updates, none
+# collapses. Versions 24 and 25 are unverified; an absent or unreadable version keeps the corpus rule.
+KEEP_EARLY_EXPECTED_FINISH_FROM = 26
+
+
+def collapses_early_expected_finish(version: str) -> bool:
+    match = re.match(r"\s*(\d+)", version or "")
+    return match is None or int(match.group(1)) < KEEP_EARLY_EXPECTED_FINISH_FROM
 
 
 @dataclass(frozen=True)
@@ -109,6 +172,9 @@ class Options:
     # "Ignore relationships to and from other projects" unchecked (SD_Both): the external
     # early start / late finish P6 stored for lost links to other projects bound the dates
     honor_external: bool = True
+    # An expected finish earlier than the early start brings the remaining duration to 0
+    # (False: the stored remaining is kept and the expected finish is ignored for that activity)
+    collapse_early_expected_finish: bool = True
 
     def __post_init__(self):
         if self.progressed not in PROGRESSED:
@@ -116,6 +182,7 @@ class Options:
 
     @classmethod
     def from_snapshot(cls, snapshot: Snapshot) -> Options:
+        export_version = (snapshot.options.get("export", {}) or {}).get("version", "")
         sched_options = snapshot.options.get("sched", {}) or {}
 
         def flag(key, default):
@@ -131,6 +198,7 @@ class Options:
             use_expected_finish=flag("sched_use_expect_end_flag", True),
             must_finish_by=snapshot.options.get("must_finish_by"),
             honor_external=(sched_options.get("sched_outer_depend_type") or "SD_Both") == "SD_Both",
+            collapse_early_expected_finish=collapses_early_expected_finish(export_version),
         )
 
 
@@ -318,8 +386,8 @@ class _Run:
                 if in_degree[successor] == 0:
                     queue.append(successor)
         if len(order) != len(self.nodes):
-            loop = sorted(set(self.nodes) - set(order))
-            raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}")
+            loop = _loop_members(set(self.nodes) - set(order), self.succs)
+            raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}", tuple(loop))
         self.order = order
 
     def _assignments(self) -> None:
@@ -528,8 +596,10 @@ class _Run:
             for bounded_end, bound in self.pred_bounds(code, started, finish_only=not use_logic):
                 (start_bounds if bounded_end == "start" else finish_bounds).append(bound)
             external_date = inputs[code].get("external_early_start_date")
-            if use_logic and options.honor_external and external_date is not None and pd.notna(external_date):
-                start_bounds.append(pd.Timestamp(external_date))  # a lost link to a project not in the database
+            if options.honor_external and external_date is not None and pd.notna(external_date):
+                # a lost link to a project not in the database: not a link of this project, so Progress
+                # Override does not release work under way from it (H8-08 A1020, H10-12 A1130, H15-09 A1110)
+                start_bounds.append(pd.Timestamp(external_date))
                 self.external.add(code)
             pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
             # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
@@ -577,6 +647,7 @@ class _Run:
                         finish_time,
                         use_logic,
                         finish_linked,
+                        options.collapse_early_expected_finish,
                     )
             early_start[code], early_finish[code], remaining_start[code] = (
                 (inputs[code].get("act_start_date") if started and activity_kind == "task" else start),
@@ -632,7 +703,17 @@ class _Run:
         return pinned
 
     def expected_finish(
-        self, code, axis, expected_date, start_bounds, finish_bounds, start, finish_time, use_logic, finish_linked
+        self,
+        code,
+        axis,
+        expected_date,
+        start_bounds,
+        finish_bounds,
+        start,
+        finish_time,
+        use_logic,
+        finish_linked,
+        collapse_early=True,
     ):
         """Early dates of task-dependent work with an expected finish, as P6 23.12 places them
         (corpus witnesses: H1-02 A1170, H4-10 A1040, H24-07 A1210).
@@ -652,9 +733,14 @@ class _Run:
         early_start_time = axis.snap_start(max(start_bounds)) if start_bounds else start
         if not use_logic and finish_linked and expected_date < early_start_time:
             return start, finish_time
-        exp_fin = max(expected_date, early_start_time)
+        if not collapse_early and expected_date < early_start_time:  # P6 26.x: expected finish ignored
+            return start, finish_time
+        # an expected finish off the calendar or on a period start ends the previous working
+        # period (P6 26.x exports: 31 Dec in a break -> 24 Dec 17:00, 08:00 -> 17:00 the day before)
+        exp_fin = max(axis.snap_finish(expected_date), early_start_time)
         finish_bound = axis.keep_or_next(max(finish_bounds)) if finish_bounds else None
-        if finish_bound is not None and exp_fin < finish_bound:
+        # compared in working time: 17:00 and the next 08:00 are the same instant of work
+        if finish_bound is not None and axis.work(exp_fin) < axis.work(finish_bound):
             return start, finish_time
         self.duration_override[code] = float(axis.between(early_start_time, exp_fin))
         return early_start_time, exp_fin
@@ -993,10 +1079,11 @@ class _Run:
         predecessors; FF, FS successors) its finish. An FF predecessor and an FF successor to
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
         It runs from the earliest start to the latest finish. Its late dates come the same
-        way from the late dates of the activities it is tied to, finished ones contributing
-        nothing; with no start-type link left, or one later than the late finish, the late
-        start is the late finish. Float as for any activity, free float 0 (H8-01 A1160,
-        H10-11 A1210).
+        way from the late dates of the activities it is tied to; a finished task contributes
+        through an FS link by its actual finish plus the lag, and through an SS link by the
+        late date it passes back (``lcarry``) plus the lag; with no start-type link
+        left, or one later than the late finish, the late start is the late finish. Float as
+        for any activity, free float 0 (H8-01 A1160, H10-11 A1210).
         """
         inputs, data_date, early_start, early_finish, remaining_start = (
             self.inputs,
@@ -1048,7 +1135,14 @@ class _Run:
             remaining_start[code] = axis.snap_start(data_date) if active else loe_start
             lstarts, lends = [], []
             for predecessor, link_type, lag in self.loe_preds[code]:
-                if self.status[predecessor] != "TK_Complete":
+                if self.status[predecessor] == "TK_Complete":
+                    if link_type == "SS" and predecessor in self.lcarry:  # the late date it passes back
+                        lstarts.append(self.shift(self.lag_axis(predecessor, code), self.lcarry[predecessor], lag))
+                    if link_type == "FS" and self.kind(predecessor) == "task":  # finished task: its actual finish holds
+                        actual_finish = inputs[predecessor].get("act_end_date")
+                        if actual_finish is not None and not pd.isna(actual_finish):
+                            lstarts.append(self.shift(self.lag_axis(predecessor, code), actual_finish, lag))
+                else:
                     measured_from = (
                         self.late_start[predecessor] if link_type in ("SS", "SF") else self.late_finish[predecessor]
                     )
@@ -1143,9 +1237,9 @@ class _Run:
                     assignment_finish = (
                         assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
                     )
-                    late_assignment_start = assignment.axis.snap_start(
-                        self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
-                    )
+                    late_shifted = self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
+                    # no work left: the late dates stay at the period end, as the task's (_late)
+                    late_assignment_start = late_shifted if not duration else assignment.axis.snap_start(late_shifted)
                     late_assignment_finish = (
                         assignment.axis.add(late_assignment_start, duration, finish=True)
                         if duration
@@ -1260,11 +1354,15 @@ def _late(
     - start milestone: the bound as it is when working time or a period edge, else the
       previous working time (Hotel HCMEB4000: 16:00; xerlock MS-020: 08:00)
     - finish milestone: a period end
+    - task with no remaining duration: a period end, like a finish milestone, although its
+      early dates sit at a period start (P6 Professional 24 export: an open activity with
+      remaining 0 and an FS successor starting 08:00 shows late start = late finish at the
+      previous 17:00)
     """
-    if kind == "start_ms" or (kind == "task" and duration == 0):
+    if kind == "start_ms":
         value = axis.keep_or_previous(min(late_start_bounds + late_finish_bounds))
         return value, value
-    if kind == "finish_ms":
+    if kind == "finish_ms" or (kind == "task" and duration == 0):
         value = axis.snap_finish(min(late_start_bounds + late_finish_bounds))
         return value, value
     finish_time = axis.snap_finish(min(late_finish_bounds)) if late_finish_bounds else None
@@ -1432,7 +1530,9 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     )
     blocking = []
     if not passed:
-        pinned = activities[activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)]
+        # only open work can absorb a delay: a finished activity's mandatory date is history
+        mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
+        pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
         blocking = pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
         if blocking:
             note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"

@@ -176,6 +176,32 @@ def test_milestone_conventions():
     assert dates(s, "SM")[:2] == (T("2026-03-03 08:00"),) * 2  # start milestone: the next morning
 
 
+def test_zero_duration_task_late_dates_end_the_previous_period():
+    # A task-dependent activity with no remaining duration: early dates like a start
+    # milestone (next morning), late dates like a finish milestone (the evening before the
+    # successor's late start). P6 Professional 24 export, FS successor.
+    s = snap(
+        [todo("Z", **hours(0)), todo("S", cstr_type="CS_MSOA", cstr_date="2026-03-10 08:00", **hours(8))],
+        [("Z", "S", "FS", 0)],
+    )
+    z = dates(s, "Z")
+    assert z[:2] == (T("2026-03-02 08:00"),) * 2
+    assert z[2:4] == (T("2026-03-09 17:00"),) * 2
+
+
+def test_zero_duration_task_assignment_late_dates_follow_the_task():
+    # P6 26.8 export: the assignment of a task with no remaining work keeps the task's late
+    # dates at the previous period end (17:00), not the next morning.
+    s = snap(
+        [todo("Z", **hours(0)), todo("S", cstr_type="CS_MSOA", cstr_date="2026-03-10 08:00", **hours(8))],
+        [("Z", "S", "FS", 0)],
+        resources=RSRCS,
+        assign=[_asg("Z", "R8", 0)],
+    )
+    a = schedule(s).assignments.iloc[0]
+    assert (a["rem_late_start"], a["rem_late_end"]) == (T("2026-03-09 17:00"),) * 2
+
+
 # --- constraints ----------------------------------------------------------------------------
 
 
@@ -243,6 +269,19 @@ def test_external_early_start_bounds_the_start():
     assert dates(s, "A")[:2] == (T("2026-03-04 08:00"), T("2026-03-04 17:00"))
     assert any("external early start" in w for w in schedule(s).warnings)
     ignored = snap(tasks, sched={"sched_outer_depend_type": "SD_None"})  # "Ignore relationships…"
+    assert dates(ignored, "A")[0] == T("2026-03-02 08:00")
+
+
+def test_external_early_start_binds_work_under_way_under_progress_override():
+    # The external date is not a link of this project: Progress Override, which frees work under
+    # way from its predecessors, does not release it (corpus H8-08 A1020, H10-12 A1130, H15-09 A1110).
+    tasks = [active("A", external_early_start_date="2026-03-04 08:00", **hours(8))]
+    override = snap(tasks, sched={"sched_retained_logic": "N", "sched_progress_override": "Y"})
+    assert dates(override, "A")[:2] == (T("2026-03-04 08:00"), T("2026-03-04 17:00"))
+    ignored = snap(
+        tasks,
+        sched={"sched_retained_logic": "N", "sched_progress_override": "Y", "sched_outer_depend_type": "SD_None"},
+    )
     assert dates(ignored, "A")[0] == T("2026-03-02 08:00")
 
 
@@ -368,6 +407,70 @@ def test_expected_finish_reports_the_remaining_it_set():
     early = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-02-27 17:00")]
     row = schedule(snap(early)).frame.loc["A"]
     assert row["rem_override_hr"] == 0.0 and row["ef"] == row["remaining_start"]
+
+
+def test_expected_finish_off_the_calendar_ends_the_previous_working_period():
+    """Expected finish on Saturday 7: the finish is Friday 6 17:00 (P6 26.8 export, Christmas break case)."""
+    t = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-07 17:00")]
+    assert dates(snap(t), "A")[1] == T("2026-03-06 17:00")
+
+
+def test_expected_finish_on_a_period_start_ends_the_previous_period():
+    """Expected finish Wed 4 08:00: the finish is Tue 3 17:00 (P6 26.8 exports, 12 of 12 cases)."""
+    t = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-04 08:00")]
+    assert dates(snap(t), "A")[1] == T("2026-03-03 17:00")
+
+
+def test_expected_finish_equal_in_working_time_to_an_ff_bound_wins():
+    """FF from a milestone at Wed 4 08:00, expected finish Wed 4 08:00: same working instant,
+    the expected finish holds, Tue 3 17:00 (P6 26.8 export, XA001418)."""
+    t = [
+        todo("M", task_type="TT_Mile", cstr_type="CS_MSOA", cstr_date="2026-03-04 08:00", **hours(0)),
+        active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-04 08:00"),
+    ]
+    assert dates(snap(t, [("M", "A", "FF", 0)]), "A")[1] == T("2026-03-03 17:00")
+
+
+def _early_expected_finish(header):
+    """P (40 h) pushes A's early start to Mon 9 08:00, past A's expected finish (Wed 4)."""
+    t = [todo("P", **hours(40)), todo("A", **hours(16), expect_end_date="2026-03-04 17:00")]
+    kw = {} if header is None else {"header": header}
+    return dates(snap(t, [("P", "A", "FS", 0)], **kw), "A")
+
+
+@pytest.mark.parametrize(
+    "header,finish",
+    [
+        # P6 23.12 corpus (H1-02 A1170): remaining brought to 0, EF = ES
+        ("23.12\t2026-03-02", "2026-03-09 08:00"),
+        # P6 26.x project exports: expected finish ignored, EF = ES + remaining (16 h)
+        (
+            "26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR",
+            "2026-03-10 17:00",
+        ),
+        ("", "2026-03-09 08:00"),  # no version in the header: the corpus rule
+    ],
+)
+def test_expected_finish_before_the_early_start_follows_the_export_version(header, finish):
+    assert _early_expected_finish(header)[1] == T(finish)
+
+
+def test_export_version_and_product_are_kept_on_the_options():
+    s = snap(
+        [todo("A", **hours(8))],
+        header="26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR",
+    )
+    assert s.options["export"] == {"version": "26.8", "product": "Project Management Cloud"}
+    assert snap([todo("A", **hours(8))], header="").options["export"] == {"version": "", "product": ""}
+
+
+@pytest.mark.parametrize(
+    "version,collapses", [("23.12", True), ("25.12", True), ("26.5", False), ("", True), ("x", True)]
+)
+def test_collapse_threshold(version, collapses):
+    from xerscope.analysis.cpm import collapses_early_expected_finish
+
+    assert collapses_early_expected_finish(version) is collapses
 
 
 @pytest.mark.parametrize(
@@ -571,3 +674,25 @@ def test_loe_spans_from_its_start_driver_to_its_finish_driver(finish_link):
     assert f.at["L", "es"] == f.at["A", "es"] == pd.Timestamp("2026-03-02 08:00")
     assert f.at["L", "ef"] == f.at["C", "ef"] == pd.Timestamp("2026-03-27 17:00")
     assert schedule(snap(tasks, links)).finish == f.at["D", "ef"] > f.at["L", "ef"]
+
+
+def test_loe_late_start_follows_the_actual_finish_of_a_finished_fs_predecessor():
+    """FS from a finished task: the LOE's late start is the predecessor's actual finish plus the
+    lag, written at the next working start (P6 23.12 corpus: H14-07 A1170, H18-09 A1340,
+    H25-01 A1380). It is not the late finish, which a finished predecessor would leave."""
+    tasks = [done("P", act_end_date="2026-02-13 17:00"), todo("C"), todo("L", task_type="TT_LOE")]
+    f = schedule(snap(tasks, [("P", "C", "FS", 0), ("P", "L", "FS", 0), ("L", "C", "FF", 0)])).frame
+    assert f.at["L", "ls"] == pd.Timestamp("2026-02-16 08:00")  # Friday 17:00 -> Monday morning
+    assert f.at["L", "lf"] == f.at["C", "lf"] == pd.Timestamp("2026-03-13 17:00")
+
+
+def test_loe_late_start_follows_the_late_date_a_finished_predecessor_passes_back():
+    """SS from a finished task: the LOE's late start is the late date the finished task passes
+    back, i.e. its other successor's late start (P6 23.12 corpus: H8-07 A1230 takes the late
+    start of A1020, FS successor of its predecessor). Q, 8 h, ends the project on 13 March:
+    late start Friday 08:00."""
+    tasks = [done("P"), todo("Q", **hours(8)), todo("C"), todo("L", task_type="TT_LOE")]
+    f = schedule(snap(tasks, [("P", "Q", "FS", 0), ("P", "L", "SS", 0), ("L", "C", "FF", 0)])).frame
+    assert f.at["Q", "ls"] == pd.Timestamp("2026-03-13 08:00")
+    assert f.at["L", "ls"] == pd.Timestamp("2026-03-13 08:00")
+    assert f.at["L", "lf"] == f.at["C", "lf"] == pd.Timestamp("2026-03-13 17:00")

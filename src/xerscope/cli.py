@@ -208,6 +208,8 @@ def _expect_differs(results, expect_csv: str) -> bool:
     file name without its folder). Prints every expected line as expected / got."""
     import pandas as pd
 
+    from .analysis import compare_counts
+
     expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
     missing = {"id", "found", "total"} - set(expected.columns)
     if missing:
@@ -215,13 +217,10 @@ def _expect_differs(results, expect_csv: str) -> bool:
     keys = ["file", "id"] if "file" in expected.columns else ["id"]
     if "file" not in expected.columns and results["file"].nunique() > 1:
         sys.exit(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
-    got = results[keys + ["check", "found", "total"]]
-    merged = expected.merge(got, on=keys, how="left", suffixes=("_exp", ""))
-    merged["match"] = (merged["found_exp"] == merged["found"]) & (merged["total_exp"] == merged["total"])
-    columns = keys + ["check", "found_exp", "found", "total_exp", "total", "match"]
+    merged = compare_counts(results, expected, keys)
     print(f"\nExpected (from {expect_csv}) vs xerscope:")
-    print(merged[columns].to_string(index=False))
-    bad = int((~merged["match"].fillna(False)).sum())
+    print(merged.to_string(index=False))
+    bad = int((~merged["match"]).sum())
     print(f"\n{bad} difference(s)" if bad else "\nall counts match", file=sys.stderr if bad else sys.stdout)
     return bad > 0
 
