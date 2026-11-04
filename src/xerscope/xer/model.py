@@ -83,6 +83,8 @@ ASSIGNMENT_NUM_COLS = [
     "target_qty_per_hr",
     "relag_drtn_hr_cnt",
     "target_lag_drtn_hr_cnt",
+    "target_cost",
+    "cost_per_qty",
 ]
 
 # Labour hours and nonlabour units per activity (Budgeted / Actual / Remaining, as P6 names them)

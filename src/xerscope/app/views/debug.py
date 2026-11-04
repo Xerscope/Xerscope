@@ -105,6 +105,13 @@ with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled acti
     table(frames["06_project_finish"])
     table(frames["06_latest_finishes"])
 
+with st.expander("7 · Costs in the file (TASKRSRC, PROJCOST)", key="debug_costs"):
+    st.caption(
+        "Whether the file carries costs: P6 computes its cost-based Schedule Performance Index from them, "
+        "xerscope's SPI (labour units) from hours. absent: the column is missing or blank on every row."
+    )
+    table(frames["07_costs"])
+
 
 def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
@@ -123,7 +130,7 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 6 as CSV. With anonymous exports on, Activity IDs and resource codes are renamed as in "
+    "Blocks 1 to 7 as CSV. With anonymous exports on, Activity IDs and resource codes are renamed as in "
     "the anonymised XER extract; the tables hold no name, WBS or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):

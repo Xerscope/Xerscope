@@ -228,9 +228,11 @@ Outside `analysis/`:
   the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
   targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
-  end last). `app/diagnostic.py` builds the tables from the existing results; with anonymous
-  exports on, `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract
-  (dates unchanged).
+  end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
+  `cost_per_qty`; P6 computes its cost SPI from them, xerscope's SPI is in labour units).
+  `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
+  `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
+  unchanged, cost figures 0 as in the extract).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
 

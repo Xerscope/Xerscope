@@ -6,8 +6,10 @@ Activity IDs), the same CPM differences against the stored dates, and the same s
 counts and flagged items for every check of every built-in standard.
 """
 
+import io
 import re
 import secrets
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -21,7 +23,7 @@ from xerscope.analysis.evm import evm_series
 from xerscope.analysis.progress import ppc_series
 from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.store import SnapshotStore
-from xerscope.xer import load_snapshot
+from xerscope.xer import build_snapshot, load_snapshot
 from xerscope.xer.parser import parse_bytes, parse_text, read_xer
 
 STANDARDS = builtin_standards()
@@ -181,6 +183,28 @@ def test_costs_are_zeroed_and_the_expense_kept():
     raw.tables["PROJCOST"]["target_cost"] = "1250.50"
     out = parse_bytes(Anonymizer.from_raws([raw]).xer(raw)).table("PROJCOST")
     assert out["target_cost"].tolist() == ["0"]
+
+
+def test_diagnostic_costs_block_is_zeroed_as_the_extract_is():
+    """The "Costs in the file" block of an anonymous download holds no amount: it reads as the
+    anonymised XER does, every cost 0, row counts and "absent" kept."""
+    from xerscope.app.diagnostic import costs_table
+
+    text = _file(
+        [todo("A1")],
+        assign=[{"task_code": "A1", "rsrc_id": "900", "target_cost": "1250.50", "cost_per_qty": "25.75"}],
+        costs=[{"task_code": "A1", "target_cost": "300.25"}],
+    )
+    raw = parse_text(text, source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    plain = costs_table(build_snapshot(raw))
+    with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames({"07_costs": plain}))) as archive:
+        data = archive.read("07_costs.csv").decode("utf-8-sig")
+    shown = pd.read_csv(io.StringIO(data))
+    assert not {"1250.5", "25.75", "300.25"} & set(data.replace("\n", ",").split(","))
+    extract = costs_table(build_snapshot(parse_bytes(anonymizer.xer(raw))))
+    pd.testing.assert_frame_equal(shown.astype(object).fillna(""), extract.astype(object).fillna(""))
+    assert shown["target_cost_total"].tolist() == [0.0, 0.0]
 
 
 def test_calendar_data_with_unknown_words_is_refused():
