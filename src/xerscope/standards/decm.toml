@@ -91,6 +91,7 @@ group = "Critical path"
 name = "Critical path test"
 description = "A delay on the critical path moves the project finish by the same amount"
 rule = "decm_06a401a_critical_path_test"
+params = { slip_days = 600 }  # working days added to the first open critical activity
 target = "pass"
 source = "06A401a: the schedule's critical path is the longest path (constraint method)"
 
@@ -109,6 +110,7 @@ group = "Baseline, forecast and actual dates"
 name = "Actual starts changed"
 description = "Actual start different from the previous update's"
 rule = "decm_06a504a_actual_starts_changed"
+params = { status_period_days = 28 }  # calendar days between the two updates compared
 target = "<= 10%"
 source = "06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28 days) earlier"
 
@@ -118,6 +120,7 @@ group = "Baseline, forecast and actual dates"
 name = "Actual finishes changed"
 description = "Actual finish different from the previous update's"
 rule = "decm_06a504b_actual_finishes_changed"
+params = { status_period_days = 28 }  # calendar days between the two updates compared
 target = "<= 10%"
 source = "06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period (28 days) earlier"
 
@@ -164,5 +167,6 @@ group = "Baseline, forecast and actual dates"
 name = "Riding the status date"
 description = "Forecasts that moved with the data date over two monthly updates"
 rule = "decm_06a506c_riding_status_date"
+params = { status_period_days = 28, riding_window_wd = 3, remaining_tolerance_wd = 2 }  # calendar days; working days; working days
 target = "<= 1%"
 source = "06A506c: X/Y <= 1%; start within 3 wd of the status date in both updates, or remaining duration within +/- 2 wd"

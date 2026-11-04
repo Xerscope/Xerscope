@@ -11,7 +11,6 @@ import operator
 from ...xer.model import CONSTRAINT as _CONSTRAINT
 from ...xer.model import forecast_dates
 from ..populations import (
-    LARGE_HOURS,
     Funnel,
     actual_after,
     as_flag,
@@ -44,6 +43,9 @@ from ..rules import (
 
 P6_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"]
 SOFT_CONSTRAINTS = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"]
+# The "x" of P6-04, P6-05 and P6-06 in hours: 352 h, the value report R1 prints for the Check Schedule
+# dialog (docs/standards.md, Sources). It is P6's own setting, not DCMA's 44 working days; p6.toml repeats it.
+LARGE_HOURS = 352
 
 
 def _activities(context) -> Funnel:

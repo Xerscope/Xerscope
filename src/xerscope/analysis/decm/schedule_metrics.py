@@ -15,8 +15,6 @@ import pandas as pd
 from ...xer.model import CONSTRAINT
 from ..baseline import Baseline
 from ..populations import (
-    CRITICAL_PATH_SLIP_DAYS,
-    DCMA_HIGH_DAYS,
     actual_after,
     as_flag,
     constrained_by,
@@ -34,17 +32,20 @@ from ..populations import (
 from ..rules import RuleOutput, critical_path_output, rule
 
 DECM_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]  # Primavera's hard constraints
-STATUS_PERIOD_DAYS = 28  # monthly updates: an update is compared with the one a period older
+# Defaults of the parameters below; decm.toml repeats each with its DECM v8.0 metric.
+HIGH_FLOAT_DAYS = 44  # 06A211a: total float limit, working days of the activity's calendar
+SLIP_DAYS = 600  # 06A401a: working days added to the first open critical activity
+STATUS_PERIOD_DAYS = 28  # 06A504a / 06A504b / 06A506c: an update is compared with the one a period older
 RIDING_WINDOW_WD = 3  # 06A506c: a forecast start this close to the data date "rides" it
 RIDING_REMAINING_TOLERANCE_WD = 2  # 06A506c: a remaining duration that moved by no more "rides" it too
 
 
-def _update_a_period_ago(context):
+def _update_a_period_ago(context, status_period_days: float):
     """The latest update at least one status period older than the snapshot, or None."""
     store, snapshot = context.store, context.snapshot
     if store is None or snapshot.data_date is None:
         return None
-    cutoff = snapshot.data_date - pd.Timedelta(days=STATUS_PERIOD_DAYS)
+    cutoff = snapshot.data_date - pd.Timedelta(days=status_period_days)
     earlier = [update for update in store if update.data_date is not None and update.data_date <= cutoff]
     return earlier[-1] if earlier else None
 
@@ -183,7 +184,7 @@ def decm_06a210a_loe_successors(context) -> RuleOutput:
 
 
 @rule("decm_06a211a_high_float", "%")
-def decm_06a211a_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
+def decm_06a211a_high_float(context, limit_days: float = HIGH_FLOAT_DAYS) -> RuleOutput:
     """Activities outside the float limit.
     Counts: flagged / checked
     Excludes: completed activities, level of effort.
@@ -242,13 +243,13 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
 
 
 @rule("decm_06a401a_critical_path_test", "pass/fail")
-def decm_06a401a_critical_path_test(context) -> RuleOutput:
-    """Add 600 working days to the first open critical activity; the finish must slip as much.
+def decm_06a401a_critical_path_test(context, slip_days: float = SLIP_DAYS) -> RuleOutput:
+    """Add the slip (working days) to the first open critical activity; the finish must slip as much.
 
     06A401a: a delay on the critical path moves the project finish by the same amount; the schedule's
     critical path is the longest path (constraint method)
     """
-    return critical_path_output(context, CRITICAL_PATH_SLIP_DAYS)
+    return critical_path_output(context, slip_days)
 
 
 # --- baseline, forecast and actual dates ---------------------------------------------------
@@ -268,15 +269,15 @@ def decm_06a501a_missing_baseline(context) -> RuleOutput:
     return RuleOutput(flagged_activities(flagged), len(flagged), len(tasks), note=note, checked=tasks)
 
 
-def _actual_date_changed(context, column: str) -> RuleOutput:
+def _actual_date_changed(context, column: str, status_period_days: float) -> RuleOutput:
     """Activities whose actual date differs from the one the update a status period older reported.
 
     X = activities whose date differs from (or was removed since) the earlier one; Y = activities with
     that date in either update, so a removed date counts on both sides and the share never exceeds 100 %.
     """
-    previous = _update_a_period_ago(context)
+    previous = _update_a_period_ago(context, status_period_days)
     if previous is None:
-        return RuleOutput(note=f"needs an update {STATUS_PERIOD_DAYS} days older")
+        return RuleOutput(note=f"needs an update {status_period_days:g} days older")
     now = context.snapshot.by_code
     before = previous.by_code[column].dropna()
     common = before.index.intersection(now.index)
@@ -289,25 +290,25 @@ def _actual_date_changed(context, column: str) -> RuleOutput:
 
 
 @rule("decm_06a504a_actual_starts_changed", "%")
-def decm_06a504a_actual_starts_changed(context) -> RuleOutput:
+def decm_06a504a_actual_starts_changed(context, status_period_days: float = STATUS_PERIOD_DAYS) -> RuleOutput:
     """Actual date changed since the previous update.
     Counts: changed / with that actual date
 
-    06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28
-    days) earlier
+    06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period
+    earlier
     """
-    return _actual_date_changed(context, "act_start_date")
+    return _actual_date_changed(context, "act_start_date", status_period_days)
 
 
 @rule("decm_06a504b_actual_finishes_changed", "%")
-def decm_06a504b_actual_finishes_changed(context) -> RuleOutput:
+def decm_06a504b_actual_finishes_changed(context, status_period_days: float = STATUS_PERIOD_DAYS) -> RuleOutput:
     """Actual date changed since the previous update.
     Counts: changed / with that actual date
 
-    06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period (28
-    days) earlier
+    06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period
+    earlier
     """
-    return _actual_date_changed(context, "act_end_date")
+    return _actual_date_changed(context, "act_end_date", status_period_days)
 
 
 @rule("decm_06a505a_in_progress_without_actual_start", "%")
@@ -372,41 +373,46 @@ def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
     )
 
 
-def _start_near_data_date(snapshot, activities: pd.DataFrame) -> pd.Series:
+def _start_near_data_date(snapshot, activities: pd.DataFrame, riding_window_wd: float) -> pd.Series:
     """True where the forecast start is within the riding window after the data date."""
     data_dates = pd.Series(snapshot.data_date, index=activities.index)
     hours = snapshot.work_hours(activities["clndr_id"], data_dates, activities["start"])
-    return (hours >= 0) & (hours <= RIDING_WINDOW_WD * activities["hours_per_day"])
+    return (hours >= 0) & (hours <= riding_window_wd * activities["hours_per_day"])
 
 
 @rule("decm_06a506c_riding_status_date", "%")
-def decm_06a506c_riding_status_date(context) -> RuleOutput:
+def decm_06a506c_riding_status_date(
+    context,
+    status_period_days: float = STATUS_PERIOD_DAYS,
+    riding_window_wd: float = RIDING_WINDOW_WD,
+    remaining_tolerance_wd: float = RIDING_REMAINING_TOLERANCE_WD,
+) -> RuleOutput:
     """Forecasts riding the status date.
     Counts: riding the status date / checked
     Excludes: completed activities, level of effort.
 
-    06A506c: X/Y <= 1%; start within 3 wd of the status date in both updates, or remaining duration
-    within +/- 2 wd. Compared with the latest update at least one status period (28 days) older: a
-    not-started activity rides when its forecast start is within 3 working days of the data date in both;
-    a started one when its remaining duration moved by no more than 2 working days (its finish slides
-    with the data date)
+    06A506c: X/Y <= 1%; start within the riding window of the status date in both updates, or remaining
+    duration within the tolerance. Compared with the latest update at least one status period older: a
+    not-started activity rides when its forecast start is within the riding window of the data date in
+    both; a started one when its remaining duration moved by no more than the tolerance (its finish
+    slides with the data date)
     """
-    previous = _update_a_period_ago(context)
+    previous = _update_a_period_ago(context, status_period_days)
     if previous is None:
-        return RuleOutput(note=f"needs an update {STATUS_PERIOD_DAYS} days older")
+        return RuleOutput(note=f"needs an update {status_period_days:g} days older")
     previous_tasks = previous.by_code
     tasks = without_level_of_effort(open_activities(context))
     tasks = tasks[tasks["task_code"].isin(previous_tasks.index)]
     before = previous_tasks.loc[tasks["task_code"]].set_index(tasks.index)
 
-    start_rides = _start_near_data_date(context.snapshot, tasks) & ~tasks["is_started"]
-    start_rode = _start_near_data_date(previous, before) & ~before["is_started"]
+    start_rides = _start_near_data_date(context.snapshot, tasks, riding_window_wd) & ~tasks["is_started"]
+    start_rode = _start_near_data_date(previous, before, riding_window_wd) & ~before["is_started"]
     remaining_change = (tasks["remaining_d"] - before["remaining_d"]).abs()
     both_started = tasks["is_started"] & before["is_started"]
-    finish_rides = both_started & (remaining_change <= RIDING_REMAINING_TOLERANCE_WD)
+    finish_rides = both_started & (remaining_change <= remaining_tolerance_wd)
     riding = as_flag((start_rides & start_rode) | finish_rides)
 
-    reason = pd.Series(f"start within {RIDING_WINDOW_WD} wd of the data date in both updates", index=tasks.index)
+    reason = pd.Series(f"start within {riding_window_wd:g} wd of the data date in both updates", index=tasks.index)
     reason = reason.mask(finish_rides, "remaining duration unchanged")
     flagged = tasks[riding]
     return RuleOutput(

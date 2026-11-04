@@ -936,6 +936,23 @@ def test_decm_riding_the_status_date():
     assert codes(r) == ["R"] and r.denominator == 2
 
 
+def test_decm_riding_the_status_date_takes_the_status_period_as_a_parameter():
+    from xerscope.analysis.audit import with_settings
+    from xerscope.store import SnapshotStore
+
+    # Two weekly updates: R's forecast start is the data date in both. The 28-day default has no earlier
+    # update to compare with; a 7-day period compares the two and R rides.
+    w1 = snap([todo("R", early_start_date="2026-03-02 08:00")])
+    w2 = snap([todo("R", early_start_date="2026-03-09 08:00")], data_date="2026-03-09 08:00")
+    store = SnapshotStore([w1, w2])
+    context = AnalysisContext(store[1], store)
+    default = run_metric(DECM["06A506c"], context)
+    assert default.status == "n/a" and "28 days older" in default.note
+    shorter = run_metric(with_settings(DECM["06A506c"], params={"status_period_days": 7}), context)
+    assert codes(shorter) == ["R"] and counts(shorter) == (1, 1)
+    assert run_metric(with_settings(DECM["06A506c"], params={"status_period_days": 8}), context).status == "n/a"
+
+
 def test_decm_riding_the_status_date_started_work():
     from xerscope.store import SnapshotStore
 

@@ -12,8 +12,6 @@ import pandas as pd
 
 from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
 from ..populations import (
-    CRITICAL_PATH_SLIP_DAYS,
-    DCMA_HIGH_DAYS,
     actual_after,
     as_flag,
     constrained_by,
@@ -31,6 +29,10 @@ from ..populations import (
     with_baseline,
 )
 from ..rules import RuleOutput, bei_from_snapshot, critical_path_output, link_population, rule, share_of_type
+
+DCMA_HIGH_DAYS = 44  # PAM 200.1 §4.6 and §4.8: "two months" of work, in working days of the activity's calendar
+# The pamphlet gives no slip length (§4.12); 600 working days is the value of DECM 06A401a.
+DCMA_SLIP_DAYS = 600
 
 # Start On, Start On or Before, Finish On, Finish On or Before, Mandatory Start, Mandatory Finish:
 # the model's set.
@@ -251,14 +253,14 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
 
 
 @rule("dcma_12_critical_path_test", "pass/fail")
-def dcma_12_critical_path_test(context) -> RuleOutput:
-    """Add 600 working days to the first open critical activity; the finish must slip as much.
+def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> RuleOutput:
+    """Add the slip (working days) to the first open critical activity; the finish must slip as much.
 
     DCMA-EA PAM 200.1 §4.12: the project completion date must move "in direct proportion" to the
     "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is the value of
     DECM 06A401a
     """
-    return critical_path_output(context, CRITICAL_PATH_SLIP_DAYS)
+    return critical_path_output(context, slip_days)
 
 
 @rule("dcma_13_cpli", "ratio")

@@ -118,7 +118,12 @@ value is noted where it differs).
 
 Thresholds in hours as P6 compares them: `x` is the `limit_hours` parameter of P6-04, P6-05
 and P6-06 in `p6.toml` (the dialog's "x", 352 h). DCMA-06, DCMA-08 and DECM 06A211a take
-`limit_days` (44 working days of the activity's calendar) the same way. Targets are the Check Schedule dialog defaults as the P6 EPPM 25 help
+`limit_days` (44 working days of the activity's calendar) the same way. Each threshold is a parameter
+of its own check with a default equal to the standard file's value (`LARGE_HOURS` in `p6/check_schedule.py`,
+`DCMA_HIGH_DAYS` and `DCMA_SLIP_DAYS` in `dcma/fourteen_point.py`, `HIGH_FLOAT_DAYS`, `SLIP_DAYS`,
+`STATUS_PERIOD_DAYS`, `RIDING_WINDOW_WD`, `RIDING_REMAINING_TOLERANCE_WD` in `decm/schedule_metrics.py`);
+`test_threshold_defaults_of_the_rules_equal_the_standard_files` keeps the two equal. P6's 352 h is not
+derived from DCMA's 44 days. Targets are the Check Schedule dialog defaults as the P6 EPPM 25 help
 states them (strict comparisons: "less than 5%", "greater than 90%"), except BEI: the help
 says "0.95 or greater", `p6.toml` holds `> 0.95` as report R1 prints it, so exactly 0.95 fails.
 The dialog's own values must be copied in for pass/fail to match a report.
@@ -168,7 +173,7 @@ the repository (real schedule), so the tests rebuild each behaviour by hand
 | 06A212a | Out of sequence | links whose predecessor is incomplete (LOE included); the successor may be complete | using `start` / `finish` (actual, else forecast): FS `S.start < P.finish`; SS `S.start < P.start`; FF `S.finish < P.finish`; SF `S.finish < P.start`; lags ignored | count | <= 0 | 06A212a: X = 0; FS (S.AS\|S.FS) < P.FF, SS (S.AS\|S.FS) < P.FS, FF (S.AF\|S.FF) < P.FF, SF (S.AF\|S.FF) < P.FS | test_decm_out_of_sequence_counts_relationships, test_decm_out_of_sequence_ignores_a_completed_predecessor |
 | 06A401a | Critical path test | see §2.5 | +600 wd | pass/fail | pass | 06A401a: the schedule's critical path is the longest path (constraint method) | rule: test_critical_path_test_passes_on_clean_logic, test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay |
 | 06A501a | Missing baseline dates | all activities | no `bl_start` or no `bl_finish` (not in the baseline, or baseline dates blank) | % | <= 5% | 06A501a: X/Y <= 5%, summaries excluded | test_decm_baseline_and_actual_dates |
-| 06A504a | Actual starts changed | activities with an actual start in this update, plus those present in both updates with one in the earlier update; earlier = the latest update whose data date is <= this one − 28 days (`STATUS_PERIOD_DAYS`) | present in both updates with an earlier actual start and a different (or now blank) actual start | % | <= 10% | 06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28 days) earlier | test_decm_actuals_changed_needs_the_previous_update, test_actuals_changed_counts_a_removed_date_on_both_sides |
+| 06A504a | Actual starts changed | activities with an actual start in this update, plus those present in both updates with one in the earlier update; earlier = the latest update whose data date is <= this one − 28 days (`status_period_days`) | present in both updates with an earlier actual start and a different (or now blank) actual start | % | <= 10% | 06A504a: X/Y <= 10%, Y = tasks with an actual start; compared with the update one status period (28 days) earlier | test_decm_actuals_changed_needs_the_previous_update, test_actuals_changed_counts_a_removed_date_on_both_sides |
 | 06A504b | Actual finishes changed | same, on actual finish | same | % | <= 10% | 06A504b: X/Y <= 10%, Y = tasks with an actual finish; compared with the update one status period (28 days) earlier | test_decm_actuals_changed_needs_the_previous_update |
 | 06A505a | In progress without actual start | `pct_complete > 0` or started (LOE included) | no `act_start_date` | % | <= 5% | 06A505a: X/Y <= 5% | test_decm_baseline_and_actual_dates |
 | 06A505b | Complete without actual finish | `pct_complete >= 100` or complete | no `act_end_date` | % | <= 5% | 06A505b: X/Y <= 5% | none |

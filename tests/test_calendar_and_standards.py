@@ -150,3 +150,20 @@ def test_overlapping_periods_count_once():
     )
     week, _ = parse_clndr_data(blob)
     assert week[0] == ((480, 960),)  # 08:00-16:00 once, not 4 + 4 + 2 hours
+
+
+def test_threshold_defaults_of_the_rules_equal_the_standard_files():
+    """A threshold lives in the standard file and as the rule's default; the two never disagree, and
+    every built-in metric states each threshold its rule takes, so the explanation shows 'standard'."""
+    from xerscope.analysis.rules import RULES
+
+    checked = 0
+    for standard in builtin_standards().values():
+        for metric in standard.metrics:
+            for name, default in RULES[metric.rule].params.items():
+                if not name.endswith(("_hours", "_days", "_wd")):
+                    continue
+                assert name in metric.params, (metric.id, name)
+                assert metric.params[name] == default, (metric.id, name, metric.params[name], default)
+                checked += 1
+    assert checked == 13  # P6-04/05/06, DCMA-06/08/12, 06A211a, 06A401a, 06A504a, 06A504b, 06A506c (3 parameters)

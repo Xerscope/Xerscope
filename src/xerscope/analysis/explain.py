@@ -145,6 +145,22 @@ def _limit_note(measure: str, key: str, unit: str) -> Callable[[dict], list[str]
     return lambda params: [f"Flagged when {measure} > {params[key]:g} {unit}."]
 
 
+def _slip_notes(params: dict) -> list[str]:
+    return [f"The first open critical activity is delayed by {params['slip_days']:g} working days."]
+
+
+def _status_period_notes(params: dict) -> list[str]:
+    return [f"Compared with the latest update at least {params['status_period_days']:g} days older."]
+
+
+def _riding_notes(params: dict) -> list[str]:
+    return [
+        *_status_period_notes(params),
+        f"Rides when the start is within {params['riding_window_wd']:g} working days of the data date in both updates,"
+        f" or the remaining duration moved by at most {params['remaining_tolerance_wd']:g} working days.",
+    ]
+
+
 # rule name -> sentences that depend on the rule's parameters
 NOTES: dict[str, Callable[[dict], list[str]]] = {
     "p6_04_large_durations": _limit_note("remaining duration", "limit_hours", "hours"),
@@ -153,6 +169,11 @@ NOTES: dict[str, Callable[[dict], list[str]]] = {
     "dcma_06_high_float": _limit_note("total float", "limit_days", "days"),
     "dcma_08_high_duration": _limit_note("baseline duration", "limit_days", "days"),
     "decm_06a211a_high_float": _limit_note("total float", "limit_days", "days"),
+    "dcma_12_critical_path_test": _slip_notes,
+    "decm_06a401a_critical_path_test": _slip_notes,
+    "decm_06a504a_actual_starts_changed": _status_period_notes,
+    "decm_06a504b_actual_finishes_changed": _status_period_notes,
+    "decm_06a506c_riding_status_date": _riding_notes,
     "relationship_type": _relationship_type_notes,
     "invalid_dates": _invalid_dates_notes,
     "late_vs_baseline": _late_vs_baseline_notes,
