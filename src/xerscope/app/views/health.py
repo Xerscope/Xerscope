@@ -5,6 +5,7 @@ import streamlit as st
 
 from xerscope.analysis import (
     AnalysisContext,
+    builtin_standards,
     compare_counts,
     health_history,
     loads_standard,
@@ -282,6 +283,8 @@ def show_own_standard() -> None:
         if upload is not None:
             try:
                 custom = loads_standard(upload.getvalue(), upload.name)
+                if custom.id in builtin_standards():
+                    raise ValueError(f"{upload.name}: id {custom.id!r} is a built-in standard's; give yours another id")
                 st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
                 st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
             except (ValueError, UnicodeDecodeError) as exc:

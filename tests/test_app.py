@@ -826,7 +826,7 @@ def _check_parameters_rows(at) -> int:
 
 
 def test_debug_block_4_follows_an_uploaded_standard_with_the_builtin_id(app):
-    """An upload named like a built-in replaces it (state.standards); the Debug page must show it."""
+    """A session standard that takes a built-in id replaces it (state.standards): Debug must show it."""
     import dataclasses
 
     from xerscope.analysis.standards import builtin_standards
@@ -839,3 +839,16 @@ def test_debug_block_4_follows_an_uploaded_standard_with_the_builtin_id(app):
     app.run()
     _ok(app)
     assert _check_parameters_rows(app) == before - 1
+
+
+def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
+    """A built-in id is not replaceable from the page: the upload is rejected and not kept."""
+    from xerscope.analysis.standards import template_text
+
+    app.switch_page("views/health.py").run()
+    text = template_text().replace('id = "CUSTOM"', 'id = "P6"', 1)
+    app.file_uploader(key="std_upload").set_value(("p6.toml", text.encode(), "application/toml")).run()
+    _ok(app)
+    assert any("P6" in error.value and "built-in" in error.value for error in app.error)
+    assert "P6" not in app.session_state["uploaded_standards"] if "uploaded_standards" in app.session_state else True
+    assert not app.success
