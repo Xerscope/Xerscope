@@ -385,6 +385,16 @@ class _Run:
                 self.loe_preds[successor].append((predecessor, link_type, lag_minutes))
             elif predecessor in activities.index and self.is_loe.get(predecessor, False) and successor in node_set:
                 self.loe_succs[predecessor].append((successor, link_type, lag_minutes))
+        # The network is a directed graph: activities are nodes, relationships are edges
+        # (predecessor -> successor). We need an order in which every activity comes after all
+        # its predecessors (a topological sort, Kahn's algorithm): the forward pass can then
+        # compute an activity from predecessors already computed, and the backward pass walks
+        # the same order reversed, so successors are computed first.
+        # in_degree[x] = number of predecessors of x not placed yet; x is ready at 0.
+        # Example, A -> B -> D and A -> C -> D:
+        #   start  A=0 B=1 C=1 D=2  -> place A
+        #          B=0 C=0 D=2      -> place B, then C
+        #          D=0              -> place D        order = [A, B, C, D]
         in_degree = dict.fromkeys(self.nodes, 0)
         for successor, links in self.preds.items():
             in_degree[successor] = len(links)
@@ -397,6 +407,8 @@ class _Run:
                 in_degree[successor] -= 1
                 if in_degree[successor] == 0:
                     queue.append(successor)
+        # nodes left out never reached 0: they wait on each other, a cycle (A -> B -> A).
+        # P6 refuses to schedule a loop too.
         if len(order) != len(self.nodes):
             loop = _loop_members(set(self.nodes) - set(order), self.succs)
             raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}", tuple(loop))
@@ -601,6 +613,30 @@ class _Run:
 
     # --- forward pass --------------------------------------------------------------------------
     def forward(self) -> None:
+        """Early dates: the soonest each activity can start and finish.
+
+        Walks the topological order, so every predecessor is already dated. For an open
+        activity it collects "not before" dates (lower bounds) and keeps the latest one:
+
+        - start bounds: the data date (nothing remaining happens before "today"), a resume
+          date, each finish-to-start predecessor's finish + lag (B starts after A finishes),
+          each start-to-start predecessor's start + lag, links to other projects, start
+          constraints set by the planner
+        - finish bounds: each finish-to-finish predecessor's finish + lag, each
+          start-to-finish predecessor's start + lag, finish constraints
+        - a mandatory constraint overrides all of them
+
+        (P6 and the code write these four relationship types FS, SS, FF and SF.)
+
+        Then finish = start + remaining duration, counted in working minutes of the
+        activity's calendar (``_early``); a later finish bound pushes both. Resource-dependent
+        activities (dated by their resources' calendars) and an expected finish adjust the
+        result. A finished activity keeps its actual dates (``forward_finished``).
+
+        Example: A ends Monday 17:00; B follows A finish-to-start with no lag, lasts 2 days,
+        on a Monday-to-Friday 08:00-17:00 calendar: B starts Tuesday 08:00 and finishes
+        Wednesday 17:00.
+        """
         inputs, options, status, data_date = self.inputs, self.options, self.status, self.data_date
         early_start, early_finish, remaining_start = self.early_start, self.early_finish, self.remaining_start
         for code in self.order:
@@ -775,7 +811,17 @@ class _Run:
     def rsrc_early(
         self, code, start_bounds, finish_bounds, extra_minutes, expected_date=None
     ) -> tuple[pd.Timestamp, pd.Timestamp]:
-        """Resource dependent, as P6 23.12 places it (corpus H8-H30):
+        """Dates of a resource-dependent activity: its duration comes from its resources.
+
+        In plain terms: each driving resource assignment has remaining hours of work and a
+        rate (hours per hour); its duration is work / rate, counted on the resource's own
+        calendar, not the activity's. The activity spans its assignments.
+
+        Example: 40 h of work at 0.5 h per hour (a half-time person) lasts 80 working hours
+        of that person's calendar; if the person works Monday to Thursday, the activity
+        stretches over the Fridays they are off.
+
+        Detail, as P6 23.12 places it (corpus H8-H30):
 
         1. the lower bound is taken on the activity's own calendar (H8-03 A1240: data date
            00:00, activity Mon-Thu from 07:00, resource every day from 06:00: starts 07:00);
@@ -975,6 +1021,24 @@ class _Run:
         return start, max(finishes)
 
     def backward(self) -> None:
+        """Late dates: the latest each activity can start and finish without delaying the
+        project end.
+
+        Walks the topological order backwards, so every successor is already dated. For an
+        open activity it collects "not after" dates (upper bounds) and keeps the earliest:
+        the project end (the "must finish by" date the planner may set, else the latest
+        early finish), each successor's late date less the lag, read through the same
+        relationship types in the other direction (``successor_limits``), links to other
+        projects and constraints. Late start = late finish -
+        remaining duration on the activity's calendar (``place_late``).
+
+        Total float (computed later, ``floats``) is late finish - early finish: how much the
+        activity can slip before the project end moves. 0 = critical: any delay moves the end.
+
+        Example: B (2 days) must finish by Friday 17:00 for its successor: late finish
+        Friday 17:00, late start Thursday 08:00; with B's early finish on Wednesday 17:00 its
+        float is 2 days.
+        """
         options, status = self.options, self.status
         end_anchor = options.must_finish_by if options.must_finish_by is not None else self.finish
         for code in reversed(self.order):
@@ -1044,8 +1108,20 @@ class _Run:
 
     # --- float, as late as possible ------------------------------------------------------------
     def floats(self) -> None:
-        """Reverse order, so an ALAP activity sees its successors already moved, and free float
-        is measured against the dates P6 finally shows."""
+        """Float of each open activity: how much it can slip.
+
+        - total float: late finish - early finish (or the start, per the project's option),
+          in working hours of the activity's calendar: slip before the project end moves
+        - free float: slip before the first successor moves (the gap to the earliest date a
+          successor imposes)
+
+        Example: B finishes Wednesday 17:00, its only successor C (finish-to-start, no lag)
+        starts Friday 08:00 at the earliest because of another predecessor: B's free float is
+        Thursday, 8 h; its total float may be larger if C itself has float.
+
+        An "as late as possible" activity is moved right by its free float here. The walk is
+        in reverse order, so such an activity sees its successors already moved, and free
+        float is measured against the dates P6 finally shows."""
         inputs, early_start, early_finish, remaining_start = (
             self.inputs,
             self.early_start,
@@ -1101,7 +1177,15 @@ class _Run:
 
     # --- level of effort: spans what drives it ------------------------------------------------
     def level_of_effort(self) -> None:
-        """Each relationship ties the end of the LOE it names: start-type ends (SS, FS
+        """Dates of level-of-effort activities (LOE): bars that span other work and drive
+        nothing, for example site management for the length of a phase. An LOE has no
+        duration of its own: it starts with the earliest work it is tied to and finishes
+        with the latest.
+
+        Example: "Supervision" tied to the start of A (Monday) and to the finish of D
+        (Friday the week after) runs Monday to that Friday, and stretches if D slips.
+
+        Detail: each relationship ties the end of the LOE it names: start-type ends (SS, FS
         predecessors; SS, SF successors) give its start, finish-type ends (FF, SF
         predecessors; FF, FS successors) its finish. An FF predecessor and an FF successor to
         the same activity give the same finish (Boyle, "constructing LOE activities in P6").
