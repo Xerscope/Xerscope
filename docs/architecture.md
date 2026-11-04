@@ -92,6 +92,21 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 | `standards.py` | TOML → `Standard(metrics)` | validated on load (rule, parameter names, population keywords, target syntax) |
 | `checks.py` | standard + `AnalysisContext` (defined in `rules.py`) → `CheckResult` per metric; `health_history` over the series | a failing rule returns status "error", never crashes the page |
 | `baseline.py` | BL snapshot (or planned dates) → frame `bl_start, bl_finish, bl_labor_hr…` | shared by BEI, missed, late, PV |
+
+**Baseline sources.** A baseline is one of: a separate XER, a loaded update, the planned dates of each update
+(`Baseline.planned`), or the project the file itself names as the P6 Project Baseline. For the last,
+`Snapshot.file_baseline` reads `PROJECT.sum_base_proj_id` of the analysed project (Oracle P6 EPPM XER
+Import/Export Data Map, table PROJECT, v23: "Project Baseline"; `orig_proj_id` = "Original Project"; v26 map
+not found, same XER format, unverified on 26). It is usable when that project is another PROJECT row of the
+same file that owns activities and, when its `orig_proj_id` is filled, names the analysed project; otherwise
+`note` says why not and the sidebar's choice applies. The app builds that project as a snapshot
+(`load_snapshot(..., project_id=)`, exact because a baseline copy may carry the code of the project it was
+copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
+Start / Finish). The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
+without one has no baseline for that update (checks that need one are n/a), stated in the Selection panel.
+The memo key holds the project each file names. P6-12 and P6-13 read `context.baseline` like every rule that
+needs one: they get the baseline of the sidebar choice (the file's, a separate XER, the planned dates) and
+carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique) |

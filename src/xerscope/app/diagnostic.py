@@ -235,14 +235,20 @@ def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: boo
         return pd.DataFrame([{"baseline": "none", "kind": "", "matched": 0, "activities": len(snapshot.by_code)}])
     codes = snapshot.by_code.index
     planned = baseline.snapshot is snapshot
+    in_file = not planned and baseline.snapshot.source == snapshot.source
     label = baseline.label
     if anonymous:
         label = "planned dates of the update" if planned else "baseline file"
+        label = "project baseline in the file" if in_file else label
     return pd.DataFrame(
         [
             {
                 "baseline": label,
-                "kind": "planned dates (target_*)" if planned else "separate file",
+                "kind": "planned dates (target_*)"
+                if planned
+                else "project baseline in the file"
+                if in_file
+                else "separate file",
                 "matched": int(codes.isin(baseline.frame.index).sum()),
                 "activities": len(codes),
             }

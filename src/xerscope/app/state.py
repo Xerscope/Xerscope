@@ -6,7 +6,7 @@ import hashlib
 import os
 import secrets
 from collections.abc import Callable, Iterable, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -24,16 +24,16 @@ from xerscope.xer.parser import parse_bytes
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
 
 
-def _parse(name: str, data: bytes, project: str | None = None) -> Snapshot:
+def _parse(name: str, data: bytes, project: str | None = None, project_id: str | None = None) -> Snapshot:
     """Parse once per session, keyed on content. The cache lives in the session's state, never in a
     process-wide cache: when the session ends (server.disconnectedSessionTTL after the tab closes),
     nothing of the files it read stays in the server."""
     cache = st.session_state.setdefault("_parsed", {})
-    key = (name, hashlib.sha256(data).hexdigest(), project)
+    key = (name, hashlib.sha256(data).hexdigest(), project, project_id)
     if key not in cache:
         if len(cache) > 64:
             cache.clear()
-        cache[key] = load_snapshot(data, project_code=project, name=name)
+        cache[key] = load_snapshot(data, project_code=project, name=name, project_id=project_id)
     return cache[key]
 
 
@@ -243,12 +243,14 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
                 "projects_in_file": "Projects in file (TASK rows)",
                 "data_date": "Data date",
                 "data_date_from": "Data date from",
+                "baseline": "Baseline (P6 Project Baseline)",
                 "activities": "Activities",
             },
         )
 
 
 BL_NONE = "None"
+BL_EACH = "Baseline in each file (P6 Project Baseline)"
 BL_PLANNED = "Planned dates in each file (target_*)"
 BL_FILE = "Separate baseline file"
 
@@ -262,8 +264,8 @@ EV_BASIS_LABEL = {
 
 def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str):
     """The Baseline (or marker) the sidebar choice stands for; None when nothing usable."""
-    if choice == BL_PLANNED:
-        return BL_PLANNED  # resolved per snapshot
+    if choice in (BL_PLANNED, BL_EACH):
+        return choice  # resolved per snapshot
     if choice == BL_NONE:
         return None
     if choice != BL_FILE:
@@ -303,11 +305,16 @@ def _baseline_picker(store: SnapshotStore) -> None:
     sidebar = st.sidebar
     sidebar.subheader("Baseline")
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    in_files = any(snapshot.file_baseline.usable for snapshot in store)
     options = [BL_FILE] + store.labels + [BL_PLANNED, BL_NONE]
+    if in_files:
+        options.insert(0, BL_EACH)
+    # BL_EACH leads the list and is the default, unless a baseline file is named by XERSCOPE_BASELINE
+    file_at = 1 if in_files else 0
     choice = sidebar.selectbox(
         "Baseline (BL)",
         options,
-        index=0 if env_path else 1,
+        index=0 if in_files and not env_path else file_at + (0 if env_path else 1),
         key="bl_choice",
         help="PV, BEI, missed tasks and late activities are measured against it. "
         "Usually the contract baseline, exported from P6 as its own XER.",
@@ -326,11 +333,42 @@ def _baseline_picker(store: SnapshotStore) -> None:
     st.session_state["baseline"] = baseline
     if isinstance(baseline, Baseline):
         _describe_baseline(sidebar, store, baseline)
+    if baseline == BL_EACH:
+        for snapshot in store:
+            if not snapshot.file_baseline.usable:
+                sidebar.caption(f"{snapshot.source}: {snapshot.file_baseline.text}. Its baseline checks are n/a.")
+
+
+def _file_baseline(snapshot: Snapshot) -> Baseline | None:
+    """The Baseline built from the project ``snapshot``'s file names as its P6 Project Baseline, or
+    None when the file names none that can be used (``Snapshot.file_baseline``). Kept for the files
+    and EV basis loaded."""
+    pointer = snapshot.file_baseline
+    data = dict(st.session_state.get("items") or []).get(snapshot.source)
+    if not pointer.usable or data is None:
+        return None
+    basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
+    signature = st.session_state.get("signature")
+    held_for, cache = st.session_state.get("_file_baselines", (None, {}))
+    if held_for != signature:
+        cache = {}
+    key = (snapshot.source, snapshot.project_id, pointer.proj_id, basis)
+    if key not in cache:
+        try:
+            source = _parse(snapshot.source, data, project_id=pointer.proj_id)
+        except XerError:
+            return None
+        built = Baseline.from_snapshot(source, basis)
+        cache[key] = replace(built, label=f"BL {pointer.code} (project baseline in {snapshot.source})")
+    st.session_state["_file_baselines"] = (signature, cache)
+    return cache[key]
 
 
 def baseline_for(snapshot: Snapshot) -> Baseline | None:
     """The sidebar's baseline, as it applies to ``snapshot``."""
     baseline = st.session_state.get("baseline")
+    if baseline == BL_EACH:
+        return _file_baseline(snapshot)
     if baseline == BL_PLANNED:
         return Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
     return baseline if isinstance(baseline, Baseline) else None
@@ -397,6 +435,10 @@ def _baseline_identity() -> tuple:
     baseline = st.session_state.get("baseline")
     if isinstance(baseline, Baseline):
         return baseline.label, baseline.ev_basis, st.session_state.get("baseline_digest")
+    if baseline == BL_EACH:  # resolved per snapshot: which project each file names
+        store = st.session_state.get("store")
+        pointers = tuple((s.source, s.file_baseline.proj_id, s.file_baseline.usable) for s in store or ())
+        return baseline, st.session_state.get("ev_basis"), pointers
     return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
 
 
