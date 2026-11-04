@@ -10,18 +10,19 @@ import pandas as pd
 
 from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
 from .populations import (
+    Funnel,
+    activity_funnel,
     actual_after,
+    as_flag,
     flagged_activities,
     flagged_relationships,
     has_predecessor_in_project,
     has_successor_in_project,
     links_between,
-    open_activities,
     open_end_reason,
     predecessors_ahead,
-    without_level_of_effort,
 )
-from .rules import RuleOutput, rule
+from .rules import RuleOutput, link_funnel, rule
 
 STORED_FIELDS = ["early_start_date", "early_end_date", "late_start_date", "late_end_date", "total_float_hr_cnt"]
 
@@ -41,8 +42,14 @@ def int_01_recalculated(context) -> RuleOutput:
     except CycleError as exc:
         return RuleOutput(note=f"cannot schedule: {exc}")
     comparison = comparison[comparison["field"].isin(STORED_FIELDS) & comparison["stored"].notna()]
+    funnel = Funnel(context.snapshot.by_code.reset_index().sort_values("task_code"))
+    funnel.keep(
+        "with stored dates to compare", "xerscope", lambda rows: rows["task_code"].isin(comparison["task_code"])
+    )
     if comparison.empty:
-        return RuleOutput(numerator=0, denominator=0, note="no stored dates to compare", checked=pd.DataFrame())
+        return RuleOutput(
+            numerator=0, denominator=0, note="no stored dates to compare", checked=funnel.rows, funnel=funnel
+        )
     differences: dict[str, list[str]] = {}
     columns = ["task_code", "field", "stored", "computed", "agree"]
     for task_code, field_name, stored, computed, agrees in comparison[columns].itertuples(index=False):
@@ -52,12 +59,17 @@ def int_01_recalculated(context) -> RuleOutput:
     flagged = tasks.loc[sorted(differences)].reset_index()
     texts = ["; ".join(differences[task_code]) for task_code in flagged["task_code"]]
     different_values = sum(len(found) for found in differences.values())
-    compared = tasks.loc[sorted(comparison["task_code"].unique())].reset_index()
+    compared = funnel.rows
     note = (
         f"{len(comparison) - different_values} of {len(comparison)} stored values reproduced; {_finish_note(context)}"
     )
     return RuleOutput(
-        flagged_activities(flagged, differences=texts), len(differences), len(compared), note=note, checked=compared
+        flagged_activities(flagged, differences=texts),
+        len(differences),
+        len(compared),
+        note=note,
+        checked=compared,
+        funnel=funnel,
     )
 
 
@@ -89,8 +101,10 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
     predecessors that finished after the successor's actual start, are not listed. Counts activities.
     """
     tasks = context.snapshot.by_code
-    started = context.snapshot.activities[context.snapshot.activities["is_started"]]
-    started = started.drop_duplicates("task_code").set_index("task_code")
+    funnel = activity_funnel(context.snapshot)
+    funnel.keep("started", "xerscope", lambda rows: as_flag(rows["is_started"]))
+    funnel.keep("first row of the Activity ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
+    started = funnel.rows.set_index("task_code")
     ahead = predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), tasks)
     ahead_of = (ahead["pred_code"] + " (" + ahead["type"] + ")").groupby(ahead["succ_code"]).agg(", ".join)
     flagged = started.loc[ahead_of.index].reset_index()
@@ -98,7 +112,8 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
         flagged_activities(flagged, ahead_of=flagged["task_code"].map(ahead_of)),
         len(flagged),
         len(started),
-        checked=started.reset_index(),
+        checked=funnel.rows,
+        funnel=funnel,
     )
 
 
@@ -117,9 +132,10 @@ def int_04_relationship_loops(context) -> RuleOutput:
         members = list(exc.members)
     else:
         members = []
-    activities = context.snapshot.activities
+    funnel = activity_funnel(context.snapshot)
+    activities = funnel.rows
     flagged = activities[activities["task_code"].isin(members)]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities, funnel=funnel)
 
 
 @rule("int_05_without_predecessors_or_successors", "count")
@@ -131,12 +147,15 @@ def int_05_without_predecessors_or_successors(context) -> RuleOutput:
     raw list, every activity (completed, started, milestones, level of effort) with no relationship in
     that direction; a relationship to another project counts. P6-01 applies the Check Schedule exclusions.
     """
-    activities = context.snapshot.activities
-    missing_predecessor = ~(has_predecessor_in_project(context, activities) | activities["has_external_pred"])
-    missing_successor = ~(has_successor_in_project(context, activities) | activities["has_external_succ"])
+    funnel = activity_funnel(context.snapshot)
+    activities = funnel.rows
+    missing_predecessor = ~(has_predecessor_in_project(context.snapshot, activities) | activities["has_external_pred"])
+    missing_successor = ~(has_successor_in_project(context.snapshot, activities) | activities["has_external_succ"])
     flagged = activities[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
-    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(activities), checked=activities)
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason), len(flagged), len(activities), checked=activities, funnel=funnel
+    )
 
 
 @rule("int_06_actual_date_after_data_date", "count")
@@ -151,13 +170,15 @@ def int_06_actual_date_after_data_date(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    activities = context.snapshot.activities
+    funnel = activity_funnel(context.snapshot)
+    activities = funnel.rows
     flagged = activities[actual_after(activities, data_date)]
     return RuleOutput(
         flagged_activities(flagged, actual_start=flagged["act_start_date"], actual_finish=flagged["act_end_date"]),
         len(flagged),
         len(activities),
         checked=activities,
+        funnel=funnel,
     )
 
 
@@ -189,8 +210,10 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
         dates = schedule(context.snapshot).frame
     except CycleError as exc:
         return RuleOutput(note=f"cannot schedule: {exc}")
-    activities = without_level_of_effort(open_activities(context)).drop_duplicates("task_code")
-    activities = activities[activities["task_code"].isin(dates.index)]
+    funnel = activity_funnel(context.snapshot).exclude("complete", "xerscope").exclude("loe", "xerscope")
+    funnel.keep("first row of the Activity ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
+    funnel.keep("in the recalculation", "xerscope", lambda rows: rows["task_code"].isin(dates.index))
+    activities = funnel.rows
     early = {
         "start": activities["task_code"].map(dates["es"]),
         "finish": activities["task_code"].map(dates["ef"]),
@@ -212,8 +235,11 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
                 )
     flagged = activities[activities["task_code"].isin(reasons)]
     texts = flagged["task_code"].map(lambda code: "; ".join(reasons[code]))
-    checked = activities[activities["task_code"].isin(constrained)]
-    return RuleOutput(flagged_activities(flagged, unsatisfied=texts), len(flagged), len(constrained), checked=checked)
+    funnel.keep("constrained", "xerscope", lambda rows: rows["task_code"].isin(constrained))
+    checked = funnel.rows
+    return RuleOutput(
+        flagged_activities(flagged, unsatisfied=texts), len(flagged), len(constrained), checked=checked, funnel=funnel
+    )
 
 
 @rule("int_08_unsatisfied_relationships", "count", links=True)
@@ -235,14 +261,14 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
     tasks = context.snapshot.by_code
     start = tasks["act_start_date"].combine_first(dates["es"])
     finish = tasks["act_end_date"].combine_first(dates["ef"])
-    relationships = context.snapshot.relationships
-    links = relationships[
-        relationships["pred_code"].isin(dates.index)
-        & relationships["succ_code"].isin(dates.index)
-        & ~relationships["pred_code"].map(tasks["is_loe"]).astype(bool)
-        & ~relationships["succ_code"].map(tasks["is_loe"]).astype(bool)
-        & (relationships["lag_hr"].fillna(0) >= 0)
-    ]
+    funnel = link_funnel(context, "all", exclude_loe=True, source="xerscope")
+    funnel.keep(
+        "between recalculated activities",
+        "xerscope",
+        lambda rows: rows["pred_code"].isin(dates.index) & rows["succ_code"].isin(dates.index),
+    )
+    funnel.keep("no lead", "xerscope", lambda rows: rows["lag_hr"].fillna(0) >= 0)
+    links = funnel.rows
     successor_start = links["succ_code"].map(start)
     successor_finish = links["succ_code"].map(finish)
     broken = (
@@ -260,7 +286,9 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
             successor_side, flagged["succ_code"], flagged["type"], flagged["pred_code"], strict=True
         )
     ]
-    return RuleOutput(flagged_relationships(flagged).assign(reason=reason), len(flagged), len(links), checked=links)
+    return RuleOutput(
+        flagged_relationships(flagged).assign(reason=reason), len(flagged), len(links), checked=links, funnel=funnel
+    )
 
 
 def _describe_differences(group: pd.DataFrame) -> str:

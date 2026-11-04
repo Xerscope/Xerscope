@@ -131,20 +131,31 @@ def RULES_POPULATION(rule_name: str) -> tuple[str, ...]:
     return RULES[rule_name].population
 
 
-def test_funnel_ends_on_the_denominator_and_removes_the_excluded(store):
-    """start - every step's removals = denominator; the rows removed are the Audit page's Excluded tab."""
+# No row population to cut: ratios, pass/fail tests, and the one check counting recalculated assignments
+# (TASKRSRC rows are neither activities nor relationships, the two things the Audit page lists as removed).
+NO_FUNNEL = {"int_03_assignments_recalculated"}
+
+
+@pytest.mark.parametrize("standard_id", sorted(builtin_standards()))
+def test_funnel_ends_on_the_denominator_and_removes_the_excluded(store, standard_id):
+    """start - every step's removals = denominator, for every metric of the four standards; for P6 the rows
+    removed are the Audit page's Excluded tab."""
     from xerscope.analysis import AnalysisContext, Baseline, run_standard
     from xerscope.analysis.audit import split
 
     for snapshot in store:
         context = AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first))
-        for result in run_standard(builtin_standards()["P6"], context):
+        for result in run_standard(builtin_standards()[standard_id], context):
+            metric_id = result.metric.id
             if result.funnel is None:
-                assert result.denominator is None, result.metric.id
+                assert result.denominator is None or result.metric.rule in NO_FUNNEL, metric_id
                 continue
             funnel = result.funnel
             left = funnel.start - sum(len(step.removed) for step in funnel.steps)
-            assert left == result.denominator == (funnel.steps[-1].left if funnel.steps else funnel.start)
+            assert left == result.denominator == (funnel.steps[-1].left if funnel.steps else funnel.start), metric_id
+            assert len(funnel.rows) == left, metric_id
+            if standard_id != "P6":
+                continue
             sets = split(result, snapshot)
-            if sets.excluded is not None and result.metric.id != "P6-13":
-                assert sum(len(step.removed) for step in funnel.steps) == len(sets.excluded), result.metric.id
+            if sets.excluded is not None and metric_id != "P6-13":
+                assert sum(len(step.removed) for step in funnel.steps) == len(sets.excluded), metric_id

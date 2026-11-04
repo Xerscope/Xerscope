@@ -20,7 +20,7 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from .baseline import Baseline
 from .populations import Funnel
-from .rules import RULES
+from .rules import RULES, AnalysisContext
 from .standards import Metric, Standard
 
 Status = Literal["pass", "fail", "info", "n/a", "error"]
@@ -38,13 +38,6 @@ class CheckResult:
     checked: pd.DataFrame | None = None  # rows behind the denominator (RuleOutput.checked)
     counted: pd.DataFrame | None = None  # rows behind the numerator when they are not ``flagged``
     funnel: Funnel | None = None  # the named steps that cut ``checked`` from the file
-
-
-@dataclass
-class AnalysisContext:
-    snapshot: Snapshot
-    store: SnapshotStore | None = None
-    baseline: Baseline | None = None
 
 
 def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:

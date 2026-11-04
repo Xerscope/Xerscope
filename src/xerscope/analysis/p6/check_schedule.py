@@ -12,6 +12,7 @@ from ...xer.model import CONSTRAINT as _CONSTRAINT
 from ...xer.model import forecast_dates
 from ..populations import (
     Funnel,
+    activity_funnel,
     actual_after,
     as_flag,
     constrained_by,
@@ -24,14 +25,10 @@ from ..populations import (
     invalid_date_reason,
     lag_flagged,
     links_between,
-    not_complete,
-    not_level_of_effort,
-    not_milestone,
     open_end_reason,
     predecessors_ahead,
     with_baseline,
-    without_level_of_effort,
-    without_milestones,
+    without,
 )
 from ..rules import (
     RuleOutput,
@@ -49,16 +46,15 @@ LARGE_HOURS = 352
 
 
 def _activities(context) -> Funnel:
-    """Every activity of the file (WBS summaries are never activities)."""
-    return Funnel(context.snapshot.activities)
+    return activity_funnel(context.snapshot)
 
 
 def _open(context) -> Funnel:
-    return _activities(context).keep("not complete", "101248", not_complete)
+    return _activities(context).exclude("complete", "101248")
 
 
 def _open_not_loe(context) -> Funnel:
-    return _open(context).keep("not level of effort", "101248", not_level_of_effort)
+    return _open(context).exclude("loe", "101248")
 
 
 def _links(context) -> Funnel:
@@ -78,8 +74,8 @@ def p6_01_logic(context) -> RuleOutput:
     """
     funnel = _open(context)
     activities = funnel.rows
-    has_predecessor = has_predecessor_in_project(context, activities) | activities["has_external_pred"]
-    has_successor = has_successor_in_project(context, activities) | activities["has_external_succ"]
+    has_predecessor = has_predecessor_in_project(context.snapshot, activities) | activities["has_external_pred"]
+    has_successor = has_successor_in_project(context.snapshot, activities) | activities["has_external_succ"]
     started = activities["is_started"]
     start_milestone = activities["is_start_milestone"]
 
@@ -146,7 +142,7 @@ def p6_04_large_durations(context, limit_hours: float = LARGE_HOURS) -> RuleOutp
     101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional
     r22.12 report shows (Ten Six) and EPPM's 46282 states
     """
-    funnel = _open_not_loe(context).keep("not milestone", "46282", not_milestone)
+    funnel = _open_not_loe(context).exclude("milestones", "46282")
     activities = funnel.rows
     remaining_hours = activities["remain_drtn_hr_cnt"]
 
@@ -245,8 +241,7 @@ def p6_10_invalid_progress_dates(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    funnel = _activities(context).keep("not level of effort", "101248", not_level_of_effort)
-    funnel.keep("not completed before the data date", "101248", lambda rows: ~(rows["act_end_date"] < data_date))
+    funnel = _activities(context).exclude("loe", "101248").exclude("complete_before_data_date", "101248")
     activities = funnel.rows
     early_start, _early_finish = forecast_dates(activities)
 
@@ -268,8 +263,8 @@ def p6_11_resource_cost(context) -> RuleOutput:
     Excludes: milestones, level of effort.
 
     46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts"""
-    funnel = _activities(context).keep("not milestone", "101248", not_milestone)
-    activities = funnel.keep("not level of effort", "101248", not_level_of_effort).rows
+    funnel = _activities(context).exclude("milestones", "101248").exclude("loe", "101248")
+    activities = funnel.rows
     has_resource_or_expense = activities["has_resource"] | activities["has_expense"]
 
     flagged = activities[~has_resource_or_expense]
@@ -287,9 +282,8 @@ def p6_12_late_activities(context) -> RuleOutput:
     101248: milestones, WBS summary and LOE not included; a P6 Professional report checks the Large
     Durations population here, so completed activities are out too. No baseline counterpart = late when
     the remaining early finish is later than the planned finish. 46278: finish variance in working time"""
-    funnel = _activities(context).keep("not complete", "R1", not_complete)
-    funnel.keep("not milestone", "101248", not_milestone).keep("not level of effort", "101248", not_level_of_effort)
-    activities = with_baseline(context, funnel.rows)
+    funnel = _activities(context).exclude("complete", "R1").exclude("milestones", "101248").exclude("loe", "101248")
+    activities = with_baseline(context.baseline, funnel.rows)
     activities["bl_finish"] = activities["bl_finish"].combine_first(activities["target_end_date"])
     out = late_output(context, activities)
     out.funnel = funnel
@@ -310,9 +304,9 @@ def p6_13_bei(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    activities = with_baseline(context, without_level_of_effort(without_milestones(context.snapshot.activities)))
-    funnel = Funnel(context.baseline.snapshot.activities).keep("not milestone", "101248", not_milestone)
-    baseline_activities = funnel.keep("not level of effort", "101248", not_level_of_effort).rows
+    activities = with_baseline(context.baseline, without(context.snapshot.activities, data_date, ("milestones", "loe")))
+    funnel = activity_funnel(context.baseline.snapshot).exclude("milestones", "101248").exclude("loe", "101248")
+    baseline_activities = funnel.rows
     completed = int(activities["is_complete"].sum())
     due = activities[as_flag(activities["bl_finish"] <= data_date) & ~activities["is_complete"]]
     total = len(baseline_activities)
