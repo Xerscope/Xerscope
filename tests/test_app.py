@@ -1120,3 +1120,18 @@ def test_health_summary_file_gains_the_notes(app, store, downloads):
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
         assert (got if isinstance(got, str) else "") == result.note_with_baseline
     assert "BL finish" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]
+
+
+def test_debug_costs_block_serialises_without_streamlit_fallback(tmp_path, monkeypatch):
+    """TASKRSRC with a cost (rows_with_cost 1) and no PROJCOST row (rows_with_cost "absent"): the
+    costs block mixes numbers and text in one column, which Arrow cannot type without a fallback."""
+    from streamlit import dataframe_util
+
+    fallbacks = []
+    monkeypatch.setattr(dataframe_util._LOGGER, "info", lambda msg, *a, **k: fallbacks.append(msg))
+    assign = [dict(task_code="A", rsrc_id="R1", rsrc_type="RT_Labor", target_qty="40", target_cost="5000")]
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A")], assign=assign))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    assert not [m for m in fallbacks if "Arrow" in str(m)]
