@@ -80,9 +80,7 @@ def test_cost_spi_with_two_activities_at_different_rates_and_an_expense():
     baseline week are elapsed (0.4): PV = 16500 x 0.4 = 6600. A is 50 % complete (remaining 20 of
     40 h): EV = 16000 x 0.5 = 8000, B and C have not started. SPI = 8000 / 6600."""
     baseline = Baseline.from_snapshot(_costed())
-    update = _update(
-        active("A", **{**WEEK, "remain_drtn_hr_cnt": "20"}), todo("B", **WEEK), todo("C", **WEEK)
-    )
+    update = _update(active("A", **{**WEEK, "remain_drtn_hr_cnt": "20"}), todo("B", **WEEK), todo("C", **WEEK))
     point = ev_point(update, baseline)
     assert (point.bac_cost, point.pv_cost, point.ev_cost) == pytest.approx((16500, 6600, 8000))
     assert point.spi_cost == pytest.approx(8000 / 6600)
