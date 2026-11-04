@@ -7,9 +7,10 @@ or exemption would silently shift a result.
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import SM, active, done, hours, snap, todo
+from xerkit import SM, active, done, hours, snap, todo, with_second_project, xer_text
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
+from xerscope.xer import build_snapshot, parse_text
 
 P6 = STANDARDS["P6"]
 DCMA = STANDARDS["DCMA"]
@@ -410,6 +411,41 @@ def test_resource_or_expense():
     )
     assert codes(run(P6, "P6-11", s)) == ["DONE", "NONE"]  # P6 keeps completed activities
     assert codes(run(DCMA, "DCMA-10", s)) == ["NONE"]
+
+
+def test_dcma_10_is_na_for_a_project_without_resource_assignment():
+    """PAM 200.1 §4.10 applies to a resource-loaded schedule. A and B share a file: A has 1 assignment
+    (R of R, NONE), B none, and its assignments are not A's: B is n/a, A is 1 of 2."""
+    text = with_second_project(
+        xer_text([todo("R"), todo("NONE")], rsrc=["R"], project={"proj_short_name": "A"}),
+        "B",
+        ["X", "Y"],
+        "2026-03-02 08:00",
+    )
+    a = run(DCMA, "DCMA-10", build_snapshot(parse_text(text, source="t.xer"), project_code="A"))
+    b = run(DCMA, "DCMA-10", build_snapshot(parse_text(text, source="t.xer"), project_code="B"))
+    assert (a.status, counts(a), codes(a)) == ("fail", (1, 2), ["NONE"])
+    assert b.status == "n/a" and "resource-loaded" in b.note
+
+
+def test_dcma_10_resource_loaded_project_flags_the_unassigned_activity():
+    s = snap([todo("R"), todo("NONE")], rsrc=["R"])
+    r = run(DCMA, "DCMA-10", s)
+    assert (r.status, counts(r), codes(r)) == ("fail", (1, 2), ["NONE"])
+
+
+def test_dcma_10_labour_hours_without_assignment_still_fail_with_a_note():
+    """Hours budgeted on the tasks (TASK.target_work_qty) but no TASKRSRC row: the export is suspect, not the
+    schedule unloaded. Both tasks are counted: 2 of 2."""
+    s = snap([todo("H", target_work_qty="40"), todo("NONE")])
+    r = run(DCMA, "DCMA-10", s)
+    assert (r.status, counts(r)) == ("fail", (2, 2))
+    assert "labour hours on tasks but no resource assignment" in r.note
+
+
+def test_dcma_10_expenses_alone_do_not_load_the_project():
+    s = snap([todo("E"), todo("NONE")], costs=["E"])
+    assert run(DCMA, "DCMA-10", s).status == "n/a"
 
 
 # --- baseline -----------------------------------------------------------------------------

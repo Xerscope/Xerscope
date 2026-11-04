@@ -13192,10 +13192,10 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 0,
+    "denominator": null,
     "flagged": [],
     "note": null,
-    "numerator": 0,
+    "numerator": null,
     "status": "n/a",
     "value": null
    },
@@ -13646,10 +13646,10 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 0,
+    "denominator": null,
     "flagged": [],
     "note": null,
-    "numerator": 0,
+    "numerator": null,
     "status": "n/a",
     "value": null
    },
@@ -14100,10 +14100,10 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 0,
+    "denominator": null,
     "flagged": [],
     "note": null,
-    "numerator": 0,
+    "numerator": null,
     "status": "n/a",
     "value": null
    },
@@ -14554,10 +14554,10 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 0,
+    "denominator": null,
     "flagged": [],
     "note": null,
-    "numerator": 0,
+    "numerator": null,
     "status": "n/a",
     "value": null
    },
@@ -16688,34 +16688,12 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 21,
-    "flagged": [
-     "A1010",
-     "A1020",
-     "A1030",
-     "A1050",
-     "A1060",
-     "A2010",
-     "A2020",
-     "A2030",
-     "A2040",
-     "A2050",
-     "A3010",
-     "A3020",
-     "A3030",
-     "A3040",
-     "A3050",
-     "A3060",
-     "A3070",
-     "A4010",
-     "A4020",
-     "A4030",
-     "A4040"
-    ],
+    "denominator": null,
+    "flagged": [],
     "note": null,
-    "numerator": 21,
-    "status": "fail",
-    "value": 100.0
+    "numerator": null,
+    "status": "n/a",
+    "value": null
    },
    "DCMA/DCMA-11": {
     "denominator": null,
@@ -17213,43 +17191,12 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 30,
-    "flagged": [
-     "A1000",
-     "A1010",
-     "A1020",
-     "A1030",
-     "A1040",
-     "A1050",
-     "A2000",
-     "A2010",
-     "A2020",
-     "A2030",
-     "A2040",
-     "A2050",
-     "A3000",
-     "A3010",
-     "A3020",
-     "A3030",
-     "A3040",
-     "A3050",
-     "A4000",
-     "A4010",
-     "A4020",
-     "A4030",
-     "A4040",
-     "A4050",
-     "A5000",
-     "A5010",
-     "A5020",
-     "A5030",
-     "A5040",
-     "A5050"
-    ],
+    "denominator": null,
+    "flagged": [],
     "note": null,
-    "numerator": 30,
-    "status": "fail",
-    "value": 100.0
+    "numerator": null,
+    "status": "n/a",
+    "value": null
    },
    "DCMA/DCMA-11": {
     "denominator": null,
@@ -17791,32 +17738,12 @@
     "value": 0.0
    },
    "DCMA/DCMA-10": {
-    "denominator": 19,
-    "flagged": [
-     "CX-010",
-     "CX-020",
-     "CX-030",
-     "CX-040",
-     "EW-030",
-     "FIT-010",
-     "FIT-020",
-     "FIT-030",
-     "MEP-010",
-     "MEP-020",
-     "MEP-030",
-     "MEP-040",
-     "MEP-050",
-     "MEP-060",
-     "MEP-070",
-     "MEP-080",
-     "ST-010",
-     "ST-020",
-     "ST-030"
-    ],
+    "denominator": null,
+    "flagged": [],
     "note": null,
-    "numerator": 19,
-    "status": "fail",
-    "value": 100.0
+    "numerator": null,
+    "status": "n/a",
+    "value": null
    },
    "DCMA/DCMA-11": {
     "denominator": null,

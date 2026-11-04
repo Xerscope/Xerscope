@@ -245,12 +245,27 @@ def dcma_10_resources(context) -> RuleOutput:
 
     DCMA-EA PAM 200.1 §4.10: "all tasks with durations greater than zero have dollars or hours assigned";
     incomplete tasks without them over incomplete tasks; §4.0 exclusions apply. Cost or hours = a
-    resource assignment or an expense
+    resource assignment or an expense. The test applies to a resource-loaded schedule only: n/a when the
+    project has no assignment and no budgeted labour hours on its tasks (expenses alone do not load it);
+    hours without assignments still fail, with a note on the export. Target 0 %, the pamphlet and Acumen
+    giving none
     """
+    snapshot = context.snapshot
+    if snapshot.assignments.empty:
+        if not (snapshot.activities["labor_budget_hr"] > 0).any():
+            return RuleOutput(
+                note="PAM 200.1 §4.10: applies to a resource-loaded schedule only; "
+                "no resource assignment and no labour hours"
+            )
+        note = "labour hours on tasks but no resource assignment: check the export (TASKRSRC)"
+    else:
+        note = ""
     funnel = _open_tasks(context).exclude("no_duration", "PAM 200.1")
     tasks = funnel.rows
     without_cost = tasks[~(tasks["has_resource"] | tasks["has_expense"])]
-    return RuleOutput(flagged_activities(without_cost), len(without_cost), len(tasks), checked=tasks, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(without_cost), len(without_cost), len(tasks), note=note, checked=tasks, funnel=funnel
+    )
 
 
 @rule("dcma_11_missed_tasks", "%", needs_baseline=True)

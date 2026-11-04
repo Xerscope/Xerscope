@@ -227,6 +227,25 @@ def snap(tasks, preds=(), **kw) -> Snapshot:
     return build_snapshot(parse_text(xer_text(tasks, preds, **kw), source="test.xer"))
 
 
+def with_second_project(main: str, code: str, task_codes: list[str], data_date: str) -> str:
+    """``main`` plus a second PROJECT (proj_id 2) owning ``task_codes``, as P6 writes a file
+    exported with a baseline copy or a second project."""
+    extra = xer_text(
+        [{"task_code": c, "task_id": str(100 + i), "proj_id": "2"} for i, c in enumerate(task_codes)],
+        data_date=data_date,
+        project={"proj_id": "2", "proj_short_name": code},
+    ).splitlines()
+    project_row = extra[extra.index("%T\tPROJECT") + 2]
+    task_rows = [line for line in extra[extra.index("%T\tTASK") + 2 :] if line.startswith("%R")]
+    lines = main.splitlines()
+    lines.insert(lines.index("%T\tPROJECT") + 3, project_row)
+    end = lines.index("%T\tTASK") + 2
+    while end < len(lines) and lines[end].startswith("%R"):
+        end += 1
+    lines[end:end] = task_rows
+    return "\n".join(lines) + "\n"
+
+
 def done(code: str, **kw) -> dict:
     return {
         "task_code": code,
