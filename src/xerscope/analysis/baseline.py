@@ -132,3 +132,8 @@ class Baseline:
     def bac_hours(self) -> float:
         """Budget at completion, labour hours, on the EV basis."""
         return float(self.frame["ev_labor_hr"].sum())
+
+    @property
+    def bac_cost(self) -> float:
+        """Budget at completion, cost: Σ bl_cost."""
+        return float(self.frame["bl_cost"].sum())

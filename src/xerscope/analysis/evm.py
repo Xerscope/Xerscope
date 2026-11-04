@@ -23,6 +23,22 @@
 - SPI = EV / PV, SV = EV - PV; CPI = EV / AC as P6 gives it (all actual labour units);
   ``productivity`` = EV / AC measured on baselined work only (EV exists for nothing else),
   the hours spent outside the baseline being reported apart.
+
+Cost (P6 Professional 26 help, glossary, "Budget At Completion", "Planned Value Cost",
+"Earned Value Cost", "Schedule Performance Index"; version 26 read from the PDF G57535-02):
+
+- BAC cost = BL total cost = Σ TASKRSRC.target_cost (labour, nonlabour, material) +
+  Σ PROJCOST.target_cost of the baseline (``bl_cost``).
+- PV cost = per resource assignment, BAC of the assignment x (data date - assignment start) /
+  (assignment finish - assignment start), clipped to 0..1; the activity's PV cost is the sum.
+  Expenses and activities without a resource: BAC x the same ratio on the activity's BL dates.
+  The text writes a difference of dates: working time (the assignment's resource calendar,
+  else the activity's) is assumed, unverified; ``PV_COST_WORKING_TIME = False`` switches to
+  calendar time. Resource curves (``curv_id``) are not modelled and listed in
+  ``EvPoint.not_modelled_cost``; manual future-period values are not read.
+- EV cost = BAC cost x Performance % Complete (same technique as the hours).
+- SPI (cost) = EV cost / PV cost, the P6 column "Schedule Performance Index"; the labour
+  units index (``spi``) stays beside it.
 """
 
 from __future__ import annotations
@@ -39,6 +55,10 @@ from ..xer.calendar import TimeAxis
 from .baseline import Baseline
 from .checks import AnalysisContext, run_metric
 from .standards import Metric
+
+# Planned Value Cost spreads an assignment over the date difference of the P6 glossary: working
+# time of the assignment's calendar (assumed, no P6 output settles it) or calendar time (False).
+PV_COST_WORKING_TIME = True
 
 
 def ev_technique(code: object) -> str:
@@ -182,28 +202,55 @@ def pv_curve(baseline: Baseline) -> pd.DataFrame:
     return curve[["date", "pv_hr", "pv_cum_hr", "pv_pct"]]
 
 
-def schedule_pct(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
-    """P6 Schedule % Complete of each baseline activity at ``when`` (on the EV basis dates)."""
-    frame = baseline.frame
-    percent = pd.Series(np.nan, index=frame.index)
-    has_dates = frame["ev_start"].notna() & frame["ev_finish"].notna()
+def _elapsed(
+    snapshot: Snapshot, frame: pd.DataFrame, start: str, finish: str, calendar: str, when: pd.Timestamp,
+    working_time: bool = True,
+) -> pd.Series:  # fmt: skip
+    """Share (0..1) of each row's start-to-finish span elapsed at ``when``, NaN where a date is
+    missing. Working time of the row's calendar, or calendar time when ``working_time`` is False;
+    a zero-length span is 0 before its instant and 1 from then on."""
+    share = pd.Series(np.nan, index=frame.index)
+    has_dates = frame[start].notna() & frame[finish].notna()
     if not has_dates.any():
-        return percent
-    first_day = min(frame.loc[has_dates, "ev_start"].min(), when).date()
-    last_day = max(frame.loc[has_dates, "ev_finish"].max(), when).date()
-    for calendar_id, group in frame[has_dates].groupby(frame.loc[has_dates, "bl_clndr_id"].fillna(""), sort=False):
-        axis = TimeAxis(baseline.snapshot.calendar(calendar_id), first_day, last_day)
-        work_starts, work_finishes = axis.work_many(group["ev_start"]), axis.work_many(group["ev_finish"])
-        work_now = axis.work(when)
-        durations = (work_finishes - work_starts).astype(float)
-        # a zero-length activity is 0% before its instant and 100% from then on
+        return share
+    first_day = min(frame.loc[has_dates, start].min(), when).date()
+    last_day = max(frame.loc[has_dates, finish].max(), when).date()
+    for calendar_id, group in frame[has_dates].groupby(frame.loc[has_dates, calendar].fillna(""), sort=False):
+        if working_time:
+            axis = TimeAxis(snapshot.calendar(calendar_id), first_day, last_day)
+            starts, finishes = axis.work_many(group[start]), axis.work_many(group[finish])
+            now = axis.work(when)
+        else:
+            starts = group[start].to_numpy("datetime64[ns]").astype("int64")
+            finishes = group[finish].to_numpy("datetime64[ns]").astype("int64")
+            now = np.datetime64(when, "ns").astype("int64")
+        durations = (finishes - starts).astype(float)
         fraction = np.where(
             durations > 0,
-            np.clip((work_now - work_starts) / np.where(durations > 0, durations, 1), 0, 1),
-            (group["ev_finish"].to_numpy("datetime64[ns]") <= np.datetime64(when)).astype(float),
+            np.clip((now - starts) / np.where(durations > 0, durations, 1), 0, 1),
+            (group[finish].to_numpy("datetime64[ns]") <= np.datetime64(when)).astype(float),
         )
-        percent.loc[group.index] = 100 * fraction
-    return percent  # unrounded: per-activity PV must sum to ev_point's PV; tables round on display
+        share.loc[group.index] = fraction
+    return share
+
+
+def schedule_pct(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
+    """P6 Schedule % Complete of each baseline activity at ``when`` (on the EV basis dates)."""
+    # unrounded: per-activity PV must sum to ev_point's PV; tables round on display
+    return 100 * _elapsed(baseline.snapshot, baseline.frame, "ev_start", "ev_finish", "bl_clndr_id", when)
+
+
+def planned_value_cost(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
+    """Planned Value Cost of each baseline activity at ``when``: its assignments one by one on their
+    own dates, the rest of its budget (expenses, no resource) on the activity's dates."""
+    snapshot, frame, costs = baseline.snapshot, baseline.frame, baseline.assignment_costs
+    by_assignment = costs["cost"] * _elapsed(
+        snapshot, costs, "start", "finish", "clndr_id", when, PV_COST_WORKING_TIME
+    ).fillna(0.0)
+    planned = by_assignment.groupby(costs["task_code"]).sum().reindex(frame.index).fillna(0.0)
+    assigned = costs.groupby("task_code")["cost"].sum().reindex(frame.index).fillna(0.0)
+    activity_share = _elapsed(snapshot, frame, "ev_start", "ev_finish", "bl_clndr_id", when, PV_COST_WORKING_TIME)
+    return planned + (frame["bl_cost"] - assigned) * activity_share.fillna(0.0)
 
 
 @dataclass
@@ -217,6 +264,10 @@ class EvPoint:
     unbaselined: list[str]
     not_modelled: list[str] = field(default_factory=list)  # activities on a fallback technique
     ac_unbaselined_hr: float = 0.0  # part of ac_hr spent on activities the baseline does not know
+    bac_cost: float = 0.0
+    pv_cost: float = 0.0
+    ev_cost: float = 0.0
+    not_modelled_cost: list[str] = field(default_factory=list)  # activities with a resource curve (PV cost)
 
     @property
     def eac_hr(self) -> float:
@@ -225,6 +276,11 @@ class EvPoint:
     @property
     def spi(self) -> float | None:
         return self.ev_hr / self.pv_hr if self.pv_hr else None
+
+    @property
+    def spi_cost(self) -> float | None:
+        """P6 "Schedule Performance Index": EV cost / PV cost; None without planned value cost."""
+        return self.ev_cost / self.pv_cost if self.pv_cost else None
 
     @property
     def productivity(self) -> float | None:
@@ -258,6 +314,10 @@ class EvPoint:
             "cpi": self.cpi,
             "unbaselined": len(self.unbaselined),
             "ac_unbaselined_hr": self.ac_unbaselined_hr,
+            "bac_cost": self.bac_cost,
+            "pv_cost": self.pv_cost,
+            "ev_cost": self.ev_cost,
+            "spi_cost": self.spi_cost,
         }
 
 
@@ -286,7 +346,7 @@ def performance_pct(snapshot: Snapshot) -> pd.DataFrame:
 
 
 def earned(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
-    """Per baseline activity: BL hours, Schedule % and Performance % now, PV and EV hours.
+    """Per baseline activity: BL hours, Schedule % and Performance % now, PV and EV hours, BL cost, PV and EV cost.
 
     ``bl_labor_hr`` / ``bl_start`` / ``bl_finish`` here are the EV basis values (see
     baseline.EV_BASES): the hours and dates PV and EV are computed from.
@@ -297,7 +357,7 @@ def earned(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
     )
     current_columns = ["task_name", "wbs_code", "wbs_l1", "pct_complete", "labor_actual_hr", "labor_remaining_hr"]
     result = (
-        baseline_ev[["bl_name", "bl_labor_hr", "bl_start", "bl_finish"]]
+        baseline_ev[["bl_name", "bl_labor_hr", "bl_start", "bl_finish", "bl_cost"]]
         .join(activities[current_columns], how="left")
         .join(performance_pct(snapshot), how="left")
     )
@@ -308,6 +368,9 @@ def earned(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
     result["schedule_pct"] = schedule_pct(baseline, snapshot.data_date) if snapshot.data_date is not None else np.nan
     result["pv_hr"] = result["bl_labor_hr"] * result["schedule_pct"].fillna(0.0) / 100
     result["ev_hr"] = result["bl_labor_hr"] * result["perf_pct"] / 100
+    has_data_date = snapshot.data_date is not None
+    result["pv_cost"] = planned_value_cost(baseline, snapshot.data_date) if has_data_date else 0.0
+    result["ev_cost"] = result["bl_cost"] * result["perf_pct"] / 100
     return result
 
 
@@ -319,6 +382,10 @@ def ev_point(snapshot: Snapshot, baseline: Baseline, spread: _Spread | None = No
     on_fallback = earned_values["ev_technique"].isin(["wbs_milestones", "resource_curves"])
     fallback = sorted(earned_values.index[on_fallback & earned_values["in_snapshot"]])
     planned_hr = float(spread.at([snapshot.data_date])[0]) if snapshot.data_date is not None else 0.0
+    curves = baseline.assignment_costs
+    curve_codes = set(curves.loc[curves["curve"].astype(bool), "task_code"]) & set(
+        earned_values.index[earned_values["in_snapshot"]]
+    )
     return EvPoint(
         snapshot.data_date,
         baseline.bac_hours,
@@ -329,6 +396,10 @@ def ev_point(snapshot: Snapshot, baseline: Baseline, spread: _Spread | None = No
         unbaselined,
         fallback,
         ac_unbaselined_hr=float(activities.loc[activities["task_code"].isin(unbaselined), "labor_actual_hr"].sum()),
+        bac_cost=baseline.bac_cost,
+        pv_cost=float(earned_values["pv_cost"].sum()),
+        ev_cost=float(earned_values["ev_cost"].sum()),
+        not_modelled_cost=sorted(curve_codes),
     )
 
 
