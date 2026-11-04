@@ -115,7 +115,7 @@ with st.expander("7 · Costs in the file (TASKRSRC, PROJCOST)", key="debug_costs
         "Whether the file carries costs: P6 computes its cost-based Schedule Performance Index from them, "
         "xerscope's SPI (labour units) from hours. absent: the column is missing or blank on every row."
     )
-    table(frames["07_costs"])
+    table(frames["07_costs"].astype(str))  # numbers and "absent" in one column: Arrow needs one type
 
 with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_ev_settings"):
     st.caption(
