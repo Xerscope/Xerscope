@@ -38,12 +38,15 @@ DEFAULT_EV_BASIS = "budgeted_planned"
 
 
 def _frame(activities: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) -> pd.DataFrame:
+    """``start`` / ``finish``: the baseline dates (bl_*). The EV dates are the planned dates (target_*) on
+    the planned basis, else the activity's current Start / Finish (``activities`` ``start`` / ``finish``:
+    actual, else remaining, else early)."""
     if ev_basis not in EV_BASES:
         raise ValueError(f"ev_basis must be one of {sorted(EV_BASES)}")
     planned = ev_basis == "budgeted_planned"
-    # an activity without planned dates (some exporters) falls back to its current dates
-    ev_start = activities["target_start_date"].combine_first(start) if planned else start
-    ev_finish = activities["target_end_date"].combine_first(finish) if planned else finish
+    # an activity without planned dates (some exporters) falls back to its baseline dates
+    ev_start = activities["target_start_date"].combine_first(start) if planned else activities["start"]
+    ev_finish = activities["target_end_date"].combine_first(finish) if planned else activities["finish"]
     at_completion = activities["labor_actual_hr"].fillna(0.0) + activities["labor_remaining_hr"].fillna(0.0)
     frame = pd.DataFrame(
         {
@@ -125,7 +128,7 @@ class Baseline:
     def planned(cls, snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
         activities = snapshot.activities
         frame = _frame(activities, activities["target_start_date"], activities["target_end_date"], ev_basis)
-        frame, costs = _with_costs(snapshot, frame, current_dates=False)
+        frame, costs = _with_costs(snapshot, frame, current_dates=ev_basis != "budgeted_planned")
         return cls(
             frame, f"planned dates (target_*) of {snapshot.label}", snapshot, ev_basis, is_planned=True,
             assignment_costs=costs,
