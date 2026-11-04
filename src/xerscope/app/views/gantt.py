@@ -19,6 +19,7 @@ from xerscope.xer.model import STATUS
 NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
+
 store = require_store()
 top = st.container()
 
@@ -83,6 +84,35 @@ status_column, float_column, search_column = st.columns(3)
 status = status_column.multiselect("Status", list(STATUS.values()), placeholder="All")
 categories = float_column.multiselect("Float", CATEGORY_ORDER, placeholder="All")
 search = search_column.text_input("Search", placeholder="Activity ID or name")
+code_type, code_ids, picks = None, set(), []
+if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has any
+    type_column, value_column = st.columns([1, 2])
+    code_type = type_column.selectbox(
+        "Activity code", list(dict.fromkeys(snapshot.code_values["code_type"])), index=None, placeholder="None"
+    )
+    values = snapshot.code_values[snapshot.code_values["code_type"] == code_type]
+    paths = snapshot.code_paths(code_type) if code_type else {}
+    description = dict(zip(values["code_id"], values["name"], strict=True))
+    by_label = {f"{path} · {description[code_id]}": code_id for code_id, path in paths.items()}
+    picks = value_column.multiselect(
+        "Code values",
+        list(by_label),
+        placeholder="Type to search; pick a value, or press Enter to keep every value containing the text"
+        if code_type
+        else "Pick an activity code first",
+        accept_new_options=True,
+        filter_mode="contains",
+        disabled=code_type is None,
+        key=f"gantt_code_values:{code_type}",  # another code type starts with nothing picked
+    )
+    # a suggestion picked = that value exactly (P6 "equals"); text kept = every value whose code
+    # contains it, case and accents ignored (P6 "contains")
+    short = dict(zip(values["code_id"], values["value"], strict=True))
+    for pick in picks:
+        if pick in by_label:
+            code_ids.add(by_label[pick])
+        else:
+            code_ids |= {code_id for code_id, value in short.items() if ui.fold(pick) in ui.fold(value)}
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
@@ -105,6 +135,8 @@ if categories:
     tasks = tasks[tasks["category"].isin(categories)]
 if search:
     tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
+if code_type and picks:
+    tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
 filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the outline stays closed
 
 rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)

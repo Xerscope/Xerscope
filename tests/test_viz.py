@@ -40,14 +40,53 @@ def test_mta_close_end_labels_are_pushed_apart():
     assert shift["M3"] == 0
 
 
-def test_mta_reporting_line_stays_in_view_for_far_milestones():
+def test_mta_x_axis_runs_over_the_updates_from_the_first_data_date():
+    """The reporting dates fill the page width, from the first update: no 1:1 scale (the
+    reporting line is still forecast = data date, at whatever slope), every forecast in view."""
     # updates on 2026-03-02..16, milestones forecast 5 and 9 months later
-    fig = build_mta(_mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3}), {})
+    trend = _mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3})
+    fig = build_mta(trend, {})
     x_lo, x_hi = (pd.Timestamp(v) for v in fig.layout.xaxis.range)
     y_lo, y_hi = (pd.Timestamp(v) for v in fig.layout.yaxis.range)
-    assert (x_lo, x_hi) == (y_lo, y_hi)  # same span on both axes: the 45° line crosses the whole chart
-    assert fig.layout.yaxis.scaleanchor == "x"
-    assert y_hi > pd.Timestamp("2026-12-01")  # every milestone can meet the line inside the frame
+    assert x_lo == trend["data_date"].min() and x_hi > trend["data_date"].max()
+    assert x_hi - x_lo < pd.Timedelta(weeks=4)  # the update period, not the forecast span
+    assert fig.layout.yaxis.scaleanchor is None
+    assert y_lo <= x_lo and y_hi > pd.Timestamp("2026-12-01")  # the line's start and every forecast in view
+    line = next(t for t in fig.data if t.name and t.name.startswith("Reporting line"))
+    assert list(line.x) == list(line.y) and pd.Timestamp(line.x[0]) == x_lo and pd.Timestamp(line.x[-1]) == x_hi
+
+
+def test_mta_x_ticks_are_the_data_dates_from_the_first_one_at_the_origin():
+    """x = 0 is the first data date and carries its label; ticks stay on update dates, thinned
+    to at most 12 so a long series keeps readable labels."""
+    trend = _mta_frame({"M1": ["2026-08-03"] * 3})
+    fig = build_mta(trend, {})
+    dates = sorted(trend["data_date"].unique())
+    assert [pd.Timestamp(v) for v in fig.layout.xaxis.tickvals] == dates
+    assert pd.Timestamp(fig.layout.xaxis.tickvals[0]) == pd.Timestamp(fig.layout.xaxis.range[0])
+    weekly = pd.date_range("2025-01-06", periods=60, freq="7D")
+    long = pd.DataFrame(
+        {
+            "task_code": "M1",
+            "task_name": "M1",
+            "data_date": weekly,
+            "forecast": pd.Timestamp("2027-01-01"),
+            "is_complete": False,
+        }
+    )
+    ticks = [pd.Timestamp(v) for v in build_mta(long, {}).layout.xaxis.tickvals]
+    assert ticks[0] == weekly[0] and len(ticks) <= 12 and set(ticks) <= set(weekly)
+
+
+def test_mta_line_breaks_at_a_hidden_update_and_ends_at_its_last_shown_one():
+    trend = _mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-09-01"] * 3})
+    trend.loc[(trend["task_code"] == "M1") & (trend["data_date"] == "2026-03-09"), "forecast"] = pd.NaT
+    trend.loc[trend["task_code"] == "M2", "forecast"] = [pd.Timestamp("2026-09-01"), pd.Timestamp("2026-09-01"), pd.NaT]
+    fig = build_mta(trend, {})
+    lines = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in ("M1", "M2")}
+    assert list(lines["M1"].y)[1] is None and len(lines["M1"].y) == 3  # a gap, not a join
+    assert len(lines["M2"].y) == 2  # nothing drawn after the last shown update
+    assert any(pd.Timestamp(a.x) == pd.Timestamp("2026-03-09") and "M2" in a.text for a in fig.layout.annotations)
 
 
 def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():

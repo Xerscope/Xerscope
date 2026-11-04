@@ -5,6 +5,7 @@ without a browser. It checks that pages run; test_app_parity.py checks that they
 """
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -72,6 +73,18 @@ def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
     keys = [element.key for element in [*at.sidebar.checkbox, *at.sidebar.expander] if element.key]
     assert len(_file_boxes(at)) == len(list(sample_dir.glob("*.xer")))
     assert keys and not [key for key in keys if str(sample_dir) in key]
+
+
+def test_milestone_trend_starts_empty_then_plots_the_picks(app, store):
+    from xerscope.analysis.progress import milestone_codes
+
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    picker = app.multiselect(key="mta_pick")
+    assert picker.value == [] and not app.get("plotly_chart")  # nothing picked, nothing drawn
+    picker.set_value(milestone_codes(store, open_only=True)[:2]).run()
+    _ok(app)
+    assert len(app.get("plotly_chart")) == 1
 
 
 def _ok(at):
@@ -188,6 +201,29 @@ def test_earned_value_needs_hours_and_baseline(app):
     assert any("Choose a baseline" in i.value for i in app.info)
 
 
+def test_ev_calculation_rows_add_up_as_shown(app):
+    """The operands shown, one decimal, give the result shown to the last digit: an
+    independently rounded pair could otherwise read 186,420 − 186,110 = +311."""
+    app.switch_page("views/earned_value.py").run()
+    for label in app.selectbox(key="ev_snap").options:
+        app.selectbox(key="ev_snap").set_value(label).run()
+        table = next(d.value for d in app.dataframe if "measure" in d.value.columns).set_index("measure")
+        shown = table.iloc[:, -1]
+        numbers = {
+            measure: [float(n.replace(",", "")) for n in re.findall(r"[+-]?[\d,]+\.\d+", text)]
+            for measure, text in shown.items()
+        }
+        ev, pv, sv = numbers["SV"]
+        assert sv == pytest.approx(ev - pv, abs=0.1 + 1e-9), label
+        ac, etc, eac = numbers["EAC"]
+        assert eac == pytest.approx(ac + etc, abs=0.1 + 1e-9), label
+        if shown["SPI"].endswith("–"):
+            continue
+        ev, pv, spi = numbers["SPI"]
+        assert len(shown["SPI"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
+        assert spi == pytest.approx(ev / pv, abs=0.001), label
+
+
 def test_changelog_and_ppc_pick_weeks(app):
     app.switch_page("views/changelog.py").run()
     labels = app.selectbox(key="cl_new").options
@@ -213,6 +249,52 @@ def _run(data_dir, monkeypatch, baseline=None):
     else:
         monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline))
     return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+
+
+def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeypatch):
+    """Two steps: the code type, then values picked from the suggestions (exact, as P6's
+    "equals") or text typed (every value containing it, as "contains")."""
+    app.switch_page("views/gantt.py").run()
+    assert not [box for box in app.selectbox if box.label == "Activity code"]  # the demo has no codes
+
+    codes = [("A", "Zone", "B1/L1"), ("B", "Zone", "B1/L2"), ("C", "Zone", "B2"), ("D", "Zone", "B1")]
+    tasks = [todo(code) for code in "ABCD"]
+    (tmp_path / "codes.xer").write_text(xer_text(tasks, codes=codes), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    _ok(at)
+    code_type = next(box for box in at.selectbox if box.label == "Activity code")
+    assert code_type.value is None  # nothing picked by default
+    code_type.set_value("Zone").run()
+    search = at.multiselect(key="gantt_code_values:Zone")
+    labels = search.options
+
+    def shown(picks):
+        search.set_value(picks).run()
+        _ok(at)
+        return {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"}
+
+    b1 = next(label for label in labels if label.split(" · ")[0] == "B1")  # path · description
+    assert shown([b1]) == {"D"}  # picked value: exactly B1, not its sub-values L1, L2
+    assert shown(["l"]) == {"A", "B"}  # typed text: values L1, L2 (case ignored)
+
+
+def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
+    """1,000 values of one code: all offered as suggestions, and one typed text keeps every
+    value containing it without ticking them one by one."""
+    tasks = [todo(f"T{n:04d}") for n in range(1000)]
+    codes = [(f"T{n:04d}", "Room", f"R{n:04d}") for n in range(1000)]
+    (tmp_path / "rooms.xer").write_text(xer_text(tasks, codes=codes), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    next(box for box in at.selectbox if box.label == "Activity code").set_value("Room").run()
+    search = at.multiselect(key="gantt_code_values:Room")
+    assert len(search.options) == 1000
+    search.set_value(["r012"]).run()  # R0120..R0129
+    _ok(at)
+    assert {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"} == {
+        f"T{n:04d}" for n in range(120, 130)
+    }
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):

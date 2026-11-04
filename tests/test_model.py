@@ -311,3 +311,44 @@ def test_header_matches_build_snapshot_on_sample_and_reference_files(sample_dir)
         _same_as_snapshot(full, read_xer(path, keep=HEADER_TABLES))
         checked += 1
     assert checked >= len(xer_files(sample_dir))
+
+
+# --- P6 activity codes (ACTVTYPE, ACTVCODE, TASKACTV) ----------------------------------------
+
+CODES = [
+    ("A", "Zone", "B1/L1"),
+    ("A", "Discipline", "CIV"),
+    ("B", "Zone", "B1/L2"),
+    ("C", "Zone", "B2"),
+    ("C", "Discipline", "MEC"),
+]
+
+
+def _value_id(s, code_type: str, value: str) -> str:
+    values = s.code_values
+    return values[(values["code_type"] == code_type) & (values["value"] == value)]["code_id"].iloc[0]
+
+
+def test_activity_codes_are_read_per_activity_with_their_hierarchy():
+    s = snap([todo("A"), todo("B"), todo("C"), todo("D")], codes=CODES)
+    assert sorted(s.code_values["code_type"].unique()) == ["Discipline", "Zone"]
+    zone = s.code_values[s.code_values["code_type"] == "Zone"].set_index("value")
+    assert zone.loc["L1", "parent_id"] == zone.loc["B1", "code_id"] and zone.loc["B1", "parent_id"] == ""
+    assert sorted(map(tuple, s.task_codes[["task_code", "code_type"]].to_numpy())) == [
+        ("A", "Discipline"), ("A", "Zone"), ("B", "Zone"), ("C", "Discipline"), ("C", "Zone"),
+    ]  # fmt: skip
+
+
+def test_a_code_value_selects_the_activities_assigned_that_exact_value():
+    # as P6's "equals": a parent value does not take the activities of its sub-values
+    s = snap([todo("A"), todo("B"), todo("C"), todo("D")], codes=CODES)
+    assert s.tasks_with_codes("Zone", [_value_id(s, "Zone", "L1")]) == {"A"}
+    assert s.tasks_with_codes("Zone", [_value_id(s, "Zone", "B1")]) == set()  # B1 holds L1, L2: none is B1 itself
+    assert s.tasks_with_codes("Discipline", [_value_id(s, "Discipline", v) for v in ("CIV", "MEC")]) == {"A", "C"}
+    assert s.tasks_with_codes("Zone", []) == set()
+
+
+def test_a_file_without_activity_codes_has_none():
+    s = snap([todo("A")])
+    assert s.code_values.empty and s.task_codes.empty
+    assert s.tasks_with_codes("Zone", ["7000"]) == set()

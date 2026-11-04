@@ -118,8 +118,15 @@ def test_pv_is_schedule_pct_complete_in_working_time():
     at 13:00 has done 4 of its 12 working hours by the evening, not a third of a day."""
     bl = _bl(early_start_date="2026-03-02 13:00", early_end_date="2026-03-03 17:00", target_drtn_hr_cnt="12")
     assert _pv_at(bl, "2026-03-02 17:00") == pytest.approx(80 * 4 / 12)
-    assert schedule_pct(bl, pd.Timestamp("2026-03-03 08:00")).loc["A"] == pytest.approx(33.33)
+    assert schedule_pct(bl, pd.Timestamp("2026-03-03 08:00")).loc["A"] == pytest.approx(100 / 3)
     assert pv_curve(bl).set_index("date").loc["2026-03-02", "pv_hr"] == pytest.approx(80 / 3)
+
+
+def test_per_activity_pv_sums_to_the_headline_pv():
+    """A third of 80 h: a Schedule % rounded to 33.33 would give 26.664 h, not 26.667 h."""
+    bl = _bl(early_start_date="2026-03-02 13:00", early_end_date="2026-03-03 17:00", target_drtn_hr_cnt="12")
+    now = snap([todo("A")], data_date="2026-03-02 17:00")
+    assert earned(now, bl)["pv_hr"].sum() == pytest.approx(ev_point(now, bl).pv_hr, abs=1e-9)
 
 
 def test_pv_skips_calendar_holiday():
@@ -368,21 +375,31 @@ def test_milestone_slip_in_working_days(tmp_path):
     assert s["slip_wd"] == 2  # Fri 10 -> Tue 14 April = Mon + Tue
 
 
-def test_mta_line_stops_at_completion(tmp_path):
+def test_mta_drops_a_milestone_complete_before_the_data_date(tmp_path):
+    """An update hides a milestone only if it is complete and its date is before that update's
+    data date; every other update keeps it, even after a completion."""
     ms = dict(task_type="TT_FinMile", target_drtn_hr_cnt="0", remain_drtn_hr_cnt="0")
-    reached = dict(act_end_date="2026-03-12 17:00", **ms)
-    weeks = {  # data date: M1 reached in week 2, M0 reached before the series, M2 open throughout
+    weeks = {  # data date: tasks
         "2026-03-02 08:00": [todo("M1", early_end_date="2026-03-12 17:00", **ms), done("M0", **ms)],
-        "2026-03-16 08:00": [done("M1", **reached), done("M0", **ms)],
-        "2026-03-23 08:00": [done("M1", **reached), done("M0", **ms)],
+        # M1 reached on 12 March; M3 marked complete on a date after this data date
+        "2026-03-16 08:00": [
+            done("M1", act_end_date="2026-03-12 17:00", **ms),
+            done("M0", **ms),
+            done("M3", act_end_date="2026-03-20 17:00", **ms),
+        ],
+        # M1 reopened: open again, kept
+        "2026-03-23 08:00": [todo("M1", early_end_date="2026-03-27 17:00", **ms), done("M0", **ms)],
     }
     for i, (dd, tasks) in enumerate(weeks.items()):
         rows = [*tasks, todo("M2", early_end_date="2026-05-29 17:00", **ms)]
         (tmp_path / f"w{i}.xer").write_text(__import__("xerkit").xer_text(rows, data_date=dd), encoding="utf-8")
     store = SnapshotStore.from_folder(tmp_path)
     plotted = plotted_trend(milestone_trend(store))
-    assert plotted.groupby("task_code").size().to_dict() == {"M1": 2, "M2": 3}  # M1 ends in week 2, M0 dropped
-    assert milestone_codes(store, open_only=True) == ["M2"]
+    assert len(plotted) == len(milestone_trend(store))  # hidden updates are blanked, not dropped
+    shown = plotted.dropna(subset=["forecast"])
+    kept = shown.groupby("task_code")["data_date"].apply(lambda d: [x.strftime("%m-%d") for x in d]).to_dict()
+    assert kept == {"M1": ["03-02", "03-23"], "M2": ["03-02", "03-16", "03-23"], "M3": ["03-16"]}  # M0 never
+    assert milestone_codes(store, open_only=True) == ["M1", "M2"]
     s = milestone_slips(milestone_trend(store), store).set_index("task_code")
     assert s.loc["M1", "updates"] == 3  # the table keeps every update
 

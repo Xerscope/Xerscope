@@ -79,12 +79,15 @@ def xer_text(
     sched: dict | None = None,
     assign=(),
     resources=(),
+    codes=(),
     header: str = "23.12\t2026-03-02",
 ) -> str:
     """tasks: dicts with at least task_code; preds: (pred, succ, type, lag_hours[, pred_proj]).
 
     ``rsrc``: activity codes given one plain labour assignment each. ``assign``: full
-    TASKRSRC rows (``task_code`` instead of task_id); ``resources``: RSRC rows.
+    TASKRSRC rows (``task_code`` instead of task_id); ``resources``: RSRC rows. ``codes``:
+    P6 activity code assignments ``(task_code, code type, "B1/L2")``, a path of values, each
+    value the child of the one before it (ACTVTYPE, ACTVCODE, TASKACTV).
     """
     ids = {}
     task_rows = []
@@ -167,12 +170,49 @@ def xer_text(
             for k, a in enumerate(assign, start=1)
         ]
         lines += _table("TASKRSRC", rows)
+    if codes:
+        lines += _code_tables(codes, ids)
     if costs:
         lines += _table(
             "PROJCOST",
             [{"cost_item_id": str(k), "task_id": ids[c], "proj_id": "1"} for k, c in enumerate(costs, start=1)],
         )
     return "\n".join(lines) + "\n"
+
+
+def _code_tables(codes, ids: dict[str, str]) -> list[str]:
+    """ACTVTYPE, ACTVCODE and TASKACTV for ``(task_code, code type, "parent/child")`` triples."""
+    types: dict[str, str] = {}
+    values: dict[tuple[str, str], dict] = {}  # (type, path) -> ACTVCODE row
+    links = []
+    for task_code, code_type, path in codes:
+        type_id = types.setdefault(code_type, str(700 + len(types)))
+        parent = ""
+        parts = path.split("/")
+        for depth in range(len(parts)):
+            key = (code_type, "/".join(parts[: depth + 1]))
+            if key not in values:
+                values[key] = {
+                    "actv_code_id": str(7000 + len(values)),
+                    "parent_actv_code_id": parent,
+                    "actv_code_type_id": type_id,
+                    "actv_code_name": f"{code_type} {key[1]}",
+                    "short_name": parts[depth],
+                    "seq_num": str(len(values)),
+                }
+            parent = values[key]["actv_code_id"]
+        links.append({"task_id": ids[task_code], "actv_code_type_id": type_id, "actv_code_id": parent, "proj_id": "1"})
+    type_rows = [
+        {
+            "actv_code_type_id": i,
+            "seq_num": str(n),
+            "actv_code_type": name,
+            "proj_id": "1",
+            "actv_code_type_scope": "AS_Project",
+        }
+        for n, (name, i) in enumerate(types.items())
+    ]
+    return _table("ACTVTYPE", type_rows) + _table("ACTVCODE", list(values.values())) + _table("TASKACTV", links)
 
 
 def snap(tasks, preds=(), **kw) -> Snapshot:

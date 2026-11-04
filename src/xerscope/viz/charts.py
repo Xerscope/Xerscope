@@ -192,6 +192,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
     ends = []
     for i, (col, name) in enumerate(columns.items()):
         s = series.dropna(subset=[col])
+        digits = 3 if col == "spi" else 2  # SPI: 1.002 ahead of plan would read 1.00
         fig.add_trace(
             go.Scatter(
                 x=s["data_date"],
@@ -200,12 +201,12 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
                 name=name,
                 line=dict(color=c[i], width=2),
                 marker=dict(size=8),
-                hovertemplate="%{y:.2f}",
+                hovertemplate=f"%{{y:.{digits}f}}",
             )
         )
         if len(s):
             y = float(s[col].iloc[-1])
-            ends.append((s["data_date"].iloc[-1], y, f"{name} {y:.2f}"))
+            ends.append((s["data_date"].iloc[-1], y, f"{name} {y:.{digits}f}"))
     span = max((float(series[c].max()) for c in columns if series[c].notna().any()), default=1.0) - min(
         (float(series[c].min()) for c in columns if series[c].notna().any()), default=0.0
     )
@@ -226,8 +227,9 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
 def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[str] | None = None) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
-    Both axes share one range at 1:1 scale so the reporting line runs at 45° across the
-    whole chart and every milestone can meet it inside the frame; below it is the past.
+    The x axis runs over the updates, from the first data date, so they fill the page width;
+    the y axis holds every forecast. The reporting line (forecast = data date) crosses the
+    chart at the slope these ranges give; below it is the past.
 
     Each line keeps its own series colour so milestones stay distinguishable: the colour of
     its position in ``order`` (the user's pick order, so the picker's tags can match), else
@@ -240,13 +242,18 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     status = STATUS
     series = SERIES
     fig = go.Figure()
-    pad = pd.Timedelta(days=10)
-    lo = min(trend["data_date"].min(), trend["forecast"].min()) - 2 * pad
-    hi = max(trend["data_date"].max(), trend["forecast"].max()) + 2 * pad
+    # x: the reporting dates, from the first update, a little room after the last for the end
+    # labels; y: every forecast and the reporting line. No 1:1 scale, so the updates fill the
+    # page width; the reporting line is still forecast = data date, at the slope that gives.
+    x0, x1 = trend["data_date"].min(), trend["data_date"].max()
+    x1 = x1 + max((x1 - x0) * 0.08, pd.Timedelta(days=3))
+    lo, hi = min(x0, trend["forecast"].min()), max(x1, trend["forecast"].max())
+    pad = max((hi - lo) * 0.05, pd.Timedelta(days=3))
+    lo, hi = lo - pad, hi + pad
     fig.add_trace(
         go.Scatter(
-            x=[lo, hi, hi],
-            y=[lo, hi, lo],
+            x=[x0, x1, x1, x0],
+            y=[x0, x1, lo, lo],
             fill="toself",
             fillcolor="rgba(123, 135, 148, 0.12)",  # NEUTRAL, faint: the past, below the reporting line
             line=dict(width=0),
@@ -256,8 +263,8 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     )
     fig.add_trace(
         go.Scatter(
-            x=[lo, hi],
-            y=[lo, hi],
+            x=[x0, x1],
+            y=[x0, x1],
             mode="lines",
             name="Reporting line (forecast = data date)",
             line=dict(color=NEUTRAL, width=3),
@@ -266,15 +273,18 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     )
     ends = []
     order = order or list(dict.fromkeys(trend["task_code"]))
-    for code, g in trend.groupby("task_code", sort=False):
+    for code, rows in trend.groupby("task_code", sort=False):
+        if rows["forecast"].isna().all():
+            continue
         color = series[order.index(code) % len(series)]
         shift = last_shift_wd.get(code, 0.0)
         moved = status["critical"] if shift > 0 else status["good"] if shift < 0 else None
+        g = rows.loc[: rows["forecast"].last_valid_index()]  # blank forecast = hidden update: the line breaks
         done = g["is_complete"].to_numpy()
         fig.add_trace(
             go.Scatter(
                 x=g["data_date"],
-                y=g["forecast"],
+                y=g["forecast"].astype(object).where(g["forecast"].notna(), None),
                 mode="lines+markers",
                 name=f"{code} {g['task_name'].iloc[-1]}",
                 line=dict(color=color, width=2),
@@ -284,6 +294,7 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
                     color=[color] * (len(g) - 1) + [moved or color],
                 ),
                 hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
+                cliponaxis=False,  # the first update's points sit on the left edge: drawn whole
             )
         )
         label = code + (format_shift(shift) if shift else "")
@@ -292,8 +303,16 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value)
     fig = _layout(fig, 640, "Forecast date")
-    fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
-    fig.update_yaxes(range=[lo, hi], scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
+    # ticks on the update dates, the first at x = 0, thinned to at most 12 labels
+    dates = sorted(trend["data_date"].unique())
+    fig.update_xaxes(
+        title="Reporting date (data date)",
+        range=[x0, x1],
+        tickmode="array",
+        tickvals=dates[:: -(-len(dates) // 12)],
+        tickformat="%d %b",
+    )
+    fig.update_yaxes(range=[lo, hi], **DATE_AXIS)
     return fig
 
 

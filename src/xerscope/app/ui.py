@@ -125,7 +125,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "bac_hr": ("BAC (h)", "h0"),
     "pv_pct": ("PV %", "pct"),
     "ev_pct": ("EV %", "pct"),
-    "spi": ("SPI", "d2"),
+    "spi": ("SPI", "d3"),
     "productivity": ("EV / AC", "d2"),
     "ac_unbaselined_hr": ("AC outside BL (h)", "h0"),
     "bei_p6": ("BEI (P6)", "d2"),
@@ -250,7 +250,15 @@ def _infer_kind(values: pd.Series) -> str:
     return "text"
 
 
-NUMBER_FORMATS = {"d1": "%.1f", "d2": "%.2f", "h0": "%,.0f", "pct": "%.1f %%", "signed": "%+.1f", "int": "%d"}
+NUMBER_FORMATS = {
+    "d1": "%.1f",
+    "d2": "%.2f",
+    "d3": "%.3f",
+    "h0": "%,.0f",
+    "pct": "%.1f %%",
+    "signed": "%+.1f",
+    "int": "%d",
+}
 
 
 def _column_for(label: str, kind: str, values: pd.Series):
