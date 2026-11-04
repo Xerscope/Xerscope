@@ -6,13 +6,14 @@ is done, add one when a check or a recalculation disagrees with P6.
 
 ## Proof: get an oracle for what has none
 
-- [ ] **P6 Check Schedule report** (P6 Professional 24) on a shareable file, with that
-      file's F9 export, under `tests/reference/`; one assertion per count. Report R1
-      (docs/standards.md, Sources) settled P6-12, P6-13 and P6-15 to P6-17, but it cannot
-      enter the repository; its counts are checked locally by `tests/test_p6_witness.py`
-      (anonymised file, outside git). Still a reading of Oracle's help only: LOE in P6-01,
-      remaining early start for in-progress work (P6-10), the hours per day behind `x`,
-      FF / SF links in P6-15, the constraint options of P6-16 / P6-17.
+- [ ] **More P6 Check Schedule reports on shareable files.** `tests/test_p6_checksched.py`
+      holds one: a synthetic project checked by P6 Professional 26.8, its F9 export rebuilt
+      with xerkit, every line and list of the report and the F9 log asserted. Report R1
+      (docs/standards.md, Sources) settled P6-12, P6-13 and P6-15 to P6-17 and stays local
+      (`tests/test_p6_witness.py`). Still a reading of Oracle's help only, because no report
+      shows it yet: LOE in P6-01, an in-progress activity whose remaining early start is
+      before the data date (P6-10a), the hours per day behind `x` on a calendar other than
+      8 h, FF / SF links in P6-15, the constraint options of P6-16 / P6-17.
 - [ ] **DECM**: a DECM output on one real file, for `decm.toml`. The v8.0 sheets are read
       (docs/standards.md, Sources); what they leave open or contradict is under
       "DECM conformance" below.

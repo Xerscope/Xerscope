@@ -247,26 +247,26 @@ AFTER_DD = "2026-03-03 08:00"  # the day after the data date (DD is Monday 2026-
 BEFORE_DD = "2026-02-27 08:00"  # the working day before the data date (Friday)
 
 
-def test_p6_10_actual_start_after_the_data_date_on_an_in_progress_activity_is_invalid():
+def test_p6_10b_actual_start_after_the_data_date_on_an_in_progress_activity_is_invalid():
     """'Invalid dates for in progress activities are remaining early start dates earlier than the data date
     or actual start dates later than the data date.' (Invalid Progress Dates, 101248)"""
     s = snap([active("A", act_start_date=AFTER_DD, early_start_date="2026-03-02 08:00"), active("B")])
-    r = run(P6, "P6-10", s)
+    r = run(P6, "P6-10b", s)
     assert counts(r) == (1, 2)
     assert codes(r) == ["A"]
 
 
-def test_p6_10_completed_with_actual_finish_exactly_on_the_data_date_stays_in_and_is_not_invalid():
+def test_p6_10b_completed_with_actual_finish_exactly_on_the_data_date_stays_in_and_is_not_invalid():
     """'Invalid dates for completed activities are actual finish dates later than the data date.' and
     'Completed activities with an actual finish earlier than the data date' are not included in this analysis.
     (Invalid Progress Dates, 101248)"""
     s = snap([done("ON", act_end_date=DD), done("BEFORE"), done("AFTER", act_end_date=AFTER_DD)])
-    r = run(P6, "P6-10", s)
+    r = run(P6, "P6-10b", s)
     assert counts(r) == (1, 2)  # BEFORE is excluded; ON stays in
     assert codes(r) == ["AFTER"]
 
 
-def test_p6_10_not_started_start_before_the_data_date_is_invalid_loe_and_wbs_are_excluded():
+def test_p6_10a_not_started_start_before_the_data_date_is_invalid_loe_and_wbs_are_excluded():
     """'Invalid dates for not started activities are start dates earlier than the data date.' and
     'WBS summary activities, and Level of Effort activities are not included in this analysis.'
     (Invalid Progress Dates, 101248)"""
@@ -278,7 +278,7 @@ def test_p6_10_not_started_start_before_the_data_date_is_invalid_loe_and_wbs_are
             todo("WBS", task_type="TT_WBS", early_start_date=BEFORE_DD),
         ]
     )
-    r = run(P6, "P6-10", s)
+    r = run(P6, "P6-10a", s)
     assert counts(r) == (1, 2)
     assert codes(r) == ["EARLY"]
 

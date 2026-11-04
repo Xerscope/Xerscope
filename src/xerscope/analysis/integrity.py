@@ -164,7 +164,7 @@ def int_06_actual_date_after_data_date(context) -> RuleOutput:
     Counts: with an actual date after the data date / activities
 
     Mirrors the P6 log warning 'Activities with actual date later than data date': any actual start or actual
-    finish later than the data date, every activity (level of effort and milestones included). P6-10
+    finish later than the data date, every activity (level of effort and milestones included). P6-10b
     reads the same dates with the Check Schedule exclusions (06A506a for DECM).
     """
     data_date = context.snapshot.data_date
@@ -246,13 +246,17 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
 def int_08_unsatisfied_relationships(context) -> RuleOutput:
     """Relationships the successor's dates break.
     Counts: unsatisfied / relationships checked
-    Excludes: level of effort, relationships to other projects, relationships with a lead (negative lag).
+    Excludes: level of effort, relationships to other projects, relationships with a lead (negative lag),
+        relationships whose successor end is an actual date.
 
-    xerscope's reading of the P6 log exception 'Activities with unsatisfied relationships', not confirmed
-    against a P6 log. Each activity is read at its actual date, else at its recalculated early date. FS: the
-    successor starts before the predecessor finishes; SS: before it starts; FF: the successor finishes
-    before the predecessor finishes; SF: before it starts. The lag is not added (it needs a calendar), so
-    a relationship with a positive lag is listed only when it is broken even at zero lag.
+    xerscope's reading of the P6 log exception 'Activities with unsatisfied relationships'. The
+    successor end the relationship bounds (start for FS / SS, finish for FF / SF) must be a recalculated
+    date: an actual date there is out-of-sequence progress, which the log lists under its own warning
+    and not here (P6 Professional 26.8 log, tests/test_p6_checksched.py). The predecessor is read at its
+    actual date, else at its recalculated early date. FS: the successor starts before the predecessor
+    finishes; SS: before it starts; FF: the successor finishes before the predecessor finishes; SF:
+    before it starts. The lag is not added (it needs a calendar), so a relationship with a positive lag
+    is listed only when it is broken even at zero lag.
     """
     try:
         dates = schedule(context.snapshot).frame
@@ -268,6 +272,14 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
         lambda rows: rows["pred_code"].isin(dates.index) & rows["succ_code"].isin(dates.index),
     )
     funnel.keep("no lead", "xerscope", lambda rows: rows["lag_hr"].fillna(0) >= 0)
+
+    def successor_end_is_actual(rows: pd.DataFrame) -> pd.Series:
+        bounds_start = rows["type"].isin(("FS", "SS"))
+        actual_start = rows["succ_code"].map(tasks["act_start_date"]).notna()
+        actual_finish = rows["succ_code"].map(tasks["act_end_date"]).notna()
+        return actual_start.where(bounds_start, actual_finish)
+
+    funnel.keep("successor end not an actual date", "xerscope", lambda rows: ~successor_end_is_actual(rows))
     links = funnel.rows
     successor_start = links["succ_code"].map(start)
     successor_finish = links["succ_code"].map(finish)

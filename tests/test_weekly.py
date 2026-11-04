@@ -613,8 +613,9 @@ def test_health_wide_has_one_row_per_check_and_one_column_per_update(store):
     assert list(wide.columns) == ["id", "check", *(f"{s.data_date:%Y-%m-%d}" for s in store)]
     assert wide["id"].tolist() == [m.id for m in std.metrics]
     assert wide["check"].iloc[:4].tolist() == ["Logic", "Hard constraints", "Soft constraints", "Large durations"]
-    assert wide.iloc[:4, 2].tolist() == pytest.approx([6.896552, 0, 7.142857, 4.166667])
-    assert wide.shape == (17, 10)
+    # Logic: 3 / 29 (K5040, M9999 and the not-started start milestone M1000)
+    assert wide.iloc[:4, 2].tolist() == pytest.approx([10.344828, 0, 7.142857, 4.166667])
+    assert wide.shape == (18, 10)
     assert (wide.dtypes.iloc[2:] == "float64").all()
 
 

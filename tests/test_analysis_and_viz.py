@@ -51,8 +51,8 @@ def test_negative_float_appears_after_vendor_delay(store):
 
 
 def test_invalid_actual_date_from_week_6(store):
-    assert codes(run_on_store(store, 5, "P6-10")) == []
-    assert codes(run_on_store(store, 6, "P6-10")) == ["C3010"]
+    assert codes(run_on_store(store, 5, "P6-10b")) == []
+    assert codes(run_on_store(store, 6, "P6-10b")) == ["C3010"]
 
 
 def test_baseline_execution(store):

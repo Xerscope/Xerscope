@@ -17,7 +17,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
 | Relationships checked | all except links between two finished activities | links into incomplete work | links into incomplete work |
-| Logic | open ends; actual start or start milestone pass the predecessor check, finish milestones are counted (101248 exempts none; a P6 Professional r22.12 report flags one, Ten Six), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
+| Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > `x` hours, milestones out | original > 44 wd | n/a |
@@ -27,7 +27,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.
 
-## P6 Check Schedule (P6 Professional 24: 17 checks)
+## P6 Check Schedule (P6 Professional 24: 17 checks, 18 report lines)
 
 Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 101393).
 
@@ -48,6 +48,8 @@ silent and a P6 Professional r22.12 report analysed by Ten Six shows the behavio
 (finish milestones counted in logic, milestones out of large durations), the report is
 followed. Where report R1 contradicts 101248, the report is followed:
 P6-12 leaves completed activities out, P6-13 divides by every baseline activity.
+Invalid Progress Dates is one check of the dialog but two lines of the report (before / after the data
+date, each with its own target, P6 Professional 26.8): P6-10a and P6-10b.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
 are written from R1 alone, and their open points are marked `UNRESOLVED` in the
 rule docstrings (`analysis/p6/check_schedule.py`).
@@ -66,7 +68,8 @@ checked subset.
 | P6-07 | | Relationship types (FS share) | links, both-finished removed | > 90 % |
 | P6-08 | | Lags | idem | < 5 % |
 | P6-09 | Inaccuracy | Negative lags | idem | < 1 % |
-| P6-10 | | Invalid progress dates (start, or remaining early start once started, before / actual after the data date) | WBS, LOE, finished-before-data-date removed | < 1 % |
+| P6-10a | | Invalid progress before data date (start, or remaining early start once started, before the data date) | WBS, LOE, finished-before-data-date removed | < 1 % |
+| P6-10b | | Invalid progress after data date (actual start or finish after the data date) | idem | < 1 % |
 | P6-11 | | Resource / cost | WBS, milestones, LOE removed (completed stay in); a role assignment counts | < 1 % |
 | P6-12 | Lateness | Late activities (finish variance < 0, working time; no baseline: finish later than planned finish) | WBS, milestones, LOE, completed removed (R1) | < 5 % |
 | P6-13 | | BEI: completed / every baseline activity (R1); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
@@ -184,11 +187,11 @@ reproduce yet. The Schedule health page prints this text above the results.
 | INT-03 | stored resource-assignment remaining dates = the recalculation | none (xerscope) | `analysis/cpm.py` | <= 0% |
 | INT-04 | activities on a relationship loop (not those downstream of it) | Errors: "Activities that have invalid relationship loops" | [99374](https://docs.oracle.com/cd/G48897_01/p6help/en/99374.htm) | <= 0 |
 | INT-05 | activities with no predecessor or no successor, unfiltered (P6-01 applies the Check Schedule exclusions) | Warnings: "Activities without predecessors", "Activities without successors" | [99350](https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm) | info |
-| INT-06 | activities with an actual start or finish after the data date, unfiltered (P6-10 / 06A506a apply exclusions) | Warnings: "Activities with actual date later than data date" | [99350](https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm) | <= 0 |
+| INT-06 | activities with an actual start or finish after the data date, unfiltered (P6-10b / 06A506a apply exclusions) | Warnings: "Activities with actual date later than data date" | [99350](https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm) | <= 0 |
 | INT-07 | open, non-LOE activities whose recalculated early start or finish is on the wrong side of a constraint date. Unconfirmed against a P6 log | Exceptions: "Activities with unsatisfied constraints" | [99352](https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm) | info |
-| INT-08 | relationships whose successor starts (FS, SS) or finishes (FF, SF) before the predecessor finishes (FS, FF) or starts (SS, SF), at actual dates else recalculated early dates; lag not applied, leads not evaluated. Unconfirmed against a P6 log | Exceptions: "Activities with unsatisfied relationships" | [99352](https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm) | info |
+| INT-08 | relationships whose successor starts (FS, SS) or finishes (FF, SF) before the predecessor finishes (FS, FF) or starts (SS, SF); the successor end is a recalculated date (an actual one is out-of-sequence progress, listed by the log under its own warning, P6 Professional 26.8 log), the predecessor at its actual date else its recalculated early date; lag not applied, leads not evaluated | Exceptions: "Activities with unsatisfied relationships" | [99352](https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm) | info |
 
-INT-07 and INT-08 stay at info until a P6 log of the same file confirms or corrects the reading.
+INT-07 and INT-08 stay at info until more P6 logs confirm the reading: the 26.8 log of the synthetic project CHECKSCHED (`tests/test_p6_checksched.py`) lists none of either, as xerscope does.
 
 ## Your own standard
 
