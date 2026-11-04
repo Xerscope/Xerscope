@@ -49,3 +49,22 @@ def two_projects(
         fields = lines[lines.index("%T\tPROJECT") + 1].split("\t")[1:]
         lines.insert(lines.index("%T\tPROJECT") + 3, "%R\t" + "\t".join(baseline.get(f, "") for f in fields))
     return "\n".join(lines) + "\n"
+
+
+def with_other_projects(text: str, codes: tuple[str, ...] = ("P3", "P4", "P5")) -> str:
+    """``text`` plus one project per code (proj_id 3, 4, …, no pointer), one activity each: a file
+    exported with other projects of the portfolio."""
+    lines = text.splitlines()
+    at = lines.index("%T\tPROJECT")
+    fields = lines[at + 1].split("\t")[1:]
+    project = dict(zip(fields, lines[at + 2].split("\t")[1:], strict=True))
+    task_at = lines.index("%T\tTASK")
+    task_fields = lines[task_at + 1].split("\t")[1:]
+    task = dict(zip(task_fields, lines[task_at + 2].split("\t")[1:], strict=True))
+    for number, code in enumerate(codes, start=3):
+        row = {**project, "proj_id": str(number), "proj_short_name": code, "sum_base_proj_id": "", "orig_proj_id": ""}
+        lines.insert(at + 2, "%R\t" + "\t".join(row.get(f, "") for f in fields))
+        task_at += 1
+        row = {**task, "task_id": str(300 + number), "proj_id": str(number), "task_code": f"Z{number}"}
+        lines.insert(task_at + 2, "%R\t" + "\t".join(row.get(f, "") for f in task_fields))
+    return "\n".join(lines) + "\n"
