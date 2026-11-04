@@ -541,6 +541,16 @@ def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     assert r.status == "fail" and codes(r) == ["Z"]
 
 
+def test_critical_path_test_with_must_finish_by_fails_when_a_mandatory_date_absorbs_the_delay():
+    """PAM 4.12 also reads "negative total float" on the completion date. The float to the Must Finish By
+    date falls by exactly what the finish moves, so it adds no pass to the finish test, and a Mandatory
+    Finish keeps the end's float at 0: Z ends Wed 25 whatever the slip, the test still fails."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-25 17:00")]
+    s = snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], project={"plan_end_date": "2026-03-25 17:00"})
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and "moved +0.0 wd" in r.note and codes(r) == ["Z"]
+
+
 MFB = {"project": {"plan_end_date": "2026-03-25 17:00"}}  # Must Finish By: the float's reference
 
 
