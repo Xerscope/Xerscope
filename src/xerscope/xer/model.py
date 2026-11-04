@@ -678,6 +678,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
             "rsrc_short_name",
             "rsrc_clndr_id",
             "driving",
+            "curv_id",
             "act_qty",
         ]
         + ASSIGNMENT_NUM_COLS
@@ -689,7 +690,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
         raw_assignments = raw_assignments[raw_assignments["proj_id"] == inputs.project_id]
     assignments = _ensure_cols(
         raw_assignments.copy(),
-        ["taskrsrc_id", "rsrc_id", "role_id", "rsrc_type", "rollup_dates_flag"]
+        ["taskrsrc_id", "rsrc_id", "role_id", "rsrc_type", "rollup_dates_flag", "curv_id"]
         + ASSIGNMENT_NUM_COLS
         + ASSIGNMENT_DATE_COLS,
     )
