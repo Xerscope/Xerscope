@@ -3,6 +3,9 @@
 Run on a plain dict standing in for the Streamlit session: no page is rendered.
 """
 
+import csv
+import io
+
 import pandas as pd
 import pytest
 from xerkit import todo, xer_text
@@ -42,9 +45,10 @@ def test_switch_on_is_the_default_and_never_runs_the_plain_build():
     assert fetch(session, _never_plain, lambda anonymous: b"anon", ["a.xer"]) is None  # not prepared yet
     out = fetch(session, _never_plain, lambda anonymous: anonymous.csv(_frame()), ["a.xer"], prepare=True)
     assert out is not None and out.anonymised and not out.refused
-    text = out.data.decode("utf-8-sig")
-    assert not any(original in text for original in ("A,", NAMES["A"]))
-    assert "XA" in text
+    cells = {cell for row in csv.reader(io.StringIO(out.data.decode("utf-8-sig"))) for cell in row}
+    # whole cells: a substring test fails whenever a drawn code ends with the original one ("XA…A")
+    assert "A" not in cells and NAMES["A"] not in cells
+    assert any(cell.startswith("XA") for cell in cells)
 
 
 def test_the_anonymizer_reads_only_the_sources_and_one_for_more_files_serves_fewer():
