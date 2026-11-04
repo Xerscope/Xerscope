@@ -316,6 +316,78 @@ def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
     st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, "")
 
 
+def _source_kind(snapshot: Snapshot) -> str:
+    """Where the baseline of an update comes from in the per-file mode: its file, the fallback, nothing."""
+    if snapshot.file_baseline.usable:
+        return "the baseline of its file"
+    return "the fallback" if st.session_state.get("fallback") is not None else "no baseline"
+
+
+def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
+    """The per-file mode, file by file: no usable baseline (and what applies instead), a pointer that is
+    not used and why, a series that mixes sources."""
+    unusable = [snapshot for snapshot in store if not snapshot.file_baseline.usable]
+    if unusable:
+        choice = st.session_state.get("fallback_choice", BL_NONE)
+        instead = "their baseline checks are n/a" if choice == BL_NONE else f"fallback: {choice}"
+        sidebar.warning(
+            f"No usable P6 Project Baseline in the file of {ui.md_text(', '.join(s.source for s in unusable))}: "
+            f"{instead}.",
+            icon=":material/warning:",
+        )
+    for snapshot in unusable:
+        if snapshot.file_baseline.note:
+            sidebar.warning(
+                f"{ui.md_text(snapshot.source)}: {ui.md_text(snapshot.file_baseline.text)}. Not used.",
+                icon=":material/warning:",
+            )
+    groups: dict[str, list[str]] = {}
+    for snapshot in store:
+        groups.setdefault(_source_kind(snapshot), []).append(snapshot.source)
+    if len(groups) > 1:
+        parts = [f"{len(files)} on {kind} ({ui.md_text(', '.join(files))})" for kind, files in groups.items()]
+        sidebar.warning(
+            "The series mixes baseline sources, so its updates are not measured against the same plan: "
+            + "; ".join(parts)
+            + ".",
+            icon=":material/warning:",
+        )
+
+
+MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must find
+
+
+def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
+    """Under a page header: the baseline an update is measured against, and what is wrong with it.
+    ``series``: the page measures every update against this baseline (the PV / EV / SPI curves)."""
+    stamp = ui.stamp(snapshot.data_date)
+    name = ui.md_text(snapshot.source)
+    if baseline is None:
+        st.markdown(f"**Baseline used for {stamp}**: none")
+        return
+    st.markdown(f"**Baseline used for {stamp}**: {ui.md_text(baseline.source or baseline.label)}")
+    if series and st.session_state.get("baseline") == BL_EACH and len(st.session_state["store"]) > 1:
+        st.caption(
+            "The PV, EV and SPI curves measure every update against this baseline; the BEI uses each update's own."
+        )
+    baseline_date = baseline.snapshot.data_date
+    if baseline_date is not None and snapshot.data_date is not None and baseline_date > snapshot.data_date:
+        st.warning(
+            f"{name}: the baseline's data date ({ui.fmt_date(baseline_date)}) is after the update's "
+            f"({ui.fmt_date(snapshot.data_date)}): it compares against a plan that did not exist yet.",
+            icon=":material/warning:",
+        )
+    codes = set(snapshot.activities["task_code"])
+    matched = len(codes & set(baseline.frame.index))
+    if codes and matched / len(codes) < MATCH_WARN_BELOW:
+        st.warning(
+            f"{name}: the baseline finds {matched} of {len(codes)} activities of the update "
+            f"({100 * matched / len(codes):.0f} %, below {MATCH_WARN_BELOW:.0%}). Late activities, BEI and "
+            "earned value count the others as not baselined.",
+            icon=":material/warning:",
+        )
+
+
 def _baseline_picker(store: SnapshotStore) -> None:
     sidebar = st.sidebar
     sidebar.subheader("Baseline")
@@ -352,9 +424,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if isinstance(baseline, Baseline):
         _describe_baseline(sidebar, store, baseline)
     if baseline == BL_EACH:
-        for snapshot in store:
-            if not snapshot.file_baseline.usable:
-                sidebar.caption(f"{snapshot.source}: {snapshot.file_baseline.text}. Its baseline checks are n/a.")
+        _file_baseline_warnings(sidebar, store)
 
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:

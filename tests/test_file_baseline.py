@@ -189,16 +189,21 @@ def test_schedule_health_runs_on_the_baseline_of_the_file(tmp_path, monkeypatch)
 # --- the fallback, update by update, and the baseline every result names ----------------------------
 
 
-def _series(tmp_path, monkeypatch):
-    """Two updates: ``a`` (2026-03-02) points to its baseline copy, ``b`` (2026-03-09) points to none."""
+def _series(tmp_path, monkeypatch, files=None):
+    """Updates in a folder, ``{name: two_projects arguments}``; by default ``a`` (2026-03-02) points to its
+    baseline copy and ``b`` (2026-03-09) points to none."""
     from pathlib import Path
 
     from streamlit.testing.v1 import AppTest
 
     import xerscope
 
-    (tmp_path / "a.xer").write_text(two_projects(data_date="2026-03-02 08:00"))
-    (tmp_path / "b.xer").write_text(two_projects(pointer="", data_date="2026-03-09 08:00", with_baseline=False))
+    files = files or {
+        "a.xer": {"data_date": "2026-03-02 08:00"},
+        "b.xer": {"pointer": "", "data_date": "2026-03-09 08:00", "with_baseline": False},
+    }
+    for name, arguments in files.items():
+        (tmp_path / name).write_text(two_projects(**arguments))
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
@@ -298,3 +303,80 @@ def test_the_exports_carry_the_baseline_of_the_result():
     notes = table.groupby("check_id")["note"].first()
     assert notes["P6-12"].endswith("baseline: P6 Project Baseline in the file")
     assert "baseline:" not in notes["P6-01"]
+
+
+# --- warnings, naming the files -----------------------------------------------------------------------
+
+A = {"data_date": "2026-03-02 08:00"}
+B_NONE = {"pointer": "", "data_date": "2026-03-09 08:00", "with_baseline": False}
+
+
+def _warnings(at):
+    return [element.value.replace("\\", "") for element in at.sidebar.warning]
+
+
+def _page_warnings(at):
+    return [element.value.replace("\\", "") for element in at.warning]
+
+
+def test_no_warning_when_every_file_has_a_usable_baseline_that_matches(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": {"data_date": "2026-03-09 08:00"}})
+    assert not _warnings(at)
+    assert not _page_warnings(_health(at, "2026-03-02"))
+
+
+def test_a_file_without_baseline_is_named_with_what_applies_instead(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch)
+    assert any("b.xer" in w and "baseline checks are n/a" in w for w in _warnings(at))
+    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(
+        "Planned dates in each file (target_*)"
+    )
+    assert any("b.xer" in w and "fallback: Planned dates in each file (target_*)" in w for w in _warnings(at.run()))
+
+
+def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
+    c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
+    at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c})
+    assert any(
+        "c.xer: Baseline: none in file (points to project 370, which is not in the file)" in w for w in _warnings(at)
+    )
+
+
+def test_a_baseline_copied_from_another_project_is_refused_and_named(tmp_path, monkeypatch):
+    c = {"original": "7", "data_date": "2026-03-09 08:00"}
+    at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c})
+    assert any("c.xer" in w and "copied from project 7" in w and "Not used" in w for w in _warnings(at))
+
+
+def test_a_series_that_mixes_baseline_sources_says_so_with_the_files(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch)
+    assert any(
+        "mixes baseline sources" in w
+        and "1 on the baseline of its file (a.xer)" in w
+        and "1 on no baseline (b.xer)" in w
+        for w in _warnings(at)
+    )
+    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(
+        "Planned dates in each file (target_*)"
+    )
+    assert any("1 on the fallback (b.xer)" in w for w in _warnings(at.run()))
+
+
+def test_a_baseline_dated_after_its_update_is_flagged_on_the_pages(tmp_path, monkeypatch):
+    late = {"data_date": "2026-03-02 08:00", "baseline_date": "2026-04-06 08:00"}
+    at = _health(_series(tmp_path, monkeypatch, {"a.xer": late}), "2026-03-02")
+    assert any("a.xer" in w and "is after the update" in w for w in _page_warnings(at))
+
+
+def test_a_baseline_that_finds_few_activities_is_flagged_on_the_pages(tmp_path, monkeypatch):
+    few = {"data_date": "2026-03-02 08:00", "baseline_ids": ("A1", "X2")}  # finds 1 of 2: 50 %
+    for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
+        at = _series(tmp_path, monkeypatch, {"a.xer": few}).switch_page(page).run()
+        assert any("a.xer" in w and "finds 1 of 2 activities" in w for w in _page_warnings(at)), page
+
+
+def test_the_pages_say_which_baseline_the_update_uses(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch)
+    for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
+        shown = _markdown(at.switch_page(page).run())
+        assert any(m.startswith("**Baseline used for 2026-03-09**: none") for m in shown), page

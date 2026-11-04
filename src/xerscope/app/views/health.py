@@ -29,6 +29,7 @@ from xerscope.app.state import (
     hold,
     memo,
     require_store,
+    show_baseline_used,
     show_download,
     snapshot_picker,
     sources_of,
@@ -389,6 +390,7 @@ baseline = baseline_for(snapshot)
 
 with top:
     ui.header("Schedule health", store, snapshot, baseline)
+    show_baseline_used(snapshot, baseline)
 reference = f" · [reference]({standard.source})" if standard.source.startswith("http") else ""
 st.caption((standard.description or standard.name) + reference)
 if baseline is None:

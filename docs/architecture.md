@@ -111,7 +111,13 @@ chosen for the user), gives the baseline of the updates whose file has no usable
 `CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
 readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
-`baseline: <source>`. P6-12 and P6-13 read `context.baseline` like every rule that
+`baseline: <source>`. Health, Audit and Earned value open with "Baseline used for <update>: <source>"
+(`state.show_baseline_used`; the Earned value curves measure every update against the baseline of the one
+shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
+baseline and what applies instead, a pointer that is not used and why (absent project, `orig_proj_id` of
+another project, no activities), a series that mixes sources; on the pages, a baseline whose data date is after
+the update's and a baseline that finds fewer than 90 % of the update's activities (the 06A501a / DCMA-11
+"N of M matched" count). P6-12 and P6-13 read `context.baseline` like every rule that
 needs one: they get the baseline of the sidebar choice (the file's, a separate XER, the planned dates) and
 carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |

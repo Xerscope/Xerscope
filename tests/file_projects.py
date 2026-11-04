@@ -17,6 +17,7 @@ def two_projects(
     baseline_ids: tuple[str, ...] = ("A1", "A2"),
     with_baseline: bool = True,
     baseline_code: str = "BL",
+    baseline_date: str = "2026-01-05 08:00",
 ) -> str:
     """Project 1 (analysed, A1 and A2, early finish 2026-03-13 17:00) with ``sum_base_proj_id = pointer``;
     project 2 (the baseline copy: ``baseline_ids``, all finishing ``baseline_finish``) with
@@ -30,8 +31,8 @@ def two_projects(
     baseline = {
         "proj_id": "2",
         "proj_short_name": baseline_code,
-        "last_recalc_date": "2026-01-05 08:00",
-        "plan_start_date": "2026-01-05 08:00",
+        "last_recalc_date": baseline_date,
+        "plan_start_date": baseline_date,
         "clndr_id": "C8",
         "sum_base_proj_id": "",
         "orig_proj_id": original,
