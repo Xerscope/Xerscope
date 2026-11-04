@@ -223,3 +223,38 @@ def test_pv_labor_check_variants_calendar_time_and_end_of_the_data_date():
     assert row["pv_calendar_time_hr"] == pytest.approx(40 * 48 / 105)
     assert row["pv_end_of_day_hr"] == pytest.approx(24)
     assert row["pv_calendar_time_end_of_day_hr"] == pytest.approx(40 * 64 / 105)
+
+
+def test_assignment_dates_counts_lags_own_dates_and_calendars():
+    """A (task dependent, Mon-Fri): R1 on the activity's dates; R2 with an Original Lag of 8 h,
+    planned Tue-Fri, on a resource calendar C10 other than the activity's C8. B (resource
+    dependent): one assignment without planned dates. A nonlabor assignment is left out.
+    Expected: 3 labour assignments, 1 with an Original Lag, 1 starting later than its activity,
+    0 finishing earlier, 1 without planned dates, 1 task dependent on another calendar, 1
+    resource dependent."""
+    from xerscope.app.diagnostic import assignment_dates_table
+
+    week = dict(target_start_date=MON, target_end_date=FRI)
+    tasks = [todo("A", **WEEK, **week), todo("B", **WEEK, **week, task_type="TT_Rsrc")]
+    resources = [
+        dict(rsrc_id="R1", rsrc_short_name="R1", rsrc_type="RT_Labor", clndr_id="C8"),
+        dict(rsrc_id="R2", rsrc_short_name="R2", rsrc_type="RT_Labor", clndr_id="C10"),
+        dict(rsrc_id="E1", rsrc_short_name="E1", rsrc_type="RT_Equip", clndr_id="C8"),
+    ]
+    assign = [
+        _labor("A", 100, MON, FRI),
+        {**_labor("A", 60, "2026-03-03 08:00", FRI, target_lag_drtn_hr_cnt="8"), "rsrc_id": "R2"},
+        _labor("B", 40),
+        dict(task_code="A", rsrc_id="E1", rsrc_type="RT_Equip", target_qty="5", target_lag_drtn_hr_cnt="8"),
+    ]
+    row = assignment_dates_table(snap(tasks, assign=assign, resources=resources)).iloc[0].to_dict()
+    assert row == {
+        "labor_assignments": 3,
+        "with_original_lag": 1,
+        "with_remaining_lag": 0,
+        "planned_dates_blank": 1,
+        "planned_start_later_than_activity": 1,
+        "planned_finish_earlier_than_activity": 0,
+        "task_dependent_on_other_calendar": 1,
+        "resource_dependent": 1,
+    }

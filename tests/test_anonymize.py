@@ -359,7 +359,7 @@ def test_diagnostic_block_09_holds_no_name_or_code():
     snapshot = build_snapshot(raw)
     frames = diagnostic_frames(snapshot, Baseline.planned(snapshot), builtin_standards()["P6"], anonymous=True)
     block = {name: frame for name, frame in frames.items() if name.startswith("09_")}
-    assert len(block) == 3 and not block["09_pv_labor_check"].empty
+    assert len(block) == 4 and not block["09_pv_labor_check"].empty
     with zipfile.ZipFile(io.BytesIO(Anonymizer.from_raws([raw]).zip_frames(block))) as archive:
         text = "".join(archive.read(name).decode("utf-8-sig") for name in archive.namelist())
     assert "SECRETCODE1" not in text and "Secret name" not in text and "TASKRSRC" in text
