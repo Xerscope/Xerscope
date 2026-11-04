@@ -125,7 +125,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "bac_hr": ("BAC (h)", "h0"),
     "pv_pct": ("PV %", "pct"),
     "ev_pct": ("EV %", "pct"),
-    "spi": ("SPI", "d3"),
+    "spi": ("SPI (labour units)", "d3"),
     "productivity": ("EV / AC", "d2"),
     "ac_unbaselined_hr": ("AC outside BL (h)", "h0"),
     "bei_p6": ("BEI (P6)", "d2"),

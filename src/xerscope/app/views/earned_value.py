@@ -55,10 +55,10 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
             ),
             ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
             (
-                "SPI",
+                "SPI (labour units)",
                 format_number(row["spi"], "{:.3f}"),
                 change_since_previous(row, previous, "spi", format_index_change),
-                "EV / PV (hours)",
+                "EV / PV in labour hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
             (
@@ -99,7 +99,7 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                 ),
                 ("AC", "Σ actual labour hours", f"{actual:,.1f} h"),
                 (
-                    "SPI",
+                    "SPI (labour units)",
                     "EV / PV",
                     f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.3f}')}",
                 ),
@@ -151,7 +151,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
     st.plotly_chart(
-        build_index_trend(series, {"spi": "SPI", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC"}),
+        build_index_trend(series, {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC"}),
         width="stretch",
     )
     ui.table(series.drop(columns=["bac_hr"]))

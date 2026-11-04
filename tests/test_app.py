@@ -202,6 +202,15 @@ def test_earned_value_needs_hours_and_baseline(app):
     assert any("Choose a baseline" in i.value for i in app.info)
 
 
+def test_earned_value_names_the_spi_as_the_labour_units_column(app):
+    """The EV / PV index is P6's "Schedule Performance Index - Labor Units" column, not the cost SPI."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    spi = next(m for m in app.metric if m.label == "SPI (labour units)")
+    assert "Schedule Performance Index - Labor Units" in spi.help
+    assert not [m for m in app.metric if m.label == "SPI"]
+
+
 def test_ev_calculation_rows_add_up_as_shown(app):
     """The operands shown, one decimal, give the result shown to the last digit: an
     independently rounded pair could otherwise read 186,420 − 186,110 = +311."""
@@ -218,10 +227,10 @@ def test_ev_calculation_rows_add_up_as_shown(app):
         assert sv == pytest.approx(ev - pv, abs=0.1 + 1e-9), label
         ac, etc, eac = numbers["EAC"]
         assert eac == pytest.approx(ac + etc, abs=0.1 + 1e-9), label
-        if shown["SPI"].endswith("–"):
+        if shown["SPI (labour units)"].endswith("–"):
             continue
-        ev, pv, spi = numbers["SPI"]
-        assert len(shown["SPI"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
+        ev, pv, spi = numbers["SPI (labour units)"]
+        assert len(shown["SPI (labour units)"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
         assert spi == pytest.approx(ev / pv, abs=0.001), label
 
 
