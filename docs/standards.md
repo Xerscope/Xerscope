@@ -164,7 +164,7 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
 | 11 | Missed tasks | due by the data date (baseline), not finished or finished on a later date | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
-| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the schedule's float to the Must Finish By date (n/a without one) | ≥ 0.95 |
+| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the float to the Must Finish By date, else the margin of the last finish milestone to its baseline finish (n/a without a baseline) | ≥ 0.95 |
 | 14 | BEI | completed / due (baseline finish ≤ data date) | ≥ 0.95 |
 
 **DCMA-10.** PAM §4.10 applies "If the contractor does resource load their schedule": a project with no
@@ -182,13 +182,14 @@ which falls by exactly what the finish moves (+16 h to -64 h for a +80 h slip), 
 on the end keeps its float at 0 and fails both readings.
 
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
-naming a calendar). Without a Must Finish By the metric is n/a.
+naming a calendar). Without a Must Finish By, TF is the margin of the open finish milestone ending last to its
+baseline finish (recalculated early finish, project calendar, negative when late); n/a without a baseline.
 
 Differences with xerlock's published result on its sample schedule (the pamphlet wins;
 `tests/reference/expected.py`, `tests/test_reference.py`): DCMA-01 0 (xerlock 2: SS-only
 dangling finishes, finish milestone exempted), DCMA-04 23/25 (xerlock 25/27: links into
 milestones counted), DCMA-05 1 (xerlock 2: a milestone counted), DCMA-11 3 (xerlock 4: a
-milestone counted), DCMA-13 n/a (xerlock 1.0: the file has no Must Finish By date, so
+milestone counted), DCMA-13 n/a (xerlock 1.0: no Must Finish By date and no baseline, so
 the float to the contract finish is unknown). The other stated values, the critical path test (MEP-020, +600 wd; the
 600 is DECM 06A401a's, the pamphlet gives none) and CPL (1080 h) reproduce.
 
