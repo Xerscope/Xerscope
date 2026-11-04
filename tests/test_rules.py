@@ -664,6 +664,14 @@ def test_cpli_is_na_without_a_baseline():
     assert r.status == "n/a" and "baseline" in r.note
 
 
+def test_cpli_is_na_with_the_planned_dates_baseline():
+    """Oracle 47222: the planned finish of a not-started milestone follows its early finish, so the margin
+    to it is 0 by construction."""
+    s = snap([A160, _end()], [("A", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-13", s, Baseline.planned(s))
+    assert r.status == "n/a" and "choose a baseline file" in r.note and "47222" in r.note
+
+
 def test_cpli_is_na_when_the_end_milestone_has_no_baseline_finish():
     r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"A": "2026-03-27 17:00"})
     assert r.status == "n/a" and "baseline finish" in r.note

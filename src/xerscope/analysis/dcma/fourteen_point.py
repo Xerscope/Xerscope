@@ -328,6 +328,12 @@ def _baseline_margin(context, last_task) -> tuple[RuleOutput | None, str, float,
     snapshot = context.snapshot
     if context.baseline is None:
         return RuleOutput(note="no Must Finish By date and no baseline: no reference date for the float"), "", 0, ""
+    if context.baseline.is_planned:
+        note = (
+            "baseline = planned dates of this file: a not-started milestone's planned finish follows its early "
+            "finish (Oracle 47222); choose a baseline file"
+        )
+        return RuleOutput(note=note), "", 0, ""
     activities = snapshot.activities
     ends = activities[
         ~activities["is_complete"] & ~activities["is_loe"] & (activities["task_type"] == "TT_FinMile")
@@ -353,7 +359,9 @@ def dcma_13_cpli(context) -> RuleOutput:
     days of the project calendar (PAM and Acumen say days without naming a calendar).
     P6 writes that float against the Must Finish By date. Without one, TF is the margin of the open
     finish milestone ending last to its baseline finish (recalculated early finish, project calendar;
-    negative when late); n/a without a baseline or a baseline finish for it. No constraint is read
+    negative when late); n/a without a baseline, with the planned dates baseline (the planned finish of a
+    not-started milestone follows its early finish: margin 0 by construction, Oracle 47222) or without a
+    baseline finish for it. No constraint is read
     """
     snapshot = context.snapshot
     last_task = finish_driver(snapshot)

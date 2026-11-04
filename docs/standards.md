@@ -184,6 +184,10 @@ on the end keeps its float at 0 and fails both readings.
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
 naming a calendar). Without a Must Finish By, TF is the margin of the open finish milestone ending last to its
 baseline finish (recalculated early finish, project calendar, negative when late); n/a without a baseline.
+n/a too when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
+help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
+by it once the activity has started, so the planned finish of a not-started milestone follows its early finish
+after scheduling and the margin is 0 by construction. A baseline file (or update) keeps the margin.
 
 Differences with xerlock's published result on its sample schedule (the pamphlet wins;
 `tests/reference/expected.py`, `tests/test_reference.py`): DCMA-01 0 (xerlock 2: SS-only
