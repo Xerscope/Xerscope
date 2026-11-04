@@ -42,15 +42,14 @@ if hidden := sorted(set(picked) - set(plotted.loc[plotted["forecast"].notna(), "
 slips = milestone_slips(trend, store)
 if plotted["forecast"].notna().any():
     last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))
-    st.plotly_chart(
-        build_mta(
-            plotted,
-            last_shift,
-            order=picked,
-            bounds=(store.latest.planned_start, store.latest.finish_date),  # the latest update's project
-        ),
-        width="stretch",
+    figure = build_mta(
+        plotted,
+        last_shift,
+        order=picked,
+        bounds=(store.latest.planned_start, store.latest.finish_date),  # the latest update's project
     )
+    with st.container(key="mta_chart"):  # as tall as wide (style.css): the square plot fills the width
+        st.plotly_chart(figure, width="stretch", height="stretch")
     st.caption(
         "One colour per milestone, as on its tag above. Last point and label = move in the last update: "
         "red later, green earlier."
