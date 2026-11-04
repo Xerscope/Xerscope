@@ -575,6 +575,55 @@ def test_ev_basis_follows_p6_admin_preference(basis, hours, first_day):
     assert bl.frame.at["A", "bl_start"] == pd.Timestamp("2026-03-02 08:00")  # variances: current dates
 
 
+@pytest.mark.parametrize(
+    "basis,pct", [("budgeted_planned", 0), ("budgeted_current", 100), ("at_completion_current", 100)]
+)
+def test_planned_dates_baseline_spreads_on_the_current_dates_with_a_current_dates_basis(basis, pct):
+    """P6 Pro 26, Admin Preferences > Earned Value: "The current dates options use the Start/Finish dates
+    for an activity or resource assignment." A, done 02-02 → 02-13, planned (target_*) 03-09 → 03-20, data
+    date 03-02: by hand, 0 % of its planned span is elapsed, 100 % of its current span."""
+    dates = {
+        "target_start_date": "2026-03-09 08:00",
+        "target_end_date": "2026-03-20 17:00",
+        "act_start_date": "2026-02-02 08:00",
+        "act_end_date": "2026-02-13 17:00",
+    }
+    s = snap(
+        [done("A", target_work_qty="80", **dates)],
+        assign=[{"task_code": "A", "rsrc_id": "R1", "target_qty": "80", **dates}],
+        data_date="2026-03-02 08:00",
+    )
+    bl = Baseline.planned(s, ev_basis=basis)
+    assert schedule_pct(bl, s.data_date).loc["A"] == pct
+    current = basis != "budgeted_planned"
+    expected = ("2026-02-02 08:00", "2026-02-13 17:00") if current else ("2026-03-09 08:00", "2026-03-20 17:00")
+    assert tuple(bl.assignment_costs.loc[0, ["start", "finish"]]) == tuple(map(pd.Timestamp, expected))
+    # the planned dates stay the baseline dates whatever the basis
+    assert (bl.frame.at["A", "bl_start"], bl.frame.at["A", "bl_finish"]) == (
+        pd.Timestamp("2026-03-09 08:00"),
+        pd.Timestamp("2026-03-20 17:00"),
+    )
+
+
+def test_current_dates_on_a_planned_dates_baseline_move_pv_only():
+    """EV = BL labour units x Performance % (P6 Pro 26, Earned Value): the dates of the basis do not enter it.
+    A done early, B 50 % physical, both planned after the data date: EV 80 + 40 h on both bases; PV 0 h on
+    the planned dates, A's 80 h on its current (actual) dates."""
+    planned = {"target_start_date": "2026-03-09 08:00", "target_end_date": "2026-03-20 17:00"}
+    s = snap(
+        [
+            done("A", target_work_qty="80", **planned),
+            active("B", target_work_qty="80", phys_complete_pct="50", complete_pct_type="CP_Phys", **planned),
+        ],
+        data_date="2026-03-02 08:00",
+    )
+    on_planned = earned(s, Baseline.planned(s, "budgeted_planned"))
+    on_current = earned(s, Baseline.planned(s, "budgeted_current"))
+    assert on_planned["ev_hr"].tolist() == on_current["ev_hr"].tolist() == [80, 40]
+    assert on_planned["pv_hr"].tolist() == [0, 0]
+    assert on_current.at["A", "pv_hr"] == 80
+
+
 def test_ev_basis_rejects_unknown_values():
     with pytest.raises(ValueError):
         Baseline.from_snapshot(snap([todo("A")]), ev_basis="planned")

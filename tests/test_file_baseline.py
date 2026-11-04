@@ -4,6 +4,7 @@ import io
 import zipfile
 
 import pandas as pd
+import pytest
 from file_projects import BASELINE_DATE, two_projects
 
 from xerscope.analysis import builtin_standards
@@ -189,9 +190,9 @@ def test_schedule_health_runs_on_the_baseline_of_the_file(tmp_path, monkeypatch)
 # --- the fallback, update by update, and the baseline every result names ----------------------------
 
 
-def _series(tmp_path, monkeypatch, files=None):
+def _series(tmp_path, monkeypatch, files=None, transform=lambda text: text):
     """Updates in a folder, ``{name: two_projects arguments}``; by default ``a`` (2026-03-02) points to its
-    baseline copy and ``b`` (2026-03-09) points to none."""
+    baseline copy and ``b`` (2026-03-09) points to none. ``transform`` edits each file's text."""
     from pathlib import Path
 
     from streamlit.testing.v1 import AppTest
@@ -203,7 +204,7 @@ def _series(tmp_path, monkeypatch, files=None):
         "b.xer": {"pointer": "", "data_date": "2026-03-09 08:00", "with_baseline": False},
     }
     for name, arguments in files.items():
-        (tmp_path / name).write_text(two_projects(**arguments))
+        (tmp_path / name).write_text(transform(two_projects(**arguments)))
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
@@ -380,3 +381,66 @@ def test_the_pages_say_which_baseline_the_update_uses(tmp_path, monkeypatch):
     for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
         shown = _markdown(at.switch_page(page).run())
         assert any(m.startswith("**Baseline used for 2026-03-09**: none") for m in shown), page
+
+
+# --- a file exported with several projects -------------------------------------------------------------
+
+
+def _portfolio(tmp_path, monkeypatch):
+    """``a`` holds UPD, its baseline copy BL (as many activities as UPD) and three other projects; ``b`` holds
+    UPD without baseline and the three others."""
+    from file_projects import with_other_projects
+
+    return _series(
+        tmp_path,
+        monkeypatch,
+        {
+            "a.xer": {"data_date": "2026-03-02 08:00"},
+            "b.xer": {"pointer": "", "data_date": "2026-03-09 08:00", "with_baseline": False},
+        },
+        transform=with_other_projects,
+    )
+
+
+def test_the_project_shown_in_the_picker_is_the_one_every_file_that_holds_it_is_read_for(tmp_path, monkeypatch):
+    # a's most-TASK-rows default can be its baseline copy BL (a tie with UPD); the picker shows UPD (b's project),
+    # so a is read for UPD too, and its P6 Project Baseline is found
+    from xerscope.app.state import BL_EACH
+
+    at = _portfolio(tmp_path, monkeypatch)
+    assert not at.exception
+    assert next(box for box in at.sidebar.selectbox if box.label == "Project").value == "UPD"
+    assert [s.project_code for s in at.session_state["store"]] == ["UPD", "UPD"]
+    assert _baseline_box(at).value == BL_EACH
+
+
+def test_the_fallback_applies_on_the_earned_value_page_of_a_portfolio_file(tmp_path, monkeypatch):
+    at = _portfolio(tmp_path, monkeypatch)
+    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(
+        "Planned dates in each file (target_*)"
+    )
+    at = at.run().switch_page("views/earned_value.py").run()
+    assert any(
+        m.startswith("**Baseline used for 2026-03-09**: fallback (Planned dates in each file (target_*))")
+        for m in _markdown(at)
+    )
+
+
+def test_an_update_without_baseline_says_where_to_pick_one(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch).switch_page("views/earned_value.py").run()
+    assert any(
+        "b.xer: Baseline: none in file" in i and "When a file has no baseline" in i
+        for i in (element.value.replace("\\", "") for element in at.info)
+    )
+    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select("Separate baseline file")
+    at.run()
+    assert any("upload the baseline XER" in element.value for element in at.info)
+
+
+@pytest.mark.parametrize("key", ["bl_choice", "bl_fallback"])
+def test_the_baseline_upload_goes_away_with_another_choice(tmp_path, monkeypatch, key):
+    at = _series(tmp_path, monkeypatch)
+    next(box for box in at.sidebar.selectbox if box.key == key).select("Separate baseline file")
+    assert [u.key for u in at.run().sidebar.get("file_uploader")].count("bl_upload") == 1
+    next(box for box in at.sidebar.selectbox if box.key == key).select("None")
+    assert "bl_upload" not in [u.key for u in at.run().sidebar.get("file_uploader")]

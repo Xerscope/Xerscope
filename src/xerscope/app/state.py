@@ -156,7 +156,9 @@ def _project_picker(sidebar, store: SnapshotStore) -> SnapshotStore:
     current = store.latest.project_code
     index = codes.index(current) if current in codes else 0
     choice = sidebar.selectbox("Project", codes, index=index, key="project")
-    if choice == current:
+    # the choice applies to every file that holds it, the default one included: a file's own default
+    # (most TASK rows) can be another project, such as a baseline copy with as many activities
+    if all(s.project_code == choice for s in store if choice in s.projects_in_file):
         return store
     with st.spinner(f"Reading {choice}…"):
         store, errors = _build(st.session_state["items"], project=choice)
@@ -371,6 +373,13 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
     name = ui.md_text(snapshot.source)
     if baseline is None:
         st.markdown(f"**Baseline used for {stamp}**: none")
+        if st.session_state.get("baseline") == BL_EACH:
+            todo = (
+                "upload the baseline XER under 'When a file has no baseline'"
+                if st.session_state.get("fallback_choice") == BL_FILE
+                else "pick what applies instead in the sidebar's 'When a file has no baseline'"
+            )
+            st.info(f"{name}: {ui.md_text(snapshot.file_baseline.text)}. To measure this update, {todo}.")
         return
     st.markdown(f"**Baseline used for {stamp}**: {ui.md_text(baseline.source or baseline.label)}")
     if series and st.session_state.get("baseline") == BL_EACH and len(st.session_state["store"]) > 1:
