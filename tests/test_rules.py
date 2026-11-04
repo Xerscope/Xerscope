@@ -7,7 +7,7 @@ or exemption would silently shift a result.
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import SM, active, done, hours, snap, todo, with_second_project, xer_text
+from xerkit import FM, SM, active, done, hours, snap, todo, with_second_project, xer_text
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
 from xerscope.xer import build_snapshot, parse_text
@@ -610,6 +610,77 @@ def test_calendar_holiday_counts_in_cpl():
     chain = CHAIN[:2] + [dict(CHAIN[2], early_end_date="2026-04-10 17:00")]
     r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert "CPL 29 wd" in r.note
+
+
+def test_cpli_counts_in_working_days_of_the_project_calendar():
+    """PAM and Acumen give days without naming a calendar: the project's (C8) here, for the length and the
+    float. Z runs on C10: its -16 h are -2 d of 8 h (not -1.6 d), CPL 20 wd -> (20 - 2) / 20."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="-16", clndr_id="C10")]
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
+    assert r.value == pytest.approx(0.9)
+    assert "total float -2 wd" in r.note
+
+
+# Without a Must Finish By the float is measured against the baseline finish of the end milestone.
+A160 = dict(todo("A", **hours(160)), early_end_date="2026-03-27 17:00")  # Mon 2 to Fri 27 Mar: 20 wd
+
+
+def _end(code="Z", finish="2026-03-27 17:00"):
+    return dict(todo(code), **FM, early_end_date=finish)
+
+
+def _cpli(tasks, preds, baseline_finishes):
+    """DCMA-13 on ``tasks`` with a baseline whose activities finish at ``baseline_finishes``."""
+    bl = snap([dict(todo(code), early_end_date=finish) for code, finish in baseline_finishes.items()])
+    return run(DCMA, "DCMA-13", snap(tasks, preds), Baseline.from_snapshot(bl))
+
+
+def test_cpli_without_must_finish_by_uses_the_margin_to_the_baseline_finish_of_the_end_milestone():
+    """Z ends Fri 27 Mar 17:00 (CPL 20 wd); baseline finish Tue 31 Mar 17:00: Mon 30 + Tue 31 = +2 wd,
+    (20 + 2) / 20."""
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
+    assert r.value == pytest.approx(1.1) and r.status == "pass"
+    assert "margin of Z to its BL finish 2026-03-31: 2 wd" in r.note
+
+
+def test_cpli_without_must_finish_by_is_below_one_when_the_end_is_after_its_baseline():
+    """Baseline finish Wed 25 Mar 17:00, forecast Fri 27: -2 wd, (20 - 2) / 20."""
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"Z": "2026-03-25 17:00"})
+    assert r.value == pytest.approx(0.9) and r.status == "fail"
+
+
+def test_cpli_takes_the_end_milestone_that_finishes_last():
+    """Z1 ends Fri 27 Mar, Z2 (after B, 8 h) Mon 30 Mar: CPL 21 wd to Z2, baseline Wed 1 Apr = +2 wd,
+    (21 + 2) / 21; Z1 (+2 wd on 20) would give 1.1."""
+    b = dict(todo("B", **hours(8)), early_end_date="2026-03-30 17:00")
+    tasks = [A160, b, _end("Z1"), _end("Z2", "2026-03-30 17:00")]
+    preds = [("A", "Z1", "FS", 0), ("A", "B", "FS", 0), ("B", "Z2", "FS", 0)]
+    r = _cpli(tasks, preds, {"Z1": "2026-03-31 17:00", "Z2": "2026-04-01 17:00"})
+    assert r.value == pytest.approx(23 / 21) and "margin of Z2" in r.note
+
+
+def test_cpli_is_na_without_a_baseline():
+    r = run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)]))
+    assert r.status == "n/a" and "baseline" in r.note
+
+
+def test_cpli_is_na_when_the_end_milestone_has_no_baseline_finish():
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"A": "2026-03-27 17:00"})
+    assert r.status == "n/a" and "baseline finish" in r.note
+
+
+def test_cpli_is_na_without_an_open_end_milestone():
+    r = _cpli(
+        [A160, dict(todo("Z"), early_end_date="2026-03-27 17:00")], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"}
+    )
+    assert r.status == "n/a" and "milestone" in r.note
+
+
+def test_cpli_with_must_finish_by_ignores_the_baseline():
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="-16")]
+    s = snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB)
+    bl = Baseline.from_snapshot(snap([dict(todo("Z"), early_end_date="2026-04-30 17:00")]))
+    assert run(DCMA, "DCMA-13", s, bl).value == pytest.approx(0.9)
 
 
 # --- framework -----------------------------------------------------------------------------

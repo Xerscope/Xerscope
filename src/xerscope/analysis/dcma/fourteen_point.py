@@ -11,6 +11,7 @@ import operator
 import pandas as pd
 
 from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
+from ..cpm import schedule
 from ..populations import (
     Funnel,
     activity_funnel,
@@ -319,16 +320,40 @@ def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> Ru
     return critical_path_output(context, slip_days)
 
 
+def _baseline_margin(context, last_task) -> tuple[RuleOutput | None, str, float, float]:
+    """Margin of the open end milestone that finishes last to its baseline finish, in project working days.
+
+    Returns (n/a output or None, milestone code, margin, baseline finish text).
+    """
+    snapshot = context.snapshot
+    if context.baseline is None:
+        return RuleOutput(note="no Must Finish By date and no baseline: no reference date for the float"), "", 0, ""
+    activities = snapshot.activities
+    ends = activities[
+        ~activities["is_complete"] & ~activities["is_loe"] & (activities["task_type"] == "TT_FinMile")
+    ].dropna(subset=["finish"])
+    if ends.empty:
+        return RuleOutput(note="no Must Finish By date and no open finish milestone to measure the float on"), "", 0, ""
+    end = ends.sort_values(["finish", "task_code"]).iloc[-1]
+    baseline_finish = context.baseline.frame["bl_finish"].get(end["task_code"], pd.NaT)
+    if pd.isna(baseline_finish):
+        return RuleOutput(note=f"{end['task_code']} has no baseline finish"), "", 0, ""
+    forecast = schedule(snapshot).frame["ef"].get(end["task_code"], end["finish"])
+    margin = snapshot.project_working_days(forecast, baseline_finish)
+    return None, end["task_code"], margin, f"{baseline_finish:%Y-%m-%d}"
+
+
 @rule("dcma_13_cpli", "ratio")
 def dcma_13_cpli(context) -> RuleOutput:
     """Critical Path Length Index = (CPL + TF) / CPL.
 
     DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion
     milestone ("the amount of days a project can be delayed before delaying the project completion
-    date"). CPL = working days from the data date to the forecast finish, TF = total float of the
-    activity that sets the finish, both on the project calendar. P6 writes that float only against the
-    Must Finish By date, so the check is n/a without one: the last activity's float would be 0 and the
-    index 1.0 whatever the schedule
+    date"). CPL = working days from the data date to the forecast finish, TF = that float, both in working
+    days of the project calendar (PAM and Acumen say days without naming a calendar).
+    P6 writes that float against the Must Finish By date. Without one, TF is the margin of the open
+    finish milestone ending last to its baseline finish (recalculated early finish, project calendar;
+    negative when late); n/a without a baseline or a baseline finish for it. No constraint is read
     """
     snapshot = context.snapshot
     last_task = finish_driver(snapshot)
@@ -336,18 +361,24 @@ def dcma_13_cpli(context) -> RuleOutput:
         return RuleOutput(note="no data date")
     if last_task is None:
         return RuleOutput(note="no remaining work")
+    margin_note = ""
     if snapshot.options.get("must_finish_by") is None:
-        return RuleOutput(note="no Must Finish By date (P6: Project > Dates): the float would be 0 by construction")
+        unavailable, code, margin, baseline_finish = _baseline_margin(context, last_task)
+        if unavailable is not None:
+            return unavailable
+        margin_note = f"margin of {code} to its BL finish {baseline_finish}: {margin:g} wd"
     calendar = snapshot.calendar()
     length = snapshot.project_working_days(snapshot.data_date, last_task["finish"])
     if length <= 0:
         return RuleOutput(note="critical path length is 0")
-    float_hours = float(last_task["total_float_hr_cnt"]) if pd.notna(last_task["total_float_hr_cnt"]) else 0.0
-    total_float = float_hours / calendar.hours_per_day if calendar.hours_per_day else 0.0
-    return RuleOutput(
-        value=(length + total_float) / length,
-        note=f"CPL {length:g} wd to {last_task['task_code']}, total float {total_float:g} wd",
-    )
+    if margin_note:
+        total_float = margin
+        note = f"CPL {length:g} wd, {margin_note}"
+    else:
+        float_hours = float(last_task["total_float_hr_cnt"]) if pd.notna(last_task["total_float_hr_cnt"]) else 0.0
+        total_float = float_hours / calendar.hours_per_day if calendar.hours_per_day else 0.0
+        note = f"CPL {length:g} wd to {last_task['task_code']}, total float {total_float:g} wd"
+    return RuleOutput(value=(length + total_float) / length, note=note)
 
 
 @rule("dcma_14_bei", "ratio", needs_baseline=True)
