@@ -121,7 +121,12 @@ def build_scurve(
     data_date=None,
     percent: bool = False,
 ) -> go.Figure:
-    """PV (baseline), EV and AC per update, forecast of hours to completion."""
+    """PV (baseline), EV and AC per update, forecast of hours to completion.
+
+    At ``data_date`` a vertical mark joins that update's PV and EV, labelled SV = EV − PV in
+    the chart's unit: green when EV >= PV (ahead), red when behind. PV there is the update's
+    own (``series.pv_hr``, as in the KPIs), not the daily curve's end-of-day value.
+    """
     c = SERIES
     bac = float(series["bac_hr"].iloc[0]) if len(series) else 0.0
     k = (100 / bac) if (percent and bac) else 1.0
@@ -145,6 +150,8 @@ def build_scurve(
             name="EV (earned)",
             line=dict(color=c[1], width=2),
             marker=dict(size=8),
+            customdata=s[["sv_hr"]].to_numpy() * k,
+            hovertemplate="%{y:,.1f}  (SV %{customdata[0]:+,.1f})",
         )
     )
     fig.add_trace(
@@ -180,8 +187,37 @@ def build_scurve(
             curve["pv_cum_hr"].iloc[-1] * k,
             f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f}",
         )
+    # drawn last, over the AC marker and the data-date line it shares x with
+    now = s[s["data_date"] == data_date] if data_date is not None else s.iloc[0:0]
+    if len(now):
+        planned, earned_now, variance = (float(now[col].iloc[-1]) * k for col in ("pv_hr", "ev_hr", "sv_hr"))
+        colour = STATUS["good"] if variance >= 0 else STATUS["critical"]
+        fig.add_trace(
+            go.Scatter(
+                x=[data_date, data_date],
+                y=[planned, earned_now],
+                mode="lines+markers",
+                name="SV (EV − PV)",
+                line=dict(color=colour, width=3),
+                marker=dict(symbol="line-ew-open", size=12, color=colour),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        sv_text = f"SV {variance:+,.1f} % of BAC" if percent and bac else f"SV {variance:+,.0f} h"
+        # above the mark's top end, left of the data date: clear of the curves, which rise to the right
+        fig.add_annotation(
+            x=data_date,
+            y=max(planned, earned_now),
+            text=sv_text,
+            showarrow=False,
+            xanchor="right",
+            yanchor="bottom",
+            xshift=-6,
+            yshift=4,
+        )
     _data_date(fig, data_date)
-    fig.update_traces(hovertemplate="%{y:,.1f}")
+    fig.update_traces(hovertemplate="%{y:,.1f}", selector=lambda trace: trace.name != "EV (earned)")
     return _layout(fig, 500, unit)
 
 

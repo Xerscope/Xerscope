@@ -11,7 +11,7 @@ from xerkit import snap, todo
 from xerscope.analysis.wbs import rollup
 from xerscope.viz import build_finish_trend, categorise, gantt_assets, gantt_data, gantt_rows
 from xerscope.viz import gantt as gantt_module
-from xerscope.viz.charts import SERIES, STATUS, build_activity_dates, build_mta, build_ppc
+from xerscope.viz.charts import SERIES, STATUS, build_activity_dates, build_mta, build_ppc, build_scurve
 
 
 def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
@@ -318,3 +318,37 @@ def test_gantt_rows_scale_to_a_large_schedule():
     rows = _rows(s, compare=s.activities, snapshot=s)
     assert time.perf_counter() - started < 2
     assert len(rows) == 1 + 300 + 3000
+
+
+def _ev_series(pv: float, ev: float) -> pd.DataFrame:
+    dates = pd.to_datetime(["2026-03-02 08:00", "2026-03-09 08:00"])
+    return pd.DataFrame(
+        {
+            "data_date": dates,
+            "bac_hr": 1000.0,
+            "pv_hr": [100.0, pv],
+            "ev_hr": [90.0, ev],
+            "ac_hr": [80.0, 150.0],
+            "sv_hr": [-10.0, ev - pv],
+        }
+    )
+
+
+def test_scurve_marks_the_schedule_variance_at_the_data_date():
+    """A vertical mark from PV to EV at the viewed update, labelled with SV = EV − PV in the
+    chart's unit: green when EV >= PV (ahead), red when behind; SV in every update's hover."""
+    curve = pd.DataFrame({"date": pd.date_range("2026-03-01", periods=30), "pv_cum_hr": range(0, 300, 10)})
+    series = _ev_series(pv=200.0, ev=231.0)
+    data_date = series["data_date"].iloc[-1]
+    fig = build_scurve(curve, series, None, data_date)
+    mark = next(t for t in fig.data if t.name == "SV (EV − PV)")
+    assert [pd.Timestamp(x) for x in mark.x] == [data_date, data_date] and list(mark.y) == [200.0, 231.0]
+    assert mark.line.color == STATUS["good"] and not mark.showlegend
+    assert any(a.text == "SV +31 h" for a in fig.layout.annotations)
+    ev = next(t for t in fig.data if t.name == "EV (earned)")
+    assert [row[0] for row in ev.customdata] == [-10.0, 31.0] and "SV" in ev.hovertemplate
+
+    behind = build_scurve(curve, _ev_series(pv=200.0, ev=150.0), None, data_date, percent=True)
+    mark = next(t for t in behind.data if t.name == "SV (EV − PV)")
+    assert mark.line.color == STATUS["critical"] and list(mark.y) == [20.0, 15.0]  # % of BAC
+    assert any(a.text == "SV -5.0 % of BAC" for a in behind.layout.annotations)
