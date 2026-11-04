@@ -80,6 +80,7 @@ def xer_text(
     assign=(),
     resources=(),
     codes=(),
+    calendars=(),
     header: str = "23.12\t2026-03-02",
 ) -> str:
     """tasks: dicts with at least task_code; preds: (pred, succ, type, lag_hours[, pred_proj]).
@@ -88,7 +89,8 @@ def xer_text(
     TASKRSRC rows (``task_code`` instead of task_id); ``resources``: RSRC rows. ``costs``: an
     activity code per PROJCOST row, or a dict (``task_code`` plus the row's columns). ``codes``:
     P6 activity code assignments ``(task_code, code type, "B1/L2")``, a path of values, each
-    value the child of the one before it (ACTVTYPE, ACTVCODE, TASKACTV).
+    value the child of the one before it (ACTVTYPE, ACTVCODE, TASKACTV). ``calendars``: more
+    CALENDAR rows, after C8, C10 and C7D.
     """
     ids = {}
     task_rows = []
@@ -129,6 +131,7 @@ def xer_text(
                 "week_hr_cnt": "56",
                 "clndr_data": SEVEN_DAYS_8H,
             },
+            *calendars,
         ],
     )
     lines += _table("PROJECT", [proj])
