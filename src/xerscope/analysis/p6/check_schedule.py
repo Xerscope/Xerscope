@@ -22,7 +22,6 @@ from ..populations import (
     has_driving_successor,
     has_predecessor_in_project,
     has_successor_in_project,
-    invalid_date_reason,
     lag_flagged,
     links_between,
     open_end_reason,
@@ -66,20 +65,21 @@ def p6_01_logic(context) -> RuleOutput:
     """Missing a predecessor or a successor.
     Counts: open-ended / checked
     Excludes: completed activities.
-    No predecessor required for: started activities, start milestones.
+    No predecessor required for: started activities.
 
-    101248: completed and WBS summary activities not included; started activities and start milestones
-    need no predecessor; a finish milestone without successor is counted, as a P6 Professional r22.12
-    report shows (Ten Six); external links pass (46291)
+    101248: completed and WBS summary activities not included; started activities need no predecessor.
+    101248 also exempts start milestones, but a P6 Professional 26.8 report lists a not-started start
+    milestone without predecessor (tests/test_p6_checksched.py), as the r22.12 report analysed by Ten Six
+    lists its Notice to Proceed milestone: the reports win. A finish milestone without successor is
+    counted (same reports); external links pass (46291)
     """
     funnel = _open(context)
     activities = funnel.rows
     has_predecessor = has_predecessor_in_project(context.snapshot, activities) | activities["has_external_pred"]
     has_successor = has_successor_in_project(context.snapshot, activities) | activities["has_external_succ"]
     started = activities["is_started"]
-    start_milestone = activities["is_start_milestone"]
 
-    missing_predecessor = ~has_predecessor & ~started & ~start_milestone
+    missing_predecessor = ~has_predecessor & ~started
     missing_successor = ~has_successor
     flagged = activities[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
@@ -228,31 +228,62 @@ def p6_09_negative_lags(context) -> RuleOutput:
     )
 
 
-@rule("p6_10_invalid_progress_dates", "%")
-def p6_10_invalid_progress_dates(context) -> RuleOutput:
-    """Progress dates on the wrong side of the data date.
+def _progress_dates(context) -> Funnel:
+    """101248, Invalid Progress Dates: completed before the data date, WBS summary and LOE not included."""
+    return _activities(context).exclude("loe", "101248").exclude("complete_before_data_date", "101248")
+
+
+@rule("p6_10a_invalid_progress_before", "%")
+def p6_10a_invalid_progress_before(context) -> RuleOutput:
+    """Forecast before the data date.
     Counts: with invalid dates / checked
     Excludes: level of effort, activities completed before the data date.
     An in-progress activity is flagged when its remaining early start is before the data date.
 
-    101248: not started, start before the data date; in progress, remaining early start before it or
-    actual start after it; completed, actual finish after it. Completed before the data date, WBS
-    summary and LOE not included"""
+    101248: not started, start before the data date; in progress, remaining early start before it.
+    P6 Professional 26.8 reports this half of Invalid Progress Dates on its own line, "Invalid Progress
+    Before Data Date", with its own target (tests/test_p6_checksched.py)"""
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    funnel = _activities(context).exclude("loe", "101248").exclude("complete_before_data_date", "101248")
+    funnel = _progress_dates(context)
     activities = funnel.rows
     early_start, _early_finish = forecast_dates(activities)
 
     # a finish before the data date has its start before it too
     forecast = as_flag(~activities["is_complete"] & (early_start < data_date))
-    actual = actual_after(activities, data_date)
-    invalid = forecast | actual
-    flagged = activities[invalid]
-    reasons = invalid_date_reason(forecast, actual)[invalid]
+    flagged = activities[forecast]
     return RuleOutput(
-        flagged_activities(flagged, reason=reasons), len(flagged), len(activities), checked=activities, funnel=funnel
+        flagged_activities(flagged, reason="forecast before data date"),
+        len(flagged),
+        len(activities),
+        checked=activities,
+        funnel=funnel,
+    )
+
+
+@rule("p6_10b_invalid_progress_after", "%")
+def p6_10b_invalid_progress_after(context) -> RuleOutput:
+    """Actual dates after the data date.
+    Counts: with invalid dates / checked
+    Excludes: level of effort, activities completed before the data date.
+
+    101248: in progress, actual start after the data date; completed, actual finish after it. P6
+    Professional 26.8 reports this half of Invalid Progress Dates on its own line, "Invalid Progress
+    After Data Date", with its own target (tests/test_p6_checksched.py)"""
+    data_date = context.snapshot.data_date
+    if data_date is None:
+        return RuleOutput(note="no data date")
+    funnel = _progress_dates(context)
+    activities = funnel.rows
+
+    flagged = activities[actual_after(activities, data_date)]
+    return RuleOutput(
+        flagged_activities(flagged, reason="actual after data date"),
+        len(flagged),
+        len(activities),
+        checked=activities,
+        funnel=funnel,
     )
 
 

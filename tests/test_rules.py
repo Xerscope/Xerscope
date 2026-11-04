@@ -34,14 +34,16 @@ LOGIC = snap(
 def test_p6_logic_exemptions():
     """101248: "Started activities and start milestones are not required by this analysis to have predecessors."
     And: "Completed activities and WBS summary activities are not included in this analysis."
-    Nothing exempts a finish milestone from the successor check: a P6 Professional r22.12 report (Ten Six,
-    tensix.com/using-the-p6-check-schedule-tool/) notes "The W1000 Notice to Proceed task
+    The P6 Professional reports exempt only the started ones: a 26.8 report lists a not-started start
+    milestone without predecessor (test_p6_checksched.py), and the r22.12 report analysed by Ten Six
+    (tensix.com/using-the-p6-check-schedule-tool/) notes "The W1000 Notice to Proceed task
     has no predecessor and the W1030 Project Complete task has no successor."
     """
-    # S1: started, no predecessor -> passes; M0: start milestone -> passes; C has no successor;
-    # F: finish milestone with no successor -> flagged; A only drives B via SS (not an open end).
+    # S1: started, no predecessor -> passes; M0: start milestone, not started -> flagged; C has no
+    # successor; F: finish milestone with no successor -> flagged; A only drives B via SS (not an open end).
     r = run(P6, "P6-01", LOGIC)
-    assert codes(r) == ["C", "F"]
+    assert codes(r) == ["C", "F", "M0"]
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))["M0"] == "no predecessor"
     assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))["F"] == "no successor"
     assert r.denominator == 6  # D0 removed (actual finish)
 
@@ -58,8 +60,9 @@ def test_p6_logic_flags_the_finish_milestone_without_successor():
         [("Start", "A", "FS", 0), ("A", "B", "FS", 0), ("B", "Finish", "FS", 0)],
     )
     r = run(P6, "P6-01", s)
-    assert codes(r) == ["Finish"]  # Start needs no predecessor; Finish has no successor
-    assert (r.numerator, r.denominator) == (1, 4)
+    # Finish has no successor; Start, not started, has no predecessor (test_p6_logic_exemptions)
+    assert codes(r) == ["Finish", "Start"]
+    assert (r.numerator, r.denominator) == (2, 4)
 
 
 def test_dcma_01_follows_pam_200_1():
@@ -366,9 +369,11 @@ def test_invalid_progress_dates():
             todo("FINE"),
         ]
     )
-    # Pro 24 help (101248): in progress = remaining early start before the data date
-    assert codes(run(P6, "P6-10", s)) == ["EARLY", "FUT", "LATE", "RUN"]
-    assert run(P6, "P6-10", s).denominator == 5  # OK finished before the data date: removed
+    # Pro 24 help (101248): in progress = remaining early start before the data date; P6 reports the
+    # forecast (P6-10a) and the actual (P6-10b) halves on two lines
+    assert codes(run(P6, "P6-10a", s)) == ["EARLY", "LATE", "RUN"]
+    assert codes(run(P6, "P6-10b", s)) == ["FUT"]
+    assert run(P6, "P6-10a", s).denominator == run(P6, "P6-10b", s).denominator == 5  # OK finished: removed
     assert run(DCMA, "DCMA-09", s).numerator == 3  # DCMA reads the remaining finish: LATE passes
 
 
@@ -585,9 +590,10 @@ def test_results_have_no_nan_status():
 
 
 def test_start_milestone_without_successor_is_an_open_end_for_p6():
-    # No milestone passes the successor check; a start milestone must drive something.
+    # No milestone passes the successor check; a start milestone must drive something, and a
+    # not-started one needs a predecessor too (test_p6_logic_exemptions).
     s = snap([todo("S", task_type="TT_Mile", target_drtn_hr_cnt="0"), todo("A")], [("S", "A", "FS", 0)])
-    assert codes(run(P6, "P6-01", s)) == ["A"]
+    assert codes(run(P6, "P6-01", s)) == ["A", "S"]  # A: no successor; S: no predecessor
     s = snap([todo("S", task_type="TT_Mile", target_drtn_hr_cnt="0"), todo("A")], [("A", "S", "FS", 0)])
     assert codes(run(P6, "P6-01", s)) == ["A", "S"]  # A: no predecessor; S: no successor
 
@@ -694,7 +700,7 @@ def test_relationship_loop_lists_the_activities_on_the_loop():
 
 
 def test_log_lists_activities_without_predecessors_or_successors_unfiltered():
-    """P6 log warnings: the raw list. P6-01 exempts started activities and start milestones and skips completed ones."""
+    """P6 log warnings: the raw list. P6-01 exempts started activities and skips completed ones."""
     s = snap(
         [todo("M", **SM), todo("A"), todo("B"), active("S"), done("D")],
         [("M", "A", "FS", 0), ("A", "B", "FS", 0)],
@@ -708,7 +714,7 @@ def test_log_lists_activities_without_predecessors_or_successors_unfiltered():
         "D": "no predecessor, no successor",
     }
     assert counts(r) == (4, 5) and r.status == "info"
-    assert codes(run(P6, "P6-01", s)) == ["B", "S"]
+    assert codes(run(P6, "P6-01", s)) == ["B", "M", "S"]
 
 
 def test_log_lists_every_actual_date_after_the_data_date():
@@ -721,13 +727,13 @@ def test_log_lists_every_actual_date_after_the_data_date():
             active("A", act_start_date="2026-03-05 08:00"),  # started after the data date
             done("B", act_end_date="2026-03-04 17:00"),  # finished after it
             done("C"),  # both actuals in February
-            active("L", task_type="TT_LOE", act_start_date="2026-03-05 08:00"),  # LOE: P6-10 leaves it out
+            active("L", task_type="TT_LOE", act_start_date="2026-03-05 08:00"),  # LOE: P6-10b leaves it out
             todo("N"),
         ]
     )
     r = run(INTEGRITY, "INT-06", s)
     assert codes(r) == ["A", "B", "L"] and counts(r) == (3, 5) and r.status == "fail"
-    assert codes(run(P6, "P6-10", s)) == ["A", "B"]
+    assert codes(run(P6, "P6-10b", s)) == ["A", "B"]
 
 
 def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
