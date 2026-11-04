@@ -40,42 +40,27 @@ def test_mta_close_end_labels_are_pushed_apart():
     assert shift["M3"] == 0
 
 
-def test_mta_x_axis_runs_over_the_updates_from_the_first_data_date():
-    """The reporting dates fill the page width, from the first update: no 1:1 scale (the
-    reporting line is still forecast = data date, at whatever slope), every forecast in view."""
-    # updates on 2026-03-02..16, milestones forecast 5 and 9 months later
-    trend = _mta_frame({"M1": ["2026-08-03"] * 3, "M2": ["2026-12-01"] * 3})
-    fig = build_mta(trend, {})
-    x_lo, x_hi = (pd.Timestamp(v) for v in fig.layout.xaxis.range)
-    y_lo, y_hi = (pd.Timestamp(v) for v in fig.layout.yaxis.range)
-    assert x_lo == trend["data_date"].min() and x_hi > trend["data_date"].max()
-    assert x_hi - x_lo < pd.Timedelta(weeks=4)  # the update period, not the forecast span
-    assert fig.layout.yaxis.scaleanchor is None
-    assert y_lo <= x_lo and y_hi > pd.Timestamp("2026-12-01")  # the line's start and every forecast in view
+def test_mta_spans_the_project_on_both_axes_with_a_45_degree_reporting_line():
+    """x and y run from the project start to its finish on one scale: the reporting line
+    (forecast = data date) is the diagonal of a square plot."""
+    trend = _mta_frame({"M1": ["2026-08-03"] * 3})  # updates 2026-03-02..16
+    start, finish = pd.Timestamp("2026-01-05"), pd.Timestamp("2027-06-30")
+    fig = build_mta(trend, {}, bounds=(start, finish))
+    assert [pd.Timestamp(v) for v in fig.layout.xaxis.range] == [start, finish]
+    assert [pd.Timestamp(v) for v in fig.layout.yaxis.range] == [start, finish]
+    assert fig.layout.yaxis.scaleanchor == "x" and fig.layout.yaxis.scaleratio == 1
     line = next(t for t in fig.data if t.name and t.name.startswith("Reporting line"))
-    assert list(line.x) == list(line.y) and pd.Timestamp(line.x[0]) == x_lo and pd.Timestamp(line.x[-1]) == x_hi
+    assert [pd.Timestamp(v) for v in line.x] == [start, finish] == [pd.Timestamp(v) for v in line.y]
 
 
-def test_mta_x_ticks_are_the_data_dates_from_the_first_one_at_the_origin():
-    """x = 0 is the first data date and carries its label; ticks stay on update dates, thinned
-    to at most 12 so a long series keeps readable labels."""
-    trend = _mta_frame({"M1": ["2026-08-03"] * 3})
+def test_mta_widens_the_project_bounds_to_keep_every_point():
+    """A data date before the project start, a forecast after its finish (an earlier update's
+    finish milestone later than today's), or no bounds at all: no point falls off the chart."""
+    trend = _mta_frame({"M1": ["2027-09-01", "2027-03-01", "2027-03-01"]})
+    fig = build_mta(trend, {}, bounds=(pd.Timestamp("2026-03-09"), pd.Timestamp("2027-06-30")))
+    assert [pd.Timestamp(v) for v in fig.layout.xaxis.range] == [pd.Timestamp("2026-03-02"), pd.Timestamp("2027-09-01")]
     fig = build_mta(trend, {})
-    dates = sorted(trend["data_date"].unique())
-    assert [pd.Timestamp(v) for v in fig.layout.xaxis.tickvals] == dates
-    assert pd.Timestamp(fig.layout.xaxis.tickvals[0]) == pd.Timestamp(fig.layout.xaxis.range[0])
-    weekly = pd.date_range("2025-01-06", periods=60, freq="7D")
-    long = pd.DataFrame(
-        {
-            "task_code": "M1",
-            "task_name": "M1",
-            "data_date": weekly,
-            "forecast": pd.Timestamp("2027-01-01"),
-            "is_complete": False,
-        }
-    )
-    ticks = [pd.Timestamp(v) for v in build_mta(long, {}).layout.xaxis.tickvals]
-    assert ticks[0] == weekly[0] and len(ticks) <= 12 and set(ticks) <= set(weekly)
+    assert [pd.Timestamp(v) for v in fig.layout.yaxis.range] == [pd.Timestamp("2026-03-02"), pd.Timestamp("2027-09-01")]
 
 
 def test_mta_line_breaks_at_a_hidden_update_and_ends_at_its_last_shown_one():
