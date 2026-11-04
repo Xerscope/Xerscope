@@ -363,8 +363,22 @@ class Anonymizer:
     CODE_LIST_COLUMNS = frozenset({"drives", "lagged_from", "ahead_of"})
     SAFE_TEXT = frozenset(
         {"type", "status", "constraint", "reason", "check_id", "check", "check_status", "pred_type", "status_now",
-         "differences", "previous", "now"}
+         "differences", "previous", "now", "set", "pred_status", "succ_status",
+         "id", "group", "result", "count", "target"}
     )  # fmt: skip
+
+    def _notes(self, notes: pd.Series) -> list[str]:
+        """The notes of the rules: they name an activity by its Activity ID and a file by its name
+        (``Baseline.label``), nothing else; both are renamed."""
+        names = dict(self.codes.get("A", {}))
+        names.update({stem: "file" for stem, origin in self.secrets_.items() if origin == "file name"})
+        if not names:
+            return [note if isinstance(note, str) else "" for note in notes]
+        found = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+        pattern = re.compile(rf"(?<![\w.-])(?:{found})(?![\w-])")
+        return [
+            pattern.sub(lambda match: names[match.group(0)], note) if isinstance(note, str) else "" for note in notes
+        ]
 
     def _code_list(self, text: object) -> str:
         if not isinstance(text, str) or not text:
@@ -387,7 +401,9 @@ class Anonymizer:
                 ]
             elif column in self.NAME_COLUMNS:
                 continue
-            elif column == "wbs_code":
+            elif column == "note":
+                out[column] = self._notes(values)
+            elif column in ("wbs_code", "pred_wbs_code", "succ_wbs_code"):
                 out[column] = [self.wbs_paths.get(value, "") if isinstance(value, str) else "" for value in values]
             elif column in self.CODE_LIST_COLUMNS:
                 out[column] = [self._code_list(value) for value in values]

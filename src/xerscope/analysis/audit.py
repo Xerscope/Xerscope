@@ -3,6 +3,7 @@
     audited = with_settings(metric, target="< 3%", params={"limit_hours": 264})
     result = run_metric(audited, context)
     sets = split(result, snapshot)   # counted / checked, not counted / excluded
+    sets_long(results, snapshot)     # every check's sets in one table, one row per item
     print(toml_block(audited))       # the [[metric]] table to paste into a standard file
 
 The sets are cut from what the rule returned (``CheckResult.checked`` / ``counted`` /
@@ -84,6 +85,53 @@ def split(result: CheckResult, snapshot) -> AuditSets | None:
         counted_outside=len(counted_keys - set(checked_keys)),
         subject=subject,
     )
+
+
+SET_NAMES = ("counted", "checked", "excluded")  # the Counted / Checked, not counted / Excluded tabs
+FRONT = ["check_id", "set", "note"]
+PREFIXED_FIELDS = ["wbs_code", "status", "start", "finish", "total_float_d"]  # of a relationship's two activities
+
+
+def sets_long(results: list[CheckResult], snapshot) -> pd.DataFrame:
+    """The sets of every result as one table: ``check_id``, ``set``, ``note``, then the item's fields.
+
+    The rows are those ``split`` returns, the ones the Audit page shows. A relationship also carries
+    ``PREFIXED_FIELDS`` of its two activities as ``pred_*`` and ``succ_*``. A check with no row to list
+    (a test, or nothing in any set) has one row with its note and an empty ``set``.
+    """
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    parts = []
+    for result in results:
+        sets = split(result, snapshot)
+        rows = []
+        if sets is not None:
+            for name, frame in zip(SET_NAMES, (sets.counted, sets.not_counted, sets.excluded), strict=True):
+                if frame is not None and not frame.empty:
+                    rows.append(
+                        (_with_ends(frame, activities) if sets.subject == "relationships" else frame).assign(set=name)
+                    )
+        part = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame({"set": [""]})
+        parts.append(part.assign(note=result.note, check_id=result.metric.id))
+    table = pd.concat(parts, ignore_index=True)
+    return table[FRONT + [column for column in table.columns if column not in FRONT]]
+
+
+def _with_ends(links: pd.DataFrame, activities: pd.DataFrame) -> pd.DataFrame:
+    """``links`` with the fields of the predecessor and the successor activity."""
+    out = links.copy()
+    for end in ("pred", "succ"):
+        for field in PREFIXED_FIELDS:
+            out[f"{end}_{field}"] = out[f"{end}_code"].map(activities[field]) if field in activities.columns else None
+    return out
+
+
+def by_check(table: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """``sets_long`` cut into one table per check, without the columns that check never fills."""
+    kept = {check_id: part.dropna(axis=1, how="all") for check_id, part in table.groupby("check_id", sort=False)}
+    return {
+        check_id: part[FRONT + [column for column in part.columns if column not in FRONT]]
+        for check_id, part in kept.items()
+    }
 
 
 def with_settings(metric: Metric, target: str | None = None, params: dict | None = None) -> Metric:

@@ -13,20 +13,28 @@ from xerscope.analysis import (
     run_standard,
     template_text,
 )
+from xerscope.analysis.audit import by_check, sets_long
 from xerscope.analysis.checks import health_wide
 from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
+from xerscope.app.sets import show_sets
 from xerscope.app.state import (
+    anonymous_exports,
     baseline_for,
     csv_download,
     downloads_ready,
+    fetch,
+    held,
+    hold,
     memo,
     require_store,
+    show_download,
     snapshot_picker,
     sources_of,
     standards,
 )
+from xerscope.export import zip_frames
 from xerscope.viz.charts import build_metric_trend
 
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
@@ -65,12 +73,13 @@ def show_kpis(results) -> None:
     )
 
 
-def show_summary(results, standard, snapshot, sources: list[str]) -> None:
-    summary = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
-    summary["target"] = summary["target"].map(typeset)
-    summary = summary[["status", "id", "group", "check", "result", "count", "target", "flagged"]]
-    if not summary["group"].astype(bool).any():
-        summary = summary.drop(columns="group")
+def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> None:
+    full = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
+    full["target"] = full["target"].map(typeset)
+    columns = ["status", "id", "group", "check", "result", "count", "target", "flagged"]
+    if not full["group"].astype(bool).any():
+        columns.remove("group")
+    summary = full[columns]
 
     ui.section(
         "Results",
@@ -94,27 +103,83 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
         or [pd.DataFrame()],
         ignore_index=True,
     )
-    summary_column, trail_column, _ = st.columns([1, 1.3, 4])
+    summary_column, trail_column, sets_column, _ = st.columns([1, 1.3, 1.6, 3])
+    with sets_column:  # first, so that the Prepare click also readies the downloads beside it
+        prepare_sets(results, standard, snapshot, baseline, sources)
     with summary_column:
-        # check names, targets and results only, no schedule data: the same with the switch on or off
+        # the notes name activities and files: anonymised like the lists
         csv_download(
-            summary,
+            full[[*columns, "note"]],
             f"{standard.id}_{ui.stamp(snapshot.data_date)}_summary.csv",
             "Summary (CSV)",
             key="dl_sum",
-            sensitive=False,
-        )
-    with trail_column:
-        if trail.empty:
-            return
-        front = ["check_id", "check", "check_status"]
-        csv_download(
-            trail[front + [column for column in trail.columns if column not in front]],
-            f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
-            "All flagged items (CSV)",
-            key="dl_trail",
             sources=sources,
         )
+    with trail_column:
+        if not trail.empty:
+            front = ["check_id", "check", "check_status"]
+            csv_download(
+                trail[front + [column for column in trail.columns if column not in front]],
+                f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
+                "All flagged items (CSV)",
+                key="dl_trail",
+                sources=sources,
+            )
+
+
+def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> None:
+    """All sets of the standard as one CSV (a row per item) and as one CSV per check in a zip,
+    built when the button is pressed, anonymised or not as the sidebar switch says."""
+    anonymous = anonymous_exports()
+    tag = (standard.id, snapshot.source, str(snapshot.data_date), baseline.label if baseline else None, anonymous)
+    if st.button(
+        "Prepare all sets",
+        icon=":material/folder_zip:",
+        key="sets_build",
+        help="Counted, checked and excluded items of every check of this standard, as the Audit page lists them.",
+    ):
+        table = sets_long(results, snapshot)
+        per_check = by_check(table)
+        csv_file = fetch(
+            st.session_state,
+            lambda: table.to_csv(index=False).encode("utf-8-sig"),
+            lambda anonymizer: anonymizer.csv(table),
+            sources,
+            prepare=True,
+        )
+        zip_file = fetch(
+            st.session_state,
+            lambda: zip_frames(per_check, "csv"),
+            lambda anonymizer: zip_frames({name: anonymizer.frame(frame) for name, frame in per_check.items()}, "csv"),
+            sources,
+            prepare=True,
+        )
+        hold(st.session_state, "health_sets_csv", tag, csv_file)
+        hold(st.session_state, "health_sets_zip", tag, zip_file)
+    stamp = f"{standard.id}_{ui.stamp(snapshot.data_date)}"
+    for slot, label, name, mime in (
+        ("health_sets_csv", "All sets (CSV)", f"{stamp}_sets.csv", "text/csv"),
+        ("health_sets_zip", "All sets (ZIP)", f"{stamp}_sets.zip", "application/zip"),
+    ):
+        built = held(st.session_state, slot, tag)
+        if built is not None:
+            show_download(built, label, name, mime, key=f"dl_{slot}")
+
+
+@st.fragment
+def show_check_sets(results, standard, snapshot, sources: list[str]) -> None:
+    """Nothing is listed until a check is picked: its Counted / Checked, not counted / Excluded sets."""
+    ids = [result.metric.id for result in results]
+    chosen = st.selectbox(
+        "Show the sets of",
+        ids,
+        index=None,
+        placeholder="Pick a check to list the items it counted, checked and excluded",
+        format_func=lambda key: f"{key} · {next(r.metric.name for r in results if r.metric.id == key)}",
+        key=f"health_sets_check:{standard.id}",
+    )
+    if chosen is not None:
+        show_sets(next(result for result in results if result.metric.id == chosen), snapshot, sources, f"{chosen}:")
 
 
 def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]) -> None:
@@ -340,7 +405,8 @@ results = memo(
 )
 show_kpis(results)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
-show_summary(results, standard, snapshot, sources)
+show_summary(results, standard, snapshot, baseline, sources)
+show_check_sets(results, standard, snapshot, sources)
 show_details(results, snapshot, only_failed, sources)
 if len(store) > 1:
     show_trend(store, standard)

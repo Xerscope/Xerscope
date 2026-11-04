@@ -546,7 +546,7 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     app.switch_page("views/health.py").run()
     app.get("button_group")[0].set_value("P6").run()
     _ok(app)
-    assert [b.proto.label for b in app.get("download_button")] == ["Summary (CSV)", "Download the template"]
+    assert [b.proto.label for b in app.get("download_button")] == ["Download the template"]  # nothing before Prepare
     next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
     _ok(app)
     flagged = pd.read_csv(
@@ -869,3 +869,145 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     assert any("P6" in error.value and "built-in" in error.value for error in app.error)
     assert "P6" not in app.session_state["uploaded_standards"] if "uploaded_standards" in app.session_state else True
     assert not app.success
+
+
+# --- Schedule health: the sets of a check on demand, and all sets as a file ---------------------
+
+
+def _open_health(at, store, standard_id="DCMA", anonymous=True):
+    """Schedule health on ``standard_id``, the first update as baseline; returns (snapshot, results)."""
+    from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
+
+    at.sidebar.toggle(key="anon_exports").set_value(anonymous).run()
+    at.sidebar.selectbox(key="bl_choice").set_value(store.labels[0]).run()
+    at.switch_page("views/health.py").run()
+    at.get("button_group")[0].set_value(standard_id).run()
+    _ok(at)
+    snapshot = store.by_label(at.session_state["health_snap"])
+    context = AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first))
+    return snapshot, run_standard(builtin_standards()[standard_id], context)
+
+
+def _pick(at, standard_id, check_id):
+    at.selectbox(key=f"health_sets_check:{standard_id}").set_value(check_id).run()
+    _ok(at)
+
+
+def test_health_lists_no_set_until_a_check_is_picked(app, store):
+    _open_health(app, store)
+    picker = app.selectbox(key="health_sets_check:DCMA")
+    assert picker.label == "Show the sets of" and picker.value is None
+    assert picker.options[0].startswith("DCMA-01")
+    assert not app.tabs
+    assert not [b for b in app.get("download_button") if "CSV" in b.proto.label and "All" not in b.proto.label]
+
+
+def test_health_picked_check_lists_its_counted_and_checked_sets(app, store):
+    """DCMA-03: Counted = the numerator, Counted + Checked not counted = the denominator, as run_standard counts."""
+    _, results = _open_health(app, store)
+    result = next(r for r in results if r.metric.id == "DCMA-03")
+    assert result.numerator and result.denominator > result.numerator
+    _pick(app, "DCMA", "DCMA-03")
+    counted, checked, excluded = app.tabs
+    assert counted.label == f"Counted ({result.numerator})"
+    assert len(counted.dataframe[0].value) == result.numerator
+    assert len(counted.dataframe[0].value) + len(checked.dataframe[0].value) == result.denominator
+    assert excluded.label.startswith("Excluded")
+    key = ["pred_code", "succ_code", "type"]  # DCMA-03 counts relationships (lags)
+    assert set(map(tuple, counted.dataframe[0].value[key].to_numpy())) == set(
+        map(tuple, result.flagged[key].to_numpy())
+    )
+    app.selectbox(key="health_sets_check:DCMA").set_value(None).run()
+    assert not app.tabs  # un-picking clears it
+
+
+@pytest.mark.parametrize("check_id", ["DCMA-12", "DCMA-13"])
+def test_health_check_without_rows_shows_its_note(app, store, check_id):
+    _, results = _open_health(app, store)
+    result = next(r for r in results if r.metric.id == check_id)
+    assert result.checked is None and result.note
+    shown = f"**Note** · {ui.md_text(result.note)}"
+    before = [m.value for m in app.markdown].count(shown)  # the check's own panel shows its note too
+    _pick(app, "DCMA", check_id)
+    assert not app.tabs
+    assert [m.value for m in app.markdown].count(shown) == before + 1
+
+
+def _sets_files(at, downloads, suffix=""):
+    next(b for b in at.button if b.label == "Prepare all sets").click().run()
+    _ok(at)
+    long = _csv(_download(at, downloads, f"All sets (CSV){suffix}"))
+    archive = _zip(_download(at, downloads, f"All sets (ZIP){suffix}"))
+    return long, archive
+
+
+@pytest.mark.parametrize("standard_id", ["P6", "DCMA", "DECM", "INTEGRITY"])
+def test_health_all_sets_file_counts_each_check_as_the_check_does(app, store, downloads, standard_id):
+    """Plain export: per check, `counted` rows = numerator, `counted` + `checked` rows = denominator."""
+    from xerscope.analysis.audit import split
+
+    snapshot, results = _open_health(app, store, standard_id, anonymous=False)
+    long, archive = _sets_files(app, downloads)
+    assert list(long.columns[:3]) == ["check_id", "set", "note"]
+    assert sorted(archive) == sorted(f"{r.metric.id}.csv" for r in results)
+    for result in results:
+        rows = long[long["check_id"] == result.metric.id]
+        name = f"{standard_id} {result.metric.id}"
+        sets = split(result, snapshot)
+        if sets is None:
+            assert len(rows) == 1 and rows["set"].isna().all(), name
+            continue
+        counted, checked = (rows["set"] == "counted").sum(), (rows["set"] == "checked").sum()
+        assert counted == (result.numerator if result.numerator is not None else len(sets.counted)), name
+        if result.denominator is not None:
+            assert counted - sets.counted_outside + checked == result.denominator, name
+        # one CSV per check holds the same rows
+        assert len(_csv(archive[f"{result.metric.id}.csv"])) == len(rows), name
+
+
+def test_health_screen_and_file_list_the_same_items(app, store, downloads):
+    """P6-07 (relationships) and DCMA-03 (activities): each tab equals the file's rows of that set."""
+    _open_health(app, store, "P6", anonymous=False)
+    long, _ = _sets_files(app, downloads)
+    for check_id, key in (("P6-07", ["pred_code", "succ_code", "type"]), ("P6-03", ["task_code"])):
+        _pick(app, "P6", check_id)
+        for tab, name in zip(app.tabs, ("counted", "checked", "excluded"), strict=True):
+            shown = tab.dataframe[0].value if tab.dataframe else None
+            rows = long[(long["check_id"] == check_id) & (long["set"] == name)]
+            assert (0 if shown is None else len(shown)) == len(rows), (check_id, name)
+            if shown is not None:
+                assert sorted(map(tuple, shown[key].astype(str).to_numpy())) == sorted(
+                    map(tuple, rows[key].astype(str).to_numpy())
+                )
+
+
+def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, downloads):
+    """Switch on: nothing before Prepare; then new IDs in the long file, the zip and the notes."""
+    snapshot, results = _open_health(app, store, "DCMA")
+    assert not [b for b in app.get("download_button") if b.proto.label.startswith("All sets")]
+    long, archive = _sets_files(app, downloads, " · anonymised")
+    originals = {v for v in set(store.history["task_code"]) | set(store.history["task_name"]) if isinstance(v, str)}
+    files = list(store.labels)
+    tables = [long, *(_csv(data) for data in archive.values())]
+    for table in tables:
+        cells = [cell for cell in table.astype(str).to_numpy().ravel() if isinstance(cell, str)]
+        assert not set(cells) & originals
+        assert not [cell for cell in cells if any(len(code) >= 5 and code in cell for code in originals)]
+        assert not [
+            cell for cell in cells if any(label.split(" · ")[-1].removesuffix(".xer") in cell for label in files)
+        ]
+    note = long.loc[long["check_id"] == "DCMA-12", "note"].iloc[0]
+    assert "wd on XA" in note  # the activity is named, by its new ID
+    summary = _csv(_download(app, downloads, "Summary (CSV) · anonymised"))
+    assert "wd on XA" in summary.loc[summary["id"] == "DCMA-12", "note"].iloc[0]
+    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+
+
+def test_health_summary_file_gains_the_notes(app, store, downloads):
+    snapshot, results = _open_health(app, store, "DCMA", anonymous=False)
+    summary = _csv(_download(app, downloads, "Summary (CSV)"))
+    assert list(summary.columns[-2:]) == ["flagged", "note"]
+    for result in results:
+        got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
+        assert (got if isinstance(got, str) else "") == result.note
+    assert "Must Finish By" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]

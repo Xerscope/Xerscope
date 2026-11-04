@@ -6,6 +6,7 @@ is among the checked ones. Run on every built-in metric of the demo series (with
 update as baseline, so the baseline checks run) and the pinned third-party files.
 """
 
+import pandas as pd
 import pytest
 from conftest import REFERENCE_HINT, missing
 from test_characterization import REFERENCE_DATA, reference_names
@@ -164,3 +165,87 @@ def test_bei_counts_completions_outside_the_due_set(store):
     bei = next(r for r in result if r.metric.id == "DCMA-14")
     sets = split(bei, snapshot)
     assert len(sets.counted) == bei.numerator
+
+
+# --- sets_long: every check's sets in one table -------------------------------------------------
+
+
+def _long_cases(store):
+    """(standard id, results, long table) of every built-in standard on the latest demo update."""
+    from xerscope.analysis.audit import sets_long
+
+    snapshot = store.latest
+    for standard in builtin_standards().values():
+        results = run_standard(standard, AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first)))
+        yield standard.id, results, sets_long(results, snapshot)
+
+
+def test_the_long_table_counts_each_check_as_the_check_does(store):
+    """Per check: `counted` rows number the numerator, `counted` + `checked` rows the denominator; a
+    numerator row outside the checked set (BEI) is the one case where the two differ, and is told."""
+    from xerscope.analysis.audit import split
+
+    assert {sid for sid, _, _ in _long_cases(store)} == {"P6", "DCMA", "DECM", "INTEGRITY"}
+    for sid, results, table in _long_cases(store):
+        assert list(table.columns[:3]) == ["check_id", "set", "note"]
+        assert list(dict.fromkeys(table["check_id"])) == [r.metric.id for r in results]
+        for result in results:
+            rows = table[table["check_id"] == result.metric.id]
+            name = f"{sid} {result.metric.id}"
+            if result.checked is None:
+                assert len(rows) == 1 and rows["set"].iloc[0] == "" and rows["note"].iloc[0] == result.note, name
+                continue
+            outside = split(result, store.latest).counted_outside
+            counted, checked = (rows["set"] == "counted").sum(), (rows["set"] == "checked").sum()
+            if result.numerator is not None:
+                assert counted == result.numerator, name
+            if result.denominator is not None:
+                assert counted - outside + checked == result.denominator, name
+
+
+def test_the_long_table_is_the_audit_page_sets(store):
+    """Same items as `split` gives the Audit page, set by set; nothing rebuilt."""
+    from xerscope.analysis.audit import _key, split
+
+    for sid, results, table in _long_cases(store):
+        for result in results:
+            sets = split(result, store.latest)
+            if sets is None:
+                continue
+            rows = table[table["check_id"] == result.metric.id]
+            for name, frame in (("counted", sets.counted), ("checked", sets.not_counted), ("excluded", sets.excluded)):
+                shown = rows[rows["set"] == name]
+                expected = [] if frame is None or frame.empty else sorted(_key(frame, sets.subject))
+                got = [] if shown.empty else sorted(_key(shown, sets.subject))
+                assert got == expected, f"{sid} {result.metric.id} {name}"
+
+
+def test_a_relationship_carries_the_fields_of_both_activities(store):
+    from xerscope.analysis.audit import PREFIXED_FIELDS
+
+    snapshot = store.latest
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code")
+    results = run_standard(
+        builtin_standards()["P6"], AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first))
+    )
+    from xerscope.analysis.audit import sets_long
+
+    table = sets_long(results, snapshot)
+    links = table[table["check_id"] == "P6-07"]
+    assert len(links) > 10
+    for end in ("pred", "succ"):
+        for field in PREFIXED_FIELDS:
+            expected = links[f"{end}_code"].map(activities[field])
+            pd.testing.assert_series_equal(links[f"{end}_{field}"], expected, check_names=False)
+    assert {"pred_code", "succ_code", "type", "lag_hr"} <= set(links.columns)
+
+
+def test_by_check_cuts_the_long_table_without_losing_a_row(store):
+    from xerscope.analysis.audit import by_check
+
+    for _, results, table in _long_cases(store):
+        parts = by_check(table)
+        assert list(parts) == [r.metric.id for r in results]
+        assert sum(len(part) for part in parts.values()) == len(table)
+        for part in parts.values():
+            assert list(part.columns[:3]) == ["check_id", "set", "note"] and not part.isna().all().any()
