@@ -224,6 +224,8 @@ Outside `analysis/`:
   target and parameters, on fields and codes the model reads, on tests that exist.
 - **Debug:** what xerscope read and decided for one update, to hold against P6 without the
   file: the scheduling options (raw XER value, value applied, blank-in-file defaults), the
+  projects of the file (`Snapshot.file_projects`: TASK rows, `sum_base_proj_id`, `orig_proj_id`,
+  `last_baseline_update_date`, and which one is the analysed project or its P6 Project Baseline), the
   activities with an expected finish and the remaining duration it set (`rem_override_hr`),
   the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
   targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities

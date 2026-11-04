@@ -335,6 +335,13 @@ def _check_snapshot_columns(snap: Snapshot) -> None:
             raise XerError(f"{snap.source}: snapshot.{name} lacks declared columns {missing}")
 
 
+# Every PROJECT row of the file: TASK rows, and the baseline pointers P6 writes (EPPM XER data map,
+# table PROJECT, v23: sum_base_proj_id "Project Baseline", orig_proj_id "Original Project",
+# last_baseline_update_date "Last Update Date"; same XER format on 26, unverified).
+FILE_PROJECT_COLUMNS = [
+    "proj_id", "proj_short_name", "tasks", "sum_base_proj_id", "orig_proj_id", "last_baseline_update_date",
+]  # fmt: skip
+
 CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
 
@@ -370,6 +377,7 @@ class Snapshot:
     # value each activity is assigned (_activity_codes)
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
     task_codes: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=TASK_CODE_COLUMNS))
+    file_projects: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=FILE_PROJECT_COLUMNS))
 
     def calendar(self, clndr_id: str | None = None) -> WorkCalendar:
         """Calendar by id; the project's default calendar when id is blank or unknown."""
@@ -705,6 +713,13 @@ def _select_project(
         return project_row, counts, "only project"
     warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
     return project_row, counts, "most TASK rows"
+
+
+def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:
+    """One row per PROJECT row of the file (``FILE_PROJECT_COLUMNS``), in file order."""
+    table = _ensure_cols(projects.copy(), FILE_PROJECT_COLUMNS)
+    table["tasks"] = table["proj_id"].map(all_tasks["proj_id"].value_counts()).fillna(0).astype(int)
+    return table[FILE_PROJECT_COLUMNS].reset_index(drop=True)
 
 
 def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
@@ -1132,6 +1147,7 @@ def build_snapshot(
         expenses=expenses.reset_index(drop=True),
         code_values=code_values,
         task_codes=task_codes,
+        file_projects=_file_projects(projects, all_tasks),
     )
     _check_snapshot_columns(snapshot)
     return snapshot

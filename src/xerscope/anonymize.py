@@ -431,7 +431,13 @@ class Anonymizer:
 
     # --- diagnostic tables (Debug page) -------------------------------------------------------
 
-    DIAGNOSTIC_CODES = {"task_code": "A", "pred_code": "A", "succ_code": "A", "rsrc_short_name": "R"}
+    DIAGNOSTIC_CODES = {
+        "task_code": "A",
+        "pred_code": "A",
+        "succ_code": "A",
+        "rsrc_short_name": "R",
+        "proj_short_name": "P",
+    }
     # Cost figures of the "Costs in the file" block: 0 as the anonymised XER holds them (MONEY),
     # "absent" and blanks kept.
     DIAGNOSTIC_MONEY = ("rows_with_cost", "target_cost_total", "cost_per_qty_min", "cost_per_qty_max")
