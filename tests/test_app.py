@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from conftest import P6_CORPUS_HINT, missing
 from streamlit.testing.v1 import AppTest
-from xerkit import hours, todo, xer_text
+from xerkit import hours, todo, with_second_project, xer_text
 
 import xerscope
 from xerscope.app import ui
@@ -500,31 +500,12 @@ def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path
     assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
 
 
-def _with_second_project(main: str, code: str, task_codes: list[str], data_date: str) -> str:
-    """``main`` plus a second PROJECT (proj_id 2) owning ``task_codes``, as P6 writes a file
-    exported with a baseline copy or a second project."""
-    extra = xer_text(
-        [{"task_code": c, "task_id": str(100 + i), "proj_id": "2"} for i, c in enumerate(task_codes)],
-        data_date=data_date,
-        project={"proj_id": "2", "proj_short_name": code},
-    ).splitlines()
-    project_row = extra[extra.index("%T\tPROJECT") + 2]
-    task_rows = [line for line in extra[extra.index("%T\tTASK") + 2 :] if line.startswith("%R")]
-    lines = main.splitlines()
-    lines.insert(lines.index("%T\tPROJECT") + 3, project_row)
-    end = lines.index("%T\tTASK") + 2
-    while end < len(lines) and lines[end].startswith("%R"):
-        end += 1
-    lines[end:end] = task_rows
-    return "\n".join(lines) + "\n"
-
-
 @pytest.fixture
 def renamed_project(tmp_path):
     """Week 1 holds project NEW plus a second project OLD; week 2 holds NEW only."""
     tasks = [{"task_code": c} for c in ("A1", "A2", "A3")]
     week1 = xer_text(tasks, data_date="2026-03-02 08:00", project={"proj_short_name": "NEW"})
-    (tmp_path / "w1.xer").write_text(_with_second_project(week1, "OLD", ["A1", "A2"], "2026-03-02 08:00"))
+    (tmp_path / "w1.xer").write_text(with_second_project(week1, "OLD", ["A1", "A2"], "2026-03-02 08:00"))
     (tmp_path / "w2.xer").write_text(xer_text(tasks, data_date="2026-03-09 08:00", project={"proj_short_name": "NEW"}))
     return tmp_path
 
@@ -1106,4 +1087,4 @@ def test_health_summary_file_gains_the_notes(app, store, downloads):
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
         assert (got if isinstance(got, str) else "") == result.note
-    assert "Must Finish By" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]
+    assert "BL finish" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]  # margin to the baseline finish

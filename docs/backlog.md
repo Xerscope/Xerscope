@@ -84,11 +84,6 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
         divides by every baseline activity, which xerscope follows. The r22.12 figure fits
         neither reading and is not explained.
 
-- [ ] CPLI is n/a without a Must Finish By date (DCMA's float is to the contract finish,
-      which P6 holds there). A project that keeps the contract date as a milestone or in
-      the baseline gets no index: a `finish_date` parameter would need the DCMA text to
-      allow it.
-
 - [ ] **Earned value against Oracle P6** (pages under docs.oracle.com/cd/F88968_01/client_help/en_US/):
       - PV: Oracle 47224 (P6 EPPM help v25) defines Planned Value Labor Units per activity, as computed here (`evm.py`,
         in working time); the per-assignment reading is unverified.

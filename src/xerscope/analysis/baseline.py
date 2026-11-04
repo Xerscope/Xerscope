@@ -64,6 +64,7 @@ class Baseline:
     label: str
     snapshot: Snapshot  # source file, for its calendars (PV spreading)
     ev_basis: str = DEFAULT_EV_BASIS
+    is_planned: bool = False  # the planned dates (target_*) of the snapshot itself, no baseline file
 
     @classmethod
     def from_snapshot(cls, baseline_snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
@@ -75,7 +76,7 @@ class Baseline:
     def planned(cls, snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
         activities = snapshot.activities
         frame = _frame(activities, activities["target_start_date"], activities["target_end_date"], ev_basis)
-        return cls(frame, f"planned dates (target_*) of {snapshot.label}", snapshot, ev_basis)
+        return cls(frame, f"planned dates (target_*) of {snapshot.label}", snapshot, ev_basis, is_planned=True)
 
     @property
     def bac_hours(self) -> float:

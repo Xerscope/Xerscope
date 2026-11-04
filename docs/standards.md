@@ -143,7 +143,11 @@ forecast exactly on it is valid; the equivalent test is "before the data date"
 Authority: DCMA-EA PAM 200.1, *DCMA Earned Value Management System Program Analyst
 Pamphlet* (Oct 2012), section 4 (points 1-14, populations in 4.0), CPLI in 3.1.2.3 and BEI in
 3.1.2.4. Copy read: [DCMA-PAM-200-1.pdf](https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf).
-Each metric's `source` in `dcma.toml` cites its section. Inputs are weekly XERs, so there is
+Each metric's `source` in `dcma.toml` cites its section. Sources in order of authority: PAM 200.1
+([DCMA-PAM-200-1.pdf](https://www.dcma.mil/Portals/31/Documents/Policy/DCMA-PAM-200-1.pdf)), then
+GAO-16-89G ([gao-16-89g.pdf](https://www.gao.gov/assets/gao-16-89g.pdf)), then Deltek Acumen
+([metric descriptions](https://help.deltek.com/product/acumen/8.7/ga/DCMA%2014%20Point%20Assessment%20Metric%20Descriptions.html));
+Ten Six, ScheduleReader and Mosaic only illustrate. Inputs are weekly XERs, so there is
 no detail planning period (DCMA-08: every baseline start qualifies).
 
 | # | Metric | Counts | Target |
@@ -157,17 +161,39 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 7 | Negative float | < 0 | 0 |
 | 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
 | 9 | Invalid dates | forecast before / actual after data date | 0 |
-| 10 | Resources | duration but no resource or cost | 0 % |
+| 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
 | 11 | Missed tasks | due by the data date (baseline), not finished or finished on a later date | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
-| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the schedule's float to the Must Finish By date (n/a without one) | ≥ 0.95 |
+| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the float to the Must Finish By date, else the margin of the last finish milestone to its baseline finish (n/a without a baseline) | ≥ 0.95 |
 | 14 | BEI | completed / due (baseline finish ≤ data date) | ≥ 0.95 |
+
+**DCMA-10.** PAM §4.10 applies "If the contractor does resource load their schedule": a project with no
+`TASKRSRC` row (for its `proj_id`) and no budgeted labour hours on its tasks (`target_work_qty`) is
+n/a; expenses alone do not load it. Hours on tasks without any assignment still fail, with a note
+to check the export. PAM and Acumen give no threshold; 0 % follows Ten Six (ch. 11) and
+ScheduleReader. Population as PAM (Ten Six also counts completed and LOE).
+
+**DCMA-12.** Method: the first open activity of the longest path is lengthened by 600 wd, and the
+finish must move by as much (PAM §4.12; Ten Six and Mosaic: "extend its remaining duration"). The
+delayed activity ignores its expected finish, which would otherwise fix its early finish and absorb the
+slip; the other activities keep theirs. The pamphlet's second criterion, "completion date shows
+negative total float", adds no pass: with a Must Finish By the float of the end is `MFB - EF_end`,
+which falls by exactly what the finish moves (+16 h to -64 h for a +80 h slip), and a Mandatory Finish
+on the end keeps its float at 0 and fails both readings.
+
+**DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
+naming a calendar). Without a Must Finish By, TF is the margin of the open finish milestone ending last to its
+baseline finish (recalculated early finish, project calendar, negative when late); n/a without a baseline.
+n/a too when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
+help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
+by it once the activity has started, so the planned finish of a not-started milestone follows its early finish
+after scheduling and the margin is 0 by construction. A baseline file (or update) keeps the margin.
 
 Differences with xerlock's published result on its sample schedule (the pamphlet wins;
 `tests/reference/expected.py`, `tests/test_reference.py`): DCMA-01 0 (xerlock 2: SS-only
 dangling finishes, finish milestone exempted), DCMA-04 23/25 (xerlock 25/27: links into
 milestones counted), DCMA-05 1 (xerlock 2: a milestone counted), DCMA-11 3 (xerlock 4: a
-milestone counted), DCMA-13 n/a (xerlock 1.0: the file has no Must Finish By date, so
+milestone counted), DCMA-13 n/a (xerlock 1.0: no Must Finish By date and no baseline, so
 the float to the contract finish is unknown). The other stated values, the critical path test (MEP-020, +600 wd; the
 600 is DECM 06A401a's, the pamphlet gives none) and CPL (1080 h) reproduce.
 

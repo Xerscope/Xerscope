@@ -7,9 +7,10 @@ or exemption would silently shift a result.
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import SM, active, done, hours, snap, todo
+from xerkit import FM, SM, active, done, hours, snap, todo, with_second_project, xer_text
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric
+from xerscope.xer import build_snapshot, parse_text
 
 P6 = STANDARDS["P6"]
 DCMA = STANDARDS["DCMA"]
@@ -412,6 +413,41 @@ def test_resource_or_expense():
     assert codes(run(DCMA, "DCMA-10", s)) == ["NONE"]
 
 
+def test_dcma_10_is_na_for_a_project_without_resource_assignment():
+    """PAM 200.1 §4.10 applies to a resource-loaded schedule. A and B share a file: A has 1 assignment
+    (R of R, NONE), B none, and its assignments are not A's: B is n/a, A is 1 of 2."""
+    text = with_second_project(
+        xer_text([todo("R"), todo("NONE")], rsrc=["R"], project={"proj_short_name": "A"}),
+        "B",
+        ["X", "Y"],
+        "2026-03-02 08:00",
+    )
+    a = run(DCMA, "DCMA-10", build_snapshot(parse_text(text, source="t.xer"), project_code="A"))
+    b = run(DCMA, "DCMA-10", build_snapshot(parse_text(text, source="t.xer"), project_code="B"))
+    assert (a.status, counts(a), codes(a)) == ("fail", (1, 2), ["NONE"])
+    assert b.status == "n/a" and "resource-loaded" in b.note
+
+
+def test_dcma_10_resource_loaded_project_flags_the_unassigned_activity():
+    s = snap([todo("R"), todo("NONE")], rsrc=["R"])
+    r = run(DCMA, "DCMA-10", s)
+    assert (r.status, counts(r), codes(r)) == ("fail", (1, 2), ["NONE"])
+
+
+def test_dcma_10_labour_hours_without_assignment_still_fail_with_a_note():
+    """Hours budgeted on the tasks (TASK.target_work_qty) but no TASKRSRC row: the export is suspect, not the
+    schedule unloaded. Both tasks are counted: 2 of 2."""
+    s = snap([todo("H", target_work_qty="40"), todo("NONE")])
+    r = run(DCMA, "DCMA-10", s)
+    assert (r.status, counts(r)) == ("fail", (2, 2))
+    assert "labour hours on tasks but no resource assignment" in r.note
+
+
+def test_dcma_10_expenses_alone_do_not_load_the_project():
+    s = snap([todo("E"), todo("NONE")], costs=["E"])
+    assert run(DCMA, "DCMA-10", s).status == "n/a"
+
+
 # --- baseline -----------------------------------------------------------------------------
 
 BL = snap(
@@ -541,6 +577,16 @@ def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     assert r.status == "fail" and codes(r) == ["Z"]
 
 
+def test_critical_path_test_with_must_finish_by_fails_when_a_mandatory_date_absorbs_the_delay():
+    """PAM 4.12 also reads "negative total float" on the completion date. The float to the Must Finish By
+    date falls by exactly what the finish moves, so it adds no pass to the finish test, and a Mandatory
+    Finish keeps the end's float at 0: Z ends Wed 25 whatever the slip, the test still fails."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-25 17:00")]
+    s = snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], project={"plan_end_date": "2026-03-25 17:00"})
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and "moved +0.0 wd" in r.note and codes(r) == ["Z"]
+
+
 MFB = {"project": {"plan_end_date": "2026-03-25 17:00"}}  # Must Finish By: the float's reference
 
 
@@ -564,6 +610,85 @@ def test_calendar_holiday_counts_in_cpl():
     chain = CHAIN[:2] + [dict(CHAIN[2], early_end_date="2026-04-10 17:00")]
     r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert "CPL 29 wd" in r.note
+
+
+def test_cpli_counts_in_working_days_of_the_project_calendar():
+    """PAM and Acumen give days without naming a calendar: the project's (C8) here, for the length and the
+    float. Z runs on C10: its -16 h are -2 d of 8 h (not -1.6 d), CPL 20 wd -> (20 - 2) / 20."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="-16", clndr_id="C10")]
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
+    assert r.value == pytest.approx(0.9)
+    assert "total float -2 wd" in r.note
+
+
+# Without a Must Finish By the float is measured against the baseline finish of the end milestone.
+A160 = dict(todo("A", **hours(160)), early_end_date="2026-03-27 17:00")  # Mon 2 to Fri 27 Mar: 20 wd
+
+
+def _end(code="Z", finish="2026-03-27 17:00"):
+    return dict(todo(code), **FM, early_end_date=finish)
+
+
+def _cpli(tasks, preds, baseline_finishes):
+    """DCMA-13 on ``tasks`` with a baseline whose activities finish at ``baseline_finishes``."""
+    bl = snap([dict(todo(code), early_end_date=finish) for code, finish in baseline_finishes.items()])
+    return run(DCMA, "DCMA-13", snap(tasks, preds), Baseline.from_snapshot(bl))
+
+
+def test_cpli_without_must_finish_by_uses_the_margin_to_the_baseline_finish_of_the_end_milestone():
+    """Z ends Fri 27 Mar 17:00 (CPL 20 wd); baseline finish Tue 31 Mar 17:00: Mon 30 + Tue 31 = +2 wd,
+    (20 + 2) / 20."""
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
+    assert r.value == pytest.approx(1.1) and r.status == "pass"
+    assert "margin of Z to its BL finish 2026-03-31: 2 wd" in r.note
+
+
+def test_cpli_without_must_finish_by_is_below_one_when_the_end_is_after_its_baseline():
+    """Baseline finish Wed 25 Mar 17:00, forecast Fri 27: -2 wd, (20 - 2) / 20."""
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"Z": "2026-03-25 17:00"})
+    assert r.value == pytest.approx(0.9) and r.status == "fail"
+
+
+def test_cpli_takes_the_end_milestone_that_finishes_last():
+    """Z1 ends Fri 27 Mar, Z2 (after B, 8 h) Mon 30 Mar: CPL 21 wd to Z2, baseline Wed 1 Apr = +2 wd,
+    (21 + 2) / 21; Z1 (+2 wd on 20) would give 1.1."""
+    b = dict(todo("B", **hours(8)), early_end_date="2026-03-30 17:00")
+    tasks = [A160, b, _end("Z1"), _end("Z2", "2026-03-30 17:00")]
+    preds = [("A", "Z1", "FS", 0), ("A", "B", "FS", 0), ("B", "Z2", "FS", 0)]
+    r = _cpli(tasks, preds, {"Z1": "2026-03-31 17:00", "Z2": "2026-04-01 17:00"})
+    assert r.value == pytest.approx(23 / 21) and "margin of Z2" in r.note
+
+
+def test_cpli_is_na_without_a_baseline():
+    r = run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)]))
+    assert r.status == "n/a" and "baseline" in r.note
+
+
+def test_cpli_is_na_with_the_planned_dates_baseline():
+    """Oracle 47222: the planned finish of a not-started milestone follows its early finish, so the margin
+    to it is 0 by construction."""
+    s = snap([A160, _end()], [("A", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-13", s, Baseline.planned(s))
+    assert r.status == "n/a" and "choose a baseline file" in r.note and "47222" in r.note
+
+
+def test_cpli_is_na_when_the_end_milestone_has_no_baseline_finish():
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"A": "2026-03-27 17:00"})
+    assert r.status == "n/a" and "baseline finish" in r.note
+
+
+def test_cpli_is_na_without_an_open_end_milestone():
+    r = _cpli(
+        [A160, dict(todo("Z"), early_end_date="2026-03-27 17:00")], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"}
+    )
+    assert r.status == "n/a" and "milestone" in r.note
+
+
+def test_cpli_with_must_finish_by_ignores_the_baseline():
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="-16")]
+    s = snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB)
+    bl = Baseline.from_snapshot(snap([dict(todo("Z"), early_end_date="2026-04-30 17:00")]))
+    assert run(DCMA, "DCMA-13", s, bl).value == pytest.approx(0.9)
 
 
 # --- framework -----------------------------------------------------------------------------
