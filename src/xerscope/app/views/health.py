@@ -13,7 +13,7 @@ from xerscope.analysis import (
     template_text,
 )
 from xerscope.analysis.checks import health_wide
-from xerscope.analysis.explain import explain, fmt_value, noun
+from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
 from xerscope.app.state import (
@@ -32,20 +32,8 @@ from xerscope.viz.charts import build_metric_trend
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
 
 
-def target_text(result) -> str:
-    return result.metric.threshold_label.replace("<=", "≤").replace(">=", "≥")
-
-
-def value_text(result, missing: str) -> str:
-    if result.status in ("n/a", "error"):
-        return missing
-    return fmt_value(result.value, result.metric.unit)
-
-
-def count_text(result) -> str:
-    if result.numerator is not None and result.denominator is not None:
-        return f"{result.numerator} / {result.denominator}"
-    return "" if result.numerator is None else str(result.numerator)
+def typeset(target: str) -> str:
+    return target.replace("<=", "≤").replace(">=", "≥")
 
 
 def check_label(standard, metric_id: str) -> str:
@@ -78,21 +66,9 @@ def show_kpis(results) -> None:
 
 
 def show_summary(results, standard, snapshot, sources: list[str]) -> None:
-    summary = pd.DataFrame(
-        [
-            {
-                "status": result.status,
-                "id": result.metric.id,
-                "group": result.metric.group,
-                "check": result.metric.name,
-                "result": value_text(result, "–"),
-                "count": count_text(result),
-                "target": target_text(result),
-                "flagged": len(result.flagged),
-            }
-            for result in results
-        ]
-    )
+    summary = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
+    summary["target"] = summary["target"].map(typeset)
+    summary = summary[["status", "id", "group", "check", "result", "count", "target", "flagged"]]
     if not summary["group"].astype(bool).any():
         summary = summary.drop(columns="group")
 
@@ -140,10 +116,12 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
 def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]) -> None:
     """One expander: what the check measures, its calculation, method and the flagged items."""
     metric = result.metric
-    counts = f" ({count_text(result)})" if result.numerator is not None and result.denominator else ""
+    row = results_frame([result]).iloc[0]
+    counts = f" ({row['count']})" if result.numerator is not None and result.denominator else ""
+    value = "n/a" if result.status in ("n/a", "error") else row["result"]
     label = (
-        f"{ui.STATUS_STYLE[result.status].mark}  {metric.id} · **{metric.name}** — {value_text(result, 'n/a')}{counts}"
-        f" · target {target_text(result)}"
+        f"{ui.STATUS_STYLE[result.status].mark}  {metric.id} · **{metric.name}** — {value}{counts}"
+        f" · target {typeset(row['target'])}"
     )
     with st.expander(label, expanded=expanded):
         left, right = st.columns([3, 2], gap="large")

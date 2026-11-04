@@ -66,7 +66,31 @@ def run_standard(standard: Standard, context: AnalysisContext) -> list[CheckResu
     return [run_metric(metric, context) for metric in standard.metrics]
 
 
+def fmt_value(value: float | None, unit: str) -> str:
+    if value is None:
+        return "–"
+    if unit == "%":
+        return f"{value:.1f} %"
+    if unit == "ratio":
+        return f"{value:.2f}"
+    if unit == "pass/fail":
+        return "pass" if value >= 1 else "fail"
+    return f"{value:g}"
+
+
+def _result_text(result: CheckResult) -> str:
+    return "–" if result.status in ("n/a", "error") else fmt_value(result.value, result.metric.unit)
+
+
+def _count_text(result: CheckResult) -> str:
+    if result.numerator is not None and result.denominator is not None:
+        return f"{result.numerator} / {result.denominator}"
+    return "" if result.numerator is None else str(result.numerator)
+
+
 def results_frame(results: list[CheckResult]) -> pd.DataFrame:
+    """One row per result: the numbers (``actual``, ``found``, ``total``) and the text shown for them
+    (``target``, ``result``, ``count``)."""
     frame = pd.DataFrame(
         [
             {
@@ -75,6 +99,8 @@ def results_frame(results: list[CheckResult]) -> pd.DataFrame:
                 "check": result.metric.name,
                 "description": result.metric.description,
                 "target": result.metric.threshold_label,
+                "result": _result_text(result),
+                "count": _count_text(result),
                 "actual": result.value,
                 "found": result.numerator,
                 "total": result.denominator,

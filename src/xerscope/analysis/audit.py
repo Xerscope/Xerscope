@@ -146,8 +146,7 @@ def toml_block(metric: Metric) -> str:
         lines.append(f"description = {_toml_value(metric.description)}")
     if metric.unit != RULES[metric.rule].unit:
         lines.append(f"unit = {_toml_value(metric.unit)}")
-    target = "info" if metric.comparator is None else metric.threshold_label
-    lines.append(f"target = {_toml_value(target)}")
+    lines.append(f"target = {_toml_value(metric.threshold_label)}")
     if metric.params:
         inner = ", ".join(f"{name} = {_toml_value(value)}" for name, value in metric.params.items())
         lines.append(f"params = {{ {inner} }}")

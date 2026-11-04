@@ -15,7 +15,7 @@ from xerkit import done, todo, xer_text
 
 import xerscope
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
-from xerscope.analysis.checks import run_metric
+from xerscope.analysis.checks import results_frame, run_metric
 from xerscope.analysis.evm import bei_series, evm_series
 from xerscope.analysis.explain import fmt_value
 from xerscope.analysis.progress import ppc_series
@@ -64,19 +64,6 @@ def _baseline(store, choice: str, snapshot):
     return Baseline.from_snapshot(store.by_label(choice))
 
 
-def _expected_health_row(result) -> dict:
-    shown = result.status not in ("n/a", "error")
-    has_counts = result.numerator is not None and result.denominator is not None
-    return {
-        "status": status_label(result.status),
-        "result": fmt_value(result.value, result.metric.unit) if shown else "–",
-        "count": f"{result.numerator} / {result.denominator}"
-        if has_counts
-        else ("" if result.numerator is None else str(result.numerator)),
-        "flagged": len(result.flagged),
-    }
-
-
 @pytest.mark.parametrize("bl_choice", ["first update", BL_PLANNED, BL_NONE])
 @pytest.mark.parametrize("standard_id", sorted(STANDARDS))
 def test_health_table_equals_run_standard(app, store, standard_id, bl_choice):
@@ -94,13 +81,17 @@ def test_health_table_equals_run_standard(app, store, standard_id, bl_choice):
         _run(app)
         snapshot = store.by_label(label)
         results = run_standard(standard, AnalysisContext(snapshot, store, _baseline(store, choice, snapshot)))
-        shown = app.dataframe[0].value.set_index("id")
-        assert list(shown.index) == [result.metric.id for result in results]
-        for result in results:
-            row = shown.loc[result.metric.id]
-            assert {key: row[key] for key in ("status", "result", "count")} | {"flagged": int(row["flagged"])} == (
-                _expected_health_row(result)
-            ), (label, result.metric.id)
+        columns = ["status", "result", "count", "flagged"]
+        expected = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
+        expected["status"] = expected["status"].map(status_label)
+        shown = app.dataframe[0].value
+        pd.testing.assert_frame_equal(
+            shown[columns].reset_index(drop=True).astype({"flagged": int}),
+            expected[columns].astype({"flagged": int}),
+            check_dtype=False,
+            obj=f"health table {label}",
+        )
+        assert list(shown["id"]) == list(expected["id"])
 
 
 def test_earned_value_kpis_equal_evm_series(app, store):
@@ -230,8 +221,7 @@ def test_audit_page_equals_run_metric_for_every_check(app, store, standard_id):
         _open_audit(app, standard_id, metric.id)
         result = run_metric(metric, context)
         shown = _metrics(app)
-        expected_value = "–" if result.status in ("n/a", "error") else fmt_value(result.value, metric.unit)
-        assert shown["Standard"] == expected_value, metric.id
+        assert shown["Standard"] == results_frame([result]).loc[0, "result"], metric.id
         assert shown["Standard status"] == status_label(result.status), metric.id
         assert "Audit" not in shown, metric.id  # nothing changed: one result only
         sets = split(result, snapshot)
