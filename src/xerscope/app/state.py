@@ -220,6 +220,13 @@ def sidebar_loader() -> None:
             help="Downloads (CSV, Power BI, Debug) carry new Activity IDs and names, other text emptied, "
             "as in the anonymised XER extract. The pages always show the files' own data.",
         )
+        sidebar.checkbox(
+            "Costs",
+            value=False,
+            key="costs",
+            help="The costs in the file come from the resource prices. On: the cost SPI is the main SPI "
+            "on Earned value, as P6's Schedule Performance Index.",
+        )
 
 
 def _selection_panel(sidebar, store: SnapshotStore) -> None:
@@ -573,6 +580,12 @@ def anonymous_exports(session: MutableMapping | None = None) -> bool:
     """The sidebar switch: downloads anonymised (default) or in the files' own names."""
     session = st.session_state if session is None else session
     return session.get("anon_exports", True)
+
+
+def costs_shown(session: MutableMapping | None = None) -> bool:
+    """The sidebar checkbox: cost figures on Earned value (default off, the schedules are sourced in hours)."""
+    session = st.session_state if session is None else session
+    return bool(session.get("costs", False))
 
 
 def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) -> list[str]:

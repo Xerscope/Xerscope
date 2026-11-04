@@ -15,8 +15,13 @@ from streamlit.testing.v1 import AppTest
 from xerkit import active, hours, todo, with_second_project, xer_text
 
 import xerscope
+from xerscope.analysis import Baseline
+from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
 from xerscope.app.state import anonymizers_built
+from xerscope.store import SnapshotStore
+from xerscope.xer import build_snapshot
+from xerscope.xer.parser import parse_text
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [
@@ -202,22 +207,43 @@ def test_earned_value_needs_hours_and_baseline(app):
     assert any("Choose a baseline" in i.value for i in app.info)
 
 
-def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second(app):
-    """The demo schedules carry hours, no cost: the cost SPI reads n/a and the labour units index stays."""
+def _costs(at, on: bool):
+    at.sidebar.checkbox(key="costs").set_value(on).run()
+    _ok(at)
+    return at
+
+
+def _caption_texts(at):
+    return [c.value for c in at.caption]
+
+
+def test_earned_value_shows_the_labour_units_spi_first_while_costs_are_off(app):
+    """The demo schedules carry hours, no cost: the labour units index leads and no caption mentions costs."""
     app.switch_page("views/earned_value.py").run()
     _ok(app)
+    labels = [m.label for m in app.metric]
+    assert "SPI" not in labels
+    assert labels.index("SPI (labour units)") == labels.index("PV %") + 1
+    labour = next(m for m in app.metric if m.label == "SPI (labour units)")
+    assert "Schedule Performance Index - Labor Units" in labour.help
+    assert not any("Costs ignored" in text for text in _caption_texts(app))
+
+
+def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second_when_costs_are_on(app):
+    """No cost in the demo schedules: the cost SPI reads n/a and the labour units index stays."""
+    app.switch_page("views/earned_value.py").run()
+    _costs(app, True)
     labels = [m.label for m in app.metric]
     assert labels.index("SPI") + 1 == labels.index("SPI (labour units)")
     cost = next(m for m in app.metric if m.label == "SPI")
     assert cost.value == "n/a — no cost in the baseline"
     assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
-    labour = next(m for m in app.metric if m.label == "SPI (labour units)")
-    assert "Schedule Performance Index - Labor Units" in labour.help
 
 
-def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
+def _costed_week(tmp_path, cost: str = "5000"):
     """A (cost 5000, 50 % complete) over Mon-Fri, data date Wednesday 08:00: PV cost 5000 x 0.4 = 2000,
-    EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here."""
+    EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
+    A second assignment without cost makes the count 1 of 2."""
     week = dict(
         target_start_date="2026-03-02 08:00",
         target_end_date="2026-03-06 17:00",
@@ -229,18 +255,64 @@ def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
             "A", target_work_qty="40", remain_work_qty="20", target_drtn_hr_cnt="40", remain_drtn_hr_cnt="20", **week
         )
     ]
-    assign = [dict(task_code="A", rsrc_id="R1", rsrc_type="RT_Labor", target_qty="40", target_cost="5000")]
+    assign = [
+        dict(task_code="A", rsrc_id="R1", rsrc_type="RT_Labor", target_qty="40", target_cost=cost),
+        dict(task_code="A", rsrc_id="R2", rsrc_type="RT_Labor", target_qty="0", target_cost="0"),
+    ]
     (tmp_path / "w1.xer").write_text(xer_text(tasks, assign=assign, data_date="2026-03-04 08:00"))
+
+
+def _ev_table(at):
+    return next(d.value for d in at.dataframe if "measure" in d.value.columns).set_index("measure")
+
+
+def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
+    _costed_week(tmp_path)
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
-    _ok(at)
+    _costs(at, True)
     assert next(m for m in at.metric if m.label == "SPI").value == "1.250"
-    table = next(d.value for d in at.dataframe if "measure" in d.value.columns).set_index("measure")
+    assert not any("Costs ignored" in text for text in _caption_texts(at))
+    table = _ev_table(at)
     assert table.loc["BAC cost"].iloc[-1] == "5,000.0"
     assert table.loc["PV cost"].iloc[-1].startswith("2,000.0")
     assert table.loc["EV cost"].iloc[-1].startswith("2,500.0")
     assert table.loc["SPI", "P6 column"] == "Schedule Performance Index"
     assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.250"
+
+
+def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monkeypatch):
+    _costed_week(tmp_path)
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/earned_value.py").run()
+    _ok(at)
+    labour = next(m for m in at.metric if m.label == "SPI (labour units)")
+    assert labour.value == "1.250"
+    assert [m.label for m in at.metric].index("SPI (labour units)") == 2
+    assert (
+        "Costs ignored: 1 of 2 assignments carry a cost in the file (resource prices). "
+        "Turn on Costs in the sidebar to see P6's cost SPI."
+    ) in _caption_texts(at)
+    table = _ev_table(at)
+    assert not [name for name in table.index if "cost" in name.lower() or name == "SPI"]
+    for frame in (d.value for d in at.dataframe):
+        assert not [c for c in frame.columns if "cost" in str(c).lower()]
+        assert "SPI" not in frame.columns
+
+
+def test_earned_value_hours_do_not_depend_on_the_costs_in_the_file(tmp_path):
+    """Same schedule with and without prices: hours, PV, EV and SPI are the same per activity and per update."""
+    results = []
+    for cost in ("5000", "0"):
+        _costed_week(tmp_path, cost)
+        snapshot = build_snapshot(parse_text((tmp_path / "w1.xer").read_text(), source="w1.xer"))
+        baseline = Baseline.from_snapshot(snapshot)
+        results.append((earned(snapshot, baseline), evm_series(SnapshotStore([snapshot]), baseline)))
+    columns = ["bl_labor_hr", "pv_hr", "ev_hr"]
+    pd.testing.assert_frame_equal(results[0][0][columns], results[1][0][columns])
+    series = ["bac_hr", "pv_hr", "ev_hr", "ac_hr", "etc_hr", "eac_hr", "spi"]
+    pd.testing.assert_frame_equal(results[0][1][series], results[1][1][series])
+    assert results[0][1]["ev_cost"].iloc[0] == 2500 and results[1][1]["ev_cost"].iloc[0] == 0
 
 
 def test_earned_value_warns_when_a_wbs_computes_its_etc_with_a_performance_factor(tmp_path, monkeypatch):
