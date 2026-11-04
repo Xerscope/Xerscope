@@ -218,3 +218,52 @@ def test_flagged_csv_matches_check_on_the_anonymised_file():
             expected = after.flagged.reset_index(drop=True)
             columns = [c for c in ("task_code", "task_name", "pred_code", "succ_code", "status") if c in shown.columns]
             pd.testing.assert_frame_equal(shown[columns], expected[columns], check_dtype=False)
+
+
+def test_a_note_names_activities_and_files_by_their_new_names_only():
+    """The notes of the rules hold an Activity ID or a file name; both are renamed, the rest is kept."""
+    raw = parse_text(_file([todo("PUMP-7"), todo("PUMP-70")]), source="Plant-Alpha_2026-03-02.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    new = anonymizer.codes["A"]
+    notes = pd.DataFrame(
+        {
+            "note": [
+                "+600 wd on PUMP-7: forecast finish 2027-03-10 -> 2028-10-30",
+                "29 of 29 activities matched in BL 2026-03-02 · Plant-Alpha_2026-03-02.xer",
+                "no Must Finish By date",
+                "",
+            ]
+        }
+    )
+    out = anonymizer.frame(notes)["note"].tolist()
+    assert out[0] == f"+600 wd on {new['PUMP-7']}: forecast finish 2027-03-10 -> 2028-10-30"
+    assert out[1] == "29 of 29 activities matched in BL 2026-03-02 · file.xer"
+    assert out[2:] == ["no Must Finish By date", ""]
+    assert "PUMP-70" not in "".join(out)
+
+
+def test_the_sets_table_columns_come_out_with_new_codes():
+    """pred_/succ_ WBS codes follow the WBS mapping, their status is kept, nothing else of the file is."""
+    raw = parse_text(_file([todo("A1")]), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    wbs = "PLANT.CIVIL"
+    anonymizer.wbs_paths[wbs] = "XW1.XW2"
+    frame = pd.DataFrame(
+        {
+            "check_id": ["P6-07"],
+            "set": ["counted"],
+            "pred_code": ["A1"],
+            "pred_wbs_code": [wbs],
+            "pred_status": ["TK_NotStart"],
+            "succ_status": ["TK_Active"],
+        }
+    )
+    out = anonymizer.frame(frame)
+    assert out["pred_code"][0] == anonymizer.codes["A"]["A1"]
+    assert out["pred_wbs_code"][0] == "XW1.XW2"
+    assert out[["check_id", "set", "pred_status", "succ_status"]].iloc[0].tolist() == [
+        "P6-07",
+        "counted",
+        "TK_NotStart",
+        "TK_Active",
+    ]

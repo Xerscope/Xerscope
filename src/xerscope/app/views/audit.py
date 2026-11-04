@@ -9,13 +9,13 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext
-from xerscope.analysis.audit import choices, is_list, sheet, split, toml_block, with_settings
+from xerscope.analysis.audit import choices, is_list, sheet, toml_block, with_settings
 from xerscope.analysis.checks import results_frame, run_metric
-from xerscope.analysis.explain import explain, noun
-from xerscope.analysis.populations import STEP_SOURCES, flagged_activities, flagged_relationships
+from xerscope.analysis.explain import explain
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, csv_download, memo, require_store, snapshot_picker, sources_of, standards
+from xerscope.app.sets import show_funnel, show_sets
+from xerscope.app.state import baseline_for, memo, require_store, snapshot_picker, sources_of, standards
 
 # Streamlit drops a widget's value once its page is left: the audit settings are kept here,
 # in the session only, so they survive a visit to another page until Reset.
@@ -103,93 +103,6 @@ def show_explanation(result) -> None:
         if result.metric.source:
             source = result.metric.source
             st.caption("Source: " + (f"[{source}]({source})" if source.startswith("http") else source))
-
-
-def show_set(frame: pd.DataFrame, title: str, filename: str, key: str) -> None:
-    if frame.empty:
-        st.caption(f"No {title.lower()}.")
-        return
-    ui.table(frame, max_height=480, key=f"table_{key}")
-    # anonymised or raw as the sidebar switch says; only the files behind this result are read
-    csv_download(frame, filename, "Download CSV", key=f"dl_{key}", sources=SOURCES)
-
-
-def funnel_table(result) -> pd.DataFrame:
-    """Start, one row per population step (rows removed, rows left), then the counted items."""
-    funnel = result.funnel
-    rows = [{"step": "start", "source": "", "removed": None, "left": funnel.start}]
-    rows += [
-        {"step": step.label, "source": step.source, "removed": len(step.removed), "left": step.left}
-        for step in funnel.steps
-    ]
-    rows.append({"step": "counted", "source": "", "removed": None, "left": result.numerator})
-    return pd.DataFrame(rows)
-
-
-def show_funnel(result, snapshot) -> None:
-    """How the denominator was cut from the file, step by step, each step with the text it follows."""
-    funnel = result.funnel
-    if funnel is None:
-        return
-    st.markdown("**Population, step by step**")
-    ui.table(
-        funnel_table(result),
-        raw_labels=True,
-        key="funnel",
-        overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
-    )
-    used = sorted({step.source for step in funnel.steps})
-    if used:
-        st.caption(
-            " · ".join(
-                f"[{key}]({STEP_SOURCES[key]})"
-                if STEP_SOURCES[key].startswith("http")
-                else f"{key}: {STEP_SOURCES[key]}"
-                for key in used
-            )
-        )
-    removing = [step for step in funnel.steps if not step.removed.empty]
-    if not removing:
-        return
-    label = st.selectbox(
-        "Rows removed by", [step.label for step in removing], index=None, key=f"funnel_step:{result.metric.id}"
-    )
-    if label is not None:
-        step = next(step for step in removing if step.label == label)
-        subject = "relationships" if "pred_code" in step.removed.columns else "activities"
-        frame = flagged_relationships(step.removed) if subject == "relationships" else flagged_activities(step.removed)
-        show_set(
-            frame, f"{subject} removed", f"{result.metric.id}_{ui.stamp(snapshot.data_date)}_removed.csv", "removed"
-        )
-
-
-def show_sets(result, snapshot) -> None:
-    show_funnel(result, snapshot)
-    sets = split(result, snapshot)
-    if sets is None:
-        st.caption("This check has no population to list (a ratio or a pass/fail test).")
-        return
-    stamp = f"{result.metric.id}_{ui.stamp(snapshot.data_date)}"
-    labels = [
-        f"Counted ({result.numerator if result.numerator is not None else len(sets.counted)})",
-        f"Checked, not counted ({len(sets.not_counted)})",
-    ]
-    if sets.excluded is not None:
-        labels.append(f"Excluded ({len(sets.excluded)})")
-    tabs = st.tabs(labels)
-    with tabs[0]:
-        if sets.counted_outside:
-            st.caption(
-                f"{sets.counted_outside} {noun(sets.subject, sets.counted_outside)} counted here are not in the "
-                "checked set (the numerator is not a part of the denominator for this check)."
-            )
-        show_set(sets.counted, "Counted items", f"{stamp}_counted.csv", "counted")
-    with tabs[1]:
-        show_set(sets.not_counted, "Checked items not counted", f"{stamp}_not_counted.csv", "not_counted")
-    if sets.excluded is not None:
-        with tabs[2]:
-            st.caption(f"The file's {sets.subject} outside the checked set; their status and type say why.")
-            show_set(sets.excluded, "Excluded items", f"{stamp}_excluded.csv", "excluded")
 
 
 def show_sheet(standard, metric) -> None:
@@ -299,5 +212,6 @@ if written is not None:
 ui.section("Calculation", "With the settings of this page.")
 show_explanation(audit_result)
 ui.section("Sets", "Every item the check looked at, so the count can be redone by hand.")
-show_sets(audit_result, snapshot)
+show_funnel(audit_result, snapshot, SOURCES)
+show_sets(audit_result, snapshot, SOURCES)
 show_sheet(standard, audited)

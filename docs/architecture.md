@@ -138,13 +138,13 @@ Outside `analysis/`:
   out while the sidebar switch "Anonymous exports" is on (the default, per session): page CSVs,
   Schedule health lists, the Power BI zip (`Anonymizer.frame` on each table, no project code in
   the file name), the Debug diagnostic. Off, the same downloads carry the files' own codes and
-  names; the XER extract stays anonymised, the Schedule health summary (checks and results
-  only) stays as it is. The pages always show the files' own data. An allowlist
+  names; the XER extract stays anonymised. The pages always show the files' own data. An allowlist
   per table keeps keys, dates, durations, units, flags and P6 enumerations; codes get new
   values, `X<kind>` and the first hex digits of an HMAC-SHA256 of the original under a key
   drawn for the session (8 for activities; two IDs on one code are refused), names are rebuilt
   from them, costs set to 0, user, database and free text removed, unknown tables and columns
-  left out and named. A download reads only its own files (the update shown, W-1 and W for the
+  left out and named. The `note` column (the rules' notes) is kept with each Activity ID and
+  file name in it renamed; the rules write nothing else of the file into a note. A download reads only its own files (the update shown, W-1 and W for the
   changelog and PPC, the baseline's file when it lists baseline fields, every file for Power BI
   and the XER extract), and an activity keeps one code in every download of the session. Every
   output field is compared with the text values of the files read before it is handed out. The
@@ -202,7 +202,14 @@ Outside `analysis/`:
 - **Schedule health:** a summary row per check, then one panel per check: what it measures,
   the calculation with its numbers (`analysis/explain.py`), the population (exclusions),
   the effective parameters (standard or default), the source, and the flagged items.
-  All flagged items of all checks export as one CSV, the audit trail behind the scores.
+  All flagged items of all checks export as one CSV, the audit trail behind the scores; the
+  summary export adds each check's note. Under the results, "Show the sets of" (a fragment,
+  nothing listed until a check is picked) shows that check's Counted / Checked, not counted /
+  Excluded tables, or its note when it has no rows; "Prepare all sets" builds, on click,
+  `audit.sets_long` (one row per item of every check: `check_id`, `set`, `note`, the item's
+  fields, `pred_*` / `succ_*` fields of a relationship's two activities) as one CSV and as one
+  CSV per check in a zip. Both read the sets `audit.split` cuts; `app/sets.py` is the display
+  shared with the Audit page.
 - **Audit:** one check at a time: the standard's result beside the same check re-run with
   the target and parameters set on the page (`analysis/audit.py` `with_settings`, validated
   as a standard file is), the three sets behind the count (counted, checked but not counted,
