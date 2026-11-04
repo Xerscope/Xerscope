@@ -459,6 +459,47 @@ def test_folder_files_can_be_picked(sample_dir, monkeypatch):
     assert len(_selection(at)) == 3  # unticked files are not read at all
 
 
+def _button(at, label):
+    return next(b for b in at.sidebar.button if b.label == label)
+
+
+def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatch):
+    """Nothing is ticked at first; "Select all" ticks every file of the folder and reads the
+    series; "Clear" unticks them all and empties it."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    _ok(at)
+    count = len(list(sample_dir.glob("*.xer")))
+    assert len(_file_boxes(at)) == count and not any(box.value for box in _file_boxes(at))
+    assert at.session_state["store"] is None
+    _button(at, "Select all").click()
+    at.run()
+    _ok(at)
+    assert all(box.value for box in _file_boxes(at)) and len(_file_boxes(at)) == count
+    assert any(f"{count} snapshot(s)" in c.value for c in at.sidebar.caption)
+    _button(at, "Clear").click()
+    at.run()
+    _ok(at)
+    assert not any(box.value for box in _file_boxes(at))
+    assert at.session_state["store"] is None
+    assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
+
+
+def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path, monkeypatch):
+    files = sorted(sample_dir.glob("*.xer"))
+    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    _button(at, "Select all").click()
+    at.run()
+    _ok(at)
+    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
+    assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
+
+
 def _with_second_project(main: str, code: str, task_codes: list[str], data_date: str) -> str:
     """``main`` plus a second PROJECT (proj_id 2) owning ``task_codes``, as P6 writes a file
     exported with a baseline copy or a second project."""
