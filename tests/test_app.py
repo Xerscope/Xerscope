@@ -456,7 +456,7 @@ def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch
     _ok(at)
     _pick_project(at, "OLD")
     _ok(at)
-    exported = [list(v["dim_snapshot"]["project"]) for k, v in at.session_state["_memo"].items() if k[-1] == "export"]
+    exported = [list(v["dim_snapshot"]["project"]) for k, v in at.session_state["_memo"].items() if "export" in k]
     assert ["OLD", "NEW"] in exported
 
 
@@ -779,3 +779,93 @@ def test_audit_downloads_follow_the_anonymous_exports_switch(app, store, downloa
     _ok(app)
     counted = _csv(_download(app, downloads, "Download CSV"))
     assert set(counted["task_code"]) <= set(store.history["task_code"])
+
+
+def _memo_runs(at) -> int:
+    return len(at.session_state["runs"])
+
+
+def _probe_script():
+    import streamlit as st
+
+    from xerscope.app.state import memo
+
+    runs = st.session_state.setdefault("runs", [])
+    memo(("probe",), lambda: runs.append(1))
+
+
+@pytest.mark.parametrize("change", ["other_file", "none", "planned", "ev_basis"])
+def test_memo_recomputes_when_the_baseline_changes(store, change):
+    """The cache key carries the baseline's identity: a page need not add it by hand."""
+    from xerscope.analysis.baseline import Baseline
+    from xerscope.app.state import BL_PLANNED
+
+    first, second = store.labels[:2]
+    at = AppTest.from_function(_probe_script, default_timeout=120)
+    at.session_state["ev_basis"] = "budgeted_planned"
+    at.session_state["baseline"] = Baseline.from_snapshot(store.by_label(first), "budgeted_planned")
+    at.run()
+    at.run()
+    assert _memo_runs(at) == 1  # same baseline: served from the cache
+    if change == "other_file":
+        at.session_state["baseline"] = Baseline.from_snapshot(store.by_label(second), "budgeted_planned")
+    elif change == "none":
+        at.session_state["baseline"] = None
+    elif change == "planned":
+        at.session_state["baseline"] = BL_PLANNED
+    else:
+        at.session_state["ev_basis"] = "at_completion_current"
+        at.session_state["baseline"] = Baseline.from_snapshot(store.by_label(first), "at_completion_current")
+    at.run()
+    assert _memo_runs(at) == 2
+
+
+def _check_parameters_rows(at) -> int:
+    frame = next(f.value for f in at.dataframe if {"tab", "check", "target", "x_hours"} <= set(f.value.columns))
+    return len(frame)
+
+
+def test_debug_block_4_follows_an_uploaded_standard_with_the_builtin_id(app):
+    """A session standard that takes a built-in id replaces it (state.standards): Debug must show it."""
+    import dataclasses
+
+    from xerscope.analysis.standards import builtin_standards
+
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    before = _check_parameters_rows(app)
+    builtin = builtin_standards()["P6"]
+    app.session_state["uploaded_standards"] = {"P6": dataclasses.replace(builtin, metrics=builtin.metrics[:-1])}
+    app.run()
+    _ok(app)
+    assert _check_parameters_rows(app) == before - 1
+
+
+def test_memo_recomputes_for_a_baseline_file_of_other_content(store):
+    """Same name, same budget, other bytes (dates moved): not served from the cache."""
+    from xerscope.analysis.baseline import Baseline
+
+    baseline = Baseline.from_snapshot(store.by_label(store.labels[0]), "budgeted_planned")
+    at = AppTest.from_function(_probe_script, default_timeout=120)
+    at.session_state["ev_basis"] = "budgeted_planned"
+    at.session_state["baseline"] = baseline
+    at.session_state["baseline_digest"] = "a" * 64
+    at.run()
+    at.run()
+    assert _memo_runs(at) == 1
+    at.session_state["baseline_digest"] = "b" * 64
+    at.run()
+    assert _memo_runs(at) == 2
+
+
+def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
+    """A built-in id is not replaceable from the page: the upload is rejected and not kept."""
+    from xerscope.analysis.standards import template_text
+
+    app.switch_page("views/health.py").run()
+    text = template_text().replace('id = "CUSTOM"', 'id = "P6"', 1)
+    app.file_uploader(key="std_upload").set_value(("p6.toml", text.encode(), "application/toml")).run()
+    _ok(app)
+    assert any("P6" in error.value and "built-in" in error.value for error in app.error)
+    assert "P6" not in app.session_state["uploaded_standards"] if "uploaded_standards" in app.session_state else True
+    assert not app.success

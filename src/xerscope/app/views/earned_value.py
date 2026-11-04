@@ -200,7 +200,7 @@ if baseline.bac_hours <= 0:
     )
     st.stop()
 
-cache_key = ("evm", st.session_state.get("bl_choice"), baseline.label, baseline.ev_basis)
+cache_key = ("evm", baseline.label, baseline.ev_basis)  # "planned dates" baselines differ per update
 curve = memo(cache_key + ("pv",), pv_curve, baseline)
 series = memo(cache_key + ("series",), evm_series, store, baseline)
 standards = builtin_standards()

@@ -265,6 +265,8 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
     source = (upload.name, upload.getvalue()) if upload is not None else None
     if source is None and env_path and Path(env_path).is_file():
         source = (Path(env_path).name, Path(env_path).read_bytes())
+    if source is not None:
+        st.session_state["baseline_digest"] = hashlib.sha256(source[1]).hexdigest()
     if source is None:
         if _data_locked():
             sidebar.caption("No baseline file on this server: pick one of the loaded snapshots.")
@@ -312,6 +314,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
         help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
         "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
     )
+    st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
     baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
     st.session_state["baseline"] = baseline
     if isinstance(baseline, Baseline):
@@ -382,8 +385,16 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     return chosen.activities, ui.stamp(chosen.data_date)
 
 
+def _baseline_identity() -> tuple:
+    """What the sidebar's baseline is: the choice, the EV basis and, for an uploaded file, its bytes."""
+    baseline = st.session_state.get("baseline")
+    if isinstance(baseline, Baseline):
+        return baseline.label, baseline.ev_basis, st.session_state.get("baseline_digest")
+    return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
+
+
 def memo(key: tuple, function, *arguments):
-    """Per-session cache keyed on the loaded files: heavy analyses run once per data set.
+    """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
 
     ``function(*arguments)`` runs only on a cache miss.
     """
@@ -391,7 +402,7 @@ def memo(key: tuple, function, *arguments):
     # the project picker re-reads the same files for another project: same signature, other data
     store = st.session_state.get("store")
     projects = tuple(snapshot.project_code for snapshot in store) if store is not None else ()
-    full_key = (st.session_state.get("signature"), projects) + key
+    full_key = (st.session_state.get("signature"), projects, _baseline_identity()) + key
     if full_key not in cache:
         if len(cache) > 64:
             cache.clear()

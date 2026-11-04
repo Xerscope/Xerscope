@@ -268,7 +268,6 @@ metric = standard[metric_id]
 prefix = f"audit:{standard_id}:{metric_id}"
 SOURCES = sources_of(snapshot, baseline=baseline)  # the files a download of this page comes from
 context = AnalysisContext(snapshot, store, baseline)
-baseline_key = st.session_state.get("bl_choice"), baseline.label if baseline else None
 
 ui.section("Settings for this audit", "Start from the standard's values; the check reruns on every change.")
 form_column, reset_column = st.columns([5, 1], vertical_alignment="bottom")
@@ -288,9 +287,7 @@ except ValueError as exc:
     st.error(str(exc), icon=":material/block:")
     st.stop()
 
-standard_result = memo(
-    ("audit", repr(metric), snapshot.source, str(snapshot.data_date), baseline_key), run_metric, metric, context
-)
+standard_result = memo(("audit", repr(metric), snapshot.source, str(snapshot.data_date)), run_metric, metric, context)
 same = (audited.params, audited.comparator, audited.threshold) == (metric.params, metric.comparator, metric.threshold)
 audit_result = standard_result if same else run_metric(audited, context)
 

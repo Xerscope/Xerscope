@@ -5,6 +5,7 @@ import streamlit as st
 
 from xerscope.analysis import (
     AnalysisContext,
+    builtin_standards,
     compare_counts,
     health_history,
     loads_standard,
@@ -184,9 +185,9 @@ def show_details(results, snapshot, only_failed: bool, sources: list[str]) -> No
         show_check(result, explain(result), snapshot, expand_all, sources)
 
 
-def show_trend(store, standard, baseline_key) -> None:
+def show_trend(store, standard) -> None:
     ui.section("Trend across updates", "The same check on every loaded update, against its target.")
-    history = memo(("health", repr(standard), baseline_key), health_history, store, standard, baseline_for)
+    history = memo(("health", repr(standard)), health_history, store, standard, baseline_for)
     metric_ids = [metric.id for metric in standard.metrics]
     metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=partial(check_label, standard))
     metric = standard[metric_id]
@@ -282,6 +283,8 @@ def show_own_standard() -> None:
         if upload is not None:
             try:
                 custom = loads_standard(upload.getvalue(), upload.name)
+                if custom.id in builtin_standards():
+                    raise ValueError(f"{upload.name}: id {custom.id!r} is a built-in standard's; give yours another id")
                 st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
                 st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
             except (ValueError, UnicodeDecodeError) as exc:
@@ -329,9 +332,8 @@ if baseline is None:
 
 # memoised per (data set, standard, update, baseline): the DECM critical path test alone
 # takes ~2 s on a 4,000-activity file, and every widget change reruns the page
-baseline_key = st.session_state.get("bl_choice"), baseline.label if baseline else None
 results = memo(
-    ("health_results", repr(standard), snapshot.source, str(snapshot.data_date), baseline_key),
+    ("health_results", repr(standard), snapshot.source, str(snapshot.data_date)),
     run_standard,
     standard,
     AnalysisContext(snapshot, store, baseline),
@@ -341,7 +343,7 @@ sources = sources_of(snapshot, baseline=baseline)  # the files the lists come fr
 show_summary(results, standard, snapshot, sources)
 show_details(results, snapshot, only_failed, sources)
 if len(store) > 1:
-    show_trend(store, standard, baseline_key)
+    show_trend(store, standard)
 
 if baseline is not None:
     missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
