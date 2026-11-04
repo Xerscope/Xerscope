@@ -35,10 +35,6 @@ ACTIVITY_COLS = [
 ]
 LINK_COLS = ["pred_code", "pred_name", "succ_code", "succ_name", "type", "lag_hr", "lag_d"]
 
-DCMA_HIGH_DAYS = 44  # DCMA PAM 200.1 "two months of work", in working days (float and duration limits)
-LARGE_HOURS = DCMA_HIGH_DAYS * 8  # 352 h: the same 44 days on an 8 h calendar, P6's duration, float and lag limit
-# The pamphlet gives no slip length; 600 working days is the value of DECM 06A401a.
-CRITICAL_PATH_SLIP_DAYS = 600
 # A link drives the successor's start through FS / SS, and the predecessor's finish through FS / FF.
 START_DRIVING_TYPES = ("FS", "SS")
 FINISH_DRIVING_TYPES = ("FS", "FF")

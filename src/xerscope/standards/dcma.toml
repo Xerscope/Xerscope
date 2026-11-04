@@ -118,6 +118,7 @@ id = "DCMA-12"
 name = "Critical path test"
 description = "A delay on the critical path moves the finish by the same amount"
 rule = "dcma_12_critical_path_test"
+params = { slip_days = 600 }  # working days; DECM 06A401a's value, the pamphlet gives none
 target = "pass"
 source = "DCMA-EA PAM 200.1 §4.12: the project completion date must move \"in direct proportion\" to the \"intentional slip\" introduced. The pamphlet gives no slip length; 600 working days is the value of DECM 06A401a"
 
