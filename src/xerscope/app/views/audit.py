@@ -10,27 +10,12 @@ import streamlit as st
 
 from xerscope.analysis import AnalysisContext
 from xerscope.analysis.audit import choices, is_list, sheet, split, toml_block, with_settings
-from xerscope.analysis.checks import run_metric
-from xerscope.analysis.explain import explain, fmt_value, noun
+from xerscope.analysis.checks import results_frame, run_metric
+from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.populations import STEP_SOURCES, flagged_activities, flagged_relationships
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, csv_download, memo, require_store, snapshot_picker, sources_of, standards
-
-
-def value_text(result) -> str:
-    return "–" if result.status in ("n/a", "error") else fmt_value(result.value, result.metric.unit)
-
-
-def count_text(result) -> str:
-    if result.numerator is not None and result.denominator is not None:
-        return f"{result.numerator} / {result.denominator}"
-    return "" if result.numerator is None else str(result.numerator)
-
-
-def target_label(metric) -> str:
-    return "info" if metric.comparator is None else metric.threshold_label
-
 
 # Streamlit drops a widget's value once its page is left: the audit settings are kept here,
 # in the session only, so they survive a visit to another page until Reset.
@@ -43,7 +28,7 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
     saved = st.session_state.setdefault(SAVED, {})
     target = st.text_input(
         "Target",
-        saved.get(f"{prefix}:target", target_label(metric)),
+        saved.get(f"{prefix}:target", metric.threshold_label),
         key=f"{prefix}:target",
         help="e.g. < 5%, <= 0, >= 0.95, pass, info",
     )
@@ -70,11 +55,13 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
 
 def show_results(standard_result, audit_result) -> None:
     changed = audit_result is not standard_result
+    standard_row = results_frame([standard_result]).iloc[0]
+    audit_row = results_frame([audit_result]).iloc[0]
     items = [
         (
             "Standard",
-            value_text(standard_result),
-            count_text(standard_result) or None,
+            standard_row["result"],
+            standard_row["count"] or None,
             "As the loaded standard sets it",
         ),
         (
@@ -86,7 +73,7 @@ def show_results(standard_result, audit_result) -> None:
     ]
     if changed:
         items += [
-            ("Audit", value_text(audit_result), count_text(audit_result) or None, "With the settings of this page"),
+            ("Audit", audit_row["result"], audit_row["count"] or None, "With the settings of this page"),
             (
                 "Audit status",
                 ui.status_label(audit_result.status),
@@ -212,8 +199,8 @@ def show_sheet(standard, metric) -> None:
         rows = [
             {
                 "setting": "target",
-                "now": target_label(metric),
-                "default": target_label(standard[metric.id]),
+                "now": metric.threshold_label,
+                "default": standard[metric.id].threshold_label,
                 "accepts": "< x%, <= x%, > x%, >= x% (unit %), <= n (count), >= r (ratio), pass, info",
             }
         ] + [

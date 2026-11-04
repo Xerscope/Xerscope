@@ -19,7 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..xer.model import CONSTRAINT
-from .checks import CheckResult
+from .checks import CheckResult, fmt_value
 from .populations import EXCLUSIONS
 from .rules import EXEMPT, RULES, Rule
 
@@ -48,18 +48,6 @@ class Explanation:
 def noun(subject: str, n: int) -> str:
     """'activities' / 'relationships', singular when n == 1."""
     return subject if n != 1 else {"activities": "activity", "relationships": "relationship"}.get(subject, subject)
-
-
-def fmt_value(value: float | None, unit: str) -> str:
-    if value is None:
-        return "–"
-    if unit == "%":
-        return f"{value:.1f} %"
-    if unit == "ratio":
-        return f"{value:.2f}"
-    if unit == "pass/fail":
-        return "pass" if value >= 1 else "fail"
-    return f"{value:g}"
 
 
 def _target(metric) -> str:
