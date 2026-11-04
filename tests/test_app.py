@@ -16,6 +16,7 @@ from xerkit import hours, todo, xer_text
 
 import xerscope
 from xerscope.app import ui
+from xerscope.app.state import anonymizers_built
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [
@@ -729,7 +730,7 @@ def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, do
 
 def _session_anonymizer(at):
     """The anonymizer the session built last (one per set of files read)."""
-    return list(at.session_state["_anonymizers"][1].values())[-1]
+    return list(anonymizers_built(at.session_state).values())[-1]
 
 
 def test_a_page_download_reads_its_update_only_and_keeps_the_series_codes(app, store, downloads):
@@ -739,14 +740,14 @@ def test_a_page_download_reads_its_update_only_and_keeps_the_series_codes(app, s
     next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
     _ok(app)
     shown = app.session_state["gantt_snap"]
-    assert list(app.session_state["_anonymizers"][1]) == [frozenset({store.by_label(shown).source})]
+    assert list(anonymizers_built(app.session_state)) == [frozenset({store.by_label(shown).source})]
     gantt = _csv(_download(app, downloads, "Download CSV · anonymised"))
 
     app.switch_page("views/export.py").run()
     next(b for b in app.button if b.label == "Build anonymised extract").click().run()
     _ok(app)
     series = _session_anonymizer(app)
-    assert len(app.session_state["_anonymizers"][1]) == 2  # the update alone, then every file
+    assert len(anonymizers_built(app.session_state)) == 2  # the update alone, then every file
     new_of = series.codes["A"]
     original = store.by_label(shown).activities.sort_values("task_code")["task_code"]
     shown_codes = set(gantt["task_code"])  # LOE hidden by default: a part of the update

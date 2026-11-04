@@ -3,15 +3,16 @@ from functools import partial
 import streamlit as st
 
 from xerscope.analysis.cpm import CycleError
-from xerscope.anonymize import LeakError
 from xerscope.app import diagnostic, ui
 from xerscope.app.state import (
-    ANONYMISED,
-    anonymizer,
     anonymous_exports,
     baseline_for,
+    fetch,
+    held,
+    hold,
     memo,
     require_store,
+    show_download,
     snapshot_picker,
     sources_of,
     standards,
@@ -105,14 +106,15 @@ with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled acti
 
 
 def build_diagnostic(anonymous: bool) -> None:
-    held = (st.session_state.get("signature"), snapshot.source, anonymous)
-    try:
-        sources = sources_of(snapshot, baseline=baseline)
-        data = anonymizer(prepare=True, sources=sources).zip_frames(frames) if anonymous else zip_frames(frames, "csv")
-    except LeakError as exc:
-        st.session_state["debug_zip"] = (*held, None, str(exc))
-        return
-    st.session_state["debug_zip"] = (*held, data, "")
+    sources = sources_of(snapshot, baseline=baseline)
+    fetched = fetch(
+        st.session_state,
+        lambda: zip_frames(frames, "csv"),
+        lambda anonymizer: anonymizer.zip_frames(frames),
+        sources,
+        prepare=True,
+    )
+    hold(st.session_state, "debug_zip", (snapshot.source, anonymous), fetched)
 
 
 anonymous = anonymous_exports()
@@ -123,17 +125,8 @@ ui.section(
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)
-held = st.session_state.get("debug_zip")
-if held is not None and held[:3] == (st.session_state.get("signature"), snapshot.source, anonymous):
-    *_, data, refused = held
-    if refused:
-        st.error(refused, icon=":material/block:")
-    else:
-        st.download_button(
-            "Download diagnostic (.zip)" + (ANONYMISED if anonymous else ""),
-            data=data,
-            file_name="xerscope_diagnostic.zip",
-            mime="application/zip",
-            icon=":material/download:",
-            key="debug_download",
-        )
+diagnostic_zip = held(st.session_state, "debug_zip", (snapshot.source, anonymous))
+if diagnostic_zip is not None:
+    show_download(
+        diagnostic_zip, "Download diagnostic (.zip)", "xerscope_diagnostic.zip", "application/zip", key="debug_download"
+    )

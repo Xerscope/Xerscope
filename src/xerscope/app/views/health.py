@@ -17,10 +17,9 @@ from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
 from xerscope.app.state import (
-    anonymizer,
-    anonymous_exports,
     baseline_for,
     csv_download,
+    downloads_ready,
     memo,
     require_store,
     snapshot_picker,
@@ -97,8 +96,12 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     summary_column, trail_column, _ = st.columns([1, 1.3, 4])
     with summary_column:
         # check names, targets and results only, no schedule data: the same with the switch on or off
-        ui.csv_button(
-            summary, f"{standard.id}_{ui.stamp(snapshot.data_date)}_summary.csv", "Summary (CSV)", key="dl_sum"
+        csv_download(
+            summary,
+            f"{standard.id}_{ui.stamp(snapshot.data_date)}_summary.csv",
+            "Summary (CSV)",
+            key="dl_sum",
+            sensitive=False,
         )
     with trail_column:
         if trail.empty:
@@ -156,7 +159,7 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
                 f"{noun(explanation.subject, len(result.flagged))}"
             )
             ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
-            if anonymous_exports() and anonymizer(sources=sources) is None:
+            if not downloads_ready(sources):
                 st.caption("Download: prepare the anonymised downloads under Results.")
             else:
                 csv_download(

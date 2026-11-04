@@ -312,24 +312,6 @@ def table(
     return st.dataframe(data, column_config=config, **kwargs)
 
 
-def anonymised_csv_button(anonymizer, frame: pd.DataFrame, filename: str, label: str, key: str | None = None) -> None:
-    """The table with new Activity IDs and names; refused (and said why, by column) if anything original is left."""
-    from xerscope.anonymize import LeakError
-
-    try:
-        data = anonymizer.csv(frame)
-    except LeakError as exc:
-        st.error(str(exc), icon=":material/block:")
-        return
-    st.download_button(label, data, filename, "text/csv", icon=":material/download:", key=key)
-
-
-def csv_button(frame: pd.DataFrame, filename: str, label: str = "Download CSV", key: str | None = None) -> None:
-    st.download_button(
-        label, frame.to_csv(index=False).encode("utf-8-sig"), filename, "text/csv", icon=":material/download:", key=key
-    )
-
-
 def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler drawing the status column as labels (pass green, fail red…), capitalised."""
     out = frame.copy()
