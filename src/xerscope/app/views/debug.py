@@ -139,6 +139,11 @@ with st.expander("9 · XER tables and planned value labour units", key="debug_pv
     else:
         table(frames["09_pv_labor_check"])
         table(frames["09_pv_labor_by_status"])
+    st.caption(
+        "Labour assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "
+        "activity's), and task dependent assignments on another calendar than their activity's."
+    )
+    table(frames["09_assignment_dates"])
 
 
 def build_diagnostic(anonymous: bool) -> None:

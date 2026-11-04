@@ -325,6 +325,66 @@ def xer_tables_table(snapshot: Snapshot) -> pd.DataFrame:
     )
 
 
+LABOR_KINDS = ("RT_Labor", "role", "")  # as xer.model._labor_hours
+
+
+def assignment_dates_table(snapshot: Snapshot) -> pd.DataFrame:
+    """Labour assignments (TASKRSRC) against their activity: do they carry their own dates?
+
+    One row of counts, no code. Original Lag is TASKRSRC.target_lag_drtn_hr_cnt and Remaining
+    Lag relag_drtn_hr_cnt (Oracle XER data map, TASKRSRC). "Planned start later" / "planned
+    finish earlier": the assignment's Planned Start / Finish (target_*) differ from its
+    activity's. Task dependent activities with an assignment on a resource calendar other than
+    the activity's: P6 schedules those assignments on the activity's calendar (P6 help, "Task
+    dependent activity"), while the planned value spreads them on the resource's.
+    """
+    assignments = snapshot.assignments
+    assignments = assignments[assignments["rsrc_type"].isin(LABOR_KINDS)] if not assignments.empty else assignments
+    activities = snapshot.by_code
+
+    def number(column: str) -> pd.Series:
+        return (
+            to_number(assignments[column]).fillna(0.0)
+            if column in assignments
+            else pd.Series(0.0, index=assignments.index)
+        )
+
+    def date(frame: pd.DataFrame, column: str) -> pd.Series:
+        return (
+            pd.to_datetime(frame[column], errors="coerce") if column in frame else pd.Series(pd.NaT, index=frame.index)
+        )
+
+    task_start = assignments["task_code"].map(date(activities, "target_start_date"))
+    task_finish = assignments["task_code"].map(date(activities, "target_end_date"))
+    own_start, own_finish = date(assignments, "target_start_date"), date(assignments, "target_end_date")
+    task_type = (
+        assignments["task_code"].map(activities["task_type"])
+        if "task_type" in activities
+        else pd.Series("", index=assignments.index)
+    )
+    task_calendar = assignments["task_code"].map(activities["clndr_id"]).fillna("").astype(str)
+    resource_calendar = (
+        assignments["rsrc_clndr_id"].fillna("").astype(str)
+        if "rsrc_clndr_id" in assignments
+        else pd.Series("", index=assignments.index)
+    )
+    other_calendar = (resource_calendar != "") & (resource_calendar != task_calendar)
+    return pd.DataFrame(
+        [
+            {
+                "labor_assignments": len(assignments),
+                "with_original_lag": int((number("target_lag_drtn_hr_cnt") > 0).sum()),
+                "with_remaining_lag": int((number("relag_drtn_hr_cnt") > 0).sum()),
+                "planned_dates_blank": int((own_start.isna() | own_finish.isna()).sum()),
+                "planned_start_later_than_activity": int((own_start > task_start).sum()),
+                "planned_finish_earlier_than_activity": int((own_finish < task_finish).sum()),
+                "task_dependent_on_other_calendar": int((other_calendar & (task_type == "TT_Task")).sum()),
+                "resource_dependent": int((task_type == "TT_Rsrc").sum()),
+            }
+        ]
+    )
+
+
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
@@ -350,4 +410,5 @@ def diagnostic_frames(
         "09_xer_tables": xer_tables_table(snapshot),
         "09_pv_labor_check": pv_totals,
         "09_pv_labor_by_status": pv_by_status,
+        "09_assignment_dates": assignment_dates_table(snapshot),
     }
