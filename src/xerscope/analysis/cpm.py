@@ -209,6 +209,7 @@ class Schedule:
     options: Options
     warnings: list[str] = field(default_factory=list)
     assignments: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per open assignment
+    assignment_minutes: dict[str, float] = field(default_factory=dict)  # taskrsrc_id -> remaining minutes as placed
 
 
 class _Axes:
@@ -253,12 +254,19 @@ def _date_range(snapshot: Snapshot):
 
 
 def schedule(
-    snapshot: Snapshot, extra_hours: dict[str, float] | None = None, options: Options | None = None
+    snapshot: Snapshot,
+    extra_hours: dict[str, float] | None = None,
+    options: Options | None = None,
+    base: Schedule | None = None,
 ) -> Schedule:
     """Recompute early/late dates and float of every activity of ``snap``.
 
     The plain recalculation (no extra delay, file options) is cached on the snapshot:
     the integrity check, the critical path test and the weekly history share it.
+
+    ``base``: the plain recalculation, given with ``extra_hours``. A delayed activity then drops
+    its expected finish, which would absorb the delay, and runs its remaining duration in
+    ``base`` (the one the expected finish set, if any) plus the delay.
     """
     if not extra_hours and options is None:
         cached = getattr(snapshot, "_xs_schedule", None)
@@ -266,7 +274,7 @@ def schedule(
             cached = _schedule(snapshot, None, None)
             object.__setattr__(snapshot, "_xs_schedule", cached)
         return cached
-    return _schedule(snapshot, extra_hours, options)
+    return _schedule(snapshot, extra_hours, options, base)
 
 
 @dataclass
@@ -281,8 +289,10 @@ class _Asg:
     driving: bool
 
 
-def _schedule(snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None) -> Schedule:
-    return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot)).result()
+def _schedule(
+    snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None, base: Schedule | None = None
+) -> Schedule:
+    return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
 
 
 class _Run:
@@ -292,8 +302,10 @@ class _Run:
     are 10x faster than DataFrame lookups in the passes' inner loops.
     """
 
-    def __init__(self, snapshot: Snapshot, extra_hours: dict[str, float], options: Options):
-        self.snapshot, self.extra_hours, self.options = snapshot, extra_hours, options
+    def __init__(
+        self, snapshot: Snapshot, extra_hours: dict[str, float], options: Options, base: Schedule | None = None
+    ):
+        self.snapshot, self.extra_hours, self.options, self.base = snapshot, extra_hours, options, base
         # Nothing is scheduled before the data date, nor before the project's planned start
         # (P6 keeps the later of the two as the earliest start of remaining work).
         self.warnings: list[str] = []
@@ -444,8 +456,22 @@ class _Run:
             return "finish_ms"
         return "task"
 
+    def delayed(self, code) -> bool:
+        """True for an activity delayed against ``base``: its expected finish no longer applies."""
+        return self.base is not None and code in self.extra_hours
+
+    def base_minutes(self, code, assignment: _Asg) -> float:
+        """Remaining minutes of an assignment before the delay (``base``'s when the activity is delayed)."""
+        if self.delayed(code):
+            return self.base.assignment_minutes.get(assignment.taskrsrc_id, assignment.duration_minutes)
+        return assignment.duration_minutes
+
     def dur_min(self, code) -> float:
-        if code in self.duration_override:  # remaining duration recomputed from an expected finish
+        if self.delayed(code):
+            held = self.base.frame.at[code, "rem_override_hr"]
+            if pd.notna(held):
+                return float(held) * 60 + self.extra_hours[code] * 60
+        elif code in self.duration_override:  # remaining duration recomputed from an expected finish
             return self.duration_override[code] + self.extra_hours.get(code, 0.0) * 60
         remaining_hr = self.inputs[code].get("remain_drtn_hr_cnt")
         return (0.0 if pd.isna(remaining_hr) else float(remaining_hr) * 60) + self.extra_hours.get(code, 0.0) * 60
@@ -608,7 +634,8 @@ class _Run:
             if pinned and pinned[0] == "start":
                 start_bounds, finish_bounds = [max(pinned[1], data_date)], []
             if code in self.rsrc_dep and activity_kind == "task":
-                expected_date = inputs[code].get("expect_end_date", pd.NaT) if options.use_expected_finish else pd.NaT
+                use_expected = options.use_expected_finish and not self.delayed(code)
+                expected_date = inputs[code].get("expect_end_date", pd.NaT) if use_expected else pd.NaT
                 alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
                 expected_date = (
                     pd.Timestamp(expected_date)
@@ -632,7 +659,7 @@ class _Run:
                     finish_time = (
                         axis.add(start, duration, finish=True) if (activity_kind == "task" and duration) else start
                     )
-            if activity_kind == "task" and options.use_expected_finish:
+            if activity_kind == "task" and options.use_expected_finish and not self.delayed(code):
                 expected_date = inputs[code].get("expect_end_date", pd.NaT)
                 alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
                 finish_linked = any(link_type in ("FF", "SF") for _, link_type, _ in self.preds[code])
@@ -766,7 +793,7 @@ class _Run:
         finish_bound = max(finish_bounds) if finish_bounds else None
         starts, durations = [], {}
         for assignment in self.driving(code):
-            duration = assignment.duration_minutes + extra_minutes
+            duration = self.base_minutes(code, assignment) + extra_minutes
             assignment_start = assignment.axis.snap_start(
                 self.shift(assignment.axis, lower_start, assignment.lag_minutes)
             )
@@ -802,7 +829,7 @@ class _Run:
             self.assignment_early[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
             finishes.append(assignment_finish)
         if any(
-            durations[assignment.taskrsrc_id] != assignment.duration_minutes + extra_minutes
+            durations[assignment.taskrsrc_id] != self.base_minutes(code, assignment) + extra_minutes
             for assignment in self.driving(code)
         ):
             self.duration_override[code] = float(axis.between(start, max(finishes)))  # the backward pass follows
@@ -915,7 +942,7 @@ class _Run:
         starts, finishes, driven = [], [], False
         for assignment in self.driving(code):
             assignment_duration = self.assignment_minutes.get(
-                assignment.taskrsrc_id, assignment.duration_minutes + self.extra_hours.get(code, 0.0) * 60
+                assignment.taskrsrc_id, self.base_minutes(code, assignment) + self.extra_hours.get(code, 0.0) * 60
             )
             assignment_finish = assignment.axis.snap_finish(upper_finish) if upper_finish is not None else None
             assignment_start = (
@@ -1289,7 +1316,9 @@ class _Run:
             if code in self.early_start
         ]
         frame = pd.DataFrame(rows).set_index("task_code")
-        return Schedule(frame, self.finish, self.options, self.warnings, self.assignment_dates())
+        return Schedule(
+            frame, self.finish, self.options, self.warnings, self.assignment_dates(), self.assignment_minutes
+        )
 
     def _report(self) -> None:
         if (self.snapshot.options.get("sched", {}) or {}).get("enable_multiple_longest_path_calc") == "Y":
@@ -1507,7 +1536,7 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     hours_per_day = float(target["hours_per_day"])
     delay_hours = delay_days * hours_per_day
     try:
-        late = schedule(snapshot, {code: delay_hours})
+        late = schedule(snapshot, {code: delay_hours}, base=base)
     except CycleError as exc:
         return _cycle_failure(exc, code)
     has_successor = set(snapshot.relationships["pred_code"])  # built once: per activity it took 33 s on Hotel

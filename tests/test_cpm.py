@@ -517,6 +517,39 @@ def test_critical_path_test_shift_in_working_days():
     assert "2026-03-03 -> 2026-03-17" in r.note  # Tue + 10 working days, weekends skipped
 
 
+def test_critical_path_test_delay_moves_an_activity_held_by_its_expected_finish():
+    """B is under way with 24 h left (data date Mon 2 08:00 to its expected finish Wed 4 17:00); its
+    delay replaces that expected finish: B ends 24 h + 600 wd later and C, B's successor, follows.
+    Finish Thu 5 17:00 -> 600 wd (4800 h on C8) later; the delay used to be absorbed (+0)."""
+    s = snap(
+        [done("A"), active("B", remain_drtn_hr_cnt="40", expect_end_date="2026-03-04 17:00"), todo("C", **hours(8))],
+        [("A", "B", "FS", 0), ("B", "C", "FS", 0)],
+        sched={"sched_use_expect_end_flag": "Y"},
+    )
+    r = critical_path_test(s, 600)
+    assert r.delayed == "B"
+    assert r.shift_h == 4800 and r.passed
+
+
+def test_critical_path_test_delay_moves_a_resource_dependent_activity_held_by_its_expected_finish():
+    """Same chain, A resource dependent (one 40 h assignment on C8) with the expected finish Wed 4 17:00:
+    24 h in the base run; the delay replaces it, the finish moves by exactly 600 wd."""
+    resources = [{"rsrc_id": "R8", "rsrc_short_name": "FITTER", "rsrc_type": "RT_Labor", "clndr_id": "C8"}]
+    s = snap(
+        [
+            todo("A", task_type="TT_Rsrc", expect_end_date="2026-03-04 17:00", **hours(40)),
+            todo("B", **hours(8)),
+        ],
+        [("A", "B", "FS", 0)],
+        resources=resources,
+        assign=[_asg("A", "R8", 40)],
+        sched={"sched_use_expect_end_flag": "Y"},
+    )
+    assert dates(s, "B")[1] == T("2026-03-05 17:00")  # base: A ends Wed 4, B Thu 5
+    r = critical_path_test(s, 600)
+    assert r.delayed == "A" and r.shift_h == 4800 and r.passed
+
+
 # --- conventions no reference file settles (documented in docs/cpm.md) ----------------------------
 
 
