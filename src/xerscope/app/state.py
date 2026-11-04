@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, MutableMapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -13,7 +14,7 @@ import streamlit as st
 
 from xerscope.analysis import Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
-from xerscope.anonymize import Anonymizer
+from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import XER_SUFFIXES, FileHeader, Snapshot, XerError, load_header, load_snapshot, xer_files
@@ -399,43 +400,13 @@ def memo(key: tuple, function, *arguments):
 
 
 ANONYMISED = " · anonymised"  # suffix of an anonymised download's label
+PREPARE_LABEL = "Prepare anonymised downloads"
 
 
-def anonymous_exports() -> bool:
+def anonymous_exports(session: MutableMapping | None = None) -> bool:
     """The sidebar switch: downloads anonymised (default) or in the files' own names."""
-    return st.session_state.get("anon_exports", True)
-
-
-def export_anonymizer(key: str, sources: Iterable[str] | None = None) -> Anonymizer | None:
-    """The anonymizer for an anonymised download of ``sources`` (file names; None = every loaded
-    file), or None: a button builds it on request and the caller shows its download from then on."""
-    anonymous = anonymizer(sources=sources)
-    if anonymous is None and st.button(
-        "Prepare anonymised downloads",
-        icon=":material/visibility_off:",
-        key=f"prepare:{key}",
-        help="Reads the file(s) of this download again to give them new codes. The codes are the same "
-        "in every download of the session.",
-    ):
-        anonymous = anonymizer(prepare=True, sources=sources)
-    return anonymous
-
-
-def csv_download(
-    frame: pd.DataFrame,
-    filename: str,
-    label: str = "Download CSV",
-    key: str | None = None,
-    sources: Iterable[str] | None = None,
-) -> None:
-    """A table as CSV, anonymised or not as the sidebar switch says; ``sources`` are the files the
-    table comes from, the only ones read to anonymise it."""
-    if not anonymous_exports():
-        ui.csv_button(frame, filename, label, key=key)
-        return
-    anonymous = export_anonymizer(key or filename, sources)
-    if anonymous is not None:
-        ui.anonymised_csv_button(anonymous, frame, filename, f"{label}{ANONYMISED}", key=key)
+    session = st.session_state if session is None else session
+    return session.get("anon_exports", True)
 
 
 def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) -> list[str]:
@@ -444,26 +415,40 @@ def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) ->
     return found + ([baseline.snapshot.source] if baseline is not None else [])
 
 
-def anonymizer(prepare: bool = False, sources: Iterable[str] | None = None) -> Anonymizer | None:
+def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[str], Anonymizer]:
+    """The anonymizers of the session, by the set of file names each one read."""
+    session = st.session_state if session is None else session
+    built_anonymizers = session.get("_anonymizers")
+    return (
+        built_anonymizers[1]
+        if built_anonymizers is not None and built_anonymizers[0] == session.get("signature")
+        else {}
+    )
+
+
+def anonymizer(
+    prepare: bool = False, sources: Iterable[str] | None = None, session: MutableMapping | None = None
+) -> Anonymizer | None:
     """New codes for ``sources`` (file names; None = every loaded file), kept in the session only.
 
     Built on request, from those files only: it reads them again. The codes come from one key per
     session (HMAC), so an anonymizer of one update and one of the whole series name an activity
     the same way. One built from more files also serves a download of fewer."""
-    signature = st.session_state.get("signature")
-    items = st.session_state.get("items") or []
+    session = st.session_state if session is None else session
+    signature = session.get("signature")
+    items = session.get("items") or []
     wanted = frozenset(name for name, _ in items if sources is None or name in set(sources))
-    held = st.session_state.get("_anonymizers")
-    if held is None or held[0] != signature:
-        held = (signature, {})
-        st.session_state["_anonymizers"] = held
-    built = held[1]
+    built_anonymizers = session.get("_anonymizers")
+    if built_anonymizers is None or built_anonymizers[0] != signature:
+        built_anonymizers = (signature, {})
+        session["_anonymizers"] = built_anonymizers
+    built = built_anonymizers[1]
     for names, anonymous in built.items():
         if wanted <= names:
             return anonymous
     if not prepare:
         return None
-    key = st.session_state.setdefault("_anon_key", secrets.token_bytes(32))
+    key = session.setdefault("_anon_key", secrets.token_bytes(32))
     with st.spinner(f"Reading {len(wanted)} file(s) for the anonymised downloads…"):
         anonymous = Anonymizer.from_raws(
             (parse_bytes(data, source=name) for name, data in items if name in wanted), key=key
@@ -472,3 +457,135 @@ def anonymizer(prepare: bool = False, sources: Iterable[str] | None = None) -> A
         built.pop(next(iter(built)))
     built[wanted] = anonymous
     return anonymous
+
+
+def downloads_ready(sources: Iterable[str] | None = None, session: MutableMapping | None = None) -> bool:
+    """Whether a download of ``sources`` can be offered now: the switch is off, or its anonymizer is built."""
+    session = st.session_state if session is None else session
+    return not anonymous_exports(session) or anonymizer(sources=sources, session=session) is not None
+
+
+@dataclass(frozen=True)
+class Fetched:
+    """The bytes of a download, or why it was refused (a leak of original values)."""
+
+    data: bytes | None
+    refused: str
+    anonymised: bool
+
+
+def fetch(
+    session: MutableMapping,
+    plain: Callable[[], bytes] | None,
+    anonymised: Callable[[Anonymizer], bytes],
+    sources: Iterable[str] | None = None,
+    *,
+    prepare: bool = False,
+    anonymous: bool | None = None,
+) -> Fetched | None:
+    """The bytes of one download under the sidebar switch (``anonymous`` overrides it).
+
+    Switch off: ``plain()``. On: ``anonymised(anonymizer)`` only, never ``plain``; None while the
+    anonymizer for ``sources`` is not built and ``prepare`` is false. A ``LeakError`` is a refusal."""
+    if anonymous is None:
+        anonymous = anonymous_exports(session)
+    if not anonymous:
+        return Fetched(plain(), "", False)
+    try:
+        built = anonymizer(prepare=prepare, sources=sources, session=session)
+        if built is None:
+            return None
+        return Fetched(anonymised(built), "", True)
+    except LeakError as exc:
+        return Fetched(None, str(exc), True)
+
+
+def hold(session: MutableMapping, slot: str, tag: object, fetched: Fetched) -> None:
+    """Keep a built download in the session for the loaded files and ``tag`` (what it was built for)."""
+    session[slot] = (session.get("signature"), tag, fetched)
+
+
+def held(session: MutableMapping, slot: str, tag: object) -> Fetched | None:
+    """The download kept by ``hold`` if it is for the loaded files and this ``tag``."""
+    kept = session.get(slot)
+    return kept[2] if kept is not None and kept[:2] == (session.get("signature"), tag) else None
+
+
+def show_download(
+    fetched: Fetched,
+    label: str,
+    file_name: str,
+    mime: str,
+    *,
+    suffix: bool = True,
+    key: str | None = None,
+    **button,
+) -> None:
+    """The download button of ``fetched`` (labelled anonymised when it is), or the refusal."""
+    if fetched.refused:
+        st.error(fetched.refused, icon=":material/block:")
+        return
+    st.download_button(
+        label + (ANONYMISED if fetched.anonymised and suffix else ""),
+        fetched.data,
+        file_name,
+        mime,
+        icon=":material/download:",
+        key=key,
+        **button,
+    )
+
+
+def download(
+    label: str,
+    file_name: str,
+    mime: str,
+    plain: Callable[[], bytes],
+    anonymised: Callable[[Anonymizer], bytes],
+    *,
+    key: str | None = None,
+    prepare_key: str | None = None,
+    sources: Iterable[str] | None = None,
+    anon_file_name: str | None = None,
+    **button,
+) -> None:
+    """A download under the sidebar switch. On, a button prepares the anonymizer of ``sources``
+    (file names; None = every loaded file) and the download shows from then on."""
+    fetched = fetch(st.session_state, plain, anonymised, sources)
+    if fetched is None and st.button(
+        PREPARE_LABEL,
+        icon=":material/visibility_off:",
+        key=f"prepare:{prepare_key or key or file_name}",
+        help="Reads the file(s) of this download again to give them new codes. The codes are the same "
+        "in every download of the session.",
+    ):
+        fetched = fetch(st.session_state, plain, anonymised, sources, prepare=True)
+    if fetched is not None:
+        name = anon_file_name if fetched.anonymised and anon_file_name else file_name
+        show_download(fetched, label, name, mime, key=key, **button)
+
+
+def csv_download(
+    frame: pd.DataFrame,
+    filename: str,
+    label: str = "Download CSV",
+    key: str | None = None,
+    sources: Iterable[str] | None = None,
+    sensitive: bool = True,
+) -> None:
+    """A table as CSV, anonymised or not as the sidebar switch says; ``sources`` are the files the
+    table comes from, the only ones read to anonymise it. ``sensitive=False``: a table with no
+    schedule data, always as is."""
+    if not sensitive:
+        data = frame.to_csv(index=False).encode("utf-8-sig")
+        show_download(Fetched(data, "", False), label, filename, "text/csv", key=key)
+        return
+    download(
+        label,
+        filename,
+        "text/csv",
+        lambda: frame.to_csv(index=False).encode("utf-8-sig"),
+        lambda anonymous: anonymous.csv(frame),
+        key=key,
+        sources=sources,
+    )
