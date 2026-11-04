@@ -141,7 +141,7 @@ update (actuals changed, riding the status date) work too.
 | Schedule health | standard picker (P6, DECM, DCMA, Integrity, uploaded TOML), Check Summary, flagged items with the rule's definition, metric trend, CSV of every flagged item |
 | Audit | one check: the sets behind its count (counted, checked not counted, excluded), the check re-run with another target or threshold (this page only), the `[[metric]]` table to make it permanent |
 | Changelog | any two files: headline counts, every change (filterable, CSV), weekly counts |
-| Earned value | PV, EV, AC, forecast S-curve (hours or % BAC); SPI (cost, P6 column) and SPI (labour units), BEI (P6 / DCMA), EV/AC per update; Schedule %, Performance % and EV technique per activity |
+| Earned value | PV, EV, AC, forecast S-curve (hours or % BAC); SPI (labour units; the cost SPI, P6 column, and the other cost figures behind the sidebar checkbox Costs, off by default), BEI (P6 / DCMA), EV/AC per update; Schedule %, Performance % and EV technique per activity |
 | Milestone trend | MTA chart, slip since first forecast and since last week in working days |
 | PPC & progress | PPC per week with target, the week's commitments and outcome, progress and earned hours by WBS and activity |
 | Export for Power BI | `dim_snapshot`, `fact_activity`, `fact_relationship`, `fact_assignment` (Parquet or CSV) |

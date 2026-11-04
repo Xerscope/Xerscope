@@ -17,6 +17,7 @@ from xerscope.analysis.evm import (
 from xerscope.app import ui
 from xerscope.app.state import (
     baseline_for,
+    costs_shown,
     csv_download,
     memo,
     require_store,
@@ -26,6 +27,8 @@ from xerscope.app.state import (
 )
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 
+COST_COLUMNS = ["bac_cost", "pv_cost", "ev_cost", "spi_cost"]
+COST_MEASURES = ["BAC cost", "PV cost", "EV cost", "SPI"]  # the rows of the calculation table that read costs
 BEI_METRIC_IDS = {"P6": "P6-13", "DCMA": "DCMA-14"}  # the BEI check of each built-in standard
 ACTIVITY_COLUMNS = [
     "task_code",
@@ -69,7 +72,13 @@ def cost_spi_text(row: pd.Series, template: str = "{:.3f}") -> str:
     return "n/a — no cost in the baseline" if not row["bac_cost"] else "n/a — no planned value cost yet"
 
 
-def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
+def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
+    cost_card = (
+        "SPI",
+        cost_spi_text(row),
+        change_since_previous(row, previous, "spi_cost", format_index_change),
+        "EV cost / PV cost; P6 column: Schedule Performance Index",
+    )
     ui.kpis(
         [
             (
@@ -79,12 +88,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
                 "Earned / BAC",
             ),
             ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
-            (
-                "SPI",
-                cost_spi_text(row),
-                change_since_previous(row, previous, "spi_cost", format_index_change),
-                "EV cost / PV cost; P6 column: Schedule Performance Index",
-            ),
+            *([cost_card] if costs else []),
             (
                 "SPI (labour units)",
                 format_number(row["spi"], "{:.3f}"),
@@ -109,7 +113,18 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
     )
 
 
-def show_calculation(row: pd.Series, baseline, snapshot) -> None:
+def show_costs_ignored(snapshot) -> None:
+    """Costs off: say how many assignments of the file carry a cost, so the switch is findable."""
+    assignments = snapshot.assignments
+    priced = int((assignments["target_cost"].fillna(0.0) != 0).sum())
+    if priced:
+        st.caption(
+            f"Costs ignored: {priced} of {len(assignments)} assignments carry a cost in the file "
+            "(resource prices). Turn on Costs in the sidebar to see P6's cost SPI."
+        )
+
+
+def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
     with st.expander("How it is calculated", icon=":material/calculate:"):
         bac, planned, earned_hours, actual = row["bac_hr"], row["pv_hr"], row["ev_hr"], row["ac_hr"]
         baselined_actual = actual - row["ac_unbaselined_hr"]
@@ -212,6 +227,8 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
             ],
             columns=["measure", "formula", "this update", "P6 column"],
         )[["measure", "P6 column", "formula", "this update"]]  # the value stays last
+        if not costs:
+            calculation = calculation[~calculation["measure"].isin(COST_MEASURES)]
         ui.table(
             calculation,
             overrides={
@@ -225,7 +242,7 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                 + ", ".join(f"{ui.md_text(item.wbs_code)} ({item.etc_technique})" for item in with_pf.itertuples()),
                 icon=":material/warning:",
             )
-        curves = ev_point(snapshot, baseline).not_modelled_cost
+        curves = ev_point(snapshot, baseline).not_modelled_cost if costs else []
         if curves:
             st.caption(
                 "PV cost: resource curves not modelled (linear spread used) for " + ui.md_text(", ".join(curves[:20]))
@@ -236,7 +253,7 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
         )
 
 
-def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
+def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool) -> None:
     ui.section(
         "S-curve",
         "Planned value from the baseline, earned value and actual hours per update, "
@@ -260,10 +277,11 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
     indices = {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
-    if series["spi_cost"].notna().any():
+    if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
     st.plotly_chart(build_index_trend(series, indices), width="stretch")
-    ui.table(series.drop(columns=["bac_hr", "bac_cost"]))
+    hidden = ["bac_hr"] + ([] if costs else COST_COLUMNS)
+    ui.table(series.drop(columns=hidden))
 
 
 def show_activity_detail(snapshot, baseline) -> None:
@@ -321,7 +339,10 @@ series = series.merge(
 row = series[series["data_date"] == snapshot.data_date].iloc[-1]
 previous = series[series["data_date"] < snapshot.data_date].tail(1)
 
-show_kpis(row, previous)
-show_calculation(row, baseline, snapshot)
-show_charts(series, curve, snapshot)
+costs = costs_shown()
+show_kpis(row, previous, costs)
+if not costs:
+    show_costs_ignored(snapshot)
+show_calculation(row, baseline, snapshot, costs)
+show_charts(series, curve, snapshot, costs)
 show_activity_detail(snapshot, baseline)

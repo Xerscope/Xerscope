@@ -100,6 +100,9 @@ def test_earned_value_kpis_equal_evm_series(app, store):
     _run(app)
     app.switch_page("views/earned_value.py")
     _run(app)
+    assert "SPI" not in _metrics(app)  # Costs off by default: no cost card
+    app.sidebar.checkbox(key="costs").set_value(True)
+    _run(app)
     baseline = Baseline.from_snapshot(store.first)
     series = evm_series(store, baseline)
     bei_metrics = {"P6": STANDARDS["P6"]["P6-13"], "DCMA": STANDARDS["DCMA"]["DCMA-14"]}
