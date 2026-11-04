@@ -287,9 +287,7 @@ except ValueError as exc:
     st.error(str(exc), icon=":material/block:")
     st.stop()
 
-standard_result = memo(
-    ("audit", repr(metric), snapshot.source, str(snapshot.data_date)), run_metric, metric, context
-)
+standard_result = memo(("audit", repr(metric), snapshot.source, str(snapshot.data_date)), run_metric, metric, context)
 same = (audited.params, audited.comparator, audited.threshold) == (metric.params, metric.comparator, metric.threshold)
 audit_result = standard_result if same else run_metric(audited, context)
 

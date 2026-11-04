@@ -841,6 +841,23 @@ def test_debug_block_4_follows_an_uploaded_standard_with_the_builtin_id(app):
     assert _check_parameters_rows(app) == before - 1
 
 
+def test_memo_recomputes_for_a_baseline_file_of_other_content(store):
+    """Same name, same budget, other bytes (dates moved): not served from the cache."""
+    from xerscope.analysis.baseline import Baseline
+
+    baseline = Baseline.from_snapshot(store.by_label(store.labels[0]), "budgeted_planned")
+    at = AppTest.from_function(_probe_script, default_timeout=120)
+    at.session_state["ev_basis"] = "budgeted_planned"
+    at.session_state["baseline"] = baseline
+    at.session_state["baseline_digest"] = "a" * 64
+    at.run()
+    at.run()
+    assert _memo_runs(at) == 1
+    at.session_state["baseline_digest"] = "b" * 64
+    at.run()
+    assert _memo_runs(at) == 2
+
+
 def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     """A built-in id is not replaceable from the page: the upload is rejected and not kept."""
     from xerscope.analysis.standards import template_text
