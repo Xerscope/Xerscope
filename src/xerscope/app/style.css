@@ -1,5 +1,5 @@
-/* The two looks .streamlit/config.toml cannot set: KPI cards drawn as a HUD readout, and the
-   milestone picker's tags in the colour of their line. --accent and --s1..--s6 are written by
+/* What .streamlit/config.toml cannot set: KPI cards drawn as a HUD readout, the milestone
+   picker's tags in the colour of their line, and a square box for the MTA chart. --accent and --s1..--s6 are written by
    ui.apply_style() from viz/charts.py and hold on both themes; everything else is mixed with
    transparency or inherits the page's text colour, so a theme switch needs no rerun.
    Selectors under a widget's key class (st-key-…, documented) and Streamlit's data-testid /
@@ -45,3 +45,6 @@
 .st-key-mta_pick [data-tag-index="3"] { --tag: var(--s4); }
 .st-key-mta_pick [data-tag-index="4"] { --tag: var(--s5); }
 .st-key-mta_pick [data-tag-index="5"] { --tag: var(--s6); }
+
+/* MTA: the chart box as tall as it is wide, so its square plot (1:1 dates) fills the width */
+.st-key-mta_chart { aspect-ratio: 1 / 1; }

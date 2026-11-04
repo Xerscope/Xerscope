@@ -224,12 +224,18 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
 # --- milestones ---------------------------------------------------------------------------------
 
 
-def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[str] | None = None) -> go.Figure:
+def build_mta(
+    trend: pd.DataFrame,
+    last_shift_wd: dict[str, float],
+    order: list[str] | None = None,
+    bounds: tuple[pd.Timestamp | None, pd.Timestamp | None] = (None, None),
+) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
-    The x axis runs over the updates, from the first data date, so they fill the page width;
-    the y axis holds every forecast. The reporting line (forecast = data date) crosses the
-    chart at the slope these ranges give; below it is the past.
+    Both axes run over the same dates on a 1:1 scale, so the reporting line (forecast = data
+    date) is the 45° diagonal; below it is the past. The span is ``bounds`` (project start,
+    project finish), widened to any update or forecast outside it so no point is cut; a
+    missing bound comes from the points.
 
     Each line keeps its own series colour so milestones stay distinguishable: the colour of
     its position in ``order`` (the user's pick order, so the picker's tags can match), else
@@ -242,18 +248,16 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     status = STATUS
     series = SERIES
     fig = go.Figure()
-    # x: the reporting dates, from the first update, a little room after the last for the end
-    # labels; y: every forecast and the reporting line. No 1:1 scale, so the updates fill the
-    # page width; the reporting line is still forecast = data date, at the slope that gives.
-    x0, x1 = trend["data_date"].min(), trend["data_date"].max()
-    x1 = x1 + max((x1 - x0) * 0.08, pd.Timedelta(days=3))
-    lo, hi = min(x0, trend["forecast"].min()), max(x1, trend["forecast"].max())
-    pad = max((hi - lo) * 0.05, pd.Timedelta(days=3))
-    lo, hi = lo - pad, hi + pad
+    points = pd.concat([trend["data_date"], trend["forecast"]]).dropna()
+    start, finish = bounds
+    lo = min(points.min(), start) if start is not None else points.min()
+    hi = max(points.max(), finish) if finish is not None else points.max()
+    if hi <= lo:  # one date only: a day either side so the axes have a span
+        lo, hi = lo - pd.Timedelta(days=1), hi + pd.Timedelta(days=1)
     fig.add_trace(
         go.Scatter(
-            x=[x0, x1, x1, x0],
-            y=[x0, x1, lo, lo],
+            x=[lo, hi, hi],
+            y=[lo, hi, lo],
             fill="toself",
             fillcolor="rgba(123, 135, 148, 0.12)",  # NEUTRAL, faint: the past, below the reporting line
             line=dict(width=0),
@@ -263,8 +267,8 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     )
     fig.add_trace(
         go.Scatter(
-            x=[x0, x1],
-            y=[x0, x1],
+            x=[lo, hi],
+            y=[lo, hi],
             mode="lines",
             name="Reporting line (forecast = data date)",
             line=dict(color=NEUTRAL, width=3),
@@ -302,17 +306,10 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
             label = f'<span style="color:{moved}">{"▲" if shift > 0 else "▼"}</span> {label}'
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value)
-    fig = _layout(fig, 640, "Forecast date")
-    # ticks on the update dates, the first at x = 0, thinned to at most 12 labels
-    dates = sorted(trend["data_date"].unique())
-    fig.update_xaxes(
-        title="Reporting date (data date)",
-        range=[x0, x1],
-        tickmode="array",
-        tickvals=dates[:: -(-len(dates) // 12)],
-        tickformat="%d %b",
-    )
-    fig.update_yaxes(range=[lo, hi], **DATE_AXIS)
+    fig = _layout(fig, 760, "Forecast date")
+    # same range and scale on both axes: the diagonal is at 45°, the plot square
+    fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
+    fig.update_yaxes(range=[lo, hi], scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
     return fig
 
 
