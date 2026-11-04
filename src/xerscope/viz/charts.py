@@ -272,15 +272,18 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
     )
     ends = []
     order = order or list(dict.fromkeys(trend["task_code"]))
-    for code, g in trend.groupby("task_code", sort=False):
+    for code, rows in trend.groupby("task_code", sort=False):
+        if rows["forecast"].isna().all():
+            continue
         color = series[order.index(code) % len(series)]
         shift = last_shift_wd.get(code, 0.0)
         moved = status["critical"] if shift > 0 else status["good"] if shift < 0 else None
+        g = rows.loc[: rows["forecast"].last_valid_index()]  # blank forecast = hidden update: the line breaks
         done = g["is_complete"].to_numpy()
         fig.add_trace(
             go.Scatter(
                 x=g["data_date"],
-                y=g["forecast"],
+                y=g["forecast"].astype(object).where(g["forecast"].notna(), None),
                 mode="lines+markers",
                 name=f"{code} {g['task_name'].iloc[-1]}",
                 line=dict(color=color, width=2),
@@ -299,7 +302,15 @@ def build_mta(trend: pd.DataFrame, last_shift_wd: dict[str, float], order: list[
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value)
     fig = _layout(fig, 640, "Forecast date")
-    fig.update_xaxes(title="Reporting date (data date)", range=[x0, x1])
+    # ticks on the update dates, the first at x = 0, thinned to at most 12 labels
+    dates = sorted(trend["data_date"].unique())
+    fig.update_xaxes(
+        title="Reporting date (data date)",
+        range=[x0, x1],
+        tickmode="array",
+        tickvals=dates[:: -(-len(dates) // 12)],
+        tickformat="%d %b",
+    )
     fig.update_yaxes(range=[lo, hi], **DATE_AXIS)
     return fig
 

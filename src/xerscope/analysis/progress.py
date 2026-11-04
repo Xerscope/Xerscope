@@ -2,8 +2,8 @@
 
 MTA: for each milestone, its forecast date in every update. Plotted against the update
 date, a flat line is a stable forecast, a rising one a slipping milestone; a completed
-milestone meets the diagonal (forecast = reporting date) and its line ends there: later
-updates only repeat the actual date below the diagonal (`plotted_trend`).
+milestone drops out of the updates whose data date is after its actual date: there it only
+repeats that date below the diagonal (`plotted_trend`).
 
 PPC (Percent Plan Complete, Last Planner): of the activities the W-1 update forecast to
 finish before the W data date, the share that the W update shows complete. In a file P6
@@ -50,16 +50,16 @@ def milestone_trend(store: SnapshotStore, codes: list[str] | None = None) -> pd.
 
 
 def plotted_trend(trend: pd.DataFrame) -> pd.DataFrame:
-    """MTA chart rows: each line stops at the first update that reports it complete.
+    """MTA chart rows: an update hides a milestone complete before its data date.
 
-    Later updates repeat the actual date below the diagonal and carry no trend; a line
-    already complete in its first update has none in this series and is left out.
+    Such a point only repeats the actual date below the diagonal: its forecast is blanked
+    (NaT), the row kept, so the line breaks there instead of joining across the update.
+    Every other update keeps the milestone: open, reopened, or complete on a date not
+    before the data date (P6 would flag that actual as invalid; shown so it can be seen).
     Slippage (`milestone_slips`) still reads the full trend.
     """
-    done = trend["is_complete"].astype(bool)
-    done_before = done.groupby(trend["task_code"]).transform(lambda d: d.cumsum().shift(fill_value=0) > 0)
-    done_at_start = done.groupby(trend["task_code"]).transform("first")
-    return trend[~done_before & ~done_at_start].reset_index(drop=True)
+    gone = trend["is_complete"].astype(bool) & (trend["forecast"] < trend["data_date"])
+    return trend.assign(forecast=trend["forecast"].mask(gone))
 
 
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
