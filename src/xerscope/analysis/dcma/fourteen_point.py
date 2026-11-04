@@ -12,10 +12,11 @@ import pandas as pd
 
 from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
 from ..populations import (
+    Funnel,
+    activity_funnel,
     actual_after,
     as_flag,
     constrained_by,
-    discrete_tasks,
     finish_driver,
     flagged_activities,
     flagged_relationships,
@@ -25,10 +26,9 @@ from ..populations import (
     invalid_date_reason,
     lag_flagged,
     open_end_reason,
-    open_tasks,
     with_baseline,
 )
-from ..rules import RuleOutput, bei_from_snapshot, critical_path_output, link_population, rule, share_of_type
+from ..rules import RuleOutput, bei_from_snapshot, critical_path_output, link_funnel, rule, share_of_type
 
 DCMA_HIGH_DAYS = 44  # PAM 200.1 §4.6 and §4.8: "two months" of work, in working days of the activity's calendar
 # The pamphlet gives no slip length (§4.12); 600 working days is the value of DECM 06A401a.
@@ -39,9 +39,19 @@ DCMA_SLIP_DAYS = 600
 DCMA_HARD_CONSTRAINTS = HARD_CONSTRAINTS
 
 
-def _relationships_into_open_tasks(context) -> pd.DataFrame:
+def _discrete_tasks(funnel: Funnel) -> Funnel:
+    """PAM 200.1 section 4.0: LOE and milestones are not tasks."""
+    return funnel.exclude("loe", "PAM 200.1").exclude("milestones", "PAM 200.1")
+
+
+def _open_tasks(context) -> Funnel:
+    """The DCMA population: incomplete, non-LOE, non-milestone tasks."""
+    return _discrete_tasks(activity_funnel(context.snapshot).exclude("complete", "PAM 200.1"))
+
+
+def _links_into_open_tasks(context) -> Funnel:
     """PAM 200.1 section 4.0: a link counts when its successor is an incomplete, non-LOE, non-milestone task."""
-    return link_population(context, "all", exclude=("complete", "loe", "milestones"))
+    return link_funnel(context, "all", exclude=("complete", "loe", "milestones"), source="PAM 200.1")
 
 
 @rule("dcma_01_logic", "%")
@@ -54,15 +64,18 @@ def dcma_01_logic(context) -> RuleOutput:
     start/finish exemption and no dangling case; §4.0: milestones excluded; a link to another project
     counts as logic (rule default)
     """
-    tasks = open_tasks(context)
-    has_predecessor = has_predecessor_in_project(context, tasks) | tasks["has_external_pred"]
-    has_successor = has_successor_in_project(context, tasks) | tasks["has_external_succ"]
+    funnel = _open_tasks(context)
+    tasks = funnel.rows
+    has_predecessor = has_predecessor_in_project(context.snapshot, tasks) | tasks["has_external_pred"]
+    has_successor = has_successor_in_project(context.snapshot, tasks) | tasks["has_external_succ"]
 
     missing_predecessor = ~has_predecessor
     missing_successor = ~has_successor
     flagged = tasks[missing_predecessor | missing_successor]
     reason = open_end_reason(missing_predecessor, missing_successor)[flagged.index]
-    return RuleOutput(flagged_activities(flagged, reason=reason), len(flagged), len(tasks), checked=tasks)
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason), len(flagged), len(tasks), checked=tasks, funnel=funnel
+    )
 
 
 @rule("dcma_02_leads", "%", links=True)
@@ -77,10 +90,13 @@ def dcma_02_leads(context) -> RuleOutput:
     incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts
     when its successor is kept
     """
-    relationships = _relationships_into_open_tasks(context)
+    funnel = _links_into_open_tasks(context)
+    relationships = funnel.rows
 
     leads = lag_flagged(relationships, operator.lt, 0)
-    return RuleOutput(flagged_relationships(leads), len(leads), len(relationships), checked=relationships)
+    return RuleOutput(
+        flagged_relationships(leads), len(leads), len(relationships), checked=relationships, funnel=funnel
+    )
 
 
 @rule("dcma_03_lags", "%", links=True)
@@ -95,10 +111,11 @@ def dcma_03_lags(context) -> RuleOutput:
     completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is
     kept
     """
-    relationships = _relationships_into_open_tasks(context)
+    funnel = _links_into_open_tasks(context)
+    relationships = funnel.rows
 
     lags = lag_flagged(relationships, operator.gt, 0)
-    return RuleOutput(flagged_relationships(lags), len(lags), len(relationships), checked=relationships)
+    return RuleOutput(flagged_relationships(lags), len(lags), len(relationships), checked=relationships, funnel=funnel)
 
 
 @rule("dcma_04_relationship_types", "%", links=True)
@@ -113,7 +130,10 @@ def dcma_04_relationship_types(context) -> RuleOutput:
     completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is
     kept
     """
-    return share_of_type(_relationships_into_open_tasks(context), "FS")
+    funnel = _links_into_open_tasks(context)
+    share = share_of_type(funnel.rows, "FS")
+    share.funnel = funnel
+    return share
 
 
 @rule("dcma_05_hard_constraints", "%")
@@ -127,10 +147,15 @@ def dcma_05_hard_constraints(context) -> RuleOutput:
     DCMA-EA PAM 200.1 §4.5 (and §4.0: milestones excluded); MSO = Start On / Mandatory Start, MFO = Finish
     On / Mandatory Finish, SNLT = Start On or Before, FNLT = Finish On or Before
     """
-    tasks = open_tasks(context)
+    funnel = _open_tasks(context)
+    tasks = funnel.rows
     hard = tasks[constrained_by(tasks, DCMA_HARD_CONSTRAINTS, ignore_started_starts=False)]
     return RuleOutput(
-        flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)), len(hard), len(tasks), checked=tasks
+        flagged_activities(hard, constraint2=hard["cstr_type2"].map(CONSTRAINT)),
+        len(hard),
+        len(tasks),
+        checked=tasks,
+        funnel=funnel,
     )
 
 
@@ -143,9 +168,10 @@ def dcma_06_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutpu
     DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months);
     §4.0: milestones excluded
     """
-    tasks = open_tasks(context)
+    funnel = _open_tasks(context)
+    tasks = funnel.rows
     high_float = tasks[tasks["total_float_d"] > limit_days]
-    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks)
+    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks, funnel=funnel)
 
 
 @rule("dcma_07_negative_float", "%")
@@ -158,9 +184,10 @@ def dcma_07_negative_float(context) -> RuleOutput:
     DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 working days; §4.0: milestones
     excluded
     """
-    tasks = open_tasks(context)
+    funnel = _open_tasks(context)
+    tasks = funnel.rows
     negative_float = tasks[tasks["total_float_d"] < 0]
-    return RuleOutput(flagged_activities(negative_float), len(negative_float), len(tasks), checked=tasks)
+    return RuleOutput(flagged_activities(negative_float), len(negative_float), len(tasks), checked=tasks, funnel=funnel)
 
 
 @rule("dcma_08_high_duration", "%")
@@ -178,10 +205,11 @@ def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOu
     """
     if context.baseline is None:
         return RuleOutput(note="needs a baseline")
-    tasks = open_tasks(context)
+    funnel = _open_tasks(context)
+    tasks = funnel.rows
     baseline_hours = tasks["task_code"].map(context.baseline.frame["bl_duration_hr"])
     long_tasks = tasks[baseline_hours / tasks["hours_per_day"] > limit_days]
-    return RuleOutput(flagged_activities(long_tasks), len(long_tasks), len(tasks), checked=tasks)
+    return RuleOutput(flagged_activities(long_tasks), len(long_tasks), len(tasks), checked=tasks, funnel=funnel)
 
 
 @rule("dcma_09_invalid_dates", "%")
@@ -197,14 +225,16 @@ def dcma_09_invalid_dates(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    tasks = discrete_tasks(context.snapshot.activities)
-    tasks = tasks[~(tasks["act_end_date"] < data_date)]
+    funnel = _discrete_tasks(activity_funnel(context.snapshot)).exclude("complete_before_data_date", "PAM 200.1")
+    tasks = funnel.rows
 
     forecast = forecast_before(tasks, data_date)
     actual = actual_after(tasks, data_date)
     invalid = forecast | actual
     reasons = invalid_date_reason(forecast, actual)[invalid]
-    return RuleOutput(flagged_activities(tasks[invalid], reason=reasons), int(invalid.sum()), len(tasks), checked=tasks)
+    return RuleOutput(
+        flagged_activities(tasks[invalid], reason=reasons), int(invalid.sum()), len(tasks), checked=tasks, funnel=funnel
+    )
 
 
 @rule("dcma_10_resources", "%")
@@ -217,10 +247,10 @@ def dcma_10_resources(context) -> RuleOutput:
     incomplete tasks without them over incomplete tasks; §4.0 exclusions apply. Cost or hours = a
     resource assignment or an expense
     """
-    tasks = open_tasks(context)
-    tasks = tasks[tasks["target_drtn_hr_cnt"].fillna(0) > 0]
+    funnel = _open_tasks(context).exclude("no_duration", "PAM 200.1")
+    tasks = funnel.rows
     without_cost = tasks[~(tasks["has_resource"] | tasks["has_expense"])]
-    return RuleOutput(flagged_activities(without_cost), len(without_cost), len(tasks), checked=tasks)
+    return RuleOutput(flagged_activities(without_cost), len(without_cost), len(tasks), checked=tasks, funnel=funnel)
 
 
 @rule("dcma_11_missed_tasks", "%", needs_baseline=True)
@@ -240,15 +270,26 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    tasks = with_baseline(context, discrete_tasks(context.snapshot.activities))
+    funnel = Funnel(with_baseline(context.baseline, context.snapshot.activities), data_date)
+    tasks = _discrete_tasks(funnel).rows
     unmatched = int((tasks["bl_start"].isna() | tasks["bl_finish"].isna()).sum())
-    due = tasks[tasks["bl_start"].notna() & (tasks["bl_finish"] <= data_date)]
+    funnel.keep(
+        "baseline finish on or before the data date",
+        "PAM 200.1",
+        lambda rows: rows["bl_start"].notna() & (rows["bl_finish"] <= data_date),
+    )
+    due = funnel.rows
     finishes_later = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
     missed = due[as_flag(finishes_later)]
     # a baseline that matches few activities shrinks the due population silently: say so
     note = f"{unmatched} without baseline dates left out of {len(tasks)} tasks" if unmatched else ""
     return RuleOutput(
-        flagged_activities(missed, bl_finish=missed["bl_finish"]), len(missed), len(due), note=note, checked=due
+        flagged_activities(missed, bl_finish=missed["bl_finish"]),
+        len(missed),
+        len(due),
+        note=note,
+        checked=due,
+        funnel=funnel,
     )
 
 
@@ -275,7 +316,7 @@ def dcma_13_cpli(context) -> RuleOutput:
     index 1.0 whatever the schedule
     """
     snapshot = context.snapshot
-    last_task = finish_driver(context)
+    last_task = finish_driver(snapshot)
     if snapshot.data_date is None:
         return RuleOutput(note="no data date")
     if last_task is None:
@@ -309,5 +350,13 @@ def dcma_14_bei(context) -> RuleOutput:
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no data date")
-    tasks = with_baseline(context, discrete_tasks(context.snapshot.activities))
-    return bei_from_snapshot(tasks, data_date, missing_baseline_is_due=True)
+    funnel = Funnel(with_baseline(context.baseline, context.snapshot.activities), data_date)
+    tasks = _discrete_tasks(funnel).rows
+    funnel.keep(
+        "due by the data date",
+        "PAM 200.1",
+        lambda rows: as_flag(rows["bl_finish"] <= data_date) | rows["bl_finish"].isna(),
+    )
+    bei = bei_from_snapshot(tasks, data_date, missing_baseline_is_due=True)
+    bei.funnel = funnel
+    return bei

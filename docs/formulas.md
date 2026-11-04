@@ -94,9 +94,9 @@ its rows (`checked`); `counted` holds the numerator's rows when they are not the
 (the share of FS links, BEI's completed activities). `tests/test_audit.py` holds every built-in
 metric to `len(checked) == denominator`, numerator rows = numerator, listed rows within `checked`.
 
-Steps (`CheckResult.funnel`, P6 checks): the population as the rule builds it, one filter at a
+Steps (`CheckResult.funnel`, every check of the four standards that has a row population): the population as the rule builds it, one filter at a
 time, each with a label, the text it follows (`populations.STEP_SOURCES`: 101248, 46282, R1,
-Ten Six, model) and the rows it removed. `tests/test_sheets.py` holds the rule's steps, the
+Ten Six, model, PAM 200.1, DECM 8.0, xerscope) and the rows it removed. `tests/test_sheets.py` holds, for every metric, the funnel's last step to the denominator and, for P6, the rule's steps, the
 sheet's numbered population, the metric's `source` in p6.toml and the docstring's `Excludes:`
 line to the same list.
 

@@ -7,17 +7,15 @@ few of these combined with ``&``, ``|`` and ``~``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
+from ..xer import Snapshot
 from ..xer.model import START_CONSTRAINTS, forecast_dates
-
-if TYPE_CHECKING:
-    from .checks import AnalysisContext
+from .baseline import Baseline
 
 ACTIVITY_COLS = [
     "task_code",
@@ -50,7 +48,45 @@ STEP_SOURCES = {
     "Ten Six": "https://tensix.com/using-the-p6-check-schedule-tool/",
     "R1": "docs/standards.md: P6 Professional Check Schedule report R1",
     "model": "docs/formulas.md 1.1: a relationship counts when both ends are activities of the file",
+    "PAM 200.1": "https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf",
+    "DECM 8.0": "https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm",
+    "xerscope": "docs/standards.md: INTEGRITY, xerscope's own checks (not a published standard)",
 }
+
+
+@dataclass(frozen=True)
+class Exclusion:
+    """One named way to leave activities out of a population; the single vocabulary of the checks."""
+
+    label: str  # the funnel step, e.g. "not complete"
+    text: str  # the words of the "Excludes:" line, e.g. "completed activities"
+    removes: Callable[[pd.DataFrame, pd.Timestamp | None], pd.Series]  # (rows, data date) -> rows it takes out
+
+
+EXCLUSIONS: dict[str, Exclusion] = {
+    "complete": Exclusion("not complete", "completed activities", lambda rows, _dd: rows["is_complete"]),
+    "complete_before_data_date": Exclusion(
+        "not completed before the data date",
+        "activities completed before the data date",
+        lambda rows, data_date: rows["is_complete"] if data_date is None else rows["act_end_date"] < data_date,
+    ),
+    "started": Exclusion("not started", "started activities", lambda rows, _dd: rows["is_started"]),
+    "loe": Exclusion("not level of effort", "level of effort", lambda rows, _dd: rows["is_loe"]),
+    "milestones": Exclusion("not milestone", "milestones", lambda rows, _dd: rows["is_milestone"]),
+    "no_duration": Exclusion(
+        "original duration above 0",
+        "activities with no original duration",
+        lambda rows, _dd: ~(rows["target_drtn_hr_cnt"].fillna(0) > 0),
+    ),
+}
+
+
+def without(rows: pd.DataFrame, data_date, exclude: Sequence[str]) -> pd.DataFrame:
+    """``rows`` less the activities any of the ``exclude`` keys (EXCLUSIONS) removes."""
+    removed = pd.Series(False, index=rows.index)
+    for key in exclude:
+        removed |= as_flag(EXCLUSIONS[key].removes(rows, data_date))
+    return rows[~removed]
 
 
 @dataclass
@@ -65,11 +101,12 @@ class Step:
 class Funnel:
     """A population built one named, sourced filter at a time, so a reviewer sees what each removed.
 
-    funnel = Funnel(context.snapshot.activities).keep("not complete", "101248", not_complete)
+    funnel = activity_funnel(context.snapshot).exclude("complete", "101248")
     funnel.rows   # the population;  funnel.steps  # [Step("not complete", "101248", ..., 790)]
     """
 
     rows: pd.DataFrame
+    data_date: pd.Timestamp | None = None
     start: int = 0
     steps: list[Step] = field(default_factory=list)
 
@@ -84,17 +121,15 @@ class Funnel:
         self.rows = self.rows[kept]
         return self
 
-
-def not_complete(rows: pd.DataFrame) -> pd.Series:
-    return ~as_flag(rows["is_complete"])
-
-
-def not_level_of_effort(rows: pd.DataFrame) -> pd.Series:
-    return ~as_flag(rows["is_loe"])
+    def exclude(self, key: str, source: str) -> Funnel:
+        """Leave out what EXCLUSIONS[key] removes."""
+        exclusion = EXCLUSIONS[key]
+        return self.keep(exclusion.label, source, lambda rows: ~as_flag(exclusion.removes(rows, self.data_date)))
 
 
-def not_milestone(rows: pd.DataFrame) -> pd.Series:
-    return ~as_flag(rows["is_milestone"])
+def activity_funnel(snapshot: Snapshot) -> Funnel:
+    """Every activity of the file (WBS summaries are never activities)."""
+    return Funnel(snapshot.activities, snapshot.data_date)
 
 
 # --- activities --------------------------------------------------------------------------
@@ -110,54 +145,30 @@ def joined_sorted(values: pd.Series) -> str:
     return ", ".join(sorted(values))
 
 
-def open_activities(context: AnalysisContext) -> pd.DataFrame:
-    """Every activity that is not completed (WBS summaries are never in the snapshot's activities)."""
-    activities = context.snapshot.activities
-    return activities[~as_flag(activities["is_complete"])]
-
-
-def without_level_of_effort(activities: pd.DataFrame) -> pd.DataFrame:
-    return activities[~as_flag(activities["is_loe"])]
-
-
-def without_milestones(activities: pd.DataFrame) -> pd.DataFrame:
-    return activities[~as_flag(activities["is_milestone"])]
-
-
-def discrete_tasks(activities: pd.DataFrame) -> pd.DataFrame:
-    """Neither level of effort nor milestones: the tasks DCMA PAM 200.1 section 4.0 measures."""
-    return without_milestones(without_level_of_effort(activities))
-
-
-def open_tasks(context: AnalysisContext) -> pd.DataFrame:
-    """The DCMA population: incomplete, non-LOE, non-milestone tasks."""
-    return discrete_tasks(open_activities(context))
-
-
-def with_baseline(context: AnalysisContext, activities: pd.DataFrame) -> pd.DataFrame:
+def with_baseline(baseline: Baseline, activities: pd.DataFrame) -> pd.DataFrame:
     """The activities with their baseline start and finish (empty where the baseline lacks them)."""
-    return activities.join(context.baseline.frame[["bl_start", "bl_finish"]], on="task_code")
+    return activities.join(baseline.frame[["bl_start", "bl_finish"]], on="task_code")
 
 
-def finish_driver(context: AnalysisContext) -> pd.Series | None:
+def finish_driver(snapshot: Snapshot) -> pd.Series | None:
     """The open, non-LOE activity with the latest forecast finish; None when no work remains."""
-    activities = context.snapshot.activities
+    activities = snapshot.activities
     remaining = activities[~activities["is_complete"] & ~activities["is_loe"] & activities["finish"].notna()]
     return None if remaining.empty else remaining.loc[remaining["finish"].idxmax()]
 
 
-def has_predecessor_in_project(context: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
+def has_predecessor_in_project(snapshot: Snapshot, activities: pd.DataFrame) -> pd.Series:
     """True where the activity is the successor of a relationship inside this project."""
-    return activities["task_code"].isin(_relationships_in_project(context)["succ_code"])
+    return activities["task_code"].isin(_relationships_in_project(snapshot)["succ_code"])
 
 
-def has_successor_in_project(context: AnalysisContext, activities: pd.DataFrame) -> pd.Series:
+def has_successor_in_project(snapshot: Snapshot, activities: pd.DataFrame) -> pd.Series:
     """True where the activity is the predecessor of a relationship inside this project."""
-    return activities["task_code"].isin(_relationships_in_project(context)["pred_code"])
+    return activities["task_code"].isin(_relationships_in_project(snapshot)["pred_code"])
 
 
-def _relationships_in_project(context: AnalysisContext) -> pd.DataFrame:
-    relationships = context.snapshot.relationships
+def _relationships_in_project(snapshot: Snapshot) -> pd.DataFrame:
+    relationships = snapshot.relationships
     return relationships[~relationships["is_external"].astype(bool)]
 
 
