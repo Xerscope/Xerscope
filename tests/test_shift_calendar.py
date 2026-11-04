@@ -1,0 +1,201 @@
+"""Which calendar measures a shift in working days (docs/formulas.md, 1.5).
+
+Every case builds the same schedule twice, C8 (Mon-Fri 8 h) and C10 (Mon-Fri 10 h), and
+puts the project and the activities on different ones, so the calendar a consumer picks
+shows in the number. The interval Mon 2026-03-02 08:00 -> Tue 2026-03-03 12:00 is
+12 working hours on C8 (1.5 d) and 14 on C10 (1.4 d).
+"""
+
+import pandas as pd
+import pytest
+from rulekit import STANDARDS, codes, run
+from xerkit import FM, active, hours, snap, todo
+
+from xerscope.analysis import AnalysisContext, Baseline, run_metric
+from xerscope.analysis.changelog import changelog
+from xerscope.analysis.progress import (
+    activity_finish_shift,
+    finish_shift_since_first,
+    milestone_slips,
+    milestone_trend,
+)
+from xerscope.analysis.wbs import ROOT, rollup
+from xerscope.store import SnapshotStore
+from xerscope.viz import categorise, gantt_rows
+
+FIRST, LAST = "2026-03-02 08:00", "2026-03-03 12:00"
+WD = {"C8": 1.5, "C10": 1.4}
+OTHER = {"C8": "C10", "C10": "C8"}
+# (calendar of the project, calendar of the activities): each calendar on each side
+PAIRS = pytest.mark.parametrize("project, activity", [("C8", "C10"), ("C10", "C8")])
+ACTIVITY_CALENDAR = pytest.mark.parametrize("project, activity", [("C8", "C8"), ("C8", "C10"), ("C10", "C8")])
+
+P6 = STANDARDS["P6"]
+DCMA = STANDARDS["DCMA"]
+DECM = STANDARDS["DECM"]
+
+
+def two_updates(project: str, activity: str, **task):
+    """Two updates, data dates FIRST and LAST; Z's forecast finish moves from FIRST to LAST."""
+
+    def update(finish: str, data_date: str):
+        z = todo("Z", clndr_id=activity, early_start_date=FIRST, early_end_date=finish, **task)
+        return snap([z], data_date=data_date, project={"clndr_id": project})
+
+    return update(FIRST, FIRST), update(LAST, LAST)
+
+
+# --- project dates: the project calendar -----------------------------------------------------
+
+
+@PAIRS
+def test_store_finish_shift_is_on_the_project_calendar(project, activity):
+    store = SnapshotStore(two_updates(project, activity))
+    assert store.summary["finish_shift_wd"].iloc[1] == pytest.approx(round(WD[project], 1))
+
+
+@PAIRS
+def test_finish_shift_since_first_is_on_the_project_calendar(project, activity):
+    assert finish_shift_since_first(SnapshotStore(two_updates(project, activity))) == pytest.approx(WD[project])
+
+
+@PAIRS
+def test_changelog_project_rows_are_on_the_project_calendar(project, activity):
+    log = changelog(*two_updates(project, activity)).query("category == 'Project'").set_index("field")
+    assert log.loc["data date", "delta"] == pytest.approx(WD[project])
+    assert log.loc["forecast finish", "delta"] == pytest.approx(WD[project])
+
+
+@PAIRS
+def test_wbs_finish_variance_is_on_the_project_calendar(project, activity):
+    old, new = two_updates(project, activity)
+    nodes = rollup(new, Baseline.from_snapshot(old)).set_index("wbs_id")
+    assert nodes.loc[ROOT, "finish_variance_wd"] == pytest.approx(round(WD[project], 1))
+
+
+@PAIRS
+def test_dcma_13_length_and_float_are_on_the_project_calendar(project, activity):
+    # CPL = FIRST -> LAST; total float -8 h is one day on C8, 0.8 day on C10
+    task = todo("Z", clndr_id=activity, early_start_date=FIRST, early_end_date=LAST, total_float_hr_cnt="-8")
+    s = snap([task], data_date=FIRST, project={"clndr_id": project, "plan_end_date": LAST})
+    r = run(DCMA, "DCMA-13", s)
+    length, total_float = WD[project], -8 / {"C8": 8, "C10": 10}[project]
+    assert r.note.startswith(f"CPL {length:g} wd")
+    assert r.value == pytest.approx((length + total_float) / length)
+
+
+# --- activity dates: the activity's calendar -------------------------------------------------
+
+
+@PAIRS
+def test_changelog_date_moves_are_on_the_activity_calendar(project, activity):
+    log = changelog(*two_updates(project, activity)).query("category == 'Dates'")
+    assert list(log["change"]) == ["finish moved"]
+    assert log["delta"].iloc[0] == pytest.approx(WD[activity], abs=0.005)
+
+
+@PAIRS
+def test_gantt_finish_shift_is_on_the_activity_calendar(project, activity):
+    old, new = two_updates(project, activity)
+    tasks = new.activities.assign(category=categorise(new.activities))
+    rows = gantt_rows(tasks, rollup(new), compare=old.activities, snapshot=new)
+    shift = next(r for r in rows if r["id"] == "a:Z")["shift_wd"]
+    assert shift == pytest.approx(round(WD[activity], 1))
+
+
+@PAIRS
+def test_milestone_slip_is_on_the_milestone_calendar(project, activity):
+    updates = [
+        snap(
+            [todo("M", clndr_id=activity, early_start_date=finish, early_end_date=finish, **FM)],
+            data_date=finish,
+            project={"clndr_id": project},
+        )
+        for finish in (FIRST, LAST)
+    ]
+    store = SnapshotStore(updates)
+    slip = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M"]
+    assert slip["slip_wd"] == pytest.approx(round(WD[activity], 1))
+    assert slip["last_week_wd"] == pytest.approx(round(WD[activity], 1))
+
+
+@PAIRS
+def test_activity_page_slip_is_on_the_activity_calendar(project, activity):
+    store = SnapshotStore(two_updates(project, activity))
+    history = store.history.query("task_code == 'Z'").sort_values("data_date")
+    assert activity_finish_shift(store, history) == pytest.approx(WD[activity])
+
+
+def test_activity_page_slip_needs_two_forecast_finishes():
+    store = SnapshotStore(two_updates("C8", "C8"))
+    history = store.history.query("task_code == 'Z'").sort_values("data_date")
+    assert activity_finish_shift(store, history.iloc[:1]) is None
+    assert activity_finish_shift(store, history.assign(finish=[pd.NaT, history["finish"].iloc[1]])) is None
+
+
+# --- hours-per-day rules: the activity's calendar --------------------------------------------
+
+
+@ACTIVITY_CALENDAR
+def test_p6_12_variance_is_on_the_activity_calendar(project, activity):
+    task = dict(clndr_id=activity, early_start_date=FIRST)
+    baseline = Baseline.from_snapshot(snap([todo("Z", early_end_date=FIRST, **task)], project={"clndr_id": project}))
+    now = snap([todo("Z", early_end_date=LAST, **task)], project={"clndr_id": project})
+    r = run(P6, "P6-12", now, baseline)
+    assert codes(r) == ["Z"]
+    assert r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(WD[activity], abs=0.005)
+
+
+@pytest.mark.parametrize("project", ["C8", "C10"])
+def test_dcma_08_limit_is_in_days_of_the_activity_calendar(project):
+    # 400 h baseline: 50 d on C8 (over 44), 40 d on C10
+    tasks = [todo(code, clndr_id=calendar, **hours(400)) for code, calendar in (("A8", "C8"), ("A10", "C10"))]
+    baseline = Baseline.from_snapshot(snap(tasks, project={"clndr_id": project}))
+    r = run(DCMA, "DCMA-08", snap(tasks, project={"clndr_id": project}), baseline)
+    assert codes(r) == ["A8"]
+
+
+@pytest.mark.parametrize("project", ["C8", "C10"])
+def test_06a506c_windows_are_in_days_of_the_activity_calendar(project):
+    """Not started: a start 3 wd after the data date rides (Thu 08:00 = 24 h on C8, 30 h on C10),
+    a start four hours later does not. Started: a remaining duration that moved by 2 wd or less
+    rides (80 h -> 60 h is 2.5 d on C8, 2.0 d on C10)."""
+
+    def week(data_date: str, near: str, far: str, remaining: str):
+        tasks = [
+            todo(f"{kind}{calendar}", clndr_id=calendar, early_start_date=start, **hours(8))
+            for kind, start in (("near", near), ("far", far))
+            for calendar in ("C8", "C10")
+        ]
+        tasks += [active(f"S{calendar}", clndr_id=calendar, remain_drtn_hr_cnt=remaining) for calendar in ("C8", "C10")]
+        return snap(tasks, data_date=data_date, project={"clndr_id": project})
+
+    old = week("2026-03-02 08:00", "2026-03-05 08:00", "2026-03-05 12:00", "80")
+    new = week("2026-03-30 08:00", "2026-04-02 08:00", "2026-04-02 12:00", "60")
+    store = SnapshotStore([old, new])
+    r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
+    assert codes(r) == ["SC10", "nearC10", "nearC8"]
+
+
+# --- changelog durations: hours, not days of a changing calendar -----------------------------
+
+
+@pytest.mark.parametrize("before, after", [("C8", "C10"), ("C10", "C8")])
+def test_changelog_ignores_a_calendar_change_at_constant_hours(before, after):
+    """P6 stores a duration in hours and only displays it in days of the activity's calendar
+    (Oracle P6 EPPM 23 Application Administration Guide, "Using Calendars to Define Hours Per Time
+    Period Settings"): 80 h is 10 d on C8 and 8 d on C10, the same duration. Only the calendar change is listed."""
+
+    def update(calendar: str, data_date: str):
+        return snap([todo("A", clndr_id=calendar, **hours(80))], data_date=data_date)
+
+    log = changelog(update(before, FIRST), update(after, LAST)).query("category != 'Project'")
+    assert list(log["change"]) == ["calendar changed"]
+
+
+def test_changelog_lists_an_hours_change_hidden_by_a_calendar_change():
+    # 80 h on C8 is 10 d, 100 h on C10 is 10 d: the days are equal, the duration grew by 20 h
+    old = snap([todo("A", clndr_id="C8", **hours(80))], data_date=FIRST)
+    new = snap([todo("A", clndr_id="C10", **hours(100))], data_date=LAST)
+    log = changelog(old, new).query("category == 'Durations'")
+    assert sorted(log["change"]) == ["original duration changed", "remaining duration increased"]

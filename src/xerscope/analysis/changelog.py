@@ -100,9 +100,8 @@ def changelog(old: Snapshot, new: Snapshot) -> pd.DataFrame:
 
 
 def _project_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame, current_all: pd.DataFrame) -> list:
-    calendar = new.calendar()
-    data_date_shift = calendar.working_days(old.data_date, new.data_date) if old.data_date is not None else None
-    finish_shift = calendar.working_days(old.finish_date, new.finish_date) if old.finish_date is not None else None
+    data_date_shift = new.project_working_days(old.data_date, new.data_date) if old.data_date is not None else None
+    finish_shift = new.project_working_days(old.finish_date, new.finish_date) if old.finish_date is not None else None
     old_links, new_links = len(old.relationships), len(new.relationships)
     old_count, new_count = len(previous_all), len(current_all)
     return [
@@ -145,28 +144,22 @@ def _activity_changes(old: Snapshot, new: Snapshot, previous: pd.DataFrame, curr
 
 
 def _duration_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
+    """Durations compared in hours, as P6 stores them: a calendar change alone re-expresses the same
+    hours in other days. The delta is in days of the new calendar, the old duration converted on it."""
     changes = []
-    for code in previous.index[_differs(previous["original_d"], current["original_d"])]:
+    old_in_new_days = previous[["target_drtn_hr_cnt", "remain_drtn_hr_cnt"]].div(current["hours_per_day"], axis=0)
+    for code in previous.index[_differs(previous["target_drtn_hr_cnt"], current["target_drtn_hr_cnt"])]:
         before, after = previous.loc[code, "original_d"], current.loc[code, "original_d"]
+        delta = after - old_in_new_days.loc[code, "target_drtn_hr_cnt"]
         changes.append(
-            _change(
-                "Durations", "original duration changed", code, "original duration", before, after, after - before, "wd"
-            )
+            _change("Durations", "original duration changed", code, "original duration", before, after, delta, "wd")
         )
-    grew = (current["remaining_d"] > previous["remaining_d"] + 1e-9) & ~current["is_complete"]
+    grew = (current["remain_drtn_hr_cnt"] > previous["remain_drtn_hr_cnt"] + 1e-9) & ~current["is_complete"]
     for code in previous.index[grew]:
         before, after = previous.loc[code, "remaining_d"], current.loc[code, "remaining_d"]
+        delta = after - old_in_new_days.loc[code, "remain_drtn_hr_cnt"]
         changes.append(
-            _change(
-                "Durations",
-                "remaining duration increased",
-                code,
-                "remaining duration",
-                before,
-                after,
-                after - before,
-                "wd",
-            )
+            _change("Durations", "remaining duration increased", code, "remaining duration", before, after, delta, "wd")
         )
     return changes
 
