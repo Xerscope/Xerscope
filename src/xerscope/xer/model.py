@@ -420,6 +420,7 @@ class Snapshot:
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
     task_codes: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=TASK_CODE_COLUMNS))
     file_projects: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=FILE_PROJECT_COLUMNS))
+    xer_tables: dict[str, tuple[int, int]] = field(default_factory=dict)  # every %T table: (rows, columns)
 
     def calendar(self, clndr_id: str | None = None) -> WorkCalendar:
         """Calendar by id; the project's default calendar when id is blank or unknown."""
@@ -678,6 +679,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
             "rsrc_short_name",
             "rsrc_clndr_id",
             "driving",
+            "curv_id",
             "act_qty",
         ]
         + ASSIGNMENT_NUM_COLS
@@ -689,7 +691,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
         raw_assignments = raw_assignments[raw_assignments["proj_id"] == inputs.project_id]
     assignments = _ensure_cols(
         raw_assignments.copy(),
-        ["taskrsrc_id", "rsrc_id", "role_id", "rsrc_type", "rollup_dates_flag"]
+        ["taskrsrc_id", "rsrc_id", "role_id", "rsrc_type", "rollup_dates_flag", "curv_id"]
         + ASSIGNMENT_NUM_COLS
         + ASSIGNMENT_DATE_COLS,
     )
@@ -1208,6 +1210,7 @@ def build_snapshot(
         code_values=code_values,
         task_codes=task_codes,
         file_projects=_file_projects(projects, all_tasks),
+        xer_tables={name: (len(table), len(table.columns)) for name, table in raw.tables.items()},
     )
     _check_snapshot_columns(snapshot)
     return snapshot

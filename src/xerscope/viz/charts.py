@@ -228,7 +228,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
     ends = []
     for i, (col, name) in enumerate(columns.items()):
         s = series.dropna(subset=[col])
-        digits = 3 if col == "spi" else 2  # SPI: 1.002 ahead of plan would read 1.00
+        digits = 3 if col in ("spi", "spi_cost") else 2  # SPI: 1.002 ahead of plan would read 1.00
         fig.add_trace(
             go.Scatter(
                 x=s["data_date"],

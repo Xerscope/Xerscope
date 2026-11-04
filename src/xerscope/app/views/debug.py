@@ -126,6 +126,20 @@ with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_e
     table(frames["08_etc_techniques"])
     table(frames["08_ev_settings"], max_height=480)
 
+with st.expander("9 · XER tables and planned value labour units", key="debug_pv_labor"):
+    st.caption(
+        "Diagnostic, not used by any KPI. Tables: every %T table of the file with its rows and columns, no cell "
+        "value. PV labour units at the data date by activity (xerscope) against by baseline assignment (Σ "
+        "target_qty x share of the assignment's own dates elapsed; activities without labour assignment keep "
+        "the activity value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - activity."
+    )
+    table(frames["09_xer_tables"], max_height=480)
+    if frames["09_pv_labor_check"].empty:
+        st.caption("No baseline or no data date: nothing to compare.")
+    else:
+        table(frames["09_pv_labor_check"])
+        table(frames["09_pv_labor_by_status"])
+
 
 def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
@@ -144,7 +158,7 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 8 as CSV. With anonymous exports on, Activity IDs, resource codes and WBS codes are renamed "
+    "Blocks 1 to 9 as CSV. With anonymous exports on, Activity IDs, resource codes and WBS codes are renamed "
     "as in the anonymised XER extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):

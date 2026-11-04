@@ -85,10 +85,14 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
         neither reading and is not explained.
 
 - [ ] **Earned value against Oracle P6** (pages under docs.oracle.com/cd/F88968_01/client_help/en_US/):
-      - PV: Oracle 47224 (P6 EPPM help v25) defines Planned Value Labor Units per activity, as computed here (`evm.py`,
-        in working time); the per-assignment reading is unverified.
+      - PV: Labor Units: per activity (Pro 26 glossary); Cost: per assignment (Pro 26 glossary),
+        implemented for the cost SPI (`planned_value_cost`). The date difference of that
+        formula is taken in working time (assumed, unverified); `PV_COST_WORKING_TIME`
+        switches to calendar time if a P6 Professional report contradicts it.
       - Manual future-period buckets are not modelled.
-      - BAC and AC are labour hours only.
+      - BAC, PV and EV cost are modelled (cost SPI); Actual Cost, CPI (cost) and EAC (cost) are
+        not: AC, CPI and EAC stay in labour hours.
+      - Cost uses the budgeted values (`target_cost`) whatever the EV basis.
       - Resource curves are treated as a technique (`EvPoint.not_modelled`); curves under
         Units are not reported.
       - The ETC technique "PF x (BAC - EV)" is not applied (EAC = AC + remaining); the technique

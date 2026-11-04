@@ -122,7 +122,7 @@ needs one: they get the baseline of the sidebar choice (the file's, a separate X
 carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
-| `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique) |
+| `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique); cost: BAC from `target_cost`, PV per assignment, EV = BAC × Performance %, SPI = EV cost / PV cost |
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = Last Planner (W-1 commitments, W outcome) |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source | read-only account of a result, shown under every check in the app |
@@ -259,7 +259,7 @@ Outside `analysis/`:
   targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
   end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
-  `cost_per_qty`; P6 computes its cost SPI from them, xerscope's SPI is in labour units).
+  `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI).
   `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
   `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
   unchanged, cost figures 0 as in the extract).

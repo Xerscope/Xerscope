@@ -1,6 +1,7 @@
 """Debug page block 6: the activities behind each load warning of the file."""
 
 import pandas as pd
+import pytest
 from xerkit import active, done, snap, todo
 
 from xerscope.analysis import builtin_standards
@@ -118,3 +119,90 @@ def test_ev_settings_block_lists_each_wbs_and_counts_the_techniques():
     ]
     counts = frames["08_etc_techniques"].set_index("etc_technique")
     assert counts["wbs"].to_dict() == {"remaining units": 1, "PF = 1": 1}
+
+
+# --- block 09: XER tables and planned value labour units ----------------------------------------
+
+MON, FRI = "2026-03-02 08:00", "2026-03-06 17:00"
+WED = "2026-03-04 08:00"  # two of the five working days of the week MON-FRI are elapsed: 0.4
+WEEK = dict(early_start_date=MON, early_end_date=FRI, target_drtn_hr_cnt="40", remain_drtn_hr_cnt="40")
+
+
+def _labor(code, qty, start=None, end=None, **kw):
+    dates = {"target_start_date": start, "target_end_date": end} if start else {}
+    return dict(task_code=code, rsrc_id="R1", rsrc_type="RT_Labor", target_qty=str(qty), **dates, **kw)
+
+
+def test_xer_tables_lists_every_table_of_the_file_with_rows_and_columns():
+    """An unknown table added to the file is listed with its own counts; no cell value is written."""
+    from xerkit import xer_text
+
+    from xerscope.xer import build_snapshot, parse_text
+
+    text = xer_text([todo("A"), todo("B")]) + "%T\tMYSTERY\n%F\tx\ty\tz\n%R\ta\tb\tc\n%R\td\te\tf\n%R\tg\th\ti\n"
+    s = build_snapshot(parse_text(text, source="test.xer"))
+    table = diagnostic_frames(s, None, builtin_standards()["P6"])["09_xer_tables"].set_index("table")
+    assert table.loc["MYSTERY"].tolist() == [3, 3]
+    assert table.loc["TASK", "rows"] == 2 and {"PROJECT", "CALENDAR"} <= set(table.index)
+    assert list(table.columns) == ["rows", "columns"]
+    assert "a" not in set(
+        diagnostic_frames(s, None, builtin_standards()["P6"])["09_xer_tables"].astype(str).to_numpy().ravel()
+    )
+
+
+def test_pv_labor_check_by_assignment_against_by_activity():
+    """Data date Wednesday 08:00 (2 of 5 working days of the baseline week = 0.4).
+    A, 160 h: 100 h Mon-Fri -> 100 x 0.4 = 40; 60 h Tue-Fri (8 of 32 h elapsed = 0.25) -> 15.
+      By assignment 55, by activity 160 x 0.4 = 64, gap -9. In progress.
+    B, 40 h, no assignment: 40 x 0.4 = 16 both ways. In progress.
+    C, 80 h, one assignment naming a curve, on the activity's dates: 80 x 0.4 = 32 both ways.
+    D, 40 h next week: 0 both ways. Not started.
+    E, 40 h the week before, one assignment Wed 02-25 to Fri 03-06 (24 + 16 = 40 of 64 h elapsed = 0.625
+      -> 25) against the activity's 40 (complete by its dates): gap -15."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import pv_labor_check
+
+    week_before = dict(early_start_date="2026-02-23 08:00", early_end_date="2026-02-27 17:00")
+    next_week = dict(early_start_date="2026-03-09 08:00", early_end_date="2026-03-13 17:00")
+    tasks = [
+        todo("A", **WEEK, target_work_qty="160"),
+        todo("B", **WEEK, target_work_qty="40"),
+        todo("C", **WEEK, target_work_qty="80"),
+        todo("D", **{**WEEK, **next_week}, target_work_qty="40"),
+        todo("E", **{**WEEK, **week_before}, target_work_qty="40"),
+    ]
+    assign = [
+        _labor("A", 100, MON, FRI),
+        _labor("A", 60, "2026-03-03 08:00", FRI),
+        _labor("C", 80, curv_id="7"),
+        _labor("E", 40, "2026-02-25 08:00", FRI),
+    ]
+    baseline = Baseline.from_snapshot(snap(tasks, assign=assign))
+    update = snap(tasks, assign=assign, data_date=WED)
+    totals, by_status = pv_labor_check(update, baseline)
+    row = totals.iloc[0]
+    assert (row["activities"], row["assignments"], row["labor_assignments"]) == (5, 4, 4)
+    assert (row["labor_assignments_with_curve"], row["bl_hr_with_curve"]) == (1, 80)
+    assert (row["bac_activity_hr"], row["bac_assignment_hr"]) == (360, 360)
+    assert (row["pv_activity_hr"], row["pv_assignment_hr"], row["gap_hr"]) == pytest.approx(
+        (64 + 16 + 32 + 40, 55 + 16 + 32 + 25, -9 - 15)
+    )
+    by_status = by_status.set_index("status")
+    assert by_status["activities"].to_dict() == {"not started": 1, "in progress": 3, "complete": 1}
+    assert by_status["gap_hr"].to_dict() == pytest.approx({"not started": 0, "in progress": -9, "complete": -15})
+    assert by_status["pv_assignment_hr"].sum() == pytest.approx(row["pv_assignment_hr"])
+
+
+def test_pv_labor_check_equals_the_activity_value_without_assignments():
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import pv_labor_check
+
+    tasks = [todo("B", **WEEK, target_work_qty="40")]
+    totals, _ = pv_labor_check(snap(tasks, data_date=WED), Baseline.from_snapshot(snap(tasks)))
+    assert totals.loc[0, ["pv_activity_hr", "pv_assignment_hr", "gap_hr"]].tolist() == pytest.approx([16, 16, 0])
+
+
+def test_pv_labor_check_is_empty_without_baseline_and_in_the_diagnostic_zip():
+    s = snap([todo("A")])
+    frames = diagnostic_frames(s, None, builtin_standards()["P6"])
+    assert frames["09_pv_labor_check"].empty and frames["09_pv_labor_by_status"].empty

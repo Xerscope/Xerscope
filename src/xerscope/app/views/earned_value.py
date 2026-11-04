@@ -8,6 +8,7 @@ from xerscope.analysis.evm import (
     earned,
     etc_settings,
     etc_technique_counts,
+    ev_point,
     evm_series,
     forecast_curve,
     pv_curve,
@@ -61,6 +62,13 @@ def change_since_previous(row: pd.Series, previous: pd.DataFrame, column: str, f
     return formatter(row[column] - previous[column].iloc[0])
 
 
+def cost_spi_text(row: pd.Series, template: str = "{:.3f}") -> str:
+    """The cost SPI, or why there is none."""
+    if pd.notna(row["spi_cost"]):
+        return template.format(row["spi_cost"])
+    return "n/a — no cost in the baseline" if not row["bac_cost"] else "n/a — no planned value cost yet"
+
+
 def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
     ui.kpis(
         [
@@ -71,6 +79,12 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
                 "Earned / BAC",
             ),
             ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
+            (
+                "SPI",
+                cost_spi_text(row),
+                change_since_previous(row, previous, "spi_cost", format_index_change),
+                "EV cost / PV cost; P6 column: Schedule Performance Index",
+            ),
             (
                 "SPI (labour units)",
                 format_number(row["spi"], "{:.3f}"),
@@ -133,6 +147,32 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                     "Schedule Performance Index - Labor Units",
                 ),
                 (
+                    "BAC cost",
+                    "Σ TASKRSRC.target_cost (all resource types) + Σ PROJCOST.target_cost of the baseline",
+                    f"{row['bac_cost']:,.1f}",
+                    "Budget At Completion (BL Total Cost)",
+                ),
+                (
+                    "PV cost",
+                    "Σ over assignments of BL cost × share of the assignment's dates elapsed at the data date "
+                    "(date difference; working time assumed, unverified); expenses and activities without "
+                    "resource: BL cost × Schedule % Complete",
+                    f"{row['pv_cost']:,.1f}",
+                    "Planned Value Cost",
+                ),
+                (
+                    "EV cost",
+                    "Σ BL cost × Performance % Complete",
+                    f"{row['ev_cost']:,.1f}",
+                    "Earned Value Cost",
+                ),
+                (
+                    "SPI",
+                    "EV cost / PV cost",
+                    f"{row['ev_cost']:,.1f} / {row['pv_cost']:,.1f} = {cost_spi_text(row)}",
+                    "Schedule Performance Index",
+                ),
+                (
                     "SV",
                     "EV − PV",
                     f"{earned_hours:,.1f} − {planned:,.1f} = {row['sv_hr']:+,.1f} h",
@@ -185,6 +225,11 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                 + ", ".join(f"{ui.md_text(item.wbs_code)} ({item.etc_technique})" for item in with_pf.itertuples()),
                 icon=":material/warning:",
             )
+        curves = ev_point(snapshot, baseline).not_modelled_cost
+        if curves:
+            st.caption(
+                "PV cost: resource curves not modelled (linear spread used) for " + ui.md_text(", ".join(curves[:20]))
+            )
         st.caption(
             "BEI is a count, not hours: completed activities / activities due by the data date "
             "(see Schedule health for the list)."
@@ -214,13 +259,11 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
         "Performance indices by update",
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
-    st.plotly_chart(
-        build_index_trend(
-            series, {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
-        ),
-        width="stretch",
-    )
-    ui.table(series.drop(columns=["bac_hr"]))
+    indices = {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
+    if series["spi_cost"].notna().any():
+        indices = {"spi_cost": "SPI", **indices}
+    st.plotly_chart(build_index_trend(series, indices), width="stretch")
+    ui.table(series.drop(columns=["bac_hr", "bac_cost"]))
 
 
 def show_activity_detail(snapshot, baseline) -> None:

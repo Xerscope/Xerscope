@@ -114,6 +114,8 @@ def test_earned_value_kpis_equal_evm_series(app, store):
         shown = _metrics(app)
         assert shown["EV %"] == f"{row['ev_pct']:.1f} %", snapshot.label
         assert shown["PV %"] == f"{row['pv_pct']:.1f} %", snapshot.label
+        expected_cost_spi = "n/a — no cost in the baseline" if pd.isna(row["spi_cost"]) else f"{row['spi_cost']:.3f}"
+        assert shown["SPI"] == expected_cost_spi, snapshot.label
         assert shown["SPI (labour units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.3f}"), snapshot.label
         assert shown["SV"] == f"{row['sv_hr']:+,.0f} h", snapshot.label
         assert shown["BEI (P6 / DCMA)"] == " / ".join(

@@ -114,6 +114,9 @@ MONEY = {
     "TASKRSRC": {"act_ot_cost", "act_reg_cost", "act_this_per_cost", "cost_per_qty", "remain_cost", "target_cost"},
     "PROJCOST": {"act_cost", "cost_per_qty", "remain_cost", "target_cost"},
 }
+# Amounts xerscope computes from the costs (EV series, baseline cost per activity): 0 in the tables
+# it anonymises, as MONEY sets them in the XER. The ratio spi_cost reveals no amount and stays.
+MONEY_COLUMNS = frozenset({"bl_cost", "bac_cost", "pv_cost", "ev_cost"})
 GUIDS = {"guid"}
 # Hex digits of each kind of new code. 8 for activities: ~4e9 values, so ~0.03 % chance of two
 # IDs sharing one among 50,000; a clash is refused (CodeClash), never written.
@@ -412,6 +415,8 @@ class Anonymizer:
             elif values.map(lambda value: isinstance(value, str)).any():
                 self.report.emptied_columns.add(f"table.{column}")
                 out[column] = ""
+        for column in MONEY_COLUMNS & set(out.columns):
+            out[column] = [self._zeroed(value) for value in out[column]]
         for column, source in self.NAME_COLUMNS.items():
             if column in frame.columns:
                 codes = out[source] if source in out.columns else pd.Series("", index=out.index)

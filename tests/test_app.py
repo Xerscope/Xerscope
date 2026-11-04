@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from conftest import P6_CORPUS_HINT, missing
 from streamlit.testing.v1 import AppTest
-from xerkit import hours, todo, with_second_project, xer_text
+from xerkit import active, hours, todo, with_second_project, xer_text
 
 import xerscope
 from xerscope.app import ui
@@ -202,13 +202,45 @@ def test_earned_value_needs_hours_and_baseline(app):
     assert any("Choose a baseline" in i.value for i in app.info)
 
 
-def test_earned_value_names_the_spi_as_the_labour_units_column(app):
-    """The EV / PV index is P6's "Schedule Performance Index - Labor Units" column, not the cost SPI."""
+def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second(app):
+    """The demo schedules carry hours, no cost: the cost SPI reads n/a and the labour units index stays."""
     app.switch_page("views/earned_value.py").run()
     _ok(app)
-    spi = next(m for m in app.metric if m.label == "SPI (labour units)")
-    assert "Schedule Performance Index - Labor Units" in spi.help
-    assert not [m for m in app.metric if m.label == "SPI"]
+    labels = [m.label for m in app.metric]
+    assert labels.index("SPI") + 1 == labels.index("SPI (labour units)")
+    cost = next(m for m in app.metric if m.label == "SPI")
+    assert cost.value == "n/a — no cost in the baseline"
+    assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
+    labour = next(m for m in app.metric if m.label == "SPI (labour units)")
+    assert "Schedule Performance Index - Labor Units" in labour.help
+
+
+def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
+    """A (cost 5000, 50 % complete) over Mon-Fri, data date Wednesday 08:00: PV cost 5000 x 0.4 = 2000,
+    EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here."""
+    week = dict(
+        target_start_date="2026-03-02 08:00",
+        target_end_date="2026-03-06 17:00",
+        early_start_date="2026-03-02 08:00",
+        early_end_date="2026-03-06 17:00",
+    )
+    tasks = [
+        active(
+            "A", target_work_qty="40", remain_work_qty="20", target_drtn_hr_cnt="40", remain_drtn_hr_cnt="20", **week
+        )
+    ]
+    assign = [dict(task_code="A", rsrc_id="R1", rsrc_type="RT_Labor", target_qty="40", target_cost="5000")]
+    (tmp_path / "w1.xer").write_text(xer_text(tasks, assign=assign, data_date="2026-03-04 08:00"))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/earned_value.py").run()
+    _ok(at)
+    assert next(m for m in at.metric if m.label == "SPI").value == "1.250"
+    table = next(d.value for d in at.dataframe if "measure" in d.value.columns).set_index("measure")
+    assert table.loc["BAC cost"].iloc[-1] == "5,000.0"
+    assert table.loc["PV cost"].iloc[-1].startswith("2,000.0")
+    assert table.loc["EV cost"].iloc[-1].startswith("2,500.0")
+    assert table.loc["SPI", "P6 column"] == "Schedule Performance Index"
+    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.250"
 
 
 def test_earned_value_warns_when_a_wbs_computes_its_etc_with_a_performance_factor(tmp_path, monkeypatch):
@@ -737,7 +769,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 8 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 9 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 

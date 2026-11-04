@@ -267,7 +267,7 @@ a mandatory constraint.
 
 ## 3. Earned value (analysis/baseline.py, analysis/evm.py)
 
-Units: labour hours. Baseline = a designated XER (`Baseline.from_snapshot`), the project the file names
+Units: labour hours, and cost for the rows marked cost. Baseline = a designated XER (`Baseline.from_snapshot`), the project the file names
 as its P6 Project Baseline (`PROJECT.sum_base_proj_id` of the analysed project, built as a snapshot and
 passed to `Baseline.from_snapshot`, so `bl_start` / `bl_finish` = its actual > remaining > early dates, P6's
 BL Project Start / Finish; used only when that project is in the file and its `orig_proj_id`, if filled, is
@@ -291,7 +291,11 @@ snapshot's own `target_*` dates (`Baseline.planned`), matched by `task_code` (fi
 | ETC technique (`etc_technique`) | `PROJWBS.ev_etc_compute_type` of each WBS (project node left out): `EE_Rem_hr` remaining units, `EE_PF_1` PF = 1, `EE_PF_cpi` PF = 1/CPI (the codes of the reference files; the 1/(CPI × SPI) and entered-PF codes are not identified, any other code is shown as stored). Oracle (Pro 25, Earned Value tab - WBS Details): ETC = PF × (BAC − EV). Reported only: ETC above stays the remaining hours, and the page warns when a WBS has a code starting `EE_PF` |
 | EAC | `AC + ETC` |
 | SV | `EV − PV` |
-| SPI | `EV / PV`; none when PV = 0 |
+| SPI (labour units, `spi`) | `EV / PV`; none when PV = 0. P6 column "Schedule Performance Index - Labor Units" |
+| `bl_cost` / BAC cost (`bac_cost`) | per baseline activity `Σ TASKRSRC.target_cost` of its assignments (labour, nonlabour, material, roles) `+ Σ PROJCOST.target_cost` of its expenses, read on the baseline snapshot; BAC cost = `Σ bl_cost`. Independent of `ev_basis`. P6 Professional 26 help (PDF G57535-02, 9 Oct 2026, glossary): "Budget At Completion = Budgeted or Planned Labor Cost + Nonlabor Cost + Material Cost + Expense Cost. It is the same as the BL Total Cost." |
+| PV cost (`pv_cost`) | P6 Professional 26 glossary: "Individual resource Budget At Completion × (Data Date of current project − Baseline Assignment Start Date) / (Baseline Assignment Finish Date − Baseline Assignment Start Date). The Planned Value Cost of an activity is the sum of the Planned Value Cost of each individual resource assignment on the activity. [...] If an activity has no resources, [...] Budget At Completion × Schedule % Complete [(Data date − Baseline Start) / (Planned Finish − Baseline Start)]." Implemented (`planned_value_cost`): per assignment, `target_cost × clip(share, 0, 1)`; a blank assignment date takes the activity's; expenses (PROJCOST) and the part of the budget no assignment carries take `bl_cost × share` on the activity's `ev_start/ev_finish`. Assignment dates: planned basis `target_start_date/target_end_date`; other bases actual, then remaining (`restart_date/reend_date`), then target. **The text writes a difference of dates: working time of the assignment's resource calendar (else the activity's) is assumed, unverified**; `evm.PV_COST_WORKING_TIME = False` switches to calendar time. Resource curves (`TASKRSRC.curv_id` not blank) and manual future-period values are not modelled (curves listed in `EvPoint.not_modelled_cost`). Whether the P6 Professional 24 behaviour is the same is not verified |
+| EV cost (`ev_cost`) | `Σ bl_cost × Performance % / 100` (Glossary: "Earned Value Cost = Budget at Completion × Performance % Complete"), same technique as EV |
+| SPI (cost, `spi_cost`) | `EV cost / PV cost`; none when PV cost = 0 (no cost in the baseline, or nothing planned yet). P6 column "Schedule Performance Index" (Glossary: "Schedule Performance Index (SPI) = Earned Value Cost / Planned Value Cost"). The Earned value page shows it first, the labour units index second. P6 Professional 26 was read from its PDF, not run: the figure of a P6 report is the oracle, none is pinned yet |
 | CPI (`cpi`) | `EV / AC`, all actual hours; none when AC = 0. P6 column "Cost Performance Index - Labor Units" = Earned Value Labor Units / Actual Labor Units (Oracle P6 EPPM help v25, page 47224, docs.oracle.com/cd/G18294_01/p6help/en/47224.htm) |
 | `productivity` (EV/AC on baselined work) | `EV / (AC − ac_unbaselined_hr)`; none when that is 0 |
 | `pv_pct`, `ev_pct` | `100 × PV / BAC`, `100 × EV / BAC`; none when BAC = 0 |
@@ -305,7 +309,7 @@ test_ev_spi_and_unbaselined, test_performance_pct_follows_the_wbs_ev_technique,
 test_ev_technique_codes, test_ev_basis_follows_p6_admin_preference,
 test_labour_hours_fall_back_to_assignments,
 test_evm_series_one_point_per_update_against_one_baseline,
-test_forecast_curve_starts_at_ac_and_ends_at_eac.
+test_forecast_curve_starts_at_ac_and_ends_at_eac. Cost rows: `test_spi_cost.py`.
 
 ## 4. Progress (analysis/progress.py, store.py)
 

@@ -323,3 +323,43 @@ def test_the_sets_table_columns_come_out_with_new_codes():
         "TK_NotStart",
         "TK_Active",
     ]
+
+
+def test_cost_amounts_of_the_earned_value_series_are_zero_in_anonymous_exports():
+    """BAC 16500, PV 6600, EV 8000 are financial data: the anonymous CSV carries 0 for them and
+    none of the raw amounts; the ratio stays (8000 / 6600 = 1.2121)."""
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00"}
+    assign = [{"task_code": "A", "rsrc_id": "R1", "rsrc_type": "RT_Labor", "target_qty": "100", "target_cost": "16500"}]
+    text = xer_text([todo("A", **week)], assign=assign)
+    baseline = Baseline.from_snapshot(build_snapshot(parse_text(text, source="b.xer")))
+    update = build_snapshot(
+        parse_text(xer_text([todo("A", **week, remain_drtn_hr_cnt="48", status_code="TK_Active",
+                                  act_start_date="2026-03-02 08:00")], data_date="2026-03-04 08:00"), source="u.xer")
+    )  # fmt: skip
+    series = evm_series(SnapshotStore([update]), baseline)
+    assert series.loc[0, "bac_cost"] == 16500 and series.loc[0, "pv_cost"] == pytest.approx(6600)
+    assert series.loc[0, "ev_cost"] > 0
+    anonymizer = Anonymizer.from_raws([parse_text(text, source="b.xer")])
+    out = pd.read_csv(io.BytesIO(anonymizer.csv(series)))
+    assert out[["bac_cost", "pv_cost", "ev_cost"]].iloc[0].tolist() == [0, 0, 0]
+    assert out.loc[0, "spi_cost"] == pytest.approx(series.loc[0, "spi_cost"])
+    raw_text = anonymizer.csv(series).decode("utf-8-sig")
+    assert not re.search(r"16500|6600|8000", raw_text)
+
+
+def test_diagnostic_block_09_holds_no_name_or_code():
+    """Table names, counts and hour totals only: the anonymous zip is written, and no activity code or name of the
+    file is in it."""
+    from xerscope.analysis import Baseline, builtin_standards
+    from xerscope.app.diagnostic import diagnostic_frames
+
+    tasks = [todo("SECRETCODE1", task_name="Secret name", early_start_date="2026-03-02 08:00",
+                  early_end_date="2026-03-06 17:00", target_work_qty="40")]  # fmt: skip
+    raw = parse_text(_file(tasks, assign=[{"task_code": "SECRETCODE1", "rsrc_id": "900", "target_qty": "40"}]), "x.xer")
+    snapshot = build_snapshot(raw)
+    frames = diagnostic_frames(snapshot, Baseline.planned(snapshot), builtin_standards()["P6"], anonymous=True)
+    block = {name: frame for name, frame in frames.items() if name.startswith("09_")}
+    assert len(block) == 3 and not block["09_pv_labor_check"].empty
+    with zipfile.ZipFile(io.BytesIO(Anonymizer.from_raws([raw]).zip_frames(block))) as archive:
+        text = "".join(archive.read(name).decode("utf-8-sig") for name in archive.namelist())
+    assert "SECRETCODE1" not in text and "Secret name" not in text and "TASKRSRC" in text
