@@ -154,6 +154,7 @@ class SnapshotStore:
                     "projects_in_file": " · ".join(f"{code} ({n})" for code, n in s.project_task_counts.items()),
                     "data_date": s.data_date,
                     "data_date_from": s.data_date_source,
+                    "baseline": s.file_baseline.text,
                     "activities": len(s.activities),
                 }
                 for s in sorted(self._snaps, key=lambda snap: snap.source)
@@ -165,6 +166,7 @@ class SnapshotStore:
                 "projects_in_file",
                 "data_date",
                 "data_date_from",
+                "baseline",
                 "activities",
             ],
         )

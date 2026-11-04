@@ -267,9 +267,12 @@ a mandatory constraint.
 
 ## 3. Earned value (analysis/baseline.py, analysis/evm.py)
 
-Units: labour hours. Baseline = a designated XER (`Baseline.from_snapshot`) or the
-snapshot's own `target_*` dates (`Baseline.planned`), matched by `task_code` (first row
-per code kept).
+Units: labour hours. Baseline = a designated XER (`Baseline.from_snapshot`), the project the file names
+as its P6 Project Baseline (`PROJECT.sum_base_proj_id` of the analysed project, built as a snapshot and
+passed to `Baseline.from_snapshot`, so `bl_start` / `bl_finish` = its actual > remaining > early dates, P6's
+BL Project Start / Finish; used only when that project is in the file and its `orig_proj_id`, if filled, is
+the analysed project; Oracle P6 EPPM XER Import/Export Data Map, table PROJECT, v23; v26 unverified) or the
+snapshot's own `target_*` dates (`Baseline.planned`), matched by `task_code` (first row per code kept).
 
 | Symbol | Definition |
 |---|---|

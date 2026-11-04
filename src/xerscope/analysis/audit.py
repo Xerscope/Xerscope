@@ -111,7 +111,7 @@ def sets_long(results: list[CheckResult], snapshot) -> pd.DataFrame:
                         (_with_ends(frame, activities) if sets.subject == "relationships" else frame).assign(set=name)
                     )
         part = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame({"set": [""]})
-        parts.append(part.assign(note=result.note, check_id=result.metric.id))
+        parts.append(part.assign(note=result.note_with_baseline, check_id=result.metric.id))
     table = pd.concat(parts, ignore_index=True)
     return table[FRONT + [column for column in table.columns if column not in FRONT]]
 

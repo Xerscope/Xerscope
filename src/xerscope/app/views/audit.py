@@ -15,7 +15,15 @@ from xerscope.analysis.explain import explain
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
 from xerscope.app.sets import show_funnel, show_sets
-from xerscope.app.state import baseline_for, memo, require_store, snapshot_picker, sources_of, standards
+from xerscope.app.state import (
+    baseline_for,
+    memo,
+    require_store,
+    show_baseline_used,
+    snapshot_picker,
+    sources_of,
+    standards,
+)
 
 # Streamlit drops a widget's value once its page is left: the audit settings are kept here,
 # in the session only, so they survive a visit to another page until Reset.
@@ -97,6 +105,8 @@ def show_explanation(result) -> None:
             st.markdown("\n".join(f"- {line}" for line in explanation.population))
         if result.note and result.note not in explanation.formula:
             st.markdown(f"**Note** · {ui.md_text(result.note)}")
+        if explanation.baseline:
+            st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
     with right:
         st.markdown("**Method**")
         st.caption(explanation.method.replace("``", "`"))
@@ -161,6 +171,7 @@ with top:
         lead="The sets behind a check, and the check re-run with other settings. Changes here stay on this "
         "page: Schedule health keeps the loaded standards.",
     )
+    show_baseline_used(snapshot, baseline)
 if standard_id is None:
     st.info("Pick a standard, then a check.", icon=":material/fact_check:")
     st.stop()

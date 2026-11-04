@@ -43,6 +43,7 @@ class Explanation:
     parameters: list[tuple[str, str, str]] = field(default_factory=list)  # (name, value, origin)
     flagged_label: str = "Flagged items"
     subject: str = "activities"
+    baseline: str = ""  # the baseline the result was computed on, when the check depends on one
 
 
 def noun(subject: str, n: int) -> str:
@@ -231,4 +232,5 @@ def explain(result: CheckResult) -> Explanation:
         parameters=parameters,
         flagged_label=rule.title or "Flagged items",
         subject=subject,
+        baseline=result.baseline,
     )

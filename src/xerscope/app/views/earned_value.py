@@ -14,7 +14,15 @@ from xerscope.analysis.evm import (
     uses_pf,
 )
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, csv_download, memo, require_store, snapshot_picker, sources_of
+from xerscope.app.state import (
+    baseline_for,
+    csv_download,
+    memo,
+    require_store,
+    show_baseline_used,
+    snapshot_picker,
+    sources_of,
+)
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 
 BEI_METRIC_IDS = {"P6": "P6-13", "DCMA": "DCMA-14"}  # the BEI check of each built-in standard
@@ -248,6 +256,7 @@ with top:
         lead="Labour hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )
+    show_baseline_used(snapshot, baseline, series=True)
 if baseline is None:
     st.info("Choose a baseline in the sidebar (a loaded snapshot or a separate BL file).")
     st.stop()

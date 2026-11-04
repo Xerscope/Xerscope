@@ -60,6 +60,11 @@ with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=Tru
             icon=":material/warning:",
         )
     table(options)
+    st.caption(
+        "Projects in the file: sum_base_proj_id is the project's P6 Project Baseline, orig_proj_id the project "
+        "a baseline copy was made from."
+    )
+    table(frames["01b_projects"])
 
 # keyed blocks: a label holds a count that changes with the update, and Streamlit keys an
 # unkeyed expander on its label, so it would redraw closed

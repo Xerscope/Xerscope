@@ -106,6 +106,9 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Memory per loaded file: a synthetic 43 MB export (97,121 activities) holds about
       0.65 GB parsed, plus its raw bytes in session state. This sets how many weeks fit under
       the NAS's memory cap (docs/deploy.md §7): drop the bytes once parsed.
+- [ ] Baseline in each file: building the baseline from the file re-reads the whole export, cached per
+      session; costly on ~40 MB files. It also needs the raw bytes kept in session state, which the
+      item above would drop.
 
 ## Deployment and CI
 

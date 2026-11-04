@@ -335,6 +335,55 @@ def _check_snapshot_columns(snap: Snapshot) -> None:
             raise XerError(f"{snap.source}: snapshot.{name} lacks declared columns {missing}")
 
 
+# Every PROJECT row of the file: TASK rows, and the baseline pointers P6 writes (EPPM XER data map,
+# table PROJECT, v23: sum_base_proj_id "Project Baseline", orig_proj_id "Original Project",
+# last_baseline_update_date "Last Update Date"; same XER format on 26, unverified).
+FILE_PROJECT_COLUMNS = [
+    "proj_id", "proj_short_name", "tasks", "sum_base_proj_id", "orig_proj_id", "last_baseline_update_date",
+]  # fmt: skip
+
+
+@dataclass(frozen=True)
+class FileBaseline:
+    """The P6 Project Baseline of the analysed project (``sum_base_proj_id``) as the same file holds it.
+
+    ``usable``: the pointer names another project of the file that owns activities and, when it
+    records its ``orig_proj_id``, was copied from the analysed project. Otherwise ``note`` says why not.
+    """
+
+    proj_id: str
+    code: str
+    usable: bool
+    note: str
+    updated: str = ""  # last_baseline_update_date of the baseline project, as stored
+
+    @property
+    def text(self) -> str:
+        if self.usable:
+            return f"Baseline: {self.code} (from the file)"
+        return f"Baseline: none in file ({self.note})" if self.note else "Baseline: none in file"
+
+
+def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
+    """Resolve ``sum_base_proj_id`` of ``project_id`` among the PROJECT rows of the file."""
+    rows = file_projects.set_index("proj_id")
+    pointer = str(rows.loc[project_id, "sum_base_proj_id"]) if project_id in rows.index else ""
+    if not pointer:
+        return FileBaseline("", "", False, "")
+    if pointer == project_id:
+        return FileBaseline(pointer, "", False, "the pointer names the analysed project itself")
+    if pointer not in rows.index:
+        return FileBaseline(pointer, "", False, f"points to project {pointer}, which is not in the file")
+    target = rows.loc[pointer]
+    if target["tasks"] == 0:
+        return FileBaseline(pointer, target["proj_short_name"], False, f"project {pointer} has no activities")
+    origin = str(target["orig_proj_id"])
+    if origin and origin != project_id:
+        note = f"project {pointer} was copied from project {origin}, not from the analysed project {project_id}"
+        return FileBaseline(pointer, target["proj_short_name"], False, note)
+    return FileBaseline(pointer, target["proj_short_name"], True, "", str(target["last_baseline_update_date"]))
+
+
 CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
 
@@ -370,6 +419,7 @@ class Snapshot:
     # value each activity is assigned (_activity_codes)
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
     task_codes: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=TASK_CODE_COLUMNS))
+    file_projects: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=FILE_PROJECT_COLUMNS))
 
     def calendar(self, clndr_id: str | None = None) -> WorkCalendar:
         """Calendar by id; the project's default calendar when id is blank or unknown."""
@@ -415,6 +465,10 @@ class Snapshot:
         """Working days from ``start`` to ``end`` on one activity's calendar (project calendar when
         the id is blank or unknown): for one activity's dates. ``working_days`` does it row by row."""
         return self.calendar(clndr_id).working_days(start, end)
+
+    @property
+    def file_baseline(self) -> FileBaseline:
+        return file_baseline(self.file_projects, self.project_id)
 
     @property
     def label(self) -> str:
@@ -672,11 +726,17 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _select_project(
-    source: str, projects: pd.DataFrame, all_tasks: pd.DataFrame, project_code: str | None, warnings: list[str]
+    source: str,
+    projects: pd.DataFrame,
+    all_tasks: pd.DataFrame,
+    project_code: str | None,
+    warnings: list[str],
+    project_id: str | None = None,
 ) -> tuple[pd.Series, dict[str, int], str]:
     """The PROJECT row to build the snapshot for, the TASK row count of every project that owns
     activities (by code, in file order), and how the row was selected: ``chosen`` (the
-    requested code), ``only project`` or ``most TASK rows``."""
+    requested code or ``project_id``), ``only project`` or ``most TASK rows``. ``project_id`` names a
+    project exactly: a baseline copy can carry the code of the project it was copied from."""
     task_counts = all_tasks["proj_id"].value_counts()
     projects = _ensure_cols(
         projects[projects["proj_id"].isin(task_counts.index)].copy(),
@@ -695,16 +755,27 @@ def _select_project(
         raise XerError(f"{source}: no project owns any activity")
     projects["_n"] = projects["proj_id"].map(task_counts)
     counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
-    if project_code:
-        selected = projects[projects["proj_short_name"] == project_code]
+    if project_code or project_id:
+        selected = (
+            projects[projects["proj_id"] == project_id]
+            if project_id
+            else projects[projects["proj_short_name"] == project_code]
+        )
         if selected.empty:
-            raise XerError(f"{source}: project {project_code!r} not found (has {list(counts)})")
+            raise XerError(f"{source}: project {project_id or project_code!r} not found (has {list(counts)})")
         return selected.iloc[0], counts, "chosen"
     project_row = projects.sort_values("_n", ascending=False).iloc[0]
     if len(projects) == 1:
         return project_row, counts, "only project"
     warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
     return project_row, counts, "most TASK rows"
+
+
+def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:
+    """One row per PROJECT row of the file (``FILE_PROJECT_COLUMNS``), in file order."""
+    table = _ensure_cols(projects.copy(), FILE_PROJECT_COLUMNS)
+    table["tasks"] = table["proj_id"].map(all_tasks["proj_id"].value_counts()).fillna(0).astype(int)
+    return table[FILE_PROJECT_COLUMNS].reset_index(drop=True)
 
 
 def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
@@ -1052,11 +1123,13 @@ def build_snapshot(
     raw: RawXer,
     project_code: str | None = None,
     settings: Settings = DEFAULT_SETTINGS,
+    project_id: str | None = None,
 ) -> Snapshot:
     """Turn a parsed XER into a typed Snapshot for one project.
 
     If the file contains several projects, ``project_code`` selects one; otherwise the
-    project with the most activities is used and a warning is recorded.
+    project with the most activities is used and a warning is recorded. ``project_id``
+    (PROJECT.proj_id) selects one exactly, over ``project_code``.
     """
     projects = raw.table("PROJECT")
     if projects.empty or raw.table("TASK").empty:
@@ -1067,7 +1140,9 @@ def build_snapshot(
     all_relationships = _taskpred_table(raw, all_tasks, warnings)
 
     # The project, its data date and its calendars
-    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, project_code, warnings)
+    project_row, task_counts, selected_by = _select_project(
+        raw.source, projects, all_tasks, project_code, warnings, project_id
+    )
     planned_start = _parse_date(project_row["plan_start_date"])
     data_date, data_date_source = _data_date(project_row)
     if data_date is None:
@@ -1132,6 +1207,7 @@ def build_snapshot(
         expenses=expenses.reset_index(drop=True),
         code_values=code_values,
         task_codes=task_codes,
+        file_projects=_file_projects(projects, all_tasks),
     )
     _check_snapshot_columns(snapshot)
     return snapshot

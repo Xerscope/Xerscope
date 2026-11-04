@@ -116,6 +116,26 @@ def options_table(snapshot: Snapshot) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+ANALYSED, BASELINE_OF_ANALYSED = "analysed project", "baseline of the analysed project"
+
+
+def projects_table(snapshot: Snapshot) -> pd.DataFrame:
+    """Every PROJECT row of the file: TASK rows, the baseline pointers, and the role in this analysis.
+
+    The baseline of the analysed project is the project its ``sum_base_proj_id`` names (P6's
+    "Project Baseline"); ``orig_proj_id`` ("Original Project") of a baseline copy names the project
+    it was copied from.
+    """
+    table = snapshot.file_projects.copy()
+    analysed = table["proj_id"] == snapshot.project_id
+    pointer = table.loc[analysed, "sum_base_proj_id"]
+    pointed = pointer.iloc[0] if len(pointer) else ""
+    table["role"] = ""
+    table.loc[(table["proj_id"] == pointed) & (pointed != "") & ~analysed, "role"] = BASELINE_OF_ANALYSED
+    table.loc[analysed, "role"] = ANALYSED
+    return table
+
+
 def expected_finish_table(snapshot: Snapshot) -> pd.DataFrame:
     """Activities with an expected finish: stored dates and remaining, recalculated early dates,
     and whether the expected finish set the remaining duration (``rem_override_hr``, 0 = brought to 0)."""
@@ -215,14 +235,20 @@ def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: boo
         return pd.DataFrame([{"baseline": "none", "kind": "", "matched": 0, "activities": len(snapshot.by_code)}])
     codes = snapshot.by_code.index
     planned = baseline.snapshot is snapshot
+    in_file = not planned and baseline.snapshot.source == snapshot.source
     label = baseline.label
     if anonymous:
         label = "planned dates of the update" if planned else "baseline file"
+        label = "project baseline in the file" if in_file else label
     return pd.DataFrame(
         [
             {
                 "baseline": label,
-                "kind": "planned dates (target_*)" if planned else "separate file",
+                "kind": "planned dates (target_*)"
+                if planned
+                else "project baseline in the file"
+                if in_file
+                else "separate file",
                 "matched": int(codes.isin(baseline.frame.index).sum()),
                 "activities": len(codes),
             }
@@ -299,6 +325,7 @@ def diagnostic_frames(
     ev_settings = etc_settings(snapshot)
     return {
         "01_options": options_table(snapshot),
+        "01b_projects": projects_table(snapshot),
         "02_expected_finish": expected_finish_table(snapshot),
         "03_int01_recalculation": recalculation_table(snapshot),
         "03_int03_assignments": assignments_table(snapshot),

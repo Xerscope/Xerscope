@@ -12,13 +12,15 @@ def _is_xer(path: str | Path) -> bool:
     return Path(path).suffix.lower() in XER_SUFFIXES
 
 
-def load_snapshot(source: str | Path | bytes, project_code=None, name: str | None = None) -> Snapshot:
+def load_snapshot(
+    source: str | Path | bytes, project_code=None, name: str | None = None, project_id: str | None = None
+) -> Snapshot:
     """Parse an XER file (a path, or its bytes plus the file ``name``) and build the snapshot."""
     if isinstance(source, bytes) and not name:
         # The name becomes Snapshot.source, which keys caches and orders the series.
         raise ValueError("load_snapshot(bytes) needs the file name")
     raw = parse_bytes(source, source=name) if isinstance(source, bytes) else read_xer(source)
-    return build_snapshot(raw, project_code=project_code)
+    return build_snapshot(raw, project_code=project_code, project_id=project_id)
 
 
 def load_header(path: str | Path) -> FileHeader:

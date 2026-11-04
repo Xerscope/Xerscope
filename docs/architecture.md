@@ -92,6 +92,34 @@ Week-over-week analysis becomes a groupby; Plotly and Power BI read the same fra
 | `standards.py` | TOML → `Standard(metrics)` | validated on load (rule, parameter names, population keywords, target syntax) |
 | `checks.py` | standard + `AnalysisContext` (defined in `rules.py`) → `CheckResult` per metric; `health_history` over the series | a failing rule returns status "error", never crashes the page |
 | `baseline.py` | BL snapshot (or planned dates) → frame `bl_start, bl_finish, bl_labor_hr…` | shared by BEI, missed, late, PV |
+
+**Baseline sources.** A baseline is one of: a separate XER, a loaded update, the planned dates of each update
+(`Baseline.planned`), or the project the file itself names as the P6 Project Baseline. For the last,
+`Snapshot.file_baseline` reads `PROJECT.sum_base_proj_id` of the analysed project (Oracle P6 EPPM XER
+Import/Export Data Map, table PROJECT, v23: "Project Baseline"; `orig_proj_id` = "Original Project"; v26 map
+not found, same XER format, unverified on 26). It is usable when that project is another PROJECT row of the
+same file that owns activities and, when its `orig_proj_id` is filled, names the analysed project; otherwise
+`note` says why not and the sidebar's choice applies. The app builds that project as a snapshot
+(`load_snapshot(..., project_id=)`, exact because a baseline copy may carry the code of the project it was
+copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
+Start / Finish). The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
+without one has no baseline for that update (checks that need one are n/a), stated in the Selection panel.
+The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
+has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never
+chosen for the user), gives the baseline of the updates whose file has no usable one, update by update.
+`Baseline.source` says where the baseline of an update comes from; `run_metric` copies it to
+`CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
+readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
+Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
+`baseline: <source>`. Health, Audit and Earned value open with "Baseline used for <update>: <source>"
+(`state.show_baseline_used`; the Earned value curves measure every update against the baseline of the one
+shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
+baseline and what applies instead, a pointer that is not used and why (absent project, `orig_proj_id` of
+another project, no activities), a series that mixes sources; on the pages, a baseline whose data date is after
+the update's and a baseline that finds fewer than 90 % of the update's activities (the 06A501a / DCMA-11
+"N of M matched" count). P6-12 and P6-13 read `context.baseline` like every rule that
+needs one: they get the baseline of the sidebar choice (the file's, a separate XER, the planned dates) and
+carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique) |
@@ -224,6 +252,8 @@ Outside `analysis/`:
   target and parameters, on fields and codes the model reads, on tests that exist.
 - **Debug:** what xerscope read and decided for one update, to hold against P6 without the
   file: the scheduling options (raw XER value, value applied, blank-in-file defaults), the
+  projects of the file (`Snapshot.file_projects`: TASK rows, `sum_base_proj_id`, `orig_proj_id`,
+  `last_baseline_update_date`, and which one is the analysed project or its P6 Project Baseline), the
   activities with an expected finish and the remaining duration it set (`rem_override_hr`),
   the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
   targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities
