@@ -112,6 +112,15 @@ with st.expander("7 · Costs in the file (TASKRSRC, PROJCOST)", key="debug_costs
     )
     table(frames["07_costs"])
 
+with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_ev_settings"):
+    st.caption(
+        "EV technique (ev_compute_type) and ETC technique (ev_etc_compute_type) of each WBS element. xerscope "
+        "computes ETC as the remaining units whatever the technique. ev_etc_user_value is the performance "
+        "factor P6 reads when it is entered; a code not identified is shown as stored."
+    )
+    table(frames["08_etc_techniques"])
+    table(frames["08_ev_settings"], max_height=480)
+
 
 def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
@@ -130,8 +139,8 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 7 as CSV. With anonymous exports on, Activity IDs and resource codes are renamed as in "
-    "the anonymised XER extract; the tables hold no name, WBS or project name. Dates are left as they are.",
+    "Blocks 1 to 8 as CSV. With anonymous exports on, Activity IDs, resource codes and WBS codes are renamed "
+    "as in the anonymised XER extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)

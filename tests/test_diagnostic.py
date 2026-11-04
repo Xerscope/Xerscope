@@ -90,3 +90,31 @@ def test_costs_table_of_a_file_without_resources_or_expenses():
     table = costs_table(snap([todo("A")])).set_index("table")
     assert table["rows"].tolist() == [0, 0]
     assert table["target_cost_total"].tolist() == [ABSENT, ABSENT]
+
+
+def test_ev_settings_block_lists_each_wbs_and_counts_the_techniques():
+    wbs = [
+        {
+            "wbs_id": code,
+            "proj_id": "1",
+            "wbs_short_name": code,
+            "wbs_name": code,
+            "proj_node_flag": "N",
+            "parent_wbs_id": "",
+            "seq_num": "1",
+            "ev_compute_type": "EC_Cmp_pct",
+            "ev_etc_compute_type": etc,
+            "ev_etc_user_value": "1",
+        }
+        for code, etc in (("W1", "EE_Rem_hr"), ("W2", "EE_PF_1"))
+    ]
+    s = snap([todo("A", wbs_id="W1"), todo("B", wbs_id="W2"), todo("C", wbs_id="W2")], wbs=wbs)
+    frames = diagnostic_frames(s, None, builtin_standards()["P6"])
+    assert frames["08_ev_settings"][["wbs_code", "ev_etc_compute_type", "etc_technique", "activities"]].to_dict(
+        "records"
+    ) == [
+        {"wbs_code": "W1", "ev_etc_compute_type": "EE_Rem_hr", "etc_technique": "remaining units", "activities": 1},
+        {"wbs_code": "W2", "ev_etc_compute_type": "EE_PF_1", "etc_technique": "PF = 1", "activities": 2},
+    ]
+    counts = frames["08_etc_techniques"].set_index("etc_technique")
+    assert counts["wbs"].to_dict() == {"remaining units": 1, "PF = 1": 1}

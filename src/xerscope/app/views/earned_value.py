@@ -3,7 +3,16 @@ import streamlit as st
 
 from xerscope.analysis import builtin_standards
 from xerscope.analysis.baseline import EV_BASES
-from xerscope.analysis.evm import bei_series, earned, evm_series, forecast_curve, pv_curve
+from xerscope.analysis.evm import (
+    bei_series,
+    earned,
+    etc_settings,
+    etc_technique_counts,
+    evm_series,
+    forecast_curve,
+    pv_curve,
+    uses_pf,
+)
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, csv_download, memo, require_store, snapshot_picker, sources_of
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
@@ -83,6 +92,10 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
         bac, planned, earned_hours, actual = row["bac_hr"], row["pv_hr"], row["ev_hr"], row["ac_hr"]
         baselined_actual = actual - row["ac_unbaselined_hr"]
         # one decimal: a result and the operands shown beside it agree to 0.1 h
+        settings = etc_settings(snapshot)
+        counts = etc_technique_counts(settings)
+        etc_counts = " · ".join(f"{item.etc_technique}: {item.wbs} WBS" for item in counts.itertuples())
+        with_pf = settings[settings["ev_etc_compute_type"].map(uses_pf)]
         calculation = pd.DataFrame(
             [
                 (
@@ -124,6 +137,12 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                     "Estimate To Complete Labor Units (Remaining Total Units)",
                 ),
                 (
+                    "ETC technique",
+                    "Per WBS: remaining units, or PF × (BAC − EV). ETC above is always the remaining hours",
+                    etc_counts,
+                    "ETC technique (ev_etc_compute_type), Earned Value tab - WBS Details, Pro 25",
+                ),
+                (
                     "EAC",
                     "AC + ETC",
                     f"{actual:,.1f} + {row['etc_hr']:,.1f} = {row['eac_hr']:,.1f} h",
@@ -145,6 +164,12 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
                 "this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date)),
             },
         )
+        if not with_pf.empty:
+            st.warning(
+                f"ETC / EAC computed as remaining hours; {len(with_pf)} WBS use a performance factor: "
+                + ", ".join(f"{ui.md_text(item.wbs_code)} ({item.etc_technique})" for item in with_pf.itertuples()),
+                icon=":material/warning:",
+            )
         st.caption(
             "BEI is a count, not hours: completed activities / activities due by the data date "
             "(see Schedule health for the list)."

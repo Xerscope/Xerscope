@@ -441,8 +441,8 @@ class Anonymizer:
         return value if isinstance(value, str) or pd.isna(value) else value * 0
 
     def zip_frames(self, frames: dict[str, pd.DataFrame]) -> bytes:
-        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES`` renamed as in the XER extract
-        and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
+        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES`` and the WBS codes renamed as in
+        the XER extract and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
 
         No other column changes: the caller selects ids, dates, durations, flags and P6
         enumerations only. Every cell of every table is still checked against the originals'
@@ -455,6 +455,8 @@ class Anonymizer:
                 if column in out.columns:
                     mapping = self.codes.get(kind, {})
                     out[column] = [mapping.get(value, "") if isinstance(value, str) else "" for value in out[column]]
+            if "wbs_code" in out.columns:
+                out["wbs_code"] = [self.wbs_paths.get(v, "") if isinstance(v, str) else "" for v in out["wbs_code"]]
             for column in self.DIAGNOSTIC_MONEY:
                 if column in out.columns:
                     out[column] = [self._zeroed(value) for value in out[column]]

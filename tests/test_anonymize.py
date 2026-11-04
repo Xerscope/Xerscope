@@ -207,6 +207,38 @@ def test_diagnostic_costs_block_is_zeroed_as_the_extract_is():
     assert shown["target_cost_total"].tolist() == [0.0, 0.0]
 
 
+def test_diagnostic_ev_settings_block_renames_the_wbs_and_keeps_the_enumerations():
+    from xerscope.analysis import builtin_standards
+    from xerscope.app.diagnostic import diagnostic_frames
+
+    p6 = builtin_standards()["P6"]
+
+    wbs = [
+        {
+            "wbs_id": "10",
+            "proj_id": "1",
+            "wbs_short_name": "SECRETWBS",
+            "wbs_name": "Secret works",
+            "proj_node_flag": "N",
+            "parent_wbs_id": "",
+            "seq_num": "1",
+            "ev_compute_type": "EC_Cmp_pct",
+            "ev_etc_compute_type": "EE_PF_1",
+            "ev_etc_user_value": "1",
+        }
+    ]
+    raw = parse_text(_file([todo("A1", wbs_id="10")], wbs=wbs), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    plain = diagnostic_frames(build_snapshot(raw), None, p6)
+    with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames(plain))) as archive:
+        data = {name: archive.read(name).decode("utf-8-sig") for name in archive.namelist()}
+    assert "SECRETWBS" not in "".join(data.values())
+    shown = pd.read_csv(io.StringIO(data["08_ev_settings.csv"]))
+    extract = diagnostic_frames(build_snapshot(parse_bytes(anonymizer.xer(raw))), None, p6)["08_ev_settings"]
+    assert shown["wbs_code"].tolist() == extract["wbs_code"].tolist() != [""]
+    assert shown["ev_etc_compute_type"].tolist() == ["EE_PF_1"] and shown["etc_technique"].tolist() == ["PF = 1"]
+
+
 def test_calendar_data_with_unknown_words_is_refused():
     raw = parse_text(_file([todo("A1")]), source="x.xer")
     calendars = raw.tables["CALENDAR"]

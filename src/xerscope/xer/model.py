@@ -545,12 +545,32 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
     wbs = raw.table("PROJWBS")
     if wbs.empty:
         return pd.DataFrame(
-            columns=["wbs_id", "wbs_code", "wbs_name", "wbs_l1", "wbs_sort", "ev_compute_type", "ev_user_pct"]
+            columns=[
+                "wbs_id",
+                "wbs_code",
+                "wbs_name",
+                "wbs_l1",
+                "wbs_sort",
+                "ev_compute_type",
+                "ev_user_pct",
+                "ev_etc_compute_type",
+                "ev_etc_user_value",
+            ]
         ), None
     _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
     wbs = _ensure_cols(
         wbs[wbs["proj_id"] == project_id].copy(),
-        ["parent_wbs_id", "proj_node_flag", "seq_num", "wbs_short_name", "wbs_name", "ev_compute_type", "ev_user_pct"],
+        [
+            "parent_wbs_id",
+            "proj_node_flag",
+            "seq_num",
+            "wbs_short_name",
+            "wbs_name",
+            "ev_compute_type",
+            "ev_user_pct",
+            "ev_etc_compute_type",
+            "ev_etc_user_value",
+        ],
     )
     by_id = wbs.set_index("wbs_id")
     project_node = wbs.loc[wbs["proj_node_flag"] == "Y"]

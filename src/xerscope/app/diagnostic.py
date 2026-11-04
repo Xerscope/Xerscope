@@ -11,6 +11,7 @@ import pandas as pd
 
 from xerscope.analysis.baseline import Baseline
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
+from xerscope.analysis.evm import etc_settings, etc_technique_counts
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
@@ -292,8 +293,9 @@ def costs_table(snapshot: Snapshot) -> pd.DataFrame:
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
-    """The seven blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
+    """The eight blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
+    ev_settings = etc_settings(snapshot)
     return {
         "01_options": options_table(snapshot),
         "02_expected_finish": expected_finish_table(snapshot),
@@ -306,4 +308,6 @@ def diagnostic_frames(
         "06_project_finish": project_finish,
         "06_latest_finishes": latest_finishes,
         "07_costs": costs_table(snapshot),
+        "08_ev_settings": ev_settings,
+        "08_etc_techniques": etc_technique_counts(ev_settings),
     }

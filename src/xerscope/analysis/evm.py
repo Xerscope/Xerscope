@@ -16,6 +16,10 @@
   nothing either.
 - AC = actual labour units and ETC = remaining labour units of every activity in the
   update, baselined or not; EAC = AC + ETC.
+- ETC technique: P6 sets it per WBS element too (PROJWBS.ev_etc_compute_type): remaining
+  units, or a performance factor PF with ETC = PF x (BAC - EV) (Oracle Pro 25, Earned Value
+  tab - WBS Details). xerscope always uses the remaining units; ``etc_settings`` reports
+  the WBS that use a PF.
 - SPI = EV / PV, SV = EV - PV; EV / AC is measured on baselined work only (EV exists
   for nothing else), the hours spent outside the baseline being reported apart.
 """
@@ -52,6 +56,51 @@ def ev_technique(code: object) -> str:
     if "0" in text:
         return "0/100"
     return "activity"
+
+
+# PROJWBS.ev_etc_compute_type values found in the reference files; any other value is shown as it is.
+ETC_TECHNIQUES = {"EE_Rem_hr": "remaining units", "EE_PF_1": "PF = 1", "EE_PF_cpi": "PF = 1/CPI"}
+
+
+def etc_technique(code: object) -> str:
+    """PROJWBS.ev_etc_compute_type -> label; an unknown code is returned as it is, a blank one as "(blank)"."""
+    text = str(code or "").strip()
+    return ETC_TECHNIQUES.get(text, text or "(blank)")
+
+
+def uses_pf(code: object) -> bool:
+    """The WBS computes its ETC with a performance factor (Oracle: PF = 1, 1/CPI, 1/(CPI x SPI) or entered)."""
+    return str(code or "").strip().startswith("EE_PF")
+
+
+def etc_settings(snapshot: Snapshot) -> pd.DataFrame:
+    """One row per WBS element of the project (the project node left out): EV and ETC techniques
+    as stored (``ev_compute_type``, ``ev_etc_compute_type``, ``ev_etc_user_value``), their labels,
+    and the number of activities on the element."""
+    wbs = snapshot.wbs
+    wbs = wbs[wbs["proj_node_flag"] != "Y"] if "proj_node_flag" in wbs else wbs
+    activities = snapshot.activities["wbs_id"].value_counts()
+    return pd.DataFrame(
+        {
+            "wbs_code": wbs["wbs_code"],
+            "ev_compute_type": wbs["ev_compute_type"],
+            "ev_technique": wbs["ev_compute_type"].map(ev_technique),
+            "ev_etc_compute_type": wbs["ev_etc_compute_type"],
+            "etc_technique": wbs["ev_etc_compute_type"].map(etc_technique),
+            "ev_etc_user_value": wbs["ev_etc_user_value"],
+            "activities": wbs["wbs_id"].map(activities).fillna(0).astype(int),
+        }
+    ).reset_index(drop=True)
+
+
+def etc_technique_counts(settings: pd.DataFrame) -> pd.DataFrame:
+    """WBS elements and activities per ETC technique, from ``etc_settings``."""
+    return (
+        settings.groupby(["ev_etc_compute_type", "etc_technique"], as_index=False)
+        .agg(wbs=("wbs_code", "size"), activities=("activities", "sum"))
+        .sort_values(["wbs", "etc_technique"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
 
 
 def _ramp_sum(work_starts: np.ndarray, work_finishes: np.ndarray, hours: np.ndarray, grid: np.ndarray) -> np.ndarray:
