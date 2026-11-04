@@ -432,9 +432,17 @@ class Anonymizer:
     # --- diagnostic tables (Debug page) -------------------------------------------------------
 
     DIAGNOSTIC_CODES = {"task_code": "A", "pred_code": "A", "succ_code": "A", "rsrc_short_name": "R"}
+    # Cost figures of the "Costs in the file" block: 0 as the anonymised XER holds them (MONEY),
+    # "absent" and blanks kept.
+    DIAGNOSTIC_MONEY = ("rows_with_cost", "target_cost_total", "cost_per_qty_min", "cost_per_qty_max")
+
+    @staticmethod
+    def _zeroed(value: object) -> object:
+        return value if isinstance(value, str) or pd.isna(value) else value * 0
 
     def zip_frames(self, frames: dict[str, pd.DataFrame]) -> bytes:
-        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES`` renamed as in the XER extract.
+        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES`` renamed as in the XER extract
+        and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
 
         No other column changes: the caller selects ids, dates, durations, flags and P6
         enumerations only. Every cell of every table is still checked against the originals'
@@ -447,6 +455,9 @@ class Anonymizer:
                 if column in out.columns:
                     mapping = self.codes.get(kind, {})
                     out[column] = [mapping.get(value, "") if isinstance(value, str) else "" for value in out[column]]
+            for column in self.DIAGNOSTIC_MONEY:
+                if column in out.columns:
+                    out[column] = [self._zeroed(value) for value in out[column]]
             self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), f"table {name}")
             outputs[f"{name}.csv"] = out.to_csv(index=False).encode("utf-8-sig")
         buffer = io.BytesIO()

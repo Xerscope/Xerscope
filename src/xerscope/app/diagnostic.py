@@ -14,7 +14,7 @@ from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_as
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
-from xerscope.xer.model import Snapshot, leveled
+from xerscope.xer.model import Snapshot, leveled, to_number
 
 FROM_FILE, DEFAULTED, BLANK = "file", "default (blank in file)", "blank in file (no default)"
 
@@ -256,10 +256,43 @@ def finish_table(snapshot: Snapshot, latest: int = 5) -> tuple[pd.DataFrame, pd.
     return project, activities.nlargest(latest, "finish").reset_index(drop=True)
 
 
+ABSENT = "absent"
+
+
+def costs_table(snapshot: Snapshot) -> pd.DataFrame:
+    """Whether the file carries costs (P6 computes its cost SPI from them): TASKRSRC and PROJCOST.
+
+    Per table: rows, rows whose ``target_cost`` is above 0, ``target_cost`` total, and for
+    TASKRSRC the smallest and largest ``cost_per_qty``. "absent": the column is missing or blank
+    on every row.
+    """
+    assignments, expenses = snapshot.assignments, snapshot.expenses
+
+    def values(frame: pd.DataFrame, column: str) -> pd.Series:
+        return to_number(frame[column]).dropna() if column in frame.columns else pd.Series(dtype=float)
+
+    def figures(frame: pd.DataFrame, rate: bool) -> dict:
+        cost, per_qty = values(frame, "target_cost"), values(frame, "cost_per_qty")
+        return {
+            "rows": len(frame),
+            "rows_with_cost": int((cost > 0).sum()) if len(cost) else ABSENT,
+            "target_cost_total": float(cost.sum()) if len(cost) else ABSENT,
+            "cost_per_qty_min": (float(per_qty.min()) if len(per_qty) else ABSENT) if rate else "",
+            "cost_per_qty_max": (float(per_qty.max()) if len(per_qty) else ABSENT) if rate else "",
+        }
+
+    return pd.DataFrame(
+        [
+            {"table": "TASKRSRC", **figures(assignments, rate=True)},
+            {"table": "PROJCOST", **figures(expenses, rate=False)},
+        ]
+    )
+
+
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
-    """The six blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
+    """The seven blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
     return {
         "01_options": options_table(snapshot),
@@ -272,4 +305,5 @@ def diagnostic_frames(
         "06_leveling": leveling_table(snapshot),
         "06_project_finish": project_finish,
         "06_latest_finishes": latest_finishes,
+        "07_costs": costs_table(snapshot),
     }

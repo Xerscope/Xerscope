@@ -85,7 +85,8 @@ def xer_text(
     """tasks: dicts with at least task_code; preds: (pred, succ, type, lag_hours[, pred_proj]).
 
     ``rsrc``: activity codes given one plain labour assignment each. ``assign``: full
-    TASKRSRC rows (``task_code`` instead of task_id); ``resources``: RSRC rows. ``codes``:
+    TASKRSRC rows (``task_code`` instead of task_id); ``resources``: RSRC rows. ``costs``: an
+    activity code per PROJCOST row, or a dict (``task_code`` plus the row's columns). ``codes``:
     P6 activity code assignments ``(task_code, code type, "B1/L2")``, a path of values, each
     value the child of the one before it (ACTVTYPE, ACTVCODE, TASKACTV).
     """
@@ -175,7 +176,11 @@ def xer_text(
     if costs:
         lines += _table(
             "PROJCOST",
-            [{"cost_item_id": str(k), "task_id": ids[c], "proj_id": "1"} for k, c in enumerate(costs, start=1)],
+            [
+                {"cost_item_id": str(k), "task_id": ids[c["task_code"] if isinstance(c, dict) else c], "proj_id": "1"}
+                | ({key: v for key, v in c.items() if key != "task_code"} if isinstance(c, dict) else {})
+                for k, c in enumerate(costs, start=1)
+            ],
         )
     return "\n".join(lines) + "\n"
 

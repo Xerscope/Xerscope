@@ -3,7 +3,8 @@
 import pandas as pd
 from xerkit import active, done, snap, todo
 
-from xerscope.app.diagnostic import finish_table, leveling_table
+from xerscope.analysis import builtin_standards
+from xerscope.app.diagnostic import ABSENT, costs_table, diagnostic_frames, finish_table, leveling_table
 
 
 def test_leveling_table_lists_the_activities_the_warning_counts():
@@ -47,3 +48,45 @@ def test_finish_table_holds_scd_end_date_and_the_latest_activities():
     ]
     assert latest["task_code"].tolist() == ["B", "A"]
     assert latest.columns.tolist() == ["task_code", "task_type", "status_code", "finish"]
+
+
+def test_costs_table_sums_the_assignment_and_expense_costs():
+    """Two assignments (1000.00 at 25 per unit, 250.50 at 10 per unit) and one expense of 300:
+    TASKRSRC 2 rows, 2 with a cost, total 1250.50, rate 10 to 25; PROJCOST 1 row, total 300."""
+    s = snap(
+        [todo("A"), todo("B")],
+        assign=[
+            {"task_code": "A", "rsrc_id": "900", "target_cost": "1000.00", "cost_per_qty": "25"},
+            {"task_code": "B", "rsrc_id": "900", "target_cost": "250.50", "cost_per_qty": "10"},
+        ],
+        costs=[{"task_code": "A", "target_cost": "300"}],
+    )
+    table = costs_table(s).set_index("table")
+    assert table.loc["TASKRSRC"].to_dict() == {
+        "rows": 2,
+        "rows_with_cost": 2,
+        "target_cost_total": 1250.5,
+        "cost_per_qty_min": 10.0,
+        "cost_per_qty_max": 25.0,
+    }
+    assert table.loc["PROJCOST", ["rows", "rows_with_cost", "target_cost_total"]].tolist() == [1, 1, 300.0]
+    assert "07_costs" in diagnostic_frames(s, None, builtin_standards()["P6"])
+
+
+def test_costs_table_says_absent_when_the_file_has_no_cost_column():
+    s = snap([todo("A")], rsrc=["A"], costs=["A"])
+    table = costs_table(s).set_index("table")
+    assert table.loc["TASKRSRC"].to_dict() == {
+        "rows": 1,
+        "rows_with_cost": ABSENT,
+        "target_cost_total": ABSENT,
+        "cost_per_qty_min": ABSENT,
+        "cost_per_qty_max": ABSENT,
+    }
+    assert table.loc["PROJCOST", ["rows", "target_cost_total"]].tolist() == [1, ABSENT]
+
+
+def test_costs_table_of_a_file_without_resources_or_expenses():
+    table = costs_table(snap([todo("A")])).set_index("table")
+    assert table["rows"].tolist() == [0, 0]
+    assert table["target_cost_total"].tolist() == [ABSENT, ABSENT]

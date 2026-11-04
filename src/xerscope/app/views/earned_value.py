@@ -55,10 +55,10 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame) -> None:
             ),
             ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
             (
-                "SPI",
+                "SPI (labour units)",
                 format_number(row["spi"], "{:.3f}"),
                 change_since_previous(row, previous, "spi", format_index_change),
-                "EV / PV (hours)",
+                "EV / PV in labour hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
             (
@@ -85,35 +85,59 @@ def show_calculation(row: pd.Series, baseline, snapshot) -> None:
         # one decimal: a result and the operands shown beside it agree to 0.1 h
         calculation = pd.DataFrame(
             [
-                ("BAC", f"Σ baseline labour hours ({EV_BASES[baseline.ev_basis]})", f"{bac:,.1f} h"),
+                (
+                    "BAC",
+                    f"Σ baseline labour hours ({EV_BASES[baseline.ev_basis]})",
+                    f"{bac:,.1f} h",
+                    "Budget At Completion - Labor Units",
+                ),
                 (
                     "PV",
                     "Σ BL hours × Schedule % Complete (working time elapsed between BL start and BL finish, "
                     "on the activity's calendar, at the data date)",
                     f"{planned:,.1f} h  ({row['pv_pct']:.1f} % of BAC)",
+                    "Planned Value Labor Units",
                 ),
                 (
                     "EV",
                     "Σ BL hours × Performance % Complete (WBS EV technique: activity %, 0/100, 50/50 or custom)",
                     f"{earned_hours:,.1f} h  ({row['ev_pct']:.1f} % of BAC)",
+                    "Earned Value Labor Units",
                 ),
-                ("AC", "Σ actual labour hours", f"{actual:,.1f} h"),
+                ("AC", "Σ actual labour hours", f"{actual:,.1f} h", "Actual Labor Units"),
                 (
-                    "SPI",
+                    "SPI (labour units)",
                     "EV / PV",
                     f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.3f}')}",
+                    "Schedule Performance Index - Labor Units",
                 ),
-                ("SV", "EV − PV", f"{earned_hours:,.1f} − {planned:,.1f} = {row['sv_hr']:+,.1f} h"),
-                ("ETC", "Σ remaining labour hours", f"{row['etc_hr']:,.1f} h"),
-                ("EAC", "AC + ETC", f"{actual:,.1f} + {row['etc_hr']:,.1f} = {row['eac_hr']:,.1f} h"),
+                (
+                    "SV",
+                    "EV − PV",
+                    f"{earned_hours:,.1f} − {planned:,.1f} = {row['sv_hr']:+,.1f} h",
+                    "Schedule Variance - Labor Units",
+                ),
+                (
+                    "ETC",
+                    "Σ remaining labour hours",
+                    f"{row['etc_hr']:,.1f} h",
+                    "Estimate To Complete Labor Units (Remaining Total Units)",
+                ),
+                (
+                    "EAC",
+                    "AC + ETC",
+                    f"{actual:,.1f} + {row['etc_hr']:,.1f} = {row['eac_hr']:,.1f} h",
+                    "Estimate At Completion - Labor Units",
+                ),
                 (
                     "EV / AC",
                     "EV / AC on baselined work (AC less the hours of activities the baseline does not have)",
                     f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
+                    "Cost Performance Index - Labor Units, on baselined work only (P6 divides by all actual units)",
                 ),
             ],
-            columns=["measure", "formula", "this update"],
-        )
+            columns=["measure", "formula", "this update", "P6 column"],
+        )[["measure", "P6 column", "formula", "this update"]]  # the value stays last
         ui.table(
             calculation,
             overrides={
@@ -151,7 +175,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot) -> None:
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
     st.plotly_chart(
-        build_index_trend(series, {"spi": "SPI", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC"}),
+        build_index_trend(series, {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC"}),
         width="stretch",
     )
     ui.table(series.drop(columns=["bac_hr"]))
