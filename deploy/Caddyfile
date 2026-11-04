@@ -51,6 +51,8 @@
         }
         @download path /media/*          # st.download_button files: schedule data, never kept on the visitor's disk
         header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
+        @page path / /index.html         # the page names the hashed JS chunks of the running image
+        header @page >Cache-Control no-cache   # revalidated: after an update a plain reload gets the new chunk names
         reverse_proxy app:8501    # network alias: "xerscope" is tailscale's hostname here
     }
     handle {
