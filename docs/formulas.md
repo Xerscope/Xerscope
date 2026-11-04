@@ -73,6 +73,31 @@ to 2 decimals. Pinned by `test_reference.py::test_percent_complete_matches_p6_ex
 - `Snapshot.work_hours` / `working_days` (row-wise) use each row's `clndr_id`; blank or
   unknown ids fall back to the project calendar; NaN where a date is missing.
 
+**Which calendar measures a shift.** Three `Snapshot` methods, no other call site reads a
+`WorkCalendar` for a shift: `project_working_days(a, b)` (project calendar),
+`activity_working_days(clndr_id, a, b)` (one activity's calendar) and `working_days(clndr, a, b)`
+(row-wise, the same on each row's calendar). The convention is xerscope's: Oracle's help for the
+Variance columns (P6 help 47223) says "Finish minus BL Project Finish" and names no calendar, so no
+Oracle text settles it. Project-level dates use the project calendar, an activity's dates its own
+calendar; of two updates, the newer (changelog, store) or the latest (MTA, activity page) supplies
+the calendar.
+
+| Shift | Dates | Calendar | Pinned by (tests/test_shift_calendar.py) |
+|---|---|---|---|
+| `summary.finish_shift_wd`, `finish_shift_since_first` | forecast finish of the project | project, newer / latest update | test_store_finish_shift_is_on_the_project_calendar, test_finish_shift_since_first_is_on_the_project_calendar |
+| changelog Project rows | data date, forecast finish | project, new update | test_changelog_project_rows_are_on_the_project_calendar |
+| WBS `finish_variance_wd` | a node's finish against its baseline finish (a node has no calendar) | project | test_wbs_finish_variance_is_on_the_project_calendar |
+| DCMA-13 CPL and TF | data date to the finish driver; TF hours | project (`hours_per_day` of the project) | test_dcma_13_length_and_float_are_on_the_project_calendar |
+| changelog Dates rows | an activity's start, finish | activity, new update | test_changelog_date_moves_are_on_the_activity_calendar |
+| Gantt `shift_wd` | an activity's finish against the comparison update | activity, displayed update | test_gantt_finish_shift_is_on_the_activity_calendar |
+| MTA `slip_wd`, `last_week_wd` | a milestone's forecast, start or finish | the milestone's own, latest update | test_milestone_slip_is_on_the_milestone_calendar |
+| Activity page "wd since first" (`activity_finish_shift`) | the activity's forecast finish | the activity's own, latest update | test_activity_page_slip_is_on_the_activity_calendar |
+| P6-12 variance, DCMA-08 limit, 06A506c windows | an activity's dates and durations | activity (`hours_per_day`) | test_p6_12_variance_is_on_the_activity_calendar, test_dcma_08_limit_is_in_days_of_the_activity_calendar, test_06a506c_windows_are_in_days_of_the_activity_calendar |
+
+The critical path test measures its shift on the delayed activity's calendar (2.5). DCMA-13 takes
+the finish driver's float on the project's `hours_per_day` (PAM 200.1 §3.1.2.3 gives "days" without
+a calendar): a convention that does not follow the driver's own calendar.
+
 ### 1.5 Targets and statuses (analysis/standards.py, analysis/checks.py)
 
 | Target text | Comparator | Threshold | Metric unit |
@@ -347,8 +372,8 @@ Two updates of one project, activities matched by `task_code` (first row per cod
 | Project | activities, relationships | always | new count − old count |
 | Scope | added / deleted | code only in new / only in old | — |
 | Activities | renamed, moved to another WBS, type changed, calendar changed | `task_name`, `wbs_code`, `type`, `clndr_id` differ (NaN = NaN) | — |
-| Durations | original duration changed | `original_d` differs | `new − old` (wd, each on its own activity calendar) |
-| Durations | remaining duration increased | `remaining_d(new) > remaining_d(old) + 1e-9` and not complete in new | `new − old` (wd) |
+| Durations | original duration changed | `target_drtn_hr_cnt` differs (hours, as P6 stores them: Oracle P6 EPPM 23 Application Administration Guide, "Using Calendars to Define Hours Per Time Period Settings"; a calendar change alone is not a duration change) | `original_d(new)` − the old hours / `hours_per_day` of the new calendar (wd) |
+| Durations | remaining duration increased | `remain_drtn_hr_cnt(new) > remain_drtn_hr_cnt(old) + 1e-9` and not complete in new | same, on remaining (wd) |
 | Progress | started / finished / status reverted | `status` differs; reverted when the order Not started < In progress < Complete goes down | — |
 | Progress | actual start / finish changed (retroactive) | both present and different | — |
 | Progress | actual start / finish removed | present in old, blank in new | — |

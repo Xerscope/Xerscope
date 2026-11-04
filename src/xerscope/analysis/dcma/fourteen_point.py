@@ -324,7 +324,7 @@ def dcma_13_cpli(context) -> RuleOutput:
     if snapshot.options.get("must_finish_by") is None:
         return RuleOutput(note="no Must Finish By date (P6: Project > Dates): the float would be 0 by construction")
     calendar = snapshot.calendar()
-    length = calendar.working_days(snapshot.data_date, last_task["finish"])
+    length = snapshot.project_working_days(snapshot.data_date, last_task["finish"])
     if length <= 0:
         return RuleOutput(note="critical path length is 0")
     float_hours = float(last_task["total_float_hr_cnt"]) if pd.notna(last_task["total_float_hr_cnt"]) else 0.0

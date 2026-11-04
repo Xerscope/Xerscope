@@ -76,9 +76,8 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
             "updates": by_milestone.size(),
         }
     )
-    calendars = {code: latest.calendar(calendar_ids.get(code)) for code in slips.index}
     slips["slip_wd"] = [
-        round(calendars[code].working_days(first, latest_forecast), 1)
+        round(latest.activity_working_days(calendar_ids.get(code), first, latest_forecast), 1)
         for code, first, latest_forecast in zip(
             slips.index, slips["first_forecast"], slips["latest_forecast"], strict=True
         )
@@ -87,7 +86,12 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
     last_two = trend.sort_values("snapshot_idx").groupby("task_code").tail(2).groupby("task_code")["forecast"]
     previous_forecast = last_two.first()
     slips["last_week_wd"] = [
-        round(calendars[code].working_days(previous_forecast[code], slips.loc[code, "latest_forecast"]), 1)
+        round(
+            latest.activity_working_days(
+                calendar_ids.get(code), previous_forecast[code], slips.loc[code, "latest_forecast"]
+            ),
+            1,
+        )
         if code in previous_forecast.index
         else 0.0
         for code in slips.index
@@ -200,4 +204,15 @@ def finish_shift_since_first(store: SnapshotStore) -> float | None:
     first, latest = store.first.finish_date, store.latest.finish_date
     if len(store) < 2 or first is None or latest is None:
         return None
-    return store.latest.calendar().working_days(first, latest)
+    return store.latest.project_working_days(first, latest)
+
+
+def activity_finish_shift(store: SnapshotStore, history: pd.DataFrame) -> float | None:
+    """Working days between an activity's first and last forecast finish, on its calendar in the
+    last row of ``history`` (as the latest update defines it); None with one update or a missing finish."""
+    if len(history) < 2 or history["finish"].isna().any():
+        return None
+    clndr_id = history["clndr_id"].iloc[-1]
+    return store.latest.activity_working_days(
+        clndr_id if isinstance(clndr_id, str) else None, history["finish"].iloc[0], history["finish"].iloc[-1]
+    )

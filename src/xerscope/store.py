@@ -220,6 +220,6 @@ class SnapshotStore:
         shifts = [None]
         for prev, cur in zip(self._snaps, self._snaps[1:], strict=False):
             a, b = prev.finish_date, cur.finish_date
-            shifts.append(None if a is None or b is None else round(cur.calendar().working_days(a, b), 1))
+            shifts.append(None if a is None or b is None else round(cur.project_working_days(a, b), 1))
         df["finish_shift_wd"] = pd.Series(shifts, dtype=float)
         return df

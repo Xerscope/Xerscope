@@ -404,6 +404,16 @@ class Snapshot:
         hours_per_day = clndr.map(self._calendar_of).map(attrgetter("hours_per_day"))
         return self.work_hours(clndr, start, end) / hours_per_day.astype(float)
 
+    def project_working_days(self, start: pd.Timestamp, end: pd.Timestamp) -> float:
+        """Working days from ``start`` to ``end`` on the project calendar: for project-level dates
+        (data date, forecast finish, a WBS node's finish)."""
+        return self.calendar().working_days(start, end)
+
+    def activity_working_days(self, clndr_id: str | None, start: pd.Timestamp, end: pd.Timestamp) -> float:
+        """Working days from ``start`` to ``end`` on one activity's calendar (project calendar when
+        the id is blank or unknown): for one activity's dates. ``working_days`` does it row by row."""
+        return self.calendar(clndr_id).working_days(start, end)
+
     @property
     def label(self) -> str:
         date_text = self.data_date.strftime(DATE_FMT) if self.data_date is not None else "no data date"

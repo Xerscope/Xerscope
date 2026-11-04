@@ -5,6 +5,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
 from xerscope.app.state import require_store
 from xerscope.viz.charts import build_activity_dates, build_activity_float
@@ -23,10 +24,8 @@ LIST_COLUMNS = [
 
 
 def show_kpis(store, history: pd.DataFrame) -> None:
-    first, last = history.iloc[0], history.iloc[-1]
-    calendar = store.latest.calendar(last["clndr_id"] if isinstance(last["clndr_id"], str) else None)
-    has_two_finishes = len(history) > 1 and history["finish"].notna().all()
-    slip = calendar.working_days(first["finish"], last["finish"]) if has_two_finishes else None
+    last = history.iloc[-1]
+    slip = activity_finish_shift(store, history)
     ui.kpis(
         [
             ("Status", last["status"]),
