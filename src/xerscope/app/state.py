@@ -382,8 +382,16 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     return chosen.activities, ui.stamp(chosen.data_date)
 
 
+def _baseline_identity() -> tuple:
+    """What the sidebar's baseline is: the choice, the EV basis and, for a file, its label and budget."""
+    baseline = st.session_state.get("baseline")
+    if isinstance(baseline, Baseline):
+        return baseline.label, baseline.ev_basis, baseline.bac_hours
+    return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
+
+
 def memo(key: tuple, function, *arguments):
-    """Per-session cache keyed on the loaded files: heavy analyses run once per data set.
+    """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
 
     ``function(*arguments)`` runs only on a cache miss.
     """
@@ -391,7 +399,7 @@ def memo(key: tuple, function, *arguments):
     # the project picker re-reads the same files for another project: same signature, other data
     store = st.session_state.get("store")
     projects = tuple(snapshot.project_code for snapshot in store) if store is not None else ()
-    full_key = (st.session_state.get("signature"), projects) + key
+    full_key = (st.session_state.get("signature"), projects, _baseline_identity()) + key
     if full_key not in cache:
         if len(cache) > 64:
             cache.clear()

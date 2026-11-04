@@ -37,13 +37,14 @@ with top:
 table = partial(ui.table, raw_labels=True)
 
 
+p6_standard = standards()["P6"]
 try:
     frames = memo(
-        ("debug", snapshot.source, str(snapshot.data_date), baseline.label if baseline else None),
+        ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
         diagnostic.diagnostic_frames,
         snapshot,
         baseline,
-        standards()["P6"],
+        p6_standard,
     )
 except CycleError as exc:
     st.error(f"Cannot schedule this file: {exc}", icon=":material/block:")

@@ -40,7 +40,7 @@ with top:
     )
 
 nodes = memo(
-    ("rollup", snapshot.source, st.session_state.get("bl_choice"), baseline.label if baseline else None),
+    ("rollup", snapshot.source),
     rollup,
     snapshot,
     baseline,
