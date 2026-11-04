@@ -28,7 +28,7 @@ from ..xer.model import to_number
 
 COLS = ["bl_start", "bl_finish", "bl_labor_hr", "bl_duration_hr", "bl_clndr_id", "bl_name",
         "ev_start", "ev_finish", "ev_labor_hr", "bl_cost"]  # fmt: skip
-ASSIGNMENT_COST_COLS = ["task_code", "cost", "start", "finish", "clndr_id", "curve"]
+ASSIGNMENT_COST_COLS = ["task_code", "cost", "start", "finish", "clndr_id", "curve", "labor", "labor_hr"]
 EV_BASES = {
     "budgeted_planned": "Budgeted values with planned dates",
     "budgeted_current": "Budgeted values with current dates",
@@ -70,7 +70,8 @@ def _with_costs(snapshot: Snapshot, frame: pd.DataFrame, current_dates: bool) ->
     Assignment dates follow the activity dates of the EV basis: planned dates (target_*) on
     the planned basis, else actual, then remaining, then target; a blank date takes the activity's.
     The calendar is the resource's, else the activity's. ``curve``: the assignment names a
-    resource curve (``curv_id``), which is not modelled.
+    resource curve (``curv_id``), which is not modelled. ``labor`` / ``labor_hr``: the assignment is
+    labour (labour resource or role, as ``xer.model._labor_hours``) and its ``target_qty``.
     """
     assignments = snapshot.assignments
     assignments = assignments[assignments["task_code"].isin(frame.index)]
@@ -90,6 +91,8 @@ def _with_costs(snapshot: Snapshot, frame: pd.DataFrame, current_dates: bool) ->
                 "finish": finish.combine_first(assignments["task_code"].map(frame["ev_finish"])).values,
                 "clndr_id": own_calendar.combine_first(assignments["task_code"].map(frame["bl_clndr_id"])).values,
                 "curve": (assignments["curv_id"].fillna("").astype(str).str.strip() != "").values,
+                "labor": assignments["rsrc_type"].isin(("RT_Labor", "role", "")).values,
+                "labor_hr": assignments["target_qty"].fillna(0.0).values,
             }
         )
     total = costs.groupby("task_code")["cost"].sum()

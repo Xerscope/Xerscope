@@ -11,7 +11,7 @@ import pandas as pd
 
 from xerscope.analysis.baseline import Baseline
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
-from xerscope.analysis.evm import etc_settings, etc_technique_counts
+from xerscope.analysis.evm import etc_settings, etc_technique_counts, pv_labor_check
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
@@ -317,12 +317,21 @@ def costs_table(snapshot: Snapshot) -> pd.DataFrame:
     )
 
 
+def xer_tables_table(snapshot: Snapshot) -> pd.DataFrame:
+    """Block 09: one row per %T table of the XER read (name, rows, columns), no cell value."""
+    return pd.DataFrame(
+        [{"table": name, "rows": rows, "columns": cols} for name, (rows, cols) in snapshot.xer_tables.items()],
+        columns=["table", "rows", "columns"],
+    )
+
+
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
-    """The eight blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
+    """The nine blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
     ev_settings = etc_settings(snapshot)
+    pv_totals, pv_by_status = pv_labor_check(snapshot, baseline)
     return {
         "01_options": options_table(snapshot),
         "01b_projects": projects_table(snapshot),
@@ -338,4 +347,7 @@ def diagnostic_frames(
         "07_costs": costs_table(snapshot),
         "08_ev_settings": ev_settings,
         "08_etc_techniques": etc_technique_counts(ev_settings),
+        "09_xer_tables": xer_tables_table(snapshot),
+        "09_pv_labor_check": pv_totals,
+        "09_pv_labor_by_status": pv_by_status,
     }

@@ -420,6 +420,7 @@ class Snapshot:
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
     task_codes: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=TASK_CODE_COLUMNS))
     file_projects: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=FILE_PROJECT_COLUMNS))
+    xer_tables: dict[str, tuple[int, int]] = field(default_factory=dict)  # every %T table: (rows, columns)
 
     def calendar(self, clndr_id: str | None = None) -> WorkCalendar:
         """Calendar by id; the project's default calendar when id is blank or unknown."""
@@ -1209,6 +1210,7 @@ def build_snapshot(
         code_values=code_values,
         task_codes=task_codes,
         file_projects=_file_projects(projects, all_tasks),
+        xer_tables={name: (len(table), len(table.columns)) for name, table in raw.tables.items()},
     )
     _check_snapshot_columns(snapshot)
     return snapshot
