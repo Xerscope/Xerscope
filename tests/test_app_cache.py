@@ -370,3 +370,46 @@ def downloads(monkeypatch):
 def _download(at, downloads: dict[str, bytes], label: str) -> bytes:
     button = next(b for b in at.get("download_button") if b.proto.label == label)
     return downloads[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
+
+
+# --- a folder's files, keyed on their content ------------------------------------------------------
+
+
+def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sample_dir, tmp_path, monkeypatch):
+    import os
+    import shutil
+
+    week1, week2, week3 = sorted(sample_dir.glob("*.xer"))[:3]
+    folder = tmp_path / "files"
+    folder.mkdir()
+    shutil.copy2(week1, folder / "a.xer")
+    shutil.copy2(week2, folder / "b.xer")
+    parsed = []
+    original = state.load_snapshot
+
+    def counting(data, *args, name=None, **kwargs):
+        parsed.append(name)
+        return original(data, *args, name=name, **kwargs)
+
+    monkeypatch.setattr(state, "load_snapshot", counting)
+    monkeypatch.setenv("XERSCOPE_DATA", str(folder))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    at.switch_page("views/health.py").run()
+    assert not at.exception
+    before = {s.source: s.data_date for s in at.session_state["store"]}
+    at.run()
+    assert sorted(parsed) == ["a.xer", "b.xer"]  # a rerun parses nothing
+
+    stat = (folder / "b.xer").stat()
+    (folder / "b.xer").write_bytes(week3.read_bytes())
+    os.utime(folder / "b.xer", ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert (folder / "b.xer").stat().st_mtime_ns == stat.st_mtime_ns
+    at.run()
+    assert not at.exception
+    assert sorted(parsed) == ["a.xer", "b.xer", "b.xer"]  # only the replaced file
+    after = {s.source: s.data_date for s in at.session_state["store"]}
+    assert after["a.xer"] == before["a.xer"] and after["b.xer"] != before["b.xer"]
+    # Health's results now are those of the new content (its status date), from a fresh calculation
+    computed = {(source, date) for _, source, date in _cached_metrics(at)}
+    assert ("b.xer", str(after["b.xer"])) in computed

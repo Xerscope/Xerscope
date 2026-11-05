@@ -278,10 +278,13 @@ def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None]:
     files = [path for path in xer_files(root) if path.name in names] if root.is_dir() else []
     if not files:
         return (), None
-    signature = ("folder", str(root)) + tuple((path.name, path.stat().st_mtime_ns) for path in files)
+    # keyed on content, as an upload: a file replaced under the same name and modification time
+    # is read again; _parse keys on the same digest, so an unchanged file is not parsed again
+    items = [(path.name, path.read_bytes()) for path in files]
+    signature = ("folder", str(root)) + tuple((name, _digest(data)) for name, data in items)
     if signature == st.session_state.get("signature"):
         return signature, None
-    return signature, [(path.name, path.read_bytes()) for path in files]
+    return signature, items
 
 
 def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
@@ -848,7 +851,7 @@ def _baseline_identity(ev_basis: bool = True) -> tuple:
 
 def data_identity(baseline: bool = True, ev_basis: bool = True) -> tuple:
     """What a result computed now was computed from: the files (``signature``: names and content
-    digests, or names and modification times for a folder), the project read from each and, unless
+    digests), the project read from each and, unless
     ``baseline`` is False, the baseline in use with (unless ``ev_basis`` is False) the EV basis.
     The memo's key and the tag of a built download start with it."""
     # the project pickers re-read the same files for another project: same signature, other data
