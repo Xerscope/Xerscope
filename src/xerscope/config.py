@@ -11,6 +11,7 @@ class Settings:
     default_hours_per_day: float = 8.0  # used when a task's calendar is missing
     critical_float_days: float = 0.0  # total float <= this => critical
     near_critical_float_days: float = 10.0  # Gantt colouring only
+    table_filter_min_rows: int = 10  # app tables with more rows than this get column filters
 
 
 DEFAULT_SETTINGS = Settings()
