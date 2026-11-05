@@ -8800,8 +8800,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 0,
@@ -9324,8 +9324,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 1,
@@ -9869,8 +9869,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 1,
@@ -10414,8 +10414,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 2,
@@ -10962,8 +10962,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 4,
@@ -11521,8 +11521,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 6,
@@ -12096,8 +12096,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 7,
@@ -12684,8 +12684,8 @@
     "flagged": [],
     "note": null,
     "numerator": null,
-    "status": "n/a",
-    "value": null
+    "status": "info",
+    "value": 1.0
    },
    "DCMA/DCMA-14": {
     "denominator": 8,

@@ -665,12 +665,13 @@ def test_cpli_is_na_without_a_baseline():
     assert r.status == "n/a" and "baseline" in r.note
 
 
-def test_cpli_is_na_with_the_planned_dates_baseline():
+def test_cpli_is_reported_for_review_with_the_planned_dates_baseline():
     """Oracle 47222: the planned finish of a not-started milestone follows its early finish, so the margin
-    to it is 0 by construction."""
+    to it is 0 by construction: 1.00 is shown, with the reason, but not judged against the target."""
     s = snap([A160, _end()], [("A", "Z", "FS", 0)])
     r = run(DCMA, "DCMA-13", s, Baseline.planned(s))
-    assert r.status == "n/a" and "choose a baseline file" in r.note and "47222" in r.note
+    assert r.status == "info" and r.value == 1.0
+    assert "by construction" in r.note and "47222" in r.note and "CPL 20 wd to Z" in r.note
 
 
 def test_cpli_is_na_when_the_end_milestone_has_no_baseline_finish():

@@ -217,7 +217,7 @@ def _verdict(result: CheckResult) -> str:
     if result.status == "fail":
         return f"{shown} misses the target {target}."
     if result.status == "info":
-        return "Reported for review: this standard sets no pass/fail target."
+        return "Reported for review: " + (result.note or "this standard sets no pass/fail target") + "."
     if result.status == "n/a":
         return "Not applicable: " + (result.note or "nothing to check") + "."
     return "The rule raised an error: " + result.note
