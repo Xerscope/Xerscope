@@ -128,7 +128,7 @@ name = "CPLI"
 description = "Critical Path Length Index = (CPL + total float) / CPL"
 rule = "dcma_13_cpli"
 target = ">= 0.95"
-source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). Days: PAM and Acumen name no calendar; the project calendar here, for CPL and TF. P6 writes that float against the Must Finish By date; without one, xerscope's choice: the float is the margin of the open finish milestone ending last to its baseline finish (the PAM names no other reference date), n/a without a baseline"
+source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). Days: PAM and Acumen name no calendar; the project calendar here, for CPL and TF. P6 writes that float against the Must Finish By date; without one, the float is the margin of the open finish milestone ending last to its baseline finish: the PAM measures TF \"relative to the baselined finish date, when constrained\" (§3.1.2.3); n/a without a baseline. The PAM measures CPL to the next measured milestone, which the analyst chooses and documents; xerscope always takes the project's completion milestone"
 
 [[metric]]
 id = "DCMA-14"

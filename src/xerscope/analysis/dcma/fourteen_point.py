@@ -358,7 +358,8 @@ def dcma_13_cpli(context) -> RuleOutput:
     date"). CPL = working days from the status date to the forecast finish, TF = that float, both in working
     days of the project calendar (PAM and Acumen say days without naming a calendar).
     P6 writes that float against the Must Finish By date. Without one, TF is the margin of the open
-    finish milestone ending last to its baseline finish (recalculated early finish, project calendar;
+    finish milestone ending last to its baseline finish (PAM: TF "relative to the baselined finish
+    date, when constrained") (recalculated early finish, project calendar;
     negative when late); n/a without a baseline, with the planned dates baseline (the planned finish of a
     not-started milestone follows its early finish: margin 0 by construction, Oracle 47222) or without a
     baseline finish for it. No constraint is read
