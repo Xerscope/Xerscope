@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.progress import committed, ppc_series, progress_delta, rollup_delta
 from xerscope.app import ui
-from xerscope.app.state import baseline_for, csv_download, memo, require_store, sources_of
+from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
 from xerscope.viz.charts import PPC_TARGET, build_ppc
 
 COMMITMENT_COLUMNS = [
@@ -114,7 +114,7 @@ store = require_store()
 top = st.container()
 if len(store) < 2:
     with top:
-        ui.header("PPC & weekly progress", store)
+        page_header("PPC & weekly progress", store)
     st.info("PPC compares consecutive updates: load at least two.")
     st.stop()
 
@@ -125,7 +125,7 @@ week = week_column.selectbox("Week ending", week_labels, index=len(week_labels) 
 week_index = store.labels.index(week)
 previous, current = store[week_index - 1], store[week_index]
 with top:
-    ui.header(
+    page_header(
         "PPC & weekly progress",
         store,
         current,

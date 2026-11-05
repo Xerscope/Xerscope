@@ -237,6 +237,42 @@ def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second_w
     assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
 
 
+def _banner(at) -> str:
+    return at.button(key="context_banner").label.replace("\\", "")
+
+
+def test_the_context_banner_states_each_setting_and_follows_its_changes(app, store):
+    """Projects, data date of the update shown, baseline, EV basis, costs, files: each change shows."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    first = store.labels[0].split(" · ")[0]
+    code = store.latest.project_code
+    assert _banner(app) == (
+        f"{code} · data date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
+        "EV budgeted, planned dates · costs off · 8 files · 1 project"
+    )
+    app.selectbox(key="ev_snap").set_value(store.labels[2]).run()
+    assert f"data date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
+    baseline_box(app).set_value(BL_PLANNED)
+    assert " · BL planned dates · " in _banner(app)
+    baseline_box(app, "ev_basis").set_value("at_completion_current")
+    assert " · EV at completion, current dates · " in _banner(app)
+    app.session_state["files_open"] = False  # baseline_box leaves the window open
+    _costs(app.run(), True)
+    assert " · costs on · " in _banner(app)
+    assert f"Data date of the update shown: {ui.fmt_date(store[2].data_date)}" in app.button(key="context_banner").help
+
+
+def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_dir, monkeypatch):
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run(), count=3)
+    _ok(at)
+    assert _banner(at).endswith(" · 3 files · 1 project")
+    at.button(key="context_banner").click().run()
+    assert at.session_state["files_open"] and file_boxes(at)
+
+
 def _costed_week(tmp_path, cost: str = "5000"):
     """A (cost 5000, 50 % complete) over Mon-Fri, data date Wednesday 08:00: PV cost 5000 x 0.4 = 2000,
     EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.

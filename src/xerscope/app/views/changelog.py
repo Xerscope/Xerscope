@@ -3,7 +3,7 @@ import streamlit as st
 
 from xerscope.analysis.changelog import category_totals, changelog, summary, weekly_change_counts, weekly_change_matrix
 from xerscope.app import ui
-from xerscope.app.state import csv_download, memo, require_store, sources_of
+from xerscope.app.state import csv_download, memo, page_header, require_store, sources_of
 
 RETROACTIVE_ACTUALS = (
     "actual start changed (retroactive)",
@@ -101,7 +101,7 @@ store = require_store()
 top = st.container()
 if len(store) < 2:
     with top:
-        ui.header("Changelog", store)
+        page_header("Changelog", store)
     st.info("Load at least two XER files to compare them.")
     st.stop()
 
@@ -112,7 +112,7 @@ new_index = labels.index(new_label)
 old_label = old_column.selectbox("From (older)", labels, index=max(new_index - 1, 0), key="cl_old")
 old, new = store.by_label(old_label), store.by_label(new_label)
 with top:
-    ui.header(
+    page_header(
         "Changelog",
         store,
         new,

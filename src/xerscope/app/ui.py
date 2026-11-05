@@ -1,9 +1,9 @@
-"""Shared presentation: page header, KPI readout, labelled tables, status colours.
+"""Shared presentation: KPI readout, labelled tables, status colours (the page header and its
+context banner are state.page_header: they read the session's choices).
 
-Every page goes through these helpers so the app reads as one product: same header,
-same readout style, the same column names and number formats everywhere.
+Every page goes through these helpers so the app reads as one product: same readout style,
+the same column names and number formats everywhere.
 
-    ui.header("Schedule health", store, snap, bl)
     ui.kpis([("Pass", 3), ("Fail", 11, None, "Checks above target")])
     ui.table(flagged)                     # labelled, formatted, technical columns hidden
 """
@@ -213,22 +213,6 @@ def md_text(value: object) -> str:
     """Text from a schedule file, shown literally inside Markdown: no link, image, emphasis
     or LaTeX ($...$) can come from an activity name or code."""
     return str(value).translate(_MD_SPECIAL)
-
-
-def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "") -> None:
-    """Page title, then one context line: project · data date · baseline, then an optional lead."""
-    st.title(title)
-    parts = []
-    if store is not None:
-        parts.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
-    if snapshot is not None:
-        parts.append(f"Status date **{fmt_date(snapshot.data_date)}**")
-    if baseline is not None:
-        parts.append(f"Baseline **{md_text(baseline.label)}**")
-    if parts:
-        st.markdown(" · ".join(parts))
-    if lead:
-        st.caption(lead)
 
 
 _ZERO = re.compile(r"^[+\-\u2212]?0(\.0+)?(?![\d.])")

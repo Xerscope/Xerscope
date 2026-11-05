@@ -12,6 +12,7 @@ from xerscope.app.state import (
     held,
     hold,
     memo,
+    page_header,
     require_store,
     show_download,
     snapshot_picker,
@@ -25,7 +26,7 @@ top = st.container()  # header above the picker, as on the other pages
 snapshot = snapshot_picker(store, "Update", key="debug_snap")
 baseline = baseline_for(snapshot)
 with top:
-    ui.header(
+    page_header(
         "Debug",
         store,
         snapshot,

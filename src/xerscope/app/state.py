@@ -597,13 +597,82 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
 MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must find
 
 
-def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
-    """Under a page header: the baseline an update is measured against, and what is wrong with it.
+def _count(number: int, word: str) -> str:
+    return f"{number} {word}{'' if number == 1 else 's'}"
+
+
+def _files_count(store: SnapshotStore) -> str:
+    """``N files · K projects``: K is the projects read, in the alert colour when the series mixes several."""
+    count = len({snapshot.project_code for snapshot in store})
+    projects = _count(count, "project")
+    if count > 1:
+        projects = f":orange[{projects}]"
+    return f"{_count(len(store), 'file')} · {projects}"
+
+
+def _baseline_kind(snapshot: Snapshot) -> str:
+    """Where the baseline ``snapshot`` is measured against comes from, as the choice in force applies to it:
+    its file's P6 Project Baseline, the fallback, planned dates, a loaded update, a separate file, none."""
+    in_force = st.session_state.get("baseline")
+    if in_force == BL_EACH:
+        if snapshot.file_baseline.usable:
+            return "in file"
+        if st.session_state.get("fallback") is None:
+            return "none"
+        return f"fallback, {_baseline_short(st.session_state.get('fallback_choice', BL_NONE))}"
+    if in_force is None:
+        return "none"
+    return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
+
+
+def context_banner(store: SnapshotStore, snapshot: Snapshot, baseline: Baseline | None = None) -> None:
+    """One line under a page title: what the page is computed from (projects read, data date of the update
+    shown, baseline used for it, EV basis, costs, files). ``baseline``: the one the page measures against,
+    named in full in the help. Pressing it opens the Files and baseline window."""
+    codes = list(dict.fromkeys(s.project_code for s in store))
+    projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
+    kind = _baseline_kind(snapshot)
+    basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
+    costs = "on" if costs_shown() else "off"
+    label = (
+        f"{projects} · data date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
+        f"EV {basis.lower().replace(' · ', ', ')} · costs {costs} · {_files_count(store)}"
+    )
+    used = ui.md_text(baseline.source or baseline.label) if baseline is not None else ui.md_text(kind)
+    details = [
+        f"Project(s) read: {', '.join(ui.md_text(code) for code in codes)}",
+        f"Data date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
+        f"Baseline used for {ui.stamp(snapshot.data_date)}: {used}",
+        f"Earned value basis: {basis}",
+        f"Costs: {costs} (sidebar)",
+        "Open to change the files, the project read from each file and the baseline.",
+    ]
+    st.button(
+        label,
+        key="context_banner",
+        help="  \n".join(details),
+        type="tertiary",
+        width="stretch",
+        on_click=_open_window,
+        args=("files",),
+    )
+
+
+def page_header(
+    title: str, store: SnapshotStore, snapshot: Snapshot | None = None, baseline: Baseline | None = None, lead: str = ""
+) -> None:
+    """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
+    st.title(title)
+    context_banner(store, snapshot or store.latest, baseline)
+    if lead:
+        st.caption(lead)
+
+
+def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
+    """Under a page header: what is wrong with the baseline an update is measured against.
     ``series``: the page measures every update against this baseline (the PV / EV / SPI curves)."""
-    stamp = ui.stamp(snapshot.data_date)
     name = ui.md_text(snapshot.source)
     if baseline is None:
-        st.markdown(f"**Baseline used for {stamp}**: none")
         if st.session_state.get("baseline") == BL_EACH:
             todo = (
                 "upload the baseline XER under 'When a file has no baseline'"
@@ -612,7 +681,6 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
             )
             st.info(f"{name}: {ui.md_text(snapshot.file_baseline.text)}. To measure this update, {todo}.")
         return
-    st.markdown(f"**Baseline used for {stamp}**: {ui.md_text(baseline.source or baseline.label)}")
     if series and st.session_state.get("baseline") == BL_EACH and len(st.session_state["store"]) > 1:
         st.caption(
             "The PV, EV and SPI curves measure every update against this baseline; the BEI uses each update's own."

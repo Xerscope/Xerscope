@@ -2,12 +2,12 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import anonymizer, download, fetch, held, hold, memo, require_store, show_download
+from xerscope.app.state import anonymizer, download, fetch, held, hold, memo, page_header, require_store, show_download
 from xerscope.export import export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
 
 store = require_store()
-ui.header(
+page_header(
     "Export for Power BI",
     store,
     store.latest,

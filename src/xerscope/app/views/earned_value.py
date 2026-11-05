@@ -19,12 +19,13 @@ from xerscope.analysis.evm import (
 from xerscope.app import ui
 from xerscope.app.state import (
     baseline_for,
+    baseline_warnings,
     costs_shown,
     csv_download,
     memo,
     metric_result,
+    page_header,
     require_store,
-    show_baseline_used,
     snapshot_picker,
     sources_of,
 )
@@ -317,7 +318,7 @@ top = st.container()
 snapshot = snapshot_picker(store, "Update", key="ev_snap")
 baseline = baseline_for(snapshot)
 with top:
-    ui.header(
+    page_header(
         "Earned value",
         store,
         snapshot,
@@ -325,7 +326,7 @@ with top:
         lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )
-    show_baseline_used(snapshot, baseline, series=True)
+    baseline_warnings(snapshot, baseline, series=True)
 if baseline is None:
     st.info("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
     st.stop()

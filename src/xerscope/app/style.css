@@ -210,6 +210,32 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 .st-key-baseline_button button p { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72rem; text-align: left; }
 /* ==== end Files and baseline window ============================================== */
 
+/* the context banner under each page title (state.context_banner): one monospaced line, muted,
+   cut with an ellipsis when the page is narrow; it opens the window like the sidebar lines */
+.st-key-context_banner button {
+  justify-content: flex-start;
+  min-height: 0;
+  margin-top: -0.6rem;
+  padding: 0.25rem 0.5rem;
+  border-left: 2px solid var(--xd-line, var(--xs-hairline));
+  border-radius: 0;
+  background: var(--xs-panel);
+}
+.st-key-context_banner button:hover {
+  --xd-line: var(--accent);
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.st-key-context_banner button > div { justify-content: flex-start; width: 100%; min-width: 0; }
+.st-key-context_banner button p {
+  overflow: hidden;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
 /* Tables: no search button in the toolbar. It highlights a matching cell anywhere in the grid;
    rows are filtered per column instead (ui.table, "Filter columns") */
 [data-testid="stElementToolbar"] button[aria-label="Search"] { display: none; }

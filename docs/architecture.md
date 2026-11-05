@@ -118,9 +118,12 @@ chosen for the user), gives the baseline of the updates whose file has no usable
 `CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
 readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
-`baseline: <source>`. Health, Audit and Earned value open with "Baseline used for <update>: <source>"
-(`state.show_baseline_used`; the Earned value curves measure every update against the baseline of the one
-shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
+`baseline: <source>`. Every page opens with a one-line context banner (`state.page_header`): the projects
+read, the data date of the update shown, where its baseline comes from (in file, fallback, planned dates, a
+loaded update, a separate file, none), the EV basis, costs on or off, and the count of files and projects; its
+help reads "Baseline used for <update>: <source>", and pressing it opens the Files and baseline window. Health,
+Audit and Earned value add the baseline's warnings under it (`state.baseline_warnings`; the Earned value curves
+measure every update against the baseline of the one shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
 baseline and what applies instead, a pointer that is not used and why (absent project, `orig_proj_id` of
 another project, no activities), a series that mixes sources; on the pages, a baseline whose data date is after
 the update's and a baseline that finds fewer than 90 % of the update's activities (the 06A501a / DCMA-11
@@ -237,7 +240,7 @@ Outside `analysis/`:
   sets (`baseline.EV_COLS`). Series over every update (the health trend, computed on request,
   and the BEI series) reuse the entries there and keep only their numbers. A built download
   (Schedule health's sets, the Debug zip) is offered again only for the same `data_identity`.
-- **`ui.py`:** the shared look: page header (project · data date · baseline), the KPI
+- **`ui.py`:** the shared look (the page header and its context banner are in `state.py`): the KPI
   readout (one line per figure, a change of zero drawn neutral), column filters on long tables, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
 - **`.streamlit/config.toml`:** the light and dark themes (warm neutrals, petrol accent) and server settings

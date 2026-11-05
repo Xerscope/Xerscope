@@ -17,9 +17,10 @@ from xerscope.app import ui
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
     baseline_for,
+    baseline_warnings,
     metric_result,
+    page_header,
     require_store,
-    show_baseline_used,
     snapshot_picker,
     sources_of,
     standards,
@@ -163,7 +164,7 @@ with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="audit_snap")
 baseline = baseline_for(snapshot)
 with top:
-    ui.header(
+    page_header(
         "Audit",
         store,
         snapshot,
@@ -171,7 +172,7 @@ with top:
         lead="The sets behind a check, and the check re-run with other settings. Changes here stay on this "
         "page: Schedule health keeps the loaded standards.",
     )
-    show_baseline_used(snapshot, baseline)
+    baseline_warnings(snapshot, baseline)
 if standard_id is None:
     st.info("Pick a standard, then a check.", icon=":material/fact_check:")
     st.stop()

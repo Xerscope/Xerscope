@@ -269,6 +269,11 @@ def _markdown(at):
     return [element.value.replace("\\", "") for element in at.markdown]  # ui.md_text escapes
 
 
+def _banner(at):
+    """The lines of the context banner's help, under the page title (state.context_banner)."""
+    return at.button(key="context_banner").help.replace("\\", "").split("  \n")
+
+
 def test_the_fallback_selector_defaults_to_none_and_is_shown_with_the_file_mode(tmp_path, monkeypatch):
     at = _series(tmp_path, monkeypatch)
     fallback = baseline_box(at, "bl_fallback")
@@ -438,8 +443,7 @@ def test_a_baseline_that_finds_few_activities_is_flagged_on_the_pages(tmp_path, 
 def test_the_pages_say_which_baseline_the_update_uses(tmp_path, monkeypatch):
     at = _series(tmp_path, monkeypatch)
     for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
-        shown = _markdown(at.switch_page(page).run())
-        assert any(m.startswith("**Baseline used for 2026-03-09**: none") for m in shown), page
+        assert "Baseline used for 2026-03-09: none" in _banner(at.switch_page(page).run()), page
 
 
 # --- a file exported with several projects -------------------------------------------------------------
@@ -478,8 +482,8 @@ def test_the_fallback_applies_on_the_earned_value_page_of_a_portfolio_file(tmp_p
     baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     at = at.run().switch_page("views/earned_value.py").run()
     assert any(
-        m.startswith("**Baseline used for 2026-03-09**: fallback (Planned dates in each file (target_*))")
-        for m in _markdown(at)
+        m.startswith("Baseline used for 2026-03-09: fallback (Planned dates in each file (target_*))")
+        for m in _banner(at)
     )
 
 
@@ -534,8 +538,8 @@ def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_aga
     from file_projects import with_other_projects
 
     at = _health(_series(tmp_path, monkeypatch, transform=with_other_projects), "2026-03-02")
-    used = "**Baseline used for 2026-03-02**: P6 Project Baseline in the file (proj_id 2"
-    assert any(m.startswith(used) for m in _markdown(at))
+    used = "Baseline used for 2026-03-02: P6 Project Baseline in the file (proj_id 2"
+    assert any(m.startswith(used) for m in _banner(at))
     before = {s.source: s for s in at.session_state["store"]}
     parsed = set(at.session_state["_parsed"])
     _file_box(at, "a.xer").set_value("3").run()
@@ -548,7 +552,7 @@ def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_aga
     assert row[["project", "selected_by", "baseline"]].tolist() == ["P3", "chosen", "Baseline: none in file"]
     at = _health(at, "2026-03-02")
     # P3 names no baseline: the file's P6 Project Baseline is no longer used for this update
-    shown = [m for m in _markdown(at) if m.startswith("**Baseline used for 2026-03-02**")]
+    shown = [m for m in _banner(at) if m.startswith("Baseline used for 2026-03-02")]
     assert shown and not any("in the file (proj_id 2" in m for m in shown)
     # the memo is keyed on the project read from each file: nothing computed for project 1 is served
     keyed = [part for key in at.session_state["_memo"] for part in key if isinstance(part, tuple)]
