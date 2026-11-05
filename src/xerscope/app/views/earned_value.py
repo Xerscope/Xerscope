@@ -139,7 +139,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
             [
                 (
                     "BAC",
-                    f"Σ baseline labor hours ({EV_BASES[baseline.ev_basis]})",
+                    f"Σ baseline labor hours of the tasks the update holds ({EV_BASES[baseline.ev_basis]})",
                     f"{bac:,.1f} h",
                     "Budget At Completion - Labor Units",
                 ),
@@ -304,6 +304,12 @@ def show_activity_detail(snapshot, baseline) -> None:
         missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
         if missing:
             st.caption(f"Not in the baseline (earn nothing): {ui.md_text(', '.join(missing))}")
+        gone = activities[~activities["in_snapshot"]]
+        if not gone.empty:
+            st.caption(
+                f"In the baseline, no longer in the update ({gone['pv_hr'].sum():,.1f} h of PV): left out of BAC, "
+                f"PV and EV, as P6 totals the tasks of the current project: {ui.md_text(', '.join(gone['task_code']))}"
+            )
 
 
 store = require_store()

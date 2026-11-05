@@ -16,6 +16,7 @@ from xerscope.analysis.evm import (
     evm_series,
     forecast_curve,
     pv_curve,
+    pv_labor_check,
     schedule_pct,
     uses_pf,
 )
@@ -163,6 +164,31 @@ def test_ev_spi_and_unbaselined():
     assert p.productivity == pytest.approx(20 / 30)  # EV per hour spent on baselined work: X's 10 h left out
     assert p.ac_unbaselined_hr == 10
     assert p.unbaselined == ["X"]
+
+
+def test_activities_deleted_since_the_baseline_are_left_out_of_bac_pv_and_ev():
+    """P6 totals its earned value fields over the activities of the current project ("adding the
+    values for each activity in the summary", P6 Professional 25, How data is summarized): a baseline
+    activity deleted from the update has no row there, so no BAC, PV or EV.
+    Baseline: A and GONE, 80 h and an expense of 300 each, 2026-03-02 08:00 -> 03-13 17:00 (10 working
+    days). Update at 2026-03-04 08:00 (2 working days elapsed) holds A only: BAC 80 h, PV 80 x 2/10 = 16 h,
+    BAC cost 300, PV cost 300 x 2/10 = 60; the 16 h GONE would add are reported apart."""
+    dates = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-13 17:00", "target_work_qty": "80"}
+    bl = Baseline.from_snapshot(
+        snap(
+            [todo("A", **dates), todo("GONE", **dates)],
+            costs=[{"task_code": "A", "target_cost": "300"}, {"task_code": "GONE", "target_cost": "300"}],
+        )
+    )
+    now = snap([todo("A")], data_date="2026-03-04 08:00")
+    p = ev_point(now, bl)
+    assert (p.bac_hr, p.pv_hr, p.ev_hr) == pytest.approx((80, 16, 0))
+    assert (p.bac_cost, p.pv_cost) == pytest.approx((300, 60))
+    assert p.deleted == ["GONE"] and p.pv_deleted_hr == pytest.approx(16)
+    table = earned(now, bl)
+    assert not table.loc["GONE", "in_snapshot"] and table.loc["GONE", "pv_hr"] == pytest.approx(16)  # listed
+    totals, _ = pv_labor_check(now, bl)
+    assert (totals.loc[0, "bac_activity_hr"], totals.loc[0, "pv_activity_hr"]) == pytest.approx((80, 16))
 
 
 def test_cpi_divides_by_all_actual_hours_and_ev_per_ac_by_the_baselined_ones():
