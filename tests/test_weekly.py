@@ -662,7 +662,10 @@ def test_bei_series_one_row_per_update_p6_and_dcma(store):
     assert out["data_date"].tolist() == [s.data_date for s in store]
     assert out["bei_p6"].dtype == out["bei_dcma"].dtype == "float64"
     assert pd.isna(out["bei_dcma"].iloc[0])
-    assert out["bei_dcma"].iloc[1:].tolist() == pytest.approx([1, 1, 1, 0.75, 2 / 3, 5 / 7, 0.75])
+    # Updates 6 and 7: one completed activity has its actual finish after the status date (the
+    # planted invalid date). DCMA-EA PAM 200.1 §3.1.2.4 step 5 keeps "only dates up to the current
+    # reporting period", so it is due and not completed: 4 / 7 and 5 / 8.
+    assert out["bei_dcma"].iloc[1:].tolist() == pytest.approx([1, 1, 1, 0.75, 2 / 3, 4 / 7, 5 / 8])
     # P6 Professional: completed / every baseline activity, milestones and LOE out (the planned
     # baseline is the snapshot itself)
     expected_p6 = []

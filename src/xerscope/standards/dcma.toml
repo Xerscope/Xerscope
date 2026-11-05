@@ -33,9 +33,9 @@ id = "DCMA-02"
 name = "Leads"
 description = "Relationships with a negative lag"
 rule = "dcma_02_leads"
-unit = "count"
+unit = "count"  # a 0 target reads the same in count and in %; the count is what the analyst acts on
 target = "<= 0"
-source = "DCMA-EA PAM 200.1 §4.2: logic links with a lead (negative lag) in predecessor relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
+source = "DCMA-EA PAM 200.1 §4.2: logic links with a lead (negative lag) in predecessor relationships for incomplete tasks; a link whose predecessor is in another project of the file counts (as for DCMA-01), the pamphlet being silent; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-03"
@@ -43,7 +43,7 @@ name = "Lags"
 description = "Relationships with a positive lag"
 rule = "dcma_03_lags"
 target = "<= 5%"
-source = "DCMA-EA PAM 200.1 §4.3: lags in predecessor logic relationships for incomplete tasks; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
+source = "DCMA-EA PAM 200.1 §4.3: lags in predecessor logic relationships for incomplete tasks; a link whose predecessor is in another project of the file counts (as for DCMA-01), the pamphlet being silent; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-04"
@@ -51,7 +51,7 @@ name = "Relationship types"
 description = "Share of Finish-to-Start relationships"
 rule = "dcma_04_relationship_types"
 target = ">= 90%"
-source = "DCMA-EA PAM 200.1 §4.4: a count of incomplete tasks containing each type of logic link; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
+source = "DCMA-EA PAM 200.1 §4.4: a count of incomplete tasks containing each type of logic link; a link whose predecessor is in another project of the file counts (as for DCMA-01), the pamphlet being silent; §4.0: completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is kept"
 
 [[metric]]
 id = "DCMA-05"
@@ -68,16 +68,16 @@ description = "Total float above 44 working days"
 rule = "dcma_06_high_float"
 params = { limit_days = 44 }  # working days of the activity's calendar
 target = "<= 5%"
-source = "DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months); §4.0: milestones excluded"
+source = "DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months); §4.0: milestones excluded. A task without a float stays in the population and cannot be flagged (the pamphlet is silent); the note counts them"
 
 [[metric]]
 id = "DCMA-07"
 name = "Negative float"
 description = "Total float below 0"
 rule = "dcma_07_negative_float"
-unit = "count"
+unit = "count"  # a 0 target reads the same in count and in %; the count is what the analyst acts on
 target = "<= 0"
-source = "DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 working days; §4.0: milestones excluded"
+source = "DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 working days; §4.0: milestones excluded. A task without a float stays in the population and cannot be flagged (the pamphlet is silent); the note counts them"
 
 [[metric]]
 id = "DCMA-08"
@@ -93,9 +93,10 @@ id = "DCMA-09"
 name = "Invalid dates"
 description = "Forecast before the status date, or actual after it"
 rule = "dcma_09_invalid_dates"
-unit = "count"
+params = { date_grain = "day" }  # the pamphlet compares dates ("on or before 8/1/09"); P6 compares timestamps (p6.toml default)
+unit = "count"  # a 0 target reads the same in count and in %; the count is what the analyst acts on
 target = "<= 0"
-source = "DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an actual start/finish beyond it; §4.0: LOE and milestones excluded; a task completed before the status date is out too, so only an actual date beyond it can flag a completed task"
+source = "DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an actual start/finish beyond it, by calendar day (§4.9 reasons in dates: \"on or before 8/1/09, not after 8/1/09\"); §4.0: LOE and milestones excluded. Completed tasks: §4.0 excludes them all, §4.9 flags an actual date beyond the status date; xerscope keeps those completed on or after it (its reading of §4.9 over §4.0)"
 
 [[metric]]
 id = "DCMA-10"
@@ -110,8 +111,9 @@ id = "DCMA-11"
 name = "Missed tasks"
 description = "Due by the status date (baseline finish) but finished, or forecast to finish, on a later date"
 rule = "dcma_11_missed_tasks"
+params = { date_grain = "day" }  # due = baseline finish on or before the status date, by calendar day as the pamphlet reads it
 target = "<= 5%"
-source = "DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date, actual or forecast finish after it; base excludes tasks missing a baseline start or finish. 4.0 excludes completed tasks, LOE, summary tasks and milestones; 4.11 measures actual finishes, so completed tasks stay here (4.11 overrides 4.0 on that point)"
+source = "DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date (by calendar day), actual or forecast finish after it; base excludes tasks missing a baseline start or finish. 4.0 excludes completed tasks, LOE, summary tasks and milestones; 4.11 measures actual finishes, so completed tasks stay here (4.11 overrides 4.0 on that point)"
 
 [[metric]]
 id = "DCMA-12"
@@ -128,7 +130,7 @@ name = "CPLI"
 description = "Critical Path Length Index = (CPL + total float) / CPL"
 rule = "dcma_13_cpli"
 target = ">= 0.95"
-source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). Days: PAM and Acumen name no calendar; the project calendar here, for CPL and TF. P6 writes that float against the Must Finish By date; without one, the float is the margin of the open finish milestone ending last to its baseline finish: the PAM measures TF \"relative to the baselined finish date, when constrained\" (§3.1.2.3); n/a without a baseline. The PAM measures CPL to the next measured milestone, which the analyst chooses and documents; xerscope always takes the project's completion milestone"
+source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). Days: PAM and Acumen name no calendar; the project calendar here, for CPL and TF. P6 writes that float against the Must Finish By date; without one, the float is the margin of the open finish milestone ending last to its baseline finish: the PAM measures TF \"relative to the baselined finish date, when constrained\" (§3.1.2.3); n/a without a baseline, and n/a when the finish driver has no float (a missing float is not 0). The PAM measures CPL to the next measured milestone, which the analyst chooses and documents; xerscope always takes the project's completion milestone"
 
 [[metric]]
 id = "DCMA-14"
@@ -136,4 +138,4 @@ name = "BEI"
 description = "Tasks completed / tasks due by the status date (baseline)"
 rule = "dcma_14_bei"
 target = ">= 0.95"
-source = "DCMA-EA PAM 200.1 §3.1.2.4: step 1 filters out LOE, summary and zero duration tasks (milestones); tasks missing baseline finish dates are included in the denominator"
+source = "DCMA-EA PAM 200.1 §3.1.2.4: step 1 filters out LOE, summary and zero duration tasks (milestones), so a task with no original duration is out whatever its type (the funnel lists them); step 5 keeps only actual finishes up to the status date, so a task finished after it is due, not completed; tasks missing baseline finish dates are included in the denominator"

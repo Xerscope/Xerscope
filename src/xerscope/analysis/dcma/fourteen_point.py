@@ -7,6 +7,7 @@ and pass/fail come from ``standards/dcma.toml``; the function only decides what 
 from __future__ import annotations
 
 import operator
+from typing import Literal
 
 import pandas as pd
 
@@ -17,6 +18,7 @@ from ..populations import (
     activity_funnel,
     actual_after,
     as_flag,
+    at_grain,
     constrained_by,
     finish_driver,
     flagged_activities,
@@ -102,15 +104,16 @@ def dcma_02_leads(context) -> RuleOutput:
 
 @rule("dcma_03_lags", "%", links=True)
 def dcma_03_lags(context) -> RuleOutput:
-    """Relationships with the lag in question.
+    """Relationships with a positive lag.
     Counts: flagged / relationships checked
-    Relationships whose successor is excluded: level of effort, milestones.
-    Relationships counted: relationships into an incomplete successor.
-    Flagged when lag > 0 hours.
+    Relationships whose successor is excluded: completed tasks, level of effort, milestones.
+    Relationships counted: relationships into an incomplete successor, a predecessor in another
+        project of the file included.
+    Flagged when lag > 0 hours (a negative lag is a lead, DCMA-02).
 
     DCMA-EA PAM 200.1 §4.3: lags in predecessor logic relationships for incomplete tasks; §4.0:
     completed, LOE, summary tasks and milestones are excluded, so a link counts when its successor is
-    kept
+    kept (xerscope's reading of §4.0, which names tasks, not links)
     """
     funnel = _links_into_open_tasks(context)
     relationships = funnel.rows
@@ -160,6 +163,13 @@ def dcma_05_hard_constraints(context) -> RuleOutput:
     )
 
 
+def _no_float_note(tasks: pd.DataFrame) -> str:
+    """PAM 200.1 is silent on a task without a float: it stays in "# of incomplete tasks" and cannot be
+    flagged, so the reader is told how many."""
+    missing = int(tasks["total_float_d"].isna().sum())
+    return f"{missing} without total float (kept in the checked population, cannot be flagged)" if missing else ""
+
+
 @rule("dcma_06_high_float", "%")
 def dcma_06_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
     """Tasks outside the float limit.
@@ -172,7 +182,14 @@ def dcma_06_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutpu
     funnel = _open_tasks(context)
     tasks = funnel.rows
     high_float = tasks[tasks["total_float_d"] > limit_days]
-    return RuleOutput(flagged_activities(high_float), len(high_float), len(tasks), checked=tasks, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(high_float),
+        len(high_float),
+        len(tasks),
+        note=_no_float_note(tasks),
+        checked=tasks,
+        funnel=funnel,
+    )
 
 
 @rule("dcma_07_negative_float", "%")
@@ -188,7 +205,14 @@ def dcma_07_negative_float(context) -> RuleOutput:
     funnel = _open_tasks(context)
     tasks = funnel.rows
     negative_float = tasks[tasks["total_float_d"] < 0]
-    return RuleOutput(flagged_activities(negative_float), len(negative_float), len(tasks), checked=tasks, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(negative_float),
+        len(negative_float),
+        len(tasks),
+        note=_no_float_note(tasks),
+        checked=tasks,
+        funnel=funnel,
+    )
 
 
 @rule("dcma_08_high_duration", "%")
@@ -214,14 +238,16 @@ def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOu
 
 
 @rule("dcma_09_invalid_dates", "%")
-def dcma_09_invalid_dates(context) -> RuleOutput:
+def dcma_09_invalid_dates(context, date_grain: Literal["timestamp", "day"] = "timestamp") -> RuleOutput:
     """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
     Excludes: level of effort, milestones, tasks completed before the status date.
 
     DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an
-    actual start/finish beyond it; §4.0: LOE and milestones excluded; a task completed before the status
-    date is out too, so only an actual date beyond it can flag a completed task
+    actual start/finish beyond it, compared by calendar day as the pamphlet does ("on or before 8/1/09,
+    not after 8/1/09"; ``date_grain``, "timestamp" being P6's reading); §4.0: LOE and milestones
+    excluded. Completed tasks: §4.0 excludes them all, §4.9 flags an actual date beyond the status date,
+    so xerscope keeps the tasks completed on or after it (its reading of §4.9 over §4.0)
     """
     data_date = context.snapshot.data_date
     if data_date is None:
@@ -229,12 +255,17 @@ def dcma_09_invalid_dates(context) -> RuleOutput:
     funnel = _discrete_tasks(activity_funnel(context.snapshot)).exclude("complete_before_data_date", "PAM 200.1")
     tasks = funnel.rows
 
-    forecast = forecast_before(tasks, data_date)
-    actual = actual_after(tasks, data_date)
+    forecast = forecast_before(tasks, data_date, date_grain)
+    actual = actual_after(tasks, data_date, date_grain)
     invalid = forecast | actual
     reasons = invalid_date_reason(forecast, actual)[invalid]
     return RuleOutput(
-        flagged_activities(tasks[invalid], reason=reasons), int(invalid.sum()), len(tasks), checked=tasks, funnel=funnel
+        flagged_activities(tasks[invalid], reason=reasons),
+        int(invalid.sum()),
+        len(tasks),
+        note=f"dates compared by {date_grain}",
+        checked=tasks,
+        funnel=funnel,
     )
 
 
@@ -270,7 +301,7 @@ def dcma_10_resources(context) -> RuleOutput:
 
 
 @rule("dcma_11_missed_tasks", "%", needs_baseline=True)
-def dcma_11_missed_tasks(context) -> RuleOutput:
+def dcma_11_missed_tasks(context, date_grain: Literal["timestamp", "day"] = "timestamp") -> RuleOutput:
     """Due by the status date and not finished on time.
     Counts: missed / due by the status date
     Excludes: level of effort, milestones.
@@ -280,8 +311,9 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date, actual or forecast
     finish after it; base excludes tasks missing a baseline start or finish. 4.0 excludes completed
     tasks, LOE, summary tasks and milestones; 4.11 measures actual finishes, so completed tasks stay here
-    (4.11 overrides 4.0 on that point). UNRESOLVED: the pamphlet's Finish Variance is working time; the
-    calendar date is compared here, as an actual on a non-working day is still late
+    (4.11 overrides 4.0 on that point). Due is read by calendar day, as the pamphlet does
+    (``date_grain``; "timestamp" is P6's reading). UNRESOLVED: the pamphlet's Finish Variance is
+    working time; the calendar date is compared here, as an actual on a non-working day is still late
     """
     data_date = context.snapshot.data_date
     if data_date is None:
@@ -292,13 +324,17 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     funnel.keep(
         "baseline finish on or before the status date",
         "PAM 200.1",
-        lambda rows: rows["bl_start"].notna() & (rows["bl_finish"] <= data_date),
+        lambda rows: (
+            rows["bl_start"].notna() & (at_grain(rows["bl_finish"], date_grain) <= at_grain(data_date, date_grain))
+        ),
     )
     due = funnel.rows
     finishes_later = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
     missed = due[as_flag(finishes_later)]
     # a baseline that matches few activities shrinks the due population silently: say so
-    note = f"{unmatched} without baseline dates left out of {len(tasks)} tasks" if unmatched else ""
+    note = f"due by {date_grain}"
+    if unmatched:
+        note += f"; {unmatched} without baseline dates left out of {len(tasks)} tasks"
     return RuleOutput(
         flagged_activities(missed, bl_finish=missed["bl_finish"]),
         len(missed),
@@ -384,8 +420,12 @@ def dcma_13_cpli(context) -> RuleOutput:
         total_float = margin
         note = f"CPL {length:g} wd, {margin_note}"
     else:
-        float_hours = float(last_task["total_float_hr_cnt"]) if pd.notna(last_task["total_float_hr_cnt"]) else 0.0
-        total_float = float_hours / calendar.hours_per_day if calendar.hours_per_day else 0.0
+        if pd.isna(last_task["total_float_hr_cnt"]):
+            code = last_task["task_code"]
+            return RuleOutput(note=f"total float missing on {code}: CPLI not computed (a missing float is not 0)")
+        if not calendar.hours_per_day:
+            return RuleOutput(note="project calendar has no hours per day: CPLI not computed")
+        total_float = float(last_task["total_float_hr_cnt"]) / calendar.hours_per_day
         note = f"CPL {length:g} wd to {last_task['task_code']}, total float {total_float:g} wd"
     return RuleOutput(value=(length + total_float) / length, note=note)
 
@@ -394,24 +434,28 @@ def dcma_13_cpli(context) -> RuleOutput:
 def dcma_14_bei(context) -> RuleOutput:
     """Due by the status date but not completed.
     Counts: completed / due by the status date
-    Excludes: level of effort, milestones.
-    Tasks without a baseline finish are counted as due. Completed = all completed tasks in the
-        population, early ones included.
+    Excludes: level of effort, milestones, tasks with no original duration.
+    Tasks without a baseline finish are counted as due. Completed = tasks with an actual finish on or
+        before the status date, early ones included.
 
     DCMA-EA PAM 200.1 §3.1.2.4: Baseline Execution Index = tasks completed / tasks due by the
-    status date; step 1 filters out LOE, summary and zero duration tasks (milestones); tasks missing
-    baseline finish dates are included in the denominator
+    status date; step 1 filters out LOE, summary and zero duration tasks (milestones), so a task with
+    no original duration is out whatever its type; step 5 keeps the actual finishes "up to the current
+    reporting period"; tasks missing baseline finish dates are included in the denominator
     """
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
     funnel = Funnel(with_baseline(context.baseline, context.snapshot.activities), data_date)
-    tasks = _discrete_tasks(funnel).rows
+    tasks = _discrete_tasks(funnel).exclude("no_duration", "PAM 200.1").rows
+    zero_duration = funnel.steps[-1]
     funnel.keep(
         "due by the status date",
         "PAM 200.1",
         lambda rows: as_flag(rows["bl_finish"] <= data_date) | rows["bl_finish"].isna(),
     )
-    bei = bei_from_snapshot(tasks, data_date, missing_baseline_is_due=True)
+    bei = bei_from_snapshot(tasks, data_date, missing_baseline_is_due=True, completed_by_data_date=True)
+    if len(zero_duration.removed):
+        bei.note += f"; {len(zero_duration.removed)} without original duration left out (PAM step 1)"
     bei.funnel = funnel
     return bei

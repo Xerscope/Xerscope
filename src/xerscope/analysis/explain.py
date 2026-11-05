@@ -152,8 +152,19 @@ def _riding_notes(params: dict) -> list[str]:
     ]
 
 
+def _date_grain_notes(params: dict) -> list[str]:
+    grain = params.get("date_grain", "timestamp")
+    if grain == "day":
+        how = "by calendar day, as DCMA-EA PAM 200.1 reads them"
+    else:
+        how = "as stored, time included (P6's reading)"
+    return [f"Dates are compared with the status date {how}."]
+
+
 # rule name -> sentences that depend on the rule's parameters
 NOTES: dict[str, Callable[[dict], list[str]]] = {
+    "dcma_09_invalid_dates": _date_grain_notes,
+    "dcma_11_missed_tasks": _date_grain_notes,
     "p6_04_large_durations": _limit_note("remaining duration", "limit_hours", "hours"),
     "p6_05_long_lags": _limit_note("lag", "limit_hours", "hours"),
     "p6_06_large_float": _limit_note("total float", "limit_hours", "hours"),

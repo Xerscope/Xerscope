@@ -1193,3 +1193,98 @@ def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
     s = snap([done("A"), done("B")], [("A", "B", "FS", 0)])
     r = run(DECM, "06A212a", s)
     assert r.status != "error" and r.numerator == 0
+
+
+# --- Audit L2 (PAM 200.1 confrontation): date grain, inter-project links, BEI base, missing float ----
+
+
+def test_dcma_09_compares_dates_by_day_p6_by_timestamp():
+    """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual finish
+    on the status date, later in the day, is not beyond it. P6 Check Schedule keeps the timestamp
+    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference."""
+    s = snap(
+        [done("SAMEDAY", act_end_date="2026-03-02 12:00"), done("LATE", act_end_date="2026-03-03 09:00"), todo("FINE")]
+    )
+    r = run(DCMA, "DCMA-09", s)
+    assert (codes(r), r.denominator) == (["LATE"], 3)
+    assert "day" in r.note
+    assert codes(run(P6, "P6-10b", s)) == ["LATE", "SAMEDAY"]
+
+
+def test_dcma_11_due_by_day():
+    """PAM 200.1 §4.11: due when the baseline finish is on or before the status date. Data date Monday
+    08:00; a baseline finish that Monday at 17:00 is due (and missed when the forecast is Thursday)."""
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            todo("SAME", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date="2026-03-02 17:00"),
+            todo("REF", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("NEXT", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date="2026-03-03 08:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
+    assert (codes(r), r.denominator) == (["REF", "SAME"], 2)  # NEXT is due tomorrow: out
+
+
+def test_dcma_14_counts_completed_by_the_status_date_only():
+    """PAM 200.1 §3.1.2.4 step 5: "Filter the Actual Finish data to include only dates up to the current
+    reporting period". A task finished after the status date is due but not completed yet."""
+    st = "2026-02-02 08:00"
+    bl = dict(target_start_date=st, target_end_date="2026-02-27 17:00")
+    s = snap(
+        [
+            done("LATEACT", act_end_date="2026-03-04 17:00", **bl),
+            done("OK", **bl),
+            todo("MISS", early_end_date="2026-03-20 17:00", **bl),
+        ]
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (1, 3)
+    assert r.value == pytest.approx(1 / 3)
+    assert "1 completed after the status date" in r.note
+
+
+def test_dcma_14_leaves_out_zero_duration_tasks_and_says_so():
+    """PAM 200.1 §3.1.2.4 step 1: "Filter out ... zero duration tasks (milestones)": a TT_Task with no
+    original duration is out of the base, and the funnel step records what was removed."""
+    st = "2026-02-02 08:00"
+    bl = dict(target_start_date=st, target_end_date="2026-02-27 17:00")
+    s = snap(
+        [
+            done("OK", **bl),
+            todo("ZERO", target_drtn_hr_cnt="0", **bl),
+            todo("MISS", early_end_date="2026-03-20 17:00", **bl),
+        ]
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (1, 2)
+    step = next(step for step in r.funnel.steps if "original duration" in step.label)
+    assert list(step.removed["task_code"]) == ["ZERO"]
+    assert "1 without original duration" in r.note
+
+
+def test_dcma_06_07_name_open_tasks_without_float():
+    """PAM 200.1 is silent on a missing float: the task stays in "# of incomplete tasks" and cannot be
+    flagged; the note says how many and why."""
+    s = snap(
+        [
+            todo("A", total_float_hr_cnt="400"),
+            todo("NOFLOAT", total_float_hr_cnt=""),
+            todo("N", total_float_hr_cnt="-8"),
+        ]
+    )
+    high = run(DCMA, "DCMA-06", s)
+    assert (codes(high), high.denominator) == (["A"], 3)
+    assert "1 without total float (kept in the checked population, cannot be flagged)" in high.note
+    neg = run(DCMA, "DCMA-07", s)
+    assert (codes(neg), neg.denominator) == (["N"], 3)
+    assert "1 without total float" in neg.note
+
+
+def test_dcma_13_has_no_value_when_the_float_is_missing():
+    """A missing total float is not 0: with a Must Finish By and no float on the finish driver the
+    CPLI is n/a, with the reason, instead of 1.00."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="")]
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
+    assert r.value is None
+    assert "total float missing" in r.note

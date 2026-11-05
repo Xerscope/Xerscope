@@ -5389,12 +5389,13 @@
     "value": 8.695652
    },
    "DCMA/DCMA-11": {
-    "denominator": 1,
+    "denominator": 2,
     "flagged": [
-     "C3010"
+     "C3010",
+     "E1010"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
     "value": 100.0
    },
@@ -7646,14 +7647,15 @@
    "DCMA/DCMA-14": {
     "denominator": 8,
     "flagged": [
+     "C3010",
      "C3045",
      "E1020",
      "E1030"
     ],
     "note": null,
-    "numerator": 5,
+    "numerator": 4,
     "status": "fail",
-    "value": 0.625
+    "value": 0.5
    },
    "DECM/06A204b": {
     "denominator": 23,
@@ -8199,9 +8201,10 @@
     "value": 10.526316
    },
    "DCMA/DCMA-11": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [
      "C3010",
+     "C3020",
      "E1010",
      "E1020",
      "E1030",
@@ -8211,7 +8214,7 @@
      "P2020"
     ],
     "note": null,
-    "numerator": 8,
+    "numerator": 9,
     "status": "fail",
     "value": 100.0
    },
@@ -8234,14 +8237,15 @@
    "DCMA/DCMA-14": {
     "denominator": 9,
     "flagged": [
+     "C3010",
      "C3045",
      "E1030",
      "E1050"
     ],
     "note": null,
-    "numerator": 6,
+    "numerator": 5,
     "status": "fail",
-    "value": 0.666667
+    "value": 0.555556
    },
    "DECM/06A204b": {
     "denominator": 22,
@@ -9842,12 +9846,13 @@
     "value": 8.695652
    },
    "DCMA/DCMA-11": {
-    "denominator": 1,
+    "denominator": 2,
     "flagged": [
-     "C3010"
+     "C3010",
+     "E1010"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
     "value": 100.0
    },
@@ -12097,13 +12102,14 @@
    "DCMA/DCMA-14": {
     "denominator": 7,
     "flagged": [
+     "C3010",
      "E1020",
      "E1030"
     ],
     "note": null,
-    "numerator": 5,
+    "numerator": 4,
     "status": "fail",
-    "value": 0.714286
+    "value": 0.571429
    },
    "DECM/06A204b": {
     "denominator": 23,
@@ -12648,9 +12654,10 @@
     "value": 10.526316
    },
    "DCMA/DCMA-11": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [
      "C3010",
+     "C3020",
      "E1010",
      "E1020",
      "E1030",
@@ -12660,7 +12667,7 @@
      "P2020"
     ],
     "note": null,
-    "numerator": 8,
+    "numerator": 9,
     "status": "fail",
     "value": 100.0
    },
@@ -12683,13 +12690,14 @@
    "DCMA/DCMA-14": {
     "denominator": 8,
     "flagged": [
+     "C3010",
      "E1030",
      "E1050"
     ],
     "note": null,
-    "numerator": 6,
+    "numerator": 5,
     "status": "fail",
-    "value": 0.75
+    "value": 0.625
    },
    "DECM/06A204b": {
     "denominator": 22,
@@ -15014,20 +15022,11 @@
    },
    "DCMA/DCMA-09": {
     "denominator": 12,
-    "flagged": [
-     "A1010",
-     "A1020",
-     "A1030",
-     "A1050",
-     "A1060",
-     "A1070",
-     "A1090",
-     "A1100"
-    ],
+    "flagged": [],
     "note": null,
-    "numerator": 8,
-    "status": "fail",
-    "value": 8.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 12,
