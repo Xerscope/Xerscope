@@ -27,7 +27,7 @@ ui.kpis(
         (
             "Forecast finish",
             ui.fmt_date(latest.finish_date),
-            None if pd.isna(shift) else f"{shift:+g} wd vs previous update",
+            None if pd.isna(shift) else f"{round(shift, 1):+g} wd vs previous update",
             "Latest early finish of the project",
             "inverse",
         ),

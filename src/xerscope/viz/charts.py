@@ -421,7 +421,7 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
 
 
 def format_shift(shift_wd: float) -> str:
-    return "" if pd.isna(shift_wd) else f" ({shift_wd:+g} wd)"
+    return "" if pd.isna(shift_wd) else f" ({round(shift_wd, 1):+g} wd)"
 
 
 # --- PPC ---------------------------------------------------------------------------------------

@@ -257,3 +257,17 @@ def test_changelog_lists_an_hours_change_hidden_by_a_calendar_change():
     new = snap([todo("A", clndr_id="C10", **hours(100))], data_date=LAST)
     log = changelog(old, new).query("category == 'Durations'")
     assert sorted(log["change"]) == ["original duration changed", "remaining duration increased"]
+
+
+def test_weekly_finish_shifts_add_up_to_the_total_shift():
+    """Four updates, the finish moving 2 h a week on C8: 0.25 wd each, 1.0 wd in all. Stored
+    rounded to 0.1 (half to even: 0.2) they summed to 0.8 wd, in Power BI as on the page."""
+    finishes = ["2026-03-13 17:00", "2026-03-16 10:00", "2026-03-16 12:00", "2026-03-16 15:00", "2026-03-16 17:00"]
+    data_dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-10 08:00", "2026-03-11 08:00", "2026-03-12 08:00"]
+    updates = [
+        snap([todo("A", early_end_date=finish)], data_date=data_date)
+        for finish, data_date in zip(finishes, data_dates, strict=True)
+    ]
+    shifts = SnapshotStore(updates).summary["finish_shift_wd"]
+    assert shifts.iloc[1:].tolist() == [0.25, 0.25, 0.25, 0.25]
+    assert shifts.sum() == 1.0
