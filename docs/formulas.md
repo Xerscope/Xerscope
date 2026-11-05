@@ -135,6 +135,33 @@ Status: `n/a` when the metric needs a baseline and none is loaded, or the value 
 `comparator(round(value, 6), threshold)` holds, else `fail`. So `<= 0%` and `<= 0` pass
 only when the numerator is 0.
 
+### 1.6 Standard score (analysis/checks.py `standard_score`)
+
+`score = checks in pass / (checks in pass + checks in fail)`, with the number of fail and their ids:
+`67 % · 3 evaluated · 1 fail: T-02`. Checks in `info`, `n/a` or `error` are not evaluated and appear
+in neither term; a standard with no evaluated check has no score (`–`, n/a). The function reads the
+`status` of results already computed (§1.5) and recomputes no check: the app takes them from
+`state.metric_result`, the per-session entry Schedule health, Audit and Earned value share, so a
+score shown on Overview or Schedule health costs no calculation once Schedule health has run.
+
+This is a xerscope convention. No DCMA, Oracle P6 or Acumen source defines a global score for a
+schedule. Ten Six, "An Introduction to the DCMA 14-Point Assessment Guidelines" (Usage), reads the
+14-Point as "not necessarily a pass/fail quality criterion. Exceeding assessment thresholds does not
+necessarily indicate schedule failure": a check over its target is a flag to explain, so the
+score summarises how many checks need reading, not whether the schedule is acceptable. The share
+depends on which checks the standard evaluates (INTEGRITY: 4 of its 8 checks have a target, the others
+are `info`), so scores of two standards, or of one standard with and without a baseline (checks that
+need one are `n/a`), do not compare.
+
+Overview shows one card per built-in standard for the latest update once its results are in the
+session's cache; otherwise "not computed yet" and a "Compute scores" button. The four standards take
+several seconds on a ~4,000-activity export (CPM recalculation, critical path tests), too long to run
+on every opening of the page.
+
+Tests: `tests/test_scores.py` (hand-made schedule: 2 pass, 1 fail, 1 n/a gives 2/3 and the failed id;
+a standard with no evaluated check has no score); `tests/test_app_cache.py` (Overview cards = score of a
+fresh calculation = Schedule health card; each metric computed once whichever page asks first).
+
 ## 2. Standards
 
 Column key: **Population** = rows the rule examines (denominator unless stated);

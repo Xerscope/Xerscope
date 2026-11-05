@@ -12,7 +12,7 @@ from xerscope.analysis import (
     template_text,
 )
 from xerscope.analysis.audit import by_check, sets_long
-from xerscope.analysis.checks import health_wide
+from xerscope.analysis.checks import health_wide, standard_score
 from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
@@ -33,6 +33,7 @@ from xerscope.app.state import (
     show_download,
     snapshot_picker,
     sources_of,
+    standard_results,
     standards,
 )
 from xerscope.export import zip_frames
@@ -56,7 +57,8 @@ def culprits_first(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[identity + extra + [column for column in frame.columns if column not in identity + extra]]
 
 
-def show_kpis(results) -> None:
+def show_kpis(results, standard) -> None:
+    ui.score_cards({standard.name: standard_score(results)})
     counts = pd.Series([result.status for result in results]).value_counts()
     scored = int(counts.get("pass", 0) + counts.get("fail", 0))
     ui.kpis(
@@ -416,8 +418,8 @@ if baseline is None:
 
 # memoised per (data set, metric, update, baseline): the DECM critical path test alone
 # takes ~2 s on a 4,000-activity file, and every widget change reruns the page
-results = [metric_result(metric, snapshot, store) for metric in standard.metrics]
-show_kpis(results)
+results = standard_results(standard, snapshot, store)
+show_kpis(results, standard)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
 show_summary(results, standard, snapshot, baseline, sources)
 show_check_sets(results, standard, snapshot, sources)

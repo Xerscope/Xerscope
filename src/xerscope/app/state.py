@@ -909,13 +909,31 @@ def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep
     written (rule, parameters, target, standard: its repr) and the update (file, data date). Not
     the EV basis: no rule reads what it sets (the ev_* columns, the assignment costs)."""
     return memo(
-        ("metric", repr(metric), snapshot.source, str(snapshot.data_date)),
+        _metric_key(metric, snapshot),
         run_metric,
         metric,
         AnalysisContext(snapshot, store, baseline_for(snapshot)),
         keep=keep,
         ev_basis=False,
     )
+
+
+def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
+    return ("metric", repr(metric), snapshot.source, str(snapshot.data_date))
+
+
+def standard_results(standard: Standard, snapshot: Snapshot, store: SnapshotStore) -> list[CheckResult]:
+    """Every check of ``standard`` on ``snapshot``, each through :func:`metric_result`."""
+    return [metric_result(metric, snapshot, store) for metric in standard.metrics]
+
+
+def standard_results_held(standard: Standard, snapshot: Snapshot) -> list[CheckResult] | None:
+    """The results :func:`standard_results` would return, if every one is already cached, else None.
+    Computes nothing."""
+    results = [
+        memo(_metric_key(metric, snapshot), lambda: None, keep=False, ev_basis=False) for metric in standard.metrics
+    ]
+    return None if any(result is None for result in results) else results
 
 
 ANONYMISED = " · anonymized"  # suffix of an anonymized download's label

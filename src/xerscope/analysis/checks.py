@@ -96,6 +96,38 @@ def run_standard(standard: Standard, context: AnalysisContext) -> list[CheckResu
     return [run_metric(metric, context) for metric in standard.metrics]
 
 
+@dataclass(frozen=True)
+class StandardScore:
+    """Checks in pass over checks evaluated (pass + fail); info, n/a and error are not evaluated."""
+
+    passed: int
+    evaluated: int
+    failed_ids: tuple[str, ...]
+
+    @property
+    def share(self) -> float | None:
+        """passed / evaluated, None when no check was evaluated (the score is n/a)."""
+        return self.passed / self.evaluated if self.evaluated else None
+
+    @property
+    def value(self) -> str:
+        return "–" if self.share is None else f"{100 * self.share:.0f} %"
+
+    @property
+    def detail(self) -> str:
+        if not self.evaluated:
+            return "0 evaluated"
+        failed = f": {', '.join(self.failed_ids)}" if self.failed_ids else ""
+        return f"{self.evaluated} evaluated · {len(self.failed_ids)} fail{failed}"
+
+
+def standard_score(results: list[CheckResult]) -> StandardScore:
+    """The score of one standard from its results (xerscope convention, docs/formulas.md §1.6)."""
+    failed = tuple(result.metric.id for result in results if result.status == "fail")
+    passed = sum(result.status == "pass" for result in results)
+    return StandardScore(passed, passed + len(failed), failed)
+
+
 def fmt_value(value: float | None, unit: str) -> str:
     if value is None:
         return "–"
