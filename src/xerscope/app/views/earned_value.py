@@ -318,7 +318,7 @@ with top:
     )
     show_baseline_used(snapshot, baseline, series=True)
 if baseline is None:
-    st.info("Choose a baseline in the sidebar (a loaded snapshot or a separate BL file).")
+    st.info("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(

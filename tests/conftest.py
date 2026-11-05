@@ -61,3 +61,80 @@ def require_reference():
         return path
 
     return get
+
+
+def file_boxes(at):
+    """The tick boxes of the folder's files in the Files… window (empty while it is closed)."""
+    return [box for box in at.checkbox if box.key and box.key.startswith("read:")]
+
+
+def open_files(at):
+    """Press the sidebar's Files line: the window opens on its Files section."""
+    at.button(key="files_button").click()
+    return at.run()
+
+
+def files_done(at):
+    """Press Done in the Files… window."""
+    at.button(key="files_done").click()
+    return at.run()
+
+
+def read_folder(at, count=None):
+    """Nothing is read until files are ticked: open the Files… window, tick every file of the
+    folder (or the first ``count``) and press Done."""
+    open_files(at)
+    for box in file_boxes(at)[:count]:
+        box.check()
+    return files_done(at)
+
+
+def files_line(at):
+    """The sidebar's Files line: ``Files · <snapshots> · <first> → <latest>``, or ``Files · none read``."""
+    return at.button(key="files_button").label
+
+
+class BaselineBox:
+    """A baseline selector of the window (``bl_choice``, ``ev_basis``, ``bl_fallback``), read and set
+    as a user does: the window opened from the sidebar's Baseline line, the choice made on its draft,
+    then Done. The window is opened again after Done, so the selectors can be read back."""
+
+    def __init__(self, at, key):
+        self.at, self.key = at, key
+
+    @property
+    def element(self):
+        if not any(box.key == f"draft_{self.key}" for box in self.at.selectbox):
+            self.at.button(key="baseline_button").click()
+            self.at.run()
+        return self.at.selectbox(key=f"draft_{self.key}")
+
+    @property
+    def value(self):
+        return self.element.value
+
+    @property
+    def options(self):
+        return self.element.options
+
+    @property
+    def label(self):
+        return self.element.label
+
+    def set_value(self, value):
+        self.element.set_value(value)
+        self.at.run()
+        self.at.button(key="files_done").click()
+        self.at.run()
+        self.at.button(key="baseline_button").click()
+        self.at.run()
+        return self
+
+    select = set_value
+
+    def run(self):
+        return self.at.run()
+
+
+def baseline_box(at, key="bl_choice"):
+    return BaselineBox(at, key)

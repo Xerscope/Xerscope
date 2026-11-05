@@ -5,6 +5,7 @@ import zipfile
 
 import pandas as pd
 import pytest
+from conftest import baseline_box, read_folder
 from file_projects import BASELINE_DATE, two_projects
 
 from xerscope.analysis import builtin_standards
@@ -185,15 +186,11 @@ def _app(tmp_path, monkeypatch, **kw):
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
-    at.run()
-    for box in at.sidebar.checkbox:
-        if box.key.startswith("read:"):
-            box.check()
-    return at.run()
+    return read_folder(at.run())
 
 
 def _baseline_box(at):
-    return next(box for box in at.sidebar.selectbox if box.key == "bl_choice")
+    return baseline_box(at)
 
 
 def _selection(at):
@@ -254,17 +251,13 @@ def _series(tmp_path, monkeypatch, files=None, transform=lambda text: text):
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
-    at.run()
-    for box in at.sidebar.checkbox:
-        if box.key.startswith("read:"):
-            box.check()
-    return at.run()
+    return read_folder(at.run())
 
 
 def _health(at, update_stamp, fallback=None):
     """The Health page on one update; ``fallback`` sets the sidebar's second selector first."""
     if fallback is not None:
-        next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(fallback)
+        baseline_box(at, "bl_fallback").select(fallback)
         at.run()
     at = at.switch_page("views/health.py").run()
     snapshot = next(box for box in at.selectbox if box.key == "health_snap")
@@ -278,7 +271,7 @@ def _markdown(at):
 
 def test_the_fallback_selector_defaults_to_none_and_is_shown_with_the_file_mode(tmp_path, monkeypatch):
     at = _series(tmp_path, monkeypatch)
-    fallback = next(box for box in at.sidebar.selectbox if box.key == "bl_fallback")
+    fallback = baseline_box(at, "bl_fallback")
     assert fallback.label == "When a file has no baseline"
     assert fallback.value == "None"
     assert fallback.options[0] == "Separate baseline file" and fallback.options[-2:] == [
@@ -375,9 +368,7 @@ def test_no_warning_when_every_file_has_a_usable_baseline_that_matches(tmp_path,
 def test_a_file_without_baseline_is_named_with_what_applies_instead(tmp_path, monkeypatch):
     at = _series(tmp_path, monkeypatch)
     assert any("b.xer" in w and "baseline checks are n/a" in w for w in _warnings(at))
-    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(
-        "Planned dates in each file (target_*)"
-    )
+    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     assert any("b.xer" in w and "fallback: Planned dates in each file (target_*)" in w for w in _warnings(at.run()))
 
 
@@ -427,9 +418,7 @@ def test_a_series_that_mixes_baseline_sources_says_so_with_the_files(tmp_path, m
         and "1 on no baseline (b.xer)" in w
         for w in _warnings(at)
     )
-    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(
-        "Planned dates in each file (target_*)"
-    )
+    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     assert any("1 on the fallback (b.xer)" in w for w in _warnings(at.run()))
 
 
@@ -486,9 +475,7 @@ def test_the_project_shown_in_the_picker_is_the_one_every_file_that_holds_it_is_
 
 def test_the_fallback_applies_on_the_earned_value_page_of_a_portfolio_file(tmp_path, monkeypatch):
     at = _portfolio(tmp_path, monkeypatch)
-    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select(
-        "Planned dates in each file (target_*)"
-    )
+    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     at = at.run().switch_page("views/earned_value.py").run()
     assert any(
         m.startswith("**Baseline used for 2026-03-09**: fallback (Planned dates in each file (target_*))")
@@ -502,7 +489,7 @@ def test_an_update_without_baseline_says_where_to_pick_one(tmp_path, monkeypatch
         "b.xer: Baseline: none in file" in i and "When a file has no baseline" in i
         for i in (element.value.replace("\\", "") for element in at.info)
     )
-    next(box for box in at.sidebar.selectbox if box.key == "bl_fallback").select("Separate baseline file")
+    baseline_box(at, "bl_fallback").select("Separate baseline file")
     at.run()
     assert any("upload the baseline XER" in element.value for element in at.info)
 
@@ -510,10 +497,10 @@ def test_an_update_without_baseline_says_where_to_pick_one(tmp_path, monkeypatch
 @pytest.mark.parametrize("key", ["bl_choice", "bl_fallback"])
 def test_the_baseline_upload_goes_away_with_another_choice(tmp_path, monkeypatch, key):
     at = _series(tmp_path, monkeypatch)
-    next(box for box in at.sidebar.selectbox if box.key == key).select("Separate baseline file")
-    assert [u.key for u in at.run().sidebar.get("file_uploader")].count("bl_upload") == 1
-    next(box for box in at.sidebar.selectbox if box.key == key).select("None")
-    assert "bl_upload" not in [u.key for u in at.run().sidebar.get("file_uploader")]
+    baseline_box(at, key).select("Separate baseline file")
+    assert [u.key for u in at.run().get("file_uploader")].count("bl_upload") == 1
+    baseline_box(at, key).select("None")
+    assert "bl_upload" not in [u.key for u in at.run().get("file_uploader")]
 
 
 def test_the_projects_of_a_file_carry_their_data_date_and_which_are_baseline_copies():
@@ -576,3 +563,32 @@ def test_a_project_picked_for_a_file_wins_over_the_project_picked_for_all(tmp_pa
     next(box for box in at.sidebar.selectbox if box.label == "Project").set_value("P4").run()
     assert not at.exception
     assert [(s.source, s.project_code) for s in at.session_state["store"]] == [("a.xer", "P3"), ("b.xer", "P4")]
+
+
+def test_a_locked_server_offers_no_separate_baseline_file_as_fallback(tmp_path, monkeypatch):
+    """XERSCOPE_DATA_LOCKED: a separate file could only be uploaded, so neither selector offers it."""
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _series(tmp_path, monkeypatch)
+    assert not at.exception
+    assert "Separate baseline file" not in baseline_box(at).options
+    assert "Separate baseline file" not in baseline_box(at, "bl_fallback").options
+    assert not at.get("file_uploader")
+
+
+def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_closes(tmp_path, monkeypatch):
+    """The upload box is a draft like the selectors: its file is the fallback once Done is pressed, and
+    stays so when the window, and its emptied upload box, are gone."""
+    from conftest import files_done
+
+    from xerscope.analysis import Baseline
+
+    monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
+    at = _series(tmp_path, monkeypatch)
+    baseline_box(at, "bl_fallback").select("Separate baseline file")
+    data = (tmp_path / "a.xer").read_bytes()
+    at.file_uploader(key="bl_upload").set_value([("bl.xer", data, "text/plain")]).run()
+    assert not at.exception and at.session_state["fallback"] is None  # not applied before Done
+    files_done(at)
+    at.run()
+    assert not at.get("file_uploader") and isinstance(at.session_state["fallback"], Baseline)
+    assert at.session_state["bl_file"][0] == "bl.xer"

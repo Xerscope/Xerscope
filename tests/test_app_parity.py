@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import baseline_box, read_folder
 from streamlit.testing.v1 import AppTest
 from xerkit import done, todo, xer_text
 
@@ -26,20 +27,13 @@ APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 STANDARDS = builtin_standards()
 
 
-def _tick_all(at):
-    """Nothing is read until ticked: tick every file of the folder."""
-    for box in (box for box in at.sidebar.checkbox if box.key.startswith("read:")):
-        box.check()
-    return at.run()
-
-
 @pytest.fixture(scope="module")
 def app(sample_dir):
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("XERSCOPE_DATA", str(sample_dir))
         patch.delenv("XERSCOPE_BASELINE", raising=False)
         patch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
-        yield _tick_all(AppTest.from_file(APP, default_timeout=180).run())
+        yield read_folder(AppTest.from_file(APP, default_timeout=180).run())
 
 
 def _run(at):
@@ -69,7 +63,7 @@ def _baseline(store, choice: str, snapshot):
 def test_health_table_equals_run_standard(app, store, standard_id, bl_choice):
     """Status, value, counts and items listed of every check, on the first and the latest update."""
     choice = store.labels[0] if bl_choice == "first update" else bl_choice
-    app.sidebar.selectbox(key="bl_choice").set_value(choice)
+    baseline_box(app).set_value(choice)
     _run(app)
     app.switch_page("views/health.py")
     _run(app)
@@ -96,7 +90,7 @@ def test_health_table_equals_run_standard(app, store, standard_id, bl_choice):
 
 def test_earned_value_kpis_equal_evm_series(app, store):
     """EV %, PV %, SPI, SV, BEI and EAC of every update; BEI is the value of the Health checks P6-13 / DCMA-14."""
-    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    baseline_box(app).set_value(store.labels[0])
     _run(app)
     app.switch_page("views/earned_value.py")
     _run(app)
@@ -153,7 +147,7 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     (tmp_path / "w2.xer").write_text(xer_text(week_2, data_date="2026-03-09 08:00"))
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
     assert not at.exception, [e.value for e in at.exception]
     at.switch_page("views/ppc.py")
     _run(at)
@@ -218,7 +212,7 @@ def test_audit_page_equals_run_metric_for_every_check(app, store, standard_id):
     counts and the size of each set shown are those of run_metric and audit.split."""
     from xerscope.analysis.audit import split
 
-    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    baseline_box(app).set_value(store.labels[0])
     _run(app)
     snapshot = store.latest
     context = AnalysisContext(snapshot, store, Baseline.from_snapshot(store.first))
@@ -246,7 +240,7 @@ def test_audit_settings_rerun_the_check_and_leave_schedule_health_alone(app, sto
     standard keep x = 352 h; Reset brings the standard back."""
     from xerscope.analysis.audit import with_settings
 
-    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    baseline_box(app).set_value(store.labels[0])
     _run(app)
     _open_audit(app, "P6", "P6-06")
     app.number_input(key="audit:P6:P6-06:limit_hours").set_value(100.0)
@@ -294,7 +288,7 @@ def test_audit_page_shows_the_calculation_sheet_of_a_p6_check(app, store):
 @pytest.mark.parametrize("metric_id", [m.id for m in STANDARDS["P6"].metrics])
 def test_audit_funnel_equals_the_rule_steps(app, store, metric_id):
     """The step table of the Audit page is the rule's funnel: start, removed and left per step, counted."""
-    app.sidebar.selectbox(key="bl_choice").set_value(store.labels[0])
+    baseline_box(app).set_value(store.labels[0])
     _run(app)
     _open_audit(app, "P6", metric_id)
     result = run_metric(

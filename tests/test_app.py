@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import P6_CORPUS_HINT, missing
+from conftest import P6_CORPUS_HINT, baseline_box, file_boxes, files_done, files_line, missing, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 from xerkit import active, hours, todo, with_second_project, xer_text
 
@@ -18,7 +18,7 @@ import xerscope
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
-from xerscope.app.state import anonymizers_built
+from xerscope.app.state import BL_FILE, BL_PLANNED, anonymizers_built
 from xerscope.store import SnapshotStore
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
@@ -43,31 +43,28 @@ PAGES = [
 def app(sample_dir, monkeypatch):
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+    return read_folder(AppTest.from_file(APP, default_timeout=120).run())
 
 
-def _file_boxes(at):
-    return [box for box in at.sidebar.checkbox if box.key.startswith("read:")]
-
-
-def _tick_all(at):
-    """Nothing is read until files are ticked: tick every file of the folder."""
-    for box in _file_boxes(at):
-        box.check()
-    return at.run()
-
-
-def test_file_list_stays_open_while_files_are_ticked(sample_dir, monkeypatch):
-    # The expander label holds the tick count. Keyed on its label, Streamlit would redraw it as a
-    # new, closed expander at every tick; a fixed key keeps the one the user opened.
+def test_files_window_opens_from_the_button_reads_on_done_and_reopens_with_the_choice(sample_dir, monkeypatch):
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = AppTest.from_file(APP, default_timeout=120).run()
-    before = at.sidebar.expander[0]
-    _file_boxes(at)[0].check()
+    _ok(at)
+    assert not file_boxes(at) and files_line(at) == "Files · none read"
+    open_files(at)
+    _ok(at)
+    assert len(file_boxes(at)) == 8 and at.text_input(key="files_folder").value == str(sample_dir)
+    for box in file_boxes(at)[:2]:
+        box.check()
     at.run()
-    after = at.sidebar.expander[0]
-    assert before.label != after.label  # "0 of 8 ticked" -> "1 of 8 ticked"
-    assert before.key is not None and after.key == before.key
+    assert at.session_state["store"] is None  # ticking reads nothing: the files are read on Done
+    files_done(at)
+    _ok(at)
+    assert not file_boxes(at) and not at.session_state["files_open"]  # Done closed the window
+    assert files_line(at).startswith("Files · 2 ·")
+    open_files(at)
+    assert [box.value for box in file_boxes(at)] == [True, True] + [False] * 6
 
 
 def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
@@ -75,9 +72,9 @@ def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
     # folder is the server's and the visitor never sees it (_data_locked), so no key may hold it.
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "1")
-    at = _tick_all(AppTest.from_file(APP, default_timeout=120).run())
-    keys = [element.key for element in [*at.sidebar.checkbox, *at.sidebar.expander] if element.key]
-    assert len(_file_boxes(at)) == len(list(sample_dir.glob("*.xer")))
+    at = open_files(read_folder(AppTest.from_file(APP, default_timeout=120).run()))
+    keys = [element.key for element in [*at.checkbox, *at.button, *at.expander] if element.key]
+    assert len(file_boxes(at)) == len(list(sample_dir.glob("*.xer")))
     assert keys and not [key for key in keys if str(sample_dir) in key]
 
 
@@ -148,7 +145,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
 @pytest.mark.parametrize("std", ["P6", "DCMA", "INTEGRITY"])
 @pytest.mark.parametrize("baseline", ["Planned dates in each file (target_*)", "None"])
 def test_health_standards_and_baselines(app, std, baseline):
-    app.sidebar.selectbox(key="bl_choice").set_value(baseline).run()
+    baseline_box(app).set_value(baseline).run()
     app.switch_page("views/health.py").run()
     app.get("button_group")[0].set_value(std).run()  # segmented control
     _ok(app)
@@ -202,7 +199,7 @@ def test_earned_value_needs_hours_and_baseline(app):
     app.switch_page("views/earned_value.py").run()
     _ok(app)
     assert app.metric[0].label == "Percent complete"
-    app.sidebar.selectbox(key="bl_choice").set_value("None").run()
+    baseline_box(app).set_value("None").run()
     _ok(app)
     assert any("Choose a baseline" in i.value for i in app.info)
 
@@ -408,7 +405,7 @@ def _run(data_dir, monkeypatch, baseline=None):
         monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     else:
         monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline))
-    return _tick_all(AppTest.from_file(APP, default_timeout=120).run())
+    return read_folder(AppTest.from_file(APP, default_timeout=120).run())
 
 
 def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeypatch):
@@ -475,7 +472,7 @@ def test_baseline_file_from_env_and_its_date_check(sample_dir, tmp_path, monkeyp
     # the first export as the baseline: read, named in the sidebar, no warning
     at = _run(tmp_path, monkeypatch, baseline=files[0])
     _ok(at)
-    assert at.sidebar.selectbox(key="bl_choice").value == "Separate baseline file"
+    assert baseline_box(at).value == "Separate baseline file"
     assert any(files[0].stem in c.value and "labor h" in c.value for c in at.sidebar.caption)
     assert not at.sidebar.warning
     # the last export as the baseline: newer than every loaded update
@@ -493,35 +490,119 @@ def test_same_data_date_twice_is_refused(sample_dir, tmp_path, monkeypatch):
     at = _run(tmp_path, monkeypatch)
     _ok(at)
     assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
-    assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert files_line(at) == "Files · none read"
 
 
 def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
-    at = _run(sample_dir / "missing", monkeypatch)
+    at = _run(sample_dir, monkeypatch)
+    open_files(at)
+    at.text_input(key="files_folder").input(str(sample_dir / "missing")).run()
     _ok(at)
-    assert any("Folder not found" in e.value for e in at.sidebar.error)
+    assert any("Folder not found" in e.value for e in at.error) and not file_boxes(at)
+    files_done(at)
+    _ok(at)
+    assert at.session_state["store"] is None
     assert any("xerscope sample" in i.value for i in at.info)
 
 
 def _with_baseline_file_choice(at):
-    at.sidebar.selectbox(key="bl_choice").set_value(at.sidebar.selectbox(key="bl_choice").options[0]).run()
+    baseline_box(at).set_value(baseline_box(at).options[0]).run()
     _ok(at)
     return at
 
 
 def test_locked_folder_gives_the_visitor_no_path_field_and_no_upload(sample_dir, monkeypatch):
     """Remote deployment (XERSCOPE_DATA_LOCKED): the server's folder is read, no field can point
-    elsewhere and nothing can be uploaded (exports and baseline: each parsed one costs memory)."""
+    elsewhere and nothing can be uploaded (exports and baseline: each parsed one costs memory), so
+    the window offers no separate baseline file either."""
     monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
-    at = _with_baseline_file_choice(_run(sample_dir, monkeypatch))
-    assert "…or read a folder" in [t.label for t in at.sidebar.text_input]
-    assert len(at.get("file_uploader")) == 2  # exports and baseline
+    at = open_files(_with_baseline_file_choice(_run(sample_dir, monkeypatch)))
+    assert "…or read a folder" in [t.label for t in at.text_input]
+    assert len(at.get("file_uploader")) == 2  # exports and baseline, both in the window
     monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
-    at = _with_baseline_file_choice(_run(sample_dir, monkeypatch))
-    assert "…or read a folder" not in [t.label for t in at.sidebar.text_input]
+    at = _run(sample_dir, monkeypatch)
+    assert BL_FILE not in baseline_box(at).options
+    open_files(at)
+    assert "…or read a folder" not in [t.label for t in at.text_input]
     assert len(at.get("file_uploader")) == 0
-    assert any("8 snapshot(s)" in c.value for c in at.sidebar.caption)
-    assert any("No baseline file on this server" in c.value for c in at.sidebar.caption)
+    assert len(file_boxes(at)) == 8  # the window lists the server's files only
+    files_done(at)
+    _ok(at)
+    assert files_line(at).startswith("Files · 8 ·")
+
+
+def test_locked_server_offers_the_baseline_file_it_names(sample_dir, monkeypatch):
+    """XERSCOPE_BASELINE on a locked server: the separate file is the server's, read without upload."""
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _run(sample_dir, monkeypatch, baseline=sorted(sample_dir.glob("*.xer"))[0])
+    _ok(at)
+    assert baseline_box(at).value == BL_FILE and not at.get("file_uploader")
+    assert at.button(key="baseline_button").label == f"Baseline · {sorted(sample_dir.glob('*.xer'))[0].name}"
+    assert isinstance(at.session_state["baseline"], Baseline)
+
+
+def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app, store):
+    """The sidebar's Baseline line opens the same window, Baseline section first; a choice applied
+    with Done stays once the window is closed, although its selectors are no longer drawn."""
+    _ok(app)
+    assert app.button(key="baseline_button").label.startswith("Baseline · ")
+    baseline_box(app).set_value(BL_PLANNED)
+    titles = [html.body for html in app.get("html") if html.body.startswith('<div class="xd-title">')]
+    assert "Baseline" in titles[0] and "Files" in titles[1]
+    files_done(app)
+    _ok(app)
+    assert not app.session_state["files_open"] and not [box for box in app.selectbox if box.key == "draft_bl_choice"]
+    app.run()
+    assert app.session_state["bl_choice"] == BL_PLANNED and app.session_state["baseline"] == BL_PLANNED
+    assert app.button(key="baseline_button").label == "Baseline · planned dates"
+    open_files(app)
+    titles = [html.body for html in app.get("html") if html.body.startswith('<div class="xd-title">')]
+    assert "Files" in titles[0] and "Baseline" in titles[1]
+    assert baseline_box(app).value == BL_PLANNED
+
+
+def _earned_value_metrics(at):
+    return [(m.label, m.value) for m in at.metric]
+
+
+def test_a_baseline_choice_closed_without_done_changes_nothing_and_done_applies_it(app, store):
+    """The window's selectors are drafts: closed without Done (Esc, ✕, a click outside run
+    _close_window), the baseline, its EV basis and the PV / SPI figures stay as they were."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    before = _earned_value_metrics(app)
+    in_force = (app.session_state["bl_choice"], app.session_state["ev_basis"])
+    assert before and in_force[0] == store.labels[0]
+    app.button(key="baseline_button").click().run()
+    app.selectbox(key="draft_bl_choice").set_value(BL_PLANNED).run()
+    app.selectbox(key="draft_ev_basis").set_value("at_completion_current").run()
+    assert app.selectbox(key="draft_bl_choice").value == BL_PLANNED
+    assert (app.session_state["bl_choice"], app.session_state["ev_basis"]) == in_force  # a draft only
+    app.session_state["files_open"] = False  # what _close_window does on dismissal
+    app.run()
+    _ok(app)
+    assert (app.session_state["bl_choice"], app.session_state["ev_basis"]) == in_force
+    assert isinstance(app.session_state["baseline"], Baseline) and _earned_value_metrics(app) == before
+    app.button(key="baseline_button").click().run()
+    assert app.selectbox(key="draft_bl_choice").value == in_force[0]  # the draft starts from the value in force
+    app.selectbox(key="draft_bl_choice").set_value(BL_PLANNED).run()
+    files_done(app)
+    _ok(app)
+    assert app.session_state["bl_choice"] == BL_PLANNED and app.session_state["baseline"] == BL_PLANNED
+    assert _earned_value_metrics(app) != before
+
+
+def test_closing_the_window_without_done_reads_nothing(sample_dir, monkeypatch):
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    file_boxes(at)[0].check()
+    at.run()
+    at.session_state["files_open"] = False  # what _close_window does on Esc or a click outside
+    at.run()
+    _ok(at)
+    assert not file_boxes(at) and at.session_state["store"] is None
+    assert files_line(at) == "Files · none read"
 
 
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
@@ -549,22 +630,49 @@ def test_folder_files_can_be_picked(sample_dir, monkeypatch):
     """No file is read until ticked; only the ticked files enter the series."""
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = AppTest.from_file(APP, default_timeout=120).run()
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
-    boxes = _file_boxes(at)
+    boxes = file_boxes(at)
     assert len(boxes) == 8 and not any(box.value for box in boxes)
     assert "store" not in at.session_state or at.session_state["store"] is None
-    assert any("Tick at least one file" in i.value for i in at.sidebar.info)
+    assert any("Tick at least one file" in i.value for i in at.info)
     for box in boxes[:3]:
         box.check()
     at.run()
+    files_done(at)
     _ok(at)
-    assert any("3 snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert files_line(at).startswith("Files · 3 ·")
     assert len(_selection(at)) == 3  # unticked files are not read at all
 
 
+def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(sample_dir, monkeypatch):
+    """Uploads are read as before, once Done is pressed; reopened, the window lists them, and
+    unticking one takes its snapshot out of the series."""
+    for name in ("XERSCOPE_DATA", "XERSCOPE_BASELINE", "XERSCOPE_DATA_LOCKED"):
+        monkeypatch.delenv(name, raising=False)
+    files = sorted(sample_dir.glob("*.xer"))[:3]
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    at.file_uploader(key="files_upload").set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
+    _ok(at)
+    keep = [box for box in at.checkbox if box.key.startswith("keep:")]
+    assert [box.label for box in keep] == [f.name for f in files] and all(box.value for box in keep)
+    assert at.session_state["store"] is None
+    files_done(at)
+    _ok(at)
+    assert [s.source for s in at.session_state["store"]] == [f.name for f in files]
+    open_files(at)
+    keep = [box for box in at.checkbox if box.key.startswith("keep:")]
+    assert [box.label for box in keep] == [f.name for f in files]  # kept although the upload box is empty
+    keep[1].uncheck()
+    at.run()
+    files_done(at)
+    _ok(at)
+    assert [s.source for s in at.session_state["store"]] == [files[0].name, files[2].name]
+    assert files_line(at).startswith("Files · 2 ·")
+
+
 def _button(at, label):
-    return next(b for b in at.sidebar.button if b.label == label)
+    return next(b for b in at.button if b.label == label)
 
 
 def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatch):
@@ -572,22 +680,25 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     series; "Clear" unticks them all and empties it."""
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = AppTest.from_file(APP, default_timeout=120).run()
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
     count = len(list(sample_dir.glob("*.xer")))
-    assert len(_file_boxes(at)) == count and not any(box.value for box in _file_boxes(at))
+    assert len(file_boxes(at)) == count and not any(box.value for box in file_boxes(at))
     assert at.session_state["store"] is None
     _button(at, "Select all").click()
     at.run()
     _ok(at)
-    assert all(box.value for box in _file_boxes(at)) and len(_file_boxes(at)) == count
-    assert any(f"{count} snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert all(box.value for box in file_boxes(at)) and len(file_boxes(at)) == count
+    files_done(at)
+    assert files_line(at).startswith(f"Files · {count} ·")
+    open_files(at)
     _button(at, "Clear").click()
     at.run()
     _ok(at)
-    assert not any(box.value for box in _file_boxes(at))
+    assert not any(box.value for box in file_boxes(at))
+    files_done(at)
     assert at.session_state["store"] is None
-    assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert files_line(at) == "Files · none read"
 
 
 def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path, monkeypatch):
@@ -596,12 +707,13 @@ def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = AppTest.from_file(APP, default_timeout=120).run()
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _button(at, "Select all").click()
     at.run()
+    files_done(at)
     _ok(at)
     assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
-    assert not any("snapshot(s)" in c.value for c in at.sidebar.caption)
+    assert files_line(at) == "Files · none read"
 
 
 @pytest.fixture
@@ -672,9 +784,9 @@ def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkey
     projects in the file; none of them is parsed into a snapshot."""
     monkeypatch.setenv("XERSCOPE_DATA", str(renamed_project))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = AppTest.from_file(APP, default_timeout=120).run()
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
-    boxes = {box.key.rsplit(":", 1)[1]: box for box in _file_boxes(at)}
+    boxes = {box.key.rsplit(":", 1)[1]: box for box in file_boxes(at)}
     assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 2 projects"
     assert boxes["w2.xer"].label == "w2.xer — NEW · 09 Mar 2026"
     assert "NEW (3) · OLD (2)" in boxes["w1.xer"].help and "most TASK rows" in boxes["w1.xer"].help
@@ -686,9 +798,9 @@ def test_unreadable_file_is_named_in_the_picker(tmp_path, monkeypatch):
     (tmp_path / "broken.xer").write_text("ERMHDR\t23.12\t2026-03-02\n%T\tPROJECT\n%F\tproj_id\n%R\t1\n")
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
-    at = AppTest.from_file(APP, default_timeout=120).run()
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
-    (box,) = _file_boxes(at)
+    (box,) = file_boxes(at)
     assert box.label == "broken.xer — unreadable" and "TASK table missing" in box.help
 
 
@@ -1060,7 +1172,7 @@ def _open_health(at, store, standard_id="DCMA", anonymous=True):
     from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
 
     at.sidebar.toggle(key="anon_exports").set_value(anonymous).run()
-    at.sidebar.selectbox(key="bl_choice").set_value(store.labels[0]).run()
+    baseline_box(at).set_value(store.labels[0]).run()
     at.switch_page("views/health.py").run()
     at.get("button_group")[0].set_value(standard_id).run()
     _ok(at)
