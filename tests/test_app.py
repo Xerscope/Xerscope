@@ -1359,3 +1359,21 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     _ok(app)
     assert not any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)
+
+
+@pytest.mark.parametrize(
+    ("delta", "colour", "expected"),
+    [
+        ("+0 this week", "inverse", "off"),  # no change: neutral, not red
+        ("+0.0 wd", "normal", "off"),
+        ("−0 wd", "normal", "off"),
+        ("+0.051", "normal", "normal"),  # a small change is still a change
+        ("+2 wd vs previous update", "inverse", "inverse"),
+        ("-12.5", "normal", "normal"),
+        (None, "normal", "normal"),
+        (3, "normal", "normal"),
+        (0, "normal", "off"),
+    ],
+)
+def test_a_change_of_zero_is_drawn_neutral(delta, colour, expected):
+    assert ui.delta_colour(delta, colour) == expected

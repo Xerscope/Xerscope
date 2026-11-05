@@ -22,9 +22,9 @@ toolbarMode = "viewer"
 disableDataExport = true
 
 # Light and dark themes; Streamlit follows the browser and the user can switch in Settings.
-# Cool neutrals, hairline borders, one glacier-cyan accent: linkColor, the same as ACCENT in
-# viz/charts.py (#7DD3FC in dark mode, #0369A1 in light mode). primaryColor fills checkboxes,
-# toggles and selected chips under white text, so it stays a deep cyan in both modes (>= 4.5:1
+# Warm neutrals (stone), soft borders, one petrol accent: linkColor, the same as ACCENT in
+# viz/charts.py (#1D6A73 in light mode, #6CC0C9 in dark mode). primaryColor fills checkboxes,
+# toggles and selected chips under white text, so it stays a deep petrol in both modes (>= 4.5:1
 # under white, >= 3:1 on the page).
 # Red, amber and green are reserved for status (fail / warning / pass) and never decorate.
 # The chart and Gantt colours in viz/charts.py and viz/gantt.py must match these
@@ -32,67 +32,60 @@ disableDataExport = true
 [theme]
 # Variable fonts (weight axis in the file), latin subset, SIL OFL 1.1: app/static/OFL-*.txt.
 # The same family is set on the Plotly charts (viz/charts.py) and the Gantt (viz/gantt.css).
-font = "Inter Tight, sans-serif"
-headingFont = "Inter Tight, sans-serif"
+font = "Onest, sans-serif"
+headingFont = "Onest, sans-serif"
 codeFont = "JetBrains Mono, monospace"
 showWidgetBorder = true
 showSidebarBorder = true
-baseRadius = "6px"
-buttonRadius = "6px"
+baseRadius = "8px"
+buttonRadius = "8px"
 baseFontSize = 15
-headingFontSizes = ["1.9rem", "1.35rem", "1.12rem", "1rem", "0.95rem", "0.9rem"]
-headingFontWeights = [500, 550, 550, 550, 550, 550]
-metricValueFontSize = "1.75rem"
-metricValueFontWeight = 300
+headingFontSizes = ["1.85rem", "1.3rem", "1.1rem", "1rem", "0.95rem", "0.9rem"]
+headingFontWeights = [600, 600, 600, 600, 600, 600]
 paddingTop = "2.5rem"
 
 [theme.light]
-primaryColor = "#0369A1"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F5F7FA"
-textColor = "#0B1220"
-linkColor = "#0369A1"
-borderColor = "#E3E8EF"
-dataframeBorderColor = "#E3E8EF"
-dataframeHeaderBackgroundColor = "#F5F7FA"
-dataframeHeaderTextColor = "#3A4A5E"
+primaryColor = "#1D6A73"
+backgroundColor = "#FAF8F5"
+secondaryBackgroundColor = "#F7F5F1"
+textColor = "#1C1917"
+linkColor = "#1D6A73"
+borderColor = "#E4DFD6"
+dataframeBorderColor = "#E4DFD6"
+dataframeHeaderBackgroundColor = "#F7F5F1"
+dataframeHeaderTextColor = "#57534E"
 redColor = "#C0392B"
 greenColor = "#2E7D32"
 orangeColor = "#A15C00"
-blueColor = "#0369A1"
+blueColor = "#1D6A73"
 
 [theme.light.sidebar]
-backgroundColor = "#F8FAFC"
-secondaryBackgroundColor = "#FFFFFF"
+backgroundColor = "#F4F1EC"
+secondaryBackgroundColor = "#FAF8F5"
 
 [theme.dark]
-primaryColor = "#0275B3"
-backgroundColor = "#070B14"
-secondaryBackgroundColor = "#0D1424"
-textColor = "#E6EBF2"
-linkColor = "#7DD3FC"
-borderColor = "#182136"
-dataframeBorderColor = "#182136"
-dataframeHeaderBackgroundColor = "#0D1424"
-dataframeHeaderTextColor = "#B4C0D0"
+primaryColor = "#21787F"
+backgroundColor = "#16181D"
+secondaryBackgroundColor = "#1B1D23"
+textColor = "#ECE9E4"
+linkColor = "#6CC0C9"
+borderColor = "#2D3139"
+dataframeBorderColor = "#2D3139"
+dataframeHeaderBackgroundColor = "#1B1D23"
+dataframeHeaderTextColor = "#B8B2A8"
 redColor = "#F05252"
 greenColor = "#22C55E"
 orangeColor = "#FAB219"
-blueColor = "#7DD3FC"
+blueColor = "#6CC0C9"
 
 [theme.dark.sidebar]
-backgroundColor = "#090E1A"
-secondaryBackgroundColor = "#0D1424"
+backgroundColor = "#121418"
+secondaryBackgroundColor = "#1B1D23"
 
 [[theme.fontFaces]]
-family = "Inter Tight"
-url = "app/static/InterTight-latin-wght.woff2"
+family = "Onest"
+url = "app/static/Onest-latin-wght.woff2"
 style = "normal"
-
-[[theme.fontFaces]]
-family = "Inter Tight"
-url = "app/static/InterTight-latin-wght-italic.woff2"
-style = "italic"
 
 [[theme.fontFaces]]
 family = "JetBrains Mono"

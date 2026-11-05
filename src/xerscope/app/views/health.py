@@ -386,15 +386,15 @@ def standard_name(standard_id: str) -> str:
 
 top = st.container()  # title and context, filled once the update is picked
 
-standard_column, snapshot_column, failed_column = st.columns([4, 2.2, 1.3], vertical_alignment="bottom")
-with standard_column:
-    standard_id = st.segmented_control(
-        "Standard",
-        list(available),
-        default="P6" if "P6" in available else None,
-        format_func=standard_name,
-        key="health_std",
-    )
+# the standards on a row of their own: beside the update picker their names did not fit
+standard_id = st.segmented_control(
+    "Standard",
+    list(available),
+    default="P6" if "P6" in available else None,
+    format_func=standard_name,
+    key="health_std",
+)
+snapshot_column, failed_column = st.columns([3, 1], vertical_alignment="bottom")
 with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="health_snap")
 with failed_column:
