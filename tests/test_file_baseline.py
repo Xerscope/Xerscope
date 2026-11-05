@@ -347,21 +347,30 @@ def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
     )
 
 
-def test_an_absent_baseline_comes_with_the_way_to_export_it(tmp_path, monkeypatch):
-    # b.xer points to no baseline, c.xer and d.xer to project 370 which neither file holds: one help box
-    # names 370 once, with its two files, and the P6 steps; nothing for b.xer or for the usable a.xer
+def _absent_baseline_boxes(at):
+    return [element.value.replace("\\", "") for element in at.sidebar.info if "not exported" in element.value]
+
+
+def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
+    # b.xer points to no baseline, c.xer and d.xer to project 370 which neither file holds: one box
+    # names 370 once, with its two files; nothing for b.xer or for the usable a.xer
     c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
     d = {"pointer": "370", "data_date": "2026-03-16 08:00", "with_baseline": False}
-    at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c, "d.xer": d})
-    help_boxes = [element.value.replace("\\", "") for element in at.sidebar.info if "Restore" in element.value]
-    assert len(help_boxes) == 1
-    assert "project 370 (c.xer, d.xer)" in help_boxes[0] and "a.xer" not in help_boxes[0]
-    assert "Separate baseline file" in help_boxes[0]
+    boxes = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c, "d.xer": d}))
+    assert len(boxes) == 1
+    assert "project 370 (c.xer, d.xer)" in boxes[0] and "a.xer" not in boxes[0]
+    assert "Separate baseline file" in boxes[0]
 
 
-def test_no_export_help_when_no_pointer_names_an_absent_project(tmp_path, monkeypatch):
-    at = _series(tmp_path, monkeypatch)
-    assert not [element for element in at.sidebar.info if "Restore" in element.value]
+def test_the_request_gives_no_p6_procedure(tmp_path, monkeypatch):
+    # restoring, unassigning or converting a baseline changes the project in P6: the box only asks for the file
+    c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
+    (box,) = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c}))
+    assert not any(step in box for step in ("Restore", "Assign Baselines", "Maintain Baselines", "Convert"))
+
+
+def test_no_request_when_no_pointer_names_an_absent_project(tmp_path, monkeypatch):
+    assert not _absent_baseline_boxes(_series(tmp_path, monkeypatch))
 
 
 def test_a_baseline_copied_from_another_project_is_refused_and_named(tmp_path, monkeypatch):
