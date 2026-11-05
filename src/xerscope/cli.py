@@ -359,6 +359,78 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _args_pv_compare(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("path", help="the update .xer")
+    parser.add_argument("--baseline", help="baseline .xer (else --planned-baseline)")
+    parser.add_argument("--planned-baseline", action="store_true", help="use the update's planned dates (target_*)")
+    parser.add_argument("--p6", required=True, metavar="CSV", help="P6 Activities view saved as CSV")
+    parser.add_argument(
+        "--column",
+        action="append",
+        default=[],
+        metavar="FIELD=HEADER",
+        help="a column the export names otherwise, e.g. pv_hr='PV Labor Units' (fields: "
+        "task_code pv_hr ev_hr schedule_pct bl_hr status bl_start bl_finish start finish)",
+    )
+    parser.add_argument("--tolerance", type=float, default=None, metavar="H", help="gap under which an activity agrees")
+    parser.add_argument("--p6-total", type=float, default=None, metavar="H", help="PV labor units total shown by P6")
+    _add_project(parser)
+    _add_out(parser, "write the five tables to this folder (default pv_compare)")
+
+
+def _cmd_pv_compare(args: argparse.Namespace) -> int:
+    """Block 10 of the diagnostic from the disk: PV and EV labour units of the update against a P6
+    Activities export, nothing kept. Four tables without code or name, and the activities in gap."""
+    from .analysis import Baseline
+    from .app import diagnostic
+    from .xer import load_snapshot
+
+    snapshot = load_snapshot(args.path, args.project)
+    if args.baseline:
+        baseline = Baseline.from_snapshot(load_snapshot(args.baseline))
+    elif args.planned_baseline:
+        baseline = Baseline.planned(snapshot)
+    else:
+        sys.exit("pv-compare: give --baseline BL.xer or --planned-baseline")
+    if snapshot.data_date is None:
+        sys.exit(f"{args.path}: no data date")
+    try:
+        raw = diagnostic.read_p6_export(args.p6, Path(args.p6).read_bytes())
+    except ValueError as exc:
+        sys.exit(f"{args.p6}: {exc}")
+    chosen = {}
+    for item in args.column:
+        field, _, header = item.partition("=")
+        if field not in diagnostic.P6_EXPORT_FIELDS or not header:
+            sys.exit(
+                f"--column {item!r}: expected FIELD=HEADER with FIELD among {' '.join(diagnostic.P6_EXPORT_FIELDS)}"
+            )
+        chosen[field] = header
+    columns = diagnostic.p6_export_columns(raw, chosen)
+    missing = [
+        field for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required and columns[field] is None
+    ]
+    if missing:
+        sys.exit(
+            f"{args.p6}: column(s) not found for {', '.join(missing)}; headers read: {', '.join(raw.columns)}. "
+            "Name them with --column FIELD=HEADER."
+        )
+    tolerance = diagnostic.PV_P6_TOLERANCE_HR if args.tolerance is None else args.tolerance
+    comparison, notes = diagnostic.compare_p6_export(snapshot, baseline, raw, columns, tolerance, args.p6_total)
+    out = Path(args.out or "pv_compare")
+    out.mkdir(parents=True, exist_ok=True)
+    frames = {**diagnostic.pv_p6_frames(comparison), "10_pv_p6_activities_in_gap": comparison.activities}
+    for name, frame in frames.items():
+        _write_csv(frame, out / f"{name}.csv")
+    set_aside = ", ".join(f"{count} {what.replace('_', ' ')}" for what, count in notes.items() if count)
+    print(f"{args.path} at {_when(snapshot.data_date)} against {args.p6} (tolerance {tolerance:g} h)")
+    if set_aside:
+        print(f"set aside: {set_aside}")
+    print(comparison.totals.to_string(index=False))
+    print(f"\n{len(comparison.activities)} activities in gap; tables written to {out}/")
+    return 0
+
+
 def _args_crosscheck(parser: argparse.ArgumentParser) -> None:
     _add_paths(parser)
     _add_out(parser, "write every comparison to this CSV")
@@ -517,6 +589,7 @@ COMMANDS = {
     "changelog": ("what changed between two XER files", _args_changelog, _cmd_changelog),
     "export": ("write BI tables (Power BI star schema)", _args_export, _cmd_export),
     "crosscheck": ("compare xerscope with MPXJ on XER files (needs Java)", _args_crosscheck, _cmd_crosscheck),
+    "pv-compare": ("PV and EV labour units against a P6 Activities export (CSV)", _args_pv_compare, _cmd_pv_compare),
     "sample": ("generate demo weekly XER files", _args_sample, _cmd_sample),
 }
 

@@ -116,6 +116,18 @@ uv run xerscope check week42.xer --standard P6 --baseline BL.xer --out xerscope-
 Prints the table of P6's Check Summary (check, target, actual %, found, total). In P6:
 Tools › Check Schedule on the same file and baseline, then compare line by line.
 
+### Compare planned and earned value with P6
+
+```bash
+uv run xerscope pv-compare week42.xer --baseline BL.xer --p6 activities.csv --out pv_compare
+```
+
+`activities.csv` is P6's Activities view saved as CSV (Activity ID, Planned Value Labor Units,
+Earned Value Labor Units, Schedule % Complete; BL Project Labor Units and dates optional), same
+data date and baseline as the file. Writes the five tables of Debug block 10 (totals by group,
+gap by Schedule % band, candidate causes, by calendar, activities in gap) and prints the totals.
+`--column pv_hr="PV Labor Units"` names a column the export spells otherwise.
+
 - **Checks:** the 17 of `standards/p6.toml`, in Oracle's groups: the 14 of the P6
   Professional 24 dialog help, plus out of sequence and dangling start / finish as a P6
   Professional report prints them.

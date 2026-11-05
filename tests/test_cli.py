@@ -148,3 +148,60 @@ def test_same_data_date_twice_stops_with_the_files(sample_dir, tmp_path):
         (folder / name).write_bytes(first.read_bytes())
     with pytest.raises(SystemExit, match=f"several files per status date.*{first.name}, zz-copy.xer"):
         cli.main(["export", str(folder), "--out", str(tmp_path / "bi")])
+
+
+def test_pv_compare_writes_the_five_tables_from_the_disk(capsys, tmp_path):
+    """Block 10 without the app: the update, a baseline file and a P6 Activities CSV on the disk.
+    Fixture of tests/test_pv_p6.py: xerscope PV 76 h (A 40, E 12, F 16, G 8), P6 PV 103 h over its six
+    rows; H is in the update but not in the baseline, D in neither file."""
+    from test_pv_p6 import BASELINE, UPDATE, WED
+
+    (tmp_path / "bl.xer").write_text(xer_text(BASELINE))
+    (tmp_path / "w.xer").write_text(xer_text(UPDATE, data_date=WED))
+    headers = (
+        "Activity ID,Planned Value Labor Units,Earned Value Labor Units,Schedule % Complete,BL Project Labor Units"
+    )
+    rows = [
+        "A,50,62.5,40%,125", "C,16,0,40%,40", "D,8,0,20%,40", "F,16,0,40%,40", "G,8,0,40%,20", "H,5,0,40%,10",
+    ]  # fmt: skip
+    (tmp_path / "p6.csv").write_text("\n".join([headers, *rows]) + "\n")
+    out = tmp_path / "cmp"
+    text = run(
+        capsys, "pv-compare", tmp_path / "w.xer", "--baseline", tmp_path / "bl.xer", "--p6", tmp_path / "p6.csv",
+        "--out", out, "--p6-total", "110",
+    )  # fmt: skip
+    assert "activities in gap" in text and "P6 total - export rows" in text
+    names = sorted(p.name for p in out.iterdir())
+    assert names == [
+        "10_pv_p6_activities_in_gap.csv", "10_pv_p6_by_calendar.csv", "10_pv_p6_by_schedule_pct.csv",
+        "10_pv_p6_gap_causes.csv", "10_pv_p6_totals.csv",
+    ]  # fmt: skip
+    totals = pd.read_csv(out / "10_pv_p6_totals.csv").set_index("group")
+    assert totals.loc["all", ["pv_xerscope_hr", "pv_p6_hr"]].tolist() == [76.0, 103.0]
+    assert totals.loc["P6 total - export rows", "pv_p6_hr"] == 7.0
+    in_gap = pd.read_csv(out / "10_pv_p6_activities_in_gap.csv")
+    assert "A" in set(in_gap["task_code"]) and "F" not in set(in_gap["task_code"])
+
+
+def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_path):
+    from test_pv_p6 import BASELINE, UPDATE, WED
+
+    (tmp_path / "bl.xer").write_text(xer_text(BASELINE))
+    (tmp_path / "w.xer").write_text(xer_text(UPDATE, data_date=WED))
+    (tmp_path / "p6.csv").write_text("Activity ID,PV,Earned Value Labor Units,Schedule % Complete\nA,50,62.5,40%\n")
+    with pytest.raises(SystemExit, match="pv_hr"):
+        cli.main(
+            [
+                "pv-compare",
+                str(tmp_path / "w.xer"),
+                "--baseline",
+                str(tmp_path / "bl.xer"),
+                "--p6",
+                str(tmp_path / "p6.csv"),
+            ]
+        )
+    text = run(
+        capsys, "pv-compare", tmp_path / "w.xer", "--planned-baseline", "--p6", tmp_path / "p6.csv",
+        "--column", "pv_hr=PV", "--out", tmp_path / "cmp",
+    )  # fmt: skip
+    assert "activities in gap" in text
