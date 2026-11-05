@@ -16,6 +16,7 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
     "crosscheck": {"verify"},
     "sample": {"xer", "analysis.cpm", "config"},
     "app": {"xer", "store", "analysis", "viz", "export", "anonymize", "config"},
+    "cli": {"xer", "store", "analysis", "export", "sample", "verify", "crosscheck", "app.diagnostic", "config"},
 }
 
 
@@ -46,4 +47,4 @@ def test_layer_imports_match_the_architecture_doc():
     for source, allowed in LAYERS.items():
         used = {rule_for(target, allowed) for s, target in cross if s == source}
         assert used == allowed, source
-    assert {source for source, target in cross if target.split(".")[0] == "app"} == set()
+    assert {source for source, target in cross if target.split(".")[0] == "app"} == {"cli"}

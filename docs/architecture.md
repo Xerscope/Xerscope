@@ -167,9 +167,11 @@ checks the code against it, so a change here must be made there too):
   Nothing in the app depends on it.
 - `sample.py` imports `xer/`, `analysis/cpm.py` and `config.py`.
 - `app/` imports `xer/`, `store.py`, `analysis/`, `viz/`, `export.py`, `anonymize.py` and `config.py`, and is imported
-  by nothing but Streamlit. Pages
+  by nothing but Streamlit and `cli.py`. Pages
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
+- `cli.py` is the entry point: it imports every layer, `app/diagnostic.py` included (`pv-compare`
+  reads the same frames as the Debug page).
 
 Outside `analysis/`:
 
