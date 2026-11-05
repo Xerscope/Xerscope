@@ -456,17 +456,17 @@ def test_diagnostic_block_09_is_written_when_the_file_defines_user_fields():
 
 
 def test_csv_exports_write_hours_to_four_decimals():
-    """Floats are written with CSV_FLOAT_FORMAT: a BAC summed from P6's minute-based hours (458870.999999)
-    reads 458871.0000 and a gap of 1e-13 reads 0.0000, in the plain download, the anonymised CSV and the
+    """Floats are written with CSV_FLOAT_FORMAT: a BAC summed from P6's minute-based hours (12345.999999)
+    reads 12346.0000 and a gap of 1e-13 reads 0.0000, in the plain download, the anonymised CSV and the
     diagnostic zip alike. Dates and text are untouched."""
     from xerscope.anonymize import csv_bytes
 
-    frame = pd.DataFrame({"data_date": ["2026-11-01 17:00:00"], "bac_hr": [458870.999999], "gap_hr": [6.9e-13]})
+    frame = pd.DataFrame({"data_date": ["2026-03-02 17:00:00"], "bac_hr": [12345.999999], "gap_hr": [6.9e-13]})
     plain = csv_bytes(frame).decode("utf-8-sig")
-    assert plain.splitlines()[1] == "2026-11-01 17:00:00,458871.0000,0.0000"
+    assert plain.splitlines()[1] == "2026-03-02 17:00:00,12346.0000,0.0000"
     # the anonymised writers empty a text column they do not know (the date here): the numbers stay
     anonymizer = Anonymizer.from_raws([parse_text(_file([todo("A")]), "x.xer")])
-    assert anonymizer.csv(frame).decode("utf-8-sig").splitlines()[1].endswith(",458871.0000,0.0000")
+    assert anonymizer.csv(frame).decode("utf-8-sig").splitlines()[1].endswith(",12346.0000,0.0000")
     with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames({"09_pv_labor_check": frame}))) as archive:
         text = archive.read("09_pv_labor_check.csv").decode("utf-8-sig")
-    assert "458871.0000,0.0000" in text
+    assert "12346.0000,0.0000" in text
