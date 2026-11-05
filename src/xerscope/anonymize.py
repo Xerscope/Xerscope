@@ -139,6 +139,14 @@ def _is_text(value: str) -> bool:
     return len(value) >= 3 and any(character.isalpha() for character in value)
 
 
+CSV_FLOAT_FORMAT = "%.4f"  # hours to the minute (0.0167 h): no float noise (458870.999999, a gap of 1e-13)
+
+
+def csv_bytes(frame: pd.DataFrame) -> bytes:
+    """A frame as the CSV the app offers: UTF-8 with BOM (Excel), floats to 4 decimals."""
+    return frame.to_csv(index=False, float_format=CSV_FLOAT_FORMAT).encode("utf-8-sig")
+
+
 @dataclass
 class Report:
     """What was left out, by name only: never a value."""
@@ -464,7 +472,7 @@ class Anonymizer:
         return out
 
     def csv(self, frame: pd.DataFrame) -> bytes:
-        return self.frame(frame).to_csv(index=False).encode("utf-8-sig")
+        return csv_bytes(self.frame(frame))
 
     def zip_xers(self, files: Iterable[tuple[RawXer, pd.Timestamp | None]]) -> bytes:
         buffer = io.BytesIO()
@@ -511,7 +519,7 @@ class Anonymizer:
                 if column in out.columns:
                     out[column] = [self._zeroed(value) for value in out[column]]
             self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), f"table {name}")
-            outputs[f"{name}.csv"] = out.to_csv(index=False).encode("utf-8-sig")
+            outputs[f"{name}.csv"] = csv_bytes(out)
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
             for file_name, data in outputs.items():

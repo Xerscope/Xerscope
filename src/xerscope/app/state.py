@@ -17,7 +17,7 @@ from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_stan
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric
 from xerscope.analysis.standards import Metric
-from xerscope.anonymize import Anonymizer, LeakError
+from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
@@ -1224,14 +1224,14 @@ def csv_download(
     table comes from, the only ones read to anonymise it. ``sensitive=False``: a table with no
     schedule data, always as is."""
     if not sensitive:
-        data = frame.to_csv(index=False).encode("utf-8-sig")
+        data = csv_bytes(frame)
         show_download(Fetched(data, "", False), label, filename, "text/csv", key=key)
         return
     download(
         label,
         filename,
         "text/csv",
-        lambda: frame.to_csv(index=False).encode("utf-8-sig"),
+        lambda: csv_bytes(frame),
         lambda anonymous: anonymous.csv(frame),
         key=key,
         sources=sources,
