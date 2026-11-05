@@ -53,7 +53,7 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from ..xer.calendar import TimeAxis
 from .baseline import Baseline
-from .checks import AnalysisContext, run_metric
+from .checks import AnalysisContext, CheckResult, run_metric
 from .standards import Metric
 
 # Planned Value Cost spreads an assignment over the date difference of the P6 glossary: working
@@ -506,21 +506,29 @@ def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
 
 
 def bei_series(
-    store: SnapshotStore, bei_metrics: Mapping[str, Metric], baseline_for: Callable[[Snapshot], Baseline | None]
+    store: SnapshotStore,
+    bei_metrics: Mapping[str, Metric],
+    baseline_for: Callable[[Snapshot], Baseline | None],
+    result_of: Callable[[Metric, Snapshot], CheckResult] | None = None,
 ) -> pd.DataFrame:
     """Baseline Execution Index of every update under the P6 and DCMA definitions.
 
     ``bei_metrics`` holds the ``bei`` metric of the "P6" and "DCMA" standards; ``baseline_for``
-    gives each snapshot its own baseline. Columns: data_date, bei_p6, bei_dcma.
+    gives each snapshot its own baseline. ``result_of(metric, snapshot)``, when given, supplies
+    each result instead (the app's per-session cache). Columns: data_date, bei_p6, bei_dcma.
     """
-    rows = []
-    for snapshot in store:
-        context = AnalysisContext(snapshot, baseline=baseline_for(snapshot))
-        rows.append(
-            {
-                "data_date": snapshot.data_date,
-                "bei_p6": run_metric(bei_metrics["P6"], context).value,
-                "bei_dcma": run_metric(bei_metrics["DCMA"], context).value,
-            }
-        )
+
+    def run(metric: Metric, snapshot: Snapshot) -> CheckResult:
+        if result_of is not None:
+            return result_of(metric, snapshot)
+        return run_metric(metric, AnalysisContext(snapshot, baseline=baseline_for(snapshot)))
+
+    rows = [
+        {
+            "data_date": snapshot.data_date,
+            "bei_p6": run(bei_metrics["P6"], snapshot).value,
+            "bei_dcma": run(bei_metrics["DCMA"], snapshot).value,
+        }
+        for snapshot in store
+    ]
     return pd.DataFrame(rows)

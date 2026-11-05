@@ -4,13 +4,11 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import (
-    AnalysisContext,
     builtin_standards,
     compare_counts,
     health_history,
     loads_standard,
     results_frame,
-    run_standard,
     template_text,
 )
 from xerscope.analysis.audit import by_check, sets_long
@@ -28,6 +26,7 @@ from xerscope.app.state import (
     held,
     hold,
     memo,
+    metric_result,
     require_store,
     show_baseline_used,
     show_download,
@@ -258,8 +257,18 @@ def show_details(results, snapshot, only_failed: bool, sources: list[str]) -> No
 
 
 def show_trend(store, standard) -> None:
+    """Computed on request: every metric on every update. Each update's results come from the
+    session's cache when there, are not kept otherwise; the trend keeps only its numbers."""
     ui.section("Trend across updates", "The same check on every loaded update, against its target.")
-    history = memo(("health", repr(standard)), health_history, store, standard, baseline_for)
+    key = ("health_history", repr(standard))
+    history = memo(key, lambda: None, keep=False)  # None until computed for these files, baseline, standard
+    if history is None:
+        if not st.button(
+            f"Compute the trend on the {len(store)} updates", icon=":material/show_chart:", key="health_trend_btn"
+        ):
+            return
+        result_of = partial(metric_result, store=store, keep=False)
+        history = memo(key, health_history, store, standard, None, result_of)
     metric_ids = [metric.id for metric in standard.metrics]
     metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=partial(check_label, standard))
     metric = standard[metric_id]
@@ -403,14 +412,9 @@ if baseline is None:
         icon=":material/info:",
     )
 
-# memoised per (data set, standard, update, baseline): the DECM critical path test alone
+# memoised per (data set, metric, update, baseline): the DECM critical path test alone
 # takes ~2 s on a 4,000-activity file, and every widget change reruns the page
-results = memo(
-    ("health_results", repr(standard), snapshot.source, str(snapshot.data_date)),
-    run_standard,
-    standard,
-    AnalysisContext(snapshot, store, baseline),
-)
+results = [metric_result(metric, snapshot, store) for metric in standard.metrics]
 show_kpis(results)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
 show_summary(results, standard, snapshot, baseline, sources)

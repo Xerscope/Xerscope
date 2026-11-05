@@ -13,8 +13,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import Baseline, Standard, discover_standards
+from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
+from xerscope.analysis.checks import CheckResult, run_metric
+from xerscope.analysis.standards import Metric
 from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
@@ -842,21 +844,47 @@ def _baseline_identity() -> tuple:
     return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
 
 
-def memo(key: tuple, function, *arguments):
+MEMO_SIZE = 128  # entries per session; a standard holds at most 18 metrics, each its own entry
+
+
+def memo(key: tuple, function, *arguments, keep: bool = True):
     """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
 
-    ``function(*arguments)`` runs only on a cache miss.
+    The full key: the files (``signature``: names and content digests, or names and modification
+    times for a folder), the project read from each, the baseline in use (``_baseline_identity``,
+    with the EV basis), then ``key``, which names the analysis and everything else it reads.
+    ``function(*arguments)`` runs only on a cache miss; ``keep=False`` then returns the value
+    without storing it (a series over every update that should not hold each update's frames).
+    The cache lives in the session's state, never process-wide; past MEMO_SIZE entries the least
+    recently used goes. Callers do not modify what it returns: the next reader gets the same object.
     """
     cache = st.session_state.setdefault("_memo", {})
     # the project pickers re-read the same files for another project: same signature, other data
     store = st.session_state.get("store")
     projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
     full_key = (st.session_state.get("signature"), projects, _baseline_identity()) + key
-    if full_key not in cache:
-        if len(cache) > 64:
-            cache.clear()
-        cache[full_key] = function(*arguments)
-    return cache[full_key]
+    if full_key in cache:
+        cache[full_key] = cache.pop(full_key)  # most recently used last
+        return cache[full_key]
+    value = function(*arguments)
+    if keep:
+        while len(cache) >= MEMO_SIZE:
+            cache.pop(next(iter(cache)))
+        cache[full_key] = value
+    return value
+
+
+def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep: bool = True) -> CheckResult:
+    """``metric`` on ``snapshot`` against the sidebar's baseline for it, once per session: Health,
+    Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
+    written (rule, parameters, target, standard: its repr) and the update (file, data date)."""
+    return memo(
+        ("metric", repr(metric), snapshot.source, str(snapshot.data_date)),
+        run_metric,
+        metric,
+        AnalysisContext(snapshot, store, baseline_for(snapshot)),
+        keep=keep,
+    )
 
 
 ANONYMISED = " · anonymized"  # suffix of an anonymized download's label

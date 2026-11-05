@@ -163,18 +163,25 @@ def compare_counts(got: pd.DataFrame, expected: pd.DataFrame, keys: list[str] | 
 
 
 def health_history(
-    store: SnapshotStore, standard: Standard, baseline: Baseline | Callable[[Snapshot], Baseline | None] | None = None
+    store: SnapshotStore,
+    standard: Standard,
+    baseline: Baseline | Callable[[Snapshot], Baseline | None] | None = None,
+    result_of: Callable[[Metric, Snapshot], CheckResult] | None = None,
 ) -> pd.DataFrame:
     """Every metric on every snapshot: the week-over-week health trend (long format).
 
     ``baseline`` is one Baseline for all snapshots, or a function giving each its own
-    (e.g. ``Baseline.planned``).
+    (e.g. ``Baseline.planned``). ``result_of(metric, update)``, when given, supplies each result
+    instead (the app's per-session cache); ``baseline`` is then not read.
     """
     rows = []
     for index, update in enumerate(store):
-        update_baseline = baseline(update) if callable(baseline) else baseline
-        context = AnalysisContext(update, store, update_baseline)
-        for result in run_standard(standard, context):
+        if result_of is not None:
+            results = [result_of(metric, update) for metric in standard.metrics]
+        else:
+            update_baseline = baseline(update) if callable(baseline) else baseline
+            results = run_standard(standard, AnalysisContext(update, store, update_baseline))
+        for result in results:
             rows.append(
                 {
                     "snapshot_idx": index,

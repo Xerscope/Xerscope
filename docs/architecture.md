@@ -226,7 +226,12 @@ Outside `analysis/`:
 - **`state.py`:** the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
   `_window`: files read on Done, baseline selectors kept in session state while it is closed),
   pickers, a per-session cache keyed on the loaded files, and the list of standards (built-in,
-  `XERSCOPE_STANDARDS`, uploaded).
+  `XERSCOPE_STANDARDS`, uploaded). The cache (`memo`) keys every entry on the files, the
+  project read from each and the baseline in use, then on what the analysis reads; it keeps the
+  `MEMO_SIZE` most recently used entries. `metric_result` holds one result per (metric, update,
+  baseline): Schedule health, Audit and the BEI of Earned value read the same entry. Series over
+  every update (the health trend, computed on request, and the BEI series) reuse the entries
+  there and keep only their numbers.
 - **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
   cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).

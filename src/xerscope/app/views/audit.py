@@ -17,7 +17,7 @@ from xerscope.app import ui
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
     baseline_for,
-    memo,
+    metric_result,
     require_store,
     show_baseline_used,
     snapshot_picker,
@@ -211,7 +211,7 @@ except ValueError as exc:
     st.error(str(exc), icon=":material/block:")
     st.stop()
 
-standard_result = memo(("audit", repr(metric), snapshot.source, str(snapshot.data_date)), run_metric, metric, context)
+standard_result = metric_result(metric, snapshot, store)
 same = (audited.params, audited.comparator, audited.threshold) == (metric.params, metric.comparator, metric.threshold)
 audit_result = standard_result if same else run_metric(audited, context)
 
