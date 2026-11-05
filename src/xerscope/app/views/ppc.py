@@ -36,14 +36,30 @@ ACTIVITY_COLUMNS = [
 ]
 
 
+def _pct(value) -> str:
+    return "–" if pd.isna(value) else f"{value:.0f} %"
+
+
 def show_kpis(week: pd.Series, project_progress: pd.Series) -> None:
     ui.kpis(
         [
             (
                 "PPC this week",
-                "–" if pd.isna(week["ppc"]) else f"{week['ppc']:.0f} %",
+                _pct(week["ppc"]),
                 None,
-                "Commitments kept / commitments: finishes and starts, milestones left out",
+                "Finishes kept / finishes committed (Last Planner: complete / planned), milestones left out",
+            ),
+            (
+                "PPC Start",
+                _pct(week["ppc_start"]),
+                None,
+                "Starts kept / starts committed",
+            ),
+            (
+                "PPC all commitments",
+                _pct(week["ppc_all"]),
+                None,
+                "Finishes and starts kept / finishes and starts committed",
             ),
             (
                 "Finishes kept",
@@ -71,9 +87,11 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
     left, right = st.columns(2, gap="large")
     with left:
         formula = (
-            f"Formula: ({week['finishes_kept']} finishes + {week['starts_kept']} starts kept) / "
-            f"({week['finishes_committed']} + {week['starts_committed']} committed)"
-        ) + ("" if pd.isna(week["ppc"]) else f" = {week['ppc']:.0f} %")
+            f"PPC = {week['finishes_kept']} finishes kept / {week['finishes_committed']} committed"
+            f" = {_pct(week['ppc'])}; PPC Start = {week['starts_kept']} / {week['starts_committed']}"
+            f" = {_pct(week['ppc_start'])}; all commitments = {week['kept']} / {week['committed']}"
+            f" = {_pct(week['ppc_all'])}"
+        )
         ui.section("Commitments", formula)
         if commitments.empty:
             st.caption("Nothing was forecast to start or finish this week.")
@@ -111,8 +129,9 @@ with top:
         "PPC & weekly progress",
         store,
         current,
-        lead="PPC = of the finishes and starts update W−1 forecast before W's status date, the share "
-        "that update W shows done; milestones left out. Weekly progress = actual in W minus actual in W−1.",
+        lead="PPC = of the finishes update W−1 forecast before W's status date, the share update W shows "
+        "complete (Last Planner: complete / planned); PPC Start the same for starts; all commitments = both "
+        "together. Milestones left out. Weekly progress = actual in W minus actual in W−1.",
     )
 
 ppc = memo(("ppc",), ppc_series, store, baseline=False)

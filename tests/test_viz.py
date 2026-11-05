@@ -105,12 +105,30 @@ def test_mta_colour_follows_pick_order_even_with_a_line_missing():
     assert colour == {"C": SERIES[0], "B": SERIES[2]}
 
 
+def _ppc_frame(ppc, kept, committed):
+    """A PPC series whose three ratios share the same counts (enough for layout tests)."""
+    weeks = len(ppc)
+    return pd.DataFrame(
+        {
+            "data_date": pd.date_range("2026-03-02", periods=weeks, freq="7D"),
+            "ppc": ppc,
+            "ppc_start": ppc,
+            "ppc_all": ppc,
+            "finishes_kept": kept,
+            "finishes_committed": committed,
+            "starts_kept": kept,
+            "starts_committed": committed,
+            "kept": kept,
+            "committed": committed,
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "fig",
     [
         build_mta(_mta_frame({"M1": ["2026-08-03"] * 3}), {"M1": 1.0}),
-        build_ppc(pd.DataFrame({"data_date": pd.date_range("2026-03-02", periods=2, freq="7D"),
-                                "ppc": [100.0, 50], "kept": [1, 1], "committed": [1, 2]}), 80),
+        build_ppc(_ppc_frame([100.0, 50], [1, 1], [1, 2]), 80),
     ],
 )  # fmt: skip
 def test_charts_leave_text_grid_and_axes_to_the_theme(fig):
@@ -123,16 +141,15 @@ def test_charts_leave_text_grid_and_axes_to_the_theme(fig):
 
 
 def test_ppc_target_label_sits_outside_the_bars():
-    ppc = pd.DataFrame(
-        {
-            "data_date": pd.date_range("2026-03-02", periods=3, freq="7D"),
-            "ppc": [100.0, 50, 100],
-            "kept": [1, 1, 1],
-            "committed": [1, 2, 1],
-        }
-    )
-    label = build_ppc(ppc, 80).layout.annotations[0]
+    label = build_ppc(_ppc_frame([100.0, 50, 100], [1, 1, 1], [1, 2, 1]), 80).layout.annotations[0]
     assert label.xref == "paper" and label.x >= 1  # in the right margin, not over the last bar
+
+
+def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
+    fig = build_ppc(_ppc_frame([50.0, None], [1, 0], [2, 0]), 80)
+    assert [t.type for t in fig.data] == ["bar", "scatter", "scatter"]
+    assert [t.name for t in fig.data] == ["PPC (finishes)", "PPC Start", "PPC all commitments"]
+    assert fig.data[0].customdata[1] == "no commitment"
 
 
 def test_activity_dates_axis_keeps_days_when_dates_never_move():

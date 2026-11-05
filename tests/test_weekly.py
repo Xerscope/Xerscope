@@ -392,7 +392,8 @@ def test_ppc_counts_starts_and_finishes_and_leaves_milestones_out():
     LATE nothing (both dates after W). FM and SM are milestones: a milestone repeats its
     predecessor's date, so counting it would add a commitment the week the predecessor ends.
     W: S1 started, S2 slipped, SF started not finished, E finished, both milestones done.
-    Finishes kept 1 / 2 (E, not SF); starts kept 2 / 3 (S1, SF, not S2); PPC 3 / 5 = 60 %."""
+    Finishes kept 1 / 2 (E, not SF): PPC 50 %; starts kept 2 / 3 (S1, SF, not S2): PPC Start
+    66.7 %; all commitments 3 / 5 = 60 %."""
     w1 = snap(
         [
             todo("S1", early_start_date="2026-03-03 08:00", early_end_date="2026-03-20 17:00"),
@@ -425,7 +426,8 @@ def test_ppc_counts_starts_and_finishes_and_leaves_milestones_out():
     row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
     assert (row["finishes_kept"], row["finishes_committed"]) == (1, 2)
     assert (row["starts_kept"], row["starts_committed"]) == (2, 3)
-    assert (row["kept"], row["committed"], row["ppc"]) == (3, 5, 60.0)
+    assert (row["kept"], row["committed"], row["ppc_all"]) == (3, 5, 60.0)
+    assert (row["ppc"], row["ppc_start"]) == (50.0, pytest.approx(200 / 3))
 
 
 def test_ppc_series_one_row_per_week():
@@ -433,12 +435,13 @@ def test_ppc_series_one_row_per_week():
     assert len(s) == 1
     row = s.iloc[0]
     # W1 forecast A, B, DEL to finish and A, B, C, DEL to start before W2's data date; DEL is
-    # gone (scope change, not a miss). Finishes: A done, B not: 1 / 2. Starts: A, B started,
-    # C not: 2 / 3. PPC = (1 + 2) / (2 + 3) = 60 %
+    # gone (scope change, not a miss). Finishes: A done, B not: 1 / 2, PPC 50 %. Starts: A, B
+    # started, C not: 2 / 3, PPC Start 66.7 %. All commitments (1 + 2) / (2 + 3) = 60 %
     assert (row["finishes_kept"], row["finishes_committed"], row["starts_kept"], row["starts_committed"]) == (
         1, 2, 2, 3,
     )  # fmt: skip
-    assert (row["committed"], row["kept"], row["ppc"]) == (5, 3, 60.0)
+    assert (row["committed"], row["kept"], row["ppc_all"]) == (5, 3, 60.0)
+    assert (row["ppc"], row["ppc_start"]) == (50.0, pytest.approx(200 / 3))
     assert row["week_start"] == W1.data_date and row["data_date"] == W2.data_date
 
 
