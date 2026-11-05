@@ -162,9 +162,9 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
 | 9 | Invalid dates | forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
 | 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
-| 11 | Missed tasks | due by the data date (baseline finish, by calendar day), not finished or finished on a later date | ≤ 5 % |
+| 11 | Missed tasks | due by the data date (baseline finish, by calendar day); missed when finished, or forecast to finish, on a later calendar date or with a Finish Variance > 0 in working time (PAM's two criteria, "or") | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
-| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the float to the Must Finish By date, else the margin of the last finish milestone to its baseline finish (n/a without a baseline) | ≥ 0.95 |
+| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; with a Must Finish By, CPL to the last open task and TF its float; without one, CPL and TF both on the open finish milestone ending last, TF being its margin to its baseline finish (n/a without a baseline or without a float) | ≥ 0.95 |
 | 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
 
 **Dates.** The pamphlet reasons in dates ("on or before 8/1/09, not after 8/1/09", §4.9): DCMA-09 and
@@ -188,8 +188,11 @@ which falls by exactly what the finish moves (+16 h to -64 h for a +80 h slip), 
 on the end keeps its float at 0 and fails both readings.
 
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
-naming a calendar). Without a Must Finish By, TF is the margin of the open finish milestone ending last to its
-baseline finish (recalculated early finish, project calendar, negative when late); n/a without a baseline.
+naming a calendar). Without a Must Finish By, the open finish milestone ending last is the measured milestone
+(PAM §3.1.2.3, "until the next program milestone that is being measured"): CPL runs to its forecast finish and
+TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
+finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
+has no float (a missing float is not 0).
 n/a too when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish

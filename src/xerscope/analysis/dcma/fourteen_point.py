@@ -306,14 +306,17 @@ def dcma_11_missed_tasks(context, date_grain: Literal["timestamp", "day"] = "tim
     Counts: missed / due by the status date
     Excludes: level of effort, milestones.
     Due = baseline start and finish set, baseline finish on or before the status date. Missed = actual
-        (else forecast) finish on a later day than the baseline finish.
+        (else forecast) finish on a later calendar day than the baseline finish, or later by any
+        working time on the task's calendar (the pamphlet's two readings, joined by "or").
 
     DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date, actual or forecast
     finish after it; base excludes tasks missing a baseline start or finish. 4.0 excludes completed
     tasks, LOE, summary tasks and milestones; 4.11 measures actual finishes, so completed tasks stay here
     (4.11 overrides 4.0 on that point). Due is read by calendar day, as the pamphlet does
-    (``date_grain``; "timestamp" is P6's reading). UNRESOLVED: the pamphlet's Finish Variance is
-    working time; the calendar date is compared here, as an actual on a non-working day is still late
+    (``date_grain``; "timestamp" is P6's reading). Missed: "after the baseline finish date OR the
+    Finish Variance (Early Finish minus Baseline Finish) is greater than zero", Finish Variance being
+    working time in MS Project and P6: a Saturday actual against a Friday baseline is late by date, a
+    17:00 actual against a 12:00 baseline the same day is late by variance; both count
     """
     data_date = context.snapshot.data_date
     if data_date is None:
@@ -329,14 +332,20 @@ def dcma_11_missed_tasks(context, date_grain: Literal["timestamp", "day"] = "tim
         ),
     )
     due = funnel.rows
-    finishes_later = due["finish"].dt.normalize() > due["bl_finish"].dt.normalize()
-    missed = due[as_flag(finishes_later)]
+    date_after = as_flag(due["finish"].dt.normalize() > due["bl_finish"].dt.normalize())
+    variance_hours = context.snapshot.work_hours(due["clndr_id"], due["bl_finish"], due["finish"])
+    variance_after = as_flag(variance_hours > 0)
+    missed = due[date_after | variance_after]
+    reason = pd.Series("both", index=missed.index)
+    reason[date_after[missed.index] & ~variance_after[missed.index]] = "date after baseline finish"
+    only_variance = variance_after[missed.index] & ~date_after[missed.index]
+    reason[only_variance] = [f"finish variance {h:g} h" for h in variance_hours[missed.index][only_variance]]
     # a baseline that matches few activities shrinks the due population silently: say so
     note = f"due by {date_grain}"
     if unmatched:
         note += f"; {unmatched} without baseline dates left out of {len(tasks)} tasks"
     return RuleOutput(
-        flagged_activities(missed, bl_finish=missed["bl_finish"]),
+        flagged_activities(missed, bl_finish=missed["bl_finish"], reason=reason),
         len(missed),
         len(due),
         note=note,
@@ -356,33 +365,45 @@ def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> Ru
     return critical_path_output(context, slip_days)
 
 
-def _baseline_margin(context, last_task) -> tuple[RuleOutput | None, str, float, float]:
+Margin = tuple[RuleOutput | None, str, float, str, "pd.Timestamp | None"]
+
+
+def _baseline_margin(context, last_task) -> Margin:
     """Margin of the open end milestone that finishes last to its baseline finish, in project working days.
 
-    Returns (n/a output or None, milestone code, margin, baseline finish text).
+    Returns (n/a output or None, milestone code, margin, baseline finish text, forecast finish of the
+    milestone): the CPL is measured to that same milestone (PAM §3.1.2.3, "the next program milestone
+    that is being measured").
     """
     snapshot = context.snapshot
     if context.baseline is None:
-        return RuleOutput(note="no Must Finish By date and no baseline: no reference date for the float"), "", 0, ""
+        return (
+            RuleOutput(note="no Must Finish By date and no baseline: no reference date for the float"),
+            "",
+            0,
+            "",
+            None,
+        )
     if context.baseline.is_planned:
         note = (
             "baseline = planned dates of this file: a not-started milestone's planned finish follows its early "
             "finish (Oracle 47222); choose a baseline file"
         )
-        return RuleOutput(note=note), "", 0, ""
+        return RuleOutput(note=note), "", 0, "", None
     activities = snapshot.activities
     ends = activities[
         ~activities["is_complete"] & ~activities["is_loe"] & (activities["task_type"] == "TT_FinMile")
     ].dropna(subset=["finish"])
     if ends.empty:
-        return RuleOutput(note="no Must Finish By date and no open finish milestone to measure the float on"), "", 0, ""
+        note = "no Must Finish By date and no open finish milestone to measure the float on"
+        return RuleOutput(note=note), "", 0, "", None
     end = ends.sort_values(["finish", "task_code"]).iloc[-1]
     baseline_finish = context.baseline.frame["bl_finish"].get(end["task_code"], pd.NaT)
     if pd.isna(baseline_finish):
-        return RuleOutput(note=f"{end['task_code']} has no baseline finish"), "", 0, ""
+        return RuleOutput(note=f"{end['task_code']} has no baseline finish"), "", 0, "", None
     forecast = schedule(snapshot).frame["ef"].get(end["task_code"], end["finish"])
     margin = snapshot.project_working_days(forecast, baseline_finish)
-    return None, end["task_code"], margin, f"{baseline_finish:%Y-%m-%d}"
+    return None, end["task_code"], margin, f"{baseline_finish:%Y-%m-%d}", forecast
 
 
 @rule("dcma_13_cpli", "ratio")
@@ -393,9 +414,10 @@ def dcma_13_cpli(context) -> RuleOutput:
     milestone ("the amount of days a project can be delayed before delaying the project completion
     date"). CPL = working days from the status date to the forecast finish, TF = that float, both in working
     days of the project calendar (PAM and Acumen say days without naming a calendar).
-    P6 writes that float against the Must Finish By date. Without one, TF is the margin of the open
-    finish milestone ending last to its baseline finish (PAM: TF "relative to the baselined finish
-    date, when constrained") (recalculated early finish, project calendar;
+    P6 writes that float against the Must Finish By date. Without one, the open finish milestone ending
+    last is the measured milestone: CPL runs to its forecast finish and TF is its margin to its baseline
+    finish (PAM: CPL "until the next program milestone that is being measured", TF "relative to the
+    baselined finish date, when constrained") (recalculated early finish, project calendar;
     negative when late); n/a without a baseline, with the planned dates baseline (the planned finish of a
     not-started milestone follows its early finish: margin 0 by construction, Oracle 47222) or without a
     baseline finish for it. No constraint is read
@@ -407,18 +429,19 @@ def dcma_13_cpli(context) -> RuleOutput:
     if last_task is None:
         return RuleOutput(note="no remaining work")
     margin_note = ""
+    end_finish = last_task["finish"]
     if snapshot.options.get("must_finish_by") is None:
-        unavailable, code, margin, baseline_finish = _baseline_margin(context, last_task)
+        unavailable, code, margin, baseline_finish, end_finish = _baseline_margin(context, last_task)
         if unavailable is not None:
             return unavailable
-        margin_note = f"margin of {code} to its BL finish {baseline_finish}: {margin:g} wd"
+        margin_note = f"to {code}, margin of {code} to its BL finish {baseline_finish}: {margin:g} wd"
     calendar = snapshot.calendar()
-    length = snapshot.project_working_days(snapshot.data_date, last_task["finish"])
+    length = snapshot.project_working_days(snapshot.data_date, end_finish)
     if length <= 0:
         return RuleOutput(note="critical path length is 0")
     if margin_note:
         total_float = margin
-        note = f"CPL {length:g} wd, {margin_note}"
+        note = f"CPL {length:g} wd {margin_note}"
     else:
         if pd.isna(last_task["total_float_hr_cnt"]):
             code = last_task["task_code"]

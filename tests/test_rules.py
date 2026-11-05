@@ -528,9 +528,10 @@ def test_dcma_11_follows_pam_200_1():
     # Data date 2026-03-02 08:00. M is a milestone and NS has no baseline start: out of the base.
     # A, B, C, E have both baseline dates and a baseline finish <= data date: 4 due.
     # A 02-26 <= 02-27 on time; B 02-28 > 02-27 missed; C forecast 03-20 > 02-27 missed;
-    # E forecast 03-02 17:00 is the same date as its baseline finish 03-02 08:00: not missed.
-    assert codes(r) == ["B", "C"]
-    assert (r.numerator, r.denominator) == (2, 4)
+    # E forecast 03-02 17:00 against a baseline finish 03-02 08:00: same calendar date, but a Finish
+    # Variance of 8 working hours, the pamphlet's second criterion ("or"): missed.
+    assert codes(r) == ["B", "C", "E"]
+    assert (r.numerator, r.denominator) == (3, 4)
 
 
 def test_baseline_metrics_are_na_without_baseline():
@@ -1288,3 +1289,34 @@ def test_dcma_13_has_no_value_when_the_float_is_missing():
     r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
     assert r.value is None
     assert "total float missing" in r.note
+
+
+def test_dcma_11_missed_is_date_after_or_working_variance_above_zero():
+    """DCMA-EA PAM 200.1 §4.11: missed when "the actual finish date or forecast finish date ... is after
+    the baseline finish date OR the Finish Variance (Early Finish minus Baseline Finish) is greater than
+    zero". Two readings joined by "or": calendar date, or working time on the task's calendar.
+    Five-day calendar, status date Mon 2026-03-02 08:00, four tasks due (baseline finish Fri 02-27)."""
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            done("SAT", act_end_date="2026-02-28 09:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            done("SAMEDAY", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 12:00"),
+            done("MON", act_end_date="2026-03-02 09:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            done("ONTIME", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
+    # SAT: date after, 0 h of working time; SAMEDAY: same date, 12:00 -> 17:00 = 4 working hours on the
+    # fixture's calendar (12:00-13:00 is a break); MON: both; ONTIME: neither.
+    assert (codes(r), r.denominator) == (["MON", "SAMEDAY", "SAT"], 4)
+    assert set(r.flagged["reason"]) == {"date after baseline finish", "finish variance 4 h", "both"}
+
+
+def test_cpli_without_must_finish_by_measures_cpl_and_float_on_the_same_milestone():
+    """Without a Must Finish By the pamphlet measures CPL "until the next program milestone that is
+    being measured" and TF on that milestone (§3.1.2.3). TAIL, unlinked, ends 10 Apr, after the end
+    milestone Z (27 Mar, CPL 20 wd, baseline 31 Mar = +2 wd): CPL stops at Z, (20 + 2) / 20."""
+    tail = dict(todo("TAIL", **hours(8)), early_end_date="2026-04-10 17:00")
+    r = _cpli([A160, _end(), tail], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
+    assert r.value == pytest.approx(1.1)
+    assert "CPL 20 wd to Z" in r.note
