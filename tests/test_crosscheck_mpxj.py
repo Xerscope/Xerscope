@@ -289,3 +289,38 @@ def test_demo_dates_are_confirmed_by_mpxj(xc, sample_dir):
         bad = cmp[cmp["comparable"] & ~cmp["xs_mpxj_work"]]
         bad = bad[[xc.excused_row(snap, c, f) is None for c, f in zip(bad["task_code"], bad["field"], strict=True)]]
         assert bad.empty or xc.mpxj_inconsistent(snap, cmp), (path.name, bad.head().to_string())
+
+
+# --- 5. the self-consistency check, without Java ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "duration, lag",
+    [("8.2", "0"), ("0.3333", "0"), ("13.3333", "0"), ("8", "8.3")],  # lag: guard only, see below
+)
+def test_dates_that_hold_together_are_not_called_inconsistent(duration, lag):
+    """MPXJ dates equal to xerscope's own pass ``mpxj_inconsistent``. A duration or a lag in
+    decimal hours is a whole number of minutes once rounded as ``TimeAxis.at`` rounds it
+    (8.2 h = 492 min, 8.3 h = 498 min), but 8.2 * 60 = 491.99999999999994 and
+    8.3 * 60 = 498.00000000000006 in floating point:
+    compared raw, the file read as MPXJ contradicting itself and every difference in it was
+    excused. A lag's noise is lost once added to a date's working minutes (21138 + 6e-14 is
+    21138.0), so the lag case cannot fail today; it guards the same rounding."""
+    from xerkit import snap as build
+
+    from xerscope.analysis.cpm import schedule
+    from xerscope.crosscheck import mpxj_inconsistent
+
+    snap = build(
+        [todo("A", target_drtn_hr_cnt=duration, remain_drtn_hr_cnt=duration), todo("B", **hours(8))],
+        [("A", "B", "FS", lag)],
+    )
+    ours = schedule(snap).frame
+    cmp = pd.DataFrame(
+        [
+            {"task_code": code, "field": field, "mpxj": ours.at[code, "remaining_start" if field == "es" else field]}
+            for code in ("A", "B")
+            for field in ("es", "ef", "ls", "lf")
+        ]
+    )
+    assert mpxj_inconsistent(snap, cmp) == set()

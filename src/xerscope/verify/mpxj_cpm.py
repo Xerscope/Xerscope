@@ -142,7 +142,8 @@ def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
     todo = [c for c in m.index if t.at[c, "task_type"] == "TT_Task" and t.at[c, "status_code"] == "TK_NotStart"]
     for c in todo:
         ax = run.cal_ax[c]
-        d = float(t.at[c, "remain_drtn_hr_cnt"] or 0) * 60
+        # whole minutes, as TimeAxis.at rounds them: 8.2 h * 60 is 491.99999999999994, not 492
+        d = round(float(t.at[c, "remain_drtn_hr_cnt"] or 0) * 60)
         es, ef, ls, lf = (pd.Timestamp(m.at[c, k]) for k in ("es", "ef", "ls", "lf"))
         if ax.work(ef) - ax.work(es) != d or ax.work(lf) - ax.work(ls) != d:
             out.add(c)
@@ -151,7 +152,7 @@ def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
         lx = run.lag_axis(p, s)
         frm = pd.Timestamp(m.at[p, "ef" if typ in ("FS", "FF") else "es"])
         to = pd.Timestamp(m.at[s, "es" if typ in ("FS", "SS") else "ef"])
-        if lx.work(to) < lx.work(frm) + lag_m:
+        if lx.work(to) < lx.work(frm) + round(lag_m):
             out.add(s)
     return out
 
