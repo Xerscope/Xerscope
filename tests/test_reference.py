@@ -20,7 +20,7 @@ from xerscope.xer import build_snapshot, percent_complete, read_xer
 DATA = Path(__file__).parent / "reference" / "data"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)  # module scope: runs before the module fixture `xl`
 def require_all_reference_files():
     """Skip (or fail under XERSCOPE_REQUIRE=reference) when a pinned file was not fetched."""
     if not all((DATA / name).exists() for name in FILES):
