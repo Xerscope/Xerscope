@@ -29,6 +29,7 @@ from xerscope.analysis.evm import (
 )
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
+from xerscope.app.ui import as_dates
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.model import Snapshot, leveled, to_number
 
@@ -393,9 +394,7 @@ def assignment_dates_table(snapshot: Snapshot) -> pd.DataFrame:
         )
 
     def date(frame: pd.DataFrame, column: str) -> pd.Series:
-        return (
-            pd.to_datetime(frame[column], errors="coerce") if column in frame else pd.Series(pd.NaT, index=frame.index)
-        )
+        return as_dates(frame[column]) if column in frame else pd.Series(pd.NaT, index=frame.index)
 
     task_start = assignments["task_code"].map(date(activities, "target_start_date"))
     task_finish = assignments["task_code"].map(date(activities, "target_end_date"))
