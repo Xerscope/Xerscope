@@ -204,6 +204,8 @@ Outside `analysis/`:
   WBS node, its own activities, then its child nodes) with float-category colours,
   comparison dates and finish shifts; `gantt_data` hands them, with the options, to a
   Streamlit component (`app/ui.py: GANTT`, `st.components.v2`) mounted in the page.
+  A click on a WBS row opens or closes it; a click on an activity row or bar sends its row
+  id (`"a:<Activity ID>"`) and nothing else.
   WBS rows open and close in the browser, without a rerun; only the rows in view are
   in the page, so a schedule of 15,000 activities scrolls like a small one. There is
   no zoom, only a month or week timescale. Schedule text reaches the browser only as the
@@ -235,16 +237,16 @@ Outside `analysis/`:
   sets (`baseline.EV_COLS`). Series over every update (the health trend, computed on request,
   and the BEI series) reuse the entries there and keep only their numbers. A built download
   (Schedule health's sets, the Debug zip) is offered again only for the same `data_identity`.
-- **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
-  cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
+- **`ui.py`:** the shared look: page header (project · data date · baseline), the KPI
+  readout (one line per figure, a change of zero drawn neutral), column filters on long tables, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
-- **`.streamlit/config.toml`:** the light and dark themes (cool neutrals, glacier-cyan accent) and server settings
+- **`.streamlit/config.toml`:** the light and dark themes (warm neutrals, petrol accent) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
-- **`static/`:** the fonts the theme loads (Inter Tight, JetBrains Mono;
+- **`static/`:** the fonts the theme loads (Onest, JetBrains Mono;
   variable woff2, latin subset, SIL OFL 1.1 with their licences), served by the app itself
   (`enableStaticServing`).
-- **`style.css`:** what the theme cannot set (KPI cards with an accent edge, the milestone picker's tags in
+- **`style.css`:** what the theme cannot set (the KPI readout, the activity card under the Gantt, the milestone picker's tags in
   their line colour), sent by `ui.apply_style()` with the colours of `viz/charts.py`.
 - **Schedule health:** a summary row per check, then one panel per check: what it measures,
   the calculation with its numbers (`analysis/explain.py`), the population (exclusions),
@@ -286,6 +288,11 @@ Outside `analysis/`:
   unchanged, cost figures 0 as in the extract).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
+- **`task_panel.py`:** one activity, named by its Activity ID: its card in the update shown
+  (P6 properties, resource assignments, logic) and its history across updates. Opened under
+  the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
+  the page only an activity the chart draws); every value is read from the snapshot or the
+  store, card text is escaped. The Task history page draws the same history.
 
 ## 8. `cli.py`
 

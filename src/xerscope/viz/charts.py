@@ -22,14 +22,14 @@ import plotly.graph_objects as go
 # validator, light (#ffffff) and dark (#070b14) surfaces: adjacent pairs >= 8 CVD delta E
 # (worst 12.6) and >= 15 normal-vision delta E (worst 16.0); the first three also all-pairs.
 SERIES = ["#3478e6", "#d0652a", "#2f9e8f", "#a27f1f", "#c0509a", "#7c5ce6"]
-STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#0369a1"}
+STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#1d6a73"}
 NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
 # Decoration (app/style.css, through CSS light-dark()), one per theme: the theme's linkColor.
-ACCENT = {"light": "#0369a1", "dark": "#7dd3fc"}
+ACCENT = {"light": "#1d6a73", "dark": "#6cc0c9"}
 LINE = 1.5  # data line width, px
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
-FONT_FAMILY = "Inter Tight, sans-serif"
+FONT_FAMILY = "Onest, sans-serif"
 FONT = dict(size=13)
 TICK = dict(size=12)
 INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC)

@@ -1,7 +1,7 @@
-"""Shared presentation: page header, KPI cards, labelled tables, status colours.
+"""Shared presentation: page header, KPI readout, labelled tables, status colours.
 
 Every page goes through these helpers so the app reads as one product: same header,
-same card style, the same column names and number formats everywhere.
+same readout style, the same column names and number formats everywhere.
 
     ui.header("Schedule health", store, snap, bl)
     ui.kpis([("Pass", 3), ("Fail", 11, None, "Checks above target")])
@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import sys
 import unicodedata
+import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
@@ -230,16 +231,31 @@ def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "")
         st.caption(lead)
 
 
+_ZERO = re.compile(r"^[+\-\u2212]?0(\.0+)?(?![\d.])")
+
+
+def delta_colour(delta, colour: str) -> str:
+    """st.metric's delta_color, with a change of zero ("+0 this week", "+0.0 wd") drawn neutral:
+    st.metric colours it by its sign, red or green, as if something had moved."""
+    return "off" if delta is not None and _ZERO.match(str(delta).strip()) else colour
+
+
 def kpis(items: Sequence[tuple]) -> None:
-    """One row of bordered cards: (label, value[, delta[, help[, delta_color]]])."""
-    cols = st.columns(len(items))
-    for col, item in zip(cols, items, strict=True):
-        label, value, *rest = item
-        delta = rest[0] if len(rest) > 0 else None
-        help_ = rest[1] if len(rest) > 1 else None
-        colour = rest[2] if len(rest) > 2 else "normal"
-        help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
-        col.metric(label, value, delta=delta, help=help_, delta_color=colour, border=True)
+    """A readout, one line per figure: (label, value[, delta[, help[, delta_color]]]). Past four
+    figures the lines run in two columns. The lines are st.metric, drawn as rows by style.css."""
+    labels = tuple(str(item[0]) for item in items)
+    with st.container(key=f"kpis_{zlib.crc32('|'.join(labels).encode()):08x}"):
+        columns = st.columns(2, gap="large") if len(items) > 4 else [st.container()]
+        per_column = -(-len(items) // len(columns))  # read down the first column, then the second
+        for index, item in enumerate(items):
+            label, value, *rest = item
+            delta = rest[0] if len(rest) > 0 else None
+            help_ = rest[1] if len(rest) > 1 else None
+            colour = rest[2] if len(rest) > 2 else "normal"
+            help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
+            columns[index // per_column].metric(
+                label, value, delta=delta, help=help_, delta_color=delta_colour(delta, colour)
+            )
 
 
 def glossary() -> None:

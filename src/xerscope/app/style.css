@@ -1,5 +1,4 @@
-/* What .streamlit/config.toml cannot set: KPI cards with a hairline accent edge, heading
-   tracking, the selected segment in the accent, a fainter chart grid, the milestone picker's
+/* What .streamlit/config.toml cannot set: the KPI readout, heading tracking, the selected segment in the accent, a fainter chart grid, the milestone picker's
    tags in the colour of their line, a square box for the MTA chart, and short transitions. --accent and --s1..--s6 are written by ui.apply_style() from
    viz/charts.py: --s* hold on both themes, --accent is a light-dark() pair that follows the
    color-scheme Streamlit sets on the app. Everything else is mixed with transparency or
@@ -12,54 +11,50 @@
 :root {
   --xs-hairline: color-mix(in srgb, currentColor 12%, transparent);
   --xs-panel: color-mix(in srgb, currentColor 3%, transparent);
-  --xs-accent-edge: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent));
-  --xs-glow: light-dark(transparent, color-mix(in srgb, var(--accent) 45%, transparent));
-  --xs-label-size: 0.7rem;
-  --xs-label-tracking: 0.12em;
   --xs-motion: 160ms ease-out;
 }
 
-/* Headings: light weight (config.toml), slightly tight tracking */
+/* Headings: weight in config.toml, slightly tight tracking */
 .stApp h1 { letter-spacing: -0.025em; }
 .stApp h2,
 .stApp h3 { letter-spacing: -0.015em; }
 
-/* KPI cards: hairline frame, 1.5 px accent edge on top, small spaced label, light tabular value */
-[data-testid="stMetric"] {
-  position: relative;
-  overflow: hidden;
-  border-color: var(--xs-hairline) !important;
-  background: linear-gradient(180deg, var(--xs-panel), transparent 70%);
+/* KPI readout (ui.kpis): each st.metric drawn as one line, label left, value right-aligned,
+   change after it, a hairline under each line and a rule on top. Values in proportional
+   figures: a lone figure lines up with nothing, and tabular ones space out a "1" */
+[class*="st-key-kpis_"] { gap: 0; border-top: 2px solid currentColor; }
+[class*="st-key-kpis_"]:not(:has([data-testid="stHorizontalBlock"])) { max-width: 46rem; }
+[class*="st-key-kpis_"] [data-testid="stVerticalBlock"] { gap: 0; }
+[class*="st-key-kpis_"] [data-testid="stMetric"] > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 14rem);
+  column-gap: 1.25rem;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--xs-hairline);
 }
-[data-testid="stMetric"]::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 1.5px;
-  background: var(--xs-accent-edge);
-  box-shadow: 0 0 8px var(--xs-glow);
-  pointer-events: none;
+[class*="st-key-kpis_"] [data-testid="stMetricLabel"] { margin: 0; min-height: 0; }
+[class*="st-key-kpis_"] [data-testid="stMetricLabel"] p { font-size: 0.95rem; opacity: 0.78; }
+[class*="st-key-kpis_"] [data-testid="stMetricValue"],
+[class*="st-key-kpis_"] [data-testid="stMetricValue"] p {
+  font-size: 1.2rem;
+  font-weight: 550;
+  line-height: 1.3;
+  text-align: right;
+  font-variant-numeric: proportional-nums;
 }
-[data-testid="stMetricLabel"] p {
-  font-size: var(--xs-label-size);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: var(--xs-label-tracking);
-  opacity: 0.78;
-}
-/* a long label ("SPI (labour units)") or delta ("+2.9 pts this week") wraps onto a second line
-   instead of being cut with an ellipsis: Streamlit keeps both on one line */
-[data-testid="stMetricLabel"],
-[data-testid="stMetricLabel"] *,
-[data-testid="stMetricDelta"],
-[data-testid="stMetricDelta"] * {
+[class*="st-key-kpis_"] [data-testid="stMetricDelta"],
+[class*="st-key-kpis_"] [data-testid="stMetricDelta"] p { font-size: 0.8rem; }
+/* a long label or change wraps instead of being cut with an ellipsis */
+[class*="st-key-kpis_"] [data-testid="stMetricLabel"] *,
+[class*="st-key-kpis_"] [data-testid="stMetricDelta"] * {
   white-space: normal !important;
   overflow: visible !important;
   text-overflow: clip !important;
 }
-[data-testid="stMetricValue"] {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+@media (max-width: 640px) {
+  [class*="st-key-kpis_"] [data-testid="stMetric"] > div { grid-template-columns: minmax(0, 1fr) auto; }
+  [class*="st-key-kpis_"] [data-testid="stMetric"] > div > div:last-child { grid-column: 1 / -1; }
 }
 
 /* Segmented control: the selected option's text in the accent; the dark theme's primaryColor
@@ -103,18 +98,6 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
-}
-
-/* KPI row: every card as tall as the tallest of its row, so a wrapped label or delta does not
-   leave the row ragged */
-[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] > div,
-[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] > div > div,
-[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {
-  height: 100%;
-}
-[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) [data-testid="stMetric"] {
-  height: 100%;
-  box-sizing: border-box;
 }
 
 /* ==== Files and baseline window (state._window) ===================================
