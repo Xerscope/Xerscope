@@ -535,8 +535,6 @@ def _cmd_sra(args: argparse.Namespace) -> int:
     print("  most often on the longest path: " + ", ".join(f"{code} {share:.0%}" for code, share in critical.items()))
     if result.pinned:
         print(f"  {len(result.pinned)} open activities pinned by a mandatory constraint: {result.pinned[:5]}")
-    if result.not_varied:
-        print(f"  {len(result.not_varied)} resource-dependent activities kept their duration: {result.not_varied[:5]}")
     if args.out:
         _write_csv(result.criticality.rename_axis("task_code").reset_index(), args.out)
     return 0

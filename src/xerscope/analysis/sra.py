@@ -13,13 +13,13 @@ risks (AACE RP 57R-09, risk drivers) are not modelled yet, so the spread is a lo
 
 Choices, each visible in the result:
 
-- a range applies to the remaining duration the plain recalculation uses (the one an expected
-  finish set, if any); an activity with a range loses its expected finish in the draw, as the
-  delayed activity of the critical path test does (``cpm.schedule(..., base=...)``);
-- resource-dependent activities are not varied: their duration comes from their assignments,
-  which this first version does not scale (``not_varied``);
+- a drawn factor multiplies the remaining duration the plain recalculation uses (the one an
+  expected finish set, if any): ``cpm.schedule(..., scale=...)``; the activity loses its expected
+  finish in the draw, as the delayed activity of the critical path test does;
+- a resource-dependent activity applies the factor to each driving assignment's remaining work,
+  still placed on its resource's calendar;
 - an open activity with a mandatory constraint keeps its date whatever its duration (``pinned``);
-- factors are never negative, so a drawn duration is never below zero.
+- factors are never negative, so a drawn duration is never below zero; milestones are not drawn.
 """
 
 from __future__ import annotations
@@ -67,7 +67,6 @@ class SraResult:
     seed: int
     varied: list[str] = field(default_factory=list)
     pinned: list[str] = field(default_factory=list)
-    not_varied: list[str] = field(default_factory=list)
 
     def percentile(self, p: float) -> pd.Timestamp:
         """The finish of the iteration at that rank: a date the engine computed, never an interpolation."""
@@ -102,20 +101,11 @@ def simulate(
     open_codes = sorted(
         code
         for code in frame.index
-        if frame.at[code, "status_code"] != "TK_Complete" and not activities.at[code, "is_loe"]
+        if frame.at[code, "status_code"] != "TK_Complete"
+        and not activities.at[code, "is_loe"]
+        and not activities.at[code, "is_milestone"]
     )
-
-    def remaining(code: str) -> float:
-        """Hours the plain recalculation runs: the expected finish's, else the file's remaining duration."""
-        for value in (frame.at[code, "rem_override_hr"], activities.at[code, "remain_drtn_hr_cnt"]):
-            if pd.notna(value):
-                return float(value)
-        return 0.0
-
-    remaining_hr = {code: remaining(code) for code in open_codes}
-    with_range = [code for code in open_codes if ranges.get(code, default) != NO_RANGE and remaining_hr[code] > 0]
-    not_varied = [code for code in with_range if frame.at[code, "resource_dependent"]]
-    varied = [code for code in with_range if not frame.at[code, "resource_dependent"]]
+    varied = [code for code in open_codes if ranges.get(code, default) != NO_RANGE]
     mandatory = activities["cstr_type"].isin(cpm.MANDATORY) | activities["cstr_type2"].isin(cpm.MANDATORY)
     pinned = sorted(code for code in open_codes if bool(mandatory.get(code, False)))
 
@@ -127,12 +117,11 @@ def simulate(
         factors[:, spread] = rng.triangular(
             bounds[spread, 0], bounds[spread, 1], bounds[spread, 2], size=(iterations, int(spread.sum()))
         )
-    hours = np.array([remaining_hr[code] for code in varied])
 
     finishes, on_path = [], pd.Series(0, index=frame.index, dtype=float)
     for draw in factors:
-        extra = {code: float(h * (f - 1.0)) for code, h, f in zip(varied, hours, draw, strict=True) if f != 1.0}
-        result = cpm.schedule(snapshot, extra, base=base) if extra else base
+        scale = {code: float(factor) for code, factor in zip(varied, draw, strict=True) if factor != 1.0}
+        result = cpm.schedule(snapshot, scale=scale, base=base) if scale else base
         finishes.append(result.finish)
         on_path = on_path.add(result.frame["longest_path"].astype(float), fill_value=0.0)
     return SraResult(
@@ -143,5 +132,4 @@ def simulate(
         seed=seed,
         varied=varied,
         pinned=pinned,
-        not_varied=not_varied,
     )

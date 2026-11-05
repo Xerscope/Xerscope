@@ -258,6 +258,7 @@ def schedule(
     extra_hours: dict[str, float] | None = None,
     options: Options | None = None,
     base: Schedule | None = None,
+    scale: dict[str, float] | None = None,
 ) -> Schedule:
     """Recompute early/late dates and float of every activity of ``snap``.
 
@@ -267,14 +268,25 @@ def schedule(
     ``base``: the plain recalculation, given with ``extra_hours``. A delayed activity then drops
     its expected finish, which would absorb the delay, and runs its remaining duration in
     ``base`` (the one the expected finish set, if any) plus the delay.
+
+    ``scale``: activity -> factor (>= 0) on its remaining duration; a resource-dependent
+    activity applies it to each driving assignment. A scaled activity drops its expected
+    finish like a delayed one and scales the duration that expected finish set in ``base``
+    (the plain recalculation when ``base`` is not given). The schedule risk analysis draws
+    these factors.
     """
-    if not extra_hours and options is None:
+    if scale:
+        negative = sorted(code for code, factor in scale.items() if factor < 0)
+        if negative:
+            raise ValueError(f"scale factors must not be negative: {negative[:5]}")
+        base = base or schedule(snapshot)
+    if not extra_hours and options is None and not scale:
         cached = getattr(snapshot, "_xs_schedule", None)
         if cached is None:
             cached = _schedule(snapshot, None, None)
             object.__setattr__(snapshot, "_xs_schedule", cached)
         return cached
-    return _schedule(snapshot, extra_hours, options, base)
+    return _schedule(snapshot, extra_hours, options, base, scale)
 
 
 @dataclass
@@ -290,9 +302,13 @@ class _Asg:
 
 
 def _schedule(
-    snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None, base: Schedule | None = None
+    snapshot: Snapshot,
+    extra_hours: dict[str, float] | None,
+    options: Options | None,
+    base: Schedule | None = None,
+    scale: dict[str, float] | None = None,
 ) -> Schedule:
-    return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
+    return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base, scale).result()
 
 
 class _Run:
@@ -303,9 +319,15 @@ class _Run:
     """
 
     def __init__(
-        self, snapshot: Snapshot, extra_hours: dict[str, float], options: Options, base: Schedule | None = None
+        self,
+        snapshot: Snapshot,
+        extra_hours: dict[str, float],
+        options: Options,
+        base: Schedule | None = None,
+        scale: dict[str, float] | None = None,
     ):
         self.snapshot, self.extra_hours, self.options, self.base = snapshot, extra_hours, options, base
+        self.scale = scale or {}
         # Nothing is scheduled before the data date, nor before the project's planned start
         # (P6 keeps the later of the two as the earliest start of remaining work).
         self.warnings: list[str] = []
@@ -469,24 +491,32 @@ class _Run:
         return "task"
 
     def delayed(self, code) -> bool:
-        """True for an activity delayed against ``base``: its expected finish no longer applies."""
-        return self.base is not None and code in self.extra_hours
+        """True for an activity delayed or scaled against ``base``: its expected finish no longer applies."""
+        return self.base is not None and (code in self.extra_hours or code in self.scale)
 
     def base_minutes(self, code, assignment: _Asg) -> float:
-        """Remaining minutes of an assignment before the delay (``base``'s when the activity is delayed)."""
+        """Remaining minutes of an assignment before the delay (``base``'s when the activity is delayed),
+        times the activity's scale factor."""
+        minutes = assignment.duration_minutes
         if self.delayed(code):
-            return self.base.assignment_minutes.get(assignment.taskrsrc_id, assignment.duration_minutes)
-        return assignment.duration_minutes
+            minutes = self.base.assignment_minutes.get(assignment.taskrsrc_id, assignment.duration_minutes)
+        if code in self.scale:
+            minutes *= self.scale[code]
+        return minutes
 
     def dur_min(self, code) -> float:
+        extra = self.extra_hours.get(code, 0.0) * 60
         if self.delayed(code):
             held = self.base.frame.at[code, "rem_override_hr"]
             if pd.notna(held):
-                return float(held) * 60 + self.extra_hours[code] * 60
+                return float(held) * 60 * self.scale.get(code, 1.0) + extra
         elif code in self.duration_override:  # remaining duration recomputed from an expected finish
-            return self.duration_override[code] + self.extra_hours.get(code, 0.0) * 60
+            return self.duration_override[code] + extra
         remaining_hr = self.inputs[code].get("remain_drtn_hr_cnt")
-        return (0.0 if pd.isna(remaining_hr) else float(remaining_hr) * 60) + self.extra_hours.get(code, 0.0) * 60
+        remaining = 0.0 if pd.isna(remaining_hr) else float(remaining_hr) * 60
+        if code in self.scale:
+            remaining *= self.scale[code]
+        return remaining + extra
 
     def driving(self, code) -> list[_Asg]:
         return [
