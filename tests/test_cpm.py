@@ -409,6 +409,37 @@ def test_expected_finish_reports_the_remaining_it_set():
     assert row["rem_override_hr"] == 0.0 and row["ef"] == row["remaining_start"]
 
 
+@pytest.mark.parametrize("rate", ["0.3333333333333333", "0.33333333", "0.333333"])
+def test_an_expected_finish_on_the_natural_finish_applies_to_resource_dependent_work(rate):
+    """A: 8 units at 1/3 unit per hour = 24 h of work, Mon 2 08:00 -> Wed 4 17:00 on C8, and its
+    expected finish is that same date. As on task-dependent work (docs/cpm.md, 265 of 265), the
+    expected finish applies: no free float (C holds B to Fri 6 17:00, 16 h after A), and the
+    remaining it stands in for is reported. P6 23.12: free float 0 on H26-03 A1300, H29-02
+    A1300, H29-10 A1410, H30-06 A1260, H30-12 A1600. It used to apply only when it changed the
+    work, compared to the float minutes of units / rate: a rate stored with 8 decimals (as in
+    Terminal Building) gave 1440.000014 min and 0 free float, an exact one 1440 min and 16 h."""
+    resources = [{"rsrc_id": "R8", "rsrc_short_name": "FITTER", "rsrc_type": "RT_Labor", "clndr_id": "C8"}]
+    assignment = {
+        "task_code": "A", "rsrc_id": "R8", "target_qty": "8", "remain_qty": "8", "act_reg_qty": "0",
+        "act_ot_qty": "0", "target_qty_per_hr": rate, "remain_qty_per_hr": rate,
+        "target_lag_drtn_hr_cnt": "0", "relag_drtn_hr_cnt": "0", "rollup_dates_flag": "Y",
+    }  # fmt: skip
+    s = snap(
+        [
+            todo("A", task_type="TT_Rsrc", expect_end_date="2026-03-04 17:00", **hours(24)),
+            todo("C", **hours(40)),
+            todo("B", **hours(8)),
+        ],
+        [("A", "B", "FS", 0), ("C", "B", "FS", 0)],
+        resources=resources,
+        assign=[assignment],
+        sched={"sched_use_expect_end_flag": "Y"},
+    )
+    row = schedule(s).frame.loc["A"]
+    assert row["ef"] == T("2026-03-04 17:00")
+    assert (row["ff_hr"], row["tf_hr"], row["rem_override_hr"]) == (0.0, 16.0, 24.0)
+
+
 def test_expected_finish_off_the_calendar_ends_the_previous_working_period():
     """Expected finish on Saturday 7: the finish is Friday 6 17:00 (P6 26.8 export, Christmas break case)."""
     t = [active("A", remain_drtn_hr_cnt="40", expect_end_date="2026-03-07 17:00")]

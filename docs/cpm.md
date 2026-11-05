@@ -201,8 +201,10 @@ work before either.
   units per hour, and pushed back behind a later finish bound; the activity starts at the
   earliest assignment start, on its own calendar, and the assignments then run forward
   from that start (a finish bound is met, not tight). An expected finish measures the
-  remaining work on the resource calendar from the first placement; one before the start
-  keeps the file's remaining duration. Without a driving assignment with a rate the
+  remaining work on the resource calendar from the first placement, and applies even when
+  it falls on the finish the units and rate give (no free float: H26-03 A1300, H29-02
+  A1300, H29-10 A1410, H30-06 A1260, H30-12 A1600); one before the start keeps the file's
+  remaining duration. Without a driving assignment with a rate the
   activity falls back to its own calendar (warned). Witnesses: H8-03 A1240, H10-02
   A1360, H26-11 A1090, H14-05 A1040.
 
