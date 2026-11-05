@@ -230,7 +230,7 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
             )
             ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
             if not downloads_ready(sources):
-                st.caption("Download: prepare the anonymised downloads under Results.")
+                st.caption("Download: prepare the anonymized downloads under Results.")
             else:
                 csv_download(
                     result.flagged,

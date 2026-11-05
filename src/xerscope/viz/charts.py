@@ -130,7 +130,7 @@ def build_scurve(
     c = SERIES
     bac = float(series["bac_hr"].iloc[0]) if len(series) else 0.0
     k = (100 / bac) if (percent and bac) else 1.0
-    unit = "% of BAC" if percent and bac else "labour hours"
+    unit = "% of BAC" if percent and bac else "labor hours"
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(

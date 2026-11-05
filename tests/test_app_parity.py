@@ -115,11 +115,11 @@ def test_earned_value_kpis_equal_evm_series(app, store):
         health_bei = [_number(run_metric(metric, context).value) for metric in bei_metrics.values()]
         assert list(bei.loc[snapshot.data_date, ["bei_p6", "bei_dcma"]]) == pytest.approx(health_bei, nan_ok=True)
         shown = _metrics(app)
-        assert shown["EV %"] == f"{row['ev_pct']:.1f} %", snapshot.label
-        assert shown["PV %"] == f"{row['pv_pct']:.1f} %", snapshot.label
+        assert shown["Percent complete"] == f"{row['ev_pct']:.1f} %", snapshot.label
+        assert shown["Percent scheduled"] == f"{row['pv_pct']:.1f} %", snapshot.label
         expected_cost_spi = "n/a — no cost in the baseline" if pd.isna(row["spi_cost"]) else f"{row['spi_cost']:.3f}"
         assert shown["SPI"] == expected_cost_spi, snapshot.label
-        assert shown["SPI (labour units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.3f}"), snapshot.label
+        assert shown["SPI (labor units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.3f}"), snapshot.label
         assert shown["SV"] == f"{row['sv_hr']:+,.0f} h", snapshot.label
         assert shown["BEI (P6 / DCMA)"] == " / ".join(
             "–" if pd.isna(value) else f"{value:.2f}" for value in health_bei

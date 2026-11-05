@@ -113,7 +113,7 @@ with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled acti
 with st.expander("7 · Costs in the file (TASKRSRC, PROJCOST)", key="debug_costs"):
     st.caption(
         "Whether the file carries costs: P6 computes its cost-based Schedule Performance Index from them, "
-        "xerscope's SPI (labour units) from hours. absent: the column is missing or blank on every row."
+        "xerscope's SPI (labor units) from hours. absent: the column is missing or blank on every row."
     )
     table(frames["07_costs"].astype(str))  # numbers and "absent" in one column: Arrow needs one type
 
@@ -126,11 +126,11 @@ with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_e
     table(frames["08_etc_techniques"])
     table(frames["08_ev_settings"], max_height=480)
 
-with st.expander("9 · XER tables and planned value labour units", key="debug_pv_labor"):
+with st.expander("9 · XER tables and planned value labor units", key="debug_pv_labor"):
     st.caption(
         "Diagnostic, not used by any KPI. Tables: every %T table of the file with its rows and columns, no cell "
-        "value. PV labour units at the data date by activity (xerscope) against by baseline assignment (Σ "
-        "target_qty x share of the assignment's own dates elapsed; activities without labour assignment keep "
+        "value. PV labor units at the data date by activity (xerscope) against by baseline assignment (Σ "
+        "target_qty x share of the assignment's own dates elapsed; activities without labor assignment keep "
         "the activity value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - activity."
     )
     table(frames["09_xer_tables"], max_height=480)
@@ -164,7 +164,7 @@ anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
     "Blocks 1 to 9 as CSV. With anonymous exports on, Activity IDs, resource codes and WBS codes are renamed "
-    "as in the anonymised XER extract; the tables hold no name or project name. Dates are left as they are.",
+    "as in the anonymized XER extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)

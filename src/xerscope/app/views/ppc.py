@@ -54,7 +54,7 @@ def show_kpis(commitments: pd.DataFrame, project_progress: pd.Series) -> tuple[i
                 "Project progress",
                 "–" if pd.isna(project_progress["progress_pts"]) else f"{project_progress['progress_pts']:+.2f} pts",
                 None,
-                "Earned labour hours this week / budget hours (baseline hours and EV technique when a baseline is set)",
+                "Earned labor hours this week / budget hours (baseline hours and EV technique when a baseline is set)",
             ),
         ]
     )
@@ -71,7 +71,7 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
         else:
             ui.table(commitments.sort_values("completed"), columns=COMMITMENT_COLUMNS)
     with right:
-        ui.section("Progress by WBS", "Points of % complete gained this week, weighted by labour hours.")
+        ui.section("Progress by WBS", "Points of % complete gained this week, weighted by labor hours.")
         ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS)
 
 

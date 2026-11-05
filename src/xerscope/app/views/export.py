@@ -46,7 +46,7 @@ with st.expander("Preview fact_activity"):
 def build_anonymised_extract(store) -> None:
     data_dates = {snapshot.source: snapshot.data_date for snapshot in store}
     items = st.session_state.get("items") or []
-    with st.spinner(f"Anonymising {len(items)} file(s)…"):
+    with st.spinner(f"Anonymizing {len(items)} file(s)…"):
         extract = fetch(
             st.session_state,
             None,
@@ -60,18 +60,18 @@ def build_anonymised_extract(store) -> None:
 
 
 ui.section(
-    "Anonymised XER extract",
+    "Anonymized XER extract",
     "Every loaded file with new Activity IDs, WBS, project, resource and calendar names; no user, "
     "free text or cost. Dates, durations, units and logic are unchanged, so P6 and xerscope compute "
-    "the same results on it. The new IDs match the anonymised lists of Schedule health.",
+    "the same results on it. The new IDs match the anonymized lists of Schedule health.",
 )
-if st.button("Build anonymised extract", icon=":material/visibility_off:", key="anon_build"):
+if st.button("Build anonymized extract", icon=":material/visibility_off:", key="anon_build"):
     build_anonymised_extract(store)
 extract = held(st.session_state, "anon_extract", None)
 if extract is not None:
     show_download(
         extract,
-        "Download anonymised XER (.zip)",
+        "Download anonymized XER (.zip)",
         "xerscope_anonymised_xer.zip",
         "application/zip",
         suffix=False,

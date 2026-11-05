@@ -82,18 +82,18 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
     ui.kpis(
         [
             (
-                "EV %",
+                "Percent complete",
                 f"{row['ev_pct']:.1f} %",
                 change_since_previous(row, previous, "ev_pct", format_points),
-                "Earned / BAC",
+                "EV / BAC (BCWP / BAC)",
             ),
-            ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
+            ("Percent scheduled", f"{row['pv_pct']:.1f} %", None, "PV / BAC (BCWS / BAC)"),
             *([cost_card] if costs else []),
             (
-                "SPI (labour units)",
+                "SPI (labor units)",
                 format_number(row["spi"], "{:.3f}"),
                 change_since_previous(row, previous, "spi", format_index_change),
-                "EV / PV in labour hours; P6 column: Schedule Performance Index - Labor Units",
+                "EV / PV in labor hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
             (
@@ -105,9 +105,8 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
             (
                 "EAC",
                 f"{row['eac_hr']:,.0f} h",
-                f"{row['eac_hr'] - row['bac_hr']:+,.0f} h vs BAC",
-                "AC + remaining hours",
-                "inverse",
+                f"VAC {row['bac_hr'] - row['eac_hr']:+,.0f} h",
+                "AC + remaining hours; VAC = BAC − EAC, negative = overrun",
             ),
         ]
     )
@@ -137,7 +136,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
             [
                 (
                     "BAC",
-                    f"Σ baseline labour hours ({EV_BASES[baseline.ev_basis]})",
+                    f"Σ baseline labor hours ({EV_BASES[baseline.ev_basis]})",
                     f"{bac:,.1f} h",
                     "Budget At Completion - Labor Units",
                 ),
@@ -154,9 +153,9 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                     f"{earned_hours:,.1f} h  ({row['ev_pct']:.1f} % of BAC)",
                     "Earned Value Labor Units",
                 ),
-                ("AC", "Σ actual labour hours", f"{actual:,.1f} h", "Actual Labor Units"),
+                ("AC", "Σ actual labor hours", f"{actual:,.1f} h", "Actual Labor Units"),
                 (
-                    "SPI (labour units)",
+                    "SPI (labor units)",
                     "EV / PV",
                     f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.3f}')}",
                     "Schedule Performance Index - Labor Units",
@@ -195,7 +194,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "ETC",
-                    "Σ remaining labour hours",
+                    "Σ remaining labor hours",
                     f"{row['etc_hr']:,.1f} h",
                     "Estimate To Complete Labor Units (Remaining Total Units)",
                 ),
@@ -212,7 +211,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                     "Estimate At Completion - Labor Units",
                 ),
                 (
-                    "CPI (labour units)",
+                    "CPI (labor units)",
                     "EV / AC, all actual hours",
                     f"{earned_hours:,.1f} / {actual:,.1f} = {format_number(row['cpi'], '{:.2f}')}",
                     "Cost Performance Index - Labor Units",
@@ -276,7 +275,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
         "Performance indices by update",
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
-    indices = {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
+    indices = {"spi": "SPI (labor units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
     if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
     st.plotly_chart(build_index_trend(series, indices), width="stretch")
@@ -314,7 +313,7 @@ with top:
         store,
         snapshot,
         baseline,
-        lead="Labour hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
+        lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )
     show_baseline_used(snapshot, baseline, series=True)
@@ -323,7 +322,7 @@ if baseline is None:
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(
-        f"The baseline ({baseline.label}) has no budgeted labour hours, so there is nothing to earn. "
+        f"The baseline ({baseline.label}) has no budgeted labor hours, so there is nothing to earn. "
         "Export the BL with resource assignments (TASK.target_work_qty / TASKRSRC)."
     )
     st.stop()

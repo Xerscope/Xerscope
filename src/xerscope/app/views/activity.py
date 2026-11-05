@@ -36,7 +36,7 @@ def show_kpis(store, history: pd.DataFrame) -> None:
                 None,
                 "inverse",
             ),
-            ("Total float", "–" if pd.isna(last["total_float_d"]) else f"{last['total_float_d']:.1f} d"),
+            ("Total float", "–" if pd.isna(last["total_float_d"]) else f"{last['total_float_d']:.1f} wd"),
             ("% complete", "–" if pd.isna(last["pct_complete"]) else f"{last['pct_complete']:.0f} %"),
         ]
     )

@@ -330,6 +330,25 @@ def test_ppc_counts_only_commitments_still_in_the_update():
     assert kept["completed"].sum() / len(kept) == 0.5
 
 
+def test_ppc_commits_started_and_not_started_work():
+    """W-1 in progress (E) and not started (N), both forecast to finish before W's data date:
+    both are committed; E finished in W, N only started, so 1 of 2."""
+    w1 = snap(
+        [
+            active("E", act_start_date="2026-03-02 08:00", early_end_date="2026-03-05 17:00"),
+            todo("N", early_end_date="2026-03-06 17:00"),
+        ]
+    )
+    w2 = snap(
+        [done("E", act_end_date="2026-03-05 17:00"), active("N", act_start_date="2026-03-04 08:00")],
+        data_date="2026-03-09 08:00",
+    )
+    c = committed(w1, w2).set_index("task_code")
+    assert sorted(c.index) == ["E", "N"]
+    assert (c.loc["E", "completed"], c.loc["N", "completed"]) == (True, False)
+    assert c.loc["N", "status_now"] == "In progress"
+
+
 def test_ppc_series_one_row_per_week():
     from xerscope.store import SnapshotStore
 
@@ -661,7 +680,7 @@ def test_health_wide_has_one_row_per_check_and_one_column_per_update(store):
     wide = health_wide(health_history(store, std, Baseline.planned), std)
     assert list(wide.columns) == ["id", "check", *(f"{s.data_date:%Y-%m-%d}" for s in store)]
     assert wide["id"].tolist() == [m.id for m in std.metrics]
-    assert wide["check"].iloc[:4].tolist() == ["Logic", "Hard constraints", "Soft constraints", "Large durations"]
+    assert wide["check"].iloc[:4].tolist() == ["Logic", "Hard Constraints", "Soft Constraints", "Large Durations"]
     # Logic: 3 / 29 (K5040, M9999 and the not-started start milestone M1000)
     assert wide.iloc[:4, 2].tolist() == pytest.approx([10.344828, 0, 7.142857, 4.166667])
     assert wide.shape == (18, 10)

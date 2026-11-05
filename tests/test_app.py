@@ -201,7 +201,7 @@ def test_health_compares_counts_typed_from_a_p6_report(app):
 def test_earned_value_needs_hours_and_baseline(app):
     app.switch_page("views/earned_value.py").run()
     _ok(app)
-    assert app.metric[0].label == "EV %"
+    assert app.metric[0].label == "Percent complete"
     app.sidebar.selectbox(key="bl_choice").set_value("None").run()
     _ok(app)
     assert any("Choose a baseline" in i.value for i in app.info)
@@ -223,8 +223,8 @@ def test_earned_value_shows_the_labour_units_spi_first_while_costs_are_off(app):
     _ok(app)
     labels = [m.label for m in app.metric]
     assert "SPI" not in labels
-    assert labels.index("SPI (labour units)") == labels.index("PV %") + 1
-    labour = next(m for m in app.metric if m.label == "SPI (labour units)")
+    assert labels.index("SPI (labor units)") == labels.index("Percent scheduled") + 1
+    labour = next(m for m in app.metric if m.label == "SPI (labor units)")
     assert "Schedule Performance Index - Labor Units" in labour.help
     assert not any("Costs ignored" in text for text in _caption_texts(app))
 
@@ -234,7 +234,7 @@ def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second_w
     app.switch_page("views/earned_value.py").run()
     _costs(app, True)
     labels = [m.label for m in app.metric]
-    assert labels.index("SPI") + 1 == labels.index("SPI (labour units)")
+    assert labels.index("SPI") + 1 == labels.index("SPI (labor units)")
     cost = next(m for m in app.metric if m.label == "SPI")
     assert cost.value == "n/a — no cost in the baseline"
     assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
@@ -286,9 +286,9 @@ def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monk
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
     _ok(at)
-    labour = next(m for m in at.metric if m.label == "SPI (labour units)")
+    labour = next(m for m in at.metric if m.label == "SPI (labor units)")
     assert labour.value == "1.250"
-    assert [m.label for m in at.metric].index("SPI (labour units)") == 2
+    assert [m.label for m in at.metric].index("SPI (labor units)") == 2
     assert (
         "Costs ignored: 1 of 2 assignments carry a cost in the file (resource prices). "
         "Turn on Costs in the sidebar to see P6's cost SPI."
@@ -353,9 +353,9 @@ def test_earned_value_shows_the_cpi_beside_ev_per_ac_on_baselined_work(app):
     app.switch_page("views/earned_value.py").run()
     _ok(app)
     table = next(d.value for d in app.dataframe if "measure" in d.value.columns).set_index("measure")
-    assert table.loc["CPI (labour units)", "P6 column"] == "Cost Performance Index - Labor Units"
+    assert table.loc["CPI (labor units)", "P6 column"] == "Cost Performance Index - Labor Units"
     ev, ac, cpi = (
-        float(n.replace(",", "")) for n in re.findall(r"[\d,]+\.\d+", table.loc["CPI (labour units)"].iloc[-1])
+        float(n.replace(",", "")) for n in re.findall(r"[\d,]+\.\d+", table.loc["CPI (labor units)"].iloc[-1])
     )
     assert cpi == pytest.approx(ev / ac, abs=0.005)
     assert "not a P6 column" in table.loc["EV / AC (baselined work)", "P6 column"]
@@ -377,10 +377,10 @@ def test_ev_calculation_rows_add_up_as_shown(app):
         assert sv == pytest.approx(ev - pv, abs=0.1 + 1e-9), label
         ac, etc, eac = numbers["EAC"]
         assert eac == pytest.approx(ac + etc, abs=0.1 + 1e-9), label
-        if shown["SPI (labour units)"].endswith("–"):
+        if shown["SPI (labor units)"].endswith("–"):
             continue
-        ev, pv, spi = numbers["SPI (labour units)"]
-        assert len(shown["SPI (labour units)"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
+        ev, pv, spi = numbers["SPI (labor units)"]
+        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
         assert spi == pytest.approx(ev / pv, abs=0.001), label
 
 
@@ -476,7 +476,7 @@ def test_baseline_file_from_env_and_its_date_check(sample_dir, tmp_path, monkeyp
     at = _run(tmp_path, monkeypatch, baseline=files[0])
     _ok(at)
     assert at.sidebar.selectbox(key="bl_choice").value == "Separate baseline file"
-    assert any(files[0].stem in c.value and "labour h" in c.value for c in at.sidebar.caption)
+    assert any(files[0].stem in c.value and "labor h" in c.value for c in at.sidebar.caption)
     assert not at.sidebar.warning
     # the last export as the baseline: newer than every loaded update
     at = _run(tmp_path, monkeypatch, baseline=files[-1])
@@ -728,19 +728,19 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     app.get("button_group")[0].set_value("P6").run()
     _ok(app)
     assert [b.proto.label for b in app.get("download_button")] == ["Download the template"]  # nothing before Prepare
-    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    next(b for b in app.button if b.label == "Prepare anonymized downloads").click().run()
     _ok(app)
     flagged = pd.read_csv(
-        io.BytesIO(_download(app, downloads, "All flagged items (CSV) · anonymised")), encoding="utf-8-sig"
+        io.BytesIO(_download(app, downloads, "All flagged items (CSV) · anonymized")), encoding="utf-8-sig"
     )
     assert not set(flagged.astype(str).to_numpy().ravel()) & originals
     codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
     assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
 
     app.switch_page("views/export.py").run()
-    next(b for b in app.button if b.label == "Build anonymised extract").click().run()
+    next(b for b in app.button if b.label == "Build anonymized extract").click().run()
     _ok(app)
-    with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download anonymised XER (.zip)"))) as archive:
+    with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download anonymized XER (.zip)"))) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
     assert len(files) == len(store)
     for name, data in files.items():
@@ -772,7 +772,7 @@ def _debug_zip(at, downloads) -> dict[str, pd.DataFrame]:
     next(b for b in at.button if b.label == "Build diagnostic").click().run()
     _ok(at)
     assert not at.error, [e.value for e in at.error]
-    with zipfile.ZipFile(io.BytesIO(_download(at, downloads, "Download diagnostic (.zip) · anonymised"))) as archive:
+    with zipfile.ZipFile(io.BytesIO(_download(at, downloads, "Download diagnostic (.zip) · anonymized"))) as archive:
         return {name: pd.read_csv(io.BytesIO(archive.read(name)), encoding="utf-8-sig") for name in archive.namelist()}
 
 
@@ -873,18 +873,18 @@ def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, stor
     app.switch_page("views/gantt.py").run()
     _ok(app)
     assert not [b for b in app.get("download_button") if b.proto.label.startswith("Download CSV")]
-    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    next(b for b in app.button if b.label == "Prepare anonymized downloads").click().run()
     _ok(app)
-    gantt = _csv(_download(app, downloads, "Download CSV · anonymised"))
+    gantt = _csv(_download(app, downloads, "Download CSV · anonymized"))
     assert not set(gantt.astype(str).to_numpy().ravel()) & originals
     assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
 
     app.switch_page("views/export.py").run()
     _ok(app)
     # the Gantt's anonymizer read one update; the Power BI tables cover the series: prepared again
-    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    next(b for b in app.button if b.label == "Prepare anonymized downloads").click().run()
     _ok(app)
-    tables = _zip(_download(app, downloads, "Download PARQUET tables (.zip) · anonymised"))
+    tables = _zip(_download(app, downloads, "Download PARQUET tables (.zip) · anonymized"))
     activity = pd.read_parquet(__import__("io").BytesIO(tables["fact_activity.parquet"]))
     assert not set(activity.astype(str).to_numpy().ravel()) & originals
     assert len(activity) == len(store.history)  # same rows, renamed
@@ -918,14 +918,14 @@ def test_a_page_download_reads_its_update_only_and_keeps_the_series_codes(app, s
     """Preparing the Gantt download reads the update shown, not the series; its codes are those
     of the anonymised XER extract of every file, made later in the same session."""
     app.switch_page("views/gantt.py").run()
-    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    next(b for b in app.button if b.label == "Prepare anonymized downloads").click().run()
     _ok(app)
     shown = app.session_state["gantt_snap"]
     assert list(anonymizers_built(app.session_state)) == [frozenset({store.by_label(shown).source})]
-    gantt = _csv(_download(app, downloads, "Download CSV · anonymised"))
+    gantt = _csv(_download(app, downloads, "Download CSV · anonymized"))
 
     app.switch_page("views/export.py").run()
-    next(b for b in app.button if b.label == "Build anonymised extract").click().run()
+    next(b for b in app.button if b.label == "Build anonymized extract").click().run()
     _ok(app)
     series = _session_anonymizer(app)
     assert len(anonymizers_built(app.session_state)) == 2  # the update alone, then every file
@@ -951,9 +951,9 @@ def test_audit_downloads_follow_the_anonymous_exports_switch(app, store, downloa
     app.selectbox(key="audit_check:P6").set_value("P6-01").run()
     _ok(app)
     assert not [b for b in app.get("download_button") if b.proto.label == "Download CSV"]
-    next(b for b in app.button if b.label == "Prepare anonymised downloads").click().run()
+    next(b for b in app.button if b.label == "Prepare anonymized downloads").click().run()
     _ok(app)
-    counted = _csv(_download(app, downloads, "Download CSV · anonymised"))
+    counted = _csv(_download(app, downloads, "Download CSV · anonymized"))
     assert len(counted) and not set(counted.astype(str).to_numpy().ravel()) & originals
 
     app.sidebar.toggle(key="anon_exports").set_value(False).run()
@@ -1166,7 +1166,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
     """Switch on: nothing before Prepare; then new IDs in the long file, the zip and the notes."""
     snapshot, results = _open_health(app, store, "DCMA")
     assert not [b for b in app.get("download_button") if b.proto.label.startswith("All sets")]
-    long, archive = _sets_files(app, downloads, " · anonymised")
+    long, archive = _sets_files(app, downloads, " · anonymized")
     originals = {v for v in set(store.history["task_code"]) | set(store.history["task_name"]) if isinstance(v, str)}
     files = list(store.labels)
     tables = [long, *(_csv(data) for data in archive.values())]
@@ -1179,7 +1179,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
         ]
     note = long.loc[long["check_id"] == "DCMA-12", "note"].iloc[0]
     assert "wd on XA" in note  # the activity is named, by its new ID
-    summary = _csv(_download(app, downloads, "Summary (CSV) · anonymised"))
+    summary = _csv(_download(app, downloads, "Summary (CSV) · anonymized"))
     assert "wd on XA" in summary.loc[summary["id"] == "DCMA-12", "note"].iloc[0]
     assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
 

@@ -75,7 +75,7 @@ ui.kpis(
             None,
             "inverse",
         ),
-        ("Labour hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
+        ("Labor hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
         ("Open critical", int(node["critical"])),
     ]
 )

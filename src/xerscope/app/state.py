@@ -220,7 +220,7 @@ def sidebar_loader() -> None:
             value=True,
             key="anon_exports",
             help="Downloads (CSV, Power BI, Debug) carry new Activity IDs and names, other text emptied, "
-            "as in the anonymised XER extract. The pages always show the files' own data.",
+            "as in the anonymized XER extract. The pages always show the files' own data.",
         )
         sidebar.checkbox(
             "Costs",
@@ -299,7 +299,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
-    sidebar.caption(f"{baseline.label} · {len(baseline.frame)} activities · {baseline.bac_hours:,.0f} labour h")
+    sidebar.caption(f"{baseline.label} · {len(baseline.frame)} activities · {baseline.bac_hours:,.0f} labor h")
     baseline_date, first_date = baseline.snapshot.data_date, store.first.data_date
     if baseline_date is not None and first_date is not None and baseline_date > first_date:
         sidebar.warning(
@@ -606,12 +606,12 @@ def memo(key: tuple, function, *arguments):
     return cache[full_key]
 
 
-ANONYMISED = " · anonymised"  # suffix of an anonymised download's label
-PREPARE_LABEL = "Prepare anonymised downloads"
+ANONYMISED = " · anonymized"  # suffix of an anonymized download's label
+PREPARE_LABEL = "Prepare anonymized downloads"
 
 
 def anonymous_exports(session: MutableMapping | None = None) -> bool:
-    """The sidebar switch: downloads anonymised (default) or in the files' own names."""
+    """The sidebar switch: downloads anonymized (default) or in the files' own names."""
     session = st.session_state if session is None else session
     return session.get("anon_exports", True)
 
@@ -662,7 +662,7 @@ def anonymizer(
     if not prepare:
         return None
     key = session.setdefault("_anon_key", secrets.token_bytes(32))
-    with st.spinner(f"Reading {len(wanted)} file(s) for the anonymised downloads…"):
+    with st.spinner(f"Reading {len(wanted)} file(s) for the anonymized downloads…"):
         anonymous = Anonymizer.from_raws(
             (parse_bytes(data, source=name) for name, data in items if name in wanted), key=key
         )
@@ -734,7 +734,7 @@ def show_download(
     key: str | None = None,
     **button,
 ) -> None:
-    """The download button of ``fetched`` (labelled anonymised when it is), or the refusal."""
+    """The download button of ``fetched`` (labelled anonymized when it is), or the refusal."""
     if fetched.refused:
         st.error(fetched.refused, icon=":material/block:")
         return
@@ -786,7 +786,7 @@ def csv_download(
     sources: Iterable[str] | None = None,
     sensitive: bool = True,
 ) -> None:
-    """A table as CSV, anonymised or not as the sidebar switch says; ``sources`` are the files the
+    """A table as CSV, anonymized or not as the sidebar switch says; ``sources`` are the files the
     table comes from, the only ones read to anonymise it. ``sensitive=False``: a table with no
     schedule data, always as is."""
     if not sensitive:
