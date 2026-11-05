@@ -406,7 +406,7 @@ standard = available[standard_id or next(iter(available))]
 baseline = baseline_for(snapshot)
 
 with top:
-    page_header("Schedule health", store, snapshot, baseline)
+    page_header("Schedule health", store, snapshot)
     baseline_warnings(snapshot, baseline)
 reference = f" · [reference]({standard.source})" if standard.source.startswith("http") else ""
 st.caption((standard.description or standard.name) + reference)

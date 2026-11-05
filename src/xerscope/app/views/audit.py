@@ -168,7 +168,6 @@ with top:
         "Audit",
         store,
         snapshot,
-        baseline,
         lead="The sets behind a check, and the check re-run with other settings. Changes here stay on this "
         "page: Schedule health keeps the loaded standards.",
     )

@@ -322,7 +322,6 @@ with top:
         "Earned value",
         store,
         snapshot,
-        baseline,
         lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )

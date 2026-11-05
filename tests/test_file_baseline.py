@@ -594,3 +594,17 @@ def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_close
     at.run()
     assert not at.get("file_uploader") and isinstance(at.session_state["fallback"], Baseline)
     assert at.session_state["bl_file"][0] == "bl.xer"
+
+
+def test_the_banner_names_the_baseline_the_page_uses_when_the_file_baseline_cannot_be_read(tmp_path, monkeypatch):
+    """a.xer names a usable P6 Project Baseline; if it cannot be built, the update falls back, and the
+    banner says so as the page does instead of "in file"."""
+    from xerscope.app import state
+
+    at = _series(tmp_path, monkeypatch)
+    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
+    monkeypatch.setattr(state, "_file_baseline", lambda snapshot: None)  # as when the copy fails to parse
+    at = _health(at.run(), "2026-03-02")
+    label = at.button(key="context_banner").label.replace("\\", "")
+    assert " · BL fallback, planned dates · " in label
+    assert "Baseline used for 2026-03-02: fallback (Planned dates in each file (target_*))" in _banner(at)

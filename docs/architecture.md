@@ -121,8 +121,8 @@ chosen for the user), gives the baseline of the updates whose file has no usable
 readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
 `baseline: <source>`. Every page opens with a one-line context banner (`state.page_header`): the projects
-read, the data date of the update shown, where its baseline comes from (in file, fallback, planned dates, a
-loaded update, a separate file, none), the EV basis, costs on or off, and the count of files and projects; its
+read, the data date of the update shown, where the baseline `baseline_for` gives it comes from (in file,
+fallback, planned dates, a loaded update, a separate file, none), the EV basis, costs on or off, and the count of files and projects; its
 help reads "Baseline used for <update>: <source>", and pressing it opens the Files and baseline window. Health,
 Audit and Earned value add the baseline's warnings under it (`state.baseline_warnings`; the Earned value curves
 measure every update against the baseline of the one shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable

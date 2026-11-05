@@ -38,7 +38,6 @@ with top:
         "Gantt & WBS",
         store,
         snapshot,
-        baseline,
         lead="Bars are coloured by float; the outline behind each bar is the same task in the "
         "comparison you pick, so slippage shows as the bar leaving its outline.",
     )

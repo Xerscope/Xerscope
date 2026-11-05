@@ -601,28 +601,26 @@ def _files_count(store: SnapshotStore) -> str:
     return f"{_count(len(store), 'file')} · {projects}"
 
 
-def _baseline_kind(snapshot: Snapshot) -> str:
-    """Where the baseline ``snapshot`` is measured against comes from, as the choice in force applies to it:
-    its file's P6 Project Baseline, the fallback, planned dates, a loaded update, a separate file, none."""
-    in_force = st.session_state.get("baseline")
-    if in_force == BL_EACH:
-        if snapshot.file_baseline.usable:
-            return "in file"
-        if st.session_state.get("fallback") is None:
-            return "none"
-        return f"fallback, {_baseline_short(st.session_state.get('fallback_choice', BL_NONE))}"
-    if in_force is None:
+def _baseline_kind(baseline: Baseline | None) -> str:
+    """Where ``baseline`` (``baseline_for`` an update) comes from: its file's P6 Project Baseline, the
+    fallback (``_fallback_baseline`` names it so), planned dates, a loaded update, a separate file, none."""
+    if baseline is None:
         return "none"
+    if st.session_state.get("baseline") == BL_EACH:
+        if baseline.source.startswith("fallback"):
+            return f"fallback, {_baseline_short(st.session_state.get('fallback_choice', BL_NONE))}"
+        return "in file"
     return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
 
 
-def context_banner(store: SnapshotStore, snapshot: Snapshot, baseline: Baseline | None = None) -> None:
+def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
     """One line under a page title: what the page is computed from (projects read, data date of the update
-    shown, baseline used for it, EV basis, costs, files). ``baseline``: the one the page measures against,
-    named in full in the help. Pressing it opens the Files and baseline window."""
+    shown, the baseline ``baseline_for`` gives it, EV basis, costs, files), the baseline's source in full in
+    the help. Pressing it opens the Files and baseline window."""
     codes = list(dict.fromkeys(s.project_code for s in store))
     projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
-    kind = _baseline_kind(snapshot)
+    baseline = baseline_for(snapshot)
+    kind = _baseline_kind(baseline)
     basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
     costs = "on" if costs_shown() else "off"
     label = (
@@ -649,12 +647,10 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot, baseline: Baseline 
     )
 
 
-def page_header(
-    title: str, store: SnapshotStore, snapshot: Snapshot | None = None, baseline: Baseline | None = None, lead: str = ""
-) -> None:
+def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = None, lead: str = "") -> None:
     """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
     st.title(title)
-    context_banner(store, snapshot or store.latest, baseline)
+    context_banner(store, snapshot or store.latest)
     if lead:
         st.caption(lead)
 
