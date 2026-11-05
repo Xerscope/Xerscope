@@ -334,6 +334,182 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     return totals, split.rename_axis("status").reset_index()
 
 
+PV_P6_TOLERANCE_HR = 0.01  # P6 shows two decimals: below this a difference is rounding
+PV_P6_PCT_TOLERANCE = 0.01  # same, in percentage points of Schedule % Complete
+PCT_BANDS = ["0", "in progress", "100", "absent"]
+PV_P6_OPTIONAL = ["status", "bl_hr", "bl_start", "bl_finish", "start", "finish"]
+PV_P6_REQUIRED = ["pv_hr", "ev_hr", "schedule_pct"]
+
+
+@dataclass
+class PvComparison:
+    """``pv_p6_comparison``: four frames without activity code or name, and the per-activity list."""
+
+    totals: pd.DataFrame
+    cross: pd.DataFrame
+    causes: pd.DataFrame
+    by_calendar: pd.DataFrame
+    activities: pd.DataFrame
+
+
+def _pct_band(percent: pd.Series, present: pd.Series) -> pd.Series:
+    rounded = percent.round(2)
+    band = np.select([rounded <= 0, rounded >= 100], ["0", "100"], "in progress")
+    return pd.Series(np.where(present, band, "absent"), index=percent.index)
+
+
+def pv_p6_comparison(
+    snapshot: Snapshot,
+    baseline: Baseline,
+    p6: pd.DataFrame,
+    tolerance_hr: float = PV_P6_TOLERANCE_HR,
+    p6_total_pv_hr: float | None = None,
+) -> PvComparison:
+    """Diagnostic, not used by any KPI: PV and EV labour units of ``earned`` against the same columns
+    of a P6 Activities export, joined on Activity ID. ``p6`` is indexed by task_code with ``pv_hr``,
+    ``ev_hr`` and ``schedule_pct``, and optionally ``PV_P6_OPTIONAL`` columns (``bl_hr`` the BL
+    labour units; the others, P6 text shown as is). A blank value counts as 0. An update activity
+    the baseline does not know has PV and EV 0 here, as in ``earned``. ``*_gap_hr`` = xerscope - P6;
+    an activity is "in gap" when its PV or its EV gap exceeds ``tolerance_hr``.
+
+    Returns, in this order:
+    - ``totals``: one row per group with the activities, PV and EV on both sides and the gap. The
+      groups all = matched + only P6 + only xerscope (xerscope = baseline plus update activities);
+      "in update, not in baseline" and "in baseline, not in update" cut across matched / only.
+      With ``p6_total_pv_hr`` (the project PV total read in P6, typed by hand), a last row
+      "P6 total - export rows": that total less the PV of the export's rows, the PV P6 counts
+      on activities its view does not show.
+    - ``cross``: the PV gap by Schedule % band of xerscope x P6 (``absent``: no value on that side).
+    - ``causes``: the count of activities in gap by candidate cause (several can hold for one
+      activity; ``bl_hr_differs`` is blank without the BL hours column).
+    - ``by_calendar``: the matched activities by calendar (``clndr_id``: the baseline's, else the update's).
+    - ``activities``: the activities in gap, largest gap first. Only this one holds codes and names.
+    """
+    values = earned(snapshot, baseline)
+    in_update_index = snapshot.by_code.index
+    codes = values.index.union(in_update_index)
+    values, update = values.reindex(codes), snapshot.by_code.reindex(codes)
+    in_baseline, in_update = codes.isin(baseline.frame.index), codes.isin(in_update_index)
+    ours = pd.DataFrame(
+        {
+            "task_name": update["task_name"].fillna(values["bl_name"]),
+            "status": update["status"].where(in_update, "not in update"),
+            "not_started": in_update & ~update["is_started"].fillna(True).astype(bool),
+            "bl_labor_hr": values["bl_labor_hr"].fillna(0.0),
+            "schedule_pct": values["schedule_pct"],
+            "pv_hr": values["pv_hr"].fillna(0.0),
+            "ev_hr": values["ev_hr"].fillna(0.0),
+            "bl_start": values["bl_start"],
+            "bl_finish": values["bl_finish"],
+            "start": update["start"],
+            "finish": update["finish"],
+        }
+    )
+    theirs = p6.rename(columns={"pv_hr": "p6_pv_hr", "ev_hr": "p6_ev_hr", "schedule_pct": "p6_schedule_pct"}).rename(
+        columns={name: f"p6_{name}" for name in PV_P6_OPTIONAL}
+    )
+    joined = ours.join(theirs, how="outer")
+    in_ours, in_p6 = joined.index.isin(ours.index), joined.index.isin(p6.index)
+    joined = joined.assign(
+        in_baseline=pd.Series(in_baseline, index=ours.index).reindex(joined.index, fill_value=False),
+        in_update=pd.Series(in_update, index=ours.index).reindex(joined.index, fill_value=False),
+    )
+    in_baseline, in_update = joined["in_baseline"].to_numpy(), joined["in_update"].to_numpy()
+    for column in ["pv_hr", "ev_hr", "p6_pv_hr", "p6_ev_hr"]:
+        joined[column] = joined[column].fillna(0.0)
+    joined["pv_gap_hr"] = joined["pv_hr"] - joined["p6_pv_hr"]
+    joined["ev_gap_hr"] = joined["ev_hr"] - joined["p6_ev_hr"]
+    in_gap = (joined["pv_gap_hr"].abs() > tolerance_hr) | (joined["ev_gap_hr"].abs() > tolerance_hr)
+    matched = in_ours & in_p6
+
+    groups = {
+        "all": np.ones(len(joined), dtype=bool),
+        "matched": matched,
+        "only P6": ~in_ours,
+        "only xerscope": ~in_p6,
+        "in update, not in baseline": in_update & ~in_baseline,
+        "in baseline, not in update": in_baseline & ~in_update,
+    }
+    totals = pd.DataFrame(
+        [
+            {
+                "group": name,
+                "activities": int(mask.sum()),
+                "pv_xerscope_hr": float(joined.loc[mask, "pv_hr"].sum()),
+                "pv_p6_hr": float(joined.loc[mask, "p6_pv_hr"].sum()),
+                "pv_gap_hr": float(joined.loc[mask, "pv_gap_hr"].sum()),
+                "ev_xerscope_hr": float(joined.loc[mask, "ev_hr"].sum()),
+                "ev_p6_hr": float(joined.loc[mask, "p6_ev_hr"].sum()),
+                "ev_gap_hr": float(joined.loc[mask, "ev_gap_hr"].sum()),
+            }
+            for name, mask in groups.items()
+        ]
+    ).astype({"activities": "Int64"})
+    if p6_total_pv_hr is not None:
+        outside = p6_total_pv_hr - float(p6["pv_hr"].fillna(0.0).sum())
+        totals.loc[len(totals)] = {"group": "P6 total - export rows", "pv_p6_hr": outside}
+
+    ours_band = _pct_band(joined["schedule_pct"].fillna(0.0), in_baseline)
+    p6_band = _pct_band(joined["p6_schedule_pct"].fillna(0.0), in_p6)
+    cross = (
+        joined.assign(xerscope_pct_band=ours_band, p6_pct_band=p6_band)
+        .groupby(["xerscope_pct_band", "p6_pct_band"])
+        .agg(activities=("pv_hr", "size"), pv_xerscope_hr=("pv_hr", "sum"), pv_p6_hr=("p6_pv_hr", "sum"),
+             pv_gap_hr=("pv_gap_hr", "sum"))
+        .reset_index()
+    )  # fmt: skip
+    for column in ["xerscope_pct_band", "p6_pct_band"]:
+        cross[column] = pd.Categorical(cross[column], PCT_BANDS)
+    cross = cross.sort_values(["xerscope_pct_band", "p6_pct_band"]).reset_index(drop=True)
+    for column in ["xerscope_pct_band", "p6_pct_band"]:
+        cross[column] = cross[column].astype(str)
+
+    pct_differs = (
+        matched
+        & in_baseline
+        & ((joined["schedule_pct"] - joined["p6_schedule_pct"].fillna(0.0)).abs() > PV_P6_PCT_TOLERANCE)
+    )
+    bl_differs = pd.NA
+    if "p6_bl_hr" in joined:
+        bl_differs = int((in_gap & matched & ((joined["bl_labor_hr"] - joined["p6_bl_hr"]).abs() > tolerance_hr)).sum())
+    causes = pd.DataFrame(
+        [
+            {
+                "gap_activities": int(in_gap.sum()),
+                "pv_gap_hr": float(joined.loc[in_gap, "pv_gap_hr"].sum()),
+                "ev_gap_hr": float(joined.loc[in_gap, "ev_gap_hr"].sum()),
+                "only_p6": int((in_gap & ~in_ours).sum()),
+                "only_xerscope": int((in_gap & ~in_p6).sum()),
+                "bl_hr_differs": bl_differs,
+                "schedule_pct_differs": int((in_gap & pct_differs).sum()),
+                "not_started_in_update": int((in_gap & joined["not_started"].fillna(False).astype(bool)).sum()),
+            }
+        ]
+    ).astype({"bl_hr_differs": "Int64"})
+
+    own_calendar = baseline.frame["bl_clndr_id"].reindex(joined.index)
+    calendar = own_calendar.where(joined["in_baseline"], update["clndr_id"].reindex(joined.index))
+    by_calendar = (
+        joined.loc[matched]
+        .assign(clndr_id=calendar[matched], in_gap=in_gap[matched])
+        .groupby("clndr_id", dropna=False)
+        .agg(matched=("pv_hr", "size"), in_gap=("in_gap", "sum"), pv_xerscope_hr=("pv_hr", "sum"),
+             pv_p6_hr=("p6_pv_hr", "sum"), pv_gap_hr=("pv_gap_hr", "sum"), ev_xerscope_hr=("ev_hr", "sum"),
+             ev_p6_hr=("p6_ev_hr", "sum"), ev_gap_hr=("ev_gap_hr", "sum"))
+        .reset_index()
+    )  # fmt: skip
+
+    listed = [
+        "task_name", "status", "p6_status", "bl_labor_hr", "p6_bl_hr", "schedule_pct", "p6_schedule_pct",
+        "pv_hr", "p6_pv_hr", "pv_gap_hr", "ev_hr", "p6_ev_hr", "ev_gap_hr", "start", "finish", "p6_start",
+        "p6_finish", "bl_start", "bl_finish", "p6_bl_start", "p6_bl_finish",
+    ]  # fmt: skip
+    activities = joined.loc[in_gap, [column for column in listed if column in joined]]
+    size = np.maximum(activities["pv_gap_hr"].abs(), activities["ev_gap_hr"].abs()).to_numpy()
+    activities = activities.iloc[np.argsort(-size, kind="stable")].rename_axis("task_code").reset_index()
+    return PvComparison(totals, cross, causes, by_calendar, activities)
+
+
 @dataclass
 class EvPoint:
     data_date: pd.Timestamp

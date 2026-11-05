@@ -7,13 +7,26 @@ the P6 standard. Nothing here computes a date or a count; the page shows these f
 
 from __future__ import annotations
 
+import csv
+import io
+import math
+import re
 from collections.abc import Iterable
 
 import pandas as pd
 
 from xerscope.analysis.baseline import Baseline
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
-from xerscope.analysis.evm import etc_settings, etc_technique_counts, pv_labor_check
+from xerscope.analysis.evm import (
+    PV_P6_OPTIONAL,
+    PV_P6_REQUIRED,
+    PV_P6_TOLERANCE_HR,
+    PvComparison,
+    etc_settings,
+    etc_technique_counts,
+    pv_labor_check,
+    pv_p6_comparison,
+)
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
@@ -418,7 +431,7 @@ def assignment_dates_table(snapshot: Snapshot) -> pd.DataFrame:
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
-    """The nine blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
+    """The blocks 1 to 9, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
     ev_settings = etc_settings(snapshot)
     pv_totals, pv_by_status = pv_labor_check(snapshot, baseline)
@@ -442,3 +455,136 @@ def diagnostic_frames(
         "09_pv_labor_by_status": pv_by_status,
         "09_assignment_dates": assignment_dates_table(snapshot),
     }
+
+
+# Block 10: PV labour units against a P6 Activities export. Field -> header names accepted (matched
+# without case or extra spaces), required. The page offers a choice of column for a field not found.
+P6_EXPORT_FIELDS = {
+    "task_code": (("Activity ID",), True),
+    "pv_hr": (("Planned Value Labor Units",), True),
+    "ev_hr": (("Earned Value Labor Units",), True),
+    "schedule_pct": (("Schedule % Complete",), True),
+    "bl_hr": (("BL Project Labor Units", "Budgeted Labor Units"), False),
+    "status": (("Activity Status",), False),
+    "bl_start": (("BL Project Start",), False),
+    "bl_finish": (("BL Project Finish",), False),
+    "start": (("Planned Start",), False),
+    "finish": (("Planned Finish",), False),
+}
+assert set(PV_P6_OPTIONAL) | {"task_code", *PV_P6_REQUIRED} == set(P6_EXPORT_FIELDS)
+P6_NUMBER_FIELDS = ["pv_hr", "ev_hr", "schedule_pct", "bl_hr"]
+P6_EXPORT_SUFFIXES = ["csv"]
+_THOUSANDS_COMMA = re.compile(r"-?\d{1,3}(,\d{3})+")
+_P6_DATE_FLAG = re.compile(r"\s*[A*]$")  # P6 marks actual dates "A" and constraint dates "*"
+
+
+def _header(name: object) -> str:
+    return " ".join(str(name).split())
+
+
+def _table(rows: list[list[str]]) -> pd.DataFrame:
+    rows = [row for row in rows if any(cell.strip() for cell in row)]
+    if len(rows) < 2:
+        raise ValueError("The export has no header row and data row.")
+    frame = pd.DataFrame(rows[1:], columns=[_header(name) for name in rows[0]], dtype=str)
+    return frame.loc[:, ~frame.columns.duplicated() & (frame.columns != "")]
+
+
+def read_p6_export(name: str, content: bytes) -> pd.DataFrame:
+    """The text cells of a P6 Activities export saved as CSV (comma, semicolon or tab), headers with
+    single spaces. XLSX is not read: no Excel reader is among the dependencies.
+
+    Raises ValueError for any file that is not a CSV table: nothing of the content is in the message.
+    """
+    if not name.lower().endswith(".csv"):
+        raise ValueError("Only .csv exports are read: save the P6 view as CSV.")
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("cp1252", errors="replace")
+    try:
+        raw = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str, keep_default_na=False)
+        return _table([list(raw.columns)] + raw.to_numpy().tolist())
+    except (ValueError, csv.Error, pd.errors.ParserError) as exc:
+        raise ValueError("The file cannot be read as a CSV table.") from exc
+
+
+def p6_export_columns(raw: pd.DataFrame, chosen: dict[str, str] | None = None) -> dict[str, str | None]:
+    """Column of ``raw`` for each field of ``P6_EXPORT_FIELDS``: the one ``chosen``, else the first
+    accepted header present, else None."""
+    present = {_header(column).casefold(): column for column in raw.columns}
+    columns: dict[str, str | None] = {}
+    for field, (names, _required) in P6_EXPORT_FIELDS.items():
+        picked = (chosen or {}).get(field)
+        found = [present[name.casefold()] for name in names if name.casefold() in present]
+        columns[field] = picked if picked in raw.columns else (found[0] if found else None)
+    return columns
+
+
+def p6_number(text: object) -> float:
+    """A P6 number as displayed: thousands separator (1,234.5 or 1.234,5), decimal comma (12,5),
+    "%" and "h" suffix, spaces. NaN where blank or unreadable."""
+    cleaned = re.sub(r"[\s\u00a0\u202f%]", "", str(text)).removesuffix("h").removesuffix("H")
+    if "," in cleaned and "." in cleaned:
+        decimal = "," if cleaned.rfind(",") > cleaned.rfind(".") else "."
+        cleaned = cleaned.replace("." if decimal == "," else ",", "").replace(decimal, ".")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", "") if _THOUSANDS_COMMA.fullmatch(cleaned) else cleaned.replace(",", ".")
+    try:
+        number = float(cleaned)
+    except ValueError:
+        return float("nan")
+    return number if math.isfinite(number) else float("nan")
+
+
+def p6_export_frame(raw: pd.DataFrame, columns: dict[str, str | None]) -> tuple[pd.DataFrame, dict[str, int]]:
+    """The export as ``pv_p6_comparison`` reads it, indexed by Activity ID, and what was set aside:
+    ``rows_without_id`` (totals, band rows), ``duplicate_ids`` (the first row is kept) and
+    ``unreadable_values`` (cells that are not blank and not a number). ValueError if a required
+    column is missing."""
+    missing = [field for field, (_names, required) in P6_EXPORT_FIELDS.items() if required and not columns.get(field)]
+    if missing:
+        raise ValueError(f"Column to choose: {', '.join(missing)}.")
+    used = {field: column for field, column in columns.items() if column}
+    frame = raw[list(used.values())].set_axis(list(used), axis=1)
+    frame = frame.assign(task_code=frame["task_code"].str.strip())
+    with_id = frame[frame["task_code"] != ""]
+    unique = with_id[~with_id["task_code"].duplicated()]
+    unreadable = 0
+    for field in P6_NUMBER_FIELDS:
+        if field in unique:
+            text = unique[field].str.strip()
+            number = text.map(p6_number)
+            unreadable += int((number.isna() & (text != "")).sum())
+            unique = unique.assign(**{field: number})
+    for field in ["bl_start", "bl_finish", "start", "finish"]:
+        if field in unique:
+            unique = unique.assign(**{field: unique[field].str.replace(_P6_DATE_FLAG, "", regex=True)})
+    notes = {
+        "rows_without_id": len(frame) - len(with_id),
+        "duplicate_ids": len(with_id) - len(unique),
+        "unreadable_values": unreadable,
+    }
+    return unique.set_index("task_code"), notes
+
+
+def pv_p6_frames(comparison: PvComparison) -> dict[str, pd.DataFrame]:
+    """Block 10 as the files of the diagnostic zip: counts and hours, no activity code or name."""
+    return {
+        "10_pv_p6_totals": comparison.totals,
+        "10_pv_p6_by_schedule_pct": comparison.cross,
+        "10_pv_p6_gap_causes": comparison.causes,
+        "10_pv_p6_by_calendar": comparison.by_calendar,
+    }
+
+
+def compare_p6_export(
+    snapshot: Snapshot,
+    baseline: Baseline,
+    raw: pd.DataFrame,
+    columns: dict[str, str | None],
+    tolerance_hr: float = PV_P6_TOLERANCE_HR,
+    p6_total_pv_hr: float | None = None,
+) -> tuple[PvComparison, dict[str, int]]:
+    p6, notes = p6_export_frame(raw, columns)
+    return pv_p6_comparison(snapshot, baseline, p6, tolerance_hr, p6_total_pv_hr), notes

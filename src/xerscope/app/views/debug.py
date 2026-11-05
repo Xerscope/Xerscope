@@ -1,3 +1,4 @@
+import hashlib
 from functools import partial
 
 import streamlit as st
@@ -153,19 +154,99 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
     )
     table(frames["09_assignment_dates"])
 
+NONE = "(none)"
+p6_frames: dict = {}
+p6_key = None
+with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
+    st.caption(
+        "Diagnostic, not used by any KPI. Upload the Activities view of P6 saved as CSV (labour units in hours; "
+        "XLSX is not read) with Activity ID, Planned Value Labor Units, Earned Value Labor Units and Schedule % "
+        "Complete; optional: BL Project Labor Units, Activity Status, BL Project Start / Finish, Planned Start / "
+        "Finish. Joined on Activity ID with PV and EV of every baseline activity, deleted from the update or not, "
+        "and the update activities the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
+        "counts as 0. The file stays in this session's memory; the activity list is not part of the zip."
+    )
+    upload = st.file_uploader("P6 Activities export", type=diagnostic.P6_EXPORT_SUFFIXES, key="debug_p6_export")
+    if upload is not None and (baseline is None or snapshot.data_date is None):
+        st.caption("No baseline or no data date: nothing to compare.")
+    elif upload is not None:
+        content = upload.getvalue()
+        try:
+            raw = diagnostic.read_p6_export(upload.name, content)
+        except ValueError as exc:
+            st.error(str(exc), icon=":material/block:")
+            raw = None
+        if raw is not None:
+            columns = diagnostic.p6_export_columns(raw)
+            chosen = {}
+            for field, column in columns.items():
+                if column is None:
+                    required = diagnostic.P6_EXPORT_FIELDS[field][1]
+                    options = list(raw.columns) if required else [NONE, *raw.columns]
+                    picked = st.selectbox(
+                        f"Column not found: {field}", options, index=None if required else 0, key=f"debug_p6_{field}"
+                    )
+                    if picked is not None and picked != NONE:
+                        chosen[field] = picked
+            columns = diagnostic.p6_export_columns(raw, chosen)
+            tolerance = st.number_input(
+                "Gap tolerance (h)", min_value=0.0, value=diagnostic.PV_P6_TOLERANCE_HR, step=0.01, format="%.2f",
+                key="debug_p6_tolerance",
+            )  # fmt: skip
+            p6_total = st.number_input(
+                "PV labor units total shown by P6 (h, optional)", value=None, step=1.0, format="%.2f",
+                key="debug_p6_total",
+            )  # fmt: skip
+            if any(columns[field] is None for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required):
+                st.caption("Choose the missing columns to compare.")
+            else:
+                digest = hashlib.sha256(content).hexdigest()
+                p6_key = (digest, tuple(columns.items()), tolerance, p6_total)
+                comparison, notes = memo(
+                    ("debug_p6", snapshot.source, str(snapshot.data_date), *p6_key),
+                    diagnostic.compare_p6_export,
+                    snapshot,
+                    baseline,
+                    raw,
+                    columns,
+                    tolerance,
+                    p6_total,
+                )
+                p6_frames = diagnostic.pv_p6_frames(comparison)
+                if any(notes.values()):
+                    st.warning(
+                        f"Set aside: {notes['rows_without_id']} rows without Activity ID, "
+                        f"{notes['duplicate_ids']} repeated Activity IDs (first kept), "
+                        f"{notes['unreadable_values']} unreadable numbers (counted as 0).",
+                        icon=":material/warning:",
+                    )
+                st.caption(
+                    "Totals by group (all = matched + only P6 + only xerscope; the next two cut across them). "
+                    "P6 total - export rows: the total typed above less the PV of the export's rows."
+                )
+                table(comparison.totals)
+                st.caption("PV gap by Schedule % band, xerscope against P6 (absent: no value on that side)")
+                table(comparison.cross)
+                st.caption("Activities in gap, by candidate cause (several can hold for one activity)")
+                table(comparison.causes)
+                st.caption("Matched activities by calendar (clndr_id)")
+                table(comparison.by_calendar)
+                st.caption("Activities in gap (PV or EV), largest gap first. On screen only: not in the zip.")
+                table(comparison.activities, max_height=480)
+
 
 def zip_tag(anonymous: bool) -> tuple:
-    """What the zip is built from, as the frames' memo key: files, projects, baseline, EV basis, update."""
-    return (*data_identity(), snapshot.source, str(snapshot.data_date), repr(p6_standard), anonymous)
+    """What the zip is built from: files, projects, baseline, EV basis, update, P6 export of block 10."""
+    return (*data_identity(), snapshot.source, str(snapshot.data_date), repr(p6_standard), anonymous, p6_key)
 
 
 def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
     fetched = fetch(
         st.session_state,
-        lambda: zip_frames(frames, "csv"),
+        lambda: zip_frames({**frames, **p6_frames}, "csv"),
         lambda anonymizer: anonymizer.zip_frames(
-            diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True)
+            {**diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True), **p6_frames}
         ),
         sources,
         prepare=True,
@@ -176,8 +257,9 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 9 as CSV. With anonymous exports on, Task IDs, resource codes and WBS codes are renamed "
-    "as in the anonymized XER extract; the tables hold no name or project name. Dates are left as they are.",
+    "Blocks 1 to 9 as CSV, and block 10 without its activity list when an export is loaded. With anonymous "
+    "exports on, Task IDs, resource codes and WBS codes are renamed as in the anonymized XER extract; the "
+    "tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)
