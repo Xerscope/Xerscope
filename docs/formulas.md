@@ -67,6 +67,10 @@ to 2 decimals. Pinned by `test_reference.py::test_percent_complete_matches_p6_ex
   A timestamp in non-working time counts as the start of the next working period.
 - `working_days(a, b)` = `work_hours(a, b) / hours_per_day` where `hours_per_day` is
   `CALENDAR.day_hr_cnt`, not the length of the parsed day.
+- Every hours-to-days division (`_d` columns, `working_days`, the day thresholds of DCMA-08 and
+  06A506c) goes through `calendar.hours_to_days`, rounded to 1e-6 day: P6 stores N days as
+  N x `day_hr_cnt` in decimal hours, and 360.8 h / 8.2 is 44.00000000000001 in binary floating
+  point, which a "greater than 44 working days" test would count.
 - "wd" in this document = working days of the calendar named for that quantity.
   "Project calendar" = `PROJECT.clndr_id`, else the first calendar in the file, else the
   Monday–Friday 8 h default (`Snapshot.calendar()`).

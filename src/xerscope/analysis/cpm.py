@@ -837,7 +837,7 @@ class _Run:
         axis = self.cal_ax[code]
         lower_start = axis.snap_start(max(start_bounds))
         finish_bound = max(finish_bounds) if finish_bounds else None
-        starts, durations = [], {}
+        starts, durations, expected_applies = [], {}, False
         for assignment in self.driving(code):
             duration = self.base_minutes(code, assignment) + extra_minutes
             assignment_start = assignment.axis.snap_start(
@@ -854,6 +854,7 @@ class _Run:
                 # the placement keeps the file's remaining duration (H14-05 A1040), and an
                 # FF / SF bound later than it wins, as for task-dependent work
                 duration = float(assignment.axis.between(assignment_start, expected_date))
+                expected_applies = True
             durations[assignment.taskrsrc_id] = self.assignment_minutes[assignment.taskrsrc_id] = duration
             assignment_finish = (
                 assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
@@ -874,10 +875,7 @@ class _Run:
             )
             self.assignment_early[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
             finishes.append(assignment_finish)
-        if any(
-            durations[assignment.taskrsrc_id] != self.base_minutes(code, assignment) + extra_minutes
-            for assignment in self.driving(code)
-        ):
+        if expected_applies:
             self.duration_override[code] = float(axis.between(start, max(finishes)))  # the backward pass follows
         return start, max(finishes)
 

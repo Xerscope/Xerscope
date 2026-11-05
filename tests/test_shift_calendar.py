@@ -9,7 +9,7 @@ shows in the number. The interval Mon 2026-03-02 08:00 -> Tue 2026-03-03 12:00 i
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, run
-from xerkit import FM, active, hours, snap, todo
+from xerkit import FM, active, clndr_data, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, run_metric
 from xerscope.analysis.changelog import changelog
@@ -177,6 +177,64 @@ def test_06a506c_windows_are_in_days_of_the_activity_calendar(project):
     assert codes(r) == ["SC10", "nearC10", "nearC8"]
 
 
+# --- whole working days on calendars whose hours per day are not binary fractions -----------
+
+
+def calendar(clndr_id: str, hours_per_day: str, afternoon_end: str) -> dict:
+    """Mon-Fri, 08:00-12:00 and 13:00-``afternoon_end``, declared at ``hours_per_day``."""
+    periods = [("08:00", "12:00"), ("13:00", afternoon_end)]
+    week = str(round(5 * float(hours_per_day), 1))
+    data = clndr_data(range(2, 7), periods)
+    return {
+        "clndr_id": clndr_id,
+        "clndr_name": clndr_id,
+        "day_hr_cnt": hours_per_day,
+        "week_hr_cnt": week,
+        "clndr_data": data,
+    }
+
+
+H82 = calendar("82", "8.2", "17:12")  # 41 h week
+H76 = calendar("76", "7.6", "16:36")  # 38 h week
+H74 = calendar("74", "7.4", "16:24")  # 37 h week
+
+
+def test_44_working_days_is_not_greater_than_44_on_an_8_2_hour_calendar():
+    """DCMA-EA PAM 200.1 4.6 / 4.8 count float or baseline duration *greater than* 44 working days,
+    DECM 06A211a high float the same. P6 stores 44 days of an 8.2 h calendar as 360.8 h, and
+    360.8 / 8.2 is 44.00000000000001 in binary floating point: A must not be counted, B (361 h,
+    44.02 d) must."""
+    tasks = [
+        todo("A", clndr_id="82", total_float_hr_cnt="360.8", **hours(0) | {"target_drtn_hr_cnt": "360.8"}),
+        todo("B", clndr_id="82", total_float_hr_cnt="361", **hours(0) | {"target_drtn_hr_cnt": "361"}),
+    ]
+    s = snap(tasks, calendars=[H82])
+    assert s.by_code.at["A", "total_float_d"] == 44
+    assert codes(run(DCMA, "DCMA-06", s)) == ["B"]
+    assert codes(run(DECM, "06A211a", s)) == ["B"]
+    assert codes(run(DCMA, "DCMA-08", s, Baseline.planned(s))) == ["B"]
+
+
+def test_06a506c_boundaries_hold_on_any_calendar():
+    """06A506c counts a start *within* 3 wd of the status date and a remaining duration that moved
+    by 2 wd or less (test above). On a 7.6 h calendar a start 3 wd after the data date is 22.8 h,
+    and 3 * 7.6 = 22.799999999999997; on a 7.4 h calendar 148 h -> 133.2 h is 2 wd, computed
+    2.0000000000000036. Both sit exactly on the boundary and both ride."""
+
+    def update(data_date: str, start: str, remaining: str):
+        tasks = [
+            todo("near", clndr_id="76", early_start_date=start, **hours(8)),
+            active("S", clndr_id="74", remain_drtn_hr_cnt=remaining),
+        ]
+        return snap(tasks, data_date=data_date, calendars=[H76, H74])
+
+    old = update("2026-03-02 08:00", "2026-03-05 08:00", "148")
+    new = update("2026-03-30 08:00", "2026-04-02 08:00", "133.2")
+    store = SnapshotStore([old, new])
+    r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
+    assert codes(r) == ["S", "near"]
+
+
 # --- changelog durations: hours, not days of a changing calendar -----------------------------
 
 
@@ -199,3 +257,17 @@ def test_changelog_lists_an_hours_change_hidden_by_a_calendar_change():
     new = snap([todo("A", clndr_id="C10", **hours(100))], data_date=LAST)
     log = changelog(old, new).query("category == 'Durations'")
     assert sorted(log["change"]) == ["original duration changed", "remaining duration increased"]
+
+
+def test_weekly_finish_shifts_add_up_to_the_total_shift():
+    """Four updates, the finish moving 2 h a week on C8: 0.25 wd each, 1.0 wd in all. Stored
+    rounded to 0.1 (half to even: 0.2) they summed to 0.8 wd, in Power BI as on the page."""
+    finishes = ["2026-03-13 17:00", "2026-03-16 10:00", "2026-03-16 12:00", "2026-03-16 15:00", "2026-03-16 17:00"]
+    data_dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-10 08:00", "2026-03-11 08:00", "2026-03-12 08:00"]
+    updates = [
+        snap([todo("A", early_end_date=finish)], data_date=data_date)
+        for finish, data_date in zip(finishes, data_dates, strict=True)
+    ]
+    shifts = SnapshotStore(updates).summary["finish_shift_wd"]
+    assert shifts.iloc[1:].tolist() == [0.25, 0.25, 0.25, 0.25]
+    assert shifts.sum() == 1.0

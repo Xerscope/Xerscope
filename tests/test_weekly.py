@@ -191,6 +191,19 @@ def test_activities_deleted_since_the_baseline_are_left_out_of_bac_pv_and_ev():
     assert (totals.loc[0, "bac_activity_hr"], totals.loc[0, "pv_activity_hr"]) == pytest.approx((80, 16))
 
 
+def test_ev_uses_the_unrounded_percent_complete():
+    """Oracle, Earned Value Columns of the Activity Table: EV labour units = BL labour units x
+    Performance % Complete; Percent Complete Columns: Duration % Complete = (planned - remaining)
+    / planned x 100. Neither rounds. 30 h planned, 20 h remaining is 1/3: on 30,000 BL hours EV is
+    10,000 h, where 33.33 % gave 9,999 h."""
+    bl = Baseline.from_snapshot(snap([todo("A", target_work_qty="30000")]))
+    now = snap(
+        [active("A", target_drtn_hr_cnt="30", remain_drtn_hr_cnt="20", target_work_qty="30000")],
+        data_date="2026-03-04 08:00",
+    )
+    assert ev_point(now, bl).ev_hr == pytest.approx(10000, rel=1e-12)
+
+
 def test_cpi_divides_by_all_actual_hours_and_ev_per_ac_by_the_baselined_ones():
     """A (in the baseline) earns 20 h for 30 h spent; X (not in the baseline) spent 10 h more.
     P6's Cost Performance Index - Labor Units uses every actual hour: 20 / 40; EV / AC on

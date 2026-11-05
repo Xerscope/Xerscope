@@ -70,6 +70,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       positive here; the 32 positive ones differ from the engine's too (H23-08 A1220).
 - [ ] The corpus is synthetic, one generator, scheduled by 23.12: shapes it never draws
       are untested. No public 24 export exists; 23.12 and 25.12 bracket it.
+- [ ] Sub-minute durations and lags: `TimeAxis.at` rounds half minutes to even, so 7.5 min
+      lands on 7 or 8 depending on the axis anchor (other activities' dates), and the two passes
+      can round apart (negative float on an unconstrained network). The corpus draws whole
+      hours; how P6 rounds below the minute is undocumented.
 
 ## Checks and earned value
 
@@ -100,6 +104,19 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       - 0/100 and 50/50 with a non-physical % complete are untested.
       - The quote for the EV-basis Admin Preference ("When calculating earned value from a
         baseline use") is unverified.
+- [ ] **Hours per day of the `_d` columns**: `CALENDAR.day_hr_cnt` of the activity's
+      calendar. P6 converts with the Admin Preferences hours per time period unless "Use
+      assigned calendar to specify the number of work hours for each time period" is set
+      (Oracle, Time Periods tab - Admin Preferences); the XER does not carry that setting.
+- [ ] DCMA-13 CPLI divides the finish driver's float, measured on its own calendar, by the
+      project calendar's hours per day.
+- [ ] Finish variance sign: shown as finish - BL finish (late positive). P6 Professional's
+      "Variance - BL Project Finish Date" is BL - finish (Finish Date Variance help, Ten Six);
+      EPPM page 47223 writes finish - BL. A P6 report settles it.
+- [ ] INT-08 compares clock times. Across calendars P6 writes an FF 0 successor finish at
+      Mon 16:00 before its predecessor's Mon 17:00 (H20-12 A1170), the same working minute on
+      the successor's calendar; the engine gives Tue 08:00 there, so no false positive shows
+      yet. Compare on the lag calendar when the engine reaches P6's date.
 
 ## App
 
@@ -113,6 +130,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Baseline in each file: building the baseline from the file re-reads the whole export, cached per
       session; costly on ~40 MB files. It also needs the raw bytes kept in session state, which the
       item above would drop.
+- [ ] Display rounding: a value beside its status can contradict it (P6-13 at 0.9545 shows
+      0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
+      (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
+- [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
+- [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
+      fields without a warning; coerced numbers and dates are not counted in the warnings; a
+      duplicate task_id raises a pandas error. None in the 394 reference files.
 
 ## Deployment and CI
 

@@ -113,7 +113,7 @@ def _cmd_info(args: argparse.Namespace) -> int:
         "critical",
         "relationships",
     ]
-    print(store.summary[columns].to_string(index=False))
+    print(store.summary[columns].round({"finish_shift_wd": 1}).to_string(index=False))
     for warning in store.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ...xer.calendar import hours_to_days
 from ...xer.model import CONSTRAINT
 from ..baseline import Baseline
 from ..populations import (
@@ -419,7 +420,7 @@ def _start_near_data_date(snapshot, activities: pd.DataFrame, riding_window_wd: 
     """True where the forecast start is within the riding window after the status date."""
     data_dates = pd.Series(snapshot.data_date, index=activities.index)
     hours = snapshot.work_hours(activities["clndr_id"], data_dates, activities["start"])
-    return (hours >= 0) & (hours <= riding_window_wd * activities["hours_per_day"])
+    return (hours >= 0) & (hours_to_days(hours, activities["hours_per_day"]) <= riding_window_wd)
 
 
 @rule("decm_06a506c_riding_status_date", "%")

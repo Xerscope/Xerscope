@@ -878,6 +878,26 @@ def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
     assert r.flagged.iloc[0]["unsatisfied"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
 
 
+def test_a_constraint_met_in_working_time_is_satisfied():
+    """A constraint date and a recalculated date that name the same working minute meet. The CPM
+    places A's Start On at Tue 00:00 at Tue 08:00 (a date in non-working time is the start of the
+    next working period, docs/formulas.md): compared as clock times, 08:00 is not 00:00 and A was
+    reported unsatisfied (the P6 23.12 corpus has 215 Start on or After and 149 Finish on or Before
+    dates at 00:00). B (Start on or before Mon, held to Tue by its FS predecessor) still is; G's
+    Mandatory Finish at Mon 08:00 is met as written."""
+    s = snap(
+        [
+            todo("P", **hours(8)),
+            todo("A", cstr_type="CS_MSO", cstr_date="2026-03-03 00:00", **hours(8)),
+            todo("B", cstr_type="CS_MSOB", cstr_date="2026-03-02 08:00", **hours(8)),
+            todo("G", cstr_type="CS_MANDFIN", cstr_date="2026-03-09 08:00", **hours(40)),
+        ],
+        [("P", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-07", s)
+    assert codes(r) == ["B"] and counts(r) == (1, 3)
+
+
 def test_unsatisfied_relationship_is_a_link_the_successor_dates_break():
     """B has a Mandatory start on Mon 2026-03-02, while its FS predecessor A (80 h) finishes Fri 2026-03-13 17:00."""
     s = snap(
@@ -1033,6 +1053,22 @@ def test_decm_baseline_and_actual_dates():
     assert codes(run(DECM, "06A505a", now)) == ["P"]
     r = run(DECM, "06A506a", now)
     assert codes(r) == ["F"] and r.denominator == 1  # of the activities with an actual start
+
+
+def test_decm_100_percent_is_100_percent():
+    """06A505b counts tasks showing 100 % complete without an actual finish. Units % Complete is
+    actual / at completion units x 100 (Oracle, Percent Complete Columns of the Activity Table):
+    19,999 of 20,000 h is 99.995 %, not complete. Rounded to 2 decimals it read 100.0 and was
+    counted."""
+    s = snap(
+        [
+            active("U", complete_pct_type="CP_Units", act_work_qty="19999", remain_work_qty="1"),
+            active("C", complete_pct_type="CP_Phys", phys_complete_pct="100"),
+        ]
+    )
+    assert s.by_code.at["U", "pct_complete"] == pytest.approx(99.995, abs=1e-9)
+    r = run(DECM, "06A505b", s)
+    assert codes(r) == ["C"] and r.denominator == 1
 
 
 def test_decm_actuals_changed_needs_the_previous_update():

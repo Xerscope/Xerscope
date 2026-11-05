@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import DATE_FMT, DEFAULT_SETTINGS, Settings
-from .calendar import TimeAxis, WorkCalendar
+from .calendar import TimeAxis, WorkCalendar, hours_to_days
 from .parser import RawXer, XerError
 
 TASK_DATE_COLS = [
@@ -159,7 +159,7 @@ def _parse_date(value: object) -> pd.Timestamp | None:
 
 
 def percent_complete(tasks: pd.DataFrame) -> pd.Series:
-    """Activity % complete as P6 displays it, chosen by ``complete_pct_type``.
+    """Activity % complete as P6 computes it, chosen by ``complete_pct_type``.
 
     - CP_Phys:  phys_complete_pct (entered by the planner)
     - CP_Drtn:  (original - remaining) / original; 100 once the activity is complete
@@ -167,6 +167,10 @@ def percent_complete(tasks: pd.DataFrame) -> pd.Series:
     Where the chosen basis cannot be computed (no duration, no units) the stored
     physical % is used, then the status. Checked against MPXJ's P6 8.4 test export
     and xerlock's rules (tests/test_reference.py).
+
+    Not rounded: Oracle's formulas (Percent Complete and Earned Value Columns of the
+    Activity Table) carry no rounding, and EV and DECM 06A505b use this value. P6 shows
+    two decimals; the pages round for display only.
     """
 
     def number(column: str) -> pd.Series:
@@ -189,7 +193,7 @@ def percent_complete(tasks: pd.DataFrame) -> pd.Series:
         dtype=float,
     )
     percent = percent.fillna(physical).fillna(complete.map({True: 100.0, False: 0.0}))
-    return percent.clip(0, 100).round(2)
+    return percent.clip(0, 100)
 
 
 def _ensure_cols(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -464,7 +468,7 @@ class Snapshot:
     def working_days(self, clndr: pd.Series, start: pd.Series, end: pd.Series) -> pd.Series:
         """``work_hours`` in days of each row's calendar (its hours per day)."""
         hours_per_day = clndr.map(self._calendar_of).map(attrgetter("hours_per_day"))
-        return self.work_hours(clndr, start, end) / hours_per_day.astype(float)
+        return hours_to_days(self.work_hours(clndr, start, end), hours_per_day.astype(float))
 
     def project_working_days(self, start: pd.Timestamp, end: pd.Timestamp) -> float:
         """Working days from ``start`` to ``end`` on the project calendar: for project-level dates
@@ -955,10 +959,14 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     forecast_start, forecast_finish = forecast_dates(tasks)
     tasks["start"] = tasks["act_start_date"].combine_first(forecast_start).combine_first(tasks["target_start_date"])
     tasks["finish"] = tasks["act_end_date"].combine_first(forecast_finish).combine_first(tasks["target_end_date"])
-    tasks["total_float_d"] = (tasks["total_float_hr_cnt"] / tasks["hours_per_day"]).where(~tasks["is_complete"])
-    tasks["free_float_d"] = (tasks["free_float_hr_cnt"] / tasks["hours_per_day"]).where(~tasks["is_complete"])
-    tasks["remaining_d"] = tasks["remain_drtn_hr_cnt"] / tasks["hours_per_day"]
-    tasks["original_d"] = tasks["target_drtn_hr_cnt"] / tasks["hours_per_day"]
+    tasks["total_float_d"] = hours_to_days(tasks["total_float_hr_cnt"], tasks["hours_per_day"]).where(
+        ~tasks["is_complete"]
+    )
+    tasks["free_float_d"] = hours_to_days(tasks["free_float_hr_cnt"], tasks["hours_per_day"]).where(
+        ~tasks["is_complete"]
+    )
+    tasks["remaining_d"] = hours_to_days(tasks["remain_drtn_hr_cnt"], tasks["hours_per_day"])
+    tasks["original_d"] = hours_to_days(tasks["target_drtn_hr_cnt"], tasks["hours_per_day"])
 
     tasks["on_longest_path"] = tasks["driving_path_flag"] == "Y"
     # Critical as P6 defines it for this project: longest path, or total float <= threshold.
@@ -1014,7 +1022,9 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     # to hours based on the predecessor activity's calendar", whatever calendar the lag
     # is then scheduled on (that one is the CPM's business, analysis/cpm.py).
     lag_hours_per_day = relationships["pred_task_id"].map(hours_per_day_by_id)
-    relationships["lag_d"] = relationships["lag_hr"] / lag_hours_per_day.astype(float).fillna(default_hours)
+    relationships["lag_d"] = hours_to_days(
+        relationships["lag_hr"], lag_hours_per_day.astype(float).fillna(default_hours)
+    )
     relationships["is_external"] = relationships["pred_proj_id"].ne(project_id) & relationships["pred_proj_id"].ne("")
     # A predecessor in another project of the same file is named as in external_links:
     # its own Activity ID may also exist here, and would read as a link from that one.
