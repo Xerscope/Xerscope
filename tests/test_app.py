@@ -1341,3 +1341,21 @@ def test_table_column_filters_keep_the_matching_rows(app):
     assert any(caption.value == f"1 of {len(everything):,} rows" for caption in app.caption)
     task_filter().set_value("").run()
     assert len(task_table()) == len(everything)
+
+
+def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, store):
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    assert not any(
+        {"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe
+    )  # nothing picked, no panel
+    app.session_state["gantt_task"] = "C3020"  # what a click on its row stores
+    app.run()
+    _ok(app)
+    history = next(d.value for d in app.dataframe if {"data_date", "original_d"} <= set(d.value.columns))
+    assert len(history) == (store.history["task_code"] == "C3020").sum()  # one row per update holding it
+    assert app.selectbox(key="gantt_task_pick").value == "C3020"
+    app.text_input[0].set_value("no task has this name").run()  # the Gantt search leaves C3020 out
+    _ok(app)
+    assert not any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
+    assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)

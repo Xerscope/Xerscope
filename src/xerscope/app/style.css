@@ -230,3 +230,11 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 /* Tables: no search button in the toolbar. It highlights a matching cell anywhere in the grid;
    rows are filtered per column instead (ui.table, "Filter columns") */
 [data-testid="stElementToolbar"] button[aria-label="Search"] { display: none; }
+
+/* Activity card under the Gantt (task_panel.card_html): one block per group of P6 properties,
+   label and value side by side */
+.xs-card { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem 2rem; }
+.xs-card h4 { margin: 0 0 0.35rem; padding: 0; font-size: 0.9rem; font-weight: 600; }
+.xs-card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.2rem 1rem; margin: 0; }
+.xs-card dt { opacity: 0.7; }
+.xs-card dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }

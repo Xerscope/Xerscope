@@ -48,6 +48,7 @@
 .row > div { padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }
 .row.wbs { background: var(--band); font-weight: 600; cursor: pointer; }
+.row.task, .trow.task { cursor: pointer; } /* a click opens the activity below the chart */
 .row.sel, .trow.sel { box-shadow: inset 3px 0 0 var(--Normal); }
 .row.hover, .trow.hover { background: color-mix(in srgb, var(--Normal) 8%, transparent); }
 .name { display: flex; align-items: center; gap: 4px; }
