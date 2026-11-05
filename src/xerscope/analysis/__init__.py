@@ -5,11 +5,13 @@ from .baseline import Baseline
 from .checks import (
     AnalysisContext,
     CheckResult,
+    StandardScore,
     compare_counts,
     health_history,
     results_frame,
     run_metric,
     run_standard,
+    standard_score,
 )
 from .rules import RULES, Rule, RuleOutput
 from .standards import (
@@ -31,6 +33,7 @@ __all__ = [
     "Rule",
     "RuleOutput",
     "Standard",
+    "StandardScore",
     "builtin_standards",
     "compare_counts",
     "discover_standards",
@@ -40,5 +43,6 @@ __all__ = [
     "results_frame",
     "run_metric",
     "run_standard",
+    "standard_score",
     "template_text",
 ]

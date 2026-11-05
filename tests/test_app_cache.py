@@ -425,3 +425,64 @@ def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sampl
     # Health's results now are those of the new content (its status date), from a fresh calculation
     computed = {(source, date) for _, source, date in _cached_metrics(at)}
     assert ("b.xer", str(after["b.xer"])) in computed
+
+
+# --- the scores of Overview ------------------------------------------------------------------------
+
+
+def _score_cards(at) -> dict[str, tuple[str, str]]:
+    return {metric.label: (metric.value, metric.delta) for metric in at.metric if metric.label.endswith(" score")}
+
+
+def _expected_scores(at, store) -> dict[str, tuple[str, str]]:
+    from xerscope.analysis import standard_score
+
+    baseline = Baseline.from_snapshot(store.first, at.session_state["ev_basis"])
+    context = AnalysisContext(store.latest, store, baseline)
+    scores = {
+        sid: standard_score([run_metric(m, context) for m in s.metrics]) for sid, s in builtin_standards().items()
+    }
+    names = {sid: s.name for sid, s in builtin_standards().items()}
+    return {f"{names[sid]} score": (score.value, score.detail) for sid, score in scores.items()}
+
+
+def _health_score(at, standard_id: str) -> tuple[str, str]:
+    at.get("button_group")[0].set_value(standard_id).run()
+    assert not at.exception
+    name = builtin_standards()[standard_id].name
+    (card,) = [(m.value, m.delta) for m in at.metric if m.label == f"{name} score"]
+    return card
+
+
+def test_overview_scores_wait_for_the_button_then_schedule_health_reads_them(app, store, runs):
+    """Opening Overview runs no check; the button runs each metric of the four built-in standards
+    once on the latest update; the cards equal the score of a fresh calculation and Schedule health's
+    card, which computes nothing more."""
+    app.switch_page("views/overview.py").run()
+    assert not app.exception and runs == []
+    assert _score_cards(app) == {f"{s.name} score": ("not computed yet", "") for s in builtin_standards().values()}
+
+    app.button(key="overview_scores").click().run()
+    assert not app.exception
+    expected_runs = [(m.standard, m.id, store.latest.source) for s in builtin_standards().values() for m in s.metrics]
+    assert Counter(runs) == Counter(expected_runs)  # each metric once
+    shown = _score_cards(app)
+    assert shown == _expected_scores(app, store)
+    app.run()  # the next rerun: nothing left to compute
+    assert not [b for b in app.button if b.key == "overview_scores"] and _score_cards(app) == shown
+
+    app.switch_page("views/health.py").run()
+    for standard_id in builtin_standards():
+        name = builtin_standards()[standard_id].name
+        assert _health_score(app, standard_id) == shown[f"{name} score"], standard_id
+    assert Counter(runs) == Counter(expected_runs)  # Schedule health computed nothing more
+
+
+def test_overview_shows_the_scores_schedule_health_computed_without_running_a_check(app, store, runs):
+    app.switch_page("views/health.py").run()
+    health = {f"{s.name} score": _health_score(app, sid) for sid, s in builtin_standards().items()}
+    computed = len(runs)
+    app.switch_page("views/overview.py").run()
+    assert not app.exception and len(runs) == computed
+    assert not [b for b in app.button if b.key == "overview_scores"]
+    assert _score_cards(app) == health == _expected_scores(app, store)

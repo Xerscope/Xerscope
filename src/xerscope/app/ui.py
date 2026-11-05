@@ -258,6 +258,34 @@ def kpis(items: Sequence[tuple]) -> None:
             )
 
 
+SCORE_HELP = (
+    "Checks in pass / checks evaluated (pass + fail); info and n/a checks are not evaluated. "
+    "A xerscope convention: no source defines a global score, and a failed check is a flag to read, "
+    "not a verdict on the schedule."
+)
+
+
+def score_cards(scores: dict) -> None:
+    """One card per standard: ``"<name> score"``, the share of evaluated checks that pass, then the
+    count evaluated and the failed ids. A standard whose score is None is not computed yet."""
+    cols = st.columns(len(scores))
+    for col, (name, score) in zip(cols, scores.items(), strict=True):
+        label = f"{name} score"
+        help_ = "\n\n".join(part for part in (SCORE_HELP, spelled_out(label)) if part)
+        if score is None:
+            col.metric(label, "not computed yet", help=help_, border=True)
+        else:
+            col.metric(
+                label,
+                score.value,
+                delta=score.detail,
+                delta_color="off",
+                delta_arrow="off",
+                help=help_,
+                border=True,
+            )
+
+
 def glossary() -> None:
     """Every acronym of the pages, spelled out with its definition and source, in the sidebar: it
     shows on every page, including those that stop early."""

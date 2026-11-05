@@ -1,9 +1,10 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis import builtin_standards, standard_score
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
-from xerscope.app.state import require_store
+from xerscope.app.state import require_store, standard_results, standard_results_held, standards
 from xerscope.viz import build_finish_trend
 
 store = require_store()
@@ -50,6 +51,22 @@ ui.kpis(
             "inverse",
         ),
     ]
+)
+
+ui.section(
+    "Score by standard",
+    "Checks in pass over checks evaluated, on the latest update and the baseline picked in the sidebar. "
+    "Shown once Schedule health or the button has computed them: the four standards take several seconds "
+    "on a large file.",
+)
+built_in = {key: standard for key, standard in standards().items() if key in builtin_standards()}
+held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
+if any(results is None for results in held.values()) and st.button(
+    "Compute scores", icon=":material/calculate:", key="overview_scores"
+):
+    held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
+ui.score_cards(
+    {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}
 )
 
 ui.section(
