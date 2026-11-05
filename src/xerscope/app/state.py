@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric
 from xerscope.analysis.standards import Metric
 from xerscope.anonymize import Anonymizer, LeakError
@@ -185,7 +185,12 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
 
 # The window's baseline selectors write to drafts, filled with the values in force when it opens;
 # Done copies them to the keys the app reads, closing it otherwise (Esc, ✕, a click outside) drops them.
-DRAFTS = {"bl_choice": "draft_bl_choice", "ev_basis": "draft_ev_basis", "bl_fallback": "draft_bl_fallback"}
+DRAFTS = {
+    "bl_choice": "draft_bl_choice",
+    "ev_basis": "draft_ev_basis",
+    "bl_fallback": "draft_bl_fallback",
+    "guid_link": "draft_guid_link",
+}
 
 
 def _open_window(section: str) -> None:
@@ -673,6 +678,8 @@ def _baseline_picker(store: SnapshotStore) -> None:
         st.session_state["ev_basis"] = DEFAULT_EV_BASIS
     if st.session_state.get("bl_fallback") not in _fallback_options(store):
         st.session_state["bl_fallback"] = BL_NONE
+    if not isinstance(st.session_state.get("guid_link"), bool):
+        st.session_state["guid_link"] = False
     choice, basis = st.session_state["bl_choice"], st.session_state["ev_basis"]
     st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
     baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
@@ -694,6 +701,35 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if baseline == BL_EACH:
         _file_baseline_warnings(sidebar, store)
     _absent_baseline_help(sidebar, store)
+    _renumbered_notice(sidebar, store)
+
+
+def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
+    """Tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``):
+    a warning while they count as deleted and new, a caption once the option links them, nothing
+    when there are none."""
+    found = {}
+    for snapshot in store:
+        baseline = baseline_for(snapshot, link=False)
+        if baseline is None or baseline.snapshot is snapshot:
+            continue
+        count = len(renumbered(baseline.snapshot, snapshot))
+        if count:
+            found[snapshot.source] = count
+    if not found:
+        return
+    total = sum(found.values())
+    files = ui.md_text(", ".join(f"{name} ({count})" for name, count in found.items()))
+    tasks = f"{total} task" if total == 1 else f"{total} tasks"
+    if st.session_state.get("guid_link"):
+        sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
+        return
+    sidebar.warning(
+        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Activity ID "
+        f"({files}): against the baseline {'it counts' if total == 1 else 'they count'} as deleted and new. "
+        "Option in the Baseline window: Link renumbered tasks by GUID.",
+        icon=":material/warning:",
+    )
 
 
 def _baseline_fields(store: SnapshotStore) -> None:
@@ -704,6 +740,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
         "draft_bl_choice": options,
         "draft_ev_basis": list(EV_BASES),
         "draft_bl_fallback": _fallback_options(store),
+        "draft_guid_link": [True, False],
     }
     for key, draft in DRAFTS.items():
         if st.session_state.get(draft) not in offered[draft]:
@@ -723,6 +760,14 @@ def _baseline_fields(store: SnapshotStore) -> None:
         format_func=EV_BASIS_LABEL.get,
         help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
         "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
+    )
+    st.checkbox(
+        "Link renumbered tasks by GUID",
+        key="draft_guid_link",
+        help="A task of an update that carries a baseline task's GUID (TASK.guid) under a new Activity ID is "
+        "measured against that baseline task, as P6 does when the renumbering was carried to the baseline "
+        "(Renumber Activity IDs > Renumber Selected Activities in Baselines). Off: it counts as deleted and "
+        "new, as P6 does otherwise.",
     )
     choice = st.session_state["draft_bl_choice"]
     if choice == BL_EACH:
@@ -783,14 +828,18 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
     return cache[key]
 
 
-def baseline_for(snapshot: Snapshot) -> Baseline | None:
-    """The sidebar's baseline, as it applies to ``snapshot``."""
-    baseline = st.session_state.get("baseline")
-    if baseline == BL_EACH:
-        return _file_baseline(snapshot) or _fallback_baseline(snapshot)
-    if baseline == BL_PLANNED:
-        return Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
-    return baseline if isinstance(baseline, Baseline) else None
+def baseline_for(snapshot: Snapshot, link: bool | None = None) -> Baseline | None:
+    """The sidebar's baseline, as it applies to ``snapshot``. ``link`` (default: the window's option
+    "Link renumbered tasks by GUID"): with the tasks ``snapshot`` renumbered under their new IDs."""
+    choice = st.session_state.get("baseline")
+    if choice == BL_EACH:
+        baseline = _file_baseline(snapshot) or _fallback_baseline(snapshot)
+    elif choice == BL_PLANNED:
+        baseline = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
+    else:
+        baseline = choice if isinstance(choice, Baseline) else None
+    link = st.session_state.get("guid_link", False) if link is None else link
+    return relinked(baseline, snapshot) if link and baseline is not None else baseline
 
 
 def standards() -> dict[str, Standard]:
@@ -851,9 +900,9 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
 
 def _baseline_identity(ev_basis: bool = True) -> tuple:
     """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
-    and, for an uploaded file, its bytes."""
+    with the GUID link option, and, for an uploaded file, its bytes."""
     baseline = st.session_state.get("baseline")
-    basis = st.session_state.get("ev_basis") if ev_basis else None
+    basis = (st.session_state.get("ev_basis"), st.session_state.get("guid_link", False)) if ev_basis else None
     if isinstance(baseline, Baseline):
         return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names

@@ -104,6 +104,11 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         "baseline earned value uses (project baseline or each user's primary baseline), unverified."
     )
     table(diagnostic.baseline_pointers(store))
+    st.caption(
+        "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
+        "previous update under a new Activity ID. P6 links a task to its baseline by Activity ID."
+    )
+    table(diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)))
     table(frames["05_calendars"])
 
 with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled tasks)", key="debug_load_warnings"):

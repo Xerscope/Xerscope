@@ -279,7 +279,8 @@ Outside `analysis/`:
   duration it set (`rem_override_hr`), the INT-01 / INT-03 differences with the inputs the CPM read,
   the P6 Check Schedule targets on the tabs of the P6 dialog, the baseline and the calendars, the
   Project Baseline every update of the series names (`diagnostic.baseline_pointers`, page only, not in
-  the zip), and the activities
+  the zip), the tasks renumbered since the baseline or the previous update by GUID
+  (`diagnostic.renumbered_table`, page only), and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
   end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
   `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI).
