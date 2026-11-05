@@ -1,36 +1,77 @@
-/* What .streamlit/config.toml cannot set: KPI cards drawn as a HUD readout, the milestone
-   picker's tags in the colour of their line, and a square box for the MTA chart. --accent and --s1..--s6 are written by
-   ui.apply_style() from viz/charts.py and hold on both themes; everything else is mixed with
-   transparency or inherits the page's text colour, so a theme switch needs no rerun.
+/* What .streamlit/config.toml cannot set: KPI cards with a hairline accent edge, heading
+   tracking, the selected segment in the accent, a fainter chart grid, the milestone picker's
+   tags in the colour of their line, a square box for the MTA chart, and short transitions. --accent and --s1..--s6 are written by ui.apply_style() from
+   viz/charts.py: --s* hold on both themes, --accent is a light-dark() pair that follows the
+   color-scheme Streamlit sets on the app. Everything else is mixed with transparency or
+   inherits the page's text colour, so a theme switch needs no rerun.
    Selectors under a widget's key class (st-key-…, documented) and Streamlit's data-testid /
    data-tag attributes, which a Streamlit upgrade can move: the app then shows the plain theme,
    nothing else changes. */
 
-/* KPI cards: corner brackets, accent-tinted edge, uppercase label */
+/* Tokens: shared by every section below and by any later rule (dialogs, panels) */
+:root {
+  --xs-hairline: color-mix(in srgb, currentColor 12%, transparent);
+  --xs-panel: color-mix(in srgb, currentColor 3%, transparent);
+  --xs-accent-edge: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent));
+  --xs-glow: light-dark(transparent, color-mix(in srgb, var(--accent) 45%, transparent));
+  --xs-label-size: 0.7rem;
+  --xs-label-tracking: 0.12em;
+  --xs-motion: 160ms ease-out;
+}
+
+/* Headings: light weight (config.toml), slightly tight tracking */
+.stApp h1 { letter-spacing: -0.025em; }
+.stApp h2,
+.stApp h3 { letter-spacing: -0.015em; }
+
+/* KPI cards: hairline frame, 1.5 px accent edge on top, small spaced label, light tabular value */
 [data-testid="stMetric"] {
   position: relative;
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 65%);
+  overflow: hidden;
+  border-color: var(--xs-hairline) !important;
+  background: linear-gradient(180deg, var(--xs-panel), transparent 70%);
 }
-[data-testid="stMetric"]::before,
-[data-testid="stMetric"]::after {
+[data-testid="stMetric"]::before {
   content: "";
   position: absolute;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--accent);
+  inset: 0 0 auto 0;
+  height: 1.5px;
+  background: var(--xs-accent-edge);
+  box-shadow: 0 0 8px var(--xs-glow);
   pointer-events: none;
 }
-[data-testid="stMetric"]::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-top-left-radius: 8px; }
-[data-testid="stMetric"]::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-bottom-right-radius: 8px; }
 [data-testid="stMetricLabel"] p {
-  font-size: 0.75rem;
+  font-size: var(--xs-label-size);
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--xs-label-tracking);
+  opacity: 0.78;
 }
-[data-testid="stMetricValue"] { font-variant-numeric: tabular-nums; }
+/* a long label ("SPI (labour units)") or delta ("+2.9 pts this week") wraps onto a second line
+   instead of being cut with an ellipsis: Streamlit keeps both on one line */
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] *,
+[data-testid="stMetricDelta"],
+[data-testid="stMetricDelta"] * {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+[data-testid="stMetricValue"] {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
 
-/* milestone picker: outlined tags, each in the colour of its line (pick order, at most 6) */
+/* Segmented control: the selected option's text in the accent; the dark theme's primaryColor
+   is deep enough for white text on it, too dark for text on the page */
+[data-testid="stButtonGroup"] button[aria-checked="true"],
+[data-testid="stButtonGroup"] button[aria-checked="true"] * { color: var(--accent) !important; }
+
+/* Plotly charts: the theme's grid colour, faded; Plotly writes stroke inline, hence !important */
+.js-plotly-plot .gridlayer path,
+.js-plotly-plot .zerolinelayer path { stroke-opacity: 0.45 !important; }
+
+/* Milestone picker: outlined tags, each in the colour of its line (pick order, at most 6) */
 .st-key-mta_pick [data-tag] {
   background: color-mix(in srgb, var(--tag) 14%, transparent) !important;
   border: 1px solid color-mix(in srgb, var(--tag) 60%, transparent);
@@ -48,3 +89,30 @@
 
 /* MTA: the chart box as tall as it is wide, so its square plot (1:1 dates) fills the width */
 .st-key-mta_chart { aspect-ratio: 1 / 1; }
+
+/* Motion: colour changes on controls only, 160 ms; none when the viewer asks for reduced motion */
+.stApp button,
+.stApp a {
+  transition: background-color var(--xs-motion), border-color var(--xs-motion), color var(--xs-motion);
+}
+@media (prefers-reduced-motion: reduce) {
+  .stApp *,
+  .stApp *::before,
+  .stApp *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* KPI row: every card as tall as the tallest of its row, so a wrapped label or delta does not
+   leave the row ragged */
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] > div,
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] > div > div,
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {
+  height: 100%;
+}
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) [data-testid="stMetric"] {
+  height: 100%;
+  box-sizing: border-box;
+}

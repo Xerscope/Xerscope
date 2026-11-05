@@ -22,79 +22,77 @@ toolbarMode = "viewer"
 disableDataExport = true
 
 # Light and dark themes; Streamlit follows the browser and the user can switch in Settings.
-# Slate neutrals, one navy accent (deep cyan in dark mode, dark enough under the white
-# text of selected chips), neon-cyan links. Red, amber and green are
-# reserved for status (fail / warning / pass) and never decorate. The chart and Gantt
-# colours in viz/charts.py and viz/gantt.py must match these (tests/test_analysis_and_viz.py).
+# Cool neutrals, hairline borders, one glacier-cyan accent: linkColor, the same as ACCENT in
+# viz/charts.py (#7DD3FC in dark mode, #0369A1 in light mode). primaryColor fills checkboxes,
+# toggles and selected chips under white text, so it stays a deep cyan in both modes (>= 4.5:1
+# under white, >= 3:1 on the page).
+# Red, amber and green are reserved for status (fail / warning / pass) and never decorate.
+# The chart and Gantt colours in viz/charts.py and viz/gantt.py must match these
+# (tests/test_analysis_and_viz.py).
 [theme]
 # Variable fonts (weight axis in the file), latin subset, SIL OFL 1.1: app/static/OFL-*.txt.
-# The same families are set on the Plotly charts (viz/charts.py) and the Gantt (viz/gantt.css).
-font = "IBM Plex Sans, sans-serif"
-headingFont = "Space Grotesk, IBM Plex Sans, sans-serif"
+# The same family is set on the Plotly charts (viz/charts.py) and the Gantt (viz/gantt.css).
+font = "Inter Tight, sans-serif"
+headingFont = "Inter Tight, sans-serif"
 codeFont = "JetBrains Mono, monospace"
 showWidgetBorder = true
 showSidebarBorder = true
-baseRadius = "8px"
+baseRadius = "6px"
 buttonRadius = "6px"
 baseFontSize = 15
-headingFontSizes = ["1.75rem", "1.3rem", "1.1rem", "1rem", "0.95rem", "0.9rem"]
-headingFontWeights = [650, 600, 600, 600, 600, 600]
-metricValueFontSize = "1.55rem"
-metricValueFontWeight = 600
+headingFontSizes = ["1.9rem", "1.35rem", "1.12rem", "1rem", "0.95rem", "0.9rem"]
+headingFontWeights = [500, 550, 550, 550, 550, 550]
+metricValueFontSize = "1.75rem"
+metricValueFontWeight = 300
 paddingTop = "2.5rem"
 
 [theme.light]
-primaryColor = "#1F4E79"
+primaryColor = "#0369A1"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F6F9"
-textColor = "#0F172A"
-linkColor = "#0E7490"
-borderColor = "#E2E8F0"
-dataframeBorderColor = "#E2E8F0"
-dataframeHeaderBackgroundColor = "#F4F6F9"
-dataframeHeaderTextColor = "#334155"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#0B1220"
+linkColor = "#0369A1"
+borderColor = "#E3E8EF"
+dataframeBorderColor = "#E3E8EF"
+dataframeHeaderBackgroundColor = "#F5F7FA"
+dataframeHeaderTextColor = "#3A4A5E"
 redColor = "#C0392B"
 greenColor = "#2E7D32"
 orangeColor = "#A15C00"
-blueColor = "#1F4E79"
+blueColor = "#0369A1"
 
 [theme.light.sidebar]
 backgroundColor = "#F8FAFC"
 secondaryBackgroundColor = "#FFFFFF"
 
 [theme.dark]
-primaryColor = "#0B7FA0"
-backgroundColor = "#0B1120"
-secondaryBackgroundColor = "#131C31"
-textColor = "#E2E8F0"
-linkColor = "#22D3EE"
-borderColor = "#1E2A44"
-dataframeBorderColor = "#1E2A44"
-dataframeHeaderBackgroundColor = "#131C31"
-dataframeHeaderTextColor = "#CBD5E1"
+primaryColor = "#0275B3"
+backgroundColor = "#070B14"
+secondaryBackgroundColor = "#0D1424"
+textColor = "#E6EBF2"
+linkColor = "#7DD3FC"
+borderColor = "#182136"
+dataframeBorderColor = "#182136"
+dataframeHeaderBackgroundColor = "#0D1424"
+dataframeHeaderTextColor = "#B4C0D0"
 redColor = "#F05252"
 greenColor = "#22C55E"
 orangeColor = "#FAB219"
-blueColor = "#22D3EE"
+blueColor = "#7DD3FC"
 
 [theme.dark.sidebar]
-backgroundColor = "#0E1628"
-secondaryBackgroundColor = "#131C31"
+backgroundColor = "#090E1A"
+secondaryBackgroundColor = "#0D1424"
 
 [[theme.fontFaces]]
-family = "IBM Plex Sans"
-url = "app/static/IBMPlexSans-latin-wght.woff2"
+family = "Inter Tight"
+url = "app/static/InterTight-latin-wght.woff2"
 style = "normal"
 
 [[theme.fontFaces]]
-family = "IBM Plex Sans"
-url = "app/static/IBMPlexSans-latin-wght-italic.woff2"
+family = "Inter Tight"
+url = "app/static/InterTight-latin-wght-italic.woff2"
 style = "italic"
-
-[[theme.fontFaces]]
-family = "Space Grotesk"
-url = "app/static/SpaceGrotesk-latin-wght.woff2"
-style = "normal"
 
 [[theme.fontFaces]]
 family = "JetBrains Mono"

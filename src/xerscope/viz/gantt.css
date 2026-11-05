@@ -17,7 +17,9 @@
 .toolbar button {
   font: inherit; color: var(--secondary); background: var(--background); cursor: pointer;
   border: 1px solid var(--axis); border-radius: 4px; padding: 2px 9px;
+  transition: color 160ms ease-out, border-color 160ms ease-out;
 }
+@media (prefers-reduced-motion: reduce) { .toolbar button { transition: none; } }
 .toolbar button:hover { color: var(--ink); border-color: var(--secondary); }
 .toolbar .sep { width: 1px; height: 18px; background: var(--axis); margin: 0 6px; }
 .toolbar .label { color: var(--muted); }

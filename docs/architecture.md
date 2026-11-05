@@ -204,10 +204,12 @@ Outside `analysis/`:
   network call, checked by a test). Page colours and font come from the theme's `--st-*`
   variables, so the Gantt follows a theme switch without a rerun.
 - **`charts.py`:** S-curve, indices, MTA, PPC and metric trend, and the app's colours
-  (`ACCENT`, `STATUS`, `SERIES`, `NEUTRAL`), one set for both themes, each mark >= 3:1 on
+  (`STATUS`, `SERIES`, `NEUTRAL`), one set for both themes, each mark >= 3:1 on
   the light and the dark background: the Gantt bars and the check-status labels in
-  `app/ui.py` derive from them. Text, grid and axes are left to Streamlit's Plotly theme,
-  applied in the browser, so the charts follow a theme switch without a rerun. The series palette is a fixed
+  `app/ui.py` derive from them. `ACCENT` (decoration in `style.css`) is the one colour set
+  per theme, the theme's link colour, applied through CSS `light-dark()`. Text, grid and axes
+  are left to Streamlit's Plotly theme (`style.css` only fades the grid), so the charts
+  follow a theme switch without a rerun. The series palette is a fixed
   categorical order, validated for colour-blind separation; status hues never decorate.
   There is one y-axis per chart.
 
@@ -219,14 +221,14 @@ Outside `analysis/`:
 - **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
   cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
-- **`.streamlit/config.toml`:** the light and dark themes (slate neutrals, navy accent, cyan in dark mode) and server settings
+- **`.streamlit/config.toml`:** the light and dark themes (cool neutrals, glacier-cyan accent) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
-- **`static/`:** the fonts the theme loads (IBM Plex Sans, Space Grotesk, JetBrains Mono;
+- **`static/`:** the fonts the theme loads (Inter Tight, JetBrains Mono;
   variable woff2, latin subset, SIL OFL 1.1 with their licences), served by the app itself
   (`enableStaticServing`).
-- **`style.css`:** what the theme cannot set (HUD KPI cards, the milestone picker's tags in
-  their line colour), sent by `ui.apply_style()` with the active mode's colours.
+- **`style.css`:** what the theme cannot set (KPI cards with an accent edge, the milestone picker's tags in
+  their line colour), sent by `ui.apply_style()` with the colours of `viz/charts.py`.
 - **Schedule health:** a summary row per check, then one panel per check: what it measures,
   the calculation with its numbers (`analysis/explain.py`), the population (exclusions),
   the effective parameters (standard or default), the source, and the flagged items.

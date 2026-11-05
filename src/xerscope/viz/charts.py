@@ -1,7 +1,7 @@
 """Trend charts: S-curve, performance indices, milestone trend, PPC, metric history.
 
 Colours follow the reference data-viz palette: categorical slots in fixed order (an
-entity keeps its colour whatever the filter), one y-axis per chart, 2 px lines, >= 8 px
+entity keeps its colour whatever the filter), one y-axis per chart, 1.5 px lines, >= 8 px
 markers, recessive grid, legend + direct end labels for a few series.
 """
 
@@ -15,16 +15,21 @@ import plotly.graph_objects as go
 # (except "info", used as a label background only) and NEUTRAL reaches 3:1 against the light
 # and the dark page backgrounds (WCAG 2.2 SC 1.4.11), so a chart need not be redrawn when the
 # viewer switches theme. Text, grid and axes are left to Streamlit's Plotly theme, which the
-# browser applies live. STATUS is reserved for meaning (critical / warning / pass / complete /
-# info, and the check statuses in app/ui.py) and never decorates; SERIES is the categorical
-# palette for lines and keeps clear of those hues.
-SERIES = ["#2a78d6", "#ea632e", "#19a070", "#be8100", "#e36092", "#6554d7"]
-STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#1f4e79"}
+# browser applies live (app/style.css only fades the grid). STATUS is reserved for
+# meaning (critical / warning / pass / complete / info, and the check statuses in app/ui.py)
+# and never decorates; SERIES is the categorical palette for lines and keeps clear of those
+# hues: azure, copper, teal, brass, orchid, violet. Order checked with the data-viz palette
+# validator, light (#ffffff) and dark (#070b14) surfaces: adjacent pairs >= 8 CVD delta E
+# (worst 12.6) and >= 15 normal-vision delta E (worst 16.0); the first three also all-pairs.
+SERIES = ["#3478e6", "#d0652a", "#2f9e8f", "#a27f1f", "#c0509a", "#7c5ce6"]
+STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#0369a1"}
 NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
-ACCENT = "#0b7fa0"  # decoration (app/style.css)
+# Decoration (app/style.css, through CSS light-dark()), one per theme: the theme's linkColor.
+ACCENT = {"light": "#0369a1", "dark": "#7dd3fc"}
+LINE = 1.5  # data line width, px
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
-FONT_FAMILY = "IBM Plex Sans, sans-serif"
+FONT_FAMILY = "Inter Tight, sans-serif"
 FONT = dict(size=13)
 TICK = dict(size=12)
 INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC)
@@ -138,7 +143,7 @@ def build_scurve(
             y=curve["pv_cum_hr"] * k,
             mode="lines",
             name="PV (baseline)",
-            line=dict(color=c[0], width=2),
+            line=dict(color=c[0], width=LINE),
         )
     )
     s = series.dropna(subset=["data_date"])
@@ -148,7 +153,7 @@ def build_scurve(
             y=s["ev_hr"] * k,
             mode="lines+markers",
             name="EV (earned)",
-            line=dict(color=c[1], width=2),
+            line=dict(color=c[1], width=LINE),
             marker=dict(size=8),
             customdata=s[["sv_hr"]].to_numpy() * k,
             hovertemplate="%{y:,.1f}  (SV %{customdata[0]:+,.1f})",
@@ -160,7 +165,7 @@ def build_scurve(
             y=s["ac_hr"] * k,
             mode="lines+markers",
             name="AC (actual)",
-            line=dict(color=c[2], width=2),
+            line=dict(color=c[2], width=LINE),
             marker=dict(size=8, symbol="square"),
         )
     )
@@ -171,7 +176,7 @@ def build_scurve(
                 y=forecast["fc_cum_hr"] * k,
                 mode="lines",
                 name="Forecast (AC + remaining)",
-                line=dict(color=c[2], width=2, dash="dash"),
+                line=dict(color=c[2], width=LINE, dash="dash"),
             )
         )
         _end_label(
@@ -235,7 +240,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
                 y=s[col],
                 mode="lines+markers",
                 name=name,
-                line=dict(color=c[i], width=2),
+                line=dict(color=c[i], width=LINE),
                 marker=dict(size=8),
                 hovertemplate=f"%{{y:.{digits}f}}",
             )
@@ -327,7 +332,7 @@ def build_mta(
                 y=g["forecast"].astype(object).where(g["forecast"].notna(), None),
                 mode="lines+markers",
                 name=f"{code} {g['task_name'].iloc[-1]}",
-                line=dict(color=color, width=2),
+                line=dict(color=color, width=LINE),
                 marker=dict(
                     size=[9] * (len(g) - 1) + [13 if moved else 9],  # bigger: red / orange series stay apart
                     symbol=["diamond" if d else "circle" for d in done],
@@ -358,7 +363,7 @@ def _line(history: pd.DataFrame, column: str, name: str, colour: str, **options)
         y=history[column],
         name=name,
         mode="lines+markers",
-        line=dict(color=colour, width=2),
+        line=dict(color=colour, width=LINE),
         marker=dict(size=8),
         **options,
     )
@@ -401,7 +406,7 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
             x=updates["data_date"],
             y=updates["forecast_finish"],
             mode="lines+markers",
-            line=dict(color=colour, width=2),
+            line=dict(color=colour, width=LINE),
             marker=dict(size=8, color=colour),
             customdata=np.stack([updates["source"], shift], axis=-1) if len(updates) else None,
             hovertemplate="Update %{x|%Y-%m-%d}<br>Forecast finish %{y|%Y-%m-%d}%{customdata[1]}"
@@ -481,7 +486,7 @@ def build_metric_trend(
             y=h["actual"],
             mode="lines+markers",
             name=name,
-            line=dict(color=c[0], width=2),
+            line=dict(color=c[0], width=LINE),
             marker=dict(size=8),
             customdata=h[["found", "total"]].astype("float").to_numpy(),
             hovertemplate="%{x|%Y-%m-%d}: %{y:.2f} (%{customdata[0]:.0f} / %{customdata[1]:.0f})<extra></extra>",

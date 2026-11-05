@@ -139,10 +139,21 @@ def test_marks_reach_3_to_1_on_both_themes():
     # reference lines read on every page background, so nothing needs redrawing on a theme switch.
     backgrounds = [colour for theme in _themes().values() for colour in
                    (theme["backgroundColor"], theme["secondaryBackgroundColor"])]  # fmt: skip
-    marks = [*SERIES, NEUTRAL, ACCENT] + [colour for tone, colour in STATUS.items() if tone != "info"]
+    marks = [*SERIES, NEUTRAL] + [colour for tone, colour in STATUS.items() if tone != "info"]
     for colour in marks:
         for background in backgrounds:
             assert _contrast(colour, background) >= 3, (colour, background)
+
+
+def test_accent_is_the_link_colour_of_each_theme_and_primary_carries_white_text():
+    # ACCENT (style.css, light-dark()) is each theme's linkColor, so text in it reads (4.5:1);
+    # primaryColor fills checkboxes and selected chips under white text and marks the page (3:1).
+    for mode, theme in _themes().items():
+        assert ACCENT[mode].lower() == theme["linkColor"].lower(), mode
+        for background in (theme["backgroundColor"], theme["secondaryBackgroundColor"]):
+            assert _contrast(ACCENT[mode], background) >= 4.5, (mode, background)
+            assert _contrast(theme["primaryColor"], background) >= 3, (mode, background)
+        assert _contrast("#ffffff", theme["primaryColor"]) >= 4.5, mode
 
 
 def test_fonts_are_served_by_the_app_and_used_everywhere():
