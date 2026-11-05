@@ -20,6 +20,7 @@ from xerscope.app.sets import show_sets
 from xerscope.app.state import (
     anonymous_exports,
     baseline_for,
+    baseline_warnings,
     csv_download,
     data_identity,
     downloads_ready,
@@ -28,8 +29,8 @@ from xerscope.app.state import (
     hold,
     memo,
     metric_result,
+    page_header,
     require_store,
-    show_baseline_used,
     show_download,
     snapshot_picker,
     sources_of,
@@ -405,8 +406,8 @@ standard = available[standard_id or next(iter(available))]
 baseline = baseline_for(snapshot)
 
 with top:
-    ui.header("Schedule health", store, snapshot, baseline)
-    show_baseline_used(snapshot, baseline)
+    page_header("Schedule health", store, snapshot)
+    baseline_warnings(snapshot, baseline)
 reference = f" · [reference]({standard.source})" if standard.source.startswith("http") else ""
 st.caption((standard.description or standard.name) + reference)
 if baseline is None:

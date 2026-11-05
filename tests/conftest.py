@@ -90,8 +90,42 @@ def read_folder(at, count=None):
 
 
 def files_line(at):
-    """The sidebar's Files line: ``Files · <snapshots> · <first> → <latest>``, or ``Files · none read``."""
+    """The sidebar's Files line: ``Files · <N> files · <K> projects``, or ``Files · none read``."""
     return at.button(key="files_button").label
+
+
+def window(at):
+    """The Files and baseline window, opened from the Files line if it is closed."""
+    if not any(button.key == "files_done" for button in at.button):
+        open_files(at)
+    return at
+
+
+def close_window(at):
+    """Close the window without Done (what Esc or a click outside does)."""
+    at.session_state["files_open"] = False
+    return at.run()
+
+
+def project_box(at, source):
+    """The list of the projects of file ``source`` in the window (opened if closed); None when the
+    file holds one project and has no list."""
+    boxes = [box for box in window(at).selectbox if box.key == f"draft_file_project:{source}"]
+    return boxes[0] if boxes else None
+
+
+def pick_project(at, source, proj_id):
+    """Pick project ``proj_id`` for file ``source`` in the window, then press Done."""
+    project_box(at, source).set_value(proj_id)
+    at.run()
+    return files_done(at)
+
+
+def selection(at):
+    """The window's Selection details table (file, project, picked by…); the window is closed after."""
+    table = next(frame for frame in window(at).dataframe if "selected_by" in frame.value.columns).value
+    close_window(at)
+    return table
 
 
 class BaselineBox:

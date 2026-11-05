@@ -8,6 +8,7 @@ from xerscope.app.state import (
     compare_picker,
     csv_download,
     memo,
+    page_header,
     require_store,
     snapshot_picker,
     sources_of,
@@ -33,11 +34,10 @@ with compare_column:
     compare, compare_label = compare_picker(store, snapshot, key="gantt_cmp")
 baseline = baseline_for(snapshot)
 with top:
-    ui.header(
+    page_header(
         "Gantt & WBS",
         store,
         snapshot,
-        baseline,
         lead="Bars are coloured by float; the outline behind each bar is the same task in the "
         "comparison you pick, so slippage shows as the bar leaving its outline.",
     )

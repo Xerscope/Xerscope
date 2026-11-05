@@ -5,7 +5,7 @@ import zipfile
 
 import pandas as pd
 import pytest
-from conftest import baseline_box, read_folder
+from conftest import baseline_box, files_done, pick_project, project_box, read_folder, selection
 from file_projects import BASELINE_DATE, two_projects
 
 from xerscope.analysis import builtin_standards
@@ -194,7 +194,7 @@ def _baseline_box(at):
 
 
 def _selection(at):
-    return next(frame for frame in at.sidebar.dataframe if "baseline" in frame.value.columns).value
+    return selection(at)
 
 
 def test_the_sidebar_defaults_to_the_baseline_in_the_file_and_the_panel_names_it(tmp_path, monkeypatch):
@@ -267,6 +267,11 @@ def _health(at, update_stamp, fallback=None):
 
 def _markdown(at):
     return [element.value.replace("\\", "") for element in at.markdown]  # ui.md_text escapes
+
+
+def _banner(at):
+    """The lines of the context banner's help, under the page title (state.context_banner)."""
+    return at.button(key="context_banner").help.replace("\\", "").split("  \n")
 
 
 def test_the_fallback_selector_defaults_to_none_and_is_shown_with_the_file_mode(tmp_path, monkeypatch):
@@ -438,8 +443,7 @@ def test_a_baseline_that_finds_few_activities_is_flagged_on_the_pages(tmp_path, 
 def test_the_pages_say_which_baseline_the_update_uses(tmp_path, monkeypatch):
     at = _series(tmp_path, monkeypatch)
     for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
-        shown = _markdown(at.switch_page(page).run())
-        assert any(m.startswith("**Baseline used for 2026-03-09**: none") for m in shown), page
+        assert "Baseline used for 2026-03-09: none" in _banner(at.switch_page(page).run()), page
 
 
 # --- a file exported with several projects -------------------------------------------------------------
@@ -461,14 +465,13 @@ def _portfolio(tmp_path, monkeypatch):
     )
 
 
-def test_the_project_shown_in_the_picker_is_the_one_every_file_that_holds_it_is_read_for(tmp_path, monkeypatch):
-    # a's most-TASK-rows default can be its baseline copy BL (a tie with UPD); the picker shows UPD (b's project),
-    # so a is read for UPD too, and its P6 Project Baseline is found
+def test_a_file_whose_baseline_copy_ties_on_activities_is_read_for_its_project(tmp_path, monkeypatch):
+    # a's baseline copy BL has as many TASK rows as UPD: set aside as a baseline copy, a is read for UPD,
+    # and its P6 Project Baseline is found
     from xerscope.app.state import BL_EACH
 
     at = _portfolio(tmp_path, monkeypatch)
     assert not at.exception
-    assert next(box for box in at.sidebar.selectbox if box.label == "Project").value == "UPD"
     assert [s.project_code for s in at.session_state["store"]] == ["UPD", "UPD"]
     assert _baseline_box(at).value == BL_EACH
 
@@ -478,8 +481,8 @@ def test_the_fallback_applies_on_the_earned_value_page_of_a_portfolio_file(tmp_p
     baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     at = at.run().switch_page("views/earned_value.py").run()
     assert any(
-        m.startswith("**Baseline used for 2026-03-09**: fallback (Planned dates in each file (target_*))")
-        for m in _markdown(at)
+        m.startswith("Baseline used for 2026-03-09: fallback (Planned dates in each file (target_*))")
+        for m in _banner(at)
     )
 
 
@@ -512,7 +515,7 @@ def test_the_projects_of_a_file_carry_their_data_date_and_which_are_baseline_cop
 
 
 def _file_box(at, name):
-    return next(box for box in at.sidebar.selectbox if box.key == f"file_project:{name}")
+    return project_box(at, name)
 
 
 def test_the_file_picker_tells_two_projects_of_the_same_code_apart(tmp_path, monkeypatch):
@@ -534,11 +537,11 @@ def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_aga
     from file_projects import with_other_projects
 
     at = _health(_series(tmp_path, monkeypatch, transform=with_other_projects), "2026-03-02")
-    used = "**Baseline used for 2026-03-02**: P6 Project Baseline in the file (proj_id 2"
-    assert any(m.startswith(used) for m in _markdown(at))
+    used = "Baseline used for 2026-03-02: P6 Project Baseline in the file (proj_id 2"
+    assert any(m.startswith(used) for m in _banner(at))
     before = {s.source: s for s in at.session_state["store"]}
     parsed = set(at.session_state["_parsed"])
-    _file_box(at, "a.xer").set_value("3").run()
+    pick_project(at, "a.xer", "3")
     assert not at.exception
     after = {s.source: s for s in at.session_state["store"]}
     assert (after["a.xer"].project_id, after["a.xer"].project_code) == ("3", "P3")
@@ -548,19 +551,20 @@ def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_aga
     assert row[["project", "selected_by", "baseline"]].tolist() == ["P3", "chosen", "Baseline: none in file"]
     at = _health(at, "2026-03-02")
     # P3 names no baseline: the file's P6 Project Baseline is no longer used for this update
-    shown = [m for m in _markdown(at) if m.startswith("**Baseline used for 2026-03-02**")]
+    shown = [m for m in _banner(at) if m.startswith("Baseline used for 2026-03-02")]
     assert shown and not any("in the file (proj_id 2" in m for m in shown)
     # the memo is keyed on the project read from each file: nothing computed for project 1 is served
     keyed = [part for key in at.session_state["_memo"] for part in key if isinstance(part, tuple)]
     assert (("a.xer", "3"), ("b.xer", "1")) in keyed
 
 
-def test_a_project_picked_for_a_file_wins_over_the_project_picked_for_all(tmp_path, monkeypatch):
+def test_projects_picked_for_two_files_in_one_window_apply_together(tmp_path, monkeypatch):
     from file_projects import with_other_projects
 
     at = _series(tmp_path, monkeypatch, transform=with_other_projects)
     _file_box(at, "a.xer").set_value("3").run()
-    next(box for box in at.sidebar.selectbox if box.label == "Project").set_value("P4").run()
+    _file_box(at, "b.xer").set_value("4").run()
+    files_done(at)
     assert not at.exception
     assert [(s.source, s.project_code) for s in at.session_state["store"]] == [("a.xer", "P3"), ("b.xer", "P4")]
 
@@ -578,8 +582,6 @@ def test_a_locked_server_offers_no_separate_baseline_file_as_fallback(tmp_path, 
 def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_closes(tmp_path, monkeypatch):
     """The upload box is a draft like the selectors: its file is the fallback once Done is pressed, and
     stays so when the window, and its emptied upload box, are gone."""
-    from conftest import files_done
-
     from xerscope.analysis import Baseline
 
     monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
@@ -592,3 +594,30 @@ def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_close
     at.run()
     assert not at.get("file_uploader") and isinstance(at.session_state["fallback"], Baseline)
     assert at.session_state["bl_file"][0] == "bl.xer"
+
+
+def test_the_banner_names_the_baseline_the_page_uses_when_the_file_baseline_cannot_be_read(tmp_path, monkeypatch):
+    """a.xer names a usable P6 Project Baseline; if it cannot be built, the update falls back, and the
+    banner says so as the page does instead of "in file"."""
+    from xerscope.app import state
+
+    at = _series(tmp_path, monkeypatch)
+    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
+    monkeypatch.setattr(state, "_file_baseline", lambda snapshot: None)  # as when the copy fails to parse
+    at = _health(at.run(), "2026-03-02")
+    label = at.button(key="context_banner").label.replace("\\", "")
+    assert " · BL fallback, planned dates · " in label
+    assert "Baseline used for 2026-03-02: fallback (Planned dates in each file (target_*))" in _banner(at)
+
+
+def _project_row(at, name):
+    """The window's row of file ``name``: ``<project> · <picked by>[ · + baseline copy]``."""
+    rows = [m.value.replace("\\", "") for m in at.markdown if m.value.replace("\\", "").startswith(f"{name} — ")]
+    return rows[0].split(" — ", 1)[1]
+
+
+def test_a_file_holding_its_project_and_its_baseline_copy_has_no_project_list(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch)  # a.xer: UPD and its baseline copy BL
+    assert project_box(at, "a.xer") is None
+    assert _project_row(at, "a.xer") == "**UPD** · only project not a baseline copy · + baseline copy"
+    assert _project_row(at, "b.xer") == "**UPD** · only project"
