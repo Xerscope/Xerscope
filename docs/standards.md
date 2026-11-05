@@ -16,7 +16,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 |---|---|---|---|
 | Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
-| Relationships checked | all except links between two finished activities | links into incomplete work | links into incomplete work |
+| Relationships checked | all except links between two finished activities | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
 | Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
@@ -157,15 +157,21 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 3 | Lags | positive lags | ≤ 5 % |
 | 4 | Relationship types | FS share | ≥ 90 % |
 | 5 | Hard constraints | MSO, MFO, SNLT, FNLT, mandatory | ≤ 5 % |
-| 6 | High float | > 44 wd | ≤ 5 % |
-| 7 | Negative float | < 0 | 0 |
+| 6 | High float | > 44 wd; a task without a float stays in the base, counted in the note | ≤ 5 % |
+| 7 | Negative float | < 0; a task without a float stays in the base, counted in the note | 0 |
 | 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
-| 9 | Invalid dates | forecast before / actual after data date | 0 |
+| 9 | Invalid dates | forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
 | 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
-| 11 | Missed tasks | due by the data date (baseline), not finished or finished on a later date | ≤ 5 % |
+| 11 | Missed tasks | due by the data date (baseline finish, by calendar day); missed when finished, or forecast to finish, on a later calendar date or with a Finish Variance > 0 in working time (PAM's two criteria, "or") | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
-| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; TF is the float to the Must Finish By date, else the margin of the last finish milestone to its baseline finish (n/a without a baseline) | ≥ 0.95 |
-| 14 | BEI | completed / due (baseline finish ≤ data date) | ≥ 0.95 |
+| 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; with a Must Finish By, CPL to the last open task and TF its float; without one, CPL and TF both on the open finish milestone ending last, TF being its margin to its baseline finish (n/a without a baseline or without a float) | ≥ 0.95 |
+| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
+
+**Dates.** The pamphlet reasons in dates ("on or before 8/1/09, not after 8/1/09", §4.9): DCMA-09 and
+DCMA-11 compare the status date by calendar day (`date_grain = "day"` in `dcma.toml`). P6 keeps the
+timestamp (an actual at 12:00 is after a data date at 08:00), which is the rule default and what
+`p6.toml` uses. A missing total float (DCMA-06, 07, 13) is never read as 0: the task stays in the
+population with a note, and the CPLI is n/a.
 
 **DCMA-10.** PAM §4.10 applies "If the contractor does resource load their schedule": a project with no
 `TASKRSRC` row (for its `proj_id`) and no budgeted labour hours on its tasks (`target_work_qty`) is
@@ -182,8 +188,11 @@ which falls by exactly what the finish moves (+16 h to -64 h for a +80 h slip), 
 on the end keeps its float at 0 and fails both readings.
 
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
-naming a calendar). Without a Must Finish By, TF is the margin of the open finish milestone ending last to its
-baseline finish (recalculated early finish, project calendar, negative when late); n/a without a baseline.
+naming a calendar). Without a Must Finish By, the open finish milestone ending last is the measured milestone
+(PAM §3.1.2.3, "until the next program milestone that is being measured"): CPL runs to its forecast finish and
+TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
+finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
+has no float (a missing float is not 0).
 n/a too when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish

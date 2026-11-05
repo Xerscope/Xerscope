@@ -47,7 +47,10 @@ STEP_SOURCES = {
     "46282": "https://docs.oracle.com/cd/G18294_01/p6help/en/46282.htm",
     "Ten Six": "https://tensix.com/using-the-p6-check-schedule-tool/",
     "R1": "docs/standards.md: P6 Professional Check Schedule report R1",
-    "model": "docs/formulas.md 1.1: a relationship counts when both ends are tasks of the file",
+    "model": (
+        "docs/formulas.md 1.1: a relationship counts when its successor is a task of the file"
+        " (the predecessor may be a task of another project of the file)"
+    ),
     "PAM 200.1": "https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf",
     "DECM 8.0": "https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm",
     "xerscope": "docs/standards.md: INTEGRITY, xerscope's own checks (not a published standard)",
@@ -219,16 +222,32 @@ def lag_flagged(relationships: pd.DataFrame, compare: Callable, limit: float, co
 # --- progress dates ----------------------------------------------------------------------
 
 
-def forecast_before(tasks: pd.DataFrame, data_date) -> pd.Series:
+DATE_GRAINS = ("timestamp", "day")
+
+
+def at_grain(dates: pd.Series | pd.Timestamp, grain: str):
+    """Dates as a check compares them: as stored ("timestamp", P6's reading: 12:00 is after a data date
+    at 08:00) or by calendar day ("day", DCMA-EA PAM 200.1, which reasons in dates)."""
+    if grain not in DATE_GRAINS:
+        raise ValueError(f"date grain {grain!r} not in {DATE_GRAINS}")
+    if grain == "timestamp":
+        return dates
+    return dates.dt.normalize() if isinstance(dates, pd.Series) else dates.normalize()
+
+
+def forecast_before(tasks: pd.DataFrame, data_date, grain: str = "timestamp") -> pd.Series:
     """Incomplete tasks whose forecast start (not started) or finish is before the status date."""
     early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
+    early_start, early_finish, data_date = (at_grain(d, grain) for d in (early_start, early_finish, data_date))
     not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
     return as_flag(~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date)))
 
 
-def actual_after(tasks: pd.DataFrame, data_date) -> pd.Series:
+def actual_after(tasks: pd.DataFrame, data_date, grain: str = "timestamp") -> pd.Series:
     """Tasks with an actual start or finish after the status date."""
-    return as_flag((tasks["act_start_date"] > data_date) | (tasks["act_end_date"] > data_date))
+    data_date = at_grain(data_date, grain)
+    start, end = (at_grain(tasks[c], grain) for c in ("act_start_date", "act_end_date"))
+    return as_flag((start > data_date) | (end > data_date))
 
 
 def invalid_date_reason(forecast: pd.Series, actual: pd.Series) -> pd.Series:
