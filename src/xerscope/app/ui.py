@@ -140,6 +140,8 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "productivity": ("EV / AC (baselined work)", "d2"),
     "cpi": ("CPI (labor units)", "d2"),
     "ac_unbaselined_hr": ("AC outside BL (h)", "h0"),
+    "deleted_since_bl": ("Deleted since BL", "int"),
+    "pv_deleted_hr": ("PV of deleted (h)", "h0"),
     "bei_p6": ("BEI (P6)", "d2"),
     "bei_dcma": ("BEI (DCMA)", "d2"),
     "ev_technique": ("EV technique", "text"),

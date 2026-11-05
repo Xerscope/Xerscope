@@ -12,8 +12,11 @@
   (PROJWBS.ev_compute_type): activity % complete (P6 default, per the activity's % complete
   type), 0/100, 50/50, or a custom % once started. "WBS milestones" and "resource curves"
   are not modelled: they fall back to activity % complete and are reported.
-- Activities not in the baseline earn nothing (listed); activities deleted since earn
-  nothing either.
+- Activities not in the baseline earn nothing (listed). BAC, PV and EV are summed over the
+  activities of the update: P6 totals its earned value fields over the activities of the current
+  project ("adding the values for each activity in the summary", P6 Professional 25, How data is
+  summarized), so a baseline activity deleted since has no BAC, PV or EV there. It stays in
+  ``earned()`` (``in_snapshot`` False) and its PV is reported apart (``EvPoint.pv_deleted_hr``).
 - AC = actual labour units and ETC = remaining labour units of every activity in the
   update, baselined or not; EAC = AC + ETC.
 - ETC technique: P6 sets it per WBS element too (PROJWBS.ev_etc_compute_type): remaining
@@ -189,7 +192,9 @@ def _pv_spread(baseline: Baseline) -> _Spread:
 
 
 def pv_curve(baseline: Baseline) -> pd.DataFrame:
-    """Daily and cumulative planned labour hours of the baseline (cumulative = end of day)."""
+    """Daily and cumulative planned labour hours of the baseline (cumulative = end of day), every
+    baseline activity: the plan itself. An update's PV (``ev_point``) leaves out the activities it
+    no longer holds."""
     frame = baseline.frame
     frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
     if frame.empty:
@@ -273,13 +278,15 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     are counted. ``gap_hr`` = assignment - activity. Variants of the activity value, to tell which
     convention P6 uses: ``pv_calendar_time_hr`` (Schedule % in calendar time, the glossary writes a
     date difference), ``pv_end_of_day_hr`` (working time, at the end of the data date's day) and
-    both together. Returns the totals (one row) and the split by
-    Schedule % (0 not started, 100 complete). No activity code in either.
+    both together. Baseline activities the update holds, as ``ev_point``. Returns the totals (one
+    row) and the split by Schedule % (0 not started, 100 complete). No activity code in either.
     """
     if baseline is None or snapshot.data_date is None:
         return pd.DataFrame(columns=PV_LABOR_COLUMNS), pd.DataFrame(columns=PV_LABOR_STATUS_COLUMNS)
     values = earned(snapshot, baseline)
+    values = values[values["in_snapshot"]]  # the population of ev_point
     costs = baseline.assignment_costs
+    costs = costs[costs["task_code"].isin(values.index)]
     labor = costs[costs["labor"].astype(bool)]
     share = _elapsed(
         baseline.snapshot, labor, "start", "finish", "clndr_id", snapshot.data_date, PV_COST_WORKING_TIME
@@ -295,7 +302,7 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     end_of_day = snapshot.data_date.normalize() + pd.Timedelta(days=1)
 
     def activity_pv(when: pd.Timestamp, working_time: bool) -> float:
-        frame = baseline.frame
+        frame = baseline.frame.loc[values.index]
         share = _elapsed(baseline.snapshot, frame, "ev_start", "ev_finish", "bl_clndr_id", when, working_time)
         return float((frame["ev_labor_hr"] * share.fillna(0.0)).sum())
 
@@ -342,6 +349,8 @@ class EvPoint:
     pv_cost: float = 0.0
     ev_cost: float = 0.0
     not_modelled_cost: list[str] = field(default_factory=list)  # activities with a resource curve (PV cost)
+    deleted: list[str] = field(default_factory=list)  # baseline activities the update no longer holds
+    pv_deleted_hr: float = 0.0  # their PV, left out of pv_hr
 
     @property
     def eac_hr(self) -> float:
@@ -388,6 +397,8 @@ class EvPoint:
             "cpi": self.cpi,
             "unbaselined": len(self.unbaselined),
             "ac_unbaselined_hr": self.ac_unbaselined_hr,
+            "deleted_since_bl": len(self.deleted),
+            "pv_deleted_hr": self.pv_deleted_hr,
             "bac_cost": self.bac_cost,
             "pv_cost": self.pv_cost,
             "ev_cost": self.ev_cost,
@@ -448,38 +459,38 @@ def earned(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
     return result
 
 
-def ev_point(snapshot: Snapshot, baseline: Baseline, spread: _Spread | None = None) -> EvPoint:
-    spread = _pv_spread(baseline) if spread is None else spread
+def ev_point(snapshot: Snapshot, baseline: Baseline) -> EvPoint:
+    """BAC, PV, EV (hours and cost) over the baseline activities the update holds; AC and ETC over
+    every activity of the update."""
     earned_values = earned(snapshot, baseline)
+    current = earned_values[earned_values["in_snapshot"]]
+    deleted = earned_values[~earned_values["in_snapshot"]]
     activities = snapshot.activities
     unbaselined = sorted(set(activities["task_code"]) - set(baseline.frame.index))
-    on_fallback = earned_values["ev_technique"].isin(["wbs_milestones", "resource_curves"])
-    fallback = sorted(earned_values.index[on_fallback & earned_values["in_snapshot"]])
-    planned_hr = float(spread.at([snapshot.data_date])[0]) if snapshot.data_date is not None else 0.0
+    on_fallback = current["ev_technique"].isin(["wbs_milestones", "resource_curves"])
     curves = baseline.assignment_costs
-    curve_codes = set(curves.loc[curves["curve"].astype(bool), "task_code"]) & set(
-        earned_values.index[earned_values["in_snapshot"]]
-    )
+    curve_codes = set(curves.loc[curves["curve"].astype(bool), "task_code"]) & set(current.index)
     return EvPoint(
         snapshot.data_date,
-        baseline.bac_hours,
-        planned_hr,
-        float(earned_values["ev_hr"].sum()),
+        float(current["bl_labor_hr"].sum()),
+        float(current["pv_hr"].sum()),
+        float(current["ev_hr"].sum()),
         float(activities["labor_actual_hr"].sum()),
         float(activities["labor_remaining_hr"].sum()),
         unbaselined,
-        fallback,
+        sorted(current.index[on_fallback]),
         ac_unbaselined_hr=float(activities.loc[activities["task_code"].isin(unbaselined), "labor_actual_hr"].sum()),
-        bac_cost=baseline.bac_cost,
-        pv_cost=float(earned_values["pv_cost"].sum()),
-        ev_cost=float(earned_values["ev_cost"].sum()),
+        bac_cost=float(current["bl_cost"].sum()),
+        pv_cost=float(current["pv_cost"].sum()),
+        ev_cost=float(current["ev_cost"].sum()),
         not_modelled_cost=sorted(curve_codes),
+        deleted=sorted(deleted.index),
+        pv_deleted_hr=float(deleted["pv_hr"].sum()),
     )
 
 
 def evm_series(store: SnapshotStore, baseline: Baseline) -> pd.DataFrame:
-    spread = _pv_spread(baseline)
-    return pd.DataFrame([ev_point(snapshot, baseline, spread).as_row() for snapshot in store])
+    return pd.DataFrame([ev_point(snapshot, baseline).as_row() for snapshot in store])
 
 
 def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
