@@ -37,7 +37,11 @@ packages = ["src/xerscope"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-filterwarnings = ["ignore::DeprecationWarning:streamlit.*"]
+filterwarnings = [
+    "ignore::DeprecationWarning:streamlit.*",
+    # a date read without a format is a guess: every date of the app is "YYYY-MM-DD HH:MM" (ISO 8601)
+    "error:Could not infer format:UserWarning",
+]
 
 [tool.ruff]
 line-length = 120

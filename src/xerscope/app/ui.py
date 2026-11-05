@@ -25,6 +25,7 @@ from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
 from xerscope.viz.charts import ACCENT, SERIES, STATUS
+from xerscope.xer.model import to_datetime
 
 
 class StatusStyle(NamedTuple):
@@ -298,6 +299,16 @@ def glossary() -> None:
         )
 
 
+def as_dates(values: pd.Series) -> pd.Series:
+    """A column as dates: left as it is when already one, else read as the XER writes dates
+    ("YYYY-MM-DD HH:MM", ISO 8601, seconds tolerated). Never a guess from the first value, which
+    pandas would otherwise make and then apply to the rest (a date without time becomes NaT after
+    one with seconds), nor a dateutil fallback on a label."""
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return values
+    return to_datetime(values.astype("string").fillna(""))
+
+
 def section(title: str, caption: str = "") -> None:
     st.subheader(title)
     if caption:
@@ -305,7 +316,7 @@ def section(title: str, caption: str = "") -> None:
 
 
 def _has_time(values: pd.Series) -> bool:
-    timestamps = pd.to_datetime(values, errors="coerce").dropna()
+    timestamps = as_dates(values).dropna()
     return bool(len(timestamps)) and bool(((timestamps.dt.hour != 0) | (timestamps.dt.minute != 0)).any())
 
 
@@ -440,7 +451,7 @@ def filter_rows(frame: pd.DataFrame, filters: Mapping[str, str]) -> tuple[pd.Dat
             if kind == "number":
                 keep &= _number_test(text)(values).fillna(False)
             elif kind == "date":
-                keep &= _date_test(text)(pd.to_datetime(values, errors="coerce")).fillna(False)
+                keep &= _date_test(text)(as_dates(values)).fillna(False)
             else:
                 keep &= values.map(fold).str.contains(fold(text), regex=False)
         except ValueError:

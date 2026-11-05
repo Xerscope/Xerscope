@@ -90,3 +90,23 @@ def test_a_filter_that_cannot_be_read_is_reported_and_skipped():
     assert rows["task_code"].tolist() == ["A1210"]
     assert set(errors) == {"total_float_d", "finish"}
     assert "number" in errors["total_float_d"] and "date" in errors["finish"]
+
+
+def test_dates_are_read_as_iso_8601_never_guessed():
+    """A date column still held as text (an export, a diagnostic frame) is read with the XER format,
+    "YYYY-MM-DD HH:MM" (ISO 8601): no element-by-element guess, so no dateutil fallback and no
+    ambiguity between day and month. Text that is not ISO is not a date (NaT), not a guess."""
+    import warnings
+
+    frame = pd.DataFrame({"finish": ["2026-10-31 17:00:00", "2026-11-01 08:00", "2026-11-02", "01/02/2026", None]})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        # pandas alone would take the format of the first value (with seconds) and lose the next two
+        assert ui.as_dates(frame["finish"]).notna().tolist() == [True, True, True, False, False]
+        rows, errors = ui.filter_rows(frame, {"finish": "2026-11"})
+        assert errors == {} and rows["finish"].tolist() == ["2026-11-01 08:00", "2026-11-02"]
+        rows, _ = ui.filter_rows(frame, {"finish": "2026-02"})
+        assert rows.empty  # "01/02/2026" is not read as 1 February (nor as 2 January)
+        assert ui._has_time(frame["finish"]) is True
+        assert ui._has_time(pd.Series(["2026-10-31", "01/02/2026"])) is False
+        assert ui._has_time(pd.Series(["2026-03-02 · update.xer"])) is False  # a label: no dateutil fallback
