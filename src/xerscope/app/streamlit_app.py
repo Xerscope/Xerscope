@@ -43,4 +43,5 @@ pages = st.navigation(
 
 ui.apply_style()
 sidebar_loader()
+ui.glossary()
 pages.run()

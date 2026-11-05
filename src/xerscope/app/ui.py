@@ -18,6 +18,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
+from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.viz import gantt_assets
 from xerscope.viz.charts import ACCENT, SERIES, STATUS
 
@@ -228,7 +229,20 @@ def kpis(items: Sequence[tuple]) -> None:
         delta = rest[0] if len(rest) > 0 else None
         help_ = rest[1] if len(rest) > 1 else None
         colour = rest[2] if len(rest) > 2 else "normal"
+        help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
         col.metric(label, value, delta=delta, help=help_, delta_color=colour, border=True)
+
+
+def glossary() -> None:
+    """Every acronym of the pages, spelled out with its definition and source, in the sidebar: it
+    shows on every page, including those that stop early."""
+    with st.sidebar.expander("Glossary", icon=":material/menu_book:"):
+        st.markdown(
+            "\n".join(
+                f"- **{token}**: {name}. {definition} *({source})*"
+                for token, (name, definition, source) in sorted(GLOSSARY.items(), key=lambda item: item[0].lower())
+            )
+        )
 
 
 def section(title: str, caption: str = "") -> None:
@@ -267,16 +281,19 @@ NUMBER_FORMATS = {
 
 
 def _column_for(label: str, kind: str, values: pd.Series):
+    help_ = spelled_out(label) or None
     if kind in ("date", "datetime"):
         with_time = kind == "datetime" and _has_time(values)
-        return st.column_config.DatetimeColumn(label, format="YYYY-MM-DD HH:mm" if with_time else "YYYY-MM-DD")
+        return st.column_config.DatetimeColumn(
+            label, format="YYYY-MM-DD HH:mm" if with_time else "YYYY-MM-DD", help=help_
+        )
     if kind in NUMBER_FORMATS:
-        return st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind])
+        return st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind], help=help_)
     if kind == "bool":
-        return st.column_config.CheckboxColumn(label)
+        return st.column_config.CheckboxColumn(label, help=help_)
     if kind == "wide":
-        return st.column_config.TextColumn(label, width="medium")
-    return st.column_config.TextColumn(label)
+        return st.column_config.TextColumn(label, width="medium", help=help_)
+    return st.column_config.TextColumn(label, help=help_)
 
 
 def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels: bool = False) -> dict:
