@@ -751,16 +751,17 @@ def baseline_copies(projects: pd.DataFrame) -> dict[str, str]:
 def _default_project(projects: pd.DataFrame, copies: set[str]) -> tuple[pd.Series, str]:
     """The PROJECT row a file is read for when none is asked for, and the rule that picked it.
 
-    Baseline copies (``copies``) are set aside; of the others, the latest data date (``_data_date``),
-    then the most TASK rows (``_n``), then the first in the file. When every project is a baseline
-    copy, the most TASK rows, then the first in the file."""
+    Baseline copies (``copies``) are set aside; of the others, the most TASK rows (``_n``), then the
+    latest data date (``_data_date``), then the first in the file. When every project is a baseline
+    copy, the most TASK rows, then the first in the file. TASK rows come first: a file exported with
+    other projects of a portfolio can hold a small project recalculated later than the main one."""
     rows = [row for _, row in projects.iterrows()]  # file order
     if len(rows) == 1:
         return rows[0], "only project"
     pool = [row for row in rows if row["proj_id"] not in copies]
     if pool:
-        keys = [(_data_date(row)[0] or pd.Timestamp.min, row["_n"]) for row in pool]
-        names = ["latest data date", "most TASK rows"]
+        keys = [(row["_n"], _data_date(row)[0] or pd.Timestamp.min) for row in pool]
+        names = ["most TASK rows", "latest data date"]
     else:
         pool = rows
         keys = [(row["_n"],) for row in pool]

@@ -287,7 +287,7 @@ def test_header_takes_what_build_snapshot_takes(case):
     text = HEADER_CASES[case]
     header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, keep=HEADER_TABLES))
     if case == "two projects":
-        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "latest data date"
+        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
     if case == "no recalc date":
         assert header.data_date_source == "plan_start_date"
 
@@ -321,19 +321,19 @@ def test_a_copy_named_only_by_orig_proj_id_is_set_aside():
     assert _default(text)[0] == "1"
 
 
-def test_of_two_unrelated_projects_the_latest_data_date_wins():
+def test_of_two_unrelated_projects_the_most_tasks_win():
     from file_projects import two_projects
 
-    # project 2 has fewer activities but a later data date
+    # project 2 has a later data date but fewer activities (a small project of the portfolio)
     text = two_projects(pointer="", original="", baseline_ids=("B1",), baseline_date="2026-03-09 08:00")
-    assert _default(text) == ("2", "latest data date")
+    assert _default(text) == ("1", "most TASK rows")
 
 
-def test_same_data_date_then_most_tasks_then_file_order():
+def test_as_many_tasks_then_latest_data_date_then_file_order():
     from file_projects import two_projects
 
-    text = two_projects(pointer="", original="", baseline_ids=("B1",), baseline_date="2026-03-02 08:00")
-    assert _default(text) == ("1", "most TASK rows")
+    text = two_projects(pointer="", original="", baseline_ids=("B1", "B2"), baseline_date="2026-03-09 08:00")
+    assert _default(text) == ("2", "latest data date")
     text = two_projects(pointer="", original="", baseline_ids=("B1", "B2"), baseline_date="2026-03-02 08:00")
     assert _default(text) == ("1", "first in file")
 

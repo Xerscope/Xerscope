@@ -309,7 +309,7 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
         st.caption(
             "One project per file: the one picked below for that file, else the one picked in Project "
             "when the file holds it, otherwise baseline copies (sum_base_proj_id, orig_proj_id) set "
-            "aside, the latest status date, then the most TASK rows, then the first in the file. "
+            "aside, the most TASK rows, then the latest status date, then the first in the file. "
             "Picked by says which rule decided. "
             "Status date: PROJECT.last_recalc_date, else plan_start_date. "
             "One file per status date."
