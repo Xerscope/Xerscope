@@ -878,6 +878,26 @@ def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
     assert r.flagged.iloc[0]["unsatisfied"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
 
 
+def test_a_constraint_met_in_working_time_is_satisfied():
+    """A constraint date and a recalculated date that name the same working minute meet. The CPM
+    places A's Start On at Tue 00:00 at Tue 08:00 (a date in non-working time is the start of the
+    next working period, docs/formulas.md): compared as clock times, 08:00 is not 00:00 and A was
+    reported unsatisfied (the P6 23.12 corpus has 215 Start on or After and 149 Finish on or Before
+    dates at 00:00). B (Start on or before Mon, held to Tue by its FS predecessor) still is; G's
+    Mandatory Finish at Mon 08:00 is met as written."""
+    s = snap(
+        [
+            todo("P", **hours(8)),
+            todo("A", cstr_type="CS_MSO", cstr_date="2026-03-03 00:00", **hours(8)),
+            todo("B", cstr_type="CS_MSOB", cstr_date="2026-03-02 08:00", **hours(8)),
+            todo("G", cstr_type="CS_MANDFIN", cstr_date="2026-03-09 08:00", **hours(40)),
+        ],
+        [("P", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-07", s)
+    assert codes(r) == ["B"] and counts(r) == (1, 3)
+
+
 def test_unsatisfied_relationship_is_a_link_the_successor_dates_break():
     """B has a Mandatory start on Mon 2026-03-02, while its FS predecessor A (80 h) finishes Fri 2026-03-13 17:00."""
     s = snap(

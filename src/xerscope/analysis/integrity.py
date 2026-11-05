@@ -204,7 +204,9 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
     xerscope's reading of the P6 log exception 'Tasks with unsatisfied constraints', not confirmed
     against a P6 log: the recalculated early start (or finish) must be on the required side of the
     constraint date (Start on or before: not later; Start on or after: not earlier; Start on, Finish on,
-    Mandatory start and finish: equal). Primary and secondary constraints are both read.
+    Mandatory start and finish: equal). Primary and secondary constraints are both read. Compared in
+    working time of the activity's calendar, as the CPM places them: a date in non-working time is the
+    start of the next working period, so a Start On at 00:00 is met by an early start at 08:00.
     """
     try:
         dates = schedule(context.snapshot).frame
@@ -226,7 +228,8 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
             if side == "start":
                 applies &= ~activities["is_started"]
             wanted, actual = activities[date_column], early[side]
-            met = {"<=": actual <= wanted, ">=": actual >= wanted, "==": actual == wanted}[requirement]
+            late_by = context.snapshot.work_hours(activities["clndr_id"], wanted, actual)  # working hours
+            met = {"<=": late_by <= 0, ">=": late_by >= 0, "==": late_by == 0}[requirement]
             constrained |= set(activities.loc[applies, "task_code"])
             for index in activities.index[applies & ~met.fillna(False)]:
                 code = activities.at[index, "task_code"]
