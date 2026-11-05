@@ -953,7 +953,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 9 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 10 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1377,3 +1377,36 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
 )
 def test_a_change_of_zero_is_drawn_neutral(delta, colour, expected):
     assert ui.delta_colour(delta, colour) == expected
+
+
+def test_debug_block_10_compares_a_p6_export_and_keeps_the_activity_list_out_of_the_zip(app, store, downloads):
+    """An export built from xerscope's own PV and EV matches it: no activity in gap; block 10 in the
+    anonymized zip as four tables with no Activity ID; the activity list on screen only."""
+    import io
+    import zipfile
+
+    from xerscope.analysis.evm import earned
+
+    app.switch_page("views/debug.py").run()
+    values = earned(app.session_state["store"].latest, app.session_state["baseline"])
+    export = pd.DataFrame(
+        {
+            "Activity ID": values.index,
+            "Planned Value Labor Units": values["pv_hr"],
+            "Earned Value Labor Units": values["ev_hr"],
+            "Schedule % Complete": values["schedule_pct"],
+        }
+    )
+    app.file_uploader(key="debug_p6_export").set_value(
+        ("p6.csv", export.to_csv(index=False).encode(), "text/csv")
+    ).run()
+    _ok(app)
+    assert any(c.value.startswith("Activities in gap (PV or EV)") for c in app.caption)
+    next(b for b in app.button if b.label == "Build diagnostic").click().run()
+    _ok(app)
+    with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download diagnostic (.zip) · anonymized"))) as archive:
+        names = [n for n in archive.namelist() if n.startswith("10_")]
+        causes = pd.read_csv(io.BytesIO(archive.read("10_pv_p6_gap_causes.csv")), encoding="utf-8-sig")
+        text = "".join(archive.read(n).decode("utf-8-sig") for n in names)
+    assert len(names) == 4 and causes.loc[0, "gap_activities"] == 0
+    assert not set(store.latest.activities["task_code"]) & {c for line in text.splitlines() for c in line.split(",")}
