@@ -354,6 +354,18 @@ FILE_PROJECT_COLUMNS = [
     "proj_id", "proj_short_name", "tasks", "sum_base_proj_id", "orig_proj_id", "last_baseline_update_date",
     "data_date", "add_date", "use_project_baseline_flag",
 ]  # fmt: skip
+# Project settings carried along with the rows above, as stored, None when the file has no such
+# column, except the two FILE_PROJECT_COLUMNS among them, blank as the baseline resolution reads
+# them (Debug block 11; no KPI reads the others). What each one is: app/diagnostic.py, SETTINGS_MEANING.
+PROJECT_SETTING_COLUMNS = [
+    "use_project_baseline_flag", "sum_base_proj_id", "baselines_to_export", "baseline_names_to_export",
+    "def_complete_pct_type", "add_act_remain_flag", "act_this_per_link_flag", "act_pct_link_flag",
+    "rem_target_link_flag", "reset_planned_flag", "def_task_type", "def_duration_type", "next_data_date",
+    "last_recalc_date",
+]  # fmt: skip
+# TASK rows of the project by complete_pct_type (PCT_COMPLETE_TYPE, then blank, then any other code);
+# None when TASK has no complete_pct_type column.
+PCT_TYPE_COUNT_COLUMNS = [*(f"tasks_{kind}" for kind in PCT_COMPLETE_TYPE), "tasks_pct_blank", "tasks_pct_other"]
 
 
 @dataclass(frozen=True)
@@ -841,11 +853,25 @@ def _select_project(
 
 
 def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:
-    """One row per PROJECT row of the file (``FILE_PROJECT_COLUMNS``), in file order."""
-    table = _ensure_cols(projects.copy(), FILE_PROJECT_COLUMNS + ["last_recalc_date", "plan_start_date"])
+    """One row per PROJECT row of the file, in file order: ``FILE_PROJECT_COLUMNS``, then the
+    ``PROJECT_SETTING_COLUMNS`` not among them and the ``PCT_TYPE_COUNT_COLUMNS``."""
+    absent = [c for c in PROJECT_SETTING_COLUMNS if c not in projects.columns and c not in FILE_PROJECT_COLUMNS]
+    table = _ensure_cols(projects.copy(), FILE_PROJECT_COLUMNS + PROJECT_SETTING_COLUMNS + ["plan_start_date"])
     table["tasks"] = table["proj_id"].map(all_tasks["proj_id"].value_counts()).fillna(0).astype(int)
     table["data_date"] = pd.to_datetime([_data_date(row)[0] for _, row in table.iterrows()])
-    return table[FILE_PROJECT_COLUMNS].reset_index(drop=True)
+    table[absent] = None
+    if "complete_pct_type" in all_tasks.columns:
+        kind = all_tasks["complete_pct_type"].fillna("")
+        kind = kind.where(kind.isin([*PCT_COMPLETE_TYPE, ""]), "other").replace("", "blank")
+        kind = kind.map(lambda value: f"tasks_{value}" if value in PCT_COMPLETE_TYPE else f"tasks_pct_{value}")
+        counts = all_tasks.groupby(["proj_id", kind]).size().unstack(fill_value=0)
+        counts = counts.reindex(columns=PCT_TYPE_COUNT_COLUMNS, fill_value=0)
+        table = table.join(counts, on="proj_id")
+        table[PCT_TYPE_COUNT_COLUMNS] = table[PCT_TYPE_COUNT_COLUMNS].fillna(0).astype(int)
+    else:
+        table[PCT_TYPE_COUNT_COLUMNS] = None
+    extra = [column for column in PROJECT_SETTING_COLUMNS if column not in FILE_PROJECT_COLUMNS]
+    return table[FILE_PROJECT_COLUMNS + extra + PCT_TYPE_COUNT_COLUMNS].reset_index(drop=True)
 
 
 def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:

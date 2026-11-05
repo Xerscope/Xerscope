@@ -153,6 +153,16 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
     )
     table(frames["09_assignment_dates"])
 
+with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):
+    st.caption(
+        "Diagnostic, not used by any KPI. Settings of each project of the file as stored; absent: the file has "
+        "no such column (sum_base_proj_id and use_project_baseline_flag read blank then). "
+        "baseline_names_to_export: number of names only. tasks_*: the project's tasks by % complete type. "
+        "Below, what each field is in P6 and where that is written; unverified where no source settles it."
+    )
+    table(frames["11_project_settings"].astype(str))  # flags, dates, counts and "absent": one type for Arrow
+    table(diagnostic.project_settings_meaning_table())
+
 
 def zip_tag(anonymous: bool) -> tuple:
     """What the zip is built from, as the frames' memo key: files, projects, baseline, EV basis, update."""
@@ -176,7 +186,7 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 9 as CSV. With anonymous exports on, Task IDs, resource codes and WBS codes are renamed "
+    "Blocks 1 to 11 as CSV. With anonymous exports on, Task IDs, resource codes and WBS codes are renamed "
     "as in the anonymized XER extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):

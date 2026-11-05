@@ -17,7 +17,14 @@ from xerscope.analysis.evm import etc_settings, etc_technique_counts, pv_labor_c
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.config import DEFAULT_SETTINGS
-from xerscope.xer.model import Snapshot, leveled, to_number
+from xerscope.xer.model import (
+    FILE_PROJECT_COLUMNS,
+    PCT_TYPE_COUNT_COLUMNS,
+    PROJECT_SETTING_COLUMNS,
+    Snapshot,
+    leveled,
+    to_number,
+)
 
 FROM_FILE, DEFAULTED, BLANK = "file", "default (blank in file)", "blank in file (no default)"
 
@@ -128,7 +135,7 @@ def projects_table(snapshot: Snapshot) -> pd.DataFrame:
     "Project Baseline"); ``orig_proj_id`` ("Original Project") of a baseline copy names the project
     it was copied from.
     """
-    table = snapshot.file_projects.copy()
+    table = snapshot.file_projects[FILE_PROJECT_COLUMNS].copy()
     analysed = table["proj_id"] == snapshot.project_id
     pointer = table.loc[analysed, "sum_base_proj_id"]
     pointed = pointer.iloc[0] if len(pointer) else ""
@@ -415,10 +422,79 @@ def assignment_dates_table(snapshot: Snapshot) -> pd.DataFrame:
     )
 
 
+def _listed(value: object) -> object:
+    """Items of a comma-separated list (the separator is assumed: no reference file fills one)."""
+    return value if value is None else sum(1 for item in str(value).split(",") if item.strip())
+
+
+def project_settings_table(snapshot: Snapshot) -> pd.DataFrame:
+    """Block 11: the ``PROJECT_SETTING_COLUMNS`` of every project of the file as stored, ``absent``
+    when the file has no such column, and its TASK rows by complete_pct_type. Of
+    baseline_names_to_export only the number of names is shown. No KPI reads this."""
+    table = snapshot.file_projects[["proj_id", "proj_short_name", *PROJECT_SETTING_COLUMNS, *PCT_TYPE_COUNT_COLUMNS]]
+    table = table.copy()
+    table["baseline_names_to_export"] = table["baseline_names_to_export"].map(_listed)
+    return table.astype(object).where(table.notna(), ABSENT)
+
+
+# What each setting is in P6. Label: P6 EPPM XER Import/Export Data Map, table PROJECT, version 23
+# (docs.oracle.com/cd/F74771_01, xer_import_export_data_map_project.pdf). Help: P6 Professional 26
+# help (G57535-02, October 2026), the section named. A Y / N reading taken from the label alone is
+# marked unverified: no reference file holds the opposite value with P6's own output.
+DATA_MAP = "data map v23"
+CALCULATIONS = "help 26, Calculations tab - Project Details"
+NEW_ACTIVITIES = "help 26, Project Details, Defaults for New Activities"
+NO_LABEL = "not in data map v23"
+SETTINGS_MEANING = [
+    ("PROJECT.use_project_baseline_flag", "use_project_baseline_flag (no label)",
+     "Baseline for earned value calculation: the project baseline or your primary baseline",
+     "help 26, Settings tab - Project Details", "Y = project baseline: unverified (matched by name)"),
+    ("PROJECT.sum_base_proj_id", "Project Baseline", "Project Baseline (Assign Baselines dialog box)",
+     "help 26, Assign Baselines dialog box", "proj_id of the baseline project"),
+    ("PROJECT.baselines_to_export", NO_LABEL, "Baselines to Export, per project, for a Primavera XML export",
+     "help 26, Baselines to Export dialog box", "how the list is stored: unverified (blank in every reference file)"),
+    ("PROJECT.baseline_names_to_export", NO_LABEL, "Baselines to Export: Baseline Name",
+     "help 26, Baselines to Export dialog box", "shown as a number of comma-separated names: separator unverified"),
+    ("PROJECT.def_complete_pct_type", "Default Percent Complete Type", "Percent complete type of new activities",
+     NEW_ACTIVITIES, "CP_Phys / CP_Drtn / CP_Units"),
+    ("PROJECT.add_act_remain_flag", "Add Actual To Remain", "When updating Actual Units or Cost: Add Actual to "
+     "Remaining, or Subtract Actual from At Completion", CALCULATIONS,
+     "Y = Add Actual to Remaining: unverified (from the label)"),
+    ("PROJECT.act_this_per_link_flag", "Link actual to date and actual this period units and costs",
+     "Link actual to date and actual this period units and costs", CALCULATIONS, "Y = marked (from the label)"),
+    ("PROJECT.act_pct_link_flag", "Link Percent Complete With Actual",
+     "Recalculate Actual Units and Cost when duration % complete changes", CALCULATIONS,
+     "Y = marked: unverified (label matched to the help by name)"),
+    ("PROJECT.rem_target_link_flag", "Link Budget and At Completion",
+     "Link Planned or Budget and At Completion for not started activities", CALCULATIONS,
+     "Y = marked (from the label)"),
+    ("PROJECT.reset_planned_flag", "Reset Original to Remaining", "Reset Planned or Original Duration and Units to "
+     "Remaining, or Reset Remaining Duration and Units to Planned or Original", CALCULATIONS,
+     "Y = Reset Planned to Remaining: unverified (from the label)"),
+    ("PROJECT.def_task_type", "Default Activity Type", "Activity type of new activities", NEW_ACTIVITIES,
+     "TT_* codes"),
+    ("PROJECT.def_duration_type", "Default Duration Type", "Duration type of new activities", NEW_ACTIVITIES,
+     "DT_* codes"),
+    ("PROJECT.next_data_date", NO_LABEL, "", "", "meaning unverified"),
+    ("PROJECT.last_recalc_date", "Last Recalc Date", "", DATA_MAP,
+     "xerscope's data date (else plan_start_date)"),
+    ("TASK.complete_pct_type", "% Complete Type", "Activity % Complete Type", "xer/model.py PCT_COMPLETE_TYPE",
+     "tasks_* counts of the project"),
+    ("PROJWBS: Use resource curves \\ future period buckets", "no column in data map v23 nor in the reference files",
+     "Earned Value tab of the WBS: curves used for EV with Activity Percent Complete",
+     "help 26, Calculating earned value using resource curves or manual future period buckets", ABSENT),
+]  # fmt: skip
+
+
+def project_settings_meaning_table() -> pd.DataFrame:
+    """Static text, the same for every file: shown on the page, not in the zip."""
+    return pd.DataFrame(SETTINGS_MEANING, columns=["field", "xer_label", "p6_setting", "source", "reading"])
+
+
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
-    """The nine blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
+    """The blocks, named as the files of the diagnostic zip. ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
     ev_settings = etc_settings(snapshot)
     pv_totals, pv_by_status = pv_labor_check(snapshot, baseline)
@@ -441,4 +517,5 @@ def diagnostic_frames(
         "09_pv_labor_check": pv_totals,
         "09_pv_labor_by_status": pv_by_status,
         "09_assignment_dates": assignment_dates_table(snapshot),
+        "11_project_settings": project_settings_table(snapshot),
     }
