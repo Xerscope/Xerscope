@@ -288,7 +288,11 @@ Outside `analysis/`:
   (`diagnostic.renumbered_table`, page only), and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
   end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
-  `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI).
+  `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI),
+  and block 11, the project settings of every project of the file (`PROJECT_SETTING_COLUMNS`, carried by
+  the same `Snapshot.file_projects` rows, `absent` for a column the file lacks; of
+  `baseline_names_to_export` only the number of names) with its tasks by `complete_pct_type`, and what
+  each setting is in the XER data map and the P6 help (`SETTINGS_MEANING`). No KPI reads it.
   `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
   `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
   unchanged, cost figures 0 as in the extract).

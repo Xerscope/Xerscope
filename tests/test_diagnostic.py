@@ -258,3 +258,124 @@ def test_assignment_dates_counts_lags_own_dates_and_calendars():
         "task_dependent_on_other_calendar": 1,
         "resource_dependent": 1,
     }
+
+
+# --- Debug block 11: project settings ----------------------------------------------------------
+
+COUNTS = ["tasks_CP_Phys", "tasks_CP_Drtn", "tasks_CP_Units", "tasks_pct_blank", "tasks_pct_other"]
+SETTINGS = {
+    "use_project_baseline_flag": "Y",
+    "sum_base_proj_id": "2",
+    "baselines_to_export": "2",
+    "baseline_names_to_export": "SECRETBL1,SECRETBL2",
+    "def_complete_pct_type": "CP_Units",
+    "add_act_remain_flag": "N",
+    "act_this_per_link_flag": "Y",
+    "act_pct_link_flag": "N",
+    "rem_target_link_flag": "Y",
+    "reset_planned_flag": "N",
+    "def_task_type": "TT_Task",
+    "def_duration_type": "DT_FixedDrtn",
+    "next_data_date": "",
+}
+
+
+def _two_projects_text():
+    from xerkit import DD, with_second_project, xer_text
+
+    tasks = [
+        todo("A"),
+        todo("B", complete_pct_type="CP_Phys"),
+        todo("C", complete_pct_type="CP_Units"),
+        todo("D", complete_pct_type=""),
+        todo("E", complete_pct_type="CP_Scope"),
+    ]
+    main = xer_text(tasks, project={**SETTINGS, "proj_short_name": "SECRETPRJ"})
+    return with_second_project(main, "SECRETBASE", ["A"], DD)
+
+
+def _settings(text):
+    from xerscope.app.diagnostic import project_settings_table
+    from xerscope.xer import build_snapshot, parse_text
+
+    return project_settings_table(build_snapshot(parse_text(text, source="x.xer"))).set_index("proj_id")
+
+
+def test_project_settings_show_y_n_as_stored_and_count_tasks_by_pct_type():
+    """Project 1: the settings above and 5 tasks, one per kind (Phys, Drtn, Units, blank, other: CP_Scope).
+    Project 2 (a second PROJECT row without these values) owns 1 Drtn task. Y / N stay as stored, the
+    two baseline names count 2, a blank next_data_date stays blank (the column is there)."""
+    table = _settings(_two_projects_text())
+    first, second = table.loc["1"], table.loc["2"]
+    flags = ["use_project_baseline_flag", "add_act_remain_flag", "act_this_per_link_flag", "act_pct_link_flag"]
+    assert first[flags].tolist() == ["Y", "N", "Y", "N"]
+    assert first[["rem_target_link_flag", "reset_planned_flag"]].tolist() == ["Y", "N"]
+    assert first[["def_complete_pct_type", "def_task_type", "def_duration_type"]].tolist() == [
+        "CP_Units",
+        "TT_Task",
+        "DT_FixedDrtn",
+    ]
+    assert first[["sum_base_proj_id", "baselines_to_export", "baseline_names_to_export"]].tolist() == ["2", "2", 2]
+    assert first["next_data_date"] == "" and first["last_recalc_date"] == "2026-03-02 08:00"
+    assert first[COUNTS].tolist() == [1, 1, 1, 1, 1]
+    assert second[COUNTS].tolist() == [0, 1, 0, 0, 0]
+    assert second[["use_project_baseline_flag", "baseline_names_to_export"]].tolist() == ["", 0]
+
+
+def test_project_settings_columns_the_file_lacks_read_absent():
+    """The default test PROJECT row has none of the settings but last_recalc_date; sum_base_proj_id and
+    use_project_baseline_flag read blank (as the baseline resolution reads them), the others absent."""
+    from xerkit import xer_text
+
+    row = _settings(xer_text([todo(c) for c in "ABC"])).loc["1"]
+    others = [c for c in SETTINGS if c not in ("sum_base_proj_id", "use_project_baseline_flag")]
+    assert row[others].tolist() == [ABSENT] * len(others)
+    assert row[["sum_base_proj_id", "use_project_baseline_flag"]].tolist() == ["", ""]
+    assert row["last_recalc_date"] == "2026-03-02 08:00"
+    assert row[COUNTS].tolist() == [0, 3, 0, 0, 0]
+
+
+def test_project_settings_counts_read_absent_when_task_has_no_complete_pct_type():
+    from xerkit import xer_text
+
+    lines = xer_text([todo("A")]).splitlines()
+    at = lines.index("%T\tTASK")
+    drop = lines[at + 1].split("\t").index("complete_pct_type")
+    for i in (at + 1, at + 2):
+        cells = lines[i].split("\t")
+        del cells[drop]
+        lines[i] = "\t".join(cells)
+    assert _settings("\n".join(lines) + "\n").loc["1", COUNTS].tolist() == [ABSENT] * len(COUNTS)
+
+
+def test_project_settings_zip_renames_project_codes_and_holds_no_baseline_name():
+    import io
+    import zipfile
+
+    from xerscope.anonymize import Anonymizer
+    from xerscope.xer import build_snapshot, parse_text
+
+    raw = parse_text(_two_projects_text(), source="x.xer")
+    frames = diagnostic_frames(build_snapshot(raw), None, builtin_standards()["P6"], anonymous=True)
+    block = {name: frame for name, frame in frames.items() if name.startswith("11_")}
+    assert sorted(block) == ["11_project_settings"]
+    with zipfile.ZipFile(io.BytesIO(Anonymizer.from_raws([raw]).zip_frames(block))) as archive:
+        text = "".join(archive.read(name).decode("utf-8-sig") for name in archive.namelist())
+        shown = pd.read_csv(
+            io.StringIO(archive.read("11_project_settings.csv").decode("utf-8-sig")), dtype=str, keep_default_na=False
+        )
+    assert "SECRET" not in text
+    assert shown["proj_short_name"].str.startswith("XP").all() and shown["proj_short_name"].nunique() == 2
+    assert shown["baseline_names_to_export"].tolist() == ["2", "0"]
+
+
+def test_project_settings_meaning_covers_every_setting_and_marks_the_unverified():
+    from xerscope.app.diagnostic import project_settings_meaning_table
+    from xerscope.xer.model import PROJECT_SETTING_COLUMNS
+
+    meaning = project_settings_meaning_table().set_index("field")
+    settings = [field.removeprefix("PROJECT.") for field in meaning.index if field.startswith("PROJECT.")]
+    assert settings == PROJECT_SETTING_COLUMNS
+    assert meaning.loc["PROJECT.next_data_date", "reading"] == "meaning unverified"
+    assert meaning.loc["PROJECT.sum_base_proj_id", "xer_label"] == "Project Baseline"
+    assert meaning.filter(like="PROJWBS", axis=0)["reading"].tolist() == [ABSENT]

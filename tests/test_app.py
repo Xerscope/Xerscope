@@ -1036,7 +1036,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 10 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 11 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 

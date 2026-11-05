@@ -239,6 +239,16 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                 st.caption("Activities in gap (PV or EV), largest gap first. On screen only: not in the zip.")
                 table(comparison.activities, max_height=480)
 
+with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):
+    st.caption(
+        "Diagnostic, not used by any KPI. Settings of each project of the file as stored; absent: the file has "
+        "no such column (sum_base_proj_id and use_project_baseline_flag read blank then). "
+        "baseline_names_to_export: number of names only. tasks_*: the project's tasks by % complete type. "
+        "Below, what each field is in P6 and where that is written; unverified where no source settles it."
+    )
+    table(frames["11_project_settings"].astype(str))  # flags, dates, counts and "absent": one type for Arrow
+    table(diagnostic.project_settings_meaning_table())
+
 
 def zip_tag(anonymous: bool) -> tuple:
     """What the zip is built from: files, projects, baseline, EV basis, update, P6 export of block 10."""
@@ -262,9 +272,9 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 9 as CSV, and block 10 without its activity list when an export is loaded. With anonymous "
-    "exports on, Task IDs, resource codes and WBS codes are renamed as in the anonymized XER extract; the "
-    "tables hold no name or project name. Dates are left as they are.",
+    "Blocks 1 to 9 and 11 as CSV, and block 10 without its activity list when an export is loaded. With "
+    "anonymous exports on, Task IDs, resource codes and WBS codes are renamed as in the anonymized XER "
+    "extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)
