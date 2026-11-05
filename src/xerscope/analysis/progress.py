@@ -9,7 +9,9 @@ PPC (Percent Plan Complete): the commitments the W-1 update made for the week, k
 W update. A finish commitment is an open activity forecast to finish before the W data
 date, kept when W shows it complete (Last Planner's PPC counts these only); a start
 commitment is a not-started activity forecast to start before that date, kept when W shows
-it started. PPC = kept / committed over both. In a file P6 has recalculated no forecast
+it started. PPC (Last Planner: complete / planned) = finishes kept / finishes committed;
+PPC Start = starts kept / starts committed; PPC all = kept / committed over both kinds.
+In a file P6 has recalculated no forecast
 falls before its own data date, so these are the dates of the week [W-1, W); an
 unscheduled file with stale forecasts also counts its overdue work, which was due and is
 not done.
@@ -151,18 +153,21 @@ def ppc_series(store: SnapshotStore) -> pd.DataFrame:
         finishes = commitments[commitments["commitment"] == "Finish"]
         starts = commitments[commitments["commitment"] == "Start"]
         planned, kept = len(commitments), int(commitments["kept"].sum())
+        finishes_kept, starts_kept = int(finishes["kept"].sum()), int(starts["kept"].sum())
         rows.append(
             {
                 "snapshot_idx": index,
                 "week_start": store[index - 1].data_date,
                 "data_date": store[index].data_date,
                 "finishes_committed": len(finishes),
-                "finishes_kept": int(finishes["kept"].sum()),
+                "finishes_kept": finishes_kept,
                 "starts_committed": len(starts),
-                "starts_kept": int(starts["kept"].sum()),
+                "starts_kept": starts_kept,
                 "committed": planned,
                 "kept": kept,
-                "ppc": 100 * kept / planned if planned else None,
+                "ppc": _share(finishes_kept, len(finishes)),
+                "ppc_start": _share(starts_kept, len(starts)),
+                "ppc_all": _share(kept, planned),
             }
         )
     return pd.DataFrame(
@@ -178,8 +183,15 @@ def ppc_series(store: SnapshotStore) -> pd.DataFrame:
             "committed",
             "kept",
             "ppc",
+            "ppc_start",
+            "ppc_all",
         ],
     )
+
+
+def _share(kept: int, committed: int) -> float | None:
+    """Percent kept, None when nothing was committed."""
+    return 100 * kept / committed if committed else None
 
 
 # --- progress delta --------------------------------------------------------------------------

@@ -122,7 +122,7 @@ def test_earned_value_kpis_equal_evm_series(app, store):
 
 
 def test_ppc_kpis_equal_ppc_series(app, store):
-    """Finishes kept, starts kept and PPC of every week: the KPI row and the chart's series agree."""
+    """Finishes kept, starts kept and the three PPC of every week: the KPI row and the chart's series agree."""
     app.switch_page("views/ppc.py")
     _run(app)
     series = ppc_series(store).set_index("snapshot_idx")
@@ -132,13 +132,14 @@ def test_ppc_kpis_equal_ppc_series(app, store):
         row, shown = series.loc[index], _metrics(app)
         assert shown["Finishes kept"] == f"{row['finishes_kept']} / {row['finishes_committed']}", label
         assert shown["Starts kept"] == f"{row['starts_kept']} / {row['starts_committed']}", label
-        assert shown["PPC this week"] == ("–" if pd.isna(row["ppc"]) else f"{row['ppc']:.0f} %"), label
+        for tile, column in (("PPC this week", "ppc"), ("PPC Start", "ppc_start"), ("PPC all commitments", "ppc_all")):
+            assert shown[tile] == ("–" if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
 
 
 def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     """W-1 commits A, B, C to start and finish before W's data date. W: A complete, B not
     started, C deleted. A deleted activity is a scope change, not a miss: finishes 1 / 2 (A),
-    starts 1 / 2 (A), PPC 2 / 4 = 50 %."""
+    PPC 50 %; starts 1 / 2 (A), PPC Start 50 %; all commitments 2 / 4 = 50 %."""
     week_1 = [todo(code, early_end_date="2026-03-06 17:00") for code in ("A", "B", "C")]
     week_2 = [done("A", act_end_date="2026-03-06 17:00"), todo("B", early_start_date="2026-03-09 08:00")]
     (tmp_path / "w1.xer").write_text(xer_text(week_1, data_date="2026-03-02 08:00"))
@@ -151,6 +152,7 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     _run(at)
     shown = _metrics(at)
     assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC this week"]) == ("1 / 2", "1 / 2", "50 %")
+    assert (shown["PPC Start"], shown["PPC all commitments"]) == ("50 %", "50 %")
 
 
 def test_overview_kpis_equal_store_summary(app, store):

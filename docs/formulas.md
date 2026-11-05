@@ -323,9 +323,10 @@ two kinds of commitment, read on the activities of W-1 that are neither mileston
 | Start | not started, `start < data date of W` | started |
 
 `start` / `finish` are W-1's Start / Finish columns. An activity due to start and finish
-within the week is two commitments. `PPC = 100 × kept / committed` over both kinds, none
-when committed = 0; the finish row alone is Last Planner's PPC (finishes only) and is
-shown next to it. Milestones are left out: a milestone repeats its predecessor's date, so
+within the week is two commitments. Three series, each none when its denominator is 0:
+`ppc = 100 × finishes kept / finishes committed` (Last Planner's PPC: complete / planned),
+`ppc_start = 100 × starts kept / starts committed`, `ppc_all = 100 × kept / committed` over
+both kinds. Milestones are left out: a milestone repeats its predecessor's date, so
 counting it adds a commitment the week the predecessor ends. Activities deleted in W are
 listed (`status_now = deleted`) and left out of both counts. Pinned by
 test_ppc_counts_starts_and_finishes_and_leaves_milestones_out,

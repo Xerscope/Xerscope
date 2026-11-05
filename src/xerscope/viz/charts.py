@@ -427,14 +427,19 @@ def format_shift(shift_wd: float) -> str:
 # --- PPC ---------------------------------------------------------------------------------------
 
 
+def _ppc_text(values, kept, committed) -> list[str]:
+    return [
+        f"{v:.0f}% ({d}/{n})" if pd.notna(v) else "no commitment"
+        for v, d, n in zip(values, kept, committed, strict=True)
+    ]
+
+
 def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
+    """Bars: PPC (finishes kept / committed, Last Planner). Lines: PPC Start and PPC all commitments."""
     c = SERIES
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
-    text = [
-        f"{v:.0f}% ({d}/{n})" if pd.notna(v) else "no commitment"
-        for v, d, n in zip(p["ppc"], p["kept"], p["committed"], strict=True)
-    ]
+    text = _ppc_text(p["ppc"], p["finishes_kept"], p["finishes_committed"])
     # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
     # the hover keeps the counts)
     weeks = len(p)
@@ -449,10 +454,27 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
             cliponaxis=False,
             marker=dict(color=c[0], cornerradius=4),
             width=0.6,
-            name="PPC",
-            hovertemplate="Week to %{x}: %{customdata}<extra></extra>",
+            name="PPC (finishes)",
+            hovertemplate="Week to %{x}: finishes %{customdata}<extra></extra>",
         )
     )
+    for column, kept, committed, name, colour in (
+        ("ppc_start", "starts_kept", "starts_committed", "PPC Start", c[2]),
+        ("ppc_all", "kept", "committed", "PPC all commitments", c[1]),
+    ):
+        fig.add_trace(
+            go.Scatter(
+                x=p["label"],
+                y=p[column],
+                mode="lines+markers",
+                name=name,
+                line=dict(color=colour, width=2),
+                marker=dict(size=7),
+                connectgaps=False,
+                customdata=_ppc_text(p[column], p[kept], p[committed]),
+                hovertemplate="Week to %{x}: " + name.lower() + " %{customdata}<extra></extra>",
+            )
+        )
     critical = STATUS["critical"]
     fig.add_hline(y=target, line=dict(color=critical, width=1, dash="dot"))
     # in the right margin: inside the plot it sits on the last bar
@@ -466,7 +488,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         xshift=6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
-    fig = _layout(fig, 400, "PPC (%)", legend=False)
+    fig = _layout(fig, 400, "PPC (%)", legend=True)
     fig.update_layout(hovermode="closest")
     fig.update_yaxes(range=[0, 115])
     fig.update_xaxes(title="Week ending (status date)", showspikes=False, type="category")
