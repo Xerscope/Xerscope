@@ -278,13 +278,28 @@ def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None]:
     files = [path for path in xer_files(root) if path.name in names] if root.is_dir() else []
     if not files:
         return (), None
-    # keyed on content, as an upload: a file replaced under the same name and modification time
-    # is read again; _parse keys on the same digest, so an unchanged file is not parsed again
-    items = [(path.name, path.read_bytes()) for path in files]
-    signature = ("folder", str(root)) + tuple((name, _digest(data)) for name, data in items)
-    if signature == st.session_state.get("signature"):
+    signature = ("folder", str(root)) + tuple((path.name, _file_digest(path)) for path in files)
+    previous = st.session_state.get("signature") or ()
+    if signature == previous:
         return signature, None
-    return signature, items
+    # the bytes of a file whose digest did not change are those already held: not read again
+    held = dict(st.session_state.get("items") or []) if previous[:2] == signature[:2] else {}
+    unchanged = {name for name, _ in set(signature[2:]) & set(previous[2:]) if name in held}
+    return signature, [(path.name, held[path.name] if path.name in unchanged else path.read_bytes()) for path in files]
+
+
+def _file_digest(path: Path) -> str:
+    """sha256 of a folder's file, keyed on content as an upload. Read and digested again only when
+    its inode, size, modification or change time moved: a file replaced under the same name and
+    modification time (os.utime) still gets a new change time. Kept in the session's state."""
+    cache = st.session_state.setdefault("_file_digests", {})
+    stat = path.stat()
+    stamp = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    kept = cache.get(str(path))
+    if kept is None or kept[0] != stamp:
+        kept = (stamp, _digest(path.read_bytes()))
+        cache[str(path)] = kept
+    return kept[1]
 
 
 def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:

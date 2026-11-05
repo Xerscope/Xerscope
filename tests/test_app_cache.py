@@ -376,6 +376,8 @@ def _download(at, downloads: dict[str, bytes], label: str) -> bytes:
 
 
 def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sample_dir, tmp_path, monkeypatch):
+    """A rerun with nothing changed reads no file; one replaced under the same name and modification
+    time (its change time moves) is read, digested and parsed again, and only it."""
     import os
     import shutil
 
@@ -398,8 +400,17 @@ def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sampl
     at.switch_page("views/health.py").run()
     assert not at.exception
     before = {s.source: s.data_date for s in at.session_state["store"]}
+    reads = []
+    real_read = Path.read_bytes
+
+    def counting_read(path):
+        reads.append(path.name)
+        return real_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read)
     at.run()
     assert sorted(parsed) == ["a.xer", "b.xer"]  # a rerun parses nothing
+    assert reads == []  # nor reads or digests a file whose stat did not change
 
     stat = (folder / "b.xer").stat()
     (folder / "b.xer").write_bytes(week3.read_bytes())
@@ -408,6 +419,7 @@ def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sampl
     at.run()
     assert not at.exception
     assert sorted(parsed) == ["a.xer", "b.xer", "b.xer"]  # only the replaced file
+    assert "a.xer" not in reads and "b.xer" in reads
     after = {s.source: s.data_date for s in at.session_state["store"]}
     assert after["a.xer"] == before["a.xer"] and after["b.xer"] != before["b.xer"]
     # Health's results now are those of the new content (its status date), from a fresh calculation
