@@ -337,11 +337,14 @@ def _check_snapshot_columns(snap: Snapshot) -> None:
 
 # Every PROJECT row of the file: TASK rows, and the baseline pointers P6 writes (EPPM XER data map,
 # table PROJECT, v23: sum_base_proj_id "Project Baseline", orig_proj_id "Original Project",
-# last_baseline_update_date "Last Update Date"; same XER format on 26, unverified).
+# last_baseline_update_date "Last Update Date", add_date "Date Added"; same XER format on 26, unverified).
+# use_project_baseline_flag has no label in the data map; its name matches the Project Details >
+# Settings choice of the baseline earned value uses (the project baseline or each user's primary
+# baseline, P6 Professional help, Earned Value tab of Admin Preferences), unverified. Both as stored.
 # data_date: the project's data date, read as for the analysed project (_data_date).
 FILE_PROJECT_COLUMNS = [
     "proj_id", "proj_short_name", "tasks", "sum_base_proj_id", "orig_proj_id", "last_baseline_update_date",
-    "data_date",
+    "data_date", "add_date", "use_project_baseline_flag",
 ]  # fmt: skip
 
 
@@ -375,8 +378,7 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     if pointer == project_id:
         return FileBaseline(pointer, "", False, "the pointer names the analysed project itself")
     if pointer not in rows.index:
-        note = f"points to project {pointer}, which is not in the file: export that baseline as its own XER"
-        return FileBaseline(pointer, "", False, note)
+        return FileBaseline(pointer, "", False, f"project {pointer} absent")
     target = rows.loc[pointer]
     if target["tasks"] == 0:
         return FileBaseline(pointer, target["proj_short_name"], False, f"project {pointer} has no tasks")

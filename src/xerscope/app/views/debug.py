@@ -95,6 +95,13 @@ with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="de
 
 with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(frames["05_baseline"])
+    st.caption(
+        "Every update of the series, by data date: the analysed project (proj_id, add_date 'Date Added') and "
+        "the Project Baseline it names (sum_base_proj_id), held by the file or not. use_project_baseline_flag "
+        "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
+        "baseline earned value uses (project baseline or each user's primary baseline), unverified."
+    )
+    table(diagnostic.baseline_pointers(store))
     table(frames["05_calendars"])
 
 with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled tasks)", key="debug_load_warnings"):

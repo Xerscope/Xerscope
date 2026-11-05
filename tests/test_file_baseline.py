@@ -9,7 +9,13 @@ from file_projects import BASELINE_DATE, two_projects
 
 from xerscope.analysis import builtin_standards
 from xerscope.anonymize import Anonymizer
-from xerscope.app.diagnostic import ANALYSED, BASELINE_OF_ANALYSED, diagnostic_frames, projects_table
+from xerscope.app.diagnostic import (
+    ANALYSED,
+    BASELINE_OF_ANALYSED,
+    baseline_pointers,
+    diagnostic_frames,
+    projects_table,
+)
 from xerscope.xer import build_snapshot, parse_text
 
 
@@ -54,6 +60,48 @@ def test_projects_block_of_an_anonymous_download_renames_the_codes_and_keeps_the
     assert shown[["proj_id", "sum_base_proj_id", "orig_proj_id"]].values.tolist() == [["1", "2", ""], ["2", "", "1"]]
 
 
+def _update(source, proj_id, data_date, pointer, added, flag):
+    from xerkit import xer_text
+
+    project = {"proj_id": proj_id, "sum_base_proj_id": pointer, "add_date": added, "use_project_baseline_flag": flag}
+    text = xer_text([{"task_code": "A1", "proj_id": proj_id}], project=project, data_date=data_date)
+    return build_snapshot(parse_text(text, source=source))
+
+
+def test_the_baseline_pointers_of_a_series_are_listed_in_data_date_order():
+    # three weekly files, read in file-name order, each a project of its own pointing to a baseline it does not hold
+    from xerscope.store import SnapshotStore
+
+    store = SnapshotStore(
+        [
+            _update("c.xer", "6318", "2026-03-16 08:00", "6319", "2026-03-13 16:00", "Y"),
+            _update("a.xer", "5778", "2026-03-02 08:00", "5621", "2026-02-27 16:00", "Y"),
+            _update("b.xer", "6096", "2026-03-09 08:00", "6115", "2026-03-06 16:00", "N"),
+        ]
+    )
+    table = baseline_pointers(store)
+    assert table.columns.tolist() == [
+        "file", "data_date", "proj_id", "add_date", "sum_base_proj_id", "baseline_in_file",
+        "use_project_baseline_flag",
+    ]  # fmt: skip
+    assert table.drop(columns="data_date").values.tolist() == [
+        ["a.xer", "5778", "2026-02-27 16:00", "5621", False, "Y"],
+        ["b.xer", "6096", "2026-03-06 16:00", "6115", False, "N"],
+        ["c.xer", "6318", "2026-03-13 16:00", "6319", False, "Y"],
+    ]
+    assert table["data_date"].tolist() == [
+        pd.Timestamp(f"{day} 08:00") for day in ("2026-03-02", "2026-03-09", "2026-03-16")
+    ]
+
+
+def test_a_baseline_held_by_the_file_is_marked_in_file():
+    from xerscope.store import SnapshotStore
+
+    (row,) = baseline_pointers(SnapshotStore([_snapshot()])).to_dict("records")
+    assert (row["proj_id"], row["sum_base_proj_id"], row["baseline_in_file"]) == ("1", "2", True)
+    assert (row["add_date"], row["use_project_baseline_flag"]) == ("", "")
+
+
 # --- the baseline a file names for its analysed project --------------------------------------------
 
 
@@ -76,9 +124,7 @@ def test_a_pointer_to_a_project_that_is_not_in_the_file_gives_no_baseline():
     # a file exported without its baseline: sum_base_proj_id names a project (370) the file does not hold
     pointer = _snapshot(pointer="370", with_baseline=False).file_baseline
     assert not pointer.usable
-    assert pointer.text == (
-        "Baseline: none in file (points to project 370, which is not in the file: export that baseline as its own XER)"
-    )
+    assert pointer.text == ("Baseline: none in file (project 370 absent)")
 
 
 def test_a_pointer_to_a_project_without_activities_gives_no_baseline():
@@ -169,9 +215,7 @@ def test_the_sidebar_keeps_its_choice_when_the_pointer_names_an_absent_project(t
     at = _app(tmp_path, monkeypatch, pointer="370", with_baseline=False)
     assert not at.exception
     assert BL_EACH not in _baseline_box(at).options and _baseline_box(at).value != BL_EACH
-    assert _selection(at)["baseline"].tolist() == [
-        "Baseline: none in file (points to project 370, which is not in the file: export that baseline as its own XER)"
-    ]
+    assert _selection(at)["baseline"].tolist() == ["Baseline: none in file (project 370 absent)"]
 
 
 def test_the_panel_says_why_an_inconsistent_baseline_is_not_used(tmp_path, monkeypatch):
@@ -340,11 +384,7 @@ def test_a_file_without_baseline_is_named_with_what_applies_instead(tmp_path, mo
 def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
     c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
     at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c})
-    assert any(
-        "c.xer: Baseline: none in file (points to project 370, which is not in the file: "
-        "export that baseline as its own XER)" in w
-        for w in _warnings(at)
-    )
+    assert any("c.xer: Baseline: none in file (project 370 absent)" in w for w in _warnings(at))
 
 
 def _absent_baseline_boxes(at):
