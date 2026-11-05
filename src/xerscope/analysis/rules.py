@@ -40,7 +40,7 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from ..xer.model import CONSTRAINT, forecast_dates
-from .baseline import Baseline
+from .baseline import EV_COLS, Baseline
 from .cpm import critical_path_test
 from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     ACTIVITY_COLS,
@@ -618,7 +618,8 @@ def bei_from_baseline(
     if gone:
         note += f"; {gone} of them no longer in the schedule"
     index = done / len(due_codes) if due_codes else None
-    checked = kept.loc[sorted(due_codes)].rename_axis("task_code").reset_index()
+    # without the EV basis's columns: a check's result is the same whatever the EV basis (the app caches it so)
+    checked = kept.loc[sorted(due_codes)].drop(columns=EV_COLS).rename_axis("task_code").reset_index()
     completed = population[population["is_complete"]]
     return RuleOutput(
         flagged_activities(late, bl_finish=late["bl_finish"]),

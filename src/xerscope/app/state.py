@@ -13,8 +13,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import Baseline, Standard, discover_standards
+from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
+from xerscope.analysis.checks import CheckResult, run_metric
+from xerscope.analysis.standards import Metric
 from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
@@ -276,10 +278,28 @@ def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None]:
     files = [path for path in xer_files(root) if path.name in names] if root.is_dir() else []
     if not files:
         return (), None
-    signature = ("folder", str(root)) + tuple((path.name, path.stat().st_mtime_ns) for path in files)
-    if signature == st.session_state.get("signature"):
+    signature = ("folder", str(root)) + tuple((path.name, _file_digest(path)) for path in files)
+    previous = st.session_state.get("signature") or ()
+    if signature == previous:
         return signature, None
-    return signature, [(path.name, path.read_bytes()) for path in files]
+    # the bytes of a file whose digest did not change are those already held: not read again
+    held = dict(st.session_state.get("items") or []) if previous[:2] == signature[:2] else {}
+    unchanged = {name for name, _ in set(signature[2:]) & set(previous[2:]) if name in held}
+    return signature, [(path.name, held[path.name] if path.name in unchanged else path.read_bytes()) for path in files]
+
+
+def _file_digest(path: Path) -> str:
+    """sha256 of a folder's file, keyed on content as an upload. Read and digested again only when
+    its inode, size, modification or change time moved: a file replaced under the same name and
+    modification time (os.utime) still gets a new change time. Kept in the session's state."""
+    cache = st.session_state.setdefault("_file_digests", {})
+    stat = path.stat()
+    stamp = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    kept = cache.get(str(path))
+    if kept is None or kept[0] != stamp:
+        kept = (stamp, _digest(path.read_bytes()))
+        cache[str(path)] = kept
+    return kept[1]
 
 
 def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
@@ -829,34 +849,73 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     return chosen.activities, ui.stamp(chosen.data_date)
 
 
-def _baseline_identity() -> tuple:
-    """What the sidebar's baseline is: the choice, the EV basis and, for an uploaded file, its bytes."""
+def _baseline_identity(ev_basis: bool = True) -> tuple:
+    """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
+    and, for an uploaded file, its bytes."""
     baseline = st.session_state.get("baseline")
+    basis = st.session_state.get("ev_basis") if ev_basis else None
     if isinstance(baseline, Baseline):
-        return baseline.label, baseline.ev_basis, st.session_state.get("baseline_digest")
+        return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
         store = st.session_state.get("store")
         pointers = tuple((s.source, s.file_baseline.proj_id, s.file_baseline.usable) for s in store or ())
         fallback = (st.session_state.get("fallback_choice"), st.session_state.get("baseline_digest"))
-        return baseline, st.session_state.get("ev_basis"), pointers, fallback
-    return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
+        return baseline, basis, pointers, fallback
+    return baseline, basis  # None, or BL_PLANNED (resolved per snapshot)
 
 
-def memo(key: tuple, function, *arguments):
-    """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
-
-    ``function(*arguments)`` runs only on a cache miss.
-    """
-    cache = st.session_state.setdefault("_memo", {})
+def data_identity(baseline: bool = True, ev_basis: bool = True) -> tuple:
+    """What a result computed now was computed from: the files (``signature``: names and content
+    digests), the project read from each and, unless
+    ``baseline`` is False, the baseline in use with (unless ``ev_basis`` is False) the EV basis.
+    The memo's key and the tag of a built download start with it."""
     # the project pickers re-read the same files for another project: same signature, other data
     store = st.session_state.get("store")
     projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
-    full_key = (st.session_state.get("signature"), projects, _baseline_identity()) + key
-    if full_key not in cache:
-        if len(cache) > 64:
-            cache.clear()
-        cache[full_key] = function(*arguments)
-    return cache[full_key]
+    identity = _baseline_identity(ev_basis) if baseline else ()
+    return st.session_state.get("signature"), projects, identity
+
+
+MEMO_SIZE = 128  # entries per session; a standard holds at most 18 metrics, each its own entry
+
+
+def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = True, ev_basis: bool = True):
+    """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
+
+    The full key: ``data_identity`` (files, projects, and the baseline and EV basis unless the
+    analysis reads neither: ``baseline`` / ``ev_basis`` False), then ``key``, which names the
+    analysis and everything else it reads. ``function(*arguments)`` runs only on a cache miss;
+    ``keep=False`` then returns the value without storing it (a series over every update that
+    should not hold each update's frames). The cache lives in the session's state, never
+    process-wide; past MEMO_SIZE entries the least recently used goes. Callers do not modify what
+    it returns: the next reader gets the same object.
+    """
+    cache = st.session_state.setdefault("_memo", {})
+    full_key = data_identity(baseline, ev_basis) + key
+    if full_key in cache:
+        cache[full_key] = cache.pop(full_key)  # most recently used last
+        return cache[full_key]
+    value = function(*arguments)
+    if keep:
+        while len(cache) >= MEMO_SIZE:
+            cache.pop(next(iter(cache)))
+        cache[full_key] = value
+    return value
+
+
+def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep: bool = True) -> CheckResult:
+    """``metric`` on ``snapshot`` against the sidebar's baseline for it, once per session: Health,
+    Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
+    written (rule, parameters, target, standard: its repr) and the update (file, data date). Not
+    the EV basis: no rule reads what it sets (the ev_* columns, the assignment costs)."""
+    return memo(
+        ("metric", repr(metric), snapshot.source, str(snapshot.data_date)),
+        run_metric,
+        metric,
+        AnalysisContext(snapshot, store, baseline_for(snapshot)),
+        keep=keep,
+        ev_basis=False,
+    )
 
 
 ANONYMISED = " · anonymized"  # suffix of an anonymized download's label

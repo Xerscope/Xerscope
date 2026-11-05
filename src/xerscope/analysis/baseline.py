@@ -28,6 +28,7 @@ from ..xer.model import to_number
 
 COLS = ["bl_start", "bl_finish", "bl_labor_hr", "bl_duration_hr", "bl_clndr_id", "bl_name",
         "ev_start", "ev_finish", "ev_labor_hr", "bl_cost"]  # fmt: skip
+EV_COLS = ["ev_start", "ev_finish", "ev_labor_hr"]  # set by the EV basis; no schedule check reads them
 ASSIGNMENT_COST_COLS = ["task_code", "cost", "start", "finish", "clndr_id", "curve", "labor", "labor_hr"]
 EV_BASES = {
     "budgeted_planned": "Budgeted values with planned dates",

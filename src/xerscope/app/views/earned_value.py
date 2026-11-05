@@ -1,3 +1,5 @@
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
@@ -20,6 +22,7 @@ from xerscope.app.state import (
     costs_shown,
     csv_download,
     memo,
+    metric_result,
     require_store,
     show_baseline_used,
     snapshot_picker,
@@ -259,7 +262,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
         "then the forecast of remaining hours.",
     )
     as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
-    forecast = memo(("forecast", snapshot.source), forecast_curve, snapshot)
+    forecast = memo(("forecast", snapshot.source), forecast_curve, snapshot, baseline=False)
     st.plotly_chart(
         build_scurve(
             curve,
@@ -332,9 +335,17 @@ curve = memo(cache_key + ("pv",), pv_curve, baseline)
 series = memo(cache_key + ("series",), evm_series, store, baseline)
 standards = builtin_standards()
 bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
-series = series.merge(
-    memo(cache_key + ("bei",), bei_series, store, bei_metrics, baseline_for), on="data_date", how="left"
+# each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise
+bei = memo(
+    ("bei", repr(bei_metrics)),
+    bei_series,
+    store,
+    bei_metrics,
+    baseline_for,
+    partial(metric_result, store=store, keep=False),
+    ev_basis=False,
 )
+series = series.merge(bei, on="data_date", how="left")
 row = series[series["data_date"] == snapshot.data_date].iloc[-1]
 previous = series[series["data_date"] < snapshot.data_date].tail(1)
 

@@ -15,7 +15,7 @@ ui.header(
     "to follow a task across weeks. Parquet keeps column types; CSV opens anywhere.",
 )
 
-tables = memo(("export",), export_tables, store)
+tables = memo(("export",), export_tables, store, baseline=False)
 ui.table(
     pd.DataFrame(
         [{"table": name, "rows": len(frame), "columns": len(frame.columns)} for name, frame in tables.items()]
@@ -33,7 +33,9 @@ download(
     f"{store.latest.project_code}_xerscope_{table_format}.zip",
     "application/zip",
     lambda: zip_tables(store, table_format),
-    lambda anonymous: memo(("export_anonymised", table_format), zip_tables, store, table_format, anonymous.frame),
+    lambda anonymous: memo(
+        ("export_anonymised", table_format), zip_tables, store, table_format, anonymous.frame, baseline=False
+    ),
     prepare_key="powerbi",
     anon_file_name=f"xerscope_{table_format}.zip",  # the project code would name the project
     type="primary",

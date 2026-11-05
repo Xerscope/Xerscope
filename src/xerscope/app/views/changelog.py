@@ -92,7 +92,7 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
 
 def show_weekly(store) -> None:
     with st.expander("Every week, side by side"):
-        weekly = memo(("changelog_weekly",), weekly_change_counts, store)
+        weekly = memo(("changelog_weekly",), weekly_change_counts, store, baseline=False)
         wide = weekly_change_matrix(weekly)
         ui.table(wide, max_height=640)
 
@@ -123,7 +123,7 @@ if old is new:
     st.warning("Pick two different files.")
     st.stop()
 
-log = memo(("changelog", old_label, new_label), changelog, old, new)
+log = memo(("changelog", old_label, new_label), changelog, old, new, baseline=False)
 counts = summary(log)
 show_kpis(log, counts)
 show_categories(counts)

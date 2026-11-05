@@ -115,7 +115,7 @@ with top:
         "that update W shows done; milestones left out. Weekly progress = actual in W minus actual in W−1.",
     )
 
-ppc = memo(("ppc",), ppc_series, store)
+ppc = memo(("ppc",), ppc_series, store, baseline=False)
 ui.section("Percent plan complete by week")
 st.plotly_chart(build_ppc(ppc, target), width="stretch")
 

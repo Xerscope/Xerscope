@@ -1512,8 +1512,22 @@ def compare_with_stored(snapshot: Snapshot, recomputed: Schedule | None = None) 
     ``agree`` needs the exact clock time; ``gap_hr`` is the difference in working hours
     of the activity's calendar (0 with agree False = same instant shown differently,
     e.g. Wednesday 17:00 vs the next working morning).
+
+    Against the plain recalculation (``recomputed`` None or ``schedule(snapshot)``) the table is
+    cached on the snapshot, as ``schedule`` is: INT-01 and the Debug page share it. Each call
+    returns its own copy.
     """
-    recomputed = recomputed or schedule(snapshot)
+    plain = schedule(snapshot) if recomputed is None else recomputed
+    if plain is not getattr(snapshot, "_xs_schedule", None):
+        return _comparison(snapshot, plain)
+    cached = getattr(snapshot, "_xs_comparison", None)
+    if cached is None:
+        cached = _comparison(snapshot, plain)
+        object.__setattr__(snapshot, "_xs_comparison", cached)
+    return cached.copy()
+
+
+def _comparison(snapshot: Snapshot, recomputed: Schedule) -> pd.DataFrame:
     activities = snapshot.by_code
     frame = recomputed.frame
     rows = []
