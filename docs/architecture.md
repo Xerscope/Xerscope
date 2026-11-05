@@ -28,9 +28,12 @@ are not split).
 
 ## 2. `xer/model.py`: what P6 means
 
-`build_snapshot(raw)` picks one project (`project_code` when given, otherwise the one with
-the most `TASK` rows) and builds a typed `Snapshot`; `project_task_counts` and `selected_by`
-record that choice. `read_header(raw)` applies the same project and data-date rules to
+`build_snapshot(raw)` picks one project (`project_id` or `project_code` when given) and builds
+a typed `Snapshot`; `project_task_counts` and `selected_by` record that choice. By default
+(`_default_project`) the baseline copies are set aside (a project another one names as its
+Project Baseline, `sum_base_proj_id`, or copied from a project of the file, `orig_proj_id`),
+then the latest data date wins, then the most `TASK` rows, then the first in the file; when
+every project is a baseline copy, the most `TASK` rows, then the first in the file. `read_header(raw)` applies the same project and data-date rules to
 `PROJECT` and `TASK` alone (`HEADER_TABLES`): the folder picker describes each file with it
 before the file is read, and a test checks it against `build_snapshot` on the sample and
 reference files. Each P6 rule lives in one place:

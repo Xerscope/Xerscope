@@ -39,7 +39,7 @@ def _parse(name: str, data: bytes, project: str | None = None, project_id: str |
 
 def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
     """``project`` applies to the files that hold it; the others keep their default project
-    (the one with the most activities), so a project renamed between updates still loads."""
+    (``_default_project`` in the model), so a project renamed between updates still loads."""
     snapshots, errors = [], []
     for name, data in items:
         try:
@@ -238,8 +238,10 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
     attention = any(len(snapshot.project_task_counts) > 1 for snapshot in store)
     with sidebar.expander(f"Selection · {len(store)} file(s) in series", expanded=attention):
         st.caption(
-            "One project per file: the one picked in Project when the file holds it, otherwise the one "
-            "with the most TASK rows. Status date: PROJECT.last_recalc_date, else plan_start_date. "
+            "One project per file: the one picked in Project when the file holds it, otherwise baseline "
+            "copies (sum_base_proj_id, orig_proj_id) set aside, the latest status date, then the most "
+            "TASK rows, then the first in the file. Picked by says which rule decided. "
+            "Status date: PROJECT.last_recalc_date, else plan_start_date. "
             "One file per status date."
         )
         st.dataframe(

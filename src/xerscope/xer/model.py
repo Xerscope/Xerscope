@@ -728,6 +728,55 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     return assignments[columns].reset_index(drop=True)
 
 
+def _baseline_copies(projects: pd.DataFrame) -> set[str]:
+    """proj_id of the PROJECT rows that are baseline copies of another project of the file: named
+    as its Project Baseline (``sum_base_proj_id``) or copied from it (``orig_proj_id``)."""
+    ids = set(projects["proj_id"])
+    named = {
+        pointer
+        for own, pointer in zip(projects["proj_id"], projects["sum_base_proj_id"], strict=True)
+        if pointer and pointer != own
+    }
+    copied = {
+        own
+        for own, origin in zip(projects["proj_id"], projects["orig_proj_id"], strict=True)
+        if origin and origin != own and origin in ids
+    }
+    return (named | copied) & ids
+
+
+def _default_project(projects: pd.DataFrame, copies: set[str]) -> tuple[pd.Series, str]:
+    """The PROJECT row a file is read for when none is asked for, and the rule that picked it.
+
+    Baseline copies (``copies``) are set aside; of the others, the latest data date (``_data_date``),
+    then the most TASK rows (``_n``), then the first in the file. When every project is a baseline
+    copy, the most TASK rows, then the first in the file."""
+    rows = [row for _, row in projects.iterrows()]  # file order
+    if len(rows) == 1:
+        return rows[0], "only project"
+    pool = [row for row in rows if row["proj_id"] not in copies]
+    if pool:
+        keys = [(_data_date(row)[0] or pd.Timestamp.min, row["_n"]) for row in pool]
+        names = ["latest data date", "most TASK rows"]
+    else:
+        pool = rows
+        keys = [(row["_n"],) for row in pool]
+        names = ["most TASK rows"]
+    # sorted is stable, reverse included: projects with the same keys keep their file order
+    order = sorted(range(len(pool)), key=keys.__getitem__, reverse=True)
+    best = order[0]
+    if len(pool) == 1:
+        return pool[best], "only project not a baseline copy"
+    differs = [n for n, a, b in zip(names, keys[best], keys[order[1]], strict=True) if a != b]
+    rule = differs[0] if differs else "first in file"
+    set_aside = len(rows) - len(pool)
+    if pool is rows and copies:
+        rule += ", every project a baseline copy"
+    elif set_aside:
+        rule += f", {set_aside} baseline cop{'y' if set_aside == 1 else 'ies'} set aside"
+    return pool[best], rule
+
+
 def _select_project(
     source: str,
     projects: pd.DataFrame,
@@ -737,10 +786,13 @@ def _select_project(
     project_id: str | None = None,
 ) -> tuple[pd.Series, dict[str, int], str]:
     """The PROJECT row to build the snapshot for, the TASK row count of every project that owns
-    activities (by code, in file order), and how the row was selected: ``chosen`` (the
-    requested code or ``project_id``), ``only project`` or ``most TASK rows``. ``project_id`` names a
-    project exactly: a baseline copy can carry the code of the project it was copied from."""
+    activities (by code, in file order), and how the row was selected (``_default_project``, or
+    ``chosen``). ``project_id`` names a project exactly; ``project_code`` names the projects of that
+    code, of which ``_default_project`` takes one: a baseline copy can carry the code of the project
+    it was copied from."""
     task_counts = all_tasks["proj_id"].value_counts()
+    projects = _ensure_cols(projects.copy(), ["sum_base_proj_id", "orig_proj_id"])
+    copies = _baseline_copies(projects)
     projects = _ensure_cols(
         projects[projects["proj_id"].isin(task_counts.index)].copy(),
         [
@@ -758,20 +810,20 @@ def _select_project(
         raise XerError(f"{source}: no project owns any task")
     projects["_n"] = projects["proj_id"].map(task_counts)
     counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
-    if project_code or project_id:
-        selected = (
-            projects[projects["proj_id"] == project_id]
-            if project_id
-            else projects[projects["proj_short_name"] == project_code]
-        )
+    if project_id:
+        selected = projects[projects["proj_id"] == project_id]
         if selected.empty:
-            raise XerError(f"{source}: project {project_id or project_code!r} not found (has {list(counts)})")
+            raise XerError(f"{source}: project {project_id!r} not found (has {list(counts)})")
         return selected.iloc[0], counts, "chosen"
-    project_row = projects.sort_values("_n", ascending=False).iloc[0]
-    if len(projects) == 1:
-        return project_row, counts, "only project"
-    warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
-    return project_row, counts, "most TASK rows"
+    if project_code:
+        selected = projects[projects["proj_short_name"] == project_code]
+        if selected.empty:
+            raise XerError(f"{source}: project {project_code!r} not found (has {list(counts)})")
+        return _default_project(selected, copies)[0], counts, "chosen"
+    project_row, rule = _default_project(projects, copies)
+    if len(projects) > 1:
+        warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
+    return project_row, counts, rule
 
 
 def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:

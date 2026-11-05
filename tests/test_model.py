@@ -287,9 +287,70 @@ def test_header_takes_what_build_snapshot_takes(case):
     text = HEADER_CASES[case]
     header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, keep=HEADER_TABLES))
     if case == "two projects":
-        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
+        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "latest data date"
     if case == "no recalc date":
         assert header.data_date_source == "plan_start_date"
+
+
+def _default(text: str):
+    snapshot = build_snapshot(parse_text(text, source="two.xer"))
+    return snapshot.project_id, snapshot.selected_by
+
+
+def test_a_baseline_copy_with_as_many_activities_is_not_the_default():
+    from file_projects import two_projects
+
+    # project 2 is named by project 1's sum_base_proj_id and copied from it (orig_proj_id)
+    text = two_projects(baseline_date="2026-03-02 08:00")
+    assert _default(text) == ("1", "only project not a baseline copy")
+
+
+def test_a_baseline_copy_with_more_activities_and_the_same_code_is_not_the_default():
+    from file_projects import two_projects
+
+    text = two_projects(baseline_code="UPD", baseline_ids=("A1", "A2", "A3"), baseline_date="2026-03-02 08:00")
+    assert _default(text) == ("1", "only project not a baseline copy")
+    chosen = build_snapshot(parse_text(text, source="two.xer"), project_code="UPD")
+    assert (chosen.project_id, chosen.selected_by) == ("1", "chosen")
+
+
+def test_a_copy_named_only_by_orig_proj_id_is_set_aside():
+    from file_projects import two_projects
+
+    text = two_projects(pointer="", baseline_ids=("A1", "A2", "A3"), baseline_date="2026-03-02 08:00")
+    assert _default(text)[0] == "1"
+
+
+def test_of_two_unrelated_projects_the_latest_data_date_wins():
+    from file_projects import two_projects
+
+    # project 2 has fewer activities but a later data date
+    text = two_projects(pointer="", original="", baseline_ids=("B1",), baseline_date="2026-03-09 08:00")
+    assert _default(text) == ("2", "latest data date")
+
+
+def test_same_data_date_then_most_tasks_then_file_order():
+    from file_projects import two_projects
+
+    text = two_projects(pointer="", original="", baseline_ids=("B1",), baseline_date="2026-03-02 08:00")
+    assert _default(text) == ("1", "most TASK rows")
+    text = two_projects(pointer="", original="", baseline_ids=("B1", "B2"), baseline_date="2026-03-02 08:00")
+    assert _default(text) == ("1", "first in file")
+
+
+def test_when_every_project_is_a_baseline_copy_the_most_tasks_win():
+    from file_projects import two_projects
+
+    # each names the other: no project is left, the old rule applies (TASK rows, then file order)
+    text = two_projects(original="", baseline_ids=("B1", "B2", "B3"), baseline_date="2026-03-02 08:00")
+    lines = text.splitlines()
+    at = lines.index("%T\tPROJECT")
+    fields = lines[at + 1].split("\t")[1:]
+    for i in (at + 2, at + 3):
+        row = dict(zip(fields, lines[i].split("\t")[1:], strict=True))
+        row["sum_base_proj_id"] = "2" if row["proj_id"] == "1" else "1"
+        lines[i] = "%R\t" + "\t".join(row[f] for f in fields)
+    assert _default("\n".join(lines) + "\n") == ("2", "most TASK rows, every project a baseline copy")
 
 
 def test_header_matches_build_snapshot_on_sample_and_reference_files(sample_dir):
