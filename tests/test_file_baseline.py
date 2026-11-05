@@ -465,3 +465,65 @@ def test_the_baseline_upload_goes_away_with_another_choice(tmp_path, monkeypatch
     assert [u.key for u in at.run().sidebar.get("file_uploader")].count("bl_upload") == 1
     next(box for box in at.sidebar.selectbox if box.key == key).select("None")
     assert "bl_upload" not in [u.key for u in at.run().sidebar.get("file_uploader")]
+
+
+def test_the_projects_of_a_file_carry_their_data_date_and_which_are_baseline_copies():
+    from xerscope.xer import baseline_copies
+
+    table = _snapshot(baseline_code="UPD").file_projects
+    assert table["data_date"].tolist() == [pd.Timestamp("2026-03-02 08:00"), pd.Timestamp("2026-01-05 08:00")]
+    assert baseline_copies(table) == {"2": "1"}  # named by project 1's sum_base_proj_id, copied from it
+
+
+def _file_box(at, name):
+    return next(box for box in at.sidebar.selectbox if box.key == f"file_project:{name}")
+
+
+def test_the_file_picker_tells_two_projects_of_the_same_code_apart(tmp_path, monkeypatch):
+    from file_projects import with_other_projects
+
+    files = {"a.xer": {"baseline_code": "UPD", "baseline_date": "2026-03-02 08:00"}}
+    at = _series(tmp_path, monkeypatch, files, transform=with_other_projects)
+    assert not at.exception
+    box = _file_box(at, "a.xer")
+    assert box.value == "1"
+    assert [o for o in box.options if o.startswith("UPD")] == [
+        "UPD · 02 Mar 2026 · 2 activities",
+        "UPD · 02 Mar 2026 · 2 activities · baseline of UPD",
+    ]
+    assert _selection(at).set_index("file").loc["a.xer", "selected_by"] == "most TASK rows, 1 baseline copy set aside"
+
+
+def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_again(tmp_path, monkeypatch):
+    from file_projects import with_other_projects
+
+    at = _health(_series(tmp_path, monkeypatch, transform=with_other_projects), "2026-03-02")
+    used = "**Baseline used for 2026-03-02**: P6 Project Baseline in the file (proj_id 2"
+    assert any(m.startswith(used) for m in _markdown(at))
+    before = {s.source: s for s in at.session_state["store"]}
+    parsed = set(at.session_state["_parsed"])
+    _file_box(at, "a.xer").set_value("3").run()
+    assert not at.exception
+    after = {s.source: s for s in at.session_state["store"]}
+    assert (after["a.xer"].project_id, after["a.xer"].project_code) == ("3", "P3")
+    assert after["b.xer"] is before["b.xer"]
+    assert [key[0] for key in set(at.session_state["_parsed"]) - parsed] == ["a.xer"]
+    row = _selection(at).set_index("file").loc["a.xer"]
+    assert row[["project", "selected_by", "baseline"]].tolist() == ["P3", "chosen", "Baseline: none in file"]
+    at = _health(at, "2026-03-02")
+    # P3 names no baseline: the file's P6 Project Baseline is no longer used for this update
+    shown = [m for m in _markdown(at) if m.startswith("**Baseline used for 2026-03-02**")]
+    assert shown and not any("in the file (proj_id 2" in m for m in shown)
+    # the memo is keyed on the project read from each file: nothing computed for project 1 is served
+    keyed = [part for key in at.session_state["_memo"] for part in key if isinstance(part, tuple)]
+    assert (("a.xer", "3"), ("b.xer", "1")) in keyed
+
+
+def test_a_project_picked_for_a_file_wins_over_the_project_picked_for_all(tmp_path, monkeypatch):
+    from file_projects import with_other_projects
+
+    at = _series(tmp_path, monkeypatch, transform=with_other_projects)
+    _file_box(at, "a.xer").set_value("3").run()
+    next(box for box in at.sidebar.selectbox if box.label == "Project").set_value("P4").run()
+    assert not at.exception
+    assert [(s.source, s.project_code) for s in at.session_state["store"]] == [("a.xer", "P3"), ("b.xer", "P4")]

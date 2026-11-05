@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .model import HARD_CONSTRAINTS, HEADER_TABLES, FileHeader, Snapshot, build_snapshot, percent_complete, read_header
+from .model import (
+    HARD_CONSTRAINTS,
+    HEADER_TABLES,
+    FileHeader,
+    Snapshot,
+    baseline_copies,
+    build_snapshot,
+    percent_complete,
+    read_header,
+)
 from .parser import RawXer, XerError, parse_bytes, parse_text, read_xer
 
 XER_SUFFIXES = (".xer",)  # compared case-insensitively: P6 writes .XER on some setups
@@ -41,6 +50,7 @@ __all__ = [
     "RawXer",
     "Snapshot",
     "XerError",
+    "baseline_copies",
     "build_snapshot",
     "load_header",
     "load_snapshot",

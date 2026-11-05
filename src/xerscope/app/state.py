@@ -17,7 +17,16 @@ from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
 from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
-from xerscope.xer import XER_SUFFIXES, FileHeader, Snapshot, XerError, load_header, load_snapshot, xer_files
+from xerscope.xer import (
+    XER_SUFFIXES,
+    FileHeader,
+    Snapshot,
+    XerError,
+    baseline_copies,
+    load_header,
+    load_snapshot,
+    xer_files,
+)
 from xerscope.xer.parser import parse_bytes
 
 # Streamlit wants extensions without the dot.
@@ -37,15 +46,31 @@ def _parse(name: str, data: bytes, project: str | None = None, project_id: str |
     return cache[key]
 
 
+def _file_choices() -> dict[str, str]:
+    """The project picked for a file in the Selection panel: proj_id by file name."""
+    return st.session_state.setdefault("file_projects", {})
+
+
+def _read(name: str, data: bytes, project: str | None = None) -> Snapshot:
+    """The snapshot of one file: the project picked for it in the Selection panel, else ``project``
+    when the file holds it, else the file's default project (``_default_project`` in the model)."""
+    snapshot = _parse(name, data)
+    chosen = _file_choices().get(name)
+    if chosen in set(snapshot.file_projects["proj_id"]):
+        return snapshot if chosen == snapshot.project_id else _parse(name, data, project_id=chosen)
+    if project and project != snapshot.project_code and project in snapshot.projects_in_file:
+        return _parse(name, data, project)
+    return snapshot
+
+
 def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
-    """``project`` applies to the files that hold it; the others keep their default project
-    (the one with the most activities), so a project renamed between updates still loads."""
+    """``project`` applies to the files that hold it and have no project picked of their own; the
+    others keep their default project (``_default_project`` in the model), so a project renamed
+    between updates still loads."""
     snapshots, errors = [], []
     for name, data in items:
         try:
-            snapshot = _parse(name, data)
-            if project and project != snapshot.project_code and project in snapshot.projects_in_file:
-                snapshot = _parse(name, data, project)
+            snapshot = _read(name, data, project)
         except XerError as exc:
             errors.append(str(exc))
             continue
@@ -147,18 +172,42 @@ def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, byt
     return signature, [(path.name, path.read_bytes()) for path in files], True
 
 
+def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
+    """Read again, for the project picked in the Selection panel, the files read for another one;
+    the other files keep their snapshot."""
+    data = dict(st.session_state.get("items") or [])
+    snapshots = list(store)
+    for i, snapshot in enumerate(snapshots):
+        chosen = _file_choices().get(snapshot.source)
+        if chosen and chosen != snapshot.project_id and snapshot.source in data:
+            snapshots[i] = _read(snapshot.source, data[snapshot.source])
+    if all(new is old for new, old in zip(snapshots, store, strict=True)):
+        return store
+    try:
+        store = SnapshotStore(snapshots)
+    except DuplicateDataDate as exc:
+        for new, old in zip(snapshots, store, strict=True):
+            if new is not old:
+                _file_choices().pop(new.source, None)
+        st.session_state["errors"] = [*st.session_state.get("errors", []), f"{exc}. Pick another project."]
+        return store
+    st.session_state["store"] = store
+    return store
+
+
 def _project_picker(sidebar, store: SnapshotStore) -> SnapshotStore:
-    """A file exported with several projects: the one with the most activities was taken;
-    let the user pick another and read the files again for it."""
+    """Apply the projects picked per file (Selection panel), then the project picked for every file
+    that holds it: the files without a choice of their own are read again for it."""
+    store = _apply_file_choices(store)
     codes = sorted({code for snapshot in store for code in snapshot.projects_in_file})
     if len(codes) <= 1:
         return store
     current = store.latest.project_code
     index = codes.index(current) if current in codes else 0
     choice = sidebar.selectbox("Project", codes, index=index, key="project")
-    # the choice applies to every file that holds it, the default one included: a file's own default
-    # (most TASK rows) can be another project, such as a baseline copy with as many activities
-    if all(s.project_code == choice for s in store if choice in s.projects_in_file):
+    # among the projects of that code, the model sets the baseline copies aside (_default_project)
+    picked = _file_choices()
+    if all(s.project_code == choice for s in store if choice in s.projects_in_file and s.source not in picked):
         return store
     with st.spinner(f"Reading {choice}…"):
         store, errors = _build(st.session_state["items"], project=choice)
@@ -231,15 +280,38 @@ def sidebar_loader() -> None:
         )
 
 
+def _project_labels(snapshot: Snapshot) -> dict[str, str]:
+    """The projects of ``snapshot``'s file that own activities, by proj_id, in file order: code, data
+    date, activities and, for a baseline copy, the project it is the baseline of."""
+    table = snapshot.file_projects
+    codes = dict(zip(table["proj_id"], table["proj_short_name"], strict=True))
+    copies = baseline_copies(table)
+    labels = {}
+    for _, row in table[table["tasks"] > 0].iterrows():
+        label = f"{row['proj_short_name']} · {ui.fmt_date(row['data_date'])} · {row['tasks']} activities"
+        if row["proj_id"] in copies:
+            label += f" · baseline of {codes[copies[row['proj_id']]]}"
+        labels[row["proj_id"]] = label
+    return labels
+
+
+def _pick_file_project(source: str, key: str) -> None:
+    _file_choices()[source] = st.session_state[key]
+
+
 def _selection_panel(sidebar, store: SnapshotStore) -> None:
     """What was taken from each file and why: the project, the rule that picked it, and the
-    data date. Open by default when a file holds several projects."""
+    data date. Open by default when a file holds several projects, each with a picker of its project."""
     table = store.selection()
-    attention = any(len(snapshot.project_task_counts) > 1 for snapshot in store)
-    with sidebar.expander(f"Selection · {len(store)} file(s) in series", expanded=attention):
+    several = {snapshot.source: _project_labels(snapshot) for snapshot in store}
+    several = {source: labels for source, labels in several.items() if len(labels) > 1}
+    with sidebar.expander(f"Selection · {len(store)} file(s) in series", expanded=bool(several)):
         st.caption(
-            "One project per file: the one picked in Project when the file holds it, otherwise the one "
-            "with the most TASK rows. Status date: PROJECT.last_recalc_date, else plan_start_date. "
+            "One project per file: the one picked below for that file, else the one picked in Project "
+            "when the file holds it, otherwise baseline copies (sum_base_proj_id, orig_proj_id) set "
+            "aside, the most TASK rows, then the latest status date, then the first in the file. "
+            "Picked by says which rule decided. "
+            "Status date: PROJECT.last_recalc_date, else plan_start_date. "
             "One file per status date."
         )
         st.dataframe(
@@ -256,6 +328,20 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
                 "activities": "Tasks",
             },
         )
+        for snapshot in sorted(store, key=lambda s: s.source):
+            labels = several.get(snapshot.source)
+            if not labels:
+                continue
+            key = f"file_project:{snapshot.source}"
+            st.session_state[key] = snapshot.project_id  # the widget shows the project read
+            st.selectbox(
+                snapshot.source,
+                list(labels),
+                format_func=labels.get,
+                key=key,
+                on_change=_pick_file_project,
+                args=(snapshot.source, key),
+            )
 
 
 BL_NONE = "None"
@@ -595,9 +681,9 @@ def memo(key: tuple, function, *arguments):
     ``function(*arguments)`` runs only on a cache miss.
     """
     cache = st.session_state.setdefault("_memo", {})
-    # the project picker re-reads the same files for another project: same signature, other data
+    # the project pickers re-read the same files for another project: same signature, other data
     store = st.session_state.get("store")
-    projects = tuple(snapshot.project_code for snapshot in store) if store is not None else ()
+    projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
     full_key = (st.session_state.get("signature"), projects, _baseline_identity()) + key
     if full_key not in cache:
         if len(cache) > 64:

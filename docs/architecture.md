@@ -28,9 +28,12 @@ are not split).
 
 ## 2. `xer/model.py`: what P6 means
 
-`build_snapshot(raw)` picks one project (`project_code` when given, otherwise the one with
-the most `TASK` rows) and builds a typed `Snapshot`; `project_task_counts` and `selected_by`
-record that choice. `read_header(raw)` applies the same project and data-date rules to
+`build_snapshot(raw)` picks one project (`project_id` or `project_code` when given) and builds
+a typed `Snapshot`; `project_task_counts` and `selected_by` record that choice. By default
+(`_default_project`) the baseline copies are set aside (a project another one names as its
+Project Baseline, `sum_base_proj_id`, or copied from a project of the file, `orig_proj_id`),
+then the most `TASK` rows win, then the latest data date, then the first in the file; when
+every project is a baseline copy, the most `TASK` rows, then the first in the file. `read_header(raw)` applies the same project and data-date rules to
 `PROJECT` and `TASK` alone (`HEADER_TABLES`): the folder picker describes each file with it
 before the file is read, and a test checks it against `build_snapshot` on the sample and
 reference files. Each P6 rule lives in one place:
@@ -72,8 +75,12 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 `SnapshotStore` sorts snapshots by data date and holds one per data date: given two files
 with the same data date (versions of one draft, an update and its baseline copy) it raises
 `DuplicateDataDate` naming them, and the user keeps one. `selection()` lists the files of the
-series and the project taken from each: the app's sidebar Selection panel shows it. It
-exposes long-format frames:
+series and the project taken from each: the app's sidebar Selection panel shows it, with a
+project picker for each file that holds several (by `proj_id`, each project named by code, data
+date, activities and the project it is a baseline copy of). A project picked for a file reads
+that file again and no other; it wins over the sidebar's Project picker, which applies to the
+files without a choice of their own. The session caches (`memo`, the file baselines) are keyed
+on the `proj_id` read from each file. `SnapshotStore` exposes long-format frames:
 
 - `history`: one row per (snapshot, activity);
 - `relationship_history`;
