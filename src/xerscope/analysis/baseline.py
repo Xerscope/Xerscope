@@ -19,7 +19,7 @@ Two sets of baseline dates, as in P6:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
@@ -144,3 +144,46 @@ class Baseline:
     def bac_cost(self) -> float:
         """Budget at completion, cost: Σ bl_cost."""
         return float(self.frame["bl_cost"].sum())
+
+
+RENUMBERED_COLUMNS = ["old_code", "new_code"]
+
+
+def renumbered(old: Snapshot, new: Snapshot) -> pd.DataFrame:
+    """Tasks of ``new`` that carry the GUID (``TASK.guid``) of a task of ``old`` under another Activity
+    ID, the old ID no longer in ``new`` and the new one not in ``old``. P6 links an activity to its
+    baseline by Activity ID and renumbers the baseline with it when "Renumber Selected Activities in
+    Baselines" is ticked (P6 Professional 24/25, Renumber Activity IDs); unticked, the renumbered
+    activities are "disconnected from the baselines and are treated as new activities". A GUID that is
+    blank, or held by several tasks of one file, is left out."""
+
+    def by_guid(snapshot: Snapshot) -> pd.DataFrame:
+        tasks = snapshot.activities
+        if "guid" not in tasks:
+            return pd.DataFrame(columns=["task_code", "guid"])
+        tasks = tasks.loc[tasks["guid"].fillna("").astype(str).str.strip() != "", ["task_code", "guid"]]
+        return tasks[~tasks["guid"].duplicated(keep=False)]
+
+    pairs = by_guid(old).merge(by_guid(new), on="guid", suffixes=("_old", "_new"))
+    pairs = pairs[
+        (pairs["task_code_old"] != pairs["task_code_new"])
+        & ~pairs["task_code_old"].isin(new.activities["task_code"])
+        & ~pairs["task_code_new"].isin(old.activities["task_code"])
+    ]
+    pairs = pairs.rename(columns={"task_code_old": "old_code", "task_code_new": "new_code"})
+    return pairs[RENUMBERED_COLUMNS].sort_values("old_code").reset_index(drop=True)
+
+
+def relinked(baseline: Baseline, snapshot: Snapshot) -> Baseline:
+    """``baseline`` with each task ``snapshot`` renumbered (``renumbered``) under its new Activity ID, as
+    P6 has it when the renumbering was carried to the baseline; ``baseline`` itself when none is."""
+    pairs = renumbered(baseline.snapshot, snapshot)
+    if pairs.empty:
+        return baseline
+    mapping = dict(zip(pairs["old_code"], pairs["new_code"], strict=True))
+    costs = baseline.assignment_costs
+    return replace(
+        baseline,
+        frame=baseline.frame.rename(index=mapping),
+        assignment_costs=costs.assign(task_code=costs["task_code"].replace(mapping)),
+    )

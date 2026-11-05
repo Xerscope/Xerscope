@@ -10,7 +10,20 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import P6_CORPUS_HINT, baseline_box, file_boxes, files_done, files_line, missing, open_files, read_folder
+from conftest import (
+    P6_CORPUS_HINT,
+    baseline_box,
+    close_window,
+    file_boxes,
+    files_done,
+    files_line,
+    missing,
+    open_files,
+    pick_project,
+    project_box,
+    read_folder,
+    selection,
+)
 from streamlit.testing.v1 import AppTest
 from xerkit import active, hours, todo, with_second_project, xer_text
 
@@ -62,7 +75,7 @@ def test_files_window_opens_from_the_button_reads_on_done_and_reopens_with_the_c
     files_done(at)
     _ok(at)
     assert not file_boxes(at) and not at.session_state["files_open"]  # Done closed the window
-    assert files_line(at).startswith("Files · 2 ·")
+    assert files_line(at) == "Files · 2 files · 1 project"
     open_files(at)
     assert [box.value for box in file_boxes(at)] == [True, True] + [False] * 6
 
@@ -235,6 +248,42 @@ def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second_w
     cost = next(m for m in app.metric if m.label == "SPI")
     assert cost.value == "n/a — no cost in the baseline"
     assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
+
+
+def _banner(at) -> str:
+    return at.button(key="context_banner").label.replace("\\", "")
+
+
+def test_the_context_banner_states_each_setting_and_follows_its_changes(app, store):
+    """Projects, data date of the update shown, baseline, EV basis, costs, files: each change shows."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    first = store.labels[0].split(" · ")[0]
+    code = store.latest.project_code
+    assert _banner(app) == (
+        f"{code} · data date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
+        "EV budgeted, planned dates · costs off · 8 files · 1 project"
+    )
+    app.selectbox(key="ev_snap").set_value(store.labels[2]).run()
+    assert f"data date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
+    baseline_box(app).set_value(BL_PLANNED)
+    assert " · BL planned dates · " in _banner(app)
+    baseline_box(app, "ev_basis").set_value("at_completion_current")
+    assert " · EV at completion, current dates · " in _banner(app)
+    app.session_state["files_open"] = False  # baseline_box leaves the window open
+    _costs(app.run(), True)
+    assert " · costs on · " in _banner(app)
+    assert f"Data date of the update shown: {ui.fmt_date(store[2].data_date)}" in app.button(key="context_banner").help
+
+
+def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_dir, monkeypatch):
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run(), count=3)
+    _ok(at)
+    assert _banner(at).endswith(" · 3 files · 1 project")
+    at.button(key="context_banner").click().run()
+    assert at.session_state["files_open"] and file_boxes(at)
 
 
 def _costed_week(tmp_path, cost: str = "5000"):
@@ -528,7 +577,7 @@ def test_locked_folder_gives_the_visitor_no_path_field_and_no_upload(sample_dir,
     assert len(file_boxes(at)) == 8  # the window lists the server's files only
     files_done(at)
     _ok(at)
-    assert files_line(at).startswith("Files · 8 ·")
+    assert files_line(at) == "Files · 8 files · 1 project"
 
 
 def test_locked_server_offers_the_baseline_file_it_names(sample_dir, monkeypatch):
@@ -641,7 +690,7 @@ def test_folder_files_can_be_picked(sample_dir, monkeypatch):
     at.run()
     files_done(at)
     _ok(at)
-    assert files_line(at).startswith("Files · 3 ·")
+    assert files_line(at) == "Files · 3 files · 1 project"
     assert len(_selection(at)) == 3  # unticked files are not read at all
 
 
@@ -668,7 +717,7 @@ def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(s
     files_done(at)
     _ok(at)
     assert [s.source for s in at.session_state["store"]] == [files[0].name, files[2].name]
-    assert files_line(at).startswith("Files · 2 ·")
+    assert files_line(at) == "Files · 2 files · 1 project"
 
 
 def _button(at, label):
@@ -690,7 +739,7 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     _ok(at)
     assert all(box.value for box in file_boxes(at)) and len(file_boxes(at)) == count
     files_done(at)
-    assert files_line(at).startswith(f"Files · {count} ·")
+    assert files_line(at) == f"Files · {count} files · 1 project"
     open_files(at)
     _button(at, "Clear").click()
     at.run()
@@ -727,7 +776,8 @@ def renamed_project(tmp_path):
 
 
 def _pick_project(at, code: str) -> None:
-    next(box for box in at.sidebar.selectbox if box.label == "Project").set_value(code).run()
+    """Pick ``code`` for w1.xer, the file that holds two projects (NEW proj_id 1, OLD proj_id 2)."""
+    pick_project(at, "w1.xer", {"NEW": "1", "OLD": "2"}[code])
 
 
 def test_project_choice_applies_to_the_files_that_hold_it(renamed_project, monkeypatch):
@@ -754,7 +804,7 @@ def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch
 
 
 def _selection(at):
-    return next(frame for frame in at.sidebar.dataframe).value
+    return selection(at)
 
 
 def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, monkeypatch):
@@ -777,6 +827,39 @@ def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, mo
     table = _selection(at).set_index("file")
     assert table.loc["w1.xer", ["project", "selected_by", "activities"]].tolist() == ["OLD", "chosen", 2]
     assert table.loc["w2.xer", "project"] == "NEW"
+
+
+def _project_rows(at) -> dict[str, str]:
+    """The window's row of each file of the series: ``<file> — **<project>** · <picked by>``."""
+    rows = [m.value.replace("\\", "") for m in at.markdown if " — **" in m.value]
+    return {row.split(" — ")[0]: row.split(" — ", 1)[1] for row in rows}
+
+
+def test_the_window_lists_the_projects_of_a_file_that_holds_several_and_why_each_file_is_read(
+    renamed_project, monkeypatch
+):
+    at = _run(renamed_project, monkeypatch)
+    _ok(at)
+    box = project_box(at, "w1.xer")
+    assert box.value == "1"
+    assert box.options == ["NEW · 02 Mar 2026 · 3 activities", "OLD · 02 Mar 2026 · 2 activities"]
+    assert project_box(at, "w2.xer") is None  # one project: no list
+    assert _project_rows(at) == {"w1.xer": "**NEW** · most TASK rows", "w2.xer": "**NEW** · only project"}
+    assert not [box for box in at.sidebar.selectbox if box.label == "Project"]  # no project picker for all files
+
+
+def test_a_project_picked_in_the_window_applies_on_done_only(renamed_project, monkeypatch):
+    at = _run(renamed_project, monkeypatch)
+    project_box(at, "w1.xer").set_value("2").run()
+    assert [s.project_code for s in at.session_state["store"]] == ["NEW", "NEW"]  # nothing before Done
+    close_window(at)  # Esc
+    assert [s.project_code for s in at.session_state["store"]] == ["NEW", "NEW"]
+    assert files_line(at) == "Files · 2 files · 1 project"
+    assert project_box(at, "w1.xer").value == "1"  # the draft starts again from the project read
+    pick_project(at, "w1.xer", "2")
+    _ok(at)
+    assert [s.project_code for s in at.session_state["store"]] == ["OLD", "NEW"]
+    assert files_line(at) == "Files · 2 files · :orange[2 projects]"
 
 
 def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkeypatch):
@@ -953,7 +1036,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 10 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 11 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1377,3 +1460,36 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
 )
 def test_a_change_of_zero_is_drawn_neutral(delta, colour, expected):
     assert ui.delta_colour(delta, colour) == expected
+
+
+def test_debug_block_10_compares_a_p6_export_and_keeps_the_activity_list_out_of_the_zip(app, store, downloads):
+    """An export built from xerscope's own PV and EV matches it: no activity in gap; block 10 in the
+    anonymized zip as four tables with no Activity ID; the activity list on screen only."""
+    import io
+    import zipfile
+
+    from xerscope.analysis.evm import earned
+
+    app.switch_page("views/debug.py").run()
+    values = earned(app.session_state["store"].latest, app.session_state["baseline"])
+    export = pd.DataFrame(
+        {
+            "Activity ID": values.index,
+            "Planned Value Labor Units": values["pv_hr"],
+            "Earned Value Labor Units": values["ev_hr"],
+            "Schedule % Complete": values["schedule_pct"],
+        }
+    )
+    app.file_uploader(key="debug_p6_export").set_value(
+        ("p6.csv", export.to_csv(index=False).encode(), "text/csv")
+    ).run()
+    _ok(app)
+    assert any(c.value.startswith("Activities in gap (PV or EV)") for c in app.caption)
+    next(b for b in app.button if b.label == "Build diagnostic").click().run()
+    _ok(app)
+    with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download diagnostic (.zip) · anonymized"))) as archive:
+        names = [n for n in archive.namelist() if n.startswith("10_")]
+        causes = pd.read_csv(io.BytesIO(archive.read("10_pv_p6_gap_causes.csv")), encoding="utf-8-sig")
+        text = "".join(archive.read(n).decode("utf-8-sig") for n in names)
+    assert len(names) == 4 and causes.loc[0, "gap_activities"] == 0
+    assert not set(store.latest.activities["task_code"]) & {c for line in text.splitlines() for c in line.split(",")}

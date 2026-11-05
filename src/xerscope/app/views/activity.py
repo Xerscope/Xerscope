@@ -8,11 +8,11 @@ from functools import partial
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import require_store
+from xerscope.app.state import page_header, require_store
 from xerscope.app.task_panel import show_history
 
 store = require_store()
-ui.header(
+page_header(
     "Task history",
     store,
     store.latest,

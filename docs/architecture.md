@@ -75,11 +75,13 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 `SnapshotStore` sorts snapshots by data date and holds one per data date: given two files
 with the same data date (versions of one draft, an update and its baseline copy) it raises
 `DuplicateDataDate` naming them, and the user keeps one. `selection()` lists the files of the
-series and the project taken from each: the app's sidebar Selection panel shows it, with a
-project picker for each file that holds several (by `proj_id`, each project named by code, data
-date, activities and the project it is a baseline copy of). A project picked for a file reads
-that file again and no other; it wins over the sidebar's Project picker, which applies to the
-files without a choice of their own. The session caches (`memo`, the file baselines) are keyed
+series and the project taken from each: the Files section of the app's Files and baseline window
+shows, for each file, the project read and the rule that picked it, with a list of its projects
+when more than one is left once its baseline copies are set aside (otherwise "+ baseline copy") (by `proj_id`, each project named by code, data date, activities and
+the project it is a baseline copy of), and the full table under "Selection details". A project
+picked there applies on Done, like the rest of the window, and reads that file again and no other;
+the files without a choice keep their default project. The sidebar's Files line counts the files
+and the projects read, the latter in the alert colour when the series mixes projects. The session caches (`memo`, the file baselines) are keyed
 on the `proj_id` read from each file. `SnapshotStore` exposes long-format frames:
 
 - `history`: one row per (snapshot, activity);
@@ -110,7 +112,7 @@ same file that owns activities and, when its `orig_proj_id` is filled, names the
 (`load_snapshot(..., project_id=)`, exact because a baseline copy may carry the code of the project it was
 copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
 Start / Finish). The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
-without one has no baseline for that update (checks that need one are n/a), stated in the Selection panel.
+without one has no baseline for that update (checks that need one are n/a), stated in the window's Selection details.
 The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
 has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never
 chosen for the user), gives the baseline of the updates whose file has no usable one, update by update.
@@ -118,9 +120,12 @@ chosen for the user), gives the baseline of the updates whose file has no usable
 `CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
 readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
-`baseline: <source>`. Health, Audit and Earned value open with "Baseline used for <update>: <source>"
-(`state.show_baseline_used`; the Earned value curves measure every update against the baseline of the one
-shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
+`baseline: <source>`. Every page opens with a one-line context banner (`state.page_header`): the projects
+read, the data date of the update shown, where the baseline `baseline_for` gives it comes from (in file,
+fallback, planned dates, a loaded update, a separate file, none), the EV basis, costs on or off, and the count of files and projects; its
+help reads "Baseline used for <update>: <source>", and pressing it opens the Files and baseline window. Health,
+Audit and Earned value add the baseline's warnings under it (`state.baseline_warnings`; the Earned value curves
+measure every update against the baseline of the one shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
 baseline and what applies instead, a pointer that is not used and why (absent project, `orig_proj_id` of
 another project, no activities), a series that mixes sources; on the pages, a baseline whose data date is after
 the update's and a baseline that finds fewer than 90 % of the update's activities (the 06A501a / DCMA-11
@@ -237,7 +242,7 @@ Outside `analysis/`:
   sets (`baseline.EV_COLS`). Series over every update (the health trend, computed on request,
   and the BEI series) reuse the entries there and keep only their numbers. A built download
   (Schedule health's sets, the Debug zip) is offered again only for the same `data_identity`.
-- **`ui.py`:** the shared look: page header (project · data date · baseline), the KPI
+- **`ui.py`:** the shared look (the page header and its context banner are in `state.py`): the KPI
   readout (one line per figure, a change of zero drawn neutral), column filters on long tables, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
 - **`.streamlit/config.toml`:** the light and dark themes (warm neutrals, petrol accent) and server settings
@@ -279,7 +284,8 @@ Outside `analysis/`:
   duration it set (`rem_override_hr`), the INT-01 / INT-03 differences with the inputs the CPM read,
   the P6 Check Schedule targets on the tabs of the P6 dialog, the baseline and the calendars, the
   Project Baseline every update of the series names (`diagnostic.baseline_pointers`, page only, not in
-  the zip), and the activities
+  the zip), the tasks renumbered since the baseline or the previous update by GUID
+  (`diagnostic.renumbered_table`, page only), and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
   end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
   `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI),

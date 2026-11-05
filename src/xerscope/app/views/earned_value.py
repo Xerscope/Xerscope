@@ -19,12 +19,13 @@ from xerscope.analysis.evm import (
 from xerscope.app import ui
 from xerscope.app.state import (
     baseline_for,
+    baseline_warnings,
     costs_shown,
     csv_download,
     memo,
     metric_result,
+    page_header,
     require_store,
-    show_baseline_used,
     snapshot_picker,
     sources_of,
 )
@@ -317,15 +318,14 @@ top = st.container()
 snapshot = snapshot_picker(store, "Update", key="ev_snap")
 baseline = baseline_for(snapshot)
 with top:
-    ui.header(
+    page_header(
         "Earned value",
         store,
         snapshot,
-        baseline,
         lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )
-    show_baseline_used(snapshot, baseline, series=True)
+    baseline_warnings(snapshot, baseline, series=True)
 if baseline is None:
     st.info("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
     st.stop()
@@ -338,7 +338,13 @@ if baseline.bac_hours <= 0:
 
 cache_key = ("evm", baseline.label, baseline.ev_basis)  # "planned dates" baselines differ per update
 curve = memo(cache_key + ("pv",), pv_curve, baseline)
-series = memo(cache_key + ("series",), evm_series, store, baseline)
+series = memo(
+    cache_key + ("series",),
+    evm_series,
+    store,
+    baseline_for(snapshot, link=False),  # each update linked to it on its own renumbered tasks
+    st.session_state.get("guid_link", False),
+)
 standards = builtin_standards()
 bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
 # each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise

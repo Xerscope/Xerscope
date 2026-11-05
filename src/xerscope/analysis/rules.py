@@ -50,6 +50,7 @@ from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     Funnel,
     actual_after,
     as_flag,
+    at_grain,
     constrained_by,
     finish_driver,
     flagged_activities,
@@ -142,9 +143,8 @@ def _check_value(where: str, hint, value) -> None:
     elif hint in (float, int):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{where}: expected a number, got {value!r}")
-    elif hint == Names:
-        if isinstance(value, str) or not all(isinstance(name, str) for name in value):
-            raise ValueError(f"{where}: expected a list of names, got {value!r}")
+    elif hint == Names and (isinstance(value, str) or not all(isinstance(name, str) for name in value)):
+        raise ValueError(f"{where}: expected a list of names, got {value!r}")
 
 
 RULES: dict[str, Rule] = {}
@@ -633,20 +633,40 @@ def bei_from_baseline(
     )
 
 
-def bei_from_snapshot(population: pd.DataFrame, data_date, missing_baseline_is_due: bool) -> RuleOutput:
-    """BEI whose due tasks are the snapshot's own, ``population`` carrying its ``bl_finish``."""
-    done = int(population["is_complete"].sum())
+def bei_from_snapshot(
+    population: pd.DataFrame,
+    data_date,
+    missing_baseline_is_due: bool,
+    completed_by_data_date: bool = False,
+    date_grain: str = "timestamp",
+) -> RuleOutput:
+    """BEI whose due tasks are the snapshot's own, ``population`` carrying its ``bl_finish``.
+
+    ``completed_by_data_date``: only an actual finish on or before the status date counts as completed
+    (DCMA-EA PAM 200.1 §3.1.2.4 step 5), compared at ``date_grain``; P6's report counts every completed
+    activity.
+    """
+    is_done = as_flag(population["is_complete"])
+    finished_later = pd.Series(False, index=population.index)
+    if completed_by_data_date:
+        finished_later = is_done & as_flag(
+            at_grain(population["act_end_date"], date_grain) > at_grain(data_date, date_grain)
+        )
+        is_done &= ~finished_later
+    done = int(is_done.sum())
     without_baseline = population["bl_finish"].isna()
     is_due = population["bl_finish"] <= data_date
     if missing_baseline_is_due:
         is_due |= without_baseline
     due = population[is_due]
-    late = due[~due["is_complete"]]
+    late = due[~is_done[due.index]]
     note = f"{done} completed / {len(due)} due"
+    if finished_later.any():
+        note += f"; {int(finished_later.sum())} completed after the status date, not counted"
     if without_baseline.any():
         note += f"; {int(without_baseline.sum())} without baseline finish"
     index = done / len(due) if len(due) else None
-    completed = population[population["is_complete"]]
+    completed = population[is_done]
     return RuleOutput(
         flagged_activities(late, bl_finish=late["bl_finish"]),
         done,

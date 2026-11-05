@@ -1,9 +1,9 @@
-"""Shared presentation: page header, KPI readout, labelled tables, status colours.
+"""Shared presentation: KPI readout, labelled tables, status colours (the page header and its
+context banner are state.page_header: they read the session's choices).
 
-Every page goes through these helpers so the app reads as one product: same header,
-same readout style, the same column names and number formats everywhere.
+Every page goes through these helpers so the app reads as one product: same readout style,
+the same column names and number formats everywhere.
 
-    ui.header("Schedule health", store, snap, bl)
     ui.kpis([("Pass", 3), ("Fail", 11, None, "Checks above target")])
     ui.table(flagged)                     # labelled, formatted, technical columns hidden
 """
@@ -25,6 +25,7 @@ from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
 from xerscope.viz.charts import ACCENT, SERIES, STATUS
+from xerscope.xer.model import to_datetime
 
 
 class StatusStyle(NamedTuple):
@@ -215,22 +216,6 @@ def md_text(value: object) -> str:
     return str(value).translate(_MD_SPECIAL)
 
 
-def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "") -> None:
-    """Page title, then one context line: project · data date · baseline, then an optional lead."""
-    st.title(title)
-    parts = []
-    if store is not None:
-        parts.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
-    if snapshot is not None:
-        parts.append(f"Status date **{fmt_date(snapshot.data_date)}**")
-    if baseline is not None:
-        parts.append(f"Baseline **{md_text(baseline.label)}**")
-    if parts:
-        st.markdown(" · ".join(parts))
-    if lead:
-        st.caption(lead)
-
-
 _ZERO = re.compile(r"^[+\-\u2212]?0(\.0+)?(?![\d.])")
 
 
@@ -298,6 +283,16 @@ def glossary() -> None:
         )
 
 
+def as_dates(values: pd.Series) -> pd.Series:
+    """A column as dates: left as it is when already one, else read as the XER writes dates
+    ("YYYY-MM-DD HH:MM", ISO 8601, seconds tolerated). Never a guess from the first value, which
+    pandas would otherwise make and then apply to the rest (a date without time becomes NaT after
+    one with seconds), nor a dateutil fallback on a label."""
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return values
+    return to_datetime(values.astype("string").fillna(""))
+
+
 def section(title: str, caption: str = "") -> None:
     st.subheader(title)
     if caption:
@@ -305,7 +300,7 @@ def section(title: str, caption: str = "") -> None:
 
 
 def _has_time(values: pd.Series) -> bool:
-    timestamps = pd.to_datetime(values, errors="coerce").dropna()
+    timestamps = as_dates(values).dropna()
     return bool(len(timestamps)) and bool(((timestamps.dt.hour != 0) | (timestamps.dt.minute != 0)).any())
 
 
@@ -440,7 +435,7 @@ def filter_rows(frame: pd.DataFrame, filters: Mapping[str, str]) -> tuple[pd.Dat
             if kind == "number":
                 keep &= _number_test(text)(values).fillna(False)
             elif kind == "date":
-                keep &= _date_test(text)(pd.to_datetime(values, errors="coerce")).fillna(False)
+                keep &= _date_test(text)(as_dates(values)).fillna(False)
             else:
                 keep &= values.map(fold).str.contains(fold(text), regex=False)
         except ValueError:

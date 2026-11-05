@@ -49,9 +49,11 @@ def test_parameters_show_standard_and_defaults(results, store):
     # a built-in check takes no parameter but its x threshold, shown with its default and its sentence
     with_parameters = {r.metric.id: explain(r) for r in results if explain(r).parameters}
     assert set(with_parameters) == {
-        "P6-04", "P6-05", "P6-06", "DCMA-06", "DCMA-08", "DCMA-12",
+        "P6-04", "P6-05", "P6-06", "DCMA-06", "DCMA-08", "DCMA-09", "DCMA-11", "DCMA-12", "DCMA-14",
         "06A211a", "06A401a", "06A504a", "06A504b", "06A506c",
     }  # fmt: skip
+    assert with_parameters["DCMA-09"].parameters == [("date_grain", "day", "standard")]
+    assert any("by calendar day" in line for line in with_parameters["DCMA-09"].population)
     assert with_parameters["P6-04"].parameters == [("limit_hours", "352", "standard")]
     assert "Flagged when remaining duration > 352 hours." in with_parameters["P6-04"].population
     assert with_parameters["06A506c"].parameters == [

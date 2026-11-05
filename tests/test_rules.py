@@ -528,9 +528,10 @@ def test_dcma_11_follows_pam_200_1():
     # Data date 2026-03-02 08:00. M is a milestone and NS has no baseline start: out of the base.
     # A, B, C, E have both baseline dates and a baseline finish <= data date: 4 due.
     # A 02-26 <= 02-27 on time; B 02-28 > 02-27 missed; C forecast 03-20 > 02-27 missed;
-    # E forecast 03-02 17:00 is the same date as its baseline finish 03-02 08:00: not missed.
-    assert codes(r) == ["B", "C"]
-    assert (r.numerator, r.denominator) == (2, 4)
+    # E forecast 03-02 17:00 against a baseline finish 03-02 08:00: same calendar date, but a Finish
+    # Variance of 8 working hours, the pamphlet's second criterion ("or"): missed.
+    assert codes(r) == ["B", "C", "E"]
+    assert (r.numerator, r.denominator) == (3, 4)
 
 
 def test_baseline_metrics_are_na_without_baseline():
@@ -1229,3 +1230,160 @@ def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
     s = snap([done("A"), done("B")], [("A", "B", "FS", 0)])
     r = run(DECM, "06A212a", s)
     assert r.status != "error" and r.numerator == 0
+
+
+# --- Audit L2 (PAM 200.1 confrontation): date grain, inter-project links, BEI base, missing float ----
+
+
+def test_dcma_09_compares_dates_by_day_p6_by_timestamp():
+    """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual finish
+    on the status date, later in the day, is not beyond it. P6 Check Schedule keeps the timestamp
+    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference."""
+    s = snap(
+        [done("SAMEDAY", act_end_date="2026-03-02 12:00"), done("LATE", act_end_date="2026-03-03 09:00"), todo("FINE")]
+    )
+    r = run(DCMA, "DCMA-09", s)
+    assert (codes(r), r.denominator) == (["LATE"], 3)
+    assert "day" in r.note
+    assert codes(run(P6, "P6-10b", s)) == ["LATE", "SAMEDAY"]
+
+
+def test_dcma_11_due_by_day():
+    """PAM 200.1 §4.11: due when the baseline finish is on or before the status date. Data date Monday
+    08:00; a baseline finish that Monday at 17:00 is due (and missed when the forecast is Thursday)."""
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            todo("SAME", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date="2026-03-02 17:00"),
+            todo("REF", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            todo("NEXT", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date="2026-03-03 08:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
+    assert (codes(r), r.denominator) == (["REF", "SAME"], 2)  # NEXT is due tomorrow: out
+
+
+def test_dcma_14_counts_completed_by_the_status_date_only():
+    """PAM 200.1 §3.1.2.4 step 5: "Filter the Actual Finish data to include only dates up to the current
+    reporting period". A task finished after the status date is due but not completed yet."""
+    st = "2026-02-02 08:00"
+    bl = dict(target_start_date=st, target_end_date="2026-02-27 17:00")
+    s = snap(
+        [
+            done("LATEACT", act_end_date="2026-03-04 17:00", **bl),
+            done("OK", **bl),
+            todo("MISS", early_end_date="2026-03-20 17:00", **bl),
+        ]
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (1, 3)
+    assert r.value == pytest.approx(1 / 3)
+    assert "1 completed after the status date" in r.note
+
+
+def test_dcma_14_leaves_out_zero_duration_tasks_and_says_so():
+    """PAM 200.1 §3.1.2.4 step 1: "Filter out ... zero duration tasks (milestones)": a TT_Task with no
+    original duration is out of the base, and the funnel step records what was removed."""
+    st = "2026-02-02 08:00"
+    bl = dict(target_start_date=st, target_end_date="2026-02-27 17:00")
+    s = snap(
+        [
+            done("OK", **bl),
+            todo("ZERO", target_drtn_hr_cnt="0", **bl),
+            todo("MISS", early_end_date="2026-03-20 17:00", **bl),
+        ]
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (1, 2)
+    step = next(step for step in r.funnel.steps if "original duration" in step.label)
+    assert list(step.removed["task_code"]) == ["ZERO"]
+    assert "1 without original duration" in r.note
+
+
+def test_dcma_06_07_name_open_tasks_without_float():
+    """PAM 200.1 is silent on a missing float: the task stays in "# of incomplete tasks" and cannot be
+    flagged; the note says how many and why."""
+    s = snap(
+        [
+            todo("A", total_float_hr_cnt="400"),
+            todo("NOFLOAT", total_float_hr_cnt=""),
+            todo("N", total_float_hr_cnt="-8"),
+        ]
+    )
+    high = run(DCMA, "DCMA-06", s)
+    assert (codes(high), high.denominator) == (["A"], 3)
+    assert "1 without total float (kept in the checked population, cannot be flagged)" in high.note
+    neg = run(DCMA, "DCMA-07", s)
+    assert (codes(neg), neg.denominator) == (["N"], 3)
+    assert "1 without total float" in neg.note
+
+
+def test_dcma_13_has_no_value_when_the_float_is_missing():
+    """A missing total float is not 0: with a Must Finish By and no float on the finish driver the
+    CPLI is n/a, with the reason, instead of 1.00."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="")]
+    r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], **MFB))
+    assert r.value is None
+    assert "total float missing" in r.note
+
+
+def test_dcma_11_missed_is_date_after_or_working_variance_above_zero():
+    """DCMA-EA PAM 200.1 §4.11: missed when "the actual finish date or forecast finish date ... is after
+    the baseline finish date OR the Finish Variance (Early Finish minus Baseline Finish) is greater than
+    zero". Two readings joined by "or": calendar date, or working time on the task's calendar.
+    Five-day calendar, status date Mon 2026-03-02 08:00, four tasks due (baseline finish Fri 02-27)."""
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            done("SAT", act_end_date="2026-02-28 09:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            done("SAMEDAY", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 12:00"),
+            done("MON", act_end_date="2026-03-02 09:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+            done("ONTIME", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+        ]
+    )
+    r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
+    # SAT: date after, 0 h of working time; SAMEDAY: same date, 12:00 -> 17:00 = 4 working hours on the
+    # fixture's calendar (12:00-13:00 is a break); MON: both; ONTIME: neither.
+    assert (codes(r), r.denominator) == (["MON", "SAMEDAY", "SAT"], 4)
+    assert set(r.flagged["reason"]) == {"date after baseline finish", "finish variance 4 h", "both"}
+
+
+def test_cpli_without_must_finish_by_measures_cpl_and_float_on_the_same_milestone():
+    """Without a Must Finish By the pamphlet measures CPL "until the next program milestone that is
+    being measured" and TF on that milestone (§3.1.2.3). TAIL, unlinked, ends 10 Apr, after the end
+    milestone Z (27 Mar, CPL 20 wd, baseline 31 Mar = +2 wd): CPL stops at Z, (20 + 2) / 20."""
+    tail = dict(todo("TAIL", **hours(8)), early_end_date="2026-04-10 17:00")
+    r = _cpli([A160, _end(), tail], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
+    assert r.value == pytest.approx(1.1)
+    assert "CPL 20 wd to Z" in r.note
+
+
+def test_dcma_11_timestamp_grain_reads_the_finish_as_stored():
+    """With date_grain="timestamp" (P6's reading, not the DCMA default) the "after" criterion compares
+    the stored finish: 17:00 against a 12:00 baseline the same day is after; with "day" it is not after
+    by date, and only the working-time variance makes it missed."""
+    from xerscope.analysis import AnalysisContext
+    from xerscope.analysis.dcma.fourteen_point import dcma_11_missed_tasks
+
+    st = "2026-02-02 08:00"
+    s = snap(
+        [done("SAMEDAY", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 12:00")]
+    )
+    context = AnalysisContext(s, baseline=Baseline.planned(s))
+    by_timestamp = dcma_11_missed_tasks(context, date_grain="timestamp")
+    by_day = dcma_11_missed_tasks(context, date_grain="day")
+    assert list(by_timestamp.flagged["reason"]) == ["both"]
+    assert list(by_day.flagged["reason"]) == ["finish variance 4 h"]
+
+
+def test_dcma_14_counts_a_finish_on_the_status_date_as_completed():
+    """PAM 200.1 §3.1.2.4 step 5 reads dates: an actual finish on the status date, later in the day,
+    is "up to the current reporting period" and counts as completed; one the day after does not."""
+    st = "2026-02-02 08:00"
+    bl = dict(target_start_date=st, target_end_date="2026-02-27 17:00")
+    s = snap(
+        [done("SAMEDAY", act_end_date="2026-03-02 12:00", **bl), done("NEXTDAY", act_end_date="2026-03-03 09:00", **bl)]
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (1, 2)
+    assert "1 completed after the status date" in r.note

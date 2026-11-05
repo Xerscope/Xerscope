@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric
 from xerscope.analysis.standards import Metric
 from xerscope.anonymize import Anonymizer, LeakError
@@ -37,44 +37,41 @@ UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
 NBSP = "\u00a0"  # pads a label without collapsing, so a list in a monospaced face reads in columns
 
 
-def _parse(name: str, data: bytes, project: str | None = None, project_id: str | None = None) -> Snapshot:
+def _parse(name: str, data: bytes, project_id: str | None = None) -> Snapshot:
     """Parse once per session, keyed on content. The cache lives in the session's state, never in a
     process-wide cache: when the session ends (server.disconnectedSessionTTL after the tab closes),
     nothing of the files it read stays in the server."""
     cache = st.session_state.setdefault("_parsed", {})
-    key = (name, hashlib.sha256(data).hexdigest(), project, project_id)
+    key = (name, hashlib.sha256(data).hexdigest(), project_id)
     if key not in cache:
         if len(cache) > 64:
             cache.clear()
-        cache[key] = load_snapshot(data, project_code=project, name=name, project_id=project_id)
+        cache[key] = load_snapshot(data, name=name, project_id=project_id)
     return cache[key]
 
 
 def _file_choices() -> dict[str, str]:
-    """The project picked for a file in the Selection panel: proj_id by file name."""
+    """The project picked for a file in the window's Files section: proj_id by file name."""
     return st.session_state.setdefault("file_projects", {})
 
 
-def _read(name: str, data: bytes, project: str | None = None) -> Snapshot:
-    """The snapshot of one file: the project picked for it in the Selection panel, else ``project``
-    when the file holds it, else the file's default project (``_default_project`` in the model)."""
+def _read(name: str, data: bytes) -> Snapshot:
+    """The snapshot of one file: the project picked for it in the window, else the file's default
+    project (``_default_project`` in the model)."""
     snapshot = _parse(name, data)
     chosen = _file_choices().get(name)
     if chosen in set(snapshot.file_projects["proj_id"]):
         return snapshot if chosen == snapshot.project_id else _parse(name, data, project_id=chosen)
-    if project and project != snapshot.project_code and project in snapshot.projects_in_file:
-        return _parse(name, data, project)
     return snapshot
 
 
-def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[SnapshotStore | None, list[str]]:
-    """``project`` applies to the files that hold it and have no project picked of their own; the
-    others keep their default project (``_default_project`` in the model), so a project renamed
+def _build(items: list[tuple[str, bytes]]) -> tuple[SnapshotStore | None, list[str]]:
+    """Each file read for the project picked for it, else its default project, so a project renamed
     between updates still loads."""
     snapshots, errors = [], []
     for name, data in items:
         try:
-            snapshot = _read(name, data, project)
+            snapshot = _read(name, data)
         except XerError as exc:
             errors.append(str(exc))
             continue
@@ -185,7 +182,17 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
 
 # The window's baseline selectors write to drafts, filled with the values in force when it opens;
 # Done copies them to the keys the app reads, closing it otherwise (Esc, ✕, a click outside) drops them.
-DRAFTS = {"bl_choice": "draft_bl_choice", "ev_basis": "draft_ev_basis", "bl_fallback": "draft_bl_fallback"}
+DRAFTS = {
+    "bl_choice": "draft_bl_choice",
+    "ev_basis": "draft_ev_basis",
+    "bl_fallback": "draft_bl_fallback",
+    "guid_link": "draft_guid_link",
+}
+
+
+def _project_draft(source: str) -> str:
+    """The draft key of the project picked for file ``source`` in the window (its proj_id)."""
+    return f"draft_file_project:{source}"
 
 
 def _open_window(section: str) -> None:
@@ -193,13 +200,20 @@ def _open_window(section: str) -> None:
     for key, draft in DRAFTS.items():
         if key in st.session_state:
             st.session_state[draft] = st.session_state[key]
+    for snapshot in st.session_state.get("store") or ():
+        st.session_state[_project_draft(snapshot.source)] = snapshot.project_id
 
 
 def _apply_drafts() -> None:
-    """Done: the window's baseline choice becomes the one in force, its uploaded file held."""
+    """Done: the window's baseline choice becomes the one in force, its uploaded file held; a project
+    picked for a file other than the one read is recorded, and the next run reads that file again."""
     for key, draft in DRAFTS.items():
         if draft in st.session_state:
             st.session_state[key] = st.session_state[draft]
+    for snapshot in st.session_state.get("store") or ():
+        chosen = st.session_state.get(_project_draft(snapshot.source))
+        if chosen is not None and chosen != snapshot.project_id:
+            _file_choices()[snapshot.source] = chosen
     upload = st.session_state.get("bl_upload")
     if upload is not None:
         st.session_state["bl_file"] = (upload.name, upload.getvalue())
@@ -214,8 +228,9 @@ def _section_title(text: str, note: str = "") -> None:
     st.html(f'<div class="xd-title"><span>{html.escape(text)}</span><span>{html.escape(note)}</span></div>')
 
 
-def _files_section(source: tuple) -> tuple | None:
-    """Upload, folder and the list of files with a box to leave one out; the choice Done would validate."""
+def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
+    """Upload, folder and the list of files with a box to leave one out, then the project read from
+    each file of the series; the choice Done would validate."""
     if _data_locked():
         folder, uploads = os.environ.get("XERSCOPE_DATA", ""), None
         _section_title("Files", "server folder")
@@ -229,10 +244,68 @@ def _files_section(source: tuple) -> tuple | None:
         )
         folder = st.text_input("…or read a folder", key="files_folder", placeholder="/path/to/exports")
     kept = _upload_boxes(uploads, source[1] if source[0] == "upload" else ())
+    picked = () if kept else _folder_boxes(folder, source[2] if source[0] == "folder" else ()) if folder else ()
+    if store is not None:
+        _projects_fields(store)
     if kept:
         return ("upload", kept)
-    picked = _folder_boxes(folder, source[2] if source[0] == "folder" else ()) if folder else ()
     return ("folder", folder, picked) if picked else None
+
+
+def _projects_fields(store: SnapshotStore) -> None:
+    """One row per file of the series: the project read from it and the rule that picked it, and a
+    list of its projects when more than one can be analysed once its baseline copies are set aside, on
+    a draft that Done applies (``_apply_drafts``); otherwise the row says it holds a baseline copy."""
+    st.caption("Project read from each file · why")
+    with st.container(key="files_projects"):
+        for snapshot in sorted(store, key=lambda s: s.source):
+            labels = _project_labels(snapshot)
+            copies = set(baseline_copies(snapshot.file_projects)) & set(labels)
+            # the projects one could analyse: the baseline copies set aside, unless one is the project read
+            choices = (set(labels) - copies) | {snapshot.project_id}
+            row = f"{ui.md_text(snapshot.source)} — **{ui.md_text(snapshot.project_code)}** · " + ui.md_text(
+                snapshot.selected_by
+            )
+            aside = len(copies - choices)
+            if len(choices) < 2 and aside:
+                row += " · + baseline copy" if aside == 1 else f" · + {aside} baseline copies"
+            st.markdown(row)
+            if len(choices) < 2:
+                continue
+            key = _project_draft(snapshot.source)
+            if st.session_state.get(key) not in labels:
+                st.session_state[key] = snapshot.project_id
+            st.selectbox(
+                f"Project of {snapshot.source}",
+                list(labels),
+                format_func=labels.get,
+                key=key,
+                label_visibility="collapsed",
+            )
+    with st.expander("Selection details"):
+        st.caption(
+            "One project per file: the one picked in its list, otherwise baseline copies (sum_base_proj_id, "
+            "orig_proj_id) set aside, the most TASK rows, then the latest status date, then the first in the "
+            "file. Picked by says which rule decided. "
+            "Status date: PROJECT.last_recalc_date, else plan_start_date. "
+            "One file per status date."
+        )
+        table = store.selection()
+        st.dataframe(
+            table.assign(data_date=table["data_date"].map(ui.fmt_date)),
+            hide_index=True,
+            key="files_selection",
+            column_config={
+                "file": "File",
+                "project": "Project",
+                "selected_by": "Picked by",
+                "projects_in_file": "Projects in file (TASK rows)",
+                "data_date": "Status date",
+                "data_date_from": "Status date from",
+                "baseline": "Baseline (P6 Project Baseline)",
+                "activities": "Tasks",
+            },
+        )
 
 
 @st.dialog("Files and baseline", width="medium", on_dismiss=_close_window)
@@ -250,7 +323,7 @@ def _window(store: SnapshotStore | None) -> None:
             if index:
                 st.html('<hr class="xd-rule">')
             if section == "files":
-                choice = _files_section(source)
+                choice = _files_section(source, store)
             else:
                 _baseline_fields(store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
@@ -303,7 +376,7 @@ def _file_digest(path: Path) -> str:
 
 
 def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
-    """Read again, for the project picked in the Selection panel, the files read for another one;
+    """Read again, for the project picked in the window, the files read for another one;
     the other files keep their snapshot."""
     data = dict(st.session_state.get("items") or [])
     snapshots = list(store)
@@ -322,26 +395,6 @@ def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
         st.session_state["errors"] = [*st.session_state.get("errors", []), f"{exc}. Pick another project."]
         return store
     st.session_state["store"] = store
-    return store
-
-
-def _project_picker(sidebar, store: SnapshotStore) -> SnapshotStore:
-    """Apply the projects picked per file (Selection panel), then the project picked for every file
-    that holds it: the files without a choice of their own are read again for it."""
-    store = _apply_file_choices(store)
-    codes = sorted({code for snapshot in store for code in snapshot.projects_in_file})
-    if len(codes) <= 1:
-        return store
-    current = store.latest.project_code
-    index = codes.index(current) if current in codes else 0
-    choice = sidebar.selectbox("Project", codes, index=index, key="project")
-    # among the projects of that code, the model sets the baseline copies aside (_default_project)
-    picked = _file_choices()
-    if all(s.project_code == choice for s in store if choice in s.projects_in_file and s.source not in picked):
-        return store
-    with st.spinner(f"Reading {choice}…"):
-        store, errors = _build(st.session_state["items"], project=choice)
-    st.session_state.update(store=store, errors=errors)
     return store
 
 
@@ -375,12 +428,13 @@ def sidebar_loader() -> None:
 
     store: SnapshotStore | None = st.session_state.get("store")
     if store is not None:
-        store = _project_picker(sidebar, store)
-    # written once the project is picked: the dates are that project's
+        store = _apply_file_choices(store)
+    # written once the projects are read: the count and dates are theirs
     files_line.button(
-        f"Files · {len(store)} · {_period(store)}" if store is not None else "Files · none read",
+        f"Files · {_files_count(store)}" if store is not None else "Files · none read",
         key="files_button",
-        help=f"Project {store.latest.project_code}: {len(store)} snapshot(s). Open to change the files."
+        help=f"Projects read: {', '.join(sorted({ui.md_text(s.project_code) for s in store}))}; "
+        f"{len(store)} snapshot(s), {_period(store)}. Open to change the files or the project read from each."
         if store is not None
         else "Open to upload files or read a folder.",
         type="tertiary",
@@ -388,8 +442,6 @@ def sidebar_loader() -> None:
         on_click=_open_window,
         args=("files",),
     )
-    if store is not None:
-        _selection_panel(sidebar, store)
     for error in st.session_state.get("errors", []):
         sidebar.error(error)
     if store is not None:
@@ -426,55 +478,6 @@ def _project_labels(snapshot: Snapshot) -> dict[str, str]:
             label += f" · baseline of {codes[copies[row['proj_id']]]}"
         labels[row["proj_id"]] = label
     return labels
-
-
-def _pick_file_project(source: str, key: str) -> None:
-    _file_choices()[source] = st.session_state[key]
-
-
-def _selection_panel(sidebar, store: SnapshotStore) -> None:
-    """What was taken from each file and why: the project, the rule that picked it, and the
-    data date. Open by default when a file holds several projects, each with a picker of its project."""
-    table = store.selection()
-    several = {snapshot.source: _project_labels(snapshot) for snapshot in store}
-    several = {source: labels for source, labels in several.items() if len(labels) > 1}
-    with sidebar.expander(f"Selection · {len(store)} file(s) in series", expanded=bool(several)):
-        st.caption(
-            "One project per file: the one picked below for that file, else the one picked in Project "
-            "when the file holds it, otherwise baseline copies (sum_base_proj_id, orig_proj_id) set "
-            "aside, the most TASK rows, then the latest status date, then the first in the file. "
-            "Picked by says which rule decided. "
-            "Status date: PROJECT.last_recalc_date, else plan_start_date. "
-            "One file per status date."
-        )
-        st.dataframe(
-            table.assign(data_date=table["data_date"].map(ui.fmt_date)),
-            hide_index=True,
-            column_config={
-                "file": "File",
-                "project": "Project",
-                "selected_by": "Picked by",
-                "projects_in_file": "Projects in file (TASK rows)",
-                "data_date": "Status date",
-                "data_date_from": "Status date from",
-                "baseline": "Baseline (P6 Project Baseline)",
-                "activities": "Tasks",
-            },
-        )
-        for snapshot in sorted(store, key=lambda s: s.source):
-            labels = several.get(snapshot.source)
-            if not labels:
-                continue
-            key = f"file_project:{snapshot.source}"
-            st.session_state[key] = snapshot.project_id  # the widget shows the project read
-            st.selectbox(
-                snapshot.source,
-                list(labels),
-                format_func=labels.get,
-                key=key,
-                on_change=_pick_file_project,
-                args=(snapshot.source, key),
-            )
 
 
 BL_NONE = "None"
@@ -597,13 +600,78 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
 MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must find
 
 
-def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
-    """Under a page header: the baseline an update is measured against, and what is wrong with it.
+def _count(number: int, word: str) -> str:
+    return f"{number} {word}{'' if number == 1 else 's'}"
+
+
+def _files_count(store: SnapshotStore) -> str:
+    """``N files · K projects``: K is the projects read, in the alert colour when the series mixes several."""
+    count = len({snapshot.project_code for snapshot in store})
+    projects = _count(count, "project")
+    if count > 1:
+        projects = f":orange[{projects}]"
+    return f"{_count(len(store), 'file')} · {projects}"
+
+
+def _baseline_kind(baseline: Baseline | None) -> str:
+    """Where ``baseline`` (``baseline_for`` an update) comes from: its file's P6 Project Baseline, the
+    fallback (``_fallback_baseline`` names it so), planned dates, a loaded update, a separate file, none."""
+    if baseline is None:
+        return "none"
+    if st.session_state.get("baseline") == BL_EACH:
+        if baseline.source.startswith("fallback"):
+            return f"fallback, {_baseline_short(st.session_state.get('fallback_choice', BL_NONE))}"
+        return "in file"
+    return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
+
+
+def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
+    """One line under a page title: what the page is computed from (projects read, data date of the update
+    shown, the baseline ``baseline_for`` gives it, EV basis, costs, files), the baseline's source in full in
+    the help. Pressing it opens the Files and baseline window."""
+    codes = list(dict.fromkeys(s.project_code for s in store))
+    projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
+    baseline = baseline_for(snapshot)
+    kind = _baseline_kind(baseline)
+    basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
+    costs = "on" if costs_shown() else "off"
+    label = (
+        f"{projects} · data date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
+        f"EV {basis.lower().replace(' · ', ', ')} · costs {costs} · {_files_count(store)}"
+    )
+    used = ui.md_text(baseline.source or baseline.label) if baseline is not None else ui.md_text(kind)
+    details = [
+        f"Project(s) read: {', '.join(ui.md_text(code) for code in codes)}",
+        f"Data date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
+        f"Baseline used for {ui.stamp(snapshot.data_date)}: {used}",
+        f"Earned value basis: {basis}",
+        f"Costs: {costs} (sidebar)",
+        "Open to change the files, the project read from each file and the baseline.",
+    ]
+    st.button(
+        label,
+        key="context_banner",
+        help="  \n".join(details),
+        type="tertiary",
+        width="stretch",
+        on_click=_open_window,
+        args=("files",),
+    )
+
+
+def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = None, lead: str = "") -> None:
+    """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
+    st.title(title)
+    context_banner(store, snapshot or store.latest)
+    if lead:
+        st.caption(lead)
+
+
+def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
+    """Under a page header: what is wrong with the baseline an update is measured against.
     ``series``: the page measures every update against this baseline (the PV / EV / SPI curves)."""
-    stamp = ui.stamp(snapshot.data_date)
     name = ui.md_text(snapshot.source)
     if baseline is None:
-        st.markdown(f"**Baseline used for {stamp}**: none")
         if st.session_state.get("baseline") == BL_EACH:
             todo = (
                 "upload the baseline XER under 'When a file has no baseline'"
@@ -612,7 +680,6 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
             )
             st.info(f"{name}: {ui.md_text(snapshot.file_baseline.text)}. To measure this update, {todo}.")
         return
-    st.markdown(f"**Baseline used for {stamp}**: {ui.md_text(baseline.source or baseline.label)}")
     if series and st.session_state.get("baseline") == BL_EACH and len(st.session_state["store"]) > 1:
         st.caption(
             "The PV, EV and SPI curves measure every update against this baseline; the BEI uses each update's own."
@@ -673,6 +740,8 @@ def _baseline_picker(store: SnapshotStore) -> None:
         st.session_state["ev_basis"] = DEFAULT_EV_BASIS
     if st.session_state.get("bl_fallback") not in _fallback_options(store):
         st.session_state["bl_fallback"] = BL_NONE
+    if not isinstance(st.session_state.get("guid_link"), bool):
+        st.session_state["guid_link"] = False
     choice, basis = st.session_state["bl_choice"], st.session_state["ev_basis"]
     st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
     baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
@@ -694,6 +763,35 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if baseline == BL_EACH:
         _file_baseline_warnings(sidebar, store)
     _absent_baseline_help(sidebar, store)
+    _renumbered_notice(sidebar, store)
+
+
+def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
+    """Tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``):
+    a warning while they count as deleted and new, a caption once the option links them, nothing
+    when there are none."""
+    found = {}
+    for snapshot in store:
+        baseline = baseline_for(snapshot, link=False)
+        if baseline is None or baseline.snapshot is snapshot:
+            continue
+        count = len(renumbered(baseline.snapshot, snapshot))
+        if count:
+            found[snapshot.source] = count
+    if not found:
+        return
+    total = sum(found.values())
+    files = ui.md_text(", ".join(f"{name} ({count})" for name, count in found.items()))
+    tasks = f"{total} task" if total == 1 else f"{total} tasks"
+    if st.session_state.get("guid_link"):
+        sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
+        return
+    sidebar.warning(
+        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Activity ID "
+        f"({files}): against the baseline {'it counts' if total == 1 else 'they count'} as deleted and new. "
+        "Option in the Baseline window: Link renumbered tasks by GUID.",
+        icon=":material/warning:",
+    )
 
 
 def _baseline_fields(store: SnapshotStore) -> None:
@@ -704,6 +802,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
         "draft_bl_choice": options,
         "draft_ev_basis": list(EV_BASES),
         "draft_bl_fallback": _fallback_options(store),
+        "draft_guid_link": [True, False],
     }
     for key, draft in DRAFTS.items():
         if st.session_state.get(draft) not in offered[draft]:
@@ -723,6 +822,14 @@ def _baseline_fields(store: SnapshotStore) -> None:
         format_func=EV_BASIS_LABEL.get,
         help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
         "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
+    )
+    st.checkbox(
+        "Link renumbered tasks by GUID",
+        key="draft_guid_link",
+        help="A task of an update that carries a baseline task's GUID (TASK.guid) under a new Activity ID is "
+        "measured against that baseline task, as P6 does when the renumbering was carried to the baseline "
+        "(Renumber Activity IDs > Renumber Selected Activities in Baselines). Off: it counts as deleted and "
+        "new, as P6 does otherwise.",
     )
     choice = st.session_state["draft_bl_choice"]
     if choice == BL_EACH:
@@ -783,14 +890,18 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
     return cache[key]
 
 
-def baseline_for(snapshot: Snapshot) -> Baseline | None:
-    """The sidebar's baseline, as it applies to ``snapshot``."""
-    baseline = st.session_state.get("baseline")
-    if baseline == BL_EACH:
-        return _file_baseline(snapshot) or _fallback_baseline(snapshot)
-    if baseline == BL_PLANNED:
-        return Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
-    return baseline if isinstance(baseline, Baseline) else None
+def baseline_for(snapshot: Snapshot, link: bool | None = None) -> Baseline | None:
+    """The sidebar's baseline, as it applies to ``snapshot``. ``link`` (default: the window's option
+    "Link renumbered tasks by GUID"): with the tasks ``snapshot`` renumbered under their new IDs."""
+    choice = st.session_state.get("baseline")
+    if choice == BL_EACH:
+        baseline = _file_baseline(snapshot) or _fallback_baseline(snapshot)
+    elif choice == BL_PLANNED:
+        baseline = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
+    else:
+        baseline = choice if isinstance(choice, Baseline) else None
+    link = st.session_state.get("guid_link", False) if link is None else link
+    return relinked(baseline, snapshot) if link and baseline is not None else baseline
 
 
 def standards() -> dict[str, Standard]:
@@ -851,9 +962,9 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
 
 def _baseline_identity(ev_basis: bool = True) -> tuple:
     """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
-    and, for an uploaded file, its bytes."""
+    with the GUID link option, and, for an uploaded file, its bytes."""
     baseline = st.session_state.get("baseline")
-    basis = st.session_state.get("ev_basis") if ev_basis else None
+    basis = (st.session_state.get("ev_basis"), st.session_state.get("guid_link", False)) if ev_basis else None
     if isinstance(baseline, Baseline):
         return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
