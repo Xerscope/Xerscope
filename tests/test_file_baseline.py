@@ -465,3 +465,12 @@ def test_the_baseline_upload_goes_away_with_another_choice(tmp_path, monkeypatch
     assert [u.key for u in at.run().sidebar.get("file_uploader")].count("bl_upload") == 1
     next(box for box in at.sidebar.selectbox if box.key == key).select("None")
     assert "bl_upload" not in [u.key for u in at.run().sidebar.get("file_uploader")]
+
+
+def test_the_projects_of_a_file_carry_their_data_date_and_which_are_baseline_copies():
+    from xerscope.xer import baseline_copies
+
+    table = _snapshot(baseline_code="UPD").file_projects
+    assert table["data_date"].tolist() == [pd.Timestamp("2026-03-02 08:00"), pd.Timestamp("2026-01-05 08:00")]
+    assert baseline_copies(table) == {"2": "1"}  # named by project 1's sum_base_proj_id, copied from it
+

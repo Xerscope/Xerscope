@@ -338,8 +338,10 @@ def _check_snapshot_columns(snap: Snapshot) -> None:
 # Every PROJECT row of the file: TASK rows, and the baseline pointers P6 writes (EPPM XER data map,
 # table PROJECT, v23: sum_base_proj_id "Project Baseline", orig_proj_id "Original Project",
 # last_baseline_update_date "Last Update Date"; same XER format on 26, unverified).
+# data_date: the project's data date, read as for the analysed project (_data_date).
 FILE_PROJECT_COLUMNS = [
     "proj_id", "proj_short_name", "tasks", "sum_base_proj_id", "orig_proj_id", "last_baseline_update_date",
+    "data_date",
 ]  # fmt: skip
 
 
@@ -728,21 +730,22 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     return assignments[columns].reset_index(drop=True)
 
 
-def _baseline_copies(projects: pd.DataFrame) -> set[str]:
-    """proj_id of the PROJECT rows that are baseline copies of another project of the file: named
-    as its Project Baseline (``sum_base_proj_id``) or copied from it (``orig_proj_id``)."""
+def baseline_copies(projects: pd.DataFrame) -> dict[str, str]:
+    """The PROJECT rows (``proj_id``, ``sum_base_proj_id``, ``orig_proj_id``) that are baseline copies of
+    another project of the file, each with the project it is the baseline of: named as that project's
+    Project Baseline (``sum_base_proj_id``), else copied from it (``orig_proj_id``)."""
     ids = set(projects["proj_id"])
-    named = {
-        pointer
-        for own, pointer in zip(projects["proj_id"], projects["sum_base_proj_id"], strict=True)
-        if pointer and pointer != own
-    }
-    copied = {
-        own
+    copies = {
+        own: origin
         for own, origin in zip(projects["proj_id"], projects["orig_proj_id"], strict=True)
         if origin and origin != own and origin in ids
     }
-    return (named | copied) & ids
+    copies.update(
+        (pointer, own)
+        for own, pointer in zip(projects["proj_id"], projects["sum_base_proj_id"], strict=True)
+        if pointer and pointer != own and pointer in ids
+    )
+    return copies
 
 
 def _default_project(projects: pd.DataFrame, copies: set[str]) -> tuple[pd.Series, str]:
@@ -792,7 +795,7 @@ def _select_project(
     it was copied from."""
     task_counts = all_tasks["proj_id"].value_counts()
     projects = _ensure_cols(projects.copy(), ["sum_base_proj_id", "orig_proj_id"])
-    copies = _baseline_copies(projects)
+    copies = set(baseline_copies(projects))
     projects = _ensure_cols(
         projects[projects["proj_id"].isin(task_counts.index)].copy(),
         [
@@ -828,8 +831,9 @@ def _select_project(
 
 def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:
     """One row per PROJECT row of the file (``FILE_PROJECT_COLUMNS``), in file order."""
-    table = _ensure_cols(projects.copy(), FILE_PROJECT_COLUMNS)
+    table = _ensure_cols(projects.copy(), FILE_PROJECT_COLUMNS + ["last_recalc_date", "plan_start_date"])
     table["tasks"] = table["proj_id"].map(all_tasks["proj_id"].value_counts()).fillna(0).astype(int)
+    table["data_date"] = pd.to_datetime([_data_date(row)[0] for _, row in table.iterrows()])
     return table[FILE_PROJECT_COLUMNS].reset_index(drop=True)
 
 
