@@ -450,9 +450,8 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
-    """Files whose P6 Project Baseline (sum_base_proj_id) names a project the file does not hold: how to
-    get that baseline out of P6. Restore detaches a baseline from its project and fails while it is
-    assigned (Oracle P6 help, Working with Baselines), so the pointer cannot be kept in one export."""
+    """Files whose P6 Project Baseline (sum_base_proj_id) names a project the file does not hold: ask
+    for that baseline's XER. No P6 steps: restoring or converting a baseline changes the project."""
     absent: dict[str, list[str]] = {}
     for snapshot in store:
         pointer = snapshot.file_baseline.proj_id
@@ -462,13 +461,8 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
         return
     named = "; ".join(f"project {proj_id} ({', '.join(files)})" for proj_id, files in absent.items())
     sidebar.info(
-        f"P6 Project Baseline not exported with the file: {ui.md_text(named)}. To measure against it:\n\n"
-        "1. In P6, Project > Assign Baselines: unassign it as Project Baseline.\n"
-        "2. Project > Maintain Baselines: select it, Restore. It becomes a project in the EPS.\n"
-        "3. Open that project alone, File > Export, XER.\n"
-        f"4. Here, Baseline (BL) > {BL_FILE}: load that XER. It applies to every update of the series.\n"
-        "5. In P6, Maintain Baselines > Add > Convert another project to a new baseline of the current "
-        "project, then Assign Baselines again.",
+        f"P6 Project Baseline not exported with the file: {ui.md_text(named)}. "
+        f"Load that baseline's XER under Baseline (BL) > {BL_FILE}.",
         icon=":material/info:",
     )
 
