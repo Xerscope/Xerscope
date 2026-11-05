@@ -142,9 +142,8 @@ def _check_value(where: str, hint, value) -> None:
     elif hint in (float, int):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{where}: expected a number, got {value!r}")
-    elif hint == Names:
-        if isinstance(value, str) or not all(isinstance(name, str) for name in value):
-            raise ValueError(f"{where}: expected a list of names, got {value!r}")
+    elif hint == Names and (isinstance(value, str) or not all(isinstance(name, str) for name in value)):
+        raise ValueError(f"{where}: expected a list of names, got {value!r}")
 
 
 RULES: dict[str, Rule] = {}

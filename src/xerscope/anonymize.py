@@ -95,6 +95,9 @@ KEEP = {
         digit_group_symbol group_digit_cnt neg_curr_fmt_type pos_curr_fmt_type""",
     "UMEASURE": "seq_num unit_abbrev unit_id unit_name",
     "OBS": "obs_id parent_obs_id seq_num",
+    # table_name is a P6 table name ("TASK"), the words block 09 of the diagnostic lists; the field's
+    # name and label stay secrets
+    "UDFTYPE": "udf_type_id table_name logical_data_type super_flag export_flag",
 }
 KEEP = {table: frozenset(columns.split()) for table, columns in KEEP.items()}
 CODES = {  # (table, column) -> kind of code; the kind's letter follows "X" in the new code

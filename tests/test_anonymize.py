@@ -429,3 +429,27 @@ def test_diagnostic_block_09_holds_no_name_or_code():
     with zipfile.ZipFile(io.BytesIO(Anonymizer.from_raws([raw]).zip_frames(block))) as archive:
         text = "".join(archive.read(name).decode("utf-8-sig") for name in archive.namelist())
     assert "SECRETCODE1" not in text and "Secret name" not in text and "TASKRSRC" in text
+
+
+def test_diagnostic_block_09_is_written_when_the_file_defines_user_fields():
+    """UDFTYPE.table_name holds P6 table names ("TASK"), the same words block 09 lists: an enumeration,
+    not a secret of the file. The user's label stays out."""
+    from xerscope.analysis import Baseline, builtin_standards
+    from xerscope.app.diagnostic import diagnostic_frames
+
+    tasks = [todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00", target_work_qty="40")]
+    udftype = "\n".join(
+        [
+            "%T\tUDFTYPE",
+            "%F\tudf_type_id\ttable_name\tudf_type_name\tudf_type_label\tlogical_data_type\tsuper_flag",
+            "%R\t5001\tTASK\tSecret Field\tSecret label\tFT_TEXT\tN",
+        ]
+    )
+    raw = parse_text(_file(tasks).replace("%T\tTASK\n", udftype + "\n%T\tTASK\n", 1), "x.xer")
+    snapshot = build_snapshot(raw)
+    frames = diagnostic_frames(snapshot, Baseline.planned(snapshot), builtin_standards()["P6"], anonymous=True)
+    block = {name: frame for name, frame in frames.items() if name.startswith("09_")}
+    with zipfile.ZipFile(io.BytesIO(Anonymizer.from_raws([raw]).zip_frames(block))) as archive:
+        text = "".join(archive.read(name).decode("utf-8-sig") for name in archive.namelist())
+    assert "UDFTYPE" in text and "TASK" in text
+    assert "Secret label" not in text and "Secret Field" not in text
