@@ -52,9 +52,12 @@ STYLE = Path(__file__).parent / "style.css"
 
 
 def apply_style() -> None:
-    """style.css with the app's colours (sent once per run, takes no space). The colours hold on
-    both themes and the rest follows the page's text colour, so a theme switch needs no rerun."""
-    colours = {"accent": ACCENT} | {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
+    """style.css with the app's colours (sent once per run, takes no space). The series colours
+    hold on both themes, the accent is a CSS light-dark() pair resolved by the color-scheme
+    Streamlit sets on the app, and the rest follows the page's text colour, so a theme switch
+    needs no rerun."""
+    accent = f"light-dark({ACCENT['light']}, {ACCENT['dark']})"
+    colours = {"accent": accent} | {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
     variables = "".join(f"--{name}: {value};" for name, value in colours.items())
     st.html(f"<style>:root {{{variables}}}\n{STYLE.read_text(encoding='utf-8')}</style>")
 
