@@ -193,7 +193,7 @@ naming a calendar). Without a Must Finish By, the open finish milestone ending l
 TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
 finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
 has no float (a missing float is not 0).
-n/a too when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
+Reported for review (status info, value 1.00, note "by construction") when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish
 after scheduling and the margin is 0 by construction. A baseline file (or update) keeps the margin.

@@ -87,6 +87,7 @@ class RuleOutput:
     checked: pd.DataFrame | None = None  # the rows behind the denominator
     funnel: Funnel | None = None  # how ``checked`` was cut from the file, step by step
     counted: pd.DataFrame | None = None  # the rows behind the numerator, when they are not ``flagged``
+    status: str | None = None  # "info" when the rule reports a value for review, not against the target
 
 
 COMPARE = {"<": operator.lt, ">": operator.gt, "<=": operator.le, ">=": operator.ge, "==": operator.eq}

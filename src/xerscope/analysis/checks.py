@@ -72,7 +72,7 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
         value = None if out.numerator is None else float(out.numerator)
     elif value is None and metric.unit == "%" and out.numerator is not None:
         value = 100.0 * out.numerator / out.denominator if out.denominator else None
-    status = metric.evaluate(value)
+    status = out.status or metric.evaluate(value)
     if value is None and out.denominator == 0:
         status, note = "n/a", out.note or "nothing to check"
     else:
