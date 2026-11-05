@@ -76,7 +76,9 @@ def test_a_pointer_to_a_project_that_is_not_in_the_file_gives_no_baseline():
     # a file exported without its baseline: sum_base_proj_id names a project (370) the file does not hold
     pointer = _snapshot(pointer="370", with_baseline=False).file_baseline
     assert not pointer.usable
-    assert pointer.text == "Baseline: none in file (points to project 370, which is not in the file)"
+    assert pointer.text == (
+        "Baseline: none in file (points to project 370, which is not in the file: export that baseline as its own XER)"
+    )
 
 
 def test_a_pointer_to_a_project_without_activities_gives_no_baseline():
@@ -168,7 +170,7 @@ def test_the_sidebar_keeps_its_choice_when_the_pointer_names_an_absent_project(t
     assert not at.exception
     assert BL_EACH not in _baseline_box(at).options and _baseline_box(at).value != BL_EACH
     assert _selection(at)["baseline"].tolist() == [
-        "Baseline: none in file (points to project 370, which is not in the file)"
+        "Baseline: none in file (points to project 370, which is not in the file: export that baseline as its own XER)"
     ]
 
 
@@ -339,8 +341,27 @@ def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
     c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
     at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c})
     assert any(
-        "c.xer: Baseline: none in file (points to project 370, which is not in the file)" in w for w in _warnings(at)
+        "c.xer: Baseline: none in file (points to project 370, which is not in the file: "
+        "export that baseline as its own XER)" in w
+        for w in _warnings(at)
     )
+
+
+def test_an_absent_baseline_comes_with_the_way_to_export_it(tmp_path, monkeypatch):
+    # b.xer points to no baseline, c.xer and d.xer to project 370 which neither file holds: one help box
+    # names 370 once, with its two files, and the P6 steps; nothing for b.xer or for the usable a.xer
+    c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
+    d = {"pointer": "370", "data_date": "2026-03-16 08:00", "with_baseline": False}
+    at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c, "d.xer": d})
+    help_boxes = [element.value.replace("\\", "") for element in at.sidebar.info if "Restore" in element.value]
+    assert len(help_boxes) == 1
+    assert "project 370 (c.xer, d.xer)" in help_boxes[0] and "a.xer" not in help_boxes[0]
+    assert "Separate baseline file" in help_boxes[0]
+
+
+def test_no_export_help_when_no_pointer_names_an_absent_project(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch)
+    assert not [element for element in at.sidebar.info if "Restore" in element.value]
 
 
 def test_a_baseline_copied_from_another_project_is_refused_and_named(tmp_path, monkeypatch):

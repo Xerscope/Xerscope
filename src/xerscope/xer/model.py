@@ -373,7 +373,8 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     if pointer == project_id:
         return FileBaseline(pointer, "", False, "the pointer names the analysed project itself")
     if pointer not in rows.index:
-        return FileBaseline(pointer, "", False, f"points to project {pointer}, which is not in the file")
+        note = f"points to project {pointer}, which is not in the file: export that baseline as its own XER"
+        return FileBaseline(pointer, "", False, note)
     target = rows.loc[pointer]
     if target["tasks"] == 0:
         return FileBaseline(pointer, target["proj_short_name"], False, f"project {pointer} has no activities")
