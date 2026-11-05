@@ -159,7 +159,7 @@ def _parse_date(value: object) -> pd.Timestamp | None:
 
 
 def percent_complete(tasks: pd.DataFrame) -> pd.Series:
-    """Activity % complete as P6 displays it, chosen by ``complete_pct_type``.
+    """Activity % complete as P6 computes it, chosen by ``complete_pct_type``.
 
     - CP_Phys:  phys_complete_pct (entered by the planner)
     - CP_Drtn:  (original - remaining) / original; 100 once the activity is complete
@@ -167,6 +167,10 @@ def percent_complete(tasks: pd.DataFrame) -> pd.Series:
     Where the chosen basis cannot be computed (no duration, no units) the stored
     physical % is used, then the status. Checked against MPXJ's P6 8.4 test export
     and xerlock's rules (tests/test_reference.py).
+
+    Not rounded: Oracle's formulas (Percent Complete and Earned Value Columns of the
+    Activity Table) carry no rounding, and EV and DECM 06A505b use this value. P6 shows
+    two decimals; the pages round for display only.
     """
 
     def number(column: str) -> pd.Series:
@@ -189,7 +193,7 @@ def percent_complete(tasks: pd.DataFrame) -> pd.Series:
         dtype=float,
     )
     percent = percent.fillna(physical).fillna(complete.map({True: 100.0, False: 0.0}))
-    return percent.clip(0, 100).round(2)
+    return percent.clip(0, 100)
 
 
 def _ensure_cols(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:

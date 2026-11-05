@@ -1035,6 +1035,22 @@ def test_decm_baseline_and_actual_dates():
     assert codes(r) == ["F"] and r.denominator == 1  # of the activities with an actual start
 
 
+def test_decm_100_percent_is_100_percent():
+    """06A505b counts tasks showing 100 % complete without an actual finish. Units % Complete is
+    actual / at completion units x 100 (Oracle, Percent Complete Columns of the Activity Table):
+    19,999 of 20,000 h is 99.995 %, not complete. Rounded to 2 decimals it read 100.0 and was
+    counted."""
+    s = snap(
+        [
+            active("U", complete_pct_type="CP_Units", act_work_qty="19999", remain_work_qty="1"),
+            active("C", complete_pct_type="CP_Phys", phys_complete_pct="100"),
+        ]
+    )
+    assert s.by_code.at["U", "pct_complete"] == pytest.approx(99.995, abs=1e-9)
+    r = run(DECM, "06A505b", s)
+    assert codes(r) == ["C"] and r.denominator == 1
+
+
 def test_decm_actuals_changed_needs_the_previous_update():
     from xerscope.store import SnapshotStore
 
