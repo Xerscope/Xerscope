@@ -249,16 +249,23 @@ def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
 
 def _projects_fields(store: SnapshotStore) -> None:
     """One row per file of the series: the project read from it and the rule that picked it, and a
-    list of its projects when it holds several, on a draft that Done applies (``_apply_drafts``)."""
+    list of its projects when more than one can be analysed once its baseline copies are set aside, on
+    a draft that Done applies (``_apply_drafts``); otherwise the row says it holds a baseline copy."""
     st.caption("Project read from each file · why")
     with st.container(key="files_projects"):
         for snapshot in sorted(store, key=lambda s: s.source):
-            st.markdown(
-                f"{ui.md_text(snapshot.source)} — **{ui.md_text(snapshot.project_code)}** · "
-                f"{ui.md_text(snapshot.selected_by)}"
-            )
             labels = _project_labels(snapshot)
-            if len(labels) < 2:
+            copies = set(baseline_copies(snapshot.file_projects)) & set(labels)
+            # the projects one could analyse: the baseline copies set aside, unless one is the project read
+            choices = (set(labels) - copies) | {snapshot.project_id}
+            row = f"{ui.md_text(snapshot.source)} — **{ui.md_text(snapshot.project_code)}** · " + ui.md_text(
+                snapshot.selected_by
+            )
+            aside = len(copies - choices)
+            if len(choices) < 2 and aside:
+                row += " · + baseline copy" if aside == 1 else f" · + {aside} baseline copies"
+            st.markdown(row)
+            if len(choices) < 2:
                 continue
             key = _project_draft(snapshot.source)
             if st.session_state.get(key) not in labels:

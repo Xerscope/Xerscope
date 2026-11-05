@@ -77,7 +77,7 @@ with the same data date (versions of one draft, an update and its baseline copy)
 `DuplicateDataDate` naming them, and the user keeps one. `selection()` lists the files of the
 series and the project taken from each: the Files section of the app's Files and baseline window
 shows, for each file, the project read and the rule that picked it, with a list of its projects
-when the file holds several (by `proj_id`, each project named by code, data date, activities and
+when more than one is left once its baseline copies are set aside (otherwise "+ baseline copy") (by `proj_id`, each project named by code, data date, activities and
 the project it is a baseline copy of), and the full table under "Selection details". A project
 picked there applies on Done, like the rest of the window, and reads that file again and no other;
 the files without a choice keep their default project. The sidebar's Files line counts the files

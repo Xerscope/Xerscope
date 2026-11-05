@@ -608,3 +608,16 @@ def test_the_banner_names_the_baseline_the_page_uses_when_the_file_baseline_cann
     label = at.button(key="context_banner").label.replace("\\", "")
     assert " · BL fallback, planned dates · " in label
     assert "Baseline used for 2026-03-02: fallback (Planned dates in each file (target_*))" in _banner(at)
+
+
+def _project_row(at, name):
+    """The window's row of file ``name``: ``<project> · <picked by>[ · + baseline copy]``."""
+    rows = [m.value.replace("\\", "") for m in at.markdown if m.value.replace("\\", "").startswith(f"{name} — ")]
+    return rows[0].split(" — ", 1)[1]
+
+
+def test_a_file_holding_its_project_and_its_baseline_copy_has_no_project_list(tmp_path, monkeypatch):
+    at = _series(tmp_path, monkeypatch)  # a.xer: UPD and its baseline copy BL
+    assert project_box(at, "a.xer") is None
+    assert _project_row(at, "a.xer") == "**UPD** · only project not a baseline copy · + baseline copy"
+    assert _project_row(at, "b.xer") == "**UPD** · only project"
