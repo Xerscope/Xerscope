@@ -47,6 +47,16 @@
   letter-spacing: var(--xs-label-tracking);
   opacity: 0.78;
 }
+/* a long label ("SPI (labour units)") or delta ("+2.9 pts this week") wraps onto a second line
+   instead of being cut with an ellipsis: Streamlit keeps both on one line */
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] *,
+[data-testid="stMetricDelta"],
+[data-testid="stMetricDelta"] * {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
 [data-testid="stMetricValue"] {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -93,4 +103,16 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* KPI row: every card as tall as the tallest of its row, so a wrapped label or delta does not
+   leave the row ragged */
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] > div,
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] > div > div,
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) [data-testid="stElementContainer"]:has(> [data-testid="stMetric"]) {
+  height: 100%;
+}
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) [data-testid="stMetric"] {
+  height: 100%;
+  box-sizing: border-box;
 }
