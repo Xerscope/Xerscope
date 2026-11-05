@@ -94,10 +94,47 @@ def files_line(at):
     return at.button(key="files_button").label
 
 
+class BaselineBox:
+    """A baseline selector of the window (``bl_choice``, ``ev_basis``, ``bl_fallback``), read and set
+    as a user does: the window opened from the sidebar's Baseline line, the choice made on its draft,
+    then Done. The window is opened again after Done, so the selectors can be read back."""
+
+    def __init__(self, at, key):
+        self.at, self.key = at, key
+
+    @property
+    def element(self):
+        if not any(box.key == f"draft_{self.key}" for box in self.at.selectbox):
+            self.at.button(key="baseline_button").click()
+            self.at.run()
+        return self.at.selectbox(key=f"draft_{self.key}")
+
+    @property
+    def value(self):
+        return self.element.value
+
+    @property
+    def options(self):
+        return self.element.options
+
+    @property
+    def label(self):
+        return self.element.label
+
+    def set_value(self, value):
+        self.element.set_value(value)
+        self.at.run()
+        self.at.button(key="files_done").click()
+        self.at.run()
+        self.at.button(key="baseline_button").click()
+        self.at.run()
+        return self
+
+    select = set_value
+
+    def run(self):
+        return self.at.run()
+
+
 def baseline_box(at, key="bl_choice"):
-    """A baseline selector of the window (``bl_choice``, ``ev_basis``, ``bl_fallback``), the window
-    opened from the sidebar's Baseline line when the selector is not shown."""
-    if not any(box.key == key for box in at.selectbox):
-        at.button(key="baseline_button").click()
-        at.run()
-    return at.selectbox(key=key)
+    return BaselineBox(at, key)

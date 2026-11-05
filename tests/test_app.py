@@ -542,16 +542,16 @@ def test_locked_server_offers_the_baseline_file_it_names(sample_dir, monkeypatch
 
 
 def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app, store):
-    """The sidebar's Baseline line opens the same window, Baseline section first; a choice made there
-    stays once Done closes the window, although its selectors are no longer drawn."""
+    """The sidebar's Baseline line opens the same window, Baseline section first; a choice applied
+    with Done stays once the window is closed, although its selectors are no longer drawn."""
     _ok(app)
     assert app.button(key="baseline_button").label.startswith("Baseline · ")
-    baseline_box(app).set_value(BL_PLANNED).run()
+    baseline_box(app).set_value(BL_PLANNED)
     titles = [html.body for html in app.get("html") if html.body.startswith('<div class="xd-title">')]
     assert "Baseline" in titles[0] and "Files" in titles[1]
     files_done(app)
     _ok(app)
-    assert not app.session_state["files_open"] and not [box for box in app.selectbox if box.key == "bl_choice"]
+    assert not app.session_state["files_open"] and not [box for box in app.selectbox if box.key == "draft_bl_choice"]
     app.run()
     assert app.session_state["bl_choice"] == BL_PLANNED and app.session_state["baseline"] == BL_PLANNED
     assert app.button(key="baseline_button").label == "Baseline · planned dates"
@@ -559,6 +559,37 @@ def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_t
     titles = [html.body for html in app.get("html") if html.body.startswith('<div class="xd-title">')]
     assert "Files" in titles[0] and "Baseline" in titles[1]
     assert baseline_box(app).value == BL_PLANNED
+
+
+def _earned_value_metrics(at):
+    return [(m.label, m.value) for m in at.metric]
+
+
+def test_a_baseline_choice_closed_without_done_changes_nothing_and_done_applies_it(app, store):
+    """The window's selectors are drafts: closed without Done (Esc, ✕, a click outside run
+    _close_window), the baseline, its EV basis and the PV / SPI figures stay as they were."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    before = _earned_value_metrics(app)
+    in_force = (app.session_state["bl_choice"], app.session_state["ev_basis"])
+    assert before and in_force[0] == store.labels[0]
+    app.button(key="baseline_button").click().run()
+    app.selectbox(key="draft_bl_choice").set_value(BL_PLANNED).run()
+    app.selectbox(key="draft_ev_basis").set_value("at_completion_current").run()
+    assert app.selectbox(key="draft_bl_choice").value == BL_PLANNED
+    assert (app.session_state["bl_choice"], app.session_state["ev_basis"]) == in_force  # a draft only
+    app.session_state["files_open"] = False  # what _close_window does on dismissal
+    app.run()
+    _ok(app)
+    assert (app.session_state["bl_choice"], app.session_state["ev_basis"]) == in_force
+    assert isinstance(app.session_state["baseline"], Baseline) and _earned_value_metrics(app) == before
+    app.button(key="baseline_button").click().run()
+    assert app.selectbox(key="draft_bl_choice").value == in_force[0]  # the draft starts from the value in force
+    app.selectbox(key="draft_bl_choice").set_value(BL_PLANNED).run()
+    files_done(app)
+    _ok(app)
+    assert app.session_state["bl_choice"] == BL_PLANNED and app.session_state["baseline"] == BL_PLANNED
+    assert _earned_value_metrics(app) != before
 
 
 def test_closing_the_window_without_done_reads_nothing(sample_dir, monkeypatch):

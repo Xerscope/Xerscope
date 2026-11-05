@@ -181,8 +181,26 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
     return tuple(picked)
 
 
+# The window's baseline selectors write to drafts, filled with the values in force when it opens;
+# Done copies them to the keys the app reads, closing it otherwise (Esc, ✕, a click outside) drops them.
+DRAFTS = {"bl_choice": "draft_bl_choice", "ev_basis": "draft_ev_basis", "bl_fallback": "draft_bl_fallback"}
+
+
 def _open_window(section: str) -> None:
     st.session_state.update(files_open=True, window_section=section)
+    for key, draft in DRAFTS.items():
+        if key in st.session_state:
+            st.session_state[draft] = st.session_state[key]
+
+
+def _apply_drafts() -> None:
+    """Done: the window's baseline choice becomes the one in force, its uploaded file held."""
+    for key, draft in DRAFTS.items():
+        if draft in st.session_state:
+            st.session_state[key] = st.session_state[draft]
+    upload = st.session_state.get("bl_upload")
+    if upload is not None:
+        st.session_state["bl_file"] = (upload.name, upload.getvalue())
 
 
 def _close_window() -> None:
@@ -218,8 +236,8 @@ def _files_section(source: tuple) -> tuple | None:
 @st.dialog("Files and baseline", width="medium", on_dismiss=_close_window)
 def _window(store: SnapshotStore | None) -> None:
     """The window of the sidebar's Files and Baseline lines. A widget inside it reruns this function
-    only (st.dialog is a fragment): the files are read on Done, the baseline choice applies at the
-    next full run (Done or closing). The section the line names comes first."""
+    only (st.dialog is a fragment): nothing applies before Done, which reads the files and sets the
+    baseline choice; closing it otherwise changes nothing. The section the line names comes first."""
     source = st.session_state.get("files_source") or ("none",)
     with st.container(key="files_sheet"):
         sections = ["files", "baseline"] if store is not None else ["files"]
@@ -234,8 +252,9 @@ def _window(store: SnapshotStore | None) -> None:
             else:
                 _baseline_fields(store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
-            st.caption("Done · Esc to close")
+            st.caption("Done applies · Esc cancels")
             if st.button("Done", type="primary", key="files_done"):
+                _apply_drafts()
                 st.session_state.update(files_source=choice, files_open=False)
                 st.rerun()
 
@@ -322,16 +341,8 @@ def _period(store: SnapshotStore) -> str:
     return f"{start} → {ui.fmt_date(last)}"
 
 
-# The window's baseline selectors: Streamlit drops a widget's value in a run that does not draw it,
-# and the window is closed most of the time. Written back at each run, the value stays.
-WINDOW_KEYS = ("bl_choice", "ev_basis", "bl_fallback")
-
-
 def sidebar_loader() -> None:
     sidebar = st.sidebar
-    for key in WINDOW_KEYS:
-        if key in st.session_state:
-            st.session_state[key] = st.session_state[key]
     files_line = sidebar.container()
 
     signature, items = _chosen_items()
@@ -665,44 +676,46 @@ def _baseline_picker(store: SnapshotStore) -> None:
     _absent_baseline_help(sidebar, store)
 
 
-def _hold_baseline_upload() -> None:
-    """The uploaded baseline, kept once the window closes (its upload box is emptied then)."""
-    upload = st.session_state.get("bl_upload")
-    st.session_state["bl_file"] = (upload.name, upload.getvalue()) if upload is not None else None
-
-
 def _baseline_fields(store: SnapshotStore) -> None:
-    """The window's Baseline section: the selectors the sidebar held, same keys, same choices."""
-    choice = st.session_state["bl_choice"]
-    _section_title("Baseline", _baseline_short(choice))
+    """The window's Baseline section: the selectors the sidebar held, same choices, on drafts
+    (DRAFTS) that Done applies. A draft the store no longer offers starts again from the value in force."""
     options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""))
+    offered = {
+        "draft_bl_choice": options,
+        "draft_ev_basis": list(EV_BASES),
+        "draft_bl_fallback": _fallback_options(store),
+    }
+    for key, draft in DRAFTS.items():
+        if st.session_state.get(draft) not in offered[draft]:
+            st.session_state[draft] = st.session_state[key]
+    _section_title("Baseline", _baseline_short(st.session_state["draft_bl_choice"]))
     st.selectbox(
         "Baseline (BL)",
         options,
-        key="bl_choice",
+        key="draft_bl_choice",
         help="PV, BEI, missed tasks and late tasks are measured against it. "
         "Usually the contract baseline, exported from P6 as its own XER.",
     )
     st.selectbox(
         "Earned value basis",
         list(EV_BASES),
-        key="ev_basis",
+        key="draft_ev_basis",
         format_func=EV_BASIS_LABEL.get,
         help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
         "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
     )
-    choice = st.session_state["bl_choice"]
+    choice = st.session_state["draft_bl_choice"]
     if choice == BL_EACH:
         st.selectbox(
             "When a file has no baseline",
             _fallback_options(store),
-            key="bl_fallback",
+            key="draft_bl_fallback",
             help="Applies update by update: an update uses the baseline of its own file when it has a usable "
             "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
         )
-    wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["bl_fallback"] == BL_FILE)
+    wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["draft_bl_fallback"] == BL_FILE)
     if wants_file and not _data_locked():
-        st.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload", on_change=_hold_baseline_upload)
+        st.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
         held = st.session_state.get("bl_file")
         if held:
             st.caption(f"Held: {held[0]}")

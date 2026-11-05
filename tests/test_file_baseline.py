@@ -535,8 +535,9 @@ def test_a_locked_server_offers_no_separate_baseline_file_as_fallback(tmp_path, 
     assert not at.get("file_uploader")
 
 
-def test_the_uploaded_baseline_is_kept_once_the_window_closes(tmp_path, monkeypatch):
-    """The upload box is emptied when the window closes; the file it took stays the fallback."""
+def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_closes(tmp_path, monkeypatch):
+    """The upload box is a draft like the selectors: its file is the fallback once Done is pressed, and
+    stays so when the window, and its emptied upload box, are gone."""
     from conftest import files_done
 
     from xerscope.analysis import Baseline
@@ -544,10 +545,9 @@ def test_the_uploaded_baseline_is_kept_once_the_window_closes(tmp_path, monkeypa
     monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
     at = _series(tmp_path, monkeypatch)
     baseline_box(at, "bl_fallback").select("Separate baseline file")
-    at.run()
     data = (tmp_path / "a.xer").read_bytes()
     at.file_uploader(key="bl_upload").set_value([("bl.xer", data, "text/plain")]).run()
-    assert not at.exception and isinstance(at.session_state["fallback"], Baseline)
+    assert not at.exception and at.session_state["fallback"] is None  # not applied before Done
     files_done(at)
     at.run()
     assert not at.get("file_uploader") and isinstance(at.session_state["fallback"], Baseline)
