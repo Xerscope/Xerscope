@@ -494,6 +494,54 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
     return 1 if unexplained else 0
 
 
+def _args_sra(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("path", help="one XER file")
+    _add_project(parser)
+    parser.add_argument(
+        "--ranges", help="CSV task_code,min,most_likely,max: factors of each activity's remaining duration"
+    )
+    parser.add_argument(
+        "--default",
+        default="1,1,1",
+        help="min,most_likely,max for every open activity the CSV does not name (default 1,1,1: no uncertainty)",
+    )
+    parser.add_argument("-n", "--iterations", type=int, default=1000)
+    parser.add_argument("--seed", type=int, default=0, help="same seed, same draws")
+    parser.add_argument("--show", type=int, default=10, help="most critical activities to print")
+    _add_out(parser, "write each activity's criticality (share of iterations on the longest path) to this CSV")
+
+
+def _cmd_sra(args: argparse.Namespace) -> int:
+    from .analysis.sra import PERCENTILES, read_ranges, simulate
+    from .xer import load_snapshot
+
+    default = tuple(float(value) for value in args.default.split(","))
+    if len(default) != 3:
+        raise SystemExit("xerscope: --default needs three factors: min,most_likely,max")
+    snapshot = load_snapshot(args.path, args.project)
+    ranges = read_ranges(args.ranges) if args.ranges else {}
+    result = simulate(snapshot, ranges, default, args.iterations, args.seed)
+    print(
+        f"\n{Path(args.path).name} · {result.iterations} iterations · seed {result.seed}"
+        f" · {len(result.varied)} activities varied"
+    )
+    print(
+        f"  deterministic finish {_when(result.deterministic_finish, DATETIME_FMT)}"
+        f" · met in {result.deterministic_confidence:.0%} of iterations"
+    )
+    for p in PERCENTILES:
+        print(f"  P{p:<3} {_when(result.percentile(p), DATETIME_FMT)}")
+    critical = result.criticality[result.criticality > 0].sort_values(ascending=False).head(args.show)
+    print("  most often on the longest path: " + ", ".join(f"{code} {share:.0%}" for code, share in critical.items()))
+    if result.pinned:
+        print(f"  {len(result.pinned)} open activities pinned by a mandatory constraint: {result.pinned[:5]}")
+    if result.not_varied:
+        print(f"  {len(result.not_varied)} resource-dependent activities kept their duration: {result.not_varied[:5]}")
+    if args.out:
+        _write_csv(result.criticality.rename_axis("task_code").reset_index(), args.out)
+    return 0
+
+
 def _args_sample(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--out", default="data/sample")
     parser.add_argument("--weeks", type=int, default=8)
@@ -517,6 +565,7 @@ COMMANDS = {
     "changelog": ("what changed between two XER files", _args_changelog, _cmd_changelog),
     "export": ("write BI tables (Power BI star schema)", _args_export, _cmd_export),
     "crosscheck": ("compare xerscope with MPXJ on XER files (needs Java)", _args_crosscheck, _cmd_crosscheck),
+    "sra": ("experimental: schedule risk analysis, the finish as a distribution", _args_sra, _cmd_sra),
     "sample": ("generate demo weekly XER files", _args_sample, _cmd_sample),
 }
 
