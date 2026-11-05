@@ -37,7 +37,7 @@ ASSIGNMENT_INPUT_COLS = ["rsrc_id", "rsrc_clndr_id", "driving", "remain_qty", "r
 
 # Fixed readings of the P6 Check Schedule dialog options (analysis/p6/check_schedule.py docstrings).
 P6_DIALOG_OPTIONS = [
-    ("Dangling Start", "Ignore in-progress activities", "applied (started activities excluded)"),
+    ("Dangling Start", "Ignore in-progress activities", "applied (started tasks excluded)"),
     ("Dangling Finish", "Ignore activities with soft constraints", "not read (unchecked in P6 by default)"),
     ("Dangling Finish", "Ignore activities with hard constraints", "not read (unchecked in P6 by default)"),
 ]

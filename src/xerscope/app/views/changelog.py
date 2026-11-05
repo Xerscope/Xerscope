@@ -39,7 +39,7 @@ def show_kpis(log: pd.DataFrame, counts: pd.DataFrame) -> None:
                 "Added / deleted",
                 f"{count_changes(counts, 'Scope', 'added')} / {count_changes(counts, 'Scope', 'deleted')}",
                 None,
-                "Activities",
+                "Tasks",
             ),
             ("Logic changes", count_changes(counts, "Relationships")),
             ("Durations changed", count_changes(counts, "Durations")),
@@ -116,8 +116,8 @@ with top:
         "Changelog",
         store,
         new,
-        lead="Everything that changed between two XER files: activities, durations, relationships, progress, "
-        "dates, float, constraints, budgets and resource assignments. Activities are matched by Activity ID.",
+        lead="Everything that changed between two XER files: tasks, durations, relationships, progress, "
+        "dates, float, constraints, budgets and resource assignments. Tasks are matched by Task ID.",
     )
 if old is new:
     st.warning("Pick two different files.")

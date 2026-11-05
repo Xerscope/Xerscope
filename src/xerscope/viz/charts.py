@@ -67,7 +67,7 @@ def _data_date(fig: go.Figure, when) -> None:
             x=when,
             y=1,
             yref="paper",
-            text=f"Data date {when:%Y-%m-%d}",
+            text=f"Status date {when:%Y-%m-%d}",
             showarrow=False,
             xanchor="left",
             yanchor="bottom",
@@ -306,7 +306,7 @@ def build_mta(
             x=[lo, hi],
             y=[lo, hi],
             mode="lines",
-            name="Reporting line (forecast = data date)",
+            name="Reporting line (forecast = status date)",
             line=dict(color=NEUTRAL, width=3),
             hoverinfo="skip",
         )
@@ -344,7 +344,7 @@ def build_mta(
     _end_labels(fig, ends, (hi - lo).value)
     fig = _layout(fig, 760, "Forecast date")
     # same range and scale on both axes: the diagonal is at 45°, the plot square
-    fig.update_xaxes(title="Reporting date (data date)", range=[lo, hi], constrain="domain")
+    fig.update_xaxes(title="Reporting date (status date)", range=[lo, hi], constrain="domain")
     fig.update_yaxes(range=[lo, hi], scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
     return fig
 
@@ -368,7 +368,7 @@ def build_activity_dates(history: pd.DataFrame) -> go.Figure:
     """Forecast start and finish of one activity in every update."""
     colours = SERIES
     fig = go.Figure([_line(history, "start", "Start", colours[0]), _line(history, "finish", "Finish", colours[1])])
-    fig.update_xaxes(title="Data date")
+    fig.update_xaxes(title="Status date")
     fig = _layout(fig, 380, "Forecast date")
     fig.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
@@ -387,7 +387,7 @@ def build_activity_float(history: pd.DataFrame) -> go.Figure:
         annotation_text="critical",
         annotation_position="bottom left",
     )
-    fig.update_xaxes(title="Data date")
+    fig.update_xaxes(title="Status date")
     return _layout(fig, 380, "Working days")
 
 
@@ -408,7 +408,7 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
             "<br>%{customdata[0]}<extra></extra>",
         )
     )
-    fig.update_xaxes(title="Data date")
+    fig.update_xaxes(title="Status date")
     fig = _layout(fig, 380, "Forecast finish", legend=False)
     fig.update_yaxes(**DATE_AXIS)
     fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
@@ -464,7 +464,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     fig = _layout(fig, 400, "PPC (%)", legend=False)
     fig.update_layout(hovermode="closest")
     fig.update_yaxes(range=[0, 115])
-    fig.update_xaxes(title="Week ending (data date)", showspikes=False, type="category")
+    fig.update_xaxes(title="Week ending (status date)", showspikes=False, type="category")
     return fig
 
 

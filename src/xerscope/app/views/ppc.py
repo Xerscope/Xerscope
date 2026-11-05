@@ -46,9 +46,9 @@ def show_kpis(commitments: pd.DataFrame, project_progress: pd.Series) -> tuple[i
                 "PPC this week",
                 f"{100 * done / due:.0f} %" if due else "–",
                 None,
-                "Committed activities finished / committed",
+                "Committed tasks finished / committed",
             ),
-            ("Committed", due, None, "Forecast at W−1 to finish before this data date"),
+            ("Committed", due, None, "Forecast at W−1 to finish before this status date"),
             ("Finished as committed", done),
             (
                 "Project progress",
@@ -76,7 +76,7 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
 
 
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
-    ui.section("Progress by activity", "Activities whose % complete, earned or actual hours moved this week.")
+    ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
     moved_mask = (progress["pct_delta"] != 0) | (progress["earned_hr_week"] != 0) | (progress["actual_hr_week"] != 0)
     moved = progress[moved_mask].sort_values("earned_hr_week", ascending=False)
     ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS)
@@ -103,7 +103,7 @@ with top:
         "PPC & weekly progress",
         store,
         current,
-        lead="PPC (Last Planner) = of the activities update W−1 forecast to finish before W's data date, "
+        lead="PPC (Last Planner) = of the tasks update W−1 forecast to finish before W's status date, "
         "the share that update W shows complete. Weekly progress = actual in W minus actual in W−1.",
     )
 

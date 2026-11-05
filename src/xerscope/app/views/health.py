@@ -85,8 +85,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
 
     ui.section(
         "Results",
-        "One row per check, in the standard's order. "
-        "Open a check below for its calculation and the activities behind it.",
+        "One row per check, in the standard's order. Open a check below for its calculation and the tasks behind it.",
     )
     ui.table(
         summary,
@@ -395,7 +394,7 @@ reference = f" · [reference]({standard.source})" if standard.source.startswith(
 st.caption((standard.description or standard.name) + reference)
 if baseline is None:
     st.warning(
-        "No baseline selected: checks against the baseline (late activities, BEI, missed tasks) "
+        "No baseline selected: checks against the baseline (late tasks, BEI, missed tasks) "
         "are not applicable. Pick one in the sidebar.",
         icon=":material/info:",
     )
@@ -420,7 +419,7 @@ if baseline is not None:
     missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
     if missing:
         st.caption(
-            f"{len(missing)} activities are not in the baseline: "
+            f"{len(missing)} tasks are not in the baseline: "
             f"{ui.md_text(', '.join(missing[:10]))}{'…' if len(missing) > 10 else ''}"
         )
 

@@ -38,15 +38,15 @@ ui.kpis(
             "Forecast finish now minus the forecast in the first loaded update (working days, project calendar)",
         ),
         (
-            "Activities complete",
+            "Tasks complete",
             f"{int(last['complete'])} / {int(last['activities'])}",
             None if before is None else f"{int(last['complete'] - before['complete']):+d} this week",
         ),
         (
-            "Critical activities",
+            "Critical tasks",
             int(last["critical"]),
             None if before is None else f"{int(last['critical'] - before['critical']):+d} this week",
-            "Open activities with total float ≤ 0",
+            "Open tasks with total float ≤ 0",
             "inverse",
         ),
     ]

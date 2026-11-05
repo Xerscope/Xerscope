@@ -50,7 +50,7 @@ def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[
             errors.append(str(exc))
             continue
         if snapshot.data_date is None:
-            errors.append(f"{name}: no data date (PROJECT.last_recalc_date); the file is skipped")
+            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
             continue
         snapshots.append(snapshot)
     if not snapshots:
@@ -100,7 +100,7 @@ def _describe_file(path: Path) -> tuple[str, str]:
     details = (
         f"Project: {header.project_code} ({header.selected_by})  \n"
         f"Projects in file (TASK rows): {' · '.join(f'{code} ({n})' for code, n in counts.items())}  \n"
-        f"Data date: {ui.fmt_date(header.data_date)} (from {header.data_date_source or 'nothing'})"
+        f"Status date: {ui.fmt_date(header.data_date)} (from {header.data_date_source or 'nothing'})"
     )
     return label, details
 
@@ -219,7 +219,7 @@ def sidebar_loader() -> None:
             "Anonymous exports",
             value=True,
             key="anon_exports",
-            help="Downloads (CSV, Power BI, Debug) carry new Activity IDs and names, other text emptied, "
+            help="Downloads (CSV, Power BI, Debug) carry new Task IDs and names, other text emptied, "
             "as in the anonymized XER extract. The pages always show the files' own data.",
         )
         sidebar.checkbox(
@@ -239,8 +239,8 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
     with sidebar.expander(f"Selection · {len(store)} file(s) in series", expanded=attention):
         st.caption(
             "One project per file: the one picked in Project when the file holds it, otherwise the one "
-            "with the most TASK rows. Data date: PROJECT.last_recalc_date, else plan_start_date. "
-            "One file per data date."
+            "with the most TASK rows. Status date: PROJECT.last_recalc_date, else plan_start_date. "
+            "One file per status date."
         )
         st.dataframe(
             table.assign(data_date=table["data_date"].map(ui.fmt_date)),
@@ -250,10 +250,10 @@ def _selection_panel(sidebar, store: SnapshotStore) -> None:
                 "project": "Project",
                 "selected_by": "Picked by",
                 "projects_in_file": "Projects in file (TASK rows)",
-                "data_date": "Data date",
-                "data_date_from": "Data date from",
+                "data_date": "Status date",
+                "data_date_from": "Status date from",
                 "baseline": "Baseline (P6 Project Baseline)",
-                "activities": "Activities",
+                "activities": "Tasks",
             },
         )
 
@@ -299,11 +299,11 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
-    sidebar.caption(f"{baseline.label} · {len(baseline.frame)} activities · {baseline.bac_hours:,.0f} labor h")
+    sidebar.caption(f"{baseline.label} · {len(baseline.frame)} tasks · {baseline.bac_hours:,.0f} labor h")
     baseline_date, first_date = baseline.snapshot.data_date, store.first.data_date
     if baseline_date is not None and first_date is not None and baseline_date > first_date:
         sidebar.warning(
-            f"The baseline's data date ({ui.fmt_date(baseline_date)}) is after the first update's "
+            f"The baseline's status date ({ui.fmt_date(baseline_date)}) is after the first update's "
             f"({ui.fmt_date(first_date)}): "
             "BEI, missed tasks and PV before that date compare against a plan that did not exist yet.",
             icon=":material/warning:",
@@ -413,7 +413,7 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
     baseline_date = baseline.snapshot.data_date
     if baseline_date is not None and snapshot.data_date is not None and baseline_date > snapshot.data_date:
         st.warning(
-            f"{name}: the baseline's data date ({ui.fmt_date(baseline_date)}) is after the update's "
+            f"{name}: the baseline's status date ({ui.fmt_date(baseline_date)}) is after the update's "
             f"({ui.fmt_date(snapshot.data_date)}): it compares against a plan that did not exist yet.",
             icon=":material/warning:",
         )
@@ -421,8 +421,8 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
     matched = len(codes & set(baseline.frame.index))
     if codes and matched / len(codes) < MATCH_WARN_BELOW:
         st.warning(
-            f"{name}: the baseline finds {matched} of {len(codes)} activities of the update "
-            f"({100 * matched / len(codes):.0f} %, below {MATCH_WARN_BELOW:.0%}). Late activities, BEI and "
+            f"{name}: the baseline finds {matched} of {len(codes)} tasks of the update "
+            f"({100 * matched / len(codes):.0f} %, below {MATCH_WARN_BELOW:.0%}). Late tasks, BEI and "
             "earned value count the others as not baselined.",
             icon=":material/warning:",
         )
@@ -443,7 +443,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
         options,
         index=0 if in_files and not env_path else file_at + (0 if env_path else 1),
         key="bl_choice",
-        help="PV, BEI, missed tasks and late activities are measured against it. "
+        help="PV, BEI, missed tasks and late tasks are measured against it. "
         "Usually the contract baseline, exported from P6 as its own XER.",
     )
     basis = sidebar.selectbox(

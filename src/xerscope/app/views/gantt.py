@@ -35,7 +35,7 @@ with top:
         store,
         snapshot,
         baseline,
-        lead="Bars are coloured by float; the outline behind each bar is the same activity in the "
+        lead="Bars are coloured by float; the outline behind each bar is the same task in the "
         "comparison you pick, so slippage shows as the bar leaving its outline.",
     )
 
@@ -83,12 +83,15 @@ ui.kpis(
 status_column, float_column, search_column = st.columns(3)
 status = status_column.multiselect("Status", list(STATUS.values()), placeholder="All")
 categories = float_column.multiselect("Float", CATEGORY_ORDER, placeholder="All")
-search = search_column.text_input("Search", placeholder="Activity ID or name")
+search = search_column.text_input("Search", placeholder="Task ID or name")
 code_type, code_ids, picks = None, set(), []
 if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has any
     type_column, value_column = st.columns([1, 2])
     code_type = type_column.selectbox(
-        "Activity code", list(dict.fromkeys(snapshot.code_values["code_type"])), index=None, placeholder="None"
+        "Task code (P6 activity code)",
+        list(dict.fromkeys(snapshot.code_values["code_type"])),
+        index=None,
+        placeholder="None",
     )
     values = snapshot.code_values[snapshot.code_values["code_type"] == code_type]
     paths = snapshot.code_paths(code_type) if code_type else {}
@@ -99,7 +102,7 @@ if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has an
         list(by_label),
         placeholder="Type to search; pick a value, or press Enter to keep every value containing the text"
         if code_type
-        else "Pick an activity code first",
+        else "Pick a task code first",
         accept_new_options=True,
         filter_mode="contains",
         disabled=code_type is None,
@@ -117,7 +120,7 @@ options = st.container(horizontal=True, vertical_alignment="bottom", gap="large"
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
 timescale = options.segmented_control(
-    "Timescale", ["Month", "Week"], default="Month", help="Week shows the 12 weeks around the data date"
+    "Timescale", ["Month", "Week"], default="Month", help="Week shows the 12 weeks around the status date"
 )
 
 branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)

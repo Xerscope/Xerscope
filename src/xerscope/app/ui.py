@@ -64,9 +64,9 @@ HEADER_HEIGHT = 38
 
 # column -> (label, kind). kind: text | date | datetime | d1 | d2 | h0 | pct | signed | int | bool
 COLUMNS: dict[str, tuple[str, str]] = {
-    "task_code": ("Activity ID", "text"),
-    "task_name": ("Activity name", "wide"),
-    "bl_name": ("Activity name", "wide"),
+    "task_code": ("Task ID", "text"),
+    "task_name": ("Task name", "wide"),
+    "bl_name": ("Task name", "wide"),
     "wbs_code": ("WBS", "text"),
     "wbs_l1": ("WBS level 1", "text"),
     "wbs_name": ("WBS name", "text"),
@@ -136,11 +136,11 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "bei_p6": ("BEI (P6)", "d2"),
     "bei_dcma": ("BEI (DCMA)", "d2"),
     "ev_technique": ("EV technique", "text"),
-    "data_date": ("Data date", "date"),
+    "data_date": ("Status date", "date"),
     "source": ("File", "text"),
     "forecast_finish": ("Forecast finish", "datetime"),
     "finish_shift_wd": ("Finish shift (wd)", "signed"),
-    "activities": ("Activities", "int"),
+    "activities": ("Tasks", "int"),
     "complete": ("Complete", "int"),
     "in_progress": ("In progress", "int"),
     "not_started": ("Not started", "int"),
@@ -167,7 +167,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "earned_hr_week": ("Earned this week (h)", "h0"),
     "actual_hr_week": ("Actual this week (h)", "h0"),
     "budget_hr": ("Budget (h)", "h0"),
-    "activities_progressed": ("Activities progressed", "int"),
+    "activities_progressed": ("Tasks progressed", "int"),
     "progress_pts": ("Progress (pts)", "signed"),
     "id": ("ID", "text"),
     "group": ("Group", "text"),
@@ -211,7 +211,7 @@ def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "")
     if store is not None:
         parts.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
     if snapshot is not None:
-        parts.append(f"Data date **{fmt_date(snapshot.data_date)}**")
+        parts.append(f"Status date **{fmt_date(snapshot.data_date)}**")
     if baseline is not None:
         parts.append(f"Baseline **{md_text(baseline.label)}**")
     if parts:

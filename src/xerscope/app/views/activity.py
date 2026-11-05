@@ -54,15 +54,15 @@ def show_charts(history: pd.DataFrame) -> None:
 
 store = require_store()
 ui.header(
-    "Activity history",
+    "Task history",
     store,
     store.latest,
-    lead="Follow one activity through every loaded update: forecast dates, float and progress.",
+    lead="Follow one task through every loaded update: forecast dates, float and progress.",
 )
 
 all_history = store.history
 names = ui.latest_names(store)
-choice = st.selectbox("Activity", names.index, format_func=partial(ui.code_label, names))
+choice = st.selectbox("Task", names.index, format_func=partial(ui.code_label, names))
 history = all_history[all_history["task_code"] == choice].sort_values("data_date")
 if len(store) - len(history):
     st.caption(f"Present in {len(history)} of {len(store)} updates (added or deleted along the way).")

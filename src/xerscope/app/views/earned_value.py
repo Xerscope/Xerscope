@@ -100,7 +100,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
                 "BEI (P6 / DCMA)",
                 " / ".join(format_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
                 None,
-                "P6 counts activities without a baseline finish as due; DCMA leaves them out",
+                "P6 counts tasks without a baseline finish as due; DCMA leaves them out",
             ),
             (
                 "EAC",
@@ -143,13 +143,13 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 (
                     "PV",
                     "Σ BL hours × Schedule % Complete (working time elapsed between BL start and BL finish, "
-                    "on the activity's calendar, at the data date)",
+                    "on the task's calendar, at the status date)",
                     f"{planned:,.1f} h  ({row['pv_pct']:.1f} % of BAC)",
                     "Planned Value Labor Units",
                 ),
                 (
                     "EV",
-                    "Σ BL hours × Performance % Complete (WBS EV technique: activity %, 0/100, 50/50 or custom)",
+                    "Σ BL hours × Performance % Complete (WBS EV technique: task %, 0/100, 50/50 or custom)",
                     f"{earned_hours:,.1f} h  ({row['ev_pct']:.1f} % of BAC)",
                     "Earned Value Labor Units",
                 ),
@@ -168,8 +168,8 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "PV cost",
-                    "Σ over assignments of BL cost × share of the assignment's dates elapsed at the data date "
-                    "(date difference; working time assumed, unverified); expenses and activities without "
+                    "Σ over assignments of BL cost × share of the assignment's dates elapsed at the status date "
+                    "(date difference; working time assumed, unverified); expenses and tasks without "
                     "resource: BL cost × Schedule % Complete",
                     f"{row['pv_cost']:,.1f}",
                     "Planned Value Cost",
@@ -218,8 +218,8 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "EV / AC (baselined work)",
-                    "EV / AC without the hours of activities the baseline does not have: EV exists only for "
-                    "baselined activities, so those hours would lower the ratio",
+                    "EV / AC without the hours of tasks the baseline does not have: EV exists only for "
+                    "baselined tasks, so those hours would lower the ratio",
                     f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
                     "not a P6 column: P6 divides by all actual units (CPI above)",
                 ),
@@ -247,7 +247,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 "PV cost: resource curves not modelled (linear spread used) for " + ui.md_text(", ".join(curves[:20]))
             )
         st.caption(
-            "BEI is a count, not hours: completed activities / activities due by the data date "
+            "BEI is a count, not hours: completed tasks / tasks due by the status date "
             "(see Schedule health for the list)."
         )
 
@@ -284,7 +284,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
 
 
 def show_activity_detail(snapshot, baseline) -> None:
-    with st.expander(f"Earned hours by activity ({ui.stamp(snapshot.data_date)})"):
+    with st.expander(f"Earned hours by task ({ui.stamp(snapshot.data_date)})"):
         activities = earned(snapshot, baseline).reset_index()
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
         csv_download(
@@ -296,7 +296,7 @@ def show_activity_detail(snapshot, baseline) -> None:
         fallback = sorted(activities.loc[fallback_mask, "task_code"])
         if fallback:
             st.caption(
-                f"EV technique not modelled (activity % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
+                f"EV technique not modelled (task % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
             )
         missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
         if missing:

@@ -142,7 +142,7 @@ def show_sheet(standard, metric) -> None:
             f"Replace the `[[metric]]` table with id `{metric.id}` in **{ui.md_text(where)}**, or copy the whole "
             "file into a folder of your own standards (`xerscope app --standards <folder>`, or upload it on "
             "Schedule health) with a new standard id. Thresholds are in the unit the parameter names "
-            "(`limit_hours`: hours as P6 stores them; `limit_days`: working days of each activity's calendar)."
+            "(`limit_hours`: hours as P6 stores them; `limit_days`: working days of each task's calendar)."
         )
         st.code(toml_block(metric), language="toml")
         st.caption(

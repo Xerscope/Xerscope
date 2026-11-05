@@ -415,7 +415,7 @@ def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeyp
     """Two steps: the code type, then values picked from the suggestions (exact, as P6's
     "equals") or text typed (every value containing it, as "contains")."""
     app.switch_page("views/gantt.py").run()
-    assert not [box for box in app.selectbox if box.label == "Activity code"]  # the demo has no codes
+    assert not [box for box in app.selectbox if box.label == "Task code (P6 activity code)"]  # the demo has no codes
 
     codes = [("A", "Zone", "B1/L1"), ("B", "Zone", "B1/L2"), ("C", "Zone", "B2"), ("D", "Zone", "B1")]
     tasks = [todo(code) for code in "ABCD"]
@@ -423,7 +423,7 @@ def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeyp
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/gantt.py").run()
     _ok(at)
-    code_type = next(box for box in at.selectbox if box.label == "Activity code")
+    code_type = next(box for box in at.selectbox if box.label == "Task code (P6 activity code)")
     assert code_type.value is None  # nothing picked by default
     code_type.set_value("Zone").run()
     search = at.multiselect(key="gantt_code_values:Zone")
@@ -447,7 +447,7 @@ def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
     (tmp_path / "rooms.xer").write_text(xer_text(tasks, codes=codes), encoding="utf-8")
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/gantt.py").run()
-    next(box for box in at.selectbox if box.label == "Activity code").set_value("Room").run()
+    next(box for box in at.selectbox if box.label == "Task code (P6 activity code)").set_value("Room").run()
     search = at.multiselect(key="gantt_code_values:Room")
     assert len(search.options) == 1000
     search.set_value(["r012"]).run()  # R0120..R0129
@@ -849,7 +849,7 @@ def test_raw_labels_are_the_column_names():
     frame = pd.DataFrame({"task_code": ["A1"], "remain_drtn_hr_cnt": [8.0]})
     config = ui.column_config(frame, raw_labels=True)
     assert [config[column]["label"] for column in frame] == ["task_code", "remain_drtn_hr_cnt"]
-    assert ui.column_config(frame)["task_code"]["label"] == "Activity ID"  # the default stays
+    assert ui.column_config(frame)["task_code"]["label"] == "Task ID"  # the default stays
 
 
 def _csv(data: bytes):

@@ -12,7 +12,7 @@ ui.header(
     store,
     store.latest,
     lead="Star schema: relate dim_snapshot to every fact table on snapshot_idx, and use task_code "
-    "to follow an activity across weeks. Parquet keeps column types; CSV opens anywhere.",
+    "to follow a task across weeks. Parquet keeps column types; CSV opens anywhere.",
 )
 
 tables = memo(("export",), export_tables, store)
@@ -61,7 +61,7 @@ def build_anonymised_extract(store) -> None:
 
 ui.section(
     "Anonymized XER extract",
-    "Every loaded file with new Activity IDs, WBS, project, resource and calendar names; no user, "
+    "Every loaded file with new Task IDs, WBS, project, resource and calendar names; no user, "
     "free text or cost. Dates, durations, units and logic are unchanged, so P6 and xerscope compute "
     "the same results on it. The new IDs match the anonymized lists of Schedule health.",
 )

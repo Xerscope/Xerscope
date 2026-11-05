@@ -166,9 +166,9 @@ def test_overview_kpis_equal_store_summary(app, store):
     _run(app)
     last, before = store.summary.iloc[-1], store.summary.iloc[-2]
     shown = _metrics(app)
-    assert shown["Activities complete"] == f"{int(last['complete'])} / {int(last['activities'])}"
-    assert int(shown["Critical activities"]) == int(last["critical"])
-    critical = next(metric for metric in app.metric if metric.label == "Critical activities")
+    assert shown["Tasks complete"] == f"{int(last['complete'])} / {int(last['activities'])}"
+    assert int(shown["Critical tasks"]) == int(last["critical"])
+    critical = next(metric for metric in app.metric if metric.label == "Critical tasks")
     assert critical.delta == f"{int(last['critical'] - before['critical']):+d} this week"
 
 
