@@ -10,6 +10,7 @@ import operator
 
 import pandas as pd
 
+from ...xer.calendar import hours_to_days
 from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
 from ..cpm import schedule
 from ..populations import (
@@ -209,7 +210,7 @@ def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOu
     funnel = _open_tasks(context)
     tasks = funnel.rows
     baseline_hours = tasks["task_code"].map(context.baseline.frame["bl_duration_hr"])
-    long_tasks = tasks[baseline_hours / tasks["hours_per_day"] > limit_days]
+    long_tasks = tasks[hours_to_days(baseline_hours, tasks["hours_per_day"]) > limit_days]
     return RuleOutput(flagged_activities(long_tasks), len(long_tasks), len(tasks), checked=tasks, funnel=funnel)
 
 

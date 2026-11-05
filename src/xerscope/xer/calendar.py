@@ -31,6 +31,17 @@ MINUTES_PER_DAY = 24 * 60
 DEFAULT_WORKING_DAYS = 5  # a calendar with neither blob nor week hours is Monday to Friday
 AXIS_MARGIN_DAYS = 366  # the axis starts a year before the first exception date
 AXIS_SPAN_DAYS = 3 * 366  # and runs three years after it, then grows on demand
+DAYS_DECIMALS = 6  # a minute is 7e-4 day of a 24 h day: rounding at 1e-6 day merges no two minutes
+
+
+def hours_to_days(hours, hours_per_day):
+    """Working days from working hours, for a number, a Series or an array.
+
+    P6 stores N days of a calendar as N x its hours per day, in decimal hours, and the
+    binary division does not always give N back: 360.8 h / 8.2 is 44.00000000000001, and
+    44 days would then count as more than 44. Rounded to ``DAYS_DECIMALS``.
+    """
+    return np.round(hours / hours_per_day, DAYS_DECIMALS)
 
 
 @dataclass
@@ -220,7 +231,7 @@ class WorkCalendar:
     def working_days(self, a: pd.Timestamp, b: pd.Timestamp) -> float:
         """Working time from ``a`` to ``b`` in days of this calendar."""
         h = self.work_hours(a, b)
-        return 0.0 if pd.isna(h) else h / self.hours_per_day
+        return 0.0 if pd.isna(h) else float(hours_to_days(h, self.hours_per_day))
 
 
 class TimeAxis:

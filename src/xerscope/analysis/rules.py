@@ -39,6 +39,7 @@ import pandas as pd
 
 from ..store import SnapshotStore
 from ..xer import Snapshot
+from ..xer.calendar import hours_to_days
 from ..xer.model import CONSTRAINT, forecast_dates
 from .baseline import EV_COLS, Baseline
 from .cpm import critical_path_test
@@ -450,7 +451,7 @@ def duration(
         if context.baseline is None:
             return RuleOutput(note="needs a baseline")
         hours = population["task_code"].map(context.baseline.frame["bl_duration_hr"])
-        measured = hours if unit == "hours" else hours / population["hours_per_day"]
+        measured = hours if unit == "hours" else hours_to_days(hours, population["hours_per_day"])
     else:
         column = {
             ("original", "hours"): "target_drtn_hr_cnt",
