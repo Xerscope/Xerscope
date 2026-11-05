@@ -61,3 +61,43 @@ def require_reference():
         return path
 
     return get
+
+
+def file_boxes(at):
+    """The tick boxes of the folder's files in the Files… window (empty while it is closed)."""
+    return [box for box in at.checkbox if box.key and box.key.startswith("read:")]
+
+
+def open_files(at):
+    """Press the sidebar's Files line: the window opens on its Files section."""
+    at.button(key="files_button").click()
+    return at.run()
+
+
+def files_done(at):
+    """Press Done in the Files… window."""
+    at.button(key="files_done").click()
+    return at.run()
+
+
+def read_folder(at, count=None):
+    """Nothing is read until files are ticked: open the Files… window, tick every file of the
+    folder (or the first ``count``) and press Done."""
+    open_files(at)
+    for box in file_boxes(at)[:count]:
+        box.check()
+    return files_done(at)
+
+
+def files_line(at):
+    """The sidebar's Files line: ``Files · <snapshots> · <first> → <latest>``, or ``Files · none read``."""
+    return at.button(key="files_button").label
+
+
+def baseline_box(at, key="bl_choice"):
+    """A baseline selector of the window (``bl_choice``, ``ev_basis``, ``bl_fallback``), the window
+    opened from the sidebar's Baseline line when the selector is not shown."""
+    if not any(box.key == key for box in at.selectbox):
+        at.button(key="baseline_button").click()
+        at.run()
+    return at.selectbox(key=key)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import os
 import secrets
 from collections.abc import Callable, Iterable, MutableMapping
@@ -31,6 +32,7 @@ from xerscope.xer.parser import parse_bytes
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
+NBSP = "\u00a0"  # pads a label without collapsing, so a list in a monospaced face reads in columns
 
 
 def _parse(name: str, data: bytes, project: str | None = None, project_id: str | None = None) -> Snapshot:
@@ -86,15 +88,8 @@ def _build(items: list[tuple[str, bytes]], project: str | None = None) -> tuple[
         return None, [*errors, f"{exc}. Untick the others."]
 
 
-def _items_from_uploads(uploads) -> tuple[tuple, list[tuple[str, bytes]] | None]:
-    """Signature of the uploaded files, and their contents when they changed since last run."""
-    # keyed on content, so a corrected file of the same name and size is read again
-    signature = ("upload",) + tuple(
-        sorted((upload.name, hashlib.sha256(upload.getvalue()).hexdigest()) for upload in uploads)
-    )
-    if signature == st.session_state.get("signature"):
-        return signature, None
-    return signature, [(upload.name, upload.getvalue()) for upload in uploads]
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _header(path: Path) -> FileHeader | str:
@@ -113,13 +108,15 @@ def _header(path: Path) -> FileHeader | str:
     return cache[key]
 
 
-def _describe_file(path: Path) -> tuple[str, str]:
-    """Tick box label and help for a file not read yet: what build_snapshot would take from it."""
+def _describe_file(path: Path, widths: tuple[int, int] = (0, 0)) -> tuple[str, str]:
+    """Tick box label and help for a file not read yet: what build_snapshot would take from it.
+    ``widths``: name and project code padded to these lengths, so the list reads in columns."""
     header = _header(path)
+    name = path.name.ljust(widths[0], NBSP)
     if isinstance(header, str):
-        return f"{path.name} — unreadable", header
+        return f"{name} — unreadable", header
     counts = header.project_task_counts
-    label = f"{path.name} — {header.project_code} · {ui.fmt_date(header.data_date)}"
+    label = f"{name} — {header.project_code.ljust(widths[1], NBSP)} · {ui.fmt_date(header.data_date)}"
     if len(counts) > 1:
         label += f" · {len(counts)} projects"
     details = (
@@ -130,46 +127,140 @@ def _describe_file(path: Path) -> tuple[str, str]:
     return label, details
 
 
-def _items_from_folder(sidebar, folder: str) -> tuple[tuple, list[tuple[str, bytes]] | None, bool]:
-    """Signature of the folder's XER files, their contents when changed, and whether the folder is usable."""
+def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
+    """One tick box per XER file of ``folder``; the names ticked. ``chosen``: the names of the
+    last validated choice, ticked again when the window reopens (its boxes are gone once closed)."""
     root = Path(folder).expanduser()
     files = xer_files(root) if root.is_dir() else []
     if not files:
-        sidebar.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
-        st.session_state.update(store=None, signature=(), errors=[])
-        return (), None, False
+        st.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")
+        return ()
     # Widget keys name the folder by a hash: a key shows in the page as a CSS class, and the
     # folder path is the server's.
     folder_id = hashlib.sha256(str(root).encode()).hexdigest()[:12]
     # nothing ticked by default: a file is read (up to ~1 GB for a 40 MB export) only once asked for
     keys = {path.name: f"read:{folder_id}:{path.name}" for path in files}
+    for name, key in keys.items():
+        st.session_state.setdefault(key, name in chosen)
 
     def tick_all(value: bool) -> None:
         st.session_state.update(dict.fromkeys(keys.values(), value))
 
-    ticked = sum(bool(st.session_state.get(key)) for key in keys.values())
+    ticked = sum(bool(st.session_state[key]) for key in keys.values())
+    count, select, clear = st.columns([2, 1, 1], vertical_alignment="center")
+    count.caption(f"{ticked} of {len(files)} ticked")
+    select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
+    clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
     picked = []
-    # a fixed key keeps the expander open while files are ticked: without it Streamlit keys it on
-    # its label, which holds the count, and redraws it closed at every tick
-    with sidebar.expander(
-        f"Files to read · {ticked} of {len(files)} ticked", expanded=not ticked, key=f"files:{folder_id}"
-    ):
-        select, clear = st.columns(2)
-        select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
-        clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
+    headers = [_header(path) for path in files]
+    widths = (
+        max(len(path.name) for path in files),
+        max((len(header.project_code) for header in headers if not isinstance(header, str)), default=0),
+    )
+    with st.container(key="files_list_folder"):
         for path in files:
-            label, details = _describe_file(path)
-            if st.checkbox(label, value=False, key=keys[path.name], help=details):
+            label, details = _describe_file(path, widths)
+            if st.checkbox(label, key=keys[path.name], help=details):
                 picked.append(path.name)
     if not picked:
-        sidebar.info("Tick at least one file to read")
-        st.session_state.update(store=None, signature=(), errors=[])
-        return (), None, False
-    files = [path for path in files if path.name in picked]
+        st.info("Tick at least one file to read")
+    return tuple(picked)
+
+
+def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[str, bytes], ...]:
+    """One tick box per uploaded file, ticked by default; the files left ticked. ``kept``: the files
+    of the last validated choice (an upload widget starts empty each time the window opens)."""
+    files = {(name, _digest(data)): data for name, data in kept}
+    for upload in uploads or []:
+        files.setdefault((upload.name, _digest(upload.getvalue())), upload.getvalue())
+    picked = []
+    with st.container(key="files_list_upload"):
+        for (name, digest), data in files.items():
+            if st.checkbox(name, value=True, key=f"keep:{digest[:12]}:{name}", help=f"{len(data) / 1e6:.1f} MB"):
+                picked.append((name, data))
+    return tuple(picked)
+
+
+def _open_window(section: str) -> None:
+    st.session_state.update(files_open=True, window_section=section)
+
+
+def _close_window() -> None:
+    st.session_state["files_open"] = False
+
+
+def _section_title(text: str, note: str = "") -> None:
+    """A section's title in the window, ``note`` aligned right (a count, a state)."""
+    st.html(f'<div class="xd-title"><span>{html.escape(text)}</span><span>{html.escape(note)}</span></div>')
+
+
+def _files_section(source: tuple) -> tuple | None:
+    """Upload, folder and the list of files with a box to leave one out; the choice Done would validate."""
+    if _data_locked():
+        folder, uploads = os.environ.get("XERSCOPE_DATA", ""), None
+        _section_title("Files", "server folder")
+    else:
+        _section_title("Files")
+        uploads = st.file_uploader(
+            "Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True, key="files_upload"
+        )
+        st.session_state.setdefault(
+            "files_folder", source[1] if source[0] == "folder" else os.environ.get("XERSCOPE_DATA", "")
+        )
+        folder = st.text_input("…or read a folder", key="files_folder", placeholder="/path/to/exports")
+    kept = _upload_boxes(uploads, source[1] if source[0] == "upload" else ())
+    if kept:
+        return ("upload", kept)
+    picked = _folder_boxes(folder, source[2] if source[0] == "folder" else ()) if folder else ()
+    return ("folder", folder, picked) if picked else None
+
+
+@st.dialog("Files and baseline", width="medium", on_dismiss=_close_window)
+def _window(store: SnapshotStore | None) -> None:
+    """The window of the sidebar's Files and Baseline lines. A widget inside it reruns this function
+    only (st.dialog is a fragment): the files are read on Done, the baseline choice applies at the
+    next full run (Done or closing). The section the line names comes first."""
+    source = st.session_state.get("files_source") or ("none",)
+    with st.container(key="files_sheet"):
+        sections = ["files", "baseline"] if store is not None else ["files"]
+        if st.session_state.get("window_section") == "baseline":
+            sections.reverse()
+        choice = None
+        for index, section in enumerate(sections):
+            if index:
+                st.html('<hr class="xd-rule">')
+            if section == "files":
+                choice = _files_section(source)
+            else:
+                _baseline_fields(store)
+        with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
+            st.caption("Done · Esc to close")
+            if st.button("Done", type="primary", key="files_done"):
+                st.session_state.update(files_source=choice, files_open=False)
+                st.rerun()
+
+
+def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None]:
+    """Signature of the files validated in the window, and their contents when they changed since
+    the last run (None: unchanged, or nothing chosen when the signature is empty)."""
+    source = st.session_state.get("files_source")
+    if source is None:
+        return (), None
+    if source[0] == "upload":
+        # keyed on content, so a corrected file of the same name and size is read again
+        signature = ("upload",) + tuple(sorted((name, _digest(data)) for name, data in source[1]))
+        if signature == st.session_state.get("signature"):
+            return signature, None
+        return signature, list(source[1])
+    _, folder, names = source
+    root = Path(folder).expanduser()
+    files = [path for path in xer_files(root) if path.name in names] if root.is_dir() else []
+    if not files:
+        return (), None
     signature = ("folder", str(root)) + tuple((path.name, path.stat().st_mtime_ns) for path in files)
     if signature == st.session_state.get("signature"):
-        return signature, None, True
-    return signature, [(path.name, path.read_bytes()) for path in files], True
+        return signature, None
+    return signature, [(path.name, path.read_bytes()) for path in files]
 
 
 def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
@@ -222,48 +313,59 @@ def _data_locked() -> bool:
     return os.environ.get("XERSCOPE_DATA_LOCKED", "").lower() in ("1", "true", "yes")
 
 
+def _period(store: SnapshotStore) -> str:
+    """First and last data dates, the year written once when both share it: one sidebar row."""
+    first, last = store.first.data_date, store.latest.data_date
+    start = ui.fmt_date(first)
+    if first is not None and last is not None and first.year == last.year:
+        start = start.rsplit(" ", 1)[0]
+    return f"{start} → {ui.fmt_date(last)}"
+
+
+# The window's baseline selectors: Streamlit drops a widget's value in a run that does not draw it,
+# and the window is closed most of the time. Written back at each run, the value stays.
+WINDOW_KEYS = ("bl_choice", "ev_basis", "bl_fallback")
+
+
 def sidebar_loader() -> None:
     sidebar = st.sidebar
-    sidebar.subheader("Weekly XER exports")
-    if _data_locked():
-        uploads = None
-        folder = os.environ.get("XERSCOPE_DATA", "")
-        sidebar.caption("The exports folder of this server")
-    else:
-        uploads = sidebar.file_uploader("Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True)
-        folder = sidebar.text_input(
-            "…or read a folder", value=os.environ.get("XERSCOPE_DATA", ""), placeholder="/path/to/exports"
-        )
+    for key in WINDOW_KEYS:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
+    files_line = sidebar.container()
 
-    items: list[tuple[str, bytes]] | None = None
-    signature: tuple = ()
-    if uploads:
-        signature, items = _items_from_uploads(uploads)
-    elif folder:
-        signature, items, usable = _items_from_folder(sidebar, folder)
-        if not usable:
-            return
-
+    signature, items = _chosen_items()
     if items is not None:
         with st.spinner(f"Parsing {len(items)} file(s)…"):
             store, errors = _build(items)
         st.session_state.update(store=store, signature=signature, errors=errors, items=items)
-    elif not uploads and not folder:
+    elif not signature:
         st.session_state.update(store=None, signature=(), errors=[], items=None)
 
     store: SnapshotStore | None = st.session_state.get("store")
     if store is not None:
         store = _project_picker(sidebar, store)
-        sidebar.caption(
-            f"{store.latest.project_code} · {len(store)} snapshot(s) · "
-            f"{ui.fmt_date(store.first.data_date)} → {ui.fmt_date(store.latest.data_date)}"
-        )
+    # written once the project is picked: the dates are that project's
+    files_line.button(
+        f"Files · {len(store)} · {_period(store)}" if store is not None else "Files · none read",
+        key="files_button",
+        help=f"Project {store.latest.project_code}: {len(store)} snapshot(s). Open to change the files."
+        if store is not None
+        else "Open to upload files or read a folder.",
+        type="tertiary",
+        width="stretch",
+        on_click=_open_window,
+        args=("files",),
+    )
     if store is not None:
         _selection_panel(sidebar, store)
     for error in st.session_state.get("errors", []):
         sidebar.error(error)
     if store is not None:
         _baseline_picker(store)
+    if st.session_state.get("files_open"):
+        _window(store)
+    if store is not None:
         sidebar.toggle(
             "Anonymous exports",
             value=True,
@@ -358,24 +460,20 @@ EV_BASIS_LABEL = {
 
 
 def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str):
-    """The Baseline (or marker) the sidebar choice stands for; None when nothing usable."""
+    """The Baseline (or marker) the window's choice stands for; None when nothing usable."""
     if choice in (BL_PLANNED, BL_EACH):
         return choice  # resolved per snapshot
     if choice == BL_NONE:
         return None
     if choice != BL_FILE:
         return Baseline.from_snapshot(store.by_label(choice), basis)
-    upload = None if _data_locked() else sidebar.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
-    source = (upload.name, upload.getvalue()) if upload is not None else None
+    source = None if _data_locked() else st.session_state.get("bl_file")
     if source is None and env_path and Path(env_path).is_file():
         source = (Path(env_path).name, Path(env_path).read_bytes())
     if source is not None:
         st.session_state["baseline_digest"] = hashlib.sha256(source[1]).hexdigest()
     if source is None:
-        if _data_locked():
-            sidebar.caption("No baseline file on this server: pick one of the loaded snapshots.")
-        else:
-            sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
+        sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
         return None
     try:
         return Baseline.from_snapshot(_parse(*source), basis)
@@ -396,17 +494,15 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
         )
 
 
+def _fallback_options(store: SnapshotStore) -> list[str]:
+    """What an update whose file has no usable baseline can be measured against. No separate file on
+    a locked server: it could only be uploaded."""
+    return ([] if _data_locked() else [BL_FILE]) + store.labels + [BL_PLANNED, BL_NONE]
+
+
 def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
     """What an update whose file has no usable baseline is measured against: chosen, never imposed."""
-    options = [BL_FILE] + store.labels + [BL_PLANNED, BL_NONE]
-    choice = sidebar.selectbox(
-        "When a file has no baseline",
-        options,
-        index=len(options) - 1,
-        key="bl_fallback",
-        help="Applies update by update: an update uses the baseline of its own file when it has a usable one, "
-        "otherwise this. None: the checks that need a baseline are n/a for that update.",
-    )
+    choice = st.session_state["bl_fallback"]
     st.session_state["fallback_choice"] = choice
     st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, "")
 
@@ -481,7 +577,7 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
             todo = (
                 "upload the baseline XER under 'When a file has no baseline'"
                 if st.session_state.get("fallback_choice") == BL_FILE
-                else "pick what applies instead in the sidebar's 'When a file has no baseline'"
+                else "pick what applies instead under 'When a file has no baseline' (the sidebar's Baseline line)"
             )
             st.info(f"{name}: {ui.md_text(snapshot.file_baseline.text)}. To measure this update, {todo}.")
         return
@@ -508,39 +604,60 @@ def show_baseline_used(snapshot: Snapshot, baseline: Baseline | None, series: bo
         )
 
 
-def _baseline_picker(store: SnapshotStore) -> None:
-    sidebar = st.sidebar
-    sidebar.subheader("Baseline")
-    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+def _baseline_options(store: SnapshotStore, env_path: str) -> tuple[list[str], str]:
+    """The choices of "Baseline (BL)" and the default one. A separate file is offered when it can be
+    had: uploaded, or named by XERSCOPE_BASELINE on a locked server."""
     in_files = any(snapshot.file_baseline.usable for snapshot in store)
-    options = [BL_FILE] + store.labels + [BL_PLANNED, BL_NONE]
-    if in_files:
-        options.insert(0, BL_EACH)
+    file_choice = not _data_locked() or Path(env_path).is_file()
+    options = ([BL_EACH] if in_files else []) + ([BL_FILE] if file_choice else []) + store.labels
+    options += [BL_PLANNED, BL_NONE]
     # BL_EACH leads the list and is the default, unless a baseline file is named by XERSCOPE_BASELINE
-    file_at = 1 if in_files else 0
-    choice = sidebar.selectbox(
-        "Baseline (BL)",
-        options,
-        index=0 if in_files and not env_path else file_at + (0 if env_path else 1),
-        key="bl_choice",
-        help="PV, BEI, missed tasks and late tasks are measured against it. "
-        "Usually the contract baseline, exported from P6 as its own XER.",
-    )
-    basis = sidebar.selectbox(
-        "Earned value basis",
-        list(EV_BASES),
-        key="ev_basis",
-        index=list(EV_BASES).index(DEFAULT_EV_BASIS),
-        format_func=EV_BASIS_LABEL.get,
-        help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
-        "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
-    )
+    if in_files and not env_path:
+        return options, BL_EACH
+    return options, BL_FILE if env_path and file_choice else store.labels[0]
+
+
+def _baseline_short(choice: str) -> str:
+    """The sidebar line's name for the baseline in use."""
+    if choice == BL_FILE:
+        held = None if _data_locked() else st.session_state.get("bl_file")
+        env_path = os.environ.get("XERSCOPE_BASELINE", "")
+        return held[0] if held else Path(env_path).name if Path(env_path).is_file() else "file missing"
+    names = {BL_EACH: "in each file", BL_PLANNED: "planned dates", BL_NONE: "none"}
+    # a loaded update: its label starts with its data date
+    return names.get(choice, f"update {choice.split(' · ')[0]}")
+
+
+def _baseline_picker(store: SnapshotStore) -> None:
+    """The window's baseline choice, applied: the sidebar line names it, the warnings follow it."""
+    sidebar = st.sidebar
+    line = sidebar.container()
+    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    # the window's values, checked against this store: a choice that names a file no longer loaded
+    # goes back to the default
+    options, default = _baseline_options(store, env_path)
+    if st.session_state.get("bl_choice") not in options:
+        st.session_state["bl_choice"] = default
+    if st.session_state.get("ev_basis") not in EV_BASES:
+        st.session_state["ev_basis"] = DEFAULT_EV_BASIS
+    if st.session_state.get("bl_fallback") not in _fallback_options(store):
+        st.session_state["bl_fallback"] = BL_NONE
+    choice, basis = st.session_state["bl_choice"], st.session_state["ev_basis"]
     st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
     baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
     st.session_state["baseline"] = baseline
     st.session_state["fallback"], st.session_state["fallback_choice"] = None, BL_NONE
     if baseline == BL_EACH:
         _fallback_picker(sidebar, store, basis)
+    line.button(
+        f"Baseline · {_baseline_short(choice)}",
+        key="baseline_button",
+        help="Open to change the baseline, the earned value basis and the fallback.",
+        type="tertiary",
+        width="stretch",
+        on_click=_open_window,
+        args=("baseline",),
+    )
     if isinstance(baseline, Baseline):
         _describe_baseline(sidebar, store, baseline)
     if baseline == BL_EACH:
@@ -548,8 +665,51 @@ def _baseline_picker(store: SnapshotStore) -> None:
     _absent_baseline_help(sidebar, store)
 
 
+def _hold_baseline_upload() -> None:
+    """The uploaded baseline, kept once the window closes (its upload box is emptied then)."""
+    upload = st.session_state.get("bl_upload")
+    st.session_state["bl_file"] = (upload.name, upload.getvalue()) if upload is not None else None
+
+
+def _baseline_fields(store: SnapshotStore) -> None:
+    """The window's Baseline section: the selectors the sidebar held, same keys, same choices."""
+    choice = st.session_state["bl_choice"]
+    _section_title("Baseline", _baseline_short(choice))
+    options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""))
+    st.selectbox(
+        "Baseline (BL)",
+        options,
+        key="bl_choice",
+        help="PV, BEI, missed tasks and late tasks are measured against it. "
+        "Usually the contract baseline, exported from P6 as its own XER.",
+    )
+    st.selectbox(
+        "Earned value basis",
+        list(EV_BASES),
+        key="ev_basis",
+        format_func=EV_BASIS_LABEL.get,
+        help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
+        "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
+    )
+    choice = st.session_state["bl_choice"]
+    if choice == BL_EACH:
+        st.selectbox(
+            "When a file has no baseline",
+            _fallback_options(store),
+            key="bl_fallback",
+            help="Applies update by update: an update uses the baseline of its own file when it has a usable "
+            "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
+        )
+    wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["bl_fallback"] == BL_FILE)
+    if wants_file and not _data_locked():
+        st.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload", on_change=_hold_baseline_upload)
+        held = st.session_state.get("bl_file")
+        if held:
+            st.caption(f"Held: {held[0]}")
+
+
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
-    """The fallback chosen in the sidebar, as it applies to ``snapshot`` (a file with no usable baseline)."""
+    """The fallback chosen in the window, as it applies to ``snapshot`` (a file with no usable baseline)."""
     fallback, choice = st.session_state.get("fallback"), st.session_state.get("fallback_choice", BL_NONE)
     if fallback == BL_PLANNED:
         built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
@@ -613,7 +773,7 @@ def require_store() -> SnapshotStore:
     store = st.session_state.get("store")
     if store is None:
         st.info(
-            "Load your weekly XER exports from the sidebar (upload or folder path).\n\n"
+            "Load your weekly XER exports from the sidebar's Files line (upload or folder path).\n\n"
             "No files yet? Generate a demo set with `uv run xerscope sample --out data/sample`, "
             "then read the folder `data/sample`."
         )

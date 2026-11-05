@@ -223,8 +223,10 @@ Outside `analysis/`:
 ## 7. `app/`: Streamlit
 
 - **`streamlit_app.py`:** declares the pages (`st.navigation`).
-- **`state.py`:** the sidebar (files, baseline), pickers, a per-session cache keyed on the
-  loaded files, and the list of standards (built-in, `XERSCOPE_STANDARDS`, uploaded).
+- **`state.py`:** the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
+  `_window`: files read on Done, baseline selectors kept in session state while it is closed),
+  pickers, a per-session cache keyed on the loaded files, and the list of standards (built-in,
+  `XERSCOPE_STANDARDS`, uploaded).
 - **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
   cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).

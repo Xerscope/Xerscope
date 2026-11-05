@@ -41,7 +41,8 @@ uv run xerscope app --data data/sample        # http://localhost:8501
 ```
 
 Your own files: `uv run xerscope app --data ~/exports/project --baseline ~/exports/BL.xer`,
-or upload them in the sidebar. The baseline can also be any loaded update (default: the
+or upload them in the window the sidebar's Files line opens (nothing is read before Done).
+The baseline, chosen in the same window, can also be any loaded update (default: the
 first). Schedules stay on your machine: the app listens on localhost, and an uploaded file
 is held in the session's memory, never written to disk.
 
@@ -153,7 +154,7 @@ Configuration (environment variables, also set by the `app` flags):
 | `XERSCOPE_DATA` | folder of weekly `.xer` files to preload |
 | `XERSCOPE_BASELINE` | baseline `.xer` |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
-| `XERSCOPE_DATA_LOCKED` | `true`: the sidebar offers no folder field and no `.xer` upload, only `XERSCOPE_DATA` is read (remote deployment) |
+| `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA` (remote deployment) |
 
 ## Definitions that matter
 

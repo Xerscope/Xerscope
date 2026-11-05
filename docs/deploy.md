@@ -129,8 +129,8 @@ has no right on that folder: the page shows no file and the log says `Permission
 The case of the folder name matters inside the container: `/volume1/Planning` and
 `/volume1/planning` are two different paths. Copy it from File Station.
 
-The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes the sidebar
-field that takes a path and the XER uploads (exports and baseline: one parsed 40 MB export
+The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes the files
+window's field that takes a path and the XER uploads (exports and baseline: one parsed 40 MB export
 takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New weeks go in
 the shared folder. The only upload left is a standard (.toml) on the Schedule health page,
 capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`). An error shows no traceback on the page
