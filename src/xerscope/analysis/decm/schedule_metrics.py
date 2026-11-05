@@ -33,7 +33,7 @@ from ..rules import RuleOutput, critical_path_output, rule
 DECM_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]  # Primavera's hard constraints
 # Defaults of the parameters below; decm.toml repeats each with its DECM v8.0 metric.
 HIGH_FLOAT_DAYS = 44  # 06A211a: total float limit, working days of the activity's calendar
-SLIP_DAYS = 600  # working days added to the first open critical task; a convention, the 06A401a sheet gives none
+SLIP_DAYS = 600  # working days added to the first open critical task; xerscope's choice, the 06A401a sheet gives none
 STATUS_PERIOD_DAYS = 28  # 06A504a / 06A504b / 06A506c: an update is compared with the one a period older
 RIDING_WINDOW_WD = 3  # 06A506c: a forecast start this close to the data date "rides" it
 RIDING_REMAINING_TOLERANCE_WD = 2  # 06A506c: a remaining duration that moved by no more "rides" it too

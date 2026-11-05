@@ -170,11 +170,11 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 **DCMA-10.** PAM §4.10 applies "If the contractor does resource load their schedule": a project with no
 `TASKRSRC` row (for its `proj_id`) and no budgeted labour hours on its tasks (`target_work_qty`) is
 n/a; expenses alone do not load it. Hours on tasks without any assignment still fail, with a note
-to check the export. PAM and Acumen give no threshold; 0 % follows Ten Six (ch. 11) and
-ScheduleReader. Population as PAM (Ten Six also counts completed and LOE).
+to check the export. The PAM asks that all tasks with a duration carry dollars or hours and states no percentage:
+0 %. Population as PAM.
 
 **DCMA-12.** Method: the first open activity of the longest path is lengthened by 600 wd, and the
-finish must move by as much (PAM §4.12; Ten Six and Mosaic: "extend its remaining duration"). The
+finish must move by as much (PAM §4.12 names "a task of the critical path"; the first open task and the lengthening are xerscope's choice). The
 delayed activity ignores its expected finish, which would otherwise fix its early finish and absorb the
 slip; the other activities keep theirs. The pamphlet's second criterion, "completion date shows
 negative total float", adds no pass: with a Must Finish By the float of the end is `MFB - EF_end`,
@@ -195,7 +195,7 @@ dangling finishes, finish milestone exempted), DCMA-04 23/25 (xerlock 25/27: lin
 milestones counted), DCMA-05 1 (xerlock 2: a milestone counted), DCMA-11 3 (xerlock 4: a
 milestone counted), DCMA-13 n/a (xerlock 1.0: no Must Finish By date and no baseline, so
 the float to the contract finish is unknown). The other stated values, the critical path test (MEP-020, +600 wd; the
-600 is a convention (Ten Six ch. 13); the pamphlet and DECM 06A401a give none) and CPL (1080 h) reproduce.
+600 is xerscope's choice; the pamphlet and DECM 06A401a give none) and CPL (1080 h) reproduce.
 
 ## Integrity
 

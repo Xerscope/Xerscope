@@ -32,7 +32,7 @@ from ..populations import (
 from ..rules import RuleOutput, bei_from_snapshot, critical_path_output, link_funnel, rule, share_of_type
 
 DCMA_HIGH_DAYS = 44  # PAM 200.1 §4.6 and §4.8: "two months" of work, in working days of the activity's calendar
-# The pamphlet gives no slip length (§4.12); 600 working days is a convention (Ten Six ch. 13).
+# The pamphlet gives no slip length (§4.12); 600 working days is xerscope's choice.
 DCMA_SLIP_DAYS = 600
 
 # Start On, Start On or Before, Finish On, Finish On or Before, Mandatory Start, Mandatory Finish:
@@ -314,8 +314,8 @@ def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> Ru
     """Add the slip (working days) to the first open critical task; the finish must slip as much.
 
     DCMA-EA PAM 200.1 §4.12: the project completion date must move "in direct proportion" to the
-    "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is a convention
-    (Ten Six ch. 13), DECM 06A401a gives none either
+    "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is xerscope's
+    choice, DECM 06A401a gives none either
     """
     return critical_path_output(context, slip_days)
 

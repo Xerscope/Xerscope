@@ -93,7 +93,7 @@ description = "A delay on the critical path moves the project finish by the same
 rule = "decm_06a401a_critical_path_test"
 params = { slip_days = 600 }  # working days added to the first open critical activity
 target = "pass"
-source = "06A401a: the schedule's critical path is the longest path. The DECM v8.0 sheet tests it with a constraint (finish no later than six months before the baseline finish) and compares the critical sets; it gives no slip length. xerscope runs the slip test of DCMA-12 instead (600 working days, a convention): an approximation of 06A401a, not its method"
+source = "06A401a: the schedule's critical path is the longest path. The DECM v8.0 sheet tests it with a constraint (finish no later than six months before the baseline finish) and compares the critical sets; it gives no slip length. xerscope runs the slip test of DCMA-12 instead (600 working days, xerscope's choice): an approximation of 06A401a, not its method"
 
 [[metric]]
 id = "06A501a"

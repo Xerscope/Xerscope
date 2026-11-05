@@ -103,7 +103,7 @@ name = "Resources"
 description = "Tasks with a duration but no resource or cost"
 rule = "dcma_10_resources"
 target = "<= 0%"
-source = "DCMA-EA PAM 200.1 §4.10: \"all tasks with durations greater than zero have dollars or hours assigned\", \"If the contractor does resource load their schedule\"; incomplete tasks without them over incomplete tasks; §4.0 exclusions apply. Cost or hours = a resource assignment or an expense. n/a when the project has no assignment and no budgeted labour hours. PAM and Acumen: no threshold; 0% as Ten Six (ch. 11) and ScheduleReader; population as PAM (Ten Six also counts completed and LOE)"
+source = "DCMA-EA PAM 200.1 §4.10: \"all tasks with durations greater than zero have dollars or hours assigned\", \"If the contractor does resource load their schedule\"; incomplete tasks without them over incomplete tasks; §4.0 exclusions apply. Cost or hours = a resource assignment or an expense. n/a when the project has no assignment and no budgeted labour hours. Threshold 0%: the PAM asks that all tasks with a duration carry dollars or hours and states no percentage; population as PAM"
 
 [[metric]]
 id = "DCMA-11"
@@ -118,9 +118,9 @@ id = "DCMA-12"
 name = "Critical path test"
 description = "A delay on the critical path moves the finish by the same amount"
 rule = "dcma_12_critical_path_test"
-params = { slip_days = 600 }  # working days; a convention (Ten Six ch. 13), the pamphlet gives none
+params = { slip_days = 600 }  # working days; xerscope's choice: PAM 200.1 §4.12 gives no length
 target = "pass"
-source = "DCMA-EA PAM 200.1 §4.12: a slip is introduced on a task of the critical path and the project completion date must move \"in direct proportion\" (the pamphlet's other criterion, a completion date showing negative total float, is the same test: with a Must Finish By the end's float falls by exactly the finish's shift, and a Mandatory Finish keeps it at 0 and fails both). Method: the first open activity of the longest path has its remaining duration extended (Ten Six, Mosaic); a delayed activity drops its expected finish. 600 working days is a convention (Ten Six ch. 13, \"some guidelines\"): neither PAM 200.1 §4.12 nor DECM v8.0 06A401a gives a slip length"
+source = "DCMA-EA PAM 200.1 §4.12: a slip is introduced on a task of the critical path and the project completion date must move \"in direct proportion\" (the pamphlet's other criterion, a completion date showing negative total float, is the same test: with a Must Finish By the end's float falls by exactly the finish's shift, and a Mandatory Finish keeps it at 0 and fails both). Method (xerscope's choice, the pamphlet names only \"a task of the critical path\"): the first open task of the longest path has its remaining duration extended; the delayed task drops its expected finish. 600 working days is xerscope's choice: neither PAM 200.1 §4.12 nor DECM v8.0 06A401a gives a slip length"
 
 [[metric]]
 id = "DCMA-13"
@@ -128,7 +128,7 @@ name = "CPLI"
 description = "Critical Path Length Index = (CPL + total float) / CPL"
 rule = "dcma_13_cpli"
 target = ">= 0.95"
-source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). Days: PAM and Acumen name no calendar; the project calendar here, for CPL and TF. P6 writes that float against the Must Finish By date; without one the float is the margin of the open finish milestone ending last to its baseline finish (Ten Six ch. 14), n/a without a baseline"
+source = "DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion milestone (\"the amount of days a project can be delayed before delaying the project completion date\"). Days: PAM and Acumen name no calendar; the project calendar here, for CPL and TF. P6 writes that float against the Must Finish By date; without one, xerscope's choice: the float is the margin of the open finish milestone ending last to its baseline finish (the PAM names no other reference date), n/a without a baseline"
 
 [[metric]]
 id = "DCMA-14"
