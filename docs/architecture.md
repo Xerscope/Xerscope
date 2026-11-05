@@ -154,15 +154,19 @@ sheet; the TOML holds only the target and the source. Your own standard picks th
 parameterised rules of `rules.py` (`float` among them) and sets units, exclusions and
 targets as data.
 
-Layer rules (imports, as the code has them):
+Layer rules (imports, as the code has them; `tests/test_architecture.py` holds the same list and
+checks the code against it, so a change here must be made there too):
 
 - `xer/` imports only `config.py`; it knows nothing of the layers above.
-- `store.py` imports `xer/`; `export.py` imports `store.py`; `anonymize.py` imports `xer/` only.
-- `analysis/` imports `xer/`, `store.py` and `config.py`; never `viz/`, `app/` or `verify/`.
-- `viz/` imports `config.py` only: it draws frames, it does not compute schedule results.
-- `verify/` imports `xer/` and `analysis/cpm.py`; `crosscheck.py` re-exports it. Nothing in
-  the app depends on it.
-- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/`, `export.py` and `anonymize.py`, and is imported
+- `store.py` imports `xer/` and `config.py`; `export.py` imports `store.py` and `config.py`;
+  `anonymize.py` imports `xer/` only.
+- `analysis/` imports `xer/` and `store.py`; never `viz/`, `app/` or `verify/`.
+- `viz/` imports `config.py` and, from `analysis/wbs.py`, the constant `ROOT` only: it draws
+  frames, it does not compute schedule results.
+- `verify/` imports `xer/`, `analysis/cpm.py` and `config.py`; `crosscheck.py` re-exports it.
+  Nothing in the app depends on it.
+- `sample.py` imports `xer/`, `analysis/cpm.py` and `config.py`.
+- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/`, `export.py`, `anonymize.py` and `config.py`, and is imported
   by nothing but Streamlit. Pages
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
