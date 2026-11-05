@@ -75,9 +75,9 @@ def test_the_baseline_pointers_of_a_series_are_listed_in_data_date_order():
 
     store = SnapshotStore(
         [
-            _update("c.xer", "6318", "2026-03-16 08:00", "6319", "2026-03-13 16:00", "Y"),
-            _update("a.xer", "5778", "2026-03-02 08:00", "5621", "2026-02-27 16:00", "Y"),
-            _update("b.xer", "6096", "2026-03-09 08:00", "6115", "2026-03-06 16:00", "N"),
+            _update("c.xer", "30", "2026-03-16 08:00", "31", "2026-03-13 16:00", "Y"),
+            _update("a.xer", "10", "2026-03-02 08:00", "7", "2026-02-27 16:00", "Y"),
+            _update("b.xer", "20", "2026-03-09 08:00", "22", "2026-03-06 16:00", "N"),
         ]
     )
     table = baseline_pointers(store)
@@ -86,9 +86,9 @@ def test_the_baseline_pointers_of_a_series_are_listed_in_data_date_order():
         "use_project_baseline_flag",
     ]  # fmt: skip
     assert table.drop(columns="data_date").values.tolist() == [
-        ["a.xer", "5778", "2026-02-27 16:00", "5621", False, "Y"],
-        ["b.xer", "6096", "2026-03-06 16:00", "6115", False, "N"],
-        ["c.xer", "6318", "2026-03-13 16:00", "6319", False, "Y"],
+        ["a.xer", "10", "2026-02-27 16:00", "7", False, "Y"],
+        ["b.xer", "20", "2026-03-06 16:00", "22", False, "N"],
+        ["c.xer", "30", "2026-03-13 16:00", "31", False, "Y"],
     ]
     assert table["data_date"].tolist() == [
         pd.Timestamp(f"{day} 08:00") for day in ("2026-03-02", "2026-03-09", "2026-03-16")
