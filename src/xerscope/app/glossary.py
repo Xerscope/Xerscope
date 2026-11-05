@@ -78,8 +78,9 @@ GLOSSARY: dict[str, tuple[str, str, str]] = {
     "PAM": ("Program Analysis Pamphlet", "DCMA-EA PAM 200.1, home of the 14-Point Assessment.", "DCMA"),
     "PPC": (
         "Percent Plan Complete",
-        "Tasks forecast at W−1 to finish before W's status date that did finish / those tasks.",
-        "Last Planner (LCI); commitments read from the W−1 forecast",
+        "Finishes and starts forecast at W−1 before W's status date that happened / those "
+        "commitments; milestones left out.",
+        "Last Planner (LCI) counts finishes only; xerscope adds starts. Commitments read from the W−1 forecast",
     ),
     "PV": (
         "Planned Value (BCWS)",

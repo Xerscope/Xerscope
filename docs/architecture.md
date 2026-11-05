@@ -130,7 +130,7 @@ carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique); cost: BAC from `target_cost`, PV per assignment, EV = BAC × Performance %, SPI = EV cost / PV cost |
-| `progress.py` | series → MTA trend, PPC, progress delta | PPC = Last Planner (W-1 commitments, W outcome) |
+| `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source | read-only account of a result, shown under every check in the app |
 
