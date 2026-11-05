@@ -94,6 +94,12 @@ check with the activities (or relationships) found, to diff against the report's
 when several files are checked) typed from the report's summary; every line is printed as
 expected / got and the command exits 1 on any difference.
 
+`--baseline-in-file` measures each file against the P6 Project Baseline it holds
+(`PROJECT.sum_base_proj_id`, `Snapshot.file_baseline`), the project baseline Check Schedule reads for
+Late Activities and BEI (101248, P6 Professional 25 help). A file without a usable one falls back on
+`--baseline` or `--planned-baseline`, else none. It is the app's "Baseline in each file"
+(`analysis.baseline.baseline_in_file`, shared by both).
+
 On the Schedule health page, "Compare with a P6 Check Schedule report" does the same on the
 update and baseline picked there: type the report's counts or upload that CSV; lines left empty are
 not compared (`compare_counts` in `analysis/checks.py`, shared with `check --expect`). Nothing typed
@@ -101,10 +107,13 @@ or uploaded is kept on the server.
 
 The Schedule health page shows the same results as `xerscope check` when both read the same
 series with the same baseline (`tests/test_app_parity.py`). Two defaults differ: the app takes
-the first loaded update as baseline, `check` none unless `--baseline` or `--planned-baseline` is
-given; and the checks against an update one status period older (DECM 06A504a/b, 06A506c)
-depend on which files are read, so `check` must get the whole folder, not a single week. To compare on real exports,
-download "Summary (CSV)" from the page and run `check` on the same folder and baseline file.
+the P6 Project Baseline in each file when a file holds one, a file without one getting the
+fallback picked in the Files window (none by default), or the file named by `XERSCOPE_BASELINE`
+on a locked server; `check` takes none unless `--baseline`, `--planned-baseline` or
+`--baseline-in-file` is given. And the checks against an update one status period older (DECM
+06A504a/b, 06A506c) depend on which files are read, so `check` must get the whole folder, not a
+single week. To compare on real exports, download "Summary (CSV)" from the page and run `check`
+on the same folder and baseline file.
 
 ## DCMA DECM v8.0, Guideline 6 (schedule)
 

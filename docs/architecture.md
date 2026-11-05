@@ -309,7 +309,7 @@ Outside `analysis/`:
 | Command | Does |
 |---|---|
 | `app` | launches the UI on localhost (`--data`, `--baseline`, `--standards`, `--port`, `--host`) |
-| `check` | runs a standard on files and prints the P6-style summary (`--baseline` or `--planned-baseline`, `--out` CSV, `--flagged DIR` for the items behind each count, `--expect CSV` to diff against a P6 Check Schedule summary, `--fail-on fail` for CI) |
+| `check` | runs a standard on files and prints the P6-style summary (`--baseline` or `--planned-baseline`, `--baseline-in-file` for the P6 Project Baseline each file holds, `--out` CSV, `--flagged DIR` for the items behind each count, `--expect CSV` to diff against a P6 Check Schedule summary, `--fail-on fail` for CI) |
 | `recalc` | reschedules and compares with stored dates (`--out` CSV, `--report` groups the differences by activity shape, `--show N`) |
 | `changelog` | changes between two files |
 | `standards` | lists standards and rules, or writes the template |
