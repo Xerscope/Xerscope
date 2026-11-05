@@ -108,6 +108,10 @@ TASK_TYPE = {
     "TT_WBS": "WBS summary",
 }
 START_MILESTONES = frozenset({"TT_Mile", "TT_StartMile"})
+# TASK.complete_pct_type, P6's "% Complete Type"
+PCT_COMPLETE_TYPE = {"CP_Phys": "Physical", "CP_Drtn": "Duration", "CP_Units": "Units"}
+# TASKRSRC / RSRC rsrc_type, P6's "Resource Type"; "role" and "" are role assignments (_assignments)
+RSRC_TYPE = {"RT_Labor": "Labor", "RT_Equip": "Nonlabor", "RT_Mat": "Material", "role": "Role", "": "Role"}
 LAG_CALENDARS = {"rcal_Predecessor", "rcal_Successor", "rcal_24Hour", "rcal_ProjDefault"}
 REL_TYPE = {"PR_FS": "FS", "PR_SS": "SS", "PR_FF": "FF", "PR_SF": "SF"}
 # DCMA "hard" constraints = they can stop the network from moving (MSO, MFO, SNLT, FNLT).

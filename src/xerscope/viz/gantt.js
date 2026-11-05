@@ -4,6 +4,7 @@
 export default function (component) {
   "use strict";
   const D = component.data;
+  const { setTriggerValue } = component;
   const P = D.palette;
   const ROW = 26; // px, same as .row / .trow in gantt.css
   const GRID_W = 420; // px, tree grid width
@@ -373,9 +374,13 @@ export default function (component) {
     if (i >= 0) showTip(shown[i], event); else hideTip();
   });
   body.addEventListener("mouseleave", () => { setHover(-1); hideTip(); });
+  // a WBS row opens or closes; an activity row sends its row id ("a:<Activity ID>") and only
+  // that: the page reads every value it shows from the loaded schedule (app/task_panel.py)
   body.addEventListener("click", (event) => {
     const i = rowAt(event);
-    if (i >= 0) toggle(shown[i]);
+    if (i < 0) return;
+    const r = shown[i];
+    if (r.kind === "task") setTriggerValue("picked", r.id); else toggle(r);
   });
 
   let pending = false;

@@ -12,11 +12,14 @@ from xerscope.app.state import (
     snapshot_picker,
     sources_of,
 )
+from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER
 from xerscope.xer.model import STATUS
 
 NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
+TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
+PICK_KEY = "gantt_task_pick"  # that list
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
 
@@ -145,7 +148,15 @@ filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the 
 
 rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
 root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
-ui.GANTT(
+drawn = set(tasks["task_code"])
+picked = st.session_state.get(TASK_KEY)
+picked = picked if picked in drawn else None  # an activity the filters or the update leave out
+open_ids = {r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"}
+if picked:  # keep the picked activity's branch open so its row shows and is scrolled to
+    wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0]
+    chain = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"]
+    open_ids |= {f"w:{a}" for a in (chain.iloc[0] if len(chain) else []) if a in branch_ids}
+chart = ui.GANTT(
     data=gantt_data(
         rows,
         relationships=snapshot.relationships,
@@ -153,14 +164,44 @@ ui.GANTT(
         span=(root_row["start"], root_row["finish"]),
         timescale="week" if timescale == "Week" else "month",
         # a filter opens every branch so each match shows; otherwise the chosen node opens
-        open_ids={r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"},
-        selected=f"w:{current}",
+        open_ids=open_ids,
+        selected=f"a:{picked}" if picked else f"w:{current}",
         compare_label=compare_label or "",
         links=show_links,
         height=GANTT_HEIGHT,
     ),
     key="gantt_chart",
+    on_picked_change=lambda: None,  # a click on an activity row sends "a:<Activity ID>"
 )
+# the browser sends a row id only; it counts when it names an activity drawn in this chart
+clicked = task_from_row_id(chart.get("picked"))
+if clicked in drawn and clicked != picked:
+    st.session_state[TASK_KEY] = clicked
+    st.rerun()  # draw the chart again with the activity selected
+
+
+def _pick_from_list() -> None:
+    st.session_state[TASK_KEY] = st.session_state[PICK_KEY]
+
+
+codes = tasks["task_code"].tolist()
+names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
+st.session_state[PICK_KEY] = picked
+st.selectbox(
+    "Task",
+    codes,
+    format_func=lambda code: f"{code} · {names.get(code, '')}",
+    placeholder="Click an activity in the chart, or pick one here",
+    key=PICK_KEY,
+    on_change=_pick_from_list,
+)
+if st.session_state.get(TASK_KEY) and not picked:
+    st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
+if picked:
+    with st.container(border=True):
+        show_card(snapshot, picked)
+        ui.section("History across updates")
+        show_history(store, picked)
 
 with st.expander("Table view"):
     table_columns = [

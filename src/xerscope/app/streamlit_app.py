@@ -24,7 +24,7 @@ pages = st.navigation(
         "Schedule": [
             st.Page(VIEWS / "overview.py", title="Overview", icon=":material/dashboard:", default=True),
             st.Page(VIEWS / "gantt.py", title="Gantt & WBS", icon=":material/view_timeline:"),
-            st.Page(VIEWS / "activity.py", title="Task history", icon=":material/history:"),
+            st.Page(VIEWS / "activity.py", title="Task history (to be removed)", icon=":material/history:"),
         ],
         "Analysis": [
             st.Page(VIEWS / "health.py", title="Schedule health", icon=":material/fact_check:"),
