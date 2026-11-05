@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
-from xerkit import CALENDAR_IDS, MON_FRI_8H, snap
+from xerkit import CALENDAR_IDS, MON_FRI_8H, snap, todo
 
 from xerscope.analysis import builtin_standards, loads_standard, template_text
 from xerscope.xer.calendar import WorkCalendar, parse_clndr_data
@@ -140,6 +140,24 @@ def test_time_axis_values_survive_growing_backwards():
     assert ax.at(w, finish=True) == T("2026-03-10 10:00")
     assert ax.add(T("2026-03-02 08:00"), -5 * 480, finish=False) == T("2026-02-23 08:00")
     assert ax.between(T("2026-02-27 17:00"), T("2026-03-02 17:00")) == 480
+
+
+def test_one_date_and_many_dates_give_the_same_working_minute():
+    """``work`` (one date, bisect) and ``work_many`` (an array, numpy) are two searches of the
+    same periods: every minute of five weeks around the Good Friday holiday must agree, and the
+    boundary conventions hold (non-working time maps to the next period's start; a finish is
+    written at a period end, a start at a period start)."""
+    from xerscope.xer.calendar import TimeAxis
+
+    T = pd.Timestamp
+    ax = TimeAxis(snap([todo("A")]).calendar(CALENDAR_IDS["C8"]), date(2026, 3, 23), date(2026, 4, 24))
+    minutes = pd.date_range("2026-03-23 00:00", "2026-04-24 23:59", freq="min")
+    assert [ax.work(ts) for ts in minutes] == ax.work_many(minutes).tolist()
+    assert ax.work(T("2026-03-23 12:30")) == ax.work(T("2026-03-23 13:00"))  # lunch is not work
+    assert ax.is_working(T("2026-03-23 12:00")) and not ax.is_working(T("2026-03-23 12:30"))
+    before_holiday = ax.work(T("2026-04-02 17:00"))  # Thursday evening: Friday 3 April is a holiday
+    assert ax.at(before_holiday, finish=True) == T("2026-04-02 17:00")
+    assert ax.at(before_holiday, finish=False) == T("2026-04-06 08:00")
 
 
 def test_overlapping_periods_count_once():

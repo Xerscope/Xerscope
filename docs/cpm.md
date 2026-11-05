@@ -110,7 +110,8 @@ cumulative working minutes at each period start. Two functions do all the arithm
 - `at(w, finish)`: the inverse. On a boundary, Monday 17:00 and Tuesday 08:00 are the same
   working minute; `finish=True` returns the period end, `finish=False` the next start.
 
-Everything else is built on these two, by binary search (`numpy.searchsorted`):
+Everything else is built on these two, by binary search (`bisect` for one date,
+`numpy.searchsorted` for an array of dates):
 
 - adding or subtracting duration: `at(work(ts) ± d, …)`;
 - working hours between two dates: `work(b) − work(a)`;
@@ -362,6 +363,8 @@ activity that has the same Activity ID (`tests/test_cpm.py`).
 
 ## Performance
 
-Hotel (4,217 activities, 7,586 links, 2,278 assignments) schedules in about 2 s. The plain
+Hotel (4,217 activities, 7,586 links, 2,278 assignments) schedules in about 0.4 s, file
+reading apart (about 1 s). Most of that time is calendar arithmetic, one date at a time
+(`TimeAxis.work` and `at`, tens of thousands of calls per run). The plain
 recalculation is cached on the snapshot, so INT-01, INT-03, the critical path test and the
 weekly trend share it; the critical path test adds one more run.

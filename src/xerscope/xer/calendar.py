@@ -17,6 +17,7 @@ Working periods are kept per day, so working hours between two timestamps are ex
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -239,6 +240,11 @@ class TimeAxis:
     The axis grows on demand (a 600-day critical path test runs years ahead, negative
     float runs back before the data date). Work values are anchored on the first origin,
     so a value computed before the axis grew stays valid after (it can be negative).
+
+    The periods are kept twice: numpy arrays for many dates at once (``work_many``), Python
+    lists searched with ``bisect`` for one date (``work``, ``at``, ``is_working``). The CPM
+    asks one date at a time, and numpy's cost per call outweighs the search itself: 12.6 µs
+    against 0.8 µs per date on the Hotel reference file's calendars.
     """
 
     def __init__(self, cal: WorkCalendar, first: date, last: date):
@@ -274,6 +280,7 @@ class TimeAxis:
         self.ends = np.array(ends, dtype=np.int64)
         lengths = self.ends - self.starts
         self.cum = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int64)  # work before period i
+        self._starts, self._ends, self._cum = starts, ends, self.cum.tolist()
         self.base = int(self._raw(np.array([(self.anchor_ns - self.t0_ns) // 60_000_000_000]))[0])
 
     def _raw(self, m: np.ndarray) -> np.ndarray:
@@ -306,9 +313,13 @@ class TimeAxis:
         return int(m)
 
     def work(self, ts) -> int:
-        """Working minutes from the anchor (the first origin) to ``ts``."""
+        """Working minutes from the anchor (the first origin) to ``ts``: ``_raw`` for one date."""
         m = self.minute(ts)
-        return int(self._raw(np.array([m]))[0]) - self.base
+        i = bisect_left(self._ends, m)  # first period ending at/after m
+        if i == len(self._ends):
+            return self._cum[-1] - self.base
+        start = self._starts[i]
+        return (self._cum[i] if m <= start else self._cum[i] + m - start) - self.base
 
     def work_many(self, stamps) -> np.ndarray:
         """``work`` for an array of timestamps at once (NaT -> 0, check for NaT yourself)."""
@@ -326,23 +337,23 @@ class TimeAxis:
         w = int(round(w))
         while w + self.base < 0 or (finish and w + self.base == 0):
             self._grow(earlier=True)
-        while w + self.base > self.cum[-1] or (not finish and w + self.base == self.cum[-1]):
+        while w + self.base > self._cum[-1] or (not finish and w + self.base == self._cum[-1]):
             self._grow(earlier=False)
         r = w + self.base
         if finish:
-            i = int(np.searchsorted(self.cum[1:], r, side="left"))  # first period whose end >= r
-            m = self.ends[i] - (self.cum[i + 1] - r)
+            i = bisect_left(self._cum, r, 1) - 1  # first period whose end >= r
+            m = self._ends[i] - (self._cum[i + 1] - r)
         else:
-            i = int(np.searchsorted(self.cum[1:], r, side="right"))  # first period whose end > r
-            m = self.starts[i] + (r - self.cum[i])
-        return pd.Timestamp(self.t0_ns + int(m) * 60_000_000_000)
+            i = bisect_right(self._cum, r, 1) - 1  # first period whose end > r
+            m = self._starts[i] + (r - self._cum[i])
+        return pd.Timestamp(self.t0_ns + m * 60_000_000_000)
 
     # convenience ------------------------------------------------------------------------
     def is_working(self, ts) -> bool:
         """``ts`` lies inside a working period or on one of its bounds."""
         m = self.minute(ts)
-        i = int(np.searchsorted(self.ends, m, side="left"))
-        return i < len(self.starts) and self.starts[i] <= m
+        i = bisect_left(self._ends, m)
+        return i < len(self._starts) and self._starts[i] <= m
 
     def keep_or_next(self, ts) -> pd.Timestamp:
         """``ts`` if working (bounds included), else the next period's start."""
