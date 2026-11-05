@@ -9,17 +9,21 @@ Allowlist, table by table (column meanings: Oracle "XER Import/Export Data Map G
 - ``KEEP``: copied as is. Keys, dates, durations, units, flags and P6 enumerations only.
 - ``CODES``: identifiers renamed X<kind><hex>, the hex being an HMAC-SHA256 of the original
   under a key drawn for the session: the same original value gets the same new code in every
-  file and every download of the session, whichever files were read to make it (task_code,
-  WBS, project, resource, role, OBS codes). Without the key the original cannot be found back.
+  file and every download of the session (task_code, WBS, project, resource, role, OBS codes).
+  Without the key the original cannot be found back. Hex digits can spell an original value
+  ("XA69C30507" holds the Activity ID "C3050"): such a code is drawn again (HMAC of
+  "<kind>:<original>:<n>"), so it then depends on the files read.
 - ``LABELS``: names rebuilt from the row's new code ("Activity XA1F09C3B2").
 - ``MONEY``: costs and prices set to 0 (P6 counts an assignment or an expense, not its cost).
-- ``GUIDS``: replaced by new random GUIDs, the same original GUID getting the same new one.
+- ``GUIDS``: replaced by new random GUIDs, the same original GUID getting the same new one,
+  none holding an original value.
 
 Any other column is emptied and any other table left out; both are reported by name. The
 ERMHDR line loses the exporting user, his full name and the database name.
 
 Before a file or a table is handed out, every one of its fields is compared with every text
-value of the originals that was not kept (``Anonymizer.leaks``): one match and it is refused.
+value of the originals that was not kept, and searched for every original code
+(``Anonymizer.leaks``): one match and it is refused.
 The names of the source files (``PROJ-01.xer``) and their stems (``PROJ-01``) are refused the same
 way, but anywhere in a field: they carry the project code and are written into labels
 ("planned dates of <date> · <file>").
@@ -121,6 +125,7 @@ GUIDS = {"guid"}
 # Hex digits of each kind of new code. 8 for activities: ~4e9 values, so ~0.03 % chance of two
 # IDs sharing one among 50,000; a clash is refused (CodeClash), never written.
 WIDTH = {"A": 8, "W": 6, "P": 6, "R": 6, "L": 6, "O": 6}
+DRAWS = 1000  # draws of one code or GUID before giving up (CodeClash): 3-character originals made of hex digits
 # What CalendarData is written with (P6 5.0 to 25.12, every reference file): nothing else may pass.
 CALENDAR_WORDS = frozenset({"CalendarData", "DaysOfWeek", "Exceptions", "ShowTotal", "VIEW"})
 GENERIC_HEADER = frozenset({"Project", "Project Management", "dbxDatabaseNoName"})
@@ -156,6 +161,8 @@ class Anonymizer:
     wbs_paths: dict[str, str] = field(default_factory=dict)  # original wbs_code -> new
     secrets_: dict[str, str] = field(default_factory=dict)  # text value -> "TABLE.column" it came from
     file_names: set[str] = field(default_factory=set)  # source file names and their stems, found anywhere in a field
+    original_codes: set[str] = field(default_factory=set)  # values of the CODES columns, found anywhere in a field
+    kept: set[str] = field(default_factory=set)  # values of the kept columns: written as they are
     report: Report = field(default_factory=Report)
     key: bytes = field(default_factory=lambda: secrets.token_bytes(32), repr=False)  # HMAC key of the codes
     taken: dict[str, set[str]] = field(default_factory=dict, repr=False)  # kind -> new codes given
@@ -163,7 +170,8 @@ class Anonymizer:
     @classmethod
     def from_raws(cls, raws: Iterable[RawXer], key: bytes | None = None) -> Anonymizer:
         """One pass over the files given. With the session's ``key``, a code is the same whichever
-        files were read: an anonymizer of one update and one of the whole series agree."""
+        files were read (an anonymizer of one update and one of the whole series agree), unless
+        it is drawn again for holding an original value of the files read."""
         found: dict[str, set[str]] = {kind: set() for kind in WIDTH}
         anonymizer = cls() if key is None else cls(key=key)
         project_nodes: list[tuple[pd.DataFrame, pd.DataFrame]] = []
@@ -174,12 +182,13 @@ class Anonymizer:
                 if column in frame.columns:
                     found[kind].update(value for value in frame[column] if value)
             project_nodes.append((raw.table("PROJWBS"), raw.table("PROJECT")))
+        codes = {value for values in found.values() for value in values}
+        anonymizer.original_codes = codes & set(anonymizer.secrets_)
         for kind, values in found.items():
             for value in sorted(values):
                 anonymizer.code(kind, value)
         for wbs, _project in project_nodes:
             anonymizer._map_wbs_paths(wbs)
-        anonymizer._check_codes_are_new()
         return anonymizer
 
     # --- what must not come out ------------------------------------------------------------
@@ -204,21 +213,27 @@ class Anonymizer:
                     for value in values:
                         self.secrets_.setdefault(value, f"{table}.{column}")
         # a value also written in a kept column (an enumeration, a unit) is not a secret of the file
+        self.kept |= kept_values
         for value in kept_values:
             self.secrets_.pop(value, None)
 
-    def _check_codes_are_new(self) -> None:
-        for mapping in self.codes.values():
-            clash = set(mapping.values()) & set(self.secrets_)
-            if clash:
-                raise LeakError(f"{len(clash)} new code(s) equal an original value; rename the X prefix")
+    def _holds_original(self, new: str) -> bool:
+        """Whether ``new`` (a code or GUID drawn here) holds a text value of the originals."""
+        return any(
+            new[start:end] in self.secrets_ for start in range(len(new)) for end in range(start + 3, len(new) + 1)
+        )
 
     def leaks(self, fields: Iterable[str]) -> dict[str, int]:
         """Original text values found among ``fields``, counted by the column they came from."""
         found: dict[str, int] = {}
         values = list(fields)
+        inside: dict[str, str | None] = {}
         for value in values:
             origin = self.secrets_.get(value.strip())
+            if origin is None and value not in self.kept and _is_text(value):
+                if value not in inside:
+                    inside[value] = self._code_inside(value)
+                origin = inside[value]
             if origin is not None:
                 found[origin] = found.get(origin, 0) + 1
         if self.file_names:
@@ -230,6 +245,14 @@ class Anonymizer:
                 found["file name"] = max(found.get("file name", 0), hits)
         return found
 
+    def _code_inside(self, value: str) -> str | None:
+        """Where the original code found inside ``value`` came from ("Activity C3050", "XA69C30507")."""
+        for start in range(len(value)):
+            for end in range(start + 3, len(value) + 1):
+                if value[start:end] in self.original_codes:
+                    return self.secrets_[value[start:end]]
+        return None
+
     def _refuse_leaks(self, fields: Iterable[str], what: str) -> None:
         found = self.leaks(fields)
         if found:
@@ -239,13 +262,20 @@ class Anonymizer:
     # --- codes -----------------------------------------------------------------------------
 
     def code(self, kind: str, original: str) -> str:
-        """The new code: X<kind> and the first hex digits of HMAC-SHA256(key, "<kind>:<original>")."""
+        """The new code: X<kind> and the first hex digits of HMAC-SHA256(key, "<kind>:<original>"),
+        or of "<kind>:<original>:<n>" for the first n whose code holds no original value."""
         if not original:
             return ""
         mapping = self.codes.setdefault(kind, {})
         if original not in mapping:
-            digest = hmac.new(self.key, f"{kind}:{original}".encode(), hashlib.sha256).hexdigest().upper()
-            new = f"X{kind}{digest[: WIDTH[kind]]}"
+            for draw in range(DRAWS):
+                message = f"{kind}:{original}" if draw == 0 else f"{kind}:{original}:{draw}"
+                digest = hmac.new(self.key, message.encode(), hashlib.sha256).hexdigest().upper()
+                new = f"X{kind}{digest[: WIDTH[kind]]}"
+                if not self._holds_original(new):
+                    break
+            else:
+                raise CodeClash(f"no {kind} code holding no original value in {DRAWS} draws")
             taken = self.taken.setdefault(kind, set())
             if new in taken:
                 raise CodeClash(f"two {kind} codes would both become {new}: reload the page for a new key")
@@ -257,7 +287,13 @@ class Anonymizer:
         if not original:
             return ""
         if original not in self.guids:
-            self.guids[original] = base64.b64encode(secrets.token_bytes(16)).decode("ascii").rstrip("=")
+            for _ in range(DRAWS):
+                new = base64.b64encode(secrets.token_bytes(16)).decode("ascii").rstrip("=")
+                if not self._holds_original(new):
+                    break
+            else:
+                raise CodeClash(f"no GUID holding no original value in {DRAWS} draws")
+            self.guids[original] = new
         return self.guids[original]
 
     def _map_wbs_paths(self, wbs: pd.DataFrame) -> None:

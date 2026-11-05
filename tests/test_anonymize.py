@@ -6,6 +6,8 @@ Activity IDs), the same CPM differences against the stored dates, and the same s
 counts and flagged items for every check of every built-in standard.
 """
 
+import hashlib
+import hmac
 import io
 import re
 import secrets
@@ -165,6 +167,70 @@ def test_two_ids_on_one_new_code_are_refused(monkeypatch):
     raw = parse_text(_file([todo(f"A{n}") for n in range(40)]), source="w.xer")
     with pytest.raises(anonymize.CodeClash):
         Anonymizer.from_raws([raw])
+
+
+# Under this key the first draw of E1010 is XA69C30507: its hex digits spell the Activity ID C3050.
+SPELLING_KEY = (488).to_bytes(32, "big")
+
+
+def test_a_code_spelling_an_original_id_is_drawn_again():
+    first = hmac.new(SPELLING_KEY, b"A:E1010", hashlib.sha256).hexdigest().upper()[:8]
+    assert first == "69C30507"
+    raw = parse_text(_file([todo("E1010"), todo("C3050")]), source="w.xer")
+    anonymizer = Anonymizer.from_raws([raw], key=SPELLING_KEY)
+    text = anonymizer.xer(raw).decode()
+    assert "C3050" not in text and "E1010" not in text
+    new = anonymizer.codes["A"]["E1010"]
+    assert re.fullmatch(r"XA[0-9A-F]{8}", new) and new != "XA69C30507"
+
+
+def test_an_original_code_inside_a_field_is_refused():
+    raw = parse_text(_file([todo("E1010"), todo("C3050")]), source="w.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    origin = anonymizer.secrets_["C3050"]  # TASK.task_code or TASK.task_name (xerkit names it by its code)
+    assert anonymizer.leaks(["XA69C30507", "Activity C3050"]) == {origin: 2}
+    anonymizer.codes["A"]["E1010"] = "XA69C30507"  # as the first draw under SPELLING_KEY
+    with pytest.raises(LeakError, match=origin):
+        anonymizer.xer(raw)
+
+
+def _original_codes_left(anonymizer, raw):
+    """Original codes found inside the fields of the anonymised file that xerscope writes (kept
+    fields are the original's own: enumerations, dates)."""
+    out = parse_bytes(anonymizer.xer(raw))
+    fields = {value for frame in out.tables.values() for value in frame.to_numpy().ravel()} - anonymizer.kept
+    return [code for code in anonymizer.original_codes for value in fields if code in value]
+
+
+def test_no_new_code_holds_an_original_value_whatever_the_key(sample_dir):
+    """Demo series, 3,000 keys: six of them gave, on the first draw, a code spelling an original."""
+    raws = [read_xer(path) for path in sorted(sample_dir.glob("*.xer"))]
+    found = Anonymizer.from_raws(raws)
+    for seed in range(3000):
+        anonymizer = Anonymizer(key=seed.to_bytes(32, "big"), secrets_=found.secrets_)
+        for kind, mapping in found.codes.items():
+            for original in mapping:
+                anonymizer.code(kind, original)
+        for kind, mapping in anonymizer.codes.items():
+            assert len(set(mapping.values())) == len(mapping), (seed, kind)
+            for new in mapping.values():
+                assert not anonymizer._holds_original(new), (seed, new)
+    for seed in (488, 521, 1562):
+        anonymizer = Anonymizer.from_raws(raws, key=seed.to_bytes(32, "big"))
+        assert all(_original_codes_left(anonymizer, raw) == [] for raw in raws), seed
+
+
+@pytest.mark.parametrize("name", REFERENCE_FILES)
+def test_no_original_code_is_left_whatever_the_key(name):
+    path = REFERENCE / name
+    if not path.exists():
+        missing("reference", REFERENCE_HINT)
+    raw = read_xer(path)
+    for seed in range(5):
+        anonymizer = Anonymizer.from_raws([raw], key=seed.to_bytes(32, "big"))
+        assert _original_codes_left(anonymizer, raw) == [], seed
+        for mapping in anonymizer.codes.values():
+            assert len(set(mapping.values())) == len(mapping)
 
 
 def test_unknown_tables_and_columns_are_left_out_and_named():
