@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, relinked, renumbered
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric
 from xerscope.analysis.standards import Metric
 from xerscope.anonymize import Anonymizer, LeakError
@@ -875,17 +875,10 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
         cache = {}
     key = (snapshot.source, snapshot.project_id, pointer.proj_id, basis)
     if key not in cache:
-        try:
-            source = _parse(snapshot.source, data, project_id=pointer.proj_id)
-        except XerError:
+        built = baseline_in_file(snapshot, data, basis, lambda data, name, project_id: _parse(name, data, project_id))
+        if built is None:
             return None
-        built = Baseline.from_snapshot(source, basis)
-        updated = pointer.updated[:10] or "not recorded"
-        cache[key] = replace(
-            built,
-            label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-            source=f"P6 Project Baseline in the file (proj_id {pointer.proj_id}, last update {updated})",
-        )
+        cache[key] = built
     st.session_state["_file_baselines"] = (signature, cache)
     return cache[key]
 

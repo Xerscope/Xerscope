@@ -71,7 +71,7 @@ Any CLI command runs in the image:
 | Command | Does |
 |---|---|
 | `app` | launch the web app on localhost (`--data`, `--baseline`, `--standards`, `--port`, `--host`) |
-| `check` | run a standard and print the P6-style summary (`--baseline` / `--planned-baseline`, `--out`, `--flagged DIR`, `--expect CSV`, `--fail-on`) |
+| `check` | run a standard and print the P6-style summary (`--baseline` / `--planned-baseline` / `--baseline-in-file`, `--out`, `--flagged DIR`, `--expect CSV`, `--fail-on`) |
 | `recalc` | reschedule like P6 and compare with the stored dates (`--out`, `--report`, `--show N`) |
 | `changelog` | every change between two files |
 | `standards` | list standards and rules (`--rules`), or write a template (`--template`) |

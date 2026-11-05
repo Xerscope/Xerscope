@@ -19,11 +19,12 @@ Two sets of baseline dates, as in P6:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
-from ..xer import Snapshot
+from ..xer import Snapshot, XerError, load_snapshot
 from ..xer.model import to_number
 
 COLS = ["bl_start", "bl_finish", "bl_labor_hr", "bl_duration_hr", "bl_clndr_id", "bl_name",
@@ -144,6 +145,28 @@ class Baseline:
     def bac_cost(self) -> float:
         """Budget at completion, cost: Σ bl_cost."""
         return float(self.frame["bl_cost"].sum())
+
+
+def baseline_in_file(
+    snapshot: Snapshot, data: bytes, ev_basis: str = DEFAULT_EV_BASIS, parse: Callable[..., Snapshot] = load_snapshot
+) -> Baseline | None:
+    """The P6 Project Baseline the file of ``snapshot`` holds (``Snapshot.file_baseline``, sum_base_proj_id)
+    as a Baseline; None when the file names none that can be used or that project cannot be read.
+    ``data``: the file's bytes. ``parse``: called as ``load_snapshot(data, name=, project_id=)``, for a
+    caller that caches the parsed files."""
+    pointer = snapshot.file_baseline
+    if not pointer.usable:
+        return None
+    try:
+        held = parse(data, name=snapshot.source, project_id=pointer.proj_id)
+    except XerError:
+        return None
+    updated = pointer.updated[:10] or "not recorded"
+    return replace(
+        Baseline.from_snapshot(held, ev_basis),
+        label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
+        source=f"P6 Project Baseline in the file (proj_id {pointer.proj_id}, last update {updated})",
+    )
 
 
 RENUMBERED_COLUMNS = ["old_code", "new_code"]

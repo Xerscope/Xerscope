@@ -64,6 +64,38 @@ def test_check_with_baseline_file(capsys, sample_dir):
     assert f"baseline BL 2026-08-31 · {first.name}" in out
 
 
+def test_check_reads_the_p6_project_baseline_of_each_file(capsys, tmp_path):
+    """a.xer holds its P6 Project Baseline, b.xer none. By hand (file_projects.two_projects): A1 and A2
+    forecast 03-13 against a baseline finish 03-06, 2 late of 2 (P6-12); 0 of the 2 baseline activities
+    complete (P6-13). Without the option P6-12 / P6-13 are n/a; b.xer falls back on --planned-baseline."""
+    from file_projects import two_projects
+
+    (tmp_path / "a.xer").write_text(two_projects(data_date="2026-03-02 08:00"))
+    (tmp_path / "b.xer").write_text(two_projects(pointer="", data_date="2026-03-09 08:00", with_baseline=False))
+    dest = tmp_path / "out.csv"
+
+    def rows():
+        frame = pd.read_csv(dest, keep_default_na=False)
+        frame = frame[frame["id"].isin(["P6-12", "P6-13"])].set_index(["file", "id"])
+        return {key: (row.status, row.found, row.total) for key, row in frame.iterrows()}
+
+    run(capsys, "check", tmp_path, "--standard", "P6", "--out", dest)
+    assert {status for status, _, _ in rows().values()} == {"n/a"}
+    out = run(capsys, "check", tmp_path, "--standard", "P6", "--baseline-in-file", "--planned-baseline", "--out", dest)
+    assert "a.xer · data date 2026-03-02 · baseline BL (P6 Project Baseline in a.xer)" in out
+    assert "b.xer · data date 2026-03-09 · baseline planned dates (target_*) of" in out
+    got = rows()
+    assert got[("a.xer", "P6-12")][1:] == (2, 2) and got[("a.xer", "P6-13")][1:] == (0, 2)
+
+
+def test_check_baseline_in_file_refuses_two_files_of_one_name(tmp_path):
+    for folder in ("w1", "w2"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "a.xer").write_text(xer_text([todo("A1")]))
+    with pytest.raises(SystemExit, match="distinct file names"):
+        cli.main(["check", str(tmp_path / "w1"), str(tmp_path / "w2"), "--baseline-in-file"])
+
+
 def test_check_rejects_unknown_standard(sample_dir):
     with pytest.raises(SystemExit, match="unknown standard"):
         cli.main(["check", str(sample_dir), "--standard", "nope"])

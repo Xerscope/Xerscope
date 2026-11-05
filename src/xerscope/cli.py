@@ -137,6 +137,12 @@ def _args_check(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--planned-baseline", action="store_true", help="no baseline file: use each file's planned dates (target_*)"
     )
+    parser.add_argument(
+        "--baseline-in-file",
+        action="store_true",
+        help="use the P6 Project Baseline each file holds (sum_base_proj_id), as Check Schedule does; "
+        "a file without a usable one falls back on --baseline / --planned-baseline, else none",
+    )
     _add_project(parser)
     _add_out(parser, "write all results to this CSV")
     parser.add_argument(
@@ -159,17 +165,23 @@ def _cmd_check(args: argparse.Namespace) -> int:
     import pandas as pd
 
     from .analysis import AnalysisContext, Baseline, results_frame, run_standard
+    from .analysis.baseline import baseline_in_file
     from .store import SnapshotStore
     from .xer import load_snapshot
 
     standard = _standard(args.standard)
     baseline = Baseline.from_snapshot(load_snapshot(args.baseline)) if args.baseline else None
     frames = []
+    files = _expand(args.paths)
+    by_name = {path.name: path for path in files}  # Snapshot.source is the file name
+    if args.baseline_in_file and len(by_name) < len(files):
+        raise SystemExit("xerscope: --baseline-in-file needs distinct file names")
     # one series, so checks against the previous update (DECM 06A504, 06A506c) can run
-    store = SnapshotStore.from_paths(_expand(args.paths), args.project)
+    store = SnapshotStore.from_paths(files, args.project)
     for snapshot in store:
         path = Path(snapshot.source)
-        applied_baseline = baseline or (Baseline.planned(snapshot) if args.planned_baseline else None)
+        in_file = baseline_in_file(snapshot, by_name[snapshot.source].read_bytes()) if args.baseline_in_file else None
+        applied_baseline = in_file or baseline or (Baseline.planned(snapshot) if args.planned_baseline else None)
         results = run_standard(standard, AnalysisContext(snapshot, store, baseline=applied_baseline))
         frame = results_frame(results)
         frame.insert(0, "file", path.name)
