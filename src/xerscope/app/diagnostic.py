@@ -7,6 +7,8 @@ the P6 standard. Nothing here computes a date or a count; the page shows these f
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import pandas as pd
 
 from xerscope.analysis.baseline import Baseline
@@ -134,6 +136,34 @@ def projects_table(snapshot: Snapshot) -> pd.DataFrame:
     table.loc[(table["proj_id"] == pointed) & (pointed != "") & ~analysed, "role"] = BASELINE_OF_ANALYSED
     table.loc[analysed, "role"] = ANALYSED
     return table
+
+
+BASELINE_POINTER_COLUMNS = [
+    "file", "data_date", "proj_id", "add_date", "sum_base_proj_id", "baseline_in_file", "use_project_baseline_flag",
+]  # fmt: skip
+
+
+def baseline_pointers(snapshots: Iterable[Snapshot]) -> pd.DataFrame:
+    """One row per update, in the order given (a SnapshotStore: data date order): the analysed
+    project's proj_id, add_date and use_project_baseline_flag as stored, the Project Baseline it
+    names (sum_base_proj_id) and whether the same file holds that project."""
+    rows = []
+    for snapshot in snapshots:
+        projects = snapshot.file_projects.set_index("proj_id")
+        project = projects.loc[snapshot.project_id]
+        pointer = str(project["sum_base_proj_id"])
+        rows.append(
+            {
+                "file": snapshot.source,
+                "data_date": snapshot.data_date,
+                "proj_id": snapshot.project_id,
+                "add_date": project["add_date"],
+                "sum_base_proj_id": pointer,
+                "baseline_in_file": bool(pointer) and pointer in projects.index,
+                "use_project_baseline_flag": project["use_project_baseline_flag"],
+            }
+        )
+    return pd.DataFrame(rows, columns=BASELINE_POINTER_COLUMNS)
 
 
 def expected_finish_table(snapshot: Snapshot) -> pd.DataFrame:

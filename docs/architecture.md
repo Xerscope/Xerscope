@@ -262,10 +262,12 @@ Outside `analysis/`:
 - **Debug:** what xerscope read and decided for one update, to hold against P6 without the
   file: the scheduling options (raw XER value, value applied, blank-in-file defaults), the
   projects of the file (`Snapshot.file_projects`: TASK rows, `sum_base_proj_id`, `orig_proj_id`,
-  `last_baseline_update_date`, and which one is the analysed project or its P6 Project Baseline), the
-  activities with an expected finish and the remaining duration it set (`rem_override_hr`),
-  the INT-01 / INT-03 differences with the inputs the CPM read, the P6 Check Schedule
-  targets on the tabs of the P6 dialog, the baseline and the calendars, and the activities
+  `last_baseline_update_date`, `add_date`, `use_project_baseline_flag`, and which one is the analysed
+  project or its P6 Project Baseline), the activities with an expected finish and the remaining
+  duration it set (`rem_override_hr`), the INT-01 / INT-03 differences with the inputs the CPM read,
+  the P6 Check Schedule targets on the tabs of the P6 dialog, the baseline and the calendars, the
+  Project Baseline every update of the series names (`diagnostic.baseline_pointers`, page only, not in
+  the zip), and the activities
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
   end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
   `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI).
