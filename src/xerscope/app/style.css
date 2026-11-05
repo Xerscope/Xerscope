@@ -178,6 +178,10 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 .st-key-files_list_folder,
 .st-key-files_list_upload { gap: 0; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
 
+/* the project read from each file (state._projects_fields): small rows, a list under a file that holds several */
+.st-key-files_projects { gap: 0.3rem; }
+.st-key-files_projects [data-testid="stMarkdownContainer"] p { font-size: 0.8rem; }
+
 /* help line and Done */
 .st-key-xd_foot { justify-content: space-between; padding-top: 0.6rem; border-top: 1px solid var(--xs-hairline); }
 .st-key-xd_foot [data-testid="stCaptionContainer"] p { margin: 0; font-family: var(--xd-mono); font-size: 0.76rem; }

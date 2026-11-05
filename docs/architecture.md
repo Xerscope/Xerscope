@@ -75,11 +75,13 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 `SnapshotStore` sorts snapshots by data date and holds one per data date: given two files
 with the same data date (versions of one draft, an update and its baseline copy) it raises
 `DuplicateDataDate` naming them, and the user keeps one. `selection()` lists the files of the
-series and the project taken from each: the app's sidebar Selection panel shows it, with a
-project picker for each file that holds several (by `proj_id`, each project named by code, data
-date, activities and the project it is a baseline copy of). A project picked for a file reads
-that file again and no other; it wins over the sidebar's Project picker, which applies to the
-files without a choice of their own. The session caches (`memo`, the file baselines) are keyed
+series and the project taken from each: the Files section of the app's Files and baseline window
+shows, for each file, the project read and the rule that picked it, with a list of its projects
+when the file holds several (by `proj_id`, each project named by code, data date, activities and
+the project it is a baseline copy of), and the full table under "Selection details". A project
+picked there applies on Done, like the rest of the window, and reads that file again and no other;
+the files without a choice keep their default project. The sidebar's Files line counts the files
+and the projects read, the latter in the alert colour when the series mixes projects. The session caches (`memo`, the file baselines) are keyed
 on the `proj_id` read from each file. `SnapshotStore` exposes long-format frames:
 
 - `history`: one row per (snapshot, activity);
@@ -110,7 +112,7 @@ same file that owns activities and, when its `orig_proj_id` is filled, names the
 (`load_snapshot(..., project_id=)`, exact because a baseline copy may carry the code of the project it was
 copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
 Start / Finish). The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
-without one has no baseline for that update (checks that need one are n/a), stated in the Selection panel.
+without one has no baseline for that update (checks that need one are n/a), stated in the window's Selection details.
 The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
 has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never
 chosen for the user), gives the baseline of the updates whose file has no usable one, update by update.

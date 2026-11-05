@@ -10,7 +10,20 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import P6_CORPUS_HINT, baseline_box, file_boxes, files_done, files_line, missing, open_files, read_folder
+from conftest import (
+    P6_CORPUS_HINT,
+    baseline_box,
+    close_window,
+    file_boxes,
+    files_done,
+    files_line,
+    missing,
+    open_files,
+    pick_project,
+    project_box,
+    read_folder,
+    selection,
+)
 from streamlit.testing.v1 import AppTest
 from xerkit import active, hours, todo, with_second_project, xer_text
 
@@ -62,7 +75,7 @@ def test_files_window_opens_from_the_button_reads_on_done_and_reopens_with_the_c
     files_done(at)
     _ok(at)
     assert not file_boxes(at) and not at.session_state["files_open"]  # Done closed the window
-    assert files_line(at).startswith("Files · 2 ·")
+    assert files_line(at) == "Files · 2 files · 1 project"
     open_files(at)
     assert [box.value for box in file_boxes(at)] == [True, True] + [False] * 6
 
@@ -564,7 +577,7 @@ def test_locked_folder_gives_the_visitor_no_path_field_and_no_upload(sample_dir,
     assert len(file_boxes(at)) == 8  # the window lists the server's files only
     files_done(at)
     _ok(at)
-    assert files_line(at).startswith("Files · 8 ·")
+    assert files_line(at) == "Files · 8 files · 1 project"
 
 
 def test_locked_server_offers_the_baseline_file_it_names(sample_dir, monkeypatch):
@@ -677,7 +690,7 @@ def test_folder_files_can_be_picked(sample_dir, monkeypatch):
     at.run()
     files_done(at)
     _ok(at)
-    assert files_line(at).startswith("Files · 3 ·")
+    assert files_line(at) == "Files · 3 files · 1 project"
     assert len(_selection(at)) == 3  # unticked files are not read at all
 
 
@@ -704,7 +717,7 @@ def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(s
     files_done(at)
     _ok(at)
     assert [s.source for s in at.session_state["store"]] == [files[0].name, files[2].name]
-    assert files_line(at).startswith("Files · 2 ·")
+    assert files_line(at) == "Files · 2 files · 1 project"
 
 
 def _button(at, label):
@@ -726,7 +739,7 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     _ok(at)
     assert all(box.value for box in file_boxes(at)) and len(file_boxes(at)) == count
     files_done(at)
-    assert files_line(at).startswith(f"Files · {count} ·")
+    assert files_line(at) == f"Files · {count} files · 1 project"
     open_files(at)
     _button(at, "Clear").click()
     at.run()
@@ -763,7 +776,8 @@ def renamed_project(tmp_path):
 
 
 def _pick_project(at, code: str) -> None:
-    next(box for box in at.sidebar.selectbox if box.label == "Project").set_value(code).run()
+    """Pick ``code`` for w1.xer, the file that holds two projects (NEW proj_id 1, OLD proj_id 2)."""
+    pick_project(at, "w1.xer", {"NEW": "1", "OLD": "2"}[code])
 
 
 def test_project_choice_applies_to_the_files_that_hold_it(renamed_project, monkeypatch):
@@ -790,7 +804,7 @@ def test_switching_project_recomputes_cached_tables(renamed_project, monkeypatch
 
 
 def _selection(at):
-    return next(frame for frame in at.sidebar.dataframe).value
+    return selection(at)
 
 
 def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, monkeypatch):
@@ -813,6 +827,39 @@ def test_selection_panel_shows_each_file_its_project_and_why(renamed_project, mo
     table = _selection(at).set_index("file")
     assert table.loc["w1.xer", ["project", "selected_by", "activities"]].tolist() == ["OLD", "chosen", 2]
     assert table.loc["w2.xer", "project"] == "NEW"
+
+
+def _project_rows(at) -> dict[str, str]:
+    """The window's row of each file of the series: ``<file> — **<project>** · <picked by>``."""
+    rows = [m.value.replace("\\", "") for m in at.markdown if " — **" in m.value]
+    return {row.split(" — ")[0]: row.split(" — ", 1)[1] for row in rows}
+
+
+def test_the_window_lists_the_projects_of_a_file_that_holds_several_and_why_each_file_is_read(
+    renamed_project, monkeypatch
+):
+    at = _run(renamed_project, monkeypatch)
+    _ok(at)
+    box = project_box(at, "w1.xer")
+    assert box.value == "1"
+    assert box.options == ["NEW · 02 Mar 2026 · 3 activities", "OLD · 02 Mar 2026 · 2 activities"]
+    assert project_box(at, "w2.xer") is None  # one project: no list
+    assert _project_rows(at) == {"w1.xer": "**NEW** · most TASK rows", "w2.xer": "**NEW** · only project"}
+    assert not [box for box in at.sidebar.selectbox if box.label == "Project"]  # no project picker for all files
+
+
+def test_a_project_picked_in_the_window_applies_on_done_only(renamed_project, monkeypatch):
+    at = _run(renamed_project, monkeypatch)
+    project_box(at, "w1.xer").set_value("2").run()
+    assert [s.project_code for s in at.session_state["store"]] == ["NEW", "NEW"]  # nothing before Done
+    close_window(at)  # Esc
+    assert [s.project_code for s in at.session_state["store"]] == ["NEW", "NEW"]
+    assert files_line(at) == "Files · 2 files · 1 project"
+    assert project_box(at, "w1.xer").value == "1"  # the draft starts again from the project read
+    pick_project(at, "w1.xer", "2")
+    _ok(at)
+    assert [s.project_code for s in at.session_state["store"]] == ["OLD", "NEW"]
+    assert files_line(at) == "Files · 2 files · :orange[2 projects]"
 
 
 def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkeypatch):
