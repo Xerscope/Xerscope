@@ -82,32 +82,31 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
     ui.kpis(
         [
             (
-                "EV %",
+                "Percent complete",
                 f"{row['ev_pct']:.1f} %",
                 change_since_previous(row, previous, "ev_pct", format_points),
-                "Earned / BAC",
+                "EV / BAC (BCWP / BAC)",
             ),
-            ("PV %", f"{row['pv_pct']:.1f} %", None, "Planned / BAC"),
+            ("Percent scheduled", f"{row['pv_pct']:.1f} %", None, "PV / BAC (BCWS / BAC)"),
             *([cost_card] if costs else []),
             (
-                "SPI (labour units)",
+                "SPI (labor units)",
                 format_number(row["spi"], "{:.3f}"),
                 change_since_previous(row, previous, "spi", format_index_change),
-                "EV / PV in labour hours; P6 column: Schedule Performance Index - Labor Units",
+                "EV / PV in labor hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
             (
                 "BEI (P6 / DCMA)",
                 " / ".join(format_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
                 None,
-                "P6 counts activities without a baseline finish as due; DCMA leaves them out",
+                "P6 counts tasks without a baseline finish as due; DCMA leaves them out",
             ),
             (
                 "EAC",
                 f"{row['eac_hr']:,.0f} h",
-                f"{row['eac_hr'] - row['bac_hr']:+,.0f} h vs BAC",
-                "AC + remaining hours",
-                "inverse",
+                f"VAC {row['bac_hr'] - row['eac_hr']:+,.0f} h",
+                "AC + remaining hours; VAC = BAC − EAC, negative = overrun",
             ),
         ]
     )
@@ -137,26 +136,26 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
             [
                 (
                     "BAC",
-                    f"Σ baseline labour hours ({EV_BASES[baseline.ev_basis]})",
+                    f"Σ baseline labor hours ({EV_BASES[baseline.ev_basis]})",
                     f"{bac:,.1f} h",
                     "Budget At Completion - Labor Units",
                 ),
                 (
                     "PV",
                     "Σ BL hours × Schedule % Complete (working time elapsed between BL start and BL finish, "
-                    "on the activity's calendar, at the data date)",
+                    "on the task's calendar, at the status date)",
                     f"{planned:,.1f} h  ({row['pv_pct']:.1f} % of BAC)",
                     "Planned Value Labor Units",
                 ),
                 (
                     "EV",
-                    "Σ BL hours × Performance % Complete (WBS EV technique: activity %, 0/100, 50/50 or custom)",
+                    "Σ BL hours × Performance % Complete (WBS EV technique: task %, 0/100, 50/50 or custom)",
                     f"{earned_hours:,.1f} h  ({row['ev_pct']:.1f} % of BAC)",
                     "Earned Value Labor Units",
                 ),
-                ("AC", "Σ actual labour hours", f"{actual:,.1f} h", "Actual Labor Units"),
+                ("AC", "Σ actual labor hours", f"{actual:,.1f} h", "Actual Labor Units"),
                 (
-                    "SPI (labour units)",
+                    "SPI (labor units)",
                     "EV / PV",
                     f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.3f}')}",
                     "Schedule Performance Index - Labor Units",
@@ -169,8 +168,8 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "PV cost",
-                    "Σ over assignments of BL cost × share of the assignment's dates elapsed at the data date "
-                    "(date difference; working time assumed, unverified); expenses and activities without "
+                    "Σ over assignments of BL cost × share of the assignment's dates elapsed at the status date "
+                    "(date difference; working time assumed, unverified); expenses and tasks without "
                     "resource: BL cost × Schedule % Complete",
                     f"{row['pv_cost']:,.1f}",
                     "Planned Value Cost",
@@ -195,7 +194,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "ETC",
-                    "Σ remaining labour hours",
+                    "Σ remaining labor hours",
                     f"{row['etc_hr']:,.1f} h",
                     "Estimate To Complete Labor Units (Remaining Total Units)",
                 ),
@@ -212,15 +211,15 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                     "Estimate At Completion - Labor Units",
                 ),
                 (
-                    "CPI (labour units)",
+                    "CPI (labor units)",
                     "EV / AC, all actual hours",
                     f"{earned_hours:,.1f} / {actual:,.1f} = {format_number(row['cpi'], '{:.2f}')}",
                     "Cost Performance Index - Labor Units",
                 ),
                 (
                     "EV / AC (baselined work)",
-                    "EV / AC without the hours of activities the baseline does not have: EV exists only for "
-                    "baselined activities, so those hours would lower the ratio",
+                    "EV / AC without the hours of tasks the baseline does not have: EV exists only for "
+                    "baselined tasks, so those hours would lower the ratio",
                     f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
                     "not a P6 column: P6 divides by all actual units (CPI above)",
                 ),
@@ -248,7 +247,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 "PV cost: resource curves not modelled (linear spread used) for " + ui.md_text(", ".join(curves[:20]))
             )
         st.caption(
-            "BEI is a count, not hours: completed activities / activities due by the data date "
+            "BEI is a count, not hours: completed tasks / tasks due by the status date "
             "(see Schedule health for the list)."
         )
 
@@ -276,7 +275,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
         "Performance indices by update",
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
-    indices = {"spi": "SPI (labour units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
+    indices = {"spi": "SPI (labor units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
     if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
     st.plotly_chart(build_index_trend(series, indices), width="stretch")
@@ -285,7 +284,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
 
 
 def show_activity_detail(snapshot, baseline) -> None:
-    with st.expander(f"Earned hours by activity ({ui.stamp(snapshot.data_date)})"):
+    with st.expander(f"Earned hours by task ({ui.stamp(snapshot.data_date)})"):
         activities = earned(snapshot, baseline).reset_index()
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
         csv_download(
@@ -297,7 +296,7 @@ def show_activity_detail(snapshot, baseline) -> None:
         fallback = sorted(activities.loc[fallback_mask, "task_code"])
         if fallback:
             st.caption(
-                f"EV technique not modelled (activity % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
+                f"EV technique not modelled (task % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
             )
         missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
         if missing:
@@ -314,7 +313,7 @@ with top:
         store,
         snapshot,
         baseline,
-        lead="Labour hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
+        lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
     )
     show_baseline_used(snapshot, baseline, series=True)
@@ -323,7 +322,7 @@ if baseline is None:
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(
-        f"The baseline ({baseline.label}) has no budgeted labour hours, so there is nothing to earn. "
+        f"The baseline ({baseline.label}) has no budgeted labor hours, so there is nothing to earn. "
         "Export the BL with resource assignments (TASK.target_work_qty / TASKRSRC)."
     )
     st.stop()

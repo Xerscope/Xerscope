@@ -19,7 +19,7 @@ def test_leveling_table_lists_the_activities_the_warning_counts():
             todo("D", early_start_date="2026-03-02 08:00", restart_date="2026-03-02 08:00"),
         ]
     )
-    assert any("2 open activities have a remaining early start" in w for w in s.warnings)
+    assert any("2 open tasks have a remaining early start" in w for w in s.warnings)
     table = leveling_table(s)
     assert table["task_code"].tolist() == ["A", "B"]
     assert table.columns.tolist() == [

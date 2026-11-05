@@ -1,6 +1,6 @@
 """Building blocks shared by the one-function-per-check modules (``p6/``, ``dcma/``, ``decm/``).
 
-Each helper answers one question in the words a schedule reader uses: which activities
+Each helper answers one question in the words a schedule reader uses: which tasks
 are open, which have a predecessor, which links lead into open work. A check reads as a
 few of these combined with ``&``, ``|`` and ``~``.
 """
@@ -47,7 +47,7 @@ STEP_SOURCES = {
     "46282": "https://docs.oracle.com/cd/G18294_01/p6help/en/46282.htm",
     "Ten Six": "https://tensix.com/using-the-p6-check-schedule-tool/",
     "R1": "docs/standards.md: P6 Professional Check Schedule report R1",
-    "model": "docs/formulas.md 1.1: a relationship counts when both ends are activities of the file",
+    "model": "docs/formulas.md 1.1: a relationship counts when both ends are tasks of the file",
     "PAM 200.1": "https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf",
     "DECM 8.0": "https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm",
     "xerscope": "docs/standards.md: INTEGRITY, xerscope's own checks (not a published standard)",
@@ -56,7 +56,7 @@ STEP_SOURCES = {
 
 @dataclass(frozen=True)
 class Exclusion:
-    """One named way to leave activities out of a population; the single vocabulary of the checks."""
+    """One named way to leave tasks out of a population; the single vocabulary of the checks."""
 
     label: str  # the funnel step, e.g. "not complete"
     text: str  # the words of the "Excludes:" line, e.g. "completed activities"
@@ -64,25 +64,25 @@ class Exclusion:
 
 
 EXCLUSIONS: dict[str, Exclusion] = {
-    "complete": Exclusion("not complete", "completed activities", lambda rows, _dd: rows["is_complete"]),
+    "complete": Exclusion("not complete", "completed tasks", lambda rows, _dd: rows["is_complete"]),
     "complete_before_data_date": Exclusion(
-        "not completed before the data date",
-        "activities completed before the data date",
+        "not completed before the status date",
+        "tasks completed before the status date",
         lambda rows, data_date: rows["is_complete"] if data_date is None else rows["act_end_date"] < data_date,
     ),
-    "started": Exclusion("not started", "started activities", lambda rows, _dd: rows["is_started"]),
+    "started": Exclusion("not started", "started tasks", lambda rows, _dd: rows["is_started"]),
     "loe": Exclusion("not level of effort", "level of effort", lambda rows, _dd: rows["is_loe"]),
     "milestones": Exclusion("not milestone", "milestones", lambda rows, _dd: rows["is_milestone"]),
     "no_duration": Exclusion(
         "original duration above 0",
-        "activities with no original duration",
+        "tasks with no original duration",
         lambda rows, _dd: ~(rows["target_drtn_hr_cnt"].fillna(0) > 0),
     ),
 }
 
 
 def without(rows: pd.DataFrame, data_date, exclude: Sequence[str]) -> pd.DataFrame:
-    """``rows`` less the activities any of the ``exclude`` keys (EXCLUSIONS) removes."""
+    """``rows`` less the tasks any of the ``exclude`` keys (EXCLUSIONS) removes."""
     removed = pd.Series(False, index=rows.index)
     for key in exclude:
         removed |= as_flag(EXCLUSIONS[key].removes(rows, data_date))
@@ -128,7 +128,7 @@ class Funnel:
 
 
 def activity_funnel(snapshot: Snapshot) -> Funnel:
-    """Every activity of the file (WBS summaries are never activities)."""
+    """Every task of the file (WBS summaries are never tasks)."""
     return Funnel(snapshot.activities, snapshot.data_date)
 
 
@@ -146,24 +146,24 @@ def joined_sorted(values: pd.Series) -> str:
 
 
 def with_baseline(baseline: Baseline, activities: pd.DataFrame) -> pd.DataFrame:
-    """The activities with their baseline start and finish (empty where the baseline lacks them)."""
+    """The tasks with their baseline start and finish (empty where the baseline lacks them)."""
     return activities.join(baseline.frame[["bl_start", "bl_finish"]], on="task_code")
 
 
 def finish_driver(snapshot: Snapshot) -> pd.Series | None:
-    """The open, non-LOE activity with the latest forecast finish; None when no work remains."""
+    """The open, non-LOE task with the latest forecast finish; None when no work remains."""
     activities = snapshot.activities
     remaining = activities[~activities["is_complete"] & ~activities["is_loe"] & activities["finish"].notna()]
     return None if remaining.empty else remaining.loc[remaining["finish"].idxmax()]
 
 
 def has_predecessor_in_project(snapshot: Snapshot, activities: pd.DataFrame) -> pd.Series:
-    """True where the activity is the successor of a relationship inside this project."""
+    """True where the task is the successor of a relationship inside this project."""
     return activities["task_code"].isin(_relationships_in_project(snapshot)["succ_code"])
 
 
 def has_successor_in_project(snapshot: Snapshot, activities: pd.DataFrame) -> pd.Series:
-    """True where the activity is the predecessor of a relationship inside this project."""
+    """True where the task is the predecessor of a relationship inside this project."""
     return activities["task_code"].isin(_relationships_in_project(snapshot)["pred_code"])
 
 
@@ -177,7 +177,7 @@ def constrained_by(
 ) -> pd.Series:
     """True where the primary or the secondary constraint is one of ``constraint_types``.
 
-    With ``ignore_started_starts`` a start constraint on an activity that has started is
+    With ``ignore_started_starts`` a start constraint on a task that has started is
     not counted (it can no longer hold the start).
     """
     constrained = pd.Series(False, index=activities.index)
@@ -200,13 +200,13 @@ def links_between(relationships: pd.DataFrame, successors: pd.DataFrame, tasks: 
 
 
 def has_driving_predecessor(codes: pd.Series, relationships: pd.DataFrame) -> pd.Series:
-    """True where the activity is the successor of an FS or SS relationship."""
+    """True where the task is the successor of an FS or SS relationship."""
     driving = relationships["type"].isin(START_DRIVING_TYPES)
     return codes.isin(relationships.loc[driving, "succ_code"])
 
 
 def has_driving_successor(codes: pd.Series, relationships: pd.DataFrame) -> pd.Series:
-    """True where the activity is the predecessor of an FS or FF relationship."""
+    """True where the task is the predecessor of an FS or FF relationship."""
     driving = relationships["type"].isin(FINISH_DRIVING_TYPES)
     return codes.isin(relationships.loc[driving, "pred_code"])
 
@@ -220,23 +220,23 @@ def lag_flagged(relationships: pd.DataFrame, compare: Callable, limit: float, co
 
 
 def forecast_before(tasks: pd.DataFrame, data_date) -> pd.Series:
-    """Incomplete activities whose forecast start (not started) or finish is before the data date."""
+    """Incomplete tasks whose forecast start (not started) or finish is before the status date."""
     early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
     not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
     return as_flag(~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date)))
 
 
 def actual_after(tasks: pd.DataFrame, data_date) -> pd.Series:
-    """Activities with an actual start or finish after the data date."""
+    """Tasks with an actual start or finish after the status date."""
     return as_flag((tasks["act_start_date"] > data_date) | (tasks["act_end_date"] > data_date))
 
 
 def invalid_date_reason(forecast: pd.Series, actual: pd.Series) -> pd.Series:
-    """Why an activity has an invalid progress date (read only where one of the two masks is True)."""
+    """Why a task has an invalid progress date (read only where one of the two masks is True)."""
     reason = np.select(
         [forecast & actual, forecast],
-        ["forecast before and actual after data date", "forecast before data date"],
-        default="actual after data date",
+        ["forecast before and actual after status date", "forecast before status date"],
+        default="actual after status date",
     )
     return pd.Series(reason, index=forecast.index)
 
@@ -245,7 +245,7 @@ def invalid_date_reason(forecast: pd.Series, actual: pd.Series) -> pd.Series:
 
 
 def open_end_reason(missing_predecessor: pd.Series, missing_successor: pd.Series) -> pd.Series:
-    """Why an activity is an open end; empty where it has both."""
+    """Why a task is an open end; empty where it has both."""
     reason = np.select(
         [missing_predecessor & missing_successor, missing_predecessor, missing_successor],
         ["no predecessor, no successor", "no predecessor", "no successor"],
@@ -255,7 +255,7 @@ def open_end_reason(missing_predecessor: pd.Series, missing_successor: pd.Series
 
 
 def flagged_activities(activities: pd.DataFrame, **extra_columns) -> pd.DataFrame:
-    """The standard activity columns of the flagged rows, plus any extra column."""
+    """The standard task columns of the flagged rows, plus any extra column."""
     flagged = activities[[column for column in ACTIVITY_COLS if column in activities.columns]].copy()
     for name, values in extra_columns.items():
         flagged[name] = values
@@ -269,7 +269,7 @@ def flagged_relationships(relationships: pd.DataFrame) -> pd.DataFrame:
 
 def predecessors_ahead(links: pd.DataFrame, tasks: pd.DataFrame) -> pd.DataFrame:
     """The links into a started successor whose FS predecessor is not complete, or SS predecessor not started,
-    at the data date (``tasks`` indexed by task code): P6's out-of-sequence activities.
+    at the status date (``tasks`` indexed by task code): P6's out-of-sequence tasks.
 
     The link-type reading is calibrated on a P6 Check Schedule report: FF and SF links, and an SS
     predecessor that has started, are not listed.

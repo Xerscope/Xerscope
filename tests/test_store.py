@@ -78,7 +78,7 @@ def test_same_data_date_twice_is_refused(store):
     with pytest.raises(DuplicateDataDate) as caught:
         SnapshotStore([*twins, *store])
     assert str(caught.value) == (
-        f"several files per data date, keep one per date: "
+        f"several files per status date, keep one per date: "
         f"{first.data_date:%Y-%m-%d}: {first.source}, v0.5.xer, v0.8.xer"
     )
 

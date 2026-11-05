@@ -60,10 +60,10 @@ def test_no_sheet_for_a_metric_that_is_not_the_built_in_one():
 STEP_LINE = re.compile(r"^\d+\. (.+?): .*\((\S+(?: \S+)?)\)$")
 # the words of the docstring population line (explain.EXCLUDE / LINKS_TEXT) for each step label
 DOCSTRING_WORDS = {
-    "not complete": "completed activities",
+    "not complete": "completed tasks",
     "not level of effort": "level of effort",
     "not milestone": "milestones",
-    "not completed before the data date": "activities completed before the data date",
+    "not completed before the status date": "tasks completed before the status date",
 }
 
 

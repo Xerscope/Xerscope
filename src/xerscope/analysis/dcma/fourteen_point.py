@@ -32,7 +32,7 @@ from ..populations import (
 from ..rules import RuleOutput, bei_from_snapshot, critical_path_output, link_funnel, rule, share_of_type
 
 DCMA_HIGH_DAYS = 44  # PAM 200.1 §4.6 and §4.8: "two months" of work, in working days of the activity's calendar
-# The pamphlet gives no slip length (§4.12); 600 working days is the value of DECM 06A401a.
+# The pamphlet gives no slip length (§4.12); 600 working days is xerscope's choice.
 DCMA_SLIP_DAYS = 600
 
 # Start On, Start On or Before, Finish On, Finish On or Before, Mandatory Start, Mandatory Finish:
@@ -59,7 +59,7 @@ def _links_into_open_tasks(context) -> Funnel:
 def dcma_01_logic(context) -> RuleOutput:
     """Missing a predecessor or a successor.
     Counts: open-ended / checked
-    Excludes: completed activities, level of effort, milestones.
+    Excludes: completed tasks, level of effort, milestones.
 
     DCMA-EA PAM 200.1 §4.1: any incomplete task missing a predecessor and/or a successor; no project
     start/finish exemption and no dangling case; §4.0: milestones excluded; a link to another project
@@ -139,9 +139,9 @@ def dcma_04_relationship_types(context) -> RuleOutput:
 
 @rule("dcma_05_hard_constraints", "%")
 def dcma_05_hard_constraints(context) -> RuleOutput:
-    """Constrained activities.
+    """Constrained tasks.
     Counts: constrained / checked
-    Excludes: completed activities, level of effort, milestones.
+    Excludes: completed tasks, level of effort, milestones.
     Constraint types: Start on, Start on or before, Finish on, Finish on or before, Mandatory start,
         Mandatory finish.
 
@@ -162,9 +162,9 @@ def dcma_05_hard_constraints(context) -> RuleOutput:
 
 @rule("dcma_06_high_float", "%")
 def dcma_06_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
-    """Activities outside the float limit.
+    """Tasks outside the float limit.
     Counts: flagged / checked
-    Excludes: completed activities, level of effort, milestones.
+    Excludes: completed tasks, level of effort, milestones.
 
     DCMA-EA PAM 200.1 §4.6: incomplete task with total float greater than 44 working days (2 months);
     §4.0: milestones excluded
@@ -177,9 +177,9 @@ def dcma_06_high_float(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutpu
 
 @rule("dcma_07_negative_float", "%")
 def dcma_07_negative_float(context) -> RuleOutput:
-    """Activities outside the float limit.
+    """Tasks outside the float limit.
     Counts: flagged / checked
-    Excludes: completed activities, level of effort, milestones.
+    Excludes: completed tasks, level of effort, milestones.
     Flagged when total float < 0 days.
 
     DCMA-EA PAM 200.1 §4.7: incomplete task with total float less than 0 working days; §4.0: milestones
@@ -193,15 +193,15 @@ def dcma_07_negative_float(context) -> RuleOutput:
 
 @rule("dcma_08_high_duration", "%")
 def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOutput:
-    """Activities outside the duration limit.
+    """Tasks outside the duration limit.
     Counts: flagged / checked
-    Excludes: completed activities, level of effort, milestones.
+    Excludes: completed tasks, level of effort, milestones.
 
     DCMA-EA PAM 200.1 §4.8: an incomplete task with a baseline duration greater than 44 working days (2
     months) and a baseline start within the detail planning period or rolling wave; §4.0: LOE and
     milestones excluded. UNRESOLVED: inputs are weekly XERs with no detail planning window, so every
-    baseline start qualifies. UNRESOLVED: baseline hours are divided by the activity's current hours per
-    day, not the baseline calendar. An activity absent from the baseline is not flagged; without a
+    baseline start qualifies. UNRESOLVED: baseline hours are divided by the task's current hours per
+    day, not the baseline calendar. A task absent from the baseline is not flagged; without a
     baseline the check is n/a
     """
     if context.baseline is None:
@@ -215,9 +215,9 @@ def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOu
 
 @rule("dcma_09_invalid_dates", "%")
 def dcma_09_invalid_dates(context) -> RuleOutput:
-    """Progress dates on the wrong side of the data date.
+    """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
-    Excludes: level of effort, milestones, activities completed before the data date.
+    Excludes: level of effort, milestones, tasks completed before the status date.
 
     DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an
     actual start/finish beyond it; §4.0: LOE and milestones excluded; a task completed before the status
@@ -225,7 +225,7 @@ def dcma_09_invalid_dates(context) -> RuleOutput:
     """
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     funnel = _discrete_tasks(activity_funnel(context.snapshot)).exclude("complete_before_data_date", "PAM 200.1")
     tasks = funnel.rows
 
@@ -240,9 +240,9 @@ def dcma_09_invalid_dates(context) -> RuleOutput:
 
 @rule("dcma_10_resources", "%")
 def dcma_10_resources(context) -> RuleOutput:
-    """Activities with no resource assignment.
+    """Tasks with no resource assignment.
     Counts: without resources / checked
-    Excludes: completed activities, level of effort, milestones, activities with no original duration.
+    Excludes: completed tasks, level of effort, milestones, tasks with no original duration.
 
     DCMA-EA PAM 200.1 §4.10: "all tasks with durations greater than zero have dollars or hours assigned";
     incomplete tasks without them over incomplete tasks; §4.0 exclusions apply. Cost or hours = a
@@ -271,10 +271,10 @@ def dcma_10_resources(context) -> RuleOutput:
 
 @rule("dcma_11_missed_tasks", "%", needs_baseline=True)
 def dcma_11_missed_tasks(context) -> RuleOutput:
-    """Due by the data date and not finished on time.
-    Counts: missed / due by the data date
+    """Due by the status date and not finished on time.
+    Counts: missed / due by the status date
     Excludes: level of effort, milestones.
-    Due = baseline start and finish set, baseline finish on or before the data date. Missed = actual
+    Due = baseline start and finish set, baseline finish on or before the status date. Missed = actual
         (else forecast) finish on a later day than the baseline finish.
 
     DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the status date, actual or forecast
@@ -285,12 +285,12 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
     """
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     funnel = Funnel(with_baseline(context.baseline, context.snapshot.activities), data_date)
     tasks = _discrete_tasks(funnel).rows
     unmatched = int((tasks["bl_start"].isna() | tasks["bl_finish"].isna()).sum())
     funnel.keep(
-        "baseline finish on or before the data date",
+        "baseline finish on or before the status date",
         "PAM 200.1",
         lambda rows: rows["bl_start"].notna() & (rows["bl_finish"] <= data_date),
     )
@@ -311,11 +311,11 @@ def dcma_11_missed_tasks(context) -> RuleOutput:
 
 @rule("dcma_12_critical_path_test", "pass/fail")
 def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> RuleOutput:
-    """Add the slip (working days) to the first open critical activity; the finish must slip as much.
+    """Add the slip (working days) to the first open critical task; the finish must slip as much.
 
     DCMA-EA PAM 200.1 §4.12: the project completion date must move "in direct proportion" to the
-    "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is the value of
-    DECM 06A401a
+    "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is xerscope's
+    choice, DECM 06A401a gives none either
     """
     return critical_path_output(context, slip_days)
 
@@ -355,10 +355,11 @@ def dcma_13_cpli(context) -> RuleOutput:
 
     DCMA-EA PAM 200.1 §3.1.2.3: CPLI = (CPL + TF) / CPL, TF being the total float of the completion
     milestone ("the amount of days a project can be delayed before delaying the project completion
-    date"). CPL = working days from the data date to the forecast finish, TF = that float, both in working
+    date"). CPL = working days from the status date to the forecast finish, TF = that float, both in working
     days of the project calendar (PAM and Acumen say days without naming a calendar).
     P6 writes that float against the Must Finish By date. Without one, TF is the margin of the open
-    finish milestone ending last to its baseline finish (recalculated early finish, project calendar;
+    finish milestone ending last to its baseline finish (PAM: TF "relative to the baselined finish
+    date, when constrained") (recalculated early finish, project calendar;
     negative when late); n/a without a baseline, with the planned dates baseline (the planned finish of a
     not-started milestone follows its early finish: margin 0 by construction, Oracle 47222) or without a
     baseline finish for it. No constraint is read
@@ -366,7 +367,7 @@ def dcma_13_cpli(context) -> RuleOutput:
     snapshot = context.snapshot
     last_task = finish_driver(snapshot)
     if snapshot.data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     if last_task is None:
         return RuleOutput(note="no remaining work")
     margin_note = ""
@@ -391,23 +392,23 @@ def dcma_13_cpli(context) -> RuleOutput:
 
 @rule("dcma_14_bei", "ratio", needs_baseline=True)
 def dcma_14_bei(context) -> RuleOutput:
-    """Due by the data date but not completed.
-    Counts: completed / due by the data date
+    """Due by the status date but not completed.
+    Counts: completed / due by the status date
     Excludes: level of effort, milestones.
-    Activities without a baseline finish are counted as due. Completed = all completed activities in the
+    Tasks without a baseline finish are counted as due. Completed = all completed tasks in the
         population, early ones included.
 
-    DCMA-EA PAM 200.1 §3.1.2.4: Baseline Execution Index = activities completed / activities due by the
-    data date; step 1 filters out LOE, summary and zero duration tasks (milestones); tasks missing
+    DCMA-EA PAM 200.1 §3.1.2.4: Baseline Execution Index = tasks completed / tasks due by the
+    status date; step 1 filters out LOE, summary and zero duration tasks (milestones); tasks missing
     baseline finish dates are included in the denominator
     """
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     funnel = Funnel(with_baseline(context.baseline, context.snapshot.activities), data_date)
     tasks = _discrete_tasks(funnel).rows
     funnel.keep(
-        "due by the data date",
+        "due by the status date",
         "PAM 200.1",
         lambda rows: as_flag(rows["bl_finish"] <= data_date) | rows["bl_finish"].isna(),
     )

@@ -315,7 +315,7 @@ def test_p6_13_bei_is_completed_over_all_baseline_activities():
     assert counts(r) == (2, 2)
     assert r.value == 1.0
     assert r.status == "pass"
-    assert r.note == "2 completed / 2 baseline activities"
+    assert r.note == "2 completed / 2 baseline tasks"
 
 
 def test_p6_13_a_baseline_milestone_is_not_counted():

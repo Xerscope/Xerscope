@@ -1,7 +1,7 @@
 """P6 Professional 24 Check Schedule: one function per check, reading like the Oracle text.
 
 The Oracle pages are cited in each docstring. Threshold and pass/fail come from
-``standards/p6.toml``; the function only decides which activities are flagged.
+``standards/p6.toml``; the function only decides which tasks are flagged.
 """
 
 from __future__ import annotations
@@ -64,10 +64,10 @@ def _links(context) -> Funnel:
 def p6_01_logic(context) -> RuleOutput:
     """Missing a predecessor or a successor.
     Counts: open-ended / checked
-    Excludes: completed activities.
-    No predecessor required for: started activities.
+    Excludes: completed tasks.
+    No predecessor required for: started tasks.
 
-    101248: completed and WBS summary activities not included; started activities need no predecessor.
+    101248: completed and WBS summary tasks not included; started tasks need no predecessor.
     101248 also exempts start milestones, but a P6 Professional 26.8 report lists a not-started start
     milestone without predecessor (tests/test_p6_checksched.py), as the r22.12 report analysed by Ten Six
     lists its Notice to Proceed milestone: the reports win. A finish milestone without successor is
@@ -90,9 +90,9 @@ def p6_01_logic(context) -> RuleOutput:
 
 @rule("p6_02_hard_constraints", "%")
 def p6_02_hard_constraints(context) -> RuleOutput:
-    """Constrained activities.
+    """Constrained tasks.
     Counts: constrained / checked
-    Excludes: completed activities, level of effort.
+    Excludes: completed tasks, level of effort.
     Constraint types: Mandatory start, Start on, Mandatory finish, Finish on.
 
     46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"""
@@ -112,9 +112,9 @@ def p6_02_hard_constraints(context) -> RuleOutput:
 
 @rule("p6_03_soft_constraints", "%")
 def p6_03_soft_constraints(context) -> RuleOutput:
-    """Constrained activities.
+    """Constrained tasks.
     Counts: constrained / checked
-    Excludes: completed activities, level of effort.
+    Excludes: completed tasks, level of effort.
     Constraint types: Start on or before, Start on or after, Finish on or before,
         Finish on or after, As late as possible.
 
@@ -135,9 +135,9 @@ def p6_03_soft_constraints(context) -> RuleOutput:
 
 @rule("p6_04_large_durations", "%")
 def p6_04_large_durations(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
-    """Activities outside the duration limit.
+    """Tasks outside the duration limit.
     Counts: flagged / checked
-    Excludes: completed activities, level of effort, milestones.
+    Excludes: completed tasks, level of effort, milestones.
 
     101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional
     r22.12 report shows (Ten Six) and EPPM's 46282 states
@@ -156,7 +156,7 @@ def p6_05_long_lags(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
     Counts: flagged / checked
     Relationships counted: relationships where predecessor and successor are not both complete.
 
-    46288: links between two actual-finished activities removed"""
+    46288: links between two actual-finished tasks removed"""
     funnel = _links(context)
     relationships = funnel.rows
 
@@ -168,9 +168,9 @@ def p6_05_long_lags(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
 
 @rule("p6_06_large_float", "%")
 def p6_06_large_float(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
-    """Activities outside the float limit.
+    """Tasks outside the float limit.
     Counts: flagged / checked
-    Excludes: completed activities, level of effort.
+    Excludes: completed tasks, level of effort.
 
     46284: WBS summary, actual-finish and LOE removed"""
     funnel = _open_not_loe(context)
@@ -218,7 +218,7 @@ def p6_09_negative_lags(context) -> RuleOutput:
     Relationships counted: relationships where predecessor and successor are not both complete.
     Flagged when lag < 0 hours.
 
-    46290: links between two actual-finished activities removed"""
+    46290: links between two actual-finished tasks removed"""
     funnel = _links(context)
     relationships = funnel.rows
 
@@ -229,23 +229,23 @@ def p6_09_negative_lags(context) -> RuleOutput:
 
 
 def _progress_dates(context) -> Funnel:
-    """101248, Invalid Progress Dates: completed before the data date, WBS summary and LOE not included."""
+    """101248, Invalid Progress Dates: completed before the status date, WBS summary and LOE not included."""
     return _activities(context).exclude("loe", "101248").exclude("complete_before_data_date", "101248")
 
 
 @rule("p6_10a_invalid_progress_before", "%")
 def p6_10a_invalid_progress_before(context) -> RuleOutput:
-    """Forecast before the data date.
+    """Forecast before the status date.
     Counts: with invalid dates / checked
-    Excludes: level of effort, activities completed before the data date.
-    An in-progress activity is flagged when its remaining early start is before the data date.
+    Excludes: level of effort, tasks completed before the status date.
+    An in-progress task is flagged when its remaining early start is before the status date.
 
-    101248: not started, start before the data date; in progress, remaining early start before it.
+    101248: not started, start before the status date; in progress, remaining early start before it.
     P6 Professional 26.8 reports this half of Invalid Progress Dates on its own line, "Invalid Progress
-    Before Data Date", with its own target (tests/test_p6_checksched.py)"""
+    Before Status Date", with its own target (tests/test_p6_checksched.py)"""
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     funnel = _progress_dates(context)
     activities = funnel.rows
     early_start, _early_finish = forecast_dates(activities)
@@ -254,7 +254,7 @@ def p6_10a_invalid_progress_before(context) -> RuleOutput:
     forecast = as_flag(~activities["is_complete"] & (early_start < data_date))
     flagged = activities[forecast]
     return RuleOutput(
-        flagged_activities(flagged, reason="forecast before data date"),
+        flagged_activities(flagged, reason="forecast before status date"),
         len(flagged),
         len(activities),
         checked=activities,
@@ -264,22 +264,22 @@ def p6_10a_invalid_progress_before(context) -> RuleOutput:
 
 @rule("p6_10b_invalid_progress_after", "%")
 def p6_10b_invalid_progress_after(context) -> RuleOutput:
-    """Actual dates after the data date.
+    """Actual dates after the status date.
     Counts: with invalid dates / checked
-    Excludes: level of effort, activities completed before the data date.
+    Excludes: level of effort, tasks completed before the status date.
 
-    101248: in progress, actual start after the data date; completed, actual finish after it. P6
+    101248: in progress, actual start after the status date; completed, actual finish after it. P6
     Professional 26.8 reports this half of Invalid Progress Dates on its own line, "Invalid Progress
-    After Data Date", with its own target (tests/test_p6_checksched.py)"""
+    After Status Date", with its own target (tests/test_p6_checksched.py)"""
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     funnel = _progress_dates(context)
     activities = funnel.rows
 
     flagged = activities[actual_after(activities, data_date)]
     return RuleOutput(
-        flagged_activities(flagged, reason="actual after data date"),
+        flagged_activities(flagged, reason="actual after status date"),
         len(flagged),
         len(activities),
         checked=activities,
@@ -289,11 +289,11 @@ def p6_10b_invalid_progress_after(context) -> RuleOutput:
 
 @rule("p6_11_resource_cost", "%")
 def p6_11_resource_cost(context) -> RuleOutput:
-    """Activities with no resource assignment.
+    """Tasks with no resource assignment.
     Counts: without resources / checked
     Excludes: milestones, level of effort.
 
-    46279: WBS summary, milestones and LOE removed (completed activities stay in); a role assignment counts"""
+    46279: WBS summary, milestones and LOE removed (completed tasks stay in); a role assignment counts"""
     funnel = _activities(context).exclude("milestones", "101248").exclude("loe", "101248")
     activities = funnel.rows
     has_resource_or_expense = activities["has_resource"] | activities["has_expense"]
@@ -306,12 +306,12 @@ def p6_11_resource_cost(context) -> RuleOutput:
 def p6_12_late_activities(context) -> RuleOutput:
     """Forecast to finish after their baseline finish.
     Counts: late / checked
-    Excludes: completed activities, milestones, level of effort.
-    Variance is working time on the activity's calendar, as P6's Finish Variance.
-    An activity with no baseline finish is late when its finish is later than its planned finish.
+    Excludes: completed tasks, milestones, level of effort.
+    Variance is working time on the task's calendar, as P6's Finish Variance.
+    A task with no baseline finish is late when its finish is later than its planned finish.
 
     101248: milestones, WBS summary and LOE not included; a P6 Professional report checks the Large
-    Durations population here, so completed activities are out too. No baseline counterpart = late when
+    Durations population here, so completed tasks are out too. No baseline counterpart = late when
     the remaining early finish is later than the planned finish. 46278: finish variance in working time"""
     funnel = _activities(context).exclude("complete", "R1").exclude("milestones", "101248").exclude("loe", "101248")
     activities = with_baseline(context.baseline, funnel.rows)
@@ -323,18 +323,18 @@ def p6_12_late_activities(context) -> RuleOutput:
 
 @rule("p6_13_bei", "ratio", needs_baseline=True)
 def p6_13_bei(context) -> RuleOutput:
-    """Completed activities against the baseline's activities.
-    Counts: completed / baseline activities
+    """Completed tasks against the baseline's tasks.
+    Counts: completed / baseline tasks
     Excludes: level of effort, milestones.
-    The list shows the activities due by the data date in the baseline and not completed.
+    The list shows the tasks due by the status date in the baseline and not completed.
 
-    101248 says baseline activities finishing before the data date, but a P6 Professional report (R1,
+    101248 says baseline tasks finishing before the status date, but a P6 Professional report (R1,
     docs/standards.md) divides by a total equal to its Resources/Cost total: P6 counts every baseline
-    activity, whatever its finish date. The report wins. Milestones, WBS summary
+    task, whatever its finish date. The report wins. Milestones, WBS summary
     and LOE not included on either side"""
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     activities = with_baseline(context.baseline, without(context.snapshot.activities, data_date, ("milestones", "loe")))
     funnel = activity_funnel(context.baseline.snapshot).exclude("milestones", "101248").exclude("loe", "101248")
     baseline_activities = funnel.rows
@@ -342,7 +342,7 @@ def p6_13_bei(context) -> RuleOutput:
     due = activities[as_flag(activities["bl_finish"] <= data_date) & ~activities["is_complete"]]
     total = len(baseline_activities)
     gone = len(set(baseline_activities["task_code"]) - set(context.snapshot.activities["task_code"]))
-    note = f"{completed} completed / {total} baseline activities"
+    note = f"{completed} completed / {total} baseline tasks"
     if gone:
         note += f"; {gone} of them no longer in the schedule"
     index = completed / total if total else None
@@ -361,13 +361,13 @@ def p6_13_bei(context) -> RuleOutput:
 @rule("p6_15_out_of_sequence", "%")
 def p6_15_out_of_sequence(context) -> RuleOutput:
     """Progressed while a predecessor is still open.
-    Counts: out of sequence / activities
-    One row per activity and predecessor, as P6 lists them; the count is of activities.
+    Counts: out of sequence / tasks
+    One row per task and predecessor, as P6 lists them; the count is of tasks.
 
-    P6 Professional report: 'Activities which are completed or in-progress before their predecessors'.
-    Report R1 lists pairs and counts activities once: each started activity has an FS
-    predecessor not completed at the data date; started activities whose predecessor finished late but
-    before the data date are not listed. SS: predecessor not started. UNRESOLVED: FF and SF"""
+    P6 Professional report: 'Tasks which are completed or in-progress before their predecessors'.
+    Report R1 lists pairs and counts tasks once: each started task has an FS
+    predecessor not completed at the status date; started tasks whose predecessor finished late but
+    before the status date are not listed. SS: predecessor not started. UNRESOLVED: FF and SF"""
     funnel = _activities(context)
     activities = funnel.rows
     tasks = context.snapshot.by_code
@@ -385,14 +385,14 @@ def p6_15_out_of_sequence(context) -> RuleOutput:
 @rule("p6_16_dangling_start", "%")
 def p6_16_dangling_start(context) -> RuleOutput:
     """Start not driven by any predecessor.
-    Counts: dangling / activities
-    Counted among: not started activities that are not milestones (P6's 'Ignore In Progress
-        Activities', checked); the others stay in the denominator.
-    An activity with no predecessor at all is the Logic check's, not this one's.
+    Counts: dangling / tasks
+    Counted among: not started tasks that are not milestones (P6's 'Ignore In Progress
+        Tasks', checked); the others stay in the denominator.
+    A task with no predecessor at all is the Logic check's, not this one's.
 
-    P6 Professional report: 'Activities with start dates that are not driven by predecessors', against the
-    total of activities; the report lists an activity without any predecessor under Logic only. Read as:
-    predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore activities with soft/hard constraints'
+    P6 Professional report: 'Tasks with start dates that are not driven by predecessors', against the
+    total of tasks; the report lists a task without any predecessor under Logic only. Read as:
+    predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore tasks with soft/hard constraints'
     (unchecked by default) is not read. Milestones are out: the report shows 0 for milestones with FF / SS
     logic only"""
     funnel = _activities(context)
@@ -408,13 +408,13 @@ def p6_16_dangling_start(context) -> RuleOutput:
 @rule("p6_17_dangling_finish", "%")
 def p6_17_dangling_finish(context) -> RuleOutput:
     """Finish that drives no successor.
-    Counts: dangling / activities
-    Counted among: not complete activities that are not milestones; the others stay in the
+    Counts: dangling / tasks
+    Counted among: not complete tasks that are not milestones; the others stay in the
         denominator.
-    An activity with no successor at all is the Logic check's, not this one's.
+    A task with no successor at all is the Logic check's, not this one's.
 
-    P6 Professional report: 'Activities with finish dates that do not drive successors', against the total
-    of activities; an activity without any successor is listed under Logic only. Read as: successors
+    P6 Professional report: 'Tasks with finish dates that do not drive successors', against the total
+    of tasks; a task without any successor is listed under Logic only. Read as: successors
     exist, none of them FS or FF"""
     funnel = _activities(context)
     activities = funnel.rows
@@ -428,9 +428,9 @@ def p6_17_dangling_finish(context) -> RuleOutput:
 
 @rule("p6_14_negative_float", "%")
 def p6_14_negative_float(context) -> RuleOutput:
-    """Activities outside the float limit.
+    """Tasks outside the float limit.
     Counts: flagged / checked
-    Excludes: completed activities, level of effort.
+    Excludes: completed tasks, level of effort.
     Flagged when total float < 0 hours.
 
     46283: WBS summary, actual-finish and LOE removed"""

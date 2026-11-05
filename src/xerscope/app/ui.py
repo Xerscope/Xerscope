@@ -18,6 +18,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
+from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.viz import gantt_assets
 from xerscope.viz.charts import ACCENT, SERIES, STATUS
 
@@ -64,9 +65,9 @@ HEADER_HEIGHT = 38
 
 # column -> (label, kind). kind: text | date | datetime | d1 | d2 | h0 | pct | signed | int | bool
 COLUMNS: dict[str, tuple[str, str]] = {
-    "task_code": ("Activity ID", "text"),
-    "task_name": ("Activity name", "wide"),
-    "bl_name": ("Activity name", "wide"),
+    "task_code": ("Task ID", "text"),
+    "task_name": ("Task name", "wide"),
+    "bl_name": ("Task name", "wide"),
     "wbs_code": ("WBS", "text"),
     "wbs_l1": ("WBS level 1", "text"),
     "wbs_name": ("WBS name", "text"),
@@ -85,11 +86,11 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "early_end_date": ("Early finish", "datetime"),
     "late_start_date": ("Late start", "datetime"),
     "late_end_date": ("Late finish", "datetime"),
-    "total_float_d": ("Total float (d)", "d1"),
-    "free_float_d": ("Free float (d)", "d1"),
-    "remaining_d": ("Remaining (d)", "d1"),
-    "original_d": ("Original (d)", "d1"),
-    "finish_variance_wd": ("Δ finish vs BL (wd)", "signed"),
+    "total_float_d": ("Total float (wd)", "d1"),
+    "free_float_d": ("Free float (wd)", "d1"),
+    "remaining_d": ("Remaining duration (wd)", "d1"),
+    "original_d": ("Original duration (wd)", "d1"),
+    "finish_variance_wd": ("Finish variance (wd)", "signed"),
     "constraint": ("Constraint", "text"),
     "constraint2": ("Secondary constraint", "text"),
     "reason": ("Reason", "wide"),
@@ -102,7 +103,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "succ_code": ("Successor", "text"),
     "succ_name": ("Successor name", "wide"),
     "lag_hr": ("Lag (h)", "d1"),
-    "lag_d": ("Lag (d)", "d1"),
+    "lag_d": ("Lag (wd)", "d1"),
     "pred_start": ("Pred. start", "datetime"),
     "pred_finish": ("Pred. finish", "datetime"),
     "succ_start": ("Succ. start", "datetime"),
@@ -127,20 +128,20 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "pv_cost": ("PV (cost)", "h0"),
     "ev_cost": ("EV (cost)", "h0"),
     "spi_cost": ("SPI", "d3"),
-    "pv_pct": ("PV %", "pct"),
-    "ev_pct": ("EV %", "pct"),
-    "spi": ("SPI (labour units)", "d3"),
+    "pv_pct": ("Percent scheduled", "pct"),
+    "ev_pct": ("Percent complete", "pct"),
+    "spi": ("SPI (labor units)", "d3"),
     "productivity": ("EV / AC (baselined work)", "d2"),
-    "cpi": ("CPI (labour units)", "d2"),
+    "cpi": ("CPI (labor units)", "d2"),
     "ac_unbaselined_hr": ("AC outside BL (h)", "h0"),
     "bei_p6": ("BEI (P6)", "d2"),
     "bei_dcma": ("BEI (DCMA)", "d2"),
     "ev_technique": ("EV technique", "text"),
-    "data_date": ("Data date", "date"),
+    "data_date": ("Status date", "date"),
     "source": ("File", "text"),
     "forecast_finish": ("Forecast finish", "datetime"),
     "finish_shift_wd": ("Finish shift (wd)", "signed"),
-    "activities": ("Activities", "int"),
+    "activities": ("Tasks", "int"),
     "complete": ("Complete", "int"),
     "in_progress": ("In progress", "int"),
     "not_started": ("Not started", "int"),
@@ -156,7 +157,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "pct_prev": ("% previous", "pct"),
     "pct_now": ("% now", "pct"),
     "pct_delta": ("Δ % complete", "signed"),
-    "completed": ("Finished", "bool"),
+    "completed": ("Complete", "bool"),
     "in_update": ("In update", "bool"),
     "status_now": ("Status now", "text"),
     "planned_finish": ("Forecast at W−1", "datetime"),
@@ -167,7 +168,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "earned_hr_week": ("Earned this week (h)", "h0"),
     "actual_hr_week": ("Actual this week (h)", "h0"),
     "budget_hr": ("Budget (h)", "h0"),
-    "activities_progressed": ("Activities progressed", "int"),
+    "activities_progressed": ("Tasks progressed", "int"),
     "progress_pts": ("Progress (pts)", "signed"),
     "id": ("ID", "text"),
     "group": ("Group", "text"),
@@ -211,7 +212,7 @@ def header(title: str, store=None, snapshot=None, baseline=None, lead: str = "")
     if store is not None:
         parts.append(f"**{md_text(store.latest.project_code)}** {md_text(store.latest.project_name)}")
     if snapshot is not None:
-        parts.append(f"Data date **{fmt_date(snapshot.data_date)}**")
+        parts.append(f"Status date **{fmt_date(snapshot.data_date)}**")
     if baseline is not None:
         parts.append(f"Baseline **{md_text(baseline.label)}**")
     if parts:
@@ -228,7 +229,20 @@ def kpis(items: Sequence[tuple]) -> None:
         delta = rest[0] if len(rest) > 0 else None
         help_ = rest[1] if len(rest) > 1 else None
         colour = rest[2] if len(rest) > 2 else "normal"
+        help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
         col.metric(label, value, delta=delta, help=help_, delta_color=colour, border=True)
+
+
+def glossary() -> None:
+    """Every acronym of the pages, spelled out with its definition and source, in the sidebar: it
+    shows on every page, including those that stop early."""
+    with st.sidebar.expander("Glossary", icon=":material/menu_book:"):
+        st.markdown(
+            "\n".join(
+                f"- **{token}**: {name}. {definition} *({source})*"
+                for token, (name, definition, source) in sorted(GLOSSARY.items(), key=lambda item: item[0].lower())
+            )
+        )
 
 
 def section(title: str, caption: str = "") -> None:
@@ -267,16 +281,19 @@ NUMBER_FORMATS = {
 
 
 def _column_for(label: str, kind: str, values: pd.Series):
+    help_ = spelled_out(label) or None
     if kind in ("date", "datetime"):
         with_time = kind == "datetime" and _has_time(values)
-        return st.column_config.DatetimeColumn(label, format="YYYY-MM-DD HH:mm" if with_time else "YYYY-MM-DD")
+        return st.column_config.DatetimeColumn(
+            label, format="YYYY-MM-DD HH:mm" if with_time else "YYYY-MM-DD", help=help_
+        )
     if kind in NUMBER_FORMATS:
-        return st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind])
+        return st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind], help=help_)
     if kind == "bool":
-        return st.column_config.CheckboxColumn(label)
+        return st.column_config.CheckboxColumn(label, help=help_)
     if kind == "wide":
-        return st.column_config.TextColumn(label, width="medium")
-    return st.column_config.TextColumn(label)
+        return st.column_config.TextColumn(label, width="medium", help=help_)
+    return st.column_config.TextColumn(label, help=help_)
 
 
 def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels: bool = False) -> dict:

@@ -770,7 +770,7 @@ def test_recalculated_note_gives_the_latest_early_finish_and_external_dates():
     )
     note = run(INTEGRITY, "INT-01", s).note
     assert "latest early finish stored 2026-03-05 17:00, recalculated 2026-03-03 17:00" in note
-    assert "1 activities with external dates" in note
+    assert "1 tasks with external dates" in note
 
 
 def test_out_of_sequence_progress_is_listed():
@@ -1029,7 +1029,7 @@ def test_decm_baseline_and_actual_dates():
         ]
     )  # actual after the data date
     r = run(DECM, "06A501a", now, bl)
-    assert codes(r) == ["F", "NEW", "P"] and "2 of 5 activities" in r.note
+    assert codes(r) == ["F", "NEW", "P"] and "2 of 5 tasks" in r.note
     assert codes(run(DECM, "06A505a", now)) == ["P"]
     r = run(DECM, "06A506a", now)
     assert codes(r) == ["F"] and r.denominator == 1  # of the activities with an actual start
@@ -1186,7 +1186,7 @@ def test_data_date_checks_are_na_without_a_data_date(std, metric):
     )
     assert s.data_date is None
     r = run(std, metric, s, Baseline.planned(s))
-    assert r.status == "n/a" and "data date" in r.note
+    assert r.status == "n/a" and "status date" in r.note
 
 
 def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():

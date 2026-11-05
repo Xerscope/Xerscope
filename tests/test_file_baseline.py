@@ -85,7 +85,7 @@ def test_a_pointer_to_a_project_without_activities_gives_no_baseline():
     raw = parse_text(two_projects(), source="two.xer")
     tasks = raw.tables["TASK"]
     raw.tables["TASK"] = tasks[tasks["proj_id"] != "2"]
-    assert build_snapshot(raw).file_baseline.note == "project 2 has no activities"
+    assert build_snapshot(raw).file_baseline.note == "project 2 has no tasks"
 
 
 def test_no_pointer_means_none_in_file():
@@ -394,7 +394,7 @@ def test_a_baseline_that_finds_few_activities_is_flagged_on_the_pages(tmp_path, 
     few = {"data_date": "2026-03-02 08:00", "baseline_ids": ("A1", "X2")}  # finds 1 of 2: 50 %
     for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
         at = _series(tmp_path, monkeypatch, {"a.xer": few}).switch_page(page).run()
-        assert any("a.xer" in w and "finds 1 of 2 activities" in w for w in _page_warnings(at)), page
+        assert any("a.xer" in w and "finds 1 of 2 tasks" in w for w in _page_warnings(at)), page
 
 
 def test_the_pages_say_which_baseline_the_update_uses(tmp_path, monkeypatch):

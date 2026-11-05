@@ -59,9 +59,9 @@ def test_parameters_show_standard_and_defaults(results, store):
         ("riding_window_wd", "3", "standard"),
         ("remaining_tolerance_wd", "2", "standard"),
     ]
-    riding = "Rides when the start is within 3 working days of the data date in both updates"
+    riding = "Rides when the start is within 3 working days of the status date in both updates"
     assert any(line.startswith(riding) for line in with_parameters["06A506c"].population)
-    slip = "The first open critical activity is delayed by 600 working days."
+    slip = "The first open critical task is delayed by 600 working days."
     assert slip in with_parameters["DCMA-12"].population
 
     custom = loads_standard(template_text())  # the parameterised rules live in the custom template

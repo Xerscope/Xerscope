@@ -13,7 +13,7 @@ ui.header(
     store,
     store.latest,
     lead="Each line is one milestone's forecast date in every update. Flat = stable, rising = slipping. "
-    "A milestone complete before an update's data date is not drawn in that update.",
+    "A milestone complete before an update's status date is not drawn in that update.",
 )
 
 all_ms = milestone_codes(store)
@@ -21,7 +21,7 @@ names = ui.latest_names(store)
 others = sorted(set(store.history["task_code"]) - set(all_ms))
 cap = len(SERIES)
 picked = st.multiselect(
-    f"Milestones and key activities (up to {cap})",
+    f"Milestones and key tasks (up to {cap})",
     all_ms + others,
     default=[],  # nothing picked until the user picks
     max_selections=cap,
@@ -29,7 +29,7 @@ picked = st.multiselect(
     key="mta_pick",
 )
 if not picked:
-    st.info("Pick at least one milestone or activity.")
+    st.info("Pick at least one milestone or task.")
     st.stop()
 if len(store) < 2:
     st.info("The trend needs at least two updates.")
@@ -38,7 +38,7 @@ if len(store) < 2:
 trend = memo(("mta", tuple(picked)), milestone_trend, store, picked)
 plotted = plotted_trend(trend)
 if hidden := sorted(set(picked) - set(plotted.loc[plotted["forecast"].notna(), "task_code"])):
-    st.caption(f"Complete before every data date, nothing to plot: {', '.join(hidden)}")
+    st.caption(f"Complete before every status date, nothing to plot: {', '.join(hidden)}")
 slips = milestone_slips(trend, store)
 if plotted["forecast"].notna().any():
     last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))

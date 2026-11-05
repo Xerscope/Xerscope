@@ -323,10 +323,10 @@ class _Run:
                 else pd.Series(dtype="datetime64[ns]")
             )
             if stamps.empty:
-                raise ValueError("no data date, no planned start and no activity date: nothing to schedule from")
+                raise ValueError("no status date, no planned start and no task date: nothing to schedule from")
             known = [stamps.min()]
             self.warnings.append(
-                f"no data date or planned start: scheduled from the earliest activity date {known[0]:%Y-%m-%d %H:%M}"
+                f"no status date or planned start: scheduled from the earliest task date {known[0]:%Y-%m-%d %H:%M}"
             )
         self.data_date = max(known)
         self.activities = snapshot.by_code
@@ -441,8 +441,8 @@ class _Run:
         lacking = [code for code in self.nodes if code in rsrc_type and code not in self.rsrc_dep]
         if lacking:
             self.warnings.append(
-                f"{len(lacking)} resource-dependent activities without a driving assignment with "
-                f"units per hour, scheduled on their activity calendar: {lacking[:5]}"
+                f"{len(lacking)} resource-dependent tasks without a driving assignment with "
+                f"units per hour, scheduled on their task calendar: {lacking[:5]}"
             )
 
     # --- helpers -----------------------------------------------------------------------------
@@ -1412,12 +1412,12 @@ class _Run:
             )
         if self.external:
             self.warnings.append(
-                f"{len(self.external)} activities bounded by P6's external early start / late finish "
+                f"{len(self.external)} tasks bounded by P6's external early start / late finish "
                 f"(relationships to projects not in the file): {sorted(self.external)[:5]}"
             )
         if self.unapplied:
             self.warnings.append(
-                f"{len(self.unapplied)} in-progress activities carry a constraint: the forward pass keeps their "
+                f"{len(self.unapplied)} in-progress tasks carry a constraint: the forward pass keeps their "
                 f"actual start, the backward pass applies finish and mandatory constraints. No reference file "
                 f"covers this case, compare with P6: {self.unapplied[:5]}"
             )
@@ -1613,7 +1613,7 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     ].drop_duplicates("task_code")
     critical_path = open_[open_["task_code"].map(frame["longest_path"]).fillna(False).astype(bool)]
     if critical_path.empty:
-        return CptResult(False, "no open activity on the longest path: the critical path is not defined")
+        return CptResult(False, "no open task on the longest path: the critical path is not defined")
     critical_path = critical_path.assign(_rs=critical_path["task_code"].map(frame["remaining_start"]))
     target = critical_path.sort_values(["_rs", "task_code"]).iloc[0]
     code = target["task_code"]

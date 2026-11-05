@@ -85,7 +85,7 @@ def _scope_lines(rule: Rule, params: dict) -> list[str]:
     if "links" in params:
         out.append("Relationships counted: " + LINKS_TEXT.get(params["links"], params["links"]) + ".")
     if params.get("exclude_loe"):
-        out.append("Relationships to or from level-of-effort activities are left out.")
+        out.append("Relationships to or from level-of-effort tasks are left out.")
     if params.get("types"):
         out.append("Constraint types: " + ", ".join(CONSTRAINT.get(code, code) for code in params["types"]) + ".")
     return out
@@ -107,27 +107,27 @@ def _relationship_type_notes(params: dict) -> list[str]:
 
 def _invalid_dates_notes(params: dict) -> list[str]:
     if params.get("in_progress") == "start":
-        return ["An in-progress activity is flagged when its remaining early start is before the data date."]
+        return ["An in-progress task is flagged when its remaining early start is before the status date."]
     return []
 
 
 def _late_vs_baseline_notes(params: dict) -> list[str]:
-    notes = ["Variance is working time on the activity's calendar, as P6's Finish Variance."]
+    notes = ["Variance is working time on the task's calendar, as P6's Finish Variance."]
     if params.get("no_baseline") == "planned":
-        notes.append("An activity with no baseline finish is late when its finish is later than its planned finish.")
+        notes.append("A task with no baseline finish is late when its finish is later than its planned finish.")
     return notes
 
 
 def _bei_notes(params: dict) -> list[str]:
     if params.get("due_from") == "baseline":
         due_text = (
-            "Due = baseline activities finishing on or before the data date, counted in the "
-            "baseline: an activity added since is never due, one deleted since still is."
+            "Due = baseline tasks finishing on or before the status date, counted in the "
+            "baseline: a task added since is never due, one deleted since still is."
         )
     else:
         missing = "counted as due" if params.get("missing_baseline", "due") == "due" else "left out"
-        due_text = f"Activities without a baseline finish are {missing}."
-    return [due_text + " Completed = all completed activities in the population, early ones included."]
+        due_text = f"Tasks without a baseline finish are {missing}."
+    return [due_text + " Completed = all completed tasks in the population, early ones included."]
 
 
 def _limit_note(measure: str, key: str, unit: str) -> Callable[[dict], list[str]]:
@@ -136,7 +136,7 @@ def _limit_note(measure: str, key: str, unit: str) -> Callable[[dict], list[str]
 
 
 def _slip_notes(params: dict) -> list[str]:
-    return [f"The first open critical activity is delayed by {params['slip_days']:g} working days."]
+    return [f"The first open critical task is delayed by {params['slip_days']:g} working days."]
 
 
 def _status_period_notes(params: dict) -> list[str]:
@@ -146,8 +146,9 @@ def _status_period_notes(params: dict) -> list[str]:
 def _riding_notes(params: dict) -> list[str]:
     return [
         *_status_period_notes(params),
-        f"Rides when the start is within {params['riding_window_wd']:g} working days of the data date in both updates,"
-        f" or the remaining duration moved by at most {params['remaining_tolerance_wd']:g} working days.",
+        f"Rides when the start is within {params['riding_window_wd']:g} working days of the status date"
+        f" in both updates, or the remaining duration moved by at most"
+        f" {params['remaining_tolerance_wd']:g} working days.",
     ]
 
 

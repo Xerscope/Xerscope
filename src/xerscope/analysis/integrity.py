@@ -30,9 +30,9 @@ STORED_FIELDS = ["early_start_date", "early_end_date", "late_start_date", "late_
 @rule("int_01_recalculated", "%")
 def int_01_recalculated(context) -> RuleOutput:
     """Stored dates differ from the recalculation.
-    Counts: different / open activities
+    Counts: different / open tasks
 
-    Open activities whose stored dates or float differ from a P6-style recalculation.
+    Open tasks whose stored dates or float differ from a P6-style recalculation.
 
     A difference means the file was edited after the last F9, or uses a scheduling
     feature xerscope does not model (see analysis/cpm.py). Exact to the minute.
@@ -74,7 +74,7 @@ def int_01_recalculated(context) -> RuleOutput:
 
 
 def _finish_note(context) -> str:
-    """The log's 'Latest Early Finish Date' (stored vs recalculated) and its count of activities with external dates."""
+    """The log's 'Latest Early Finish Date' (stored vs recalculated) and its count of tasks with external dates."""
     snapshot = context.snapshot
     stored, recalculated = snapshot.finish_date, schedule(snapshot).finish
     external = (
@@ -82,7 +82,7 @@ def _finish_note(context) -> str:
     )
     return (
         f"latest early finish stored {_date_text(stored)}, recalculated {_date_text(recalculated)}; "
-        f"{int(external.sum())} activities with external dates"
+        f"{int(external.sum())} tasks with external dates"
     )
 
 
@@ -92,18 +92,18 @@ def _date_text(date) -> str:
 
 @rule("int_02_out_of_sequence_progress", "count")
 def int_02_out_of_sequence_progress(context) -> RuleOutput:
-    """Out of sequence activities.
+    """Out of sequence tasks.
     Counts: out of sequence / started
 
-    Mirrors the P6 log warning 'Out of sequence activities': activities that have started before their
-    predecessor has completed. Read at the data date, as P6 Check Schedule (P6-15) does: a started activity
+    Mirrors the P6 log warning 'Out of sequence tasks': tasks that have started before their
+    predecessor has completed. Read at the status date, as P6 Check Schedule (P6-15) does: a started task
     whose FS predecessor is not complete, or whose SS predecessor has not started. FF and SF links, and
-    predecessors that finished after the successor's actual start, are not listed. Counts activities.
+    predecessors that finished after the successor's actual start, are not listed. Counts tasks.
     """
     tasks = context.snapshot.by_code
     funnel = activity_funnel(context.snapshot)
     funnel.keep("started", "xerscope", lambda rows: as_flag(rows["is_started"]))
-    funnel.keep("first row of the Activity ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
+    funnel.keep("first row of the Task ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
     started = funnel.rows.set_index("task_code")
     ahead = predecessors_ahead(links_between(context.snapshot.relationships, started, tasks), tasks)
     ahead_of = (ahead["pred_code"] + " (" + ahead["type"] + ")").groupby(ahead["succ_code"]).agg(", ".join)
@@ -119,12 +119,12 @@ def int_02_out_of_sequence_progress(context) -> RuleOutput:
 
 @rule("int_04_relationship_loops", "count")
 def int_04_relationship_loops(context) -> RuleOutput:
-    """Activities in a relationship loop.
-    Counts: in a loop / activities
-    Excludes: activities downstream of a loop, level of effort (its links are not part of the network).
+    """Tasks in a relationship loop.
+    Counts: in a loop / tasks
+    Excludes: tasks downstream of a loop, level of effort (its links are not part of the network).
 
-    Mirrors the P6 log error 'Activities that have invalid relationship loops'. The loop is found by the
-    CPM's topological pass (analysis/cpm.py), narrowed to the activities that lie on a loop.
+    Mirrors the P6 log error 'Tasks that have invalid relationship loops'. The loop is found by the
+    CPM's topological pass (analysis/cpm.py), narrowed to the tasks that lie on a loop.
     """
     try:
         schedule(context.snapshot)
@@ -140,11 +140,11 @@ def int_04_relationship_loops(context) -> RuleOutput:
 
 @rule("int_05_without_predecessors_or_successors", "count")
 def int_05_without_predecessors_or_successors(context) -> RuleOutput:
-    """Activities without a predecessor or a successor.
-    Counts: without logic / activities
+    """Tasks without a predecessor or a successor.
+    Counts: without logic / tasks
 
-    Mirrors the P6 log warnings 'Activities without predecessors' and 'Activities without successors': the
-    raw list, every activity (completed, started, milestones, level of effort) with no relationship in
+    Mirrors the P6 log warnings 'Tasks without predecessors' and 'Tasks without successors': the
+    raw list, every task (completed, started, milestones, level of effort) with no relationship in
     that direction; a relationship to another project counts. P6-01 applies the Check Schedule exclusions.
     """
     funnel = activity_funnel(context.snapshot)
@@ -160,16 +160,16 @@ def int_05_without_predecessors_or_successors(context) -> RuleOutput:
 
 @rule("int_06_actual_date_after_data_date", "count")
 def int_06_actual_date_after_data_date(context) -> RuleOutput:
-    """Activities with an actual date after the data date.
-    Counts: with an actual date after the data date / activities
+    """Tasks with an actual date after the status date.
+    Counts: with an actual date after the status date / tasks
 
-    Mirrors the P6 log warning 'Activities with actual date later than data date': any actual start or actual
-    finish later than the data date, every activity (level of effort and milestones included). P6-10b
+    Mirrors the P6 log warning 'Tasks with actual date later than status date': any actual start or actual
+    finish later than the status date, every task (level of effort and milestones included). P6-10b
     reads the same dates with the Check Schedule exclusions (06A506a for DECM).
     """
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     funnel = activity_funnel(context.snapshot)
     activities = funnel.rows
     flagged = activities[actual_after(activities, data_date)]
@@ -197,11 +197,11 @@ CONSTRAINT_RULES = {
 
 @rule("int_07_unsatisfied_constraints", "count")
 def int_07_unsatisfied_constraints(context) -> RuleOutput:
-    """Activities whose recalculated dates do not meet their constraint.
+    """Tasks whose recalculated dates do not meet their constraint.
     Counts: unsatisfied / constrained
-    Excludes: completed activities, level of effort, start constraints of started activities.
+    Excludes: completed tasks, level of effort, start constraints of started tasks.
 
-    xerscope's reading of the P6 log exception 'Activities with unsatisfied constraints', not confirmed
+    xerscope's reading of the P6 log exception 'Tasks with unsatisfied constraints', not confirmed
     against a P6 log: the recalculated early start (or finish) must be on the required side of the
     constraint date (Start on or before: not later; Start on or after: not earlier; Start on, Finish on,
     Mandatory start and finish: equal). Primary and secondary constraints are both read.
@@ -211,7 +211,7 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
     except CycleError as exc:
         return RuleOutput(note=f"cannot schedule: {exc}")
     funnel = activity_funnel(context.snapshot).exclude("complete", "xerscope").exclude("loe", "xerscope")
-    funnel.keep("first row of the Activity ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
+    funnel.keep("first row of the Task ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
     funnel.keep("in the recalculation", "xerscope", lambda rows: rows["task_code"].isin(dates.index))
     activities = funnel.rows
     early = {
@@ -249,7 +249,7 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
     Excludes: level of effort, relationships to other projects, relationships with a lead (negative lag),
         relationships whose successor end is an actual date.
 
-    xerscope's reading of the P6 log exception 'Activities with unsatisfied relationships'. The
+    xerscope's reading of the P6 log exception 'Tasks with unsatisfied relationships'. The
     successor end the relationship bounds (start for FS / SS, finish for FF / SF) must be a recalculated
     date: an actual date there is out-of-sequence progress, which the log lists under its own warning
     and not here (P6 Professional 26.8 log, tests/test_p6_checksched.py). The predecessor is read at its
@@ -267,7 +267,7 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
     finish = tasks["act_end_date"].combine_first(dates["ef"])
     funnel = link_funnel(context, "all", exclude_loe=True, source="xerscope")
     funnel.keep(
-        "between recalculated activities",
+        "between recalculated tasks",
         "xerscope",
         lambda rows: rows["pred_code"].isin(dates.index) & rows["succ_code"].isin(dates.index),
     )
@@ -316,9 +316,9 @@ def int_03_assignments_recalculated(context) -> RuleOutput:
 
     Open resource assignments whose stored remaining early/late dates differ from a recalculation.
 
-    Same idea as ``int_01_recalculated``, on TASKRSRC: activity dates + assignment lag, duration
+    Same idea as ``int_01_recalculated``, on TASKRSRC: task dates + assignment lag, duration
     = remaining units / units per hour, on the resource's calendar for resource-dependent
-    activities.
+    tasks.
     """
     try:
         comparison = compare_assignments(context.snapshot)

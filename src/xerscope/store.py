@@ -88,7 +88,7 @@ class SnapshotStore:
         duplicates = {date: sources for date, sources in by_date.items() if len(sources) > 1}
         if duplicates:
             raise DuplicateDataDate(
-                "several files per data date, keep one per date: "
+                "several files per status date, keep one per date: "
                 + "; ".join(f"{date:{DATE_FMT}}: {', '.join(sources)}" for date, sources in duplicates.items())
             )
         self._snaps: list[Snapshot] = snaps

@@ -11,7 +11,7 @@ source = "xerscope: analysis/cpm.py, validated against P6-scheduled exports; Ora
 [[metric]]
 id = "INT-01"
 name = "Schedule recalculated"
-description = "Open activities whose stored dates or total float differ from a recalculation. Mirrors the log's Scheduling Results (Latest Early Finish Date): the note gives it stored and recalculated, and the activities with external dates"
+description = "Open tasks whose stored dates or total float differ from a recalculation. Mirrors the log's Scheduling Results (Latest Early Finish Date): the note gives it stored and recalculated, and the tasks with external dates"
 rule = "int_01_recalculated"
 target = "<= 0%"
 source = "Oracle P6 EPPM 26 help, Schedule Project Log, Scheduling Results: \"Latest Early Finish Date\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99351.htm); Exceptions: \"Activities with external dates\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99352.htm)"
@@ -19,7 +19,7 @@ source = "Oracle P6 EPPM 26 help, Schedule Project Log, Scheduling Results: \"La
 [[metric]]
 id = "INT-02"
 name = "Out of sequence activities"
-description = "Started activities whose FS predecessor is not complete or SS predecessor not started. Mirrors the log's Warnings 'Out of sequence activities'; P6-15 applies the same reading in the Check Schedule"
+description = "Started tasks whose FS predecessor is not complete or SS predecessor not started. Mirrors the log's Warnings 'Out of sequence activities'; P6-15 applies the same reading in the Check Schedule"
 rule = "int_02_out_of_sequence_progress"
 target = "info"
 source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Out of sequence activities\", \"The activities that have started before their predecessor activity has completed\" (https://docs.oracle.com/cd/G48897_01/p6help/en/99350.htm). The link-type reading (FS predecessor not complete, SS predecessor not started, FF and SF not listed) is calibrated on a P6 Check Schedule report (R1: 6 activities, 7 pairs)"
@@ -34,7 +34,7 @@ target = "<= 0%"
 [[metric]]
 id = "INT-04"
 name = "Relationship loops"
-description = "Activities on a relationship loop. Mirrors the log's Errors 'Activities that have invalid relationship loops'; P6 cannot schedule the file until the loop is cut"
+description = "Tasks on a relationship loop. Mirrors the log's Errors 'Activities that have invalid relationship loops'; P6 cannot schedule the file until the loop is cut"
 rule = "int_04_relationship_loops"
 unit = "count"
 target = "<= 0"
@@ -43,7 +43,7 @@ source = "Oracle P6 EPPM 26 help, Schedule Project Log, Errors: \"Activities tha
 [[metric]]
 id = "INT-05"
 name = "Without predecessors or successors"
-description = "Activities with no predecessor or no successor, unfiltered. Mirrors the log's Warnings 'Activities without predecessors' and 'Activities without successors'; P6-01 applies the Check Schedule exclusions (completed, started, start milestones)"
+description = "Tasks with no predecessor or no successor, unfiltered. Mirrors the log's Warnings 'Activities without predecessors' and 'Activities without successors'; P6-01 applies the Check Schedule exclusions (completed, started, start milestones)"
 rule = "int_05_without_predecessors_or_successors"
 unit = "count"
 target = "info"
@@ -52,7 +52,7 @@ source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities w
 [[metric]]
 id = "INT-06"
 name = "Actual date later than data date"
-description = "Activities with an actual start or finish after the data date, unfiltered. Mirrors the log's Warnings 'Activities with actual date later than data date'; P6-10b (DECM 06A506a) reads the same dates with exclusions"
+description = "Tasks with an actual start or finish after the status date, unfiltered. Mirrors the log's Warnings 'Activities with actual date later than data date'; P6-10b (DECM 06A506a) reads the same dates with exclusions"
 rule = "int_06_actual_date_after_data_date"
 unit = "count"
 target = "<= 0"
@@ -61,7 +61,7 @@ source = "Oracle P6 EPPM 26 help, Schedule Project Log, Warnings: \"Activities w
 [[metric]]
 id = "INT-07"
 name = "Unsatisfied constraints"
-description = "Open activities whose recalculated start or finish misses the date of a constraint. Mirrors the log's Exceptions 'Activities with unsatisfied constraints'; xerscope's reading, info until confirmed against a P6 log"
+description = "Open tasks whose recalculated start or finish misses the date of a constraint. Mirrors the log's Exceptions 'Activities with unsatisfied constraints'; xerscope's reading, info until confirmed against a P6 log"
 rule = "int_07_unsatisfied_constraints"
 unit = "count"
 target = "info"

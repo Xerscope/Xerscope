@@ -235,7 +235,7 @@ def _taskpred_table(raw: RawXer, all_tasks: pd.DataFrame, warnings: list[str]) -
         if column not in relationships.columns:
             relationships = relationships.assign(**{column: relationships[via].map(owner).fillna("")})
             what = "successor" if column == "proj_id" else "predecessor"
-            warnings.append(f"{raw.source}: TASKPRED.{column} missing: taken from the {what} activity")
+            warnings.append(f"{raw.source}: TASKPRED.{column} missing: taken from the {what} task")
     return relationships
 
 
@@ -377,7 +377,7 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
         return FileBaseline(pointer, "", False, note)
     target = rows.loc[pointer]
     if target["tasks"] == 0:
-        return FileBaseline(pointer, target["proj_short_name"], False, f"project {pointer} has no activities")
+        return FileBaseline(pointer, target["proj_short_name"], False, f"project {pointer} has no tasks")
     origin = str(target["orig_proj_id"])
     if origin and origin != project_id:
         note = f"project {pointer} was copied from project {origin}, not from the analysed project {project_id}"
@@ -474,7 +474,7 @@ class Snapshot:
 
     @property
     def label(self) -> str:
-        date_text = self.data_date.strftime(DATE_FMT) if self.data_date is not None else "no data date"
+        date_text = self.data_date.strftime(DATE_FMT) if self.data_date is not None else "no status date"
         return f"{date_text} · {self.source}"
 
     @property
@@ -755,7 +755,7 @@ def _select_project(
         ],
     )
     if projects.empty:
-        raise XerError(f"{source}: no project owns any activity")
+        raise XerError(f"{source}: no project owns any task")
     projects["_n"] = projects["proj_id"].map(task_counts)
     counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
     if project_code or project_id:
@@ -872,7 +872,7 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     unknown_calendars = sorted(set(tasks.loc[task_hours_per_day.isna(), "clndr_id"].astype(str)))
     if unknown_calendars:
         inputs.warnings.append(
-            f"{source}: activity calendars not in the file {unknown_calendars[:5]}; "
+            f"{source}: task calendars not in the file {unknown_calendars[:5]}; "
             f"read on the project's calendar ({default_hours} h/day)"
         )
     tasks["hours_per_day"] = task_hours_per_day.fillna(default_hours)
@@ -923,7 +923,7 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
 
     duplicates = tasks["task_code"][tasks["task_code"].duplicated()].unique()
     if len(duplicates):
-        inputs.warnings.append(f"{source}: duplicate activity IDs {list(duplicates)[:5]}; history joins may be wrong")
+        inputs.warnings.append(f"{source}: duplicate task IDs {list(duplicates)[:5]}; history joins may be wrong")
     return tasks
 
 
@@ -968,7 +968,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     corrupt = lost & ~relationships["is_external"]
     if corrupt.any():
         inputs.warnings.append(
-            f"{inputs.source}: {int(corrupt.sum())} relationship(s) to an activity "
+            f"{inputs.source}: {int(corrupt.sum())} relationship(s) to a task "
             "not in the file; ignored by the schedule and the checks"
         )
     return relationships[~lost].copy(), external_predecessors
@@ -1065,7 +1065,7 @@ def _warn_leveling(tasks: pd.DataFrame, inputs: _BuildInputs) -> None:
     count = int(leveled(tasks).sum())
     if count:
         inputs.warnings.append(
-            f"{inputs.source}: {count} open activities have a remaining early start "
+            f"{inputs.source}: {count} open tasks have a remaining early start "
             "different from their early start (resource leveling?)"
         )
 
@@ -1078,7 +1078,7 @@ def _project_finish(tasks: pd.DataFrame, inputs: _BuildInputs) -> tuple[pd.Times
     if finish is not None and scheduled_finish is not None and abs(scheduled_finish - finish) > pd.Timedelta(days=1):
         inputs.warnings.append(
             f"{inputs.source}: PROJECT.scd_end_date {scheduled_finish:%Y-%m-%d} differs from the "
-            f"latest activity finish {finish:%Y-%m-%d}; using the activities"
+            f"latest task finish {finish:%Y-%m-%d}; using the tasks"
         )
     return finish, scheduled_finish
 
@@ -1149,7 +1149,7 @@ def build_snapshot(
     planned_start = _parse_date(project_row["plan_start_date"])
     data_date, data_date_source = _data_date(project_row)
     if data_date is None:
-        warnings.append(f"{raw.source}: no data date (last_recalc_date / plan_start_date blank)")
+        warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
     calendars, hours_per_day, work_calendars = _calendars(raw, settings)
     inputs = _BuildInputs(raw, all_tasks, all_relationships, project_row, hours_per_day, settings, warnings)
     wbs, project_name = _wbs_frame(raw, inputs.project_id)

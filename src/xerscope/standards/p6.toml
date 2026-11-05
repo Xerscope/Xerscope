@@ -40,7 +40,7 @@ source = "101248: completed and WBS summary activities not included; started act
 [[metric]]
 id = "P6-02"
 group = "Inflexibility and Inefficiency"
-name = "Hard constraints"
+name = "Hard Constraints"
 description = "Constraints that prevent activities being moved (Mandatory Start, Start On, Mandatory Finish, Finish On)"
 rule = "p6_02_hard_constraints"
 target = "< 1%"
@@ -49,7 +49,7 @@ source = "101248 (P6 Professional help, Hard Constraints) and 46286: completed, 
 [[metric]]
 id = "P6-03"
 group = "Inflexibility and Inefficiency"
-name = "Soft constraints"
+name = "Soft Constraints"
 description = "Constraints that do not prevent activities being moved"
 rule = "p6_03_soft_constraints"
 target = "< 5%"
@@ -58,7 +58,7 @@ source = "101248 (P6 Professional help, Soft Constraints) and 46285: Start on or
 [[metric]]
 id = "P6-04"
 group = "Inflexibility and Inefficiency"
-name = "Large durations"
+name = "Large Durations"
 description = "Activities that have a remaining duration greater than 352 hours"
 rule = "p6_04_large_durations"
 params = { limit_hours = 352 }  # the dialog's "x", in hours
@@ -68,7 +68,7 @@ source = "101248: completed, WBS summary and LOE not included; milestones also o
 [[metric]]
 id = "P6-05"
 group = "Inflexibility and Inefficiency"
-name = "Long lags"
+name = "Long Lags"
 description = "Relationships with a lag duration greater than 352 hours"
 rule = "p6_05_long_lags"
 params = { limit_hours = 352 }  # the dialog's "x", in hours
@@ -78,7 +78,7 @@ source = "101248 (P6 Professional help, Long Lags) and 46288: links between two 
 [[metric]]
 id = "P6-06"
 group = "Inflexibility and Inefficiency"
-name = "Large float"
+name = "Large Float"
 description = "Activities with total float greater than 352 hours"
 rule = "p6_06_large_float"
 params = { limit_hours = 352 }  # the dialog's "x", in hours
@@ -88,7 +88,7 @@ source = "101248 (P6 Professional help, Large Float) and 46284: WBS summary, act
 [[metric]]
 id = "P6-07"
 group = "Inflexibility and Inefficiency"
-name = "Relationship types"
+name = "Relationship Types"
 description = "The majority of relationships should be Finish to Start"
 rule = "p6_07_relationship_types"
 target = "> 90%"
@@ -97,7 +97,7 @@ source = "101248 (P6 Professional help, Relationship Types): relationships betwe
 [[metric]]
 id = "P6-08"
 group = "Inflexibility and Inefficiency"
-name = "Lags"
+name = "Positive Lags"
 description = "Relationships with a positive lag duration"
 rule = "p6_08_lags"
 target = "< 5%"
@@ -108,7 +108,7 @@ source = "101248 (P6 Professional help, Lags): relationships between completed a
 [[metric]]
 id = "P6-09"
 group = "Inaccuracy"
-name = "Negative lags"
+name = "Negative Lags"
 description = "Relationships with a lag duration of less than 0"
 rule = "p6_09_negative_lags"
 target = "< 1%"
@@ -117,7 +117,7 @@ source = "101248 (P6 Professional help, Negative Lags) and 46290: links between 
 [[metric]]
 id = "P6-10a"
 group = "Inaccuracy"
-name = "Invalid progress before data date"
+name = "Invalid Progress Before Data Date"
 description = "Incomplete activities before the data date"
 rule = "p6_10a_invalid_progress_before"
 target = "< 1%"
@@ -126,7 +126,7 @@ source = "101248: not started, start before the data date; in progress, remainin
 [[metric]]
 id = "P6-10b"
 group = "Inaccuracy"
-name = "Invalid progress after data date"
+name = "Invalid Progress After Data Date"
 description = "Activities with actual dates after the data date"
 rule = "p6_10b_invalid_progress_after"
 target = "< 1%"
@@ -135,7 +135,7 @@ source = "101248: in progress, actual start after the data date; completed, actu
 [[metric]]
 id = "P6-11"
 group = "Inaccuracy"
-name = "Resource / cost"
+name = "Resource / Cost"
 description = "Activities that do not have an expense or a resource assigned"
 rule = "p6_11_resource_cost"
 target = "< 1%"
@@ -146,7 +146,7 @@ source = "101248 (P6 Professional help, Resource / Cost) and 46279: WBS summary,
 [[metric]]
 id = "P6-12"
 group = "Lateness"
-name = "Late activities"
+name = "Late Activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "p6_12_late_activities"
 target = "< 5%"
@@ -164,7 +164,7 @@ source = "101248 reads 'baseline activities calculated to finish before the data
 [[metric]]
 id = "P6-14"
 group = "Lateness"
-name = "Negative float"
+name = "Negative Float"
 description = "Activities with a total float less than 0"
 rule = "p6_14_negative_float"
 target = "< 1%"
@@ -173,7 +173,7 @@ source = "101248 (P6 Professional help, Negative Float) and 46283: WBS summary, 
 [[metric]]
 id = "P6-15"
 group = "Inaccuracy"
-name = "Out of sequence"
+name = "Out of Sequence"
 description = "Activities which are completed or in-progress before their predecessors"
 rule = "p6_15_out_of_sequence"
 target = "< 2%"
@@ -182,7 +182,7 @@ source = "P6 Professional Check Schedule report (R1): pairs listed, activities c
 [[metric]]
 id = "P6-16"
 group = "Inaccuracy"
-name = "Dangling start"
+name = "Dangling Start Activities"
 description = "Activities with start dates that are not driven by predecessors"
 rule = "p6_16_dangling_start"
 target = "<= 0%"
@@ -191,7 +191,7 @@ source = "P6 Professional Check Schedule report (R1, Dangling Activities, 'Ignor
 [[metric]]
 id = "P6-17"
 group = "Inaccuracy"
-name = "Dangling finish"
+name = "Dangling Finish Activities"
 description = "Activities with finish dates that do not drive successors"
 rule = "p6_17_dangling_finish"
 target = "<= 0%"
