@@ -58,7 +58,7 @@ no route to the internet.
 Password hash — Caddy gets a bcrypt hash, never the password:
 
 ```bash
-docker run --rm caddy:2.11.7 caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext 'your passphrase'   # → $2a$10$...
+docker run --rm caddy:2.11.8 caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext 'your passphrase'   # → $2a$10$...
 ```
 
 Use a long passphrase (24+ characters, generated; a password manager or

@@ -222,7 +222,7 @@ schedules, and any gap names a rule to fix.
 
 ```bash
 cd deploy && cp .env.example .env    # TS_AUTHKEY, XERSCOPE_USER, XERSCOPE_PASSWORD_HASH, XERSCOPE_PATH, XERSCOPE_EXPORTS
-docker run --rm caddy:2.11.7 caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext '<password>'
+docker run --rm caddy:2.11.8 caddy hash-password --algorithm bcrypt --bcrypt-cost 10 --plaintext '<password>'
 docker compose up -d
 docker compose exec tailscale tailscale funnel status
 ```

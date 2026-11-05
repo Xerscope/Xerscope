@@ -16,10 +16,10 @@
 # The builder sets the binary's cap_net_bind_service file capability like the stock image
 # (XCADDY_SETCAP): deploy/compose.yaml keeps cap_add NET_BIND_SERVICE for either image.
 
-FROM caddy:2.11.7-builder AS build
+FROM caddy:2.11.8-builder AS build
 RUN xcaddy build --with github.com/mholt/caddy-ratelimit@v0.1.1-0.20260612195517-5625512f24f6
 
-FROM caddy:2.11.7
+FROM caddy:2.11.8
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
 # the build fails here, not on the NAS, if the module is missing
 RUN caddy list-modules | grep -qx http.handlers.rate_limit && caddy version
