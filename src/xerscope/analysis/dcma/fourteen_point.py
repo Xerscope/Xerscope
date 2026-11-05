@@ -332,7 +332,7 @@ def dcma_11_missed_tasks(context, date_grain: Literal["timestamp", "day"] = "tim
         ),
     )
     due = funnel.rows
-    date_after = as_flag(due["finish"].dt.normalize() > due["bl_finish"].dt.normalize())
+    date_after = as_flag(at_grain(due["finish"], date_grain) > at_grain(due["bl_finish"], date_grain))
     variance_hours = context.snapshot.work_hours(due["clndr_id"], due["bl_finish"], due["finish"])
     variance_after = as_flag(variance_hours > 0)
     missed = due[date_after | variance_after]
@@ -365,7 +365,7 @@ def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> Ru
     return critical_path_output(context, slip_days)
 
 
-Margin = tuple[RuleOutput | None, str, float, str, "pd.Timestamp | None"]
+Margin = tuple[RuleOutput | None, str, float, str, pd.Timestamp | None]
 
 
 def _baseline_margin(context, last_task) -> Margin:
@@ -454,12 +454,12 @@ def dcma_13_cpli(context) -> RuleOutput:
 
 
 @rule("dcma_14_bei", "ratio", needs_baseline=True)
-def dcma_14_bei(context) -> RuleOutput:
+def dcma_14_bei(context, date_grain: Literal["timestamp", "day"] = "timestamp") -> RuleOutput:
     """Due by the status date but not completed.
     Counts: completed / due by the status date
     Excludes: level of effort, milestones, tasks with no original duration.
     Tasks without a baseline finish are counted as due. Completed = tasks with an actual finish on or
-        before the status date, early ones included.
+        before the status date (``date_grain``: by calendar day for the pamphlet), early ones included.
 
     DCMA-EA PAM 200.1 §3.1.2.4: Baseline Execution Index = tasks completed / tasks due by the
     status date; step 1 filters out LOE, summary and zero duration tasks (milestones), so a task with
@@ -477,7 +477,9 @@ def dcma_14_bei(context) -> RuleOutput:
         "PAM 200.1",
         lambda rows: as_flag(rows["bl_finish"] <= data_date) | rows["bl_finish"].isna(),
     )
-    bei = bei_from_snapshot(tasks, data_date, missing_baseline_is_due=True, completed_by_data_date=True)
+    bei = bei_from_snapshot(
+        tasks, data_date, missing_baseline_is_due=True, completed_by_data_date=True, date_grain=date_grain
+    )
     if len(zero_duration.removed):
         bei.note += f"; {len(zero_duration.removed)} without original duration left out (PAM step 1)"
     bei.funnel = funnel

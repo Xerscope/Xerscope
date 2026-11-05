@@ -49,6 +49,7 @@ from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     Funnel,
     actual_after,
     as_flag,
+    at_grain,
     constrained_by,
     finish_driver,
     flagged_activities,
@@ -632,17 +633,24 @@ def bei_from_baseline(
 
 
 def bei_from_snapshot(
-    population: pd.DataFrame, data_date, missing_baseline_is_due: bool, completed_by_data_date: bool = False
+    population: pd.DataFrame,
+    data_date,
+    missing_baseline_is_due: bool,
+    completed_by_data_date: bool = False,
+    date_grain: str = "timestamp",
 ) -> RuleOutput:
     """BEI whose due tasks are the snapshot's own, ``population`` carrying its ``bl_finish``.
 
     ``completed_by_data_date``: only an actual finish on or before the status date counts as completed
-    (DCMA-EA PAM 200.1 §3.1.2.4 step 5); P6's report counts every completed activity.
+    (DCMA-EA PAM 200.1 §3.1.2.4 step 5), compared at ``date_grain``; P6's report counts every completed
+    activity.
     """
     is_done = as_flag(population["is_complete"])
     finished_later = pd.Series(False, index=population.index)
     if completed_by_data_date:
-        finished_later = is_done & as_flag(population["act_end_date"] > data_date)
+        finished_later = is_done & as_flag(
+            at_grain(population["act_end_date"], date_grain) > at_grain(data_date, date_grain)
+        )
         is_done &= ~finished_later
     done = int(is_done.sum())
     without_baseline = population["bl_finish"].isna()

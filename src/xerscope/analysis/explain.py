@@ -165,6 +165,7 @@ def _date_grain_notes(params: dict) -> list[str]:
 NOTES: dict[str, Callable[[dict], list[str]]] = {
     "dcma_09_invalid_dates": _date_grain_notes,
     "dcma_11_missed_tasks": _date_grain_notes,
+    "dcma_14_bei": _date_grain_notes,
     "p6_04_large_durations": _limit_note("remaining duration", "limit_hours", "hours"),
     "p6_05_long_lags": _limit_note("lag", "limit_hours", "hours"),
     "p6_06_large_float": _limit_note("total float", "limit_hours", "hours"),

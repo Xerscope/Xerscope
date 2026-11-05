@@ -1320,3 +1320,34 @@ def test_cpli_without_must_finish_by_measures_cpl_and_float_on_the_same_mileston
     r = _cpli([A160, _end(), tail], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
     assert r.value == pytest.approx(1.1)
     assert "CPL 20 wd to Z" in r.note
+
+
+def test_dcma_11_timestamp_grain_reads_the_finish_as_stored():
+    """With date_grain="timestamp" (P6's reading, not the DCMA default) the "after" criterion compares
+    the stored finish: 17:00 against a 12:00 baseline the same day is after; with "day" it is not after
+    by date, and only the working-time variance makes it missed."""
+    from xerscope.analysis import AnalysisContext
+    from xerscope.analysis.dcma.fourteen_point import dcma_11_missed_tasks
+
+    st = "2026-02-02 08:00"
+    s = snap(
+        [done("SAMEDAY", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 12:00")]
+    )
+    context = AnalysisContext(s, baseline=Baseline.planned(s))
+    by_timestamp = dcma_11_missed_tasks(context, date_grain="timestamp")
+    by_day = dcma_11_missed_tasks(context, date_grain="day")
+    assert list(by_timestamp.flagged["reason"]) == ["both"]
+    assert list(by_day.flagged["reason"]) == ["finish variance 4 h"]
+
+
+def test_dcma_14_counts_a_finish_on_the_status_date_as_completed():
+    """PAM 200.1 §3.1.2.4 step 5 reads dates: an actual finish on the status date, later in the day,
+    is "up to the current reporting period" and counts as completed; one the day after does not."""
+    st = "2026-02-02 08:00"
+    bl = dict(target_start_date=st, target_end_date="2026-02-27 17:00")
+    s = snap(
+        [done("SAMEDAY", act_end_date="2026-03-02 12:00", **bl), done("NEXTDAY", act_end_date="2026-03-03 09:00", **bl)]
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (1, 2)
+    assert "1 completed after the status date" in r.note
