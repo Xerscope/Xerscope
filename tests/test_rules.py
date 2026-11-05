@@ -567,6 +567,21 @@ def test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay():
     assert r.status == "fail" and "Z" in r.note
 
 
+def test_critical_path_test_names_the_expected_finish_that_absorbs_the_delay():
+    """B (10 wd) holds an expected finish at its own early finish. Pushed 600 wd later by A, B's
+    remaining duration falls to 0 (an expected finish before the early start, as P6 does): the end
+    moves +590 wd instead of +600. The test fails and names B and the 10 wd it absorbed."""
+    b = todo(
+        "B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00", expect_end_date="2026-03-27 17:00"
+    )
+    s = snap([CHAIN[0], b, CHAIN[2]], [("A", "B", "FS", 0), ("B", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and "moved +590.0 wd instead of +600" in r.note
+    assert "expected finish dates absorb it" in r.note and "B (10 wd)" in r.note
+    assert codes(r) == ["B"] and r.flagged.iloc[0]["reason"] == "expected finish"
+    assert r.flagged.iloc[0]["absorbed_wd"] == 10
+
+
 def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     # a finished activity cannot absorb a delay: its mandatory date is not listed
     chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]

@@ -1610,7 +1610,9 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
 
     The finish is measured on the project's end points (activities without successors),
     in working time of the delayed activity's calendar. Pass = it moved by at least the
-    delay (further is a calendar effect, less means something absorbed the delay).
+    delay (further is a calendar effect, less means something absorbed the delay: a mandatory
+    date, or an expected finish downstream, whose activity loses its remaining duration when the
+    delay pushes it past that date; both are named with what they absorbed).
     """
     activities = snapshot.activities
     try:
@@ -1658,7 +1660,27 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         # only open work can absorb a delay: a finished activity's mandatory date is history
         mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
         pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
-        blocking = pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
+        blocking = [
+            {**row, "reason": "mandatory date", "absorbed_wd": None}
+            for row in pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
+        ]
         if blocking:
             note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"
+        # an expected finish downstream shortens the remaining duration of its activity when the
+        # delay pushes its start past that date (to 0 beyond it): the shortening is the absorption
+        shortened = (base.frame["rem_override_hr"] - late.frame["rem_override_hr"].reindex(base.frame.index)).fillna(0)
+        shortened = shortened[(shortened > 1e-6) & (shortened.index != code)]
+        if not shortened.empty:
+            names = activities.set_index("task_code")["task_name"]
+            hours = activities.set_index("task_code")["hours_per_day"].astype(float)
+            absorbing = [
+                {
+                    "task_code": task, "task_name": names.get(task, ""), "cstr_type": "", "cstr_type2": "",
+                    "reason": "expected finish", "absorbed_wd": round(float(cut / hours.get(task, hours_per_day)), 1),
+                }
+                for task, cut in shortened.sort_values(ascending=False).items()
+            ]  # fmt: skip
+            blocking += absorbing
+            listed = ", ".join(f"{item['task_code']} ({item['absorbed_wd']:g} wd)" for item in absorbing[:5])
+            note += f"; expected finish dates absorb it (remaining duration cut when pushed past them): {listed}"
     return CptResult(passed, note, code, shift, blocking)

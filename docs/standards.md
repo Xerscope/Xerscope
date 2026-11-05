@@ -191,7 +191,9 @@ to check the export. The PAM asks that all tasks with a duration carry dollars o
 **DCMA-12.** Method: the first open activity of the longest path is lengthened by 600 wd, and the
 finish must move by as much (PAM §4.12 names "a task of the critical path"; the first open task and the lengthening are xerscope's choice). The
 delayed activity ignores its expected finish, which would otherwise fix its early finish and absorb the
-slip; the other activities keep theirs. The pamphlet's second criterion, "completion date shows
+slip; the other activities keep theirs, so an expected finish downstream absorbs the slip (its activity's
+remaining duration is cut, to 0 once pushed past that date, as P6 does with the option on): the test
+fails and names it with the working days absorbed, as it names a mandatory date. The pamphlet's second criterion, "completion date shows
 negative total float", adds no pass: with a Must Finish By the float of the end is `MFB - EF_end`,
 which falls by exactly what the finish moves (+16 h to -64 h for a +80 h slip), and a Mandatory Finish
 on the end keeps its float at 0 and fails both readings.
