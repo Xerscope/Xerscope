@@ -213,7 +213,11 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
             st.caption(explanation.method.replace("``", "`"))
             if explanation.parameters:
                 st.markdown("**Parameters**")
-                ui.table(pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]), max_height=260)
+                ui.table(
+                    pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]),
+                    max_height=260,
+                    key=f"params_{metric.id}",  # one table per check: filters keyed per check
+                )
             if metric.source:
                 st.caption(
                     "Source: "

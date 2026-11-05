@@ -226,3 +226,7 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 .st-key-files_button button p,
 .st-key-baseline_button button p { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72rem; text-align: left; }
 /* ==== end Files and baseline window ============================================== */
+
+/* Tables: no search button in the toolbar. It highlights a matching cell anywhere in the grid;
+   rows are filtered per column instead (ui.table, "Filter columns") */
+[data-testid="stElementToolbar"] button[aria-label="Search"] { display: none; }

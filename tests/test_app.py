@@ -1319,3 +1319,25 @@ def test_debug_costs_block_serialises_without_streamlit_fallback(tmp_path, monke
     at.switch_page("views/debug.py").run()
     _ok(at)
     assert not [m for m in fallbacks if "Arrow" in str(m)]
+
+
+def test_table_column_filters_keep_the_matching_rows(app):
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+
+    def task_table():
+        return next(d.value for d in app.dataframe if "task_code" in d.value.columns)
+
+    def task_filter():
+        # the Gantt task list is drawn without a key: its filters are keyed on the call site
+        keys = (t for t in app.text_input if (t.key or "").startswith("filter:gantt:"))
+        return next(t for t in keys if t.key.endswith(":task_code"))
+
+    everything = task_table()
+    assert len(everything) > 10  # long enough to carry filters
+    task_filter().set_value("c3020").run()
+    _ok(app)
+    assert task_table()["task_code"].tolist() == ["C3020"]
+    assert any(caption.value == f"1 of {len(everything):,} rows" for caption in app.caption)
+    task_filter().set_value("").run()
+    assert len(task_table()) == len(everything)

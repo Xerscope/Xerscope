@@ -10,8 +10,10 @@ same card style, the same column names and number formats everywhere.
 
 from __future__ import annotations
 
+import re
+import sys
 import unicodedata
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -19,6 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app.glossary import GLOSSARY, spelled_out
+from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
 from xerscope.viz.charts import ACCENT, SERIES, STATUS
 
@@ -312,6 +315,132 @@ def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels
     return config
 
 
+# Column filters. One text per column, all of them must hold (AND); an empty text filters nothing.
+#   text     beton            contains, ignoring case and accents
+#   number   <0  >=5  =3  -10..0
+#   date     >2026-11-01  2026-11  2026-11..2026-12   (a year, month or day; ranges are inclusive)
+FILTER_HINT = {
+    "text": "contains…",
+    "number": "<0, >=5, -10..0",
+    "date": ">2026-11-01, 2026-11, 2026-11..2026-12",
+}
+_OPERATOR = re.compile(r"^(<=|>=|<|>|=)?\s*(.+)$")
+
+
+def filter_kind(column: str, values: pd.Series) -> str:
+    """text | number | date: how a column's filter text is read."""
+    kind = COLUMNS.get(column, ("", ""))[1] or _infer_kind(values)
+    if kind in ("date", "datetime"):
+        return "date"
+    if kind in NUMBER_FORMATS and pd.api.types.is_numeric_dtype(values):
+        return "number"
+    return "text"
+
+
+def _number(text: str) -> float:
+    return float(text.replace("−", "-").replace(",", "").replace("%", "").strip())
+
+
+def _range(text: str) -> tuple[str, str] | None:
+    """Bounds of "a..b"; the split skips the first character so "-10..0" keeps its sign."""
+    cut = text.find("..", 1)
+    return (text[:cut], text[cut + 2 :]) if cut > 0 else None
+
+
+def _number_test(text: str) -> Callable[[pd.Series], pd.Series]:
+    bounds = _range(text)
+    if bounds:
+        low, high = _number(bounds[0]), _number(bounds[1])
+        return lambda values: values.between(low, high)
+    operator, value = _OPERATOR.match(text).groups()
+    number = _number(value)
+    return {
+        "<": lambda values: values < number,
+        "<=": lambda values: values <= number,
+        ">": lambda values: values > number,
+        ">=": lambda values: values >= number,
+    }.get(operator or "=", lambda values: values == number)
+
+
+def _date_test(text: str) -> Callable[[pd.Series], pd.Series]:
+    """A date may be a year, a month or a day: "=" keeps the whole period, ">" what is after it."""
+    bounds = _range(text)
+    if bounds:
+        start, end = pd.Period(bounds[0].strip()).start_time, pd.Period(bounds[1].strip()).end_time
+        return lambda values: (values >= start) & (values <= end)
+    operator, value = _OPERATOR.match(text).groups()
+    period = pd.Period(value.strip())
+    start, end = period.start_time, period.end_time
+    return {
+        "<": lambda values: values < start,
+        "<=": lambda values: values <= end,
+        ">": lambda values: values > end,
+        ">=": lambda values: values >= start,
+    }.get(operator or "=", lambda values: (values >= start) & (values <= end))
+
+
+def filter_rows(frame: pd.DataFrame, filters: Mapping[str, str]) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Rows of ``frame`` that every filter keeps, and the filters that could not be read
+    (column -> message). A filter that cannot be read is skipped, not applied."""
+    keep = pd.Series(True, index=frame.index)
+    errors: dict[str, str] = {}
+    for column, raw in filters.items():
+        text = (raw or "").strip()
+        if not text or column not in frame.columns:
+            continue
+        values = frame[column]
+        kind = filter_kind(column, values)
+        try:
+            if kind == "number":
+                keep &= _number_test(text)(values).fillna(False)
+            elif kind == "date":
+                keep &= _date_test(text)(pd.to_datetime(values, errors="coerce")).fillna(False)
+            else:
+                keep &= values.map(fold).str.contains(fold(text), regex=False)
+        except ValueError:
+            errors[column] = f"Not read as a {kind} filter. Examples: {FILTER_HINT[kind]}"
+    return frame[keep], errors
+
+
+def _caller_key() -> str:
+    """Where table() was called from (file:line): a table without a key keeps its filters per
+    call site. Call sites that draw several tables in a loop pass ``key``."""
+    caller = sys._getframe(2)
+    return f"{Path(caller.f_code.co_filename).stem}:{caller.f_lineno}"
+
+
+def _filtered(frame: pd.DataFrame, config: dict, key: str, status: str | None) -> pd.DataFrame:
+    """A popover of column filters above the table; the rows they keep."""
+    prefix = f"filter:{key}:"
+    labels = {
+        column: (spec.get("label") if isinstance(spec, dict) else spec) or str(column)
+        for column, spec in config.items()
+        if column in frame.columns
+    }
+    active = sum(bool(st.session_state.get(prefix + str(column))) for column in frame.columns)
+    title = f"Filter columns · {active}" if active else "Filter columns"
+    filters: dict[str, str] = {}
+    choices: dict[str, list] = {}
+    with st.popover(title, icon=":material/filter_list:"):
+        for column in frame.columns:
+            label, widget_key = labels[column], prefix + str(column)
+            if column == status:
+                options = sorted({status_label(value) for value in frame[column].dropna()})
+                choices[column] = st.multiselect(label, options, key=widget_key, placeholder="any")
+            else:
+                hint = FILTER_HINT[filter_kind(column, frame[column])]
+                filters[column] = st.text_input(label, key=widget_key, placeholder=hint)
+        rows, errors = filter_rows(frame, filters)
+        for column, message in errors.items():
+            st.caption(f":red[{md_text(labels[column])}: {md_text(message)}]")
+    for column, picked in choices.items():
+        if picked:
+            rows = rows[rows[column].map(status_label).isin(picked)]
+    if len(rows) != len(frame):
+        st.caption(f"{len(rows):,} of {len(frame):,} rows")
+    return rows
+
+
 def table(
     frame: pd.DataFrame,
     *,
@@ -325,15 +454,18 @@ def table(
     """A labelled, formatted dataframe; height follows the rows up to ``max_height``.
 
     ``status`` names a pass/fail column to show as coloured labels; ``raw_labels`` keeps the
-    column names as headers (see ``column_config``).
+    column names as headers (see ``column_config``). A table longer than
+    ``Settings.table_filter_min_rows`` gets column filters, kept per ``key`` (or per call site).
     """
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
     frame = frame.drop(columns=[column for column in HIDDEN if column in frame.columns])
+    config = column_config(frame, overrides, raw_labels)
+    if len(frame) > DEFAULT_SETTINGS.table_filter_min_rows:
+        frame = _filtered(frame, config, kwargs.get("key") or _caller_key(), status)
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
-    config = column_config(frame, overrides, raw_labels)
     data = status_style(frame, status) if status else frame
     return st.dataframe(data, column_config=config, **kwargs)
 
