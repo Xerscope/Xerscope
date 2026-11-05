@@ -55,7 +55,7 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from ..xer.calendar import TimeAxis
-from .baseline import Baseline
+from .baseline import Baseline, relinked
 from .checks import AnalysisContext, CheckResult, run_metric
 from .standards import Metric
 
@@ -665,8 +665,12 @@ def ev_point(snapshot: Snapshot, baseline: Baseline) -> EvPoint:
     )
 
 
-def evm_series(store: SnapshotStore, baseline: Baseline) -> pd.DataFrame:
-    return pd.DataFrame([ev_point(snapshot, baseline).as_row() for snapshot in store])
+def evm_series(store: SnapshotStore, baseline: Baseline, link_by_guid: bool = False) -> pd.DataFrame:
+    """One ``ev_point`` per update against ``baseline``; ``link_by_guid``: each update against the
+    baseline with that update's renumbered tasks under their new Activity IDs (``relinked``)."""
+    return pd.DataFrame(
+        [ev_point(snapshot, relinked(baseline, snapshot) if link_by_guid else baseline).as_row() for snapshot in store]
+    )
 
 
 def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:

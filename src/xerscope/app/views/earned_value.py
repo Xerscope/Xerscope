@@ -338,7 +338,13 @@ if baseline.bac_hours <= 0:
 
 cache_key = ("evm", baseline.label, baseline.ev_basis)  # "planned dates" baselines differ per update
 curve = memo(cache_key + ("pv",), pv_curve, baseline)
-series = memo(cache_key + ("series",), evm_series, store, baseline)
+series = memo(
+    cache_key + ("series",),
+    evm_series,
+    store,
+    baseline_for(snapshot, link=False),  # each update linked to it on its own renumbered tasks
+    st.session_state.get("guid_link", False),
+)
 standards = builtin_standards()
 bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
 # each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise

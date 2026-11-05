@@ -15,7 +15,7 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-from xerscope.analysis.baseline import Baseline
+from xerscope.analysis.baseline import RENUMBERED_COLUMNS, Baseline, renumbered
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
 from xerscope.analysis.evm import (
     PV_P6_OPTIONAL,
@@ -178,6 +178,18 @@ def baseline_pointers(snapshots: Iterable[Snapshot]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=BASELINE_POINTER_COLUMNS)
+
+
+def renumbered_table(snapshot: Snapshot, baseline: Baseline | None, previous: Snapshot | None) -> pd.DataFrame:
+    """Tasks of ``snapshot`` that carry the GUID of a task of the baseline file, or of the previous
+    update, under a new Activity ID (``baseline.renumbered``). ``baseline`` as chosen, not linked."""
+    frames = [
+        renumbered(other, snapshot).assign(against=against)
+        for against, other in (("baseline", baseline.snapshot if baseline else None), ("previous update", previous))
+        if other is not None and other is not snapshot
+    ]
+    columns = ["against", *RENUMBERED_COLUMNS]
+    return pd.concat(frames)[columns].reset_index(drop=True) if frames else pd.DataFrame(columns=columns)
 
 
 def expected_finish_table(snapshot: Snapshot) -> pd.DataFrame:
