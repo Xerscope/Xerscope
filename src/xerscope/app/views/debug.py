@@ -7,6 +7,7 @@ from xerscope.app import diagnostic, ui
 from xerscope.app.state import (
     anonymous_exports,
     baseline_for,
+    data_identity,
     fetch,
     held,
     hold,
@@ -153,6 +154,11 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
     table(frames["09_assignment_dates"])
 
 
+def zip_tag(anonymous: bool) -> tuple:
+    """What the zip is built from, as the frames' memo key: files, projects, baseline, EV basis, update."""
+    return (*data_identity(), snapshot.source, str(snapshot.data_date), repr(p6_standard), anonymous)
+
+
 def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
     fetched = fetch(
@@ -164,7 +170,7 @@ def build_diagnostic(anonymous: bool) -> None:
         sources,
         prepare=True,
     )
-    hold(st.session_state, "debug_zip", (snapshot.source, anonymous), fetched)
+    hold(st.session_state, "debug_zip", zip_tag(anonymous), fetched)
 
 
 anonymous = anonymous_exports()
@@ -175,7 +181,7 @@ ui.section(
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)
-diagnostic_zip = held(st.session_state, "debug_zip", (snapshot.source, anonymous))
+diagnostic_zip = held(st.session_state, "debug_zip", zip_tag(anonymous))
 if diagnostic_zip is not None:
     show_download(
         diagnostic_zip, "Download diagnostic (.zip)", "xerscope_diagnostic.zip", "application/zip", key="debug_download"

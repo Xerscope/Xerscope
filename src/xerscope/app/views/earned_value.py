@@ -262,7 +262,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
         "then the forecast of remaining hours.",
     )
     as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
-    forecast = memo(("forecast", snapshot.source), forecast_curve, snapshot)
+    forecast = memo(("forecast", snapshot.source), forecast_curve, snapshot, baseline=False)
     st.plotly_chart(
         build_scurve(
             curve,
@@ -343,6 +343,7 @@ bei = memo(
     bei_metrics,
     baseline_for,
     partial(metric_result, store=store, keep=False),
+    ev_basis=False,
 )
 series = series.merge(bei, on="data_date", how="left")
 row = series[series["data_date"] == snapshot.data_date].iloc[-1]

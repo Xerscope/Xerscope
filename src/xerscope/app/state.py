@@ -831,38 +831,49 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     return chosen.activities, ui.stamp(chosen.data_date)
 
 
-def _baseline_identity() -> tuple:
-    """What the sidebar's baseline is: the choice, the EV basis and, for an uploaded file, its bytes."""
+def _baseline_identity(ev_basis: bool = True) -> tuple:
+    """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
+    and, for an uploaded file, its bytes."""
     baseline = st.session_state.get("baseline")
+    basis = st.session_state.get("ev_basis") if ev_basis else None
     if isinstance(baseline, Baseline):
-        return baseline.label, baseline.ev_basis, st.session_state.get("baseline_digest")
+        return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
         store = st.session_state.get("store")
         pointers = tuple((s.source, s.file_baseline.proj_id, s.file_baseline.usable) for s in store or ())
         fallback = (st.session_state.get("fallback_choice"), st.session_state.get("baseline_digest"))
-        return baseline, st.session_state.get("ev_basis"), pointers, fallback
-    return baseline, st.session_state.get("ev_basis")  # None, or BL_PLANNED (resolved per snapshot)
+        return baseline, basis, pointers, fallback
+    return baseline, basis  # None, or BL_PLANNED (resolved per snapshot)
+
+
+def data_identity(baseline: bool = True, ev_basis: bool = True) -> tuple:
+    """What a result computed now was computed from: the files (``signature``: names and content
+    digests, or names and modification times for a folder), the project read from each and, unless
+    ``baseline`` is False, the baseline in use with (unless ``ev_basis`` is False) the EV basis.
+    The memo's key and the tag of a built download start with it."""
+    # the project pickers re-read the same files for another project: same signature, other data
+    store = st.session_state.get("store")
+    projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
+    identity = _baseline_identity(ev_basis) if baseline else ()
+    return st.session_state.get("signature"), projects, identity
 
 
 MEMO_SIZE = 128  # entries per session; a standard holds at most 18 metrics, each its own entry
 
 
-def memo(key: tuple, function, *arguments, keep: bool = True):
+def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = True, ev_basis: bool = True):
     """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
 
-    The full key: the files (``signature``: names and content digests, or names and modification
-    times for a folder), the project read from each, the baseline in use (``_baseline_identity``,
-    with the EV basis), then ``key``, which names the analysis and everything else it reads.
-    ``function(*arguments)`` runs only on a cache miss; ``keep=False`` then returns the value
-    without storing it (a series over every update that should not hold each update's frames).
-    The cache lives in the session's state, never process-wide; past MEMO_SIZE entries the least
-    recently used goes. Callers do not modify what it returns: the next reader gets the same object.
+    The full key: ``data_identity`` (files, projects, and the baseline and EV basis unless the
+    analysis reads neither: ``baseline`` / ``ev_basis`` False), then ``key``, which names the
+    analysis and everything else it reads. ``function(*arguments)`` runs only on a cache miss;
+    ``keep=False`` then returns the value without storing it (a series over every update that
+    should not hold each update's frames). The cache lives in the session's state, never
+    process-wide; past MEMO_SIZE entries the least recently used goes. Callers do not modify what
+    it returns: the next reader gets the same object.
     """
     cache = st.session_state.setdefault("_memo", {})
-    # the project pickers re-read the same files for another project: same signature, other data
-    store = st.session_state.get("store")
-    projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
-    full_key = (st.session_state.get("signature"), projects, _baseline_identity()) + key
+    full_key = data_identity(baseline, ev_basis) + key
     if full_key in cache:
         cache[full_key] = cache.pop(full_key)  # most recently used last
         return cache[full_key]
@@ -877,13 +888,15 @@ def memo(key: tuple, function, *arguments, keep: bool = True):
 def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep: bool = True) -> CheckResult:
     """``metric`` on ``snapshot`` against the sidebar's baseline for it, once per session: Health,
     Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
-    written (rule, parameters, target, standard: its repr) and the update (file, data date)."""
+    written (rule, parameters, target, standard: its repr) and the update (file, data date). Not
+    the EV basis: no rule reads what it sets (the ev_* columns, the assignment costs)."""
     return memo(
         ("metric", repr(metric), snapshot.source, str(snapshot.data_date)),
         run_metric,
         metric,
         AnalysisContext(snapshot, store, baseline_for(snapshot)),
         keep=keep,
+        ev_basis=False,
     )
 
 

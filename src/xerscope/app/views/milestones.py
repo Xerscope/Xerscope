@@ -35,7 +35,7 @@ if len(store) < 2:
     st.info("The trend needs at least two updates.")
     st.stop()
 
-trend = memo(("mta", tuple(picked)), milestone_trend, store, picked)
+trend = memo(("mta", tuple(picked)), milestone_trend, store, picked, baseline=False)
 plotted = plotted_trend(trend)
 if hidden := sorted(set(picked) - set(plotted.loc[plotted["forecast"].notna(), "task_code"])):
     st.caption(f"Complete before every status date, nothing to plot: {', '.join(hidden)}")

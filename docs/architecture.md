@@ -228,10 +228,13 @@ Outside `analysis/`:
   pickers, a per-session cache keyed on the loaded files, and the list of standards (built-in,
   `XERSCOPE_STANDARDS`, uploaded). The cache (`memo`) keys every entry on the files, the
   project read from each and the baseline in use, then on what the analysis reads; it keeps the
-  `MEMO_SIZE` most recently used entries. `metric_result` holds one result per (metric, update,
-  baseline): Schedule health, Audit and the BEI of Earned value read the same entry. Series over
-  every update (the health trend, computed on request, and the BEI series) reuse the entries
-  there and keep only their numbers.
+  `MEMO_SIZE` most recently used entries. An analysis that reads no baseline (change log, PPC,
+  milestones, exports, forecast) or not the EV basis (the checks, the WBS rollup) leaves it out of
+  its key. `metric_result` holds one result per (metric, update, baseline): Schedule health,
+  Audit and the BEI of Earned value read the same entry; no check reads the columns the EV basis
+  sets (`baseline.EV_COLS`). Series over every update (the health trend, computed on request,
+  and the BEI series) reuse the entries there and keep only their numbers. A built download
+  (Schedule health's sets, the Debug zip) is offered again only for the same `data_identity`.
 - **`ui.py`:** the shared look: page header (project · data date · baseline), bordered KPI
   cards, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).

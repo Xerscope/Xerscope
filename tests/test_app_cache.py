@@ -115,6 +115,7 @@ INPUTS = [
     "standard",
     "update",
 ]
+# not the EV basis: test_metric_result_is_not_run_again_for_another_ev_basis
 
 
 @pytest.mark.parametrize("change", INPUTS)
@@ -142,13 +143,36 @@ def test_metric_result_runs_again_for_another_fallback(store, runs):
     assert not at.exception and len(runs) == 2
 
 
-def test_metric_result_runs_again_for_another_ev_basis(store, runs):
+def test_metric_result_is_not_run_again_for_another_ev_basis(store, runs):
+    """No check reads what the EV basis sets (see the test below): the key leaves it out."""
     at = _metric_app(store, Baseline.from_snapshot(store.first, "budgeted_planned"))
     at.run()
     at.session_state["ev_basis"] = "at_completion_current"
     at.session_state["baseline"] = Baseline.from_snapshot(store.first, "at_completion_current")
     at.run()
-    assert not at.exception and len(runs) == 2
+    assert not at.exception and len(runs) == 1
+
+
+BEI_FROM_BASELINE = dataclasses.replace(BEI, rule="bei", params={"due_from": "baseline"}, standard="CUSTOM")
+
+
+@pytest.mark.parametrize("planned", [False, True])
+def test_every_check_gives_the_same_result_whatever_the_ev_basis(store, planned):
+    """What lets metric_result's key leave the EV basis out: every metric of every built-in standard,
+    and the BEI counted in the baseline (its checked rows came from the baseline's frame), gives the
+    same result, rows included, on the three bases."""
+    metrics = [m for standard in builtin_standards().values() for m in standard.metrics] + [BEI_FROM_BASELINE]
+    snapshot = store.latest
+
+    def results(basis):
+        baseline = Baseline.planned(snapshot, basis) if planned else Baseline.from_snapshot(store.first, basis)
+        return [run_metric(metric, AnalysisContext(snapshot, store, baseline)) for metric in metrics]
+
+    reference = results("budgeted_planned")
+    assert any(r.metric is BEI_FROM_BASELINE and r.checked is not None and len(r.checked) for r in reference)
+    for basis in ("budgeted_current", "at_completion_current"):
+        for got, expected in zip(results(basis), reference, strict=True):
+            same_result(got, expected)
 
 
 # --- the memo's bound ---------------------------------------------------------------------------
@@ -262,3 +286,87 @@ def test_health_trend_is_computed_on_request_once_and_keeps_numbers_only(app, st
     history = app.session_state["_memo"][_history_keys(app)[0]]
     baseline = Baseline.from_snapshot(store.first, app.session_state["ev_basis"])
     pd.testing.assert_frame_equal(history, health_history(store, standard, baseline))
+
+
+# --- what the EV basis and the baseline change on the pages ------------------------------------------
+
+
+def test_another_ev_basis_reruns_no_check_and_the_sets_stay_those_of_a_fresh_calculation(app, store, runs, downloads):
+    from xerscope.analysis.audit import sets_long
+
+    app.sidebar.toggle(key="anon_exports").set_value(False).run()
+    app.switch_page("views/health.py").run()
+    app.button(key="sets_build").click().run()
+    computed = len(runs)
+    baseline_box(app, "ev_basis").set_value("at_completion_current")
+    app.button(key="files_done").click().run()
+    app.switch_page("views/health.py").run()
+    assert not app.exception and len(runs) == computed
+    # the sets built before the change are still offered: they are those of the new basis
+    p6 = builtin_standards()["P6"]
+    baseline = Baseline.from_snapshot(store.first, "at_completion_current")
+    fresh = [run_metric(metric, AnalysisContext(store.latest, store, baseline)) for metric in p6.metrics]
+    expected = sets_long(fresh, store.latest).to_csv(index=False).encode("utf-8-sig")
+    assert _download(app, downloads, "All sets (CSV)") == expected
+
+
+def test_another_baseline_withdraws_the_sets_and_the_diagnostic_built_before(app, store):
+    app.sidebar.toggle(key="anon_exports").set_value(False).run()
+    app.switch_page("views/health.py").run()
+    app.button(key="sets_build").click().run()
+    app.switch_page("views/debug.py").run()
+    app.button(key="debug_build").click().run()
+    assert _offered(app, "Download diagnostic (.zip)")
+    baseline_box(app).set_value(store.labels[1])
+    app.button(key="files_done").click().run()
+    assert not _offered(app, "Download diagnostic (.zip)")
+    app.switch_page("views/health.py").run()
+    assert not app.exception and not _offered(app, "All sets (CSV)")
+
+
+def test_another_ev_basis_withdraws_the_diagnostic_built_before(app):
+    """The diagnostic's planned value check (block 9) follows the EV basis."""
+    app.switch_page("views/debug.py").run()
+    app.sidebar.toggle(key="anon_exports").set_value(False).run()
+    app.button(key="debug_build").click().run()
+    assert _offered(app, "Download diagnostic (.zip)")
+    baseline_box(app, "ev_basis").set_value("at_completion_current")
+    app.button(key="files_done").click().run()
+    assert not app.exception and not _offered(app, "Download diagnostic (.zip)")
+
+
+@pytest.mark.parametrize("page", ["ppc", "changelog", "export"])
+def test_pages_that_read_no_baseline_are_not_recomputed_for_another(app, store, page):
+    app.switch_page(f"views/{page}.py").run()
+    before = set(app.session_state["_memo"])
+    assert before
+    baseline_box(app).set_value(store.labels[1])
+    app.button(key="files_done").click().run()
+    app.switch_page(f"views/{page}.py").run()
+    assert not app.exception and set(app.session_state["_memo"]) == before
+
+
+def _offered(at, label: str) -> bool:
+    return any(b.proto.label == label for b in at.get("download_button"))
+
+
+@pytest.fixture
+def downloads(monkeypatch):
+    """Every file the app hands to a download button, by its media id."""
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+
+    saved: dict[str, bytes] = {}
+    real = MemoryMediaFileStorage.load_and_get_id
+
+    def keep(self, path_or_data, mimetype, kind, filename=None):
+        file_id = real(self, path_or_data, mimetype, kind, filename)
+        saved[file_id] = self._files_by_id[file_id].content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", keep)
+    return saved
+
+
+def _download(at, downloads: dict[str, bytes], label: str) -> bytes:
+    button = next(b for b in at.get("download_button") if b.proto.label == label)
+    return downloads[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]

@@ -44,6 +44,7 @@ nodes = memo(
     rollup,
     snapshot,
     baseline,
+    ev_basis=False,  # reads bl_finish only
 )
 if st.session_state.get(NODE_KEY) not in set(nodes["wbs_id"]):
     st.session_state[NODE_KEY] = ROOT  # first visit, or a node the picked update does not have
