@@ -46,6 +46,12 @@ The baseline, chosen in the same window, can also be any loaded update (default:
 first). Schedules stay on your machine: the app listens on localhost, and an uploaded file
 is held in the session's memory, never written to disk.
 
+If the page keeps an older look after an update (another font, no Files line in a
+monospaced face), the running copy is old: `uv sync` then `uv run xerscope app` for a
+checkout, `docker compose up -d --build` for the local image, and on a deployed stack pull
+the new image before the rebuild (docs/deploy.md §7). Then reload the page with the cache
+bypassed (Ctrl+Shift+R). Debug, block 12, shows what the running app read and from where.
+
 Windows (PowerShell) is identical with `\` paths. Install uv once:
 `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`.
 

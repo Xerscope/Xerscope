@@ -42,7 +42,12 @@ export default function (component) {
     if (!children.has(r.parent)) children.set(r.parent, []);
     children.get(r.parent).push(r.id);
   }
-  const open = new Set(D.open);
+  // the branches opened by the viewer stay open across reruns (a pick, a toggle on the page): the
+  // page sends the branches it needs open (the chosen node's, every one under a filter), the host
+  // element keeps the viewer's, and the two are merged
+  const host = component.parentElement;
+  const open = new Set([...(host.xsOpen || []), ...D.open]);
+  host.xsOpen = open;
   const maxDepth = Math.max(0, ...rows.filter((r) => r.kind === "wbs").map((r) => r.depth));
 
   const visibleRows = () => {
@@ -374,6 +379,9 @@ export default function (component) {
     if (i >= 0) showTip(shown[i], event); else hideTip();
   });
   body.addEventListener("mouseleave", () => { setHover(-1); hideTip(); });
+  // the page scrolling under the pointer (wheel outside the chart's own scroll box): the tip would
+  // stay where the row was
+  window.addEventListener("scroll", hideTip, { passive: true });
   // a WBS row opens or closes; an activity row sends its row id ("a:<Activity ID>") and only
   // that: the page reads every value it shows from the loaded schedule (app/task_panel.py)
   body.addEventListener("click", (event) => {
@@ -399,5 +407,8 @@ export default function (component) {
     scroll.scrollTop = (selectedIndex - 1) * ROW;
     drawWindow(false);
   }
-  return () => window.removeEventListener("resize", onResize);
+  return () => {
+    window.removeEventListener("resize", onResize);
+    window.removeEventListener("scroll", hideTip);
+  };
 }

@@ -1036,7 +1036,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 11 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 12 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1493,3 +1493,28 @@ def test_debug_block_10_compares_a_p6_export_and_keeps_the_activity_list_out_of_
         text = "".join(archive.read(n).decode("utf-8-sig") for n in names)
     assert len(names) == 4 and causes.loc[0, "gap_activities"] == 0
     assert not set(store.latest.activities["task_code"]) & {c for line in text.splitlines() for c in line.split(",")}
+
+
+def test_score_cards_not_computed_show_a_short_value(app):
+    """A card cuts a long value with an ellipsis: the state goes in the change line instead."""
+    cards = [m for m in app.metric if m.label.endswith(" score")]
+    assert len(cards) == 4
+    assert all(m.value == "–" and m.delta == "not computed yet" for m in cards)
+
+
+def test_runtime_block_names_what_the_app_read(app):
+    """Debug block 12: the fonts, the config and the package that runs, for a page that looks old."""
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    table = ui.runtime_table()
+    assert list(table["setting"])[:2] == ["Config read", "Working directory (config is read here)"]
+    assert any("12 · App runtime" in e.label for e in app.expander)
+    assert table.set_index("setting").loc["Config read", "value"] in ("yes", "no — start with `xerscope app`")
+    assert table.set_index("setting").loc["Package", "value"] == str(Path(ui.__file__).parents[1])
+
+
+def test_font_fallback_inlines_both_faces():
+    """Without the config (no static folder served), the theme's two fonts come as data: URLs."""
+    css = ui.font_fallback_css()
+    assert css.count("data:font/woff2;base64,") == 2
+    assert all(f'font-family: "{family}"' in css for family in ("Onest", "JetBrains Mono"))

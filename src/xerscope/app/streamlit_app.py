@@ -1,8 +1,8 @@
 """Entry point: ``uv run xerscope app``.
 
 ``xerscope app`` runs Streamlit from this folder so ``.streamlit/config.toml`` (theme,
-localhost binding) applies. A plain ``streamlit run`` from elsewhere reads no config:
-the theme is lost and Streamlit listens on every interface.
+localhost binding) applies whatever the Streamlit version (1.66 also reads it next to the
+script). Debug, block 12, shows what was read.
 """
 
 import sys

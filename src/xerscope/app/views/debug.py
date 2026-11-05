@@ -249,6 +249,14 @@ with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key
     table(frames["11_project_settings"].astype(str))  # flags, dates, counts and "absent": one type for Arrow
     table(diagnostic.project_settings_meaning_table())
 
+with st.expander("12 · App runtime (where the theme and fonts come from)", key="debug_runtime"):
+    st.caption(
+        "What Streamlit read at start, to tell an old running copy from a page that did not load the theme. "
+        "Config read: no means default theme and fonts, every interface listened on. Package: the copy that "
+        "runs; after an update, reload the page with the cache bypassed (Ctrl+Shift+R) if it still looks old."
+    )
+    table(ui.runtime_table())
+
 
 def zip_tag(anonymous: bool) -> tuple:
     """What the zip is built from: files, projects, baseline, EV basis, update, P6 export of block 10."""

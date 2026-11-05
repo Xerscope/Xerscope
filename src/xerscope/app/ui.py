@@ -10,6 +10,8 @@ the same column names and number formats everywhere.
 
 from __future__ import annotations
 
+import base64
+import functools
 import re
 import sys
 import unicodedata
@@ -55,17 +57,68 @@ GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())
 
 
 STYLE = Path(__file__).parent / "style.css"
+STATIC = Path(__file__).parent / "static"
+# The theme's fonts (.streamlit/config.toml, [[theme.fontFaces]]): family -> file in app/static/.
+FONT_FILES = {"Onest": "Onest-latin-wght.woff2", "JetBrains Mono": "JetBrainsMono-latin-wght.woff2"}
+
+
+def theme_loaded() -> bool:
+    """Whether Streamlit read the app's .streamlit/config.toml: ``xerscope app`` runs from that folder,
+    and Streamlit 1.66 also reads it next to the script. An older Streamlit started from another
+    folder reads none: the page then shows Streamlit's defaults (its own fonts and colours, no
+    static folder, every interface listened on)."""
+    return st.get_option("theme.font") is not None and bool(st.get_option("server.enableStaticServing"))
+
+
+@functools.cache
+def font_fallback_css() -> str:
+    """@font-face rules with the two fonts inlined (data: URLs, ~100 KB), for a run without the
+    config: the static folder is not served then, so the theme's font URLs would 404."""
+    rules = []
+    for family, name in FONT_FILES.items():
+        data = base64.b64encode((STATIC / name).read_bytes()).decode("ascii")
+        rules.append(
+            f'@font-face {{ font-family: "{family}"; font-weight: 100 900; font-display: swap; '
+            f"src: url(data:font/woff2;base64,{data}) format('woff2'); }}"
+        )
+    rules.append('.stApp { font-family: "Onest", sans-serif; }')
+    rules.append('.stApp code, .stApp pre { font-family: "JetBrains Mono", monospace; }')
+    return "\n".join(rules)
+
+
+def runtime_table() -> pd.DataFrame:
+    """Debug block 12: where the app runs and what Streamlit read, one row per setting."""
+    import platform
+
+    import streamlit as st_module
+
+    fonts = ", ".join(f"{face.get('family')} ({face.get('url')})" for face in st.get_option("theme.fontFaces") or [])
+    rows = [
+        ("Config read", "yes" if theme_loaded() else "no — start with `xerscope app`"),
+        ("Working directory (config is read here)", str(Path.cwd())),
+        ("theme.font", str(st.get_option("theme.font"))),
+        ("theme.fontFaces", fonts or "none"),
+        ("server.enableStaticServing (fonts folder)", str(st.get_option("server.enableStaticServing"))),
+        ("Fonts inlined as fallback", "no" if theme_loaded() else "yes"),
+        ("Style sheet", f"{STYLE} ({STYLE.stat().st_size} bytes)"),
+        ("Package", str(Path(__file__).resolve().parents[1])),
+        ("Streamlit", st_module.__version__),
+        ("Python", platform.python_version()),
+    ]
+    return pd.DataFrame(rows, columns=["setting", "value"])
 
 
 def apply_style() -> None:
     """style.css with the app's colours (sent once per run, takes no space). The series colours
     hold on both themes, the accent is a CSS light-dark() pair resolved by the color-scheme
     Streamlit sets on the app, and the rest follows the page's text colour, so a theme switch
-    needs no rerun."""
+    needs no rerun. Without the config (``theme_loaded``), the fonts are inlined so the page at
+    least reads in the app's faces."""
     accent = f"light-dark({ACCENT['light']}, {ACCENT['dark']})"
     colours = {"accent": accent} | {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
     variables = "".join(f"--{name}: {value};" for name, value in colours.items())
-    st.html(f"<style>:root {{{variables}}}\n{STYLE.read_text(encoding='utf-8')}</style>")
+    fallback = "" if theme_loaded() else font_fallback_css()
+    st.html(f"<style>:root {{{variables}}}\n{fallback}\n{STYLE.read_text(encoding='utf-8')}</style>")
 
 
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
@@ -253,12 +306,16 @@ SCORE_HELP = (
 def score_cards(scores: dict) -> None:
     """One card per standard: ``"<name> score"``, the share of evaluated checks that pass, then the
     count evaluated and the failed ids. A standard whose score is None is not computed yet."""
-    cols = st.columns(len(scores))
+    with st.container(key="score_cards"):
+        cols = st.columns(len(scores))
     for col, (name, score) in zip(cols, scores.items(), strict=True):
         label = f"{name} score"
         help_ = "\n\n".join(part for part in (SCORE_HELP, spelled_out(label)) if part)
         if score is None:
-            col.metric(label, "not computed yet", help=help_, border=True)
+            # a short value: a long one is cut with an ellipsis in a card
+            col.metric(
+                label, "–", delta="not computed yet", delta_color="off", delta_arrow="off", help=help_, border=True
+            )
         else:
             col.metric(
                 label,

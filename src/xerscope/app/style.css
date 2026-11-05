@@ -1,5 +1,6 @@
-/* What .streamlit/config.toml cannot set: the KPI readout, heading tracking, the selected segment in the accent, a fainter chart grid, the milestone picker's
-   tags in the colour of their line, a square box for the MTA chart, and short transitions. --accent and --s1..--s6 are written by ui.apply_style() from
+/* What .streamlit/config.toml cannot set: the KPI readout, heading tracking, the selected segment in
+   the accent, a fainter chart grid, the milestone picker's tags in the colour of their line, a
+   square box for the MTA chart, the sidebar's current page, and short transitions and fades. --accent and --s1..--s6 are written by ui.apply_style() from
    viz/charts.py: --s* hold on both themes, --accent is a light-dark() pair that follows the
    color-scheme Streamlit sets on the app. Everything else is mixed with transparency or
    inherits the page's text colour, so a theme switch needs no rerun.
@@ -27,12 +28,20 @@
 [class*="st-key-kpis_"] [data-testid="stVerticalBlock"] { gap: 0; }
 [class*="st-key-kpis_"] [data-testid="stMetric"] > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 14rem);
+  grid-template-columns: minmax(8rem, 1fr) auto minmax(0, 12rem);
   column-gap: 1.25rem;
   align-items: baseline;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--xs-hairline);
 }
+/* the change column is reserved only where a line of the same column carries one: the values
+   of a column stay aligned, and a column without changes gives its width to the labels, which
+   otherwise wrap behind their help icon ("Labor hours", "BEI (P6 / DCMA)") */
+[class*="st-key-kpis_"]:not(:has([data-testid="stMetricDelta"])) [data-testid="stMetric"] > div,
+[class*="st-key-kpis_"] [data-testid="stColumn"]:not(:has([data-testid="stMetricDelta"])) [data-testid="stMetric"] > div {
+  grid-template-columns: minmax(8rem, 1fr) auto;
+}
+[class*="st-key-kpis_"] [data-testid="stMetricLabel"] > div { flex-wrap: nowrap; }
 [class*="st-key-kpis_"] [data-testid="stMetricLabel"] { margin: 0; min-height: 0; }
 [class*="st-key-kpis_"] [data-testid="stMetricLabel"] p { font-size: 0.95rem; opacity: 0.78; }
 [class*="st-key-kpis_"] [data-testid="stMetricValue"],
@@ -84,6 +93,39 @@
 
 /* MTA: the chart box as tall as it is wide, so its square plot (1:1 dates) fills the width */
 .st-key-mta_chart { aspect-ratio: 1 / 1; }
+
+/* Score cards (ui.score_cards): the value never cut, a lift on hover */
+.st-key-score_cards [data-testid="stMetricValue"] { overflow: visible; }
+.st-key-score_cards [data-testid="stMetric"] {
+  transition: box-shadow var(--xs-motion), transform var(--xs-motion);
+}
+.st-key-score_cards [data-testid="stMetric"]:hover {
+  box-shadow: 0 6px 18px -10px rgb(0 0 0 / 0.35);
+  transform: translateY(-1px);
+}
+
+/* Sidebar navigation: the current page carries a bar in the accent, the others light up on hover */
+[data-testid="stSidebarNavLink"] {
+  border-left: 2px solid transparent;
+  transition: background-color var(--xs-motion), border-color var(--xs-motion), color var(--xs-motion);
+}
+[data-testid="stSidebarNavLink"][aria-current="page"] { border-left-color: var(--accent); }
+[data-testid="stSidebarNavLink"]:not([aria-current="page"]):hover { border-left-color: var(--xs-hairline); }
+[data-testid="stSidebarNavLink"] span[label] { transition: color var(--xs-motion); }
+
+/* Tooltips: a short fade in instead of a pop (Streamlit's and the data grid's) */
+[role="tooltip"],
+[data-testid="stTooltipContent"] { animation: xs-in 120ms ease-out both; }
+
+/* Page content: each element fades in when it is drawn, so a page change and a new result are read
+   as a change of content rather than a flash; opacity only, which moves nothing (the Gantt's
+   tooltip is position: fixed and a transform on an ancestor would re-anchor it) */
+[data-testid="stMainBlockContainer"] .stElementContainer { animation: xs-in 180ms ease-out both; }
+/* an element waiting for its rerun dims after a moment rather than at once: a short rerun does not blink */
+.stElementContainer[data-stale="true"] { transition: opacity 250ms ease-out 200ms; }
+.stElementContainer[data-stale="false"] { transition: opacity 120ms ease-out; }
+
+@keyframes xs-in { from { opacity: 0; } }
 
 /* Motion: colour changes on controls only, 160 ms; none when the viewer asks for reduced motion */
 .stApp button,

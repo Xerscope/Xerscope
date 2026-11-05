@@ -65,11 +65,16 @@ def _read(name: str, data: bytes) -> Snapshot:
     return snapshot
 
 
-def _build(items: list[tuple[str, bytes]]) -> tuple[SnapshotStore | None, list[str]]:
+def _build(
+    items: list[tuple[str, bytes]], on_file: Callable[[int, str], None] | None = None
+) -> tuple[SnapshotStore | None, list[str]]:
     """Each file read for the project picked for it, else its default project, so a project renamed
-    between updates still loads."""
+    between updates still loads. ``on_file(index, name)`` is called before each file is read (the
+    sidebar's progress line)."""
     snapshots, errors = [], []
-    for name, data in items:
+    for index, (name, data) in enumerate(items):
+        if on_file is not None:
+            on_file(index, name)
         try:
             snapshot = _read(name, data)
         except XerError as exc:
@@ -420,8 +425,17 @@ def sidebar_loader() -> None:
 
     signature, items = _chosen_items()
     if items is not None:
-        with st.spinner(f"Parsing {len(items)} file(s)…"):
-            store, errors = _build(items)
+        # one line per file read, in the sidebar: a series of large exports takes a while
+        line = sidebar.empty()
+        count = len(items)
+        line.progress(0.0, text=f"Reading {count} file(s)…")
+        store, errors = _build(
+            items,
+            on_file=lambda index, name: line.progress(
+                index / count, text=f"Reading {ui.md_text(name)} · {index + 1}/{count}"
+            ),
+        )
+        line.empty()
         st.session_state.update(store=store, signature=signature, errors=errors, items=items)
     elif not signature:
         st.session_state.update(store=None, signature=(), errors=[], items=None)
@@ -770,14 +784,7 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
     """Tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``):
     a warning while they count as deleted and new, a caption once the option links them, nothing
     when there are none."""
-    found = {}
-    for snapshot in store:
-        baseline = baseline_for(snapshot, link=False)
-        if baseline is None or baseline.snapshot is snapshot:
-            continue
-        count = len(renumbered(baseline.snapshot, snapshot))
-        if count:
-            found[snapshot.source] = count
+    found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
     if not found:
         return
     total = sum(found.values())
@@ -792,6 +799,20 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
         "Option in the Baseline window: Link renumbered tasks by GUID.",
         icon=":material/warning:",
     )
+
+
+def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
+    """Renumbered tasks per update (file -> count), once per data set and baseline: the sidebar
+    draws the notice on every rerun of every page, and the GUID match reads every update."""
+    found = {}
+    for snapshot in store:
+        baseline = baseline_for(snapshot, link=False)
+        if baseline is None or baseline.snapshot is snapshot:
+            continue
+        count = len(renumbered(baseline.snapshot, snapshot))
+        if count:
+            found[snapshot.source] = count
+    return found
 
 
 def _baseline_fields(store: SnapshotStore) -> None:
