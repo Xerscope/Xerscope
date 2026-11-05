@@ -729,3 +729,72 @@ def test_loe_late_start_follows_the_late_date_a_finished_predecessor_passes_back
     assert f.at["Q", "ls"] == pd.Timestamp("2026-03-13 08:00")
     assert f.at["L", "ls"] == pd.Timestamp("2026-03-13 08:00")
     assert f.at["L", "lf"] == f.at["C", "lf"] == pd.Timestamp("2026-03-13 17:00")
+
+
+# --- the comparison with the stored dates, cached on the snapshot -----------------------------------
+
+
+@pytest.fixture
+def comparisons(monkeypatch):
+    """How many times the comparison table is built."""
+    from xerscope.analysis import cpm
+
+    calls = []
+    original = cpm._comparison
+
+    def counting(snapshot, recomputed):
+        calls.append(snapshot)
+        return original(snapshot, recomputed)
+
+    monkeypatch.setattr(cpm, "_comparison", counting)
+    return calls
+
+
+def _stored_snapshot():
+    return snap([todo("A", **hours(16)), todo("B", **hours(8))], [("A", "B", "FS", 0)])
+
+
+def test_comparison_is_built_once_per_snapshot_for_int01_and_debug(comparisons):
+    from xerscope.analysis.integrity import int_01_recalculated
+    from xerscope.analysis.rules import AnalysisContext
+    from xerscope.app.diagnostic import recalculation_table
+
+    s = _stored_snapshot()
+    first = compare_with_stored(s)
+    assert len(comparisons) == 1
+    int_01_recalculated(AnalysisContext(s))
+    recalculation_table(s)
+    pd.testing.assert_frame_equal(compare_with_stored(s, schedule(s)), first)
+    assert len(comparisons) == 1
+
+
+def test_comparison_of_another_snapshot_is_its_own(comparisons):
+    import dataclasses
+
+    s = _stored_snapshot()
+    compare_with_stored(s)
+    other = dataclasses.replace(s, tasks=s.tasks.assign(remain_drtn_hr_cnt=24.0))
+    assert not compare_with_stored(other).equals(compare_with_stored(s))
+    assert len(comparisons) == 2
+
+
+def test_comparison_against_another_recalculation_is_not_cached(comparisons):
+    from xerscope.analysis.cpm import Options
+
+    s = _stored_snapshot()
+    compare_with_stored(s)
+    other = schedule(s, options=Options.from_snapshot(s))
+    compare_with_stored(s, other)
+    compare_with_stored(s, other)
+    assert len(comparisons) == 3
+    compare_with_stored(s)
+    assert len(comparisons) == 3
+
+
+def test_a_caller_changing_its_comparison_leaves_the_next_one_intact():
+    s = _stored_snapshot()
+    first = compare_with_stored(s)
+    expected = first.copy()
+    first["agree"] = False
+    first.iloc[0, 0] = "ZZ"
+    pd.testing.assert_frame_equal(compare_with_stored(s), expected)
