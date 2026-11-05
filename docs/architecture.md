@@ -75,8 +75,12 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 `SnapshotStore` sorts snapshots by data date and holds one per data date: given two files
 with the same data date (versions of one draft, an update and its baseline copy) it raises
 `DuplicateDataDate` naming them, and the user keeps one. `selection()` lists the files of the
-series and the project taken from each: the app's sidebar Selection panel shows it. It
-exposes long-format frames:
+series and the project taken from each: the app's sidebar Selection panel shows it, with a
+project picker for each file that holds several (by `proj_id`, each project named by code, data
+date, activities and the project it is a baseline copy of). A project picked for a file reads
+that file again and no other; it wins over the sidebar's Project picker, which applies to the
+files without a choice of their own. The session caches (`memo`, the file baselines) are keyed
+on the `proj_id` read from each file. `SnapshotStore` exposes long-format frames:
 
 - `history`: one row per (snapshot, activity);
 - `relationship_history`;
