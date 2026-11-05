@@ -85,7 +85,7 @@ def test_a_pointer_to_a_project_without_activities_gives_no_baseline():
     raw = parse_text(two_projects(), source="two.xer")
     tasks = raw.tables["TASK"]
     raw.tables["TASK"] = tasks[tasks["proj_id"] != "2"]
-    assert build_snapshot(raw).file_baseline.note == "project 2 has no activities"
+    assert build_snapshot(raw).file_baseline.note == "project 2 has no tasks"
 
 
 def test_no_pointer_means_none_in_file():

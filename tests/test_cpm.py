@@ -307,7 +307,7 @@ def test_multiple_float_paths_are_reported_not_computed():
 def test_constraint_on_an_in_progress_activity_is_reported():
     s = snap([active("A", cstr_type="CS_MEOA", cstr_date="2026-03-20 17:00", remain_drtn_hr_cnt="8")])
     assert dates(s, "A")[1] == T("2026-03-02 17:00")  # actual start kept, remaining from the data date
-    assert any("in-progress activities carry a constraint" in w for w in schedule(s).warnings)
+    assert any("in-progress tasks carry a constraint" in w for w in schedule(s).warnings)
 
 
 def test_secondary_constraint_counts():

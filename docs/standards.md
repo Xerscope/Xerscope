@@ -195,7 +195,7 @@ dangling finishes, finish milestone exempted), DCMA-04 23/25 (xerlock 25/27: lin
 milestones counted), DCMA-05 1 (xerlock 2: a milestone counted), DCMA-11 3 (xerlock 4: a
 milestone counted), DCMA-13 n/a (xerlock 1.0: no Must Finish By date and no baseline, so
 the float to the contract finish is unknown). The other stated values, the critical path test (MEP-020, +600 wd; the
-600 is DECM 06A401a's, the pamphlet gives none) and CPL (1080 h) reproduce.
+600 is a convention (Ten Six ch. 13); the pamphlet and DECM 06A401a give none) and CPL (1080 h) reproduce.
 
 ## Integrity
 

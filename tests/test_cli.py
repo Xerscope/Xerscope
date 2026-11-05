@@ -146,5 +146,5 @@ def test_same_data_date_twice_stops_with_the_files(sample_dir, tmp_path):
     folder.mkdir()
     for name in (first.name, "zz-copy.xer"):
         (folder / name).write_bytes(first.read_bytes())
-    with pytest.raises(SystemExit, match=f"several files per data date.*{first.name}, zz-copy.xer"):
+    with pytest.raises(SystemExit, match=f"several files per status date.*{first.name}, zz-copy.xer"):
         cli.main(["export", str(folder), "--out", str(tmp_path / "bi")])

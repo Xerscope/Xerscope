@@ -85,7 +85,7 @@ def test_changelog_relationships():
 def test_changelog_project_rows_and_summary():
     log = changelog(OLD, NEW)
     proj = log[log["category"] == "Project"].set_index("change")
-    assert proj.loc["data date", "delta"] == 5
+    assert proj.loc["status date", "delta"] == 5
     s = summary(log)
     assert "Project" not in set(s["category"])
     assert s["count"].sum() == len(log) - 4

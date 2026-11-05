@@ -18,7 +18,7 @@ from .populations import joined_sorted
 CATEGORIES = [
     "Project",
     "Scope",
-    "Activities",
+    "Tasks",
     "Durations",
     "Relationships",
     "Progress",
@@ -105,7 +105,7 @@ def _project_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame, c
     old_links, new_links = len(old.relationships), len(new.relationships)
     old_count, new_count = len(previous_all), len(current_all)
     return [
-        _change("Project", "data date", "", "data date", old.data_date, new.data_date, data_date_shift, "wd"),
+        _change("Project", "status date", "", "status date", old.data_date, new.data_date, data_date_shift, "wd"),
         _change(
             "Project", "forecast finish", "", "forecast finish", old.finish_date, new.finish_date, finish_shift, "wd"
         ),
@@ -139,7 +139,7 @@ def _activity_changes(old: Snapshot, new: Snapshot, previous: pd.DataFrame, curr
             before, after = previous.loc[code, column], current.loc[code, column]
             if column == "clndr_id":
                 before, after = calendar_names.get(before, before), calendar_names.get(after, after)
-            changes.append(_change("Activities", change, code, column, before, after))
+            changes.append(_change("Tasks", change, code, column, before, after))
     return changes
 
 

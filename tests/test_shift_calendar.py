@@ -62,7 +62,7 @@ def test_finish_shift_since_first_is_on_the_project_calendar(project, activity):
 @PAIRS
 def test_changelog_project_rows_are_on_the_project_calendar(project, activity):
     log = changelog(*two_updates(project, activity)).query("category == 'Project'").set_index("field")
-    assert log.loc["data date", "delta"] == pytest.approx(WD[project])
+    assert log.loc["status date", "delta"] == pytest.approx(WD[project])
     assert log.loc["forecast finish", "delta"] == pytest.approx(WD[project])
 
 

@@ -9,13 +9,13 @@ The helpers after the generic rules (``share_of_type``, ``late_output``, ...) ar
 with the explicit checks.
 
 Each rule returns a :class:`RuleOutput`; the profile's target turns it into pass/fail.
-Populations always exclude WBS-summary rows (``Snapshot.activities``).
+Populations always exclude WBS-summary rows (``Snapshot.tasks``).
 
 Docstring convention. ``explain.py`` words a result from the rule's docstring:
 
-    Constrained activities.                    <- title (label of the flagged list)
+    Constrained tasks.                    <- title (label of the flagged list)
     Counts: constrained / checked              <- numerator word / denominator word
-    Excludes: completed activities.            <- population lines, zero or more, shown as written
+    Excludes: completed tasks.            <- population lines, zero or more, shown as written
     Constraint types: A, B,
         continued on an indented line.         <- an indented line continues the one above
 
@@ -184,11 +184,11 @@ def rule(name: str, unit: Unit, needs_baseline: bool = False, links: bool = Fals
 
 # Each closed vocabulary is declared once: key -> label for explain (exclusions: populations.EXCLUSIONS).
 EXEMPT: dict[str, str] = {
-    "started": "started activities",
+    "started": "started tasks",
     "start_milestone": "start milestones",
     "finish_milestone": "finish milestones",
-    "project_start": "the project's first activity",
-    "project_finish": "the project's last activity",
+    "project_start": "the project's first task",
+    "project_finish": "the project's last task",
 }
 ALLOWED: dict[str, set[str]] = {
     "exclude": set(EXCLUSIONS),
@@ -205,7 +205,7 @@ def activities(context: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
 def link_population(
     context: AnalysisContext, links: str, exclude_loe: bool = False, exclude: Names = ()
 ) -> pd.DataFrame:
-    """Relationships into a scheduled activity, with both names, narrowed by ``links`` (see LinkPop)."""
+    """Relationships into a scheduled task, with both names, narrowed by ``links`` (see LinkPop)."""
     return link_funnel(context, links, exclude_loe, exclude).rows
 
 
@@ -216,7 +216,7 @@ def link_funnel(
     snapshot = context.snapshot
     tasks = snapshot.activities.set_index("task_code")
     funnel = Funnel(snapshot.relationships)
-    funnel.keep("into an activity", "model", lambda rows: rows["succ_code"].isin(tasks.index))
+    funnel.keep("into a task", "model", lambda rows: rows["succ_code"].isin(tasks.index))
 
     def done(rows: pd.DataFrame, end: str) -> pd.Series:
         return as_flag(rows[end].map(tasks["is_complete"]))
@@ -244,7 +244,7 @@ def link_funnel(
 
 
 def _project_ends(context: AnalysisContext) -> tuple[set[str], set[str]]:
-    """Activities at the project's start (no predecessor, earliest start) and finish."""
+    """Tasks at the project's start (no predecessor, earliest start) and finish."""
     tasks = context.snapshot.activities
     relationships = context.snapshot.relationships
     no_predecessor = tasks[~tasks["task_code"].isin(relationships["succ_code"])]
@@ -258,7 +258,7 @@ def _project_ends(context: AnalysisContext) -> tuple[set[str], set[str]]:
 
 
 def _exempt_masks(population: pd.DataFrame, start_ids: set[str], finish_ids: set[str]) -> dict[str, pd.Series]:
-    """One boolean mask per EXEMPT key: the activities that pass the missing-logic test."""
+    """One boolean mask per EXEMPT key: the tasks that pass the missing-logic test."""
     masks = {
         "started": population["is_started"],
         "start_milestone": population["is_start_milestone"],
@@ -284,7 +284,7 @@ def missing_logic(
     """Missing a predecessor or a successor.
     Counts: open-ended / checked
 
-    Activities without a predecessor or a successor (open ends).
+    Tasks without a predecessor or a successor (open ends).
 
     ``pred_exempt`` / ``succ_exempt`` pass one side for: started, start_milestone,
     finish_milestone, project_start, project_finish. ``external_passes`` counts links to
@@ -330,14 +330,14 @@ def missing_logic(
 
 @rule("dangling", "%")
 def dangling(context, end: Literal["start", "finish"] = "finish", exclude: Names = ("complete",)) -> RuleOutput:
-    """Logic that does not drive the activity.
+    """Logic that does not drive the task.
     Counts: dangling / checked
 
-    Activities with logic on one end that does not drive it.
+    Tasks with logic on one end that does not drive it.
 
     ``end = "start"``: has predecessors but none FS or SS (the start floats free).
     ``end = "finish"``: has successors but none FS or FF (the finish drives nothing).
-    Activities with no logic at all on that end are left to ``missing_logic``.
+    Tasks with no logic at all on that end are left to ``missing_logic``.
     """
     population = activities(context, exclude)
     relationships = context.snapshot.relationships
@@ -400,10 +400,10 @@ def relationship_type(
 def constraints(
     context, types: Names = (), exclude: Names = ("complete",), ignore_start_when_started: bool = True
 ) -> RuleOutput:
-    """Constrained activities.
+    """Constrained tasks.
     Counts: constrained / checked
 
-    Activities with a primary or secondary constraint in ``types`` (P6 codes, e.g. CS_MANDSTART).
+    Tasks with a primary or secondary constraint in ``types`` (P6 codes, e.g. CS_MANDSTART).
     """
     population = activities(context, exclude)
     flagged = population[constrained_by(population, types, ignore_start_when_started)]
@@ -415,10 +415,10 @@ def constraints(
 def total_float(
     context, op: Op = ">", value: float = 44, unit: Literal["hours", "days"] = "days", exclude: Names = ("complete",)
 ) -> RuleOutput:
-    """Activities outside the float limit.
+    """Tasks outside the float limit.
     Counts: flagged / checked
 
-    Activities whose total float compares to ``value`` (hours as stored, or working days).
+    Tasks whose total float compares to ``value`` (hours as stored, or working days).
     """
     population = activities(context, exclude)
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
@@ -435,14 +435,14 @@ def duration(
     unit: Literal["hours", "days"] = "days",
     exclude: Names = ("complete",),
 ) -> RuleOutput:
-    """Activities outside the duration limit.
+    """Tasks outside the duration limit.
     Counts: flagged / checked
 
-    Activities whose ``original``, ``remaining`` or ``baseline`` duration compares to ``value``.
+    Tasks whose ``original``, ``remaining`` or ``baseline`` duration compares to ``value``.
 
-    ``baseline`` (DCMA-EA PAM 200.1 4.8) is the baseline's planned duration, matched by Activity ID. In
-    days it is divided by the activity's current hours per day (the baseline calendar is not used). An
-    activity absent from the baseline has no baseline duration, so it is never flagged but stays in the
+    ``baseline`` (DCMA-EA PAM 200.1 4.8) is the baseline's planned duration, matched by Task ID. In
+    days it is divided by the task's current hours per day (the baseline calendar is not used). An
+    task absent from the baseline has no baseline duration, so it is never flagged but stays in the
     denominator. Without a baseline the rule has no value (n/a).
     """
     population = activities(context, exclude)
@@ -475,23 +475,23 @@ def invalid_dates(
     include_data_date: bool = False,
     in_progress: Literal["finish", "start"] = "finish",
 ) -> RuleOutput:
-    """Progress dates on the wrong side of the data date.
+    """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
 
-    Progress dates on the wrong side of the data date.
+    Progress dates on the wrong side of the status date.
 
-    ``forecast``: incomplete activity scheduled before the data date (not-started start or
+    ``forecast``: incomplete task scheduled before the status date (not-started start or
     finish; in-progress remaining finish, or remaining start with ``in_progress = "start"``,
     P6 Professional's reading). ``actual``: actual start or finish after it.
-    ``denominator``: the population, or ``started`` (activities with an actual start, as
-    DECM 06A506a). ``include_data_date`` also flags a forecast exactly on the data date:
-    off by default, because P6's data date is the first instant of remaining work (DECM's
+    ``denominator``: the population, or ``started`` (tasks with an actual start, as
+    DECM 06A506a). ``include_data_date`` also flags a forecast exactly on the status date:
+    off by default, because P6's status date is the first instant of remaining work (DECM's
     "on or before the status date", the end of the reported period, is "before" it).
     """
     data_date = context.snapshot.data_date
     population = activities(context, exclude)
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     before = operator.le if include_data_date else operator.lt
     is_open = ~population["is_complete"]
     early_start, early_finish = forecast_dates(population)  # the same reading as the model's Start / Finish
@@ -510,10 +510,10 @@ def invalid_dates(
 
 @rule("no_resource", "%")
 def no_resource(context, exclude: Names = ("complete", "loe", "milestones"), expenses_count: bool = True) -> RuleOutput:
-    """Activities with no resource assignment.
+    """Tasks with no resource assignment.
     Counts: without resources / checked
 
-    Activities with no resource assignment (and, if ``expenses_count``, no expense).
+    Tasks with no resource assignment (and, if ``expenses_count``, no expense).
     """
     population = activities(context, exclude)
     has_cost = population["has_resource"] | (population["has_expense"] if expenses_count else False)
@@ -534,11 +534,11 @@ def late_vs_baseline(
     """Forecast to finish after their baseline finish.
     Counts: late / checked
 
-    Activities forecast to finish later than their baseline finish.
+    Tasks forecast to finish later than their baseline finish.
 
-    P6's finish variance is working time on the activity's calendar, so a finish at
+    P6's finish variance is working time on the task's calendar, so a finish at
     17:00 against a baseline of 08:00 the next working morning is not late.
-    ``no_baseline``: an activity with no baseline finish passes, or (``"planned"``, P6
+    ``no_baseline``: a task with no baseline finish passes, or (``"planned"``, P6
     Professional) is late when its finish is later than its planned finish.
     """
     population = with_baseline(context.baseline, activities(context, exclude))
@@ -554,19 +554,19 @@ def bei(
     missing_baseline: Literal["due", "ignore"] = "due",
     due_from: Literal["snapshot", "baseline"] = "snapshot",
 ) -> RuleOutput:
-    """Due by the data date but not completed.
-    Counts: completed / due by the data date
+    """Due by the status date but not completed.
+    Counts: completed / due by the status date
 
-    Baseline Execution Index = activities completed / activities due by the data date.
+    Baseline Execution Index = tasks completed / tasks due by the status date.
 
-    ``missing_baseline = "due"`` counts an activity with no baseline finish as due (P6
+    ``missing_baseline = "due"`` counts a task with no baseline finish as due (P6
     EPPM); ``"ignore"`` leaves it out. ``due_from = "baseline"`` (P6 Professional) counts
-    the due activities in the baseline itself, ``exclude`` applied there: an activity
+    the due tasks in the baseline itself, ``exclude`` applied there: a task
     added since is never due, one deleted since still is; ``missing_baseline`` is unused.
     """
     data_date = context.snapshot.data_date
     if data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     population = with_baseline(context.baseline, activities(context, exclude))
     if due_from == "baseline":
         baseline_population = without(context.baseline.snapshot.activities, data_date, exclude)
@@ -595,7 +595,7 @@ def share_of_type(relationships: pd.DataFrame, link_type: str) -> RuleOutput:
 
 
 def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_hours: float = 0) -> RuleOutput:
-    """The activities finishing later than ``bl_finish`` by more than the tolerance, in working time."""
+    """The tasks finishing later than ``bl_finish`` by more than the tolerance, in working time."""
     variance_hours = context.snapshot.work_hours(population["clndr_id"], population["bl_finish"], population["finish"])
     flagged = population[as_flag(variance_hours > tolerance_hours)]
     variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
@@ -606,8 +606,8 @@ def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_ho
 def bei_from_baseline(
     context: AnalysisContext, population: pd.DataFrame, baseline_population: pd.DataFrame
 ) -> RuleOutput:
-    """BEI whose due activities are counted in the baseline (``baseline_population``: its kept activities):
-    an activity added since is never due, one deleted since still is."""
+    """BEI whose due tasks are counted in the baseline (``baseline_population``: its kept tasks):
+    a task added since is never due, one deleted since still is."""
     baseline = context.baseline
     done = int(population["is_complete"].sum())
     kept = baseline.frame[baseline.frame.index.isin(baseline_population["task_code"])]
@@ -632,7 +632,7 @@ def bei_from_baseline(
 
 
 def bei_from_snapshot(population: pd.DataFrame, data_date, missing_baseline_is_due: bool) -> RuleOutput:
-    """BEI whose due activities are the snapshot's own, ``population`` carrying its ``bl_finish``."""
+    """BEI whose due tasks are the snapshot's own, ``population`` carrying its ``bl_finish``."""
     done = int(population["is_complete"].sum())
     without_baseline = population["bl_finish"].isna()
     is_due = population["bl_finish"] <= data_date
@@ -657,9 +657,9 @@ def bei_from_snapshot(population: pd.DataFrame, data_date, missing_baseline_is_d
 
 
 def critical_path_output(context: AnalysisContext, slip_days: float) -> RuleOutput:
-    """The critical path test: slip the first open critical activity by ``slip_days``; the finish must follow."""
+    """The critical path test: slip the first open critical task by ``slip_days``; the finish must follow."""
     if context.snapshot.data_date is None:
-        return RuleOutput(note="no data date")
+        return RuleOutput(note="no status date")
     if finish_driver(context.snapshot) is None:
         return RuleOutput(note="no remaining work")
     test = critical_path_test(context.snapshot, slip_days)
