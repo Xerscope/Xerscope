@@ -315,12 +315,21 @@ test_forecast_curve_starts_at_ac_and_ends_at_eac. Cost rows: `test_spi_cost.py`.
 
 **PPC** (`committed`, `ppc_series`), for each consecutive pair W-1 → W of the series
 (sorted by data date, then source name):
-committed = activities of W-1 that are not complete, not LOE (milestones included by
-default) with `finish` (W-1 Start/Finish column) `< data date of W`, and still present in
-W; completed = those complete in W; `PPC = 100 × completed / committed`, none when
-committed = 0. Activities deleted in W are listed (`status_now = deleted`) and left out
-of both counts. Pinned by test_ppc_counts_only_commitments_still_in_the_update,
-test_ppc_series_one_row_per_week.
+two kinds of commitment, read on the activities of W-1 that are neither milestones nor LOE:
+
+| Commitment | Committed in W-1 | Kept in W |
+|---|---|---|
+| Finish | not complete, `finish < data date of W` | complete |
+| Start | not started, `start < data date of W` | started |
+
+`start` / `finish` are W-1's Start / Finish columns. An activity due to start and finish
+within the week is two commitments. `PPC = 100 × kept / committed` over both kinds, none
+when committed = 0; the finish row alone is Last Planner's PPC (finishes only) and is
+shown next to it. Milestones are left out: a milestone repeats its predecessor's date, so
+counting it adds a commitment the week the predecessor ends. Activities deleted in W are
+listed (`status_now = deleted`) and left out of both counts. Pinned by
+test_ppc_counts_starts_and_finishes_and_leaves_milestones_out,
+test_ppc_counts_only_commitments_still_in_the_update, test_ppc_series_one_row_per_week.
 
 **Progress delta** (`progress_delta(prev, cur, baseline)`), per activity of either update:
 

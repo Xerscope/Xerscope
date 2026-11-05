@@ -5,11 +5,14 @@ date, a flat line is a stable forecast, a rising one a slipping milestone; a com
 milestone drops out of the updates whose data date is after its actual date: there it only
 repeats that date below the diagonal (`plotted_trend`).
 
-PPC (Percent Plan Complete, Last Planner): of the activities the W-1 update forecast to
-finish before the W data date, the share that the W update shows complete. In a file P6
-has recalculated no open activity finishes before its own data date, so these are the
-activities forecast to finish during the week [W-1, W); an unscheduled file with stale
-forecasts also counts its overdue work, which was due and is not done.
+PPC (Percent Plan Complete): the commitments the W-1 update made for the week, kept in the
+W update. A finish commitment is an open activity forecast to finish before the W data
+date, kept when W shows it complete (Last Planner's PPC counts these only); a start
+commitment is a not-started activity forecast to start before that date, kept when W shows
+it started. PPC = kept / committed over both. In a file P6 has recalculated no forecast
+falls before its own data date, so these are the dates of the week [W-1, W); an
+unscheduled file with stale forecasts also counts its overdue work, which was due and is
+not done.
 
 Progress delta ("actual W - actual W-1"): per activity, % complete and earned hours
 gained during the week (budget hours of week W x change in % complete), rolled up by WBS.
@@ -102,40 +105,81 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
 # --- PPC --------------------------------------------------------------------------------------
 
 
-def committed(previous: Snapshot, current: Snapshot, include_milestones: bool = True) -> pd.DataFrame:
-    """Activities W-1 forecast to finish before W's data date, with their outcome in W."""
-    open_work = previous.activities
-    open_work = open_work[~open_work["is_complete"] & ~open_work["is_loe"]]
-    if not include_milestones:
-        open_work = open_work[~open_work["is_milestone"]]
-    plan = open_work[open_work["finish"] < current.data_date][["task_code", "task_name", "wbs_code", "finish"]]
-    now = current.by_code
-    plan = plan.rename(columns={"finish": "planned_finish"})
-    plan["in_update"] = plan["task_code"].isin(now.index)
-    plan["completed"] = plan["task_code"].map(now["is_complete"]).fillna(False).astype(bool)
-    plan["actual_finish"] = plan["task_code"].map(now["act_end_date"])
-    plan["forecast_finish_now"] = plan["task_code"].map(now["finish"])
-    plan["status_now"] = plan["task_code"].map(now["status"]).fillna("deleted")
-    return plan.reset_index(drop=True)
+def committed(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
+    """W-1's commitments for the week to W's data date, one row each, with their outcome in W.
+
+    An activity due to start and finish within the week is two commitments. Milestones and
+    level of effort are left out: a milestone repeats its predecessor's date, so it would
+    add a commitment the week the predecessor ends."""
+    work = previous.activities
+    work = work[~work["is_milestone"] & ~work["is_loe"]]
+    due, now = current.data_date, current.by_code
+    finishes = work[~work["is_complete"] & (work["finish"] < due)]
+    starts = work[~work["is_started"] & (work["start"] < due)]
+    return pd.concat(
+        [
+            _outcome(finishes, now, "Finish", date="finish", actual="act_end_date", kept="is_complete"),
+            _outcome(starts, now, "Start", date="start", actual="act_start_date", kept="is_started"),
+        ],
+        ignore_index=True,
+    )
 
 
-def ppc_series(store: SnapshotStore, include_milestones: bool = True) -> pd.DataFrame:
+def _outcome(plan: pd.DataFrame, now: pd.DataFrame, commitment: str, date: str, actual: str, kept: str) -> pd.DataFrame:
+    codes = plan["task_code"]
+    return pd.DataFrame(
+        {
+            "task_code": codes,
+            "task_name": plan["task_name"],
+            "wbs_code": plan["wbs_code"],
+            "commitment": commitment,
+            "planned_date": plan[date],
+            "in_update": codes.isin(now.index),
+            "kept": codes.map(now[kept]).fillna(False).astype(bool),
+            "actual_date": codes.map(now[actual]),
+            "forecast_now": codes.map(now[date]),
+            "status_now": codes.map(now["status"]).fillna("deleted"),
+        }
+    )
+
+
+def ppc_series(store: SnapshotStore) -> pd.DataFrame:
     rows = []
     for index in range(1, len(store)):
-        commitments = committed(store[index - 1], store[index], include_milestones)
+        commitments = committed(store[index - 1], store[index])
         commitments = commitments[commitments["in_update"]]  # deleted activities are scope changes, not misses
-        planned, done = len(commitments), int(commitments["completed"].sum())
+        finishes = commitments[commitments["commitment"] == "Finish"]
+        starts = commitments[commitments["commitment"] == "Start"]
+        planned, kept = len(commitments), int(commitments["kept"].sum())
         rows.append(
             {
                 "snapshot_idx": index,
                 "week_start": store[index - 1].data_date,
                 "data_date": store[index].data_date,
+                "finishes_committed": len(finishes),
+                "finishes_kept": int(finishes["kept"].sum()),
+                "starts_committed": len(starts),
+                "starts_kept": int(starts["kept"].sum()),
                 "committed": planned,
-                "completed": done,
-                "ppc": 100 * done / planned if planned else None,
+                "kept": kept,
+                "ppc": 100 * kept / planned if planned else None,
             }
         )
-    return pd.DataFrame(rows, columns=["snapshot_idx", "week_start", "data_date", "committed", "completed", "ppc"])
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "snapshot_idx",
+            "week_start",
+            "data_date",
+            "finishes_committed",
+            "finishes_kept",
+            "starts_committed",
+            "starts_kept",
+            "committed",
+            "kept",
+            "ppc",
+        ],
+    )
 
 
 # --- progress delta --------------------------------------------------------------------------

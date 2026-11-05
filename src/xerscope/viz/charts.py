@@ -433,7 +433,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
     text = [
         f"{v:.0f}% ({d}/{n})" if pd.notna(v) else "no commitment"
-        for v, d, n in zip(p["ppc"], p["completed"], p["committed"], strict=True)
+        for v, d, n in zip(p["ppc"], p["kept"], p["committed"], strict=True)
     ]
     # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
     # the hover keeps the counts)

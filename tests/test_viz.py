@@ -110,7 +110,7 @@ def test_mta_colour_follows_pick_order_even_with_a_line_missing():
     [
         build_mta(_mta_frame({"M1": ["2026-08-03"] * 3}), {"M1": 1.0}),
         build_ppc(pd.DataFrame({"data_date": pd.date_range("2026-03-02", periods=2, freq="7D"),
-                                "ppc": [100.0, 50], "completed": [1, 1], "committed": [1, 2]}), 80),
+                                "ppc": [100.0, 50], "kept": [1, 1], "committed": [1, 2]}), 80),
     ],
 )  # fmt: skip
 def test_charts_leave_text_grid_and_axes_to_the_theme(fig):
@@ -127,7 +127,7 @@ def test_ppc_target_label_sits_outside_the_bars():
         {
             "data_date": pd.date_range("2026-03-02", periods=3, freq="7D"),
             "ppc": [100.0, 50, 100],
-            "completed": [1, 1, 1],
+            "kept": [1, 1, 1],
             "committed": [1, 2, 1],
         }
     )

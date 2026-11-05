@@ -14,7 +14,7 @@ read in P6, each traced to a formula, a population and a source:
 - **P6-exact recalculation:** early / late dates, floats, longest path and resource
   assignments, compared with the dates stored in the file.
 - **Weekly series:** changelog between updates, earned value in labour hours with
-  S-curve, milestone trend, PPC (Last Planner), Gantt with WBS explorer.
+  S-curve, milestone trend, PPC (finish and start commitments), Gantt with WBS explorer.
 - **Export:** Power BI star schema (Parquet or CSV).
 
 ## Contents
@@ -182,9 +182,10 @@ Configuration (environment variables, also set by the `app` flags):
 - **EV:** baseline labour units × Performance % Complete, by the WBS's EV technique
   (activity % complete, 0/100, 50/50, custom %). Activities not in the baseline earn
   nothing and are listed. AC is the actual hours; EAC = AC + remaining.
-- **PPC commitments:** activities that update W-1 forecasts to finish before W's data
-  date (in a recalculated file, those forecast to finish during the week). An activity
-  deleted in W counts as scope change, not as a miss.
+- **PPC commitments:** the finishes and the starts that update W-1 forecasts before W's
+  data date (in a recalculated file, those forecast during the week); PPC = kept / committed
+  over both, the finishes alone being Last Planner's PPC. Milestones are left out. An
+  activity deleted in W counts as scope change, not as a miss.
 
 ## Validation
 
@@ -276,7 +277,7 @@ src/xerscope/
 | 3 | Baseline: PV (BL labour units × Schedule % Complete, working time of each calendar) | Earned value | done |
 | 4 | Snapshot vs baseline: EV, EV %, SPI, BEI (P6 and DCMA), S-curve, EAC | Earned value | done |
 | 5 | Milestone trend analysis (forecast over reporting date) | Milestone trend | done |
-| 6 | PPC (Last Planner, W-1 forecast vs W actual) + progress delta, by WBS | PPC & progress | done |
+| 6 | PPC (W-1 finish and start commitments vs W actual) + progress delta, by WBS | PPC & progress | done |
 | 7 | Gantt & WBS explorer (roll-ups, summary bars, focus a node) | Gantt & WBS | done |
 | 8 | Data analysis, forecast, TIA | | next |
 

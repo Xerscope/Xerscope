@@ -121,26 +121,24 @@ def test_earned_value_kpis_equal_evm_series(app, store):
         assert shown["EAC"] == f"{row['eac_hr']:,.0f} h", snapshot.label
 
 
-@pytest.mark.parametrize("with_milestones", [True, False])
-def test_ppc_kpis_equal_ppc_series(app, store, with_milestones):
-    """Committed, finished and PPC of every week: the KPI row and the chart's series agree."""
+def test_ppc_kpis_equal_ppc_series(app, store):
+    """Finishes kept, starts kept and PPC of every week: the KPI row and the chart's series agree."""
     app.switch_page("views/ppc.py")
     _run(app)
-    next(toggle for toggle in app.toggle if toggle.label == "Include milestones").set_value(with_milestones)
-    _run(app)
-    series = ppc_series(store, with_milestones).set_index("snapshot_idx")
+    series = ppc_series(store).set_index("snapshot_idx")
     for index, label in enumerate(store.labels[1:], start=1):
         app.selectbox(key="ppc_week").set_value(label)
         _run(app)
         row, shown = series.loc[index], _metrics(app)
-        assert int(shown["Committed"]) == row["committed"], label
-        assert int(shown["Finished as committed"]) == row["completed"], label
+        assert shown["Finishes kept"] == f"{row['finishes_kept']} / {row['finishes_committed']}", label
+        assert shown["Starts kept"] == f"{row['starts_kept']} / {row['starts_committed']}", label
         assert shown["PPC this week"] == ("–" if pd.isna(row["ppc"]) else f"{row['ppc']:.0f} %"), label
 
 
 def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
-    """W-1 commits A, B, C (forecast to finish before W's data date). W: A complete, B open,
-    C deleted. A deleted activity is a scope change, not a miss: 1 finished / 2 committed = 50 %."""
+    """W-1 commits A, B, C to start and finish before W's data date. W: A complete, B not
+    started, C deleted. A deleted activity is a scope change, not a miss: finishes 1 / 2 (A),
+    starts 1 / 2 (A), PPC 2 / 4 = 50 %."""
     week_1 = [todo(code, early_end_date="2026-03-06 17:00") for code in ("A", "B", "C")]
     week_2 = [done("A", act_end_date="2026-03-06 17:00"), todo("B", early_start_date="2026-03-09 08:00")]
     (tmp_path / "w1.xer").write_text(xer_text(week_1, data_date="2026-03-02 08:00"))
@@ -152,7 +150,7 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     at.switch_page("views/ppc.py")
     _run(at)
     shown = _metrics(at)
-    assert (shown["Committed"], shown["Finished as committed"], shown["PPC this week"]) == ("2", "1", "50 %")
+    assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC this week"]) == ("1 / 2", "1 / 2", "50 %")
 
 
 def test_overview_kpis_equal_store_summary(app, store):

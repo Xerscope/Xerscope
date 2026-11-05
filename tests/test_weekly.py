@@ -2,7 +2,7 @@
 
 import pandas as pd
 import pytest
-from xerkit import active, done, snap, todo
+from xerkit import FM, SM, active, done, snap, todo
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.changelog import changelog, summary
@@ -323,16 +323,24 @@ W2 = snap(
 )
 
 
+def _commitments(c: pd.DataFrame) -> list[tuple[str, str]]:
+    return sorted(zip(c["task_code"], c["commitment"], strict=True))
+
+
 def test_ppc_counts_only_commitments_still_in_the_update():
     c = committed(W1, W2)
-    assert sorted(c["task_code"]) == ["A", "B", "DEL"]  # C was due after the W2 data date
-    kept = c[c["in_update"]]
-    assert kept["completed"].sum() / len(kept) == 0.5
+    # all four were not started and forecast to start on W1's data date; C finishes after W2's
+    assert _commitments(c) == [
+        ("A", "Finish"), ("A", "Start"), ("B", "Finish"), ("B", "Start"),
+        ("C", "Start"), ("DEL", "Finish"), ("DEL", "Start"),
+    ]  # fmt: skip
+    finishes = c[c["in_update"] & (c["commitment"] == "Finish")]
+    assert finishes["kept"].sum() / len(finishes) == 0.5
 
 
 def test_ppc_commits_started_and_not_started_work():
     """W-1 in progress (E) and not started (N), both forecast to finish before W's data date:
-    both are committed; E finished in W, N only started, so 1 of 2."""
+    both finishes are committed, and N's start. E finished in W, N only started."""
     w1 = snap(
         [
             active("E", act_start_date="2026-03-02 08:00", early_end_date="2026-03-05 17:00"),
@@ -343,21 +351,68 @@ def test_ppc_commits_started_and_not_started_work():
         [done("E", act_end_date="2026-03-05 17:00"), active("N", act_start_date="2026-03-04 08:00")],
         data_date="2026-03-09 08:00",
     )
-    c = committed(w1, w2).set_index("task_code")
-    assert sorted(c.index) == ["E", "N"]
-    assert (c.loc["E", "completed"], c.loc["N", "completed"]) == (True, False)
-    assert c.loc["N", "status_now"] == "In progress"
+    c = committed(w1, w2).set_index(["task_code", "commitment"])
+    assert sorted(c.index) == [("E", "Finish"), ("N", "Finish"), ("N", "Start")]
+    assert (c.loc[("E", "Finish"), "kept"], c.loc[("N", "Finish"), "kept"]) == (True, False)
+    assert c.loc[("N", "Start"), "kept"]
+    assert c.loc[("N", "Start"), "actual_date"] == pd.Timestamp("2026-03-04 08:00")
+    assert c.loc[("N", "Finish"), "status_now"] == "In progress"
+
+
+def test_ppc_counts_starts_and_finishes_and_leaves_milestones_out():
+    """Week 2026-03-02 -> 2026-03-09. W-1 commits:
+    S1, S2 start only (finish after W); SF starts and finishes within the week (two commitments);
+    E in progress, finish only; DEL start and finish, then deleted (scope change, not counted);
+    LATE nothing (both dates after W). FM and SM are milestones: a milestone repeats its
+    predecessor's date, so counting it would add a commitment the week the predecessor ends.
+    W: S1 started, S2 slipped, SF started not finished, E finished, both milestones done.
+    Finishes kept 1 / 2 (E, not SF); starts kept 2 / 3 (S1, SF, not S2); PPC 3 / 5 = 60 %."""
+    w1 = snap(
+        [
+            todo("S1", early_start_date="2026-03-03 08:00", early_end_date="2026-03-20 17:00"),
+            todo("S2", early_start_date="2026-03-04 08:00", early_end_date="2026-03-20 17:00"),
+            todo("SF", early_start_date="2026-03-04 08:00", early_end_date="2026-03-06 17:00"),
+            active("E", early_end_date="2026-03-05 17:00"),
+            todo("DEL", early_start_date="2026-03-03 08:00", early_end_date="2026-03-05 17:00"),
+            todo("LATE", early_start_date="2026-03-10 08:00", early_end_date="2026-03-12 17:00"),
+            todo("FM", **FM, early_start_date="2026-03-05 17:00", early_end_date="2026-03-05 17:00"),
+            todo("SM", **SM, early_start_date="2026-03-03 08:00", early_end_date="2026-03-03 08:00"),
+        ]
+    )
+    w2 = snap(
+        [
+            active("S1", act_start_date="2026-03-03 08:00"),
+            todo("S2", early_start_date="2026-03-10 08:00", early_end_date="2026-03-24 17:00"),
+            active("SF", act_start_date="2026-03-04 08:00"),
+            done("E", act_end_date="2026-03-05 17:00"),
+            todo("LATE", early_start_date="2026-03-10 08:00", early_end_date="2026-03-12 17:00"),
+            done("FM", **FM, act_start_date="2026-03-05 17:00", act_end_date="2026-03-05 17:00"),
+            done("SM", **SM, act_start_date="2026-03-03 08:00", act_end_date="2026-03-03 08:00"),
+        ],
+        data_date="2026-03-09 08:00",
+    )
+    c = committed(w1, w2)
+    assert _commitments(c) == [
+        ("DEL", "Finish"), ("DEL", "Start"), ("E", "Finish"), ("S1", "Start"),
+        ("S2", "Start"), ("SF", "Finish"), ("SF", "Start"),
+    ]  # fmt: skip
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["finishes_kept"], row["finishes_committed"]) == (1, 2)
+    assert (row["starts_kept"], row["starts_committed"]) == (2, 3)
+    assert (row["kept"], row["committed"], row["ppc"]) == (3, 5, 60.0)
 
 
 def test_ppc_series_one_row_per_week():
-    from xerscope.store import SnapshotStore
-
     s = ppc_series(SnapshotStore([W1, W2]))
     assert len(s) == 1
     row = s.iloc[0]
-    # W1 forecast A, B and DEL to finish before W2's data date; DEL is gone (scope change,
-    # not a missed commitment), A finished, B did not: 1 of 2
-    assert (row["committed"], row["completed"], row["ppc"]) == (2, 1, 50.0)
+    # W1 forecast A, B, DEL to finish and A, B, C, DEL to start before W2's data date; DEL is
+    # gone (scope change, not a miss). Finishes: A done, B not: 1 / 2. Starts: A, B started,
+    # C not: 2 / 3. PPC = (1 + 2) / (2 + 3) = 60 %
+    assert (row["finishes_kept"], row["finishes_committed"], row["starts_kept"], row["starts_committed"]) == (
+        1, 2, 2, 3,
+    )  # fmt: skip
+    assert (row["committed"], row["kept"], row["ppc"]) == (5, 3, 60.0)
     assert row["week_start"] == W1.data_date and row["data_date"] == W2.data_date
 
 
