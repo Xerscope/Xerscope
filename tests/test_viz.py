@@ -146,9 +146,17 @@ def test_ppc_target_label_sits_outside_the_bars():
 
 
 def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
-    fig = build_ppc(_ppc_frame([50.0, None], [1, 0], [2, 0]), 80)
+    """Finishes 1/2 = 50 %, starts 2/3 = 66.7 %, all 3/5 = 60 % in week 1; nothing committed in week 2.
+    Each trace carries its own ratio and counts, so a swap between the start and the all series fails."""
+    frame = _ppc_frame([50.0, None], [1, 0], [2, 0])
+    frame["ppc_start"], frame["starts_kept"], frame["starts_committed"] = [200 / 3, None], [2, 0], [3, 0]
+    frame["ppc_all"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
+    fig = build_ppc(frame, 80)
     assert [t.type for t in fig.data] == ["bar", "scatter", "scatter"]
     assert [t.name for t in fig.data] == ["PPC (finishes)", "PPC Start", "PPC all commitments"]
+    assert list(fig.data[0].y) == [50.0, 0.0] and fig.data[0].customdata[0] == "50% (1/2)"
+    assert fig.data[1].y[0] == pytest.approx(200 / 3) and fig.data[1].customdata[0] == "67% (2/3)"
+    assert fig.data[2].y[0] == 60.0 and fig.data[2].customdata[0] == "60% (3/5)"
     assert fig.data[0].customdata[1] == "no commitment"
 
 
