@@ -363,6 +363,30 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
         )
 
 
+def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
+    """Files whose P6 Project Baseline (sum_base_proj_id) names a project the file does not hold: how to
+    get that baseline out of P6. Restore detaches a baseline from its project and fails while it is
+    assigned (Oracle P6 help, Working with Baselines), so the pointer cannot be kept in one export."""
+    absent: dict[str, list[str]] = {}
+    for snapshot in store:
+        pointer = snapshot.file_baseline.proj_id
+        if pointer and pointer not in set(snapshot.file_projects["proj_id"]):
+            absent.setdefault(pointer, []).append(snapshot.source)
+    if not absent:
+        return
+    named = "; ".join(f"project {proj_id} ({', '.join(files)})" for proj_id, files in absent.items())
+    sidebar.info(
+        f"P6 Project Baseline not exported with the file: {ui.md_text(named)}. To measure against it:\n\n"
+        "1. In P6, Project > Assign Baselines: unassign it as Project Baseline.\n"
+        "2. Project > Maintain Baselines: select it, Restore. It becomes a project in the EPS.\n"
+        "3. Open that project alone, File > Export, XER.\n"
+        f"4. Here, Baseline (BL) > {BL_FILE}: load that XER. It applies to every update of the series.\n"
+        "5. In P6, Maintain Baselines > Add > Convert another project to a new baseline of the current "
+        "project, then Assign Baselines again.",
+        icon=":material/info:",
+    )
+
+
 MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must find
 
 
@@ -441,6 +465,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
         _describe_baseline(sidebar, store, baseline)
     if baseline == BL_EACH:
         _file_baseline_warnings(sidebar, store)
+    _absent_baseline_help(sidebar, store)
 
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
