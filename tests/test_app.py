@@ -901,8 +901,11 @@ def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkey
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
     boxes = {box.key.rsplit(":", 1)[1]: box for box in file_boxes(at)}
-    assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 2 projects"
-    assert boxes["w2.xer"].label == "w2.xer — NEW · 09 Mar 2026"
+    # the project's number of tasks on the label: the project info reads without opening the help
+    assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 3 tasks · 2 projects"
+    assert boxes["w2.xer"].label.startswith("w2.xer — NEW · 09 Mar 2026 · ") and boxes["w2.xer"].label.endswith(
+        " tasks"
+    )
     assert "NEW (3) · OLD (2)" in boxes["w1.xer"].help and "most TASK rows" in boxes["w1.xer"].help
     assert "from last_recalc_date" in boxes["w2.xer"].help
     assert "_parsed" not in at.session_state or not at.session_state["_parsed"]
