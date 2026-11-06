@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -249,18 +251,23 @@ def test_base_images_pinned_by_digest():
     assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
 
 
-def test_caddy_scan_exceptions_are_dated_and_reasoned():
-    """Each Trivy exception for the Caddy image names its CVE, why it is not reachable here, and an expiry."""
+@pytest.mark.parametrize("image", ["caddy", "tailscale"])
+def test_sidecar_scan_exceptions_are_dated_and_reasoned(image):
+    """Each Trivy exception for a sidecar image of deploy/compose.yaml names its CVE, why it is not
+    reachable here, and an expiry; the scan of that image, and only that one, reads the file."""
     import datetime
 
-    text = (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()
+    text = (ROOT / "deploy" / f"{image}.trivyignore.yaml").read_text()
     entries = re.findall(r"- id: (\S+)\n\s+statement: (.+)\n\s+expired_at: (\d{4}-\d{2}-\d{2})", text)
     assert entries and len(entries) == text.count("- id:"), entries
     for cve, statement, expiry in entries:
         assert cve.startswith(("CVE-", "GHSA-")) and len(statement) > 20, cve
         datetime.date.fromisoformat(expiry)
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
-    assert wf.count("trivyignores:") == 1 and "trivyignores: deploy/caddy.trivyignore.yaml" in wf
+    step = wf[wf.index(f"Known vulnerabilities in the {image.capitalize()} image") :]
+    step = step[: step.index("- name:", 1)]
+    assert f"trivyignores: deploy/{image}.trivyignore.yaml" in step, image
+    assert wf.count("trivyignores:") == 2
 
 
 def test_schedules_stay_out_of_git():

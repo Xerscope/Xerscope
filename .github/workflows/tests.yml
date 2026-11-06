@@ -261,6 +261,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          trivyignores: deploy/tailscale.trivyignore.yaml   # dated exceptions, each with its reason
       - name: Container states and logs, when a step failed
         if: failure()
         run: |
