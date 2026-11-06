@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.progress import committed, ppc_series, progress_delta, rollup_delta
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
@@ -79,7 +80,8 @@ def show_kpis(week: pd.Series, project_progress: pd.Series) -> None:
                 None,
                 "Earned labor hours this week / budget hours (baseline hours and EV technique when a baseline is set)",
             ),
-        ]
+        ],
+        formulas=KPI_FORMULAS,
     )
 
 

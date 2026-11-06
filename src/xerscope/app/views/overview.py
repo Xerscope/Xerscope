@@ -2,9 +2,19 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import builtin_standards, standard_score
+from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
-from xerscope.app.state import page_header, require_store, standard_results, standard_results_held, standards
+from xerscope.app.state import (
+    background_jobs,
+    page_header,
+    poll_scores,
+    require_store,
+    score_job,
+    standard_results,
+    standard_results_held,
+    standards,
+)
 from xerscope.viz import build_finish_trend
 
 store = require_store()
@@ -50,7 +60,8 @@ ui.kpis(
             "Open tasks with total float ≤ 0",
             "inverse",
         ),
-    ]
+    ],
+    formulas=KPI_FORMULAS,
 )
 
 ui.section(
@@ -61,9 +72,19 @@ ui.section(
 )
 built_in = {key: standard for key, standard in standards().items() if key in builtin_standards()}
 held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
-if any(results is None for results in held.values()) and st.button(
-    "Compute scores", icon=":material/calculate:", key="overview_scores"
-):
+missing = [key for key, results in held.items() if results is None]
+loading = st.session_state.get("_load_job") is not None  # the series is still being read
+if missing and background_jobs() and not loading:
+    # computed in a thread once the series is read; the cards fill as each standard finishes
+    job = score_job(latest, store, built_in)
+    held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
+    failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
+    for message in failed:
+        st.error(message, icon=":material/error:")
+    if not job.done:
+        st.caption(f"Computing the scores · {len(job.held)}/{len(built_in)} standards")
+        poll_scores()
+elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
     held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
 ui.score_cards(
     {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}

@@ -18,6 +18,7 @@ from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
 from xerscope.app.sets import show_sets
 from xerscope.app.state import (
+    SNAP_CHOICE,
     anonymous_exports,
     baseline_for,
     baseline_warnings,
@@ -25,10 +26,12 @@ from xerscope.app.state import (
     data_identity,
     downloads_ready,
     fetch,
+    go_to,
     held,
     hold,
     memo,
     metric_result,
+    open_in_gantt,
     page_header,
     require_store,
     show_download,
@@ -187,7 +190,47 @@ def show_check_sets(results, standard, snapshot, sources: list[str]) -> None:
         show_sets(next(result for result in results if result.metric.id == chosen), snapshot, sources, f"{chosen}:")
 
 
-def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]) -> None:
+def flagged_codes(flagged: pd.DataFrame) -> list[str]:
+    """The Activity IDs a check's list names: its tasks, or both ends of its links."""
+    codes: list[str] = []
+    for column in ("task_code", "pred_code", "succ_code"):
+        if column in flagged.columns:
+            codes += [str(code) for code in flagged[column].dropna() if not str(code).startswith("[ext]")]
+    return list(dict.fromkeys(codes))
+
+
+def show_links(result, snapshot, standard) -> None:
+    """Where to go next with this check: the Gantt on the tasks it lists, the Audit on its sets."""
+    metric = result.metric
+    codes = flagged_codes(result.flagged)
+    with st.container(horizontal=True, gap="small"):
+        if codes and st.button(
+            f"Show the {len(codes)} tasks in the Gantt",
+            icon=":material/view_timeline:",
+            key=f"gantt_{metric.id}",
+            help="The Gantt filtered on the tasks this check lists, on this update",
+        ):
+            go_to(
+                "gantt",
+                gantt_focus={"codes": codes, "label": f"{metric.id} · {metric.name}"},
+                gantt_node=None,
+                gantt_task=None,
+                **{SNAP_CHOICE: snapshot.label},
+            )
+        if st.button(
+            "Audit this check",
+            icon=":material/manage_search:",
+            key=f"audit_{metric.id}",
+            help="The sets it counted, checked and excluded, and the check re-run with other settings",
+        ):
+            go_to(
+                "audit",
+                audit_std=standard.id,
+                **{f"audit_check:{standard.id}": metric.id, SNAP_CHOICE: snapshot.label},
+            )
+
+
+def show_check(result, explanation, snapshot, expanded: bool, sources: list[str], standard=None) -> None:
     """One expander: what the check measures, its calculation, method and the flagged items."""
     metric = result.metric
     row = results_frame([result]).iloc[0]
@@ -228,6 +271,8 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
                     + (f"[{metric.source}]({metric.source})" if metric.source.startswith("http") else metric.source)
                 )
 
+        if standard is not None:
+            show_links(result, snapshot, standard)
         if result.flagged.empty:
             st.caption("No item listed for this check.")
         else:
@@ -235,7 +280,12 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
                 f"**{explanation.flagged_label}** · {len(result.flagged)} "
                 f"{noun(explanation.subject, len(result.flagged))}"
             )
-            ui.table(culprits_first(result.flagged), max_height=420, key=f"flag_{metric.id}")
+            ui.table(
+                culprits_first(result.flagged),
+                max_height=420,
+                key=f"flag_{metric.id}",
+                open_task=partial(open_in_gantt, snapshot=snapshot),
+            )
             if not downloads_ready(sources):
                 st.caption("Download: prepare the anonymized downloads under Results.")
             else:
@@ -248,7 +298,7 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
                 )
 
 
-def show_details(results, snapshot, only_failed: bool, sources: list[str]) -> None:
+def show_details(results, snapshot, only_failed: bool, sources: list[str], standard) -> None:
     ui.section("Detail by check")
     expand_all = st.toggle("Expand all", value=False, key="health_expand")
     group = None
@@ -258,7 +308,7 @@ def show_details(results, snapshot, only_failed: bool, sources: list[str]) -> No
         if result.metric.group and result.metric.group != group:
             group = result.metric.group
             st.markdown(f"##### {group}")
-        show_check(result, explain(result), snapshot, expand_all, sources)
+        show_check(result, explain(result), snapshot, expand_all, sources, standard)
 
 
 def show_trend(store, standard) -> None:
@@ -424,7 +474,7 @@ show_kpis(results, standard)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
 show_summary(results, standard, snapshot, baseline, sources)
 show_check_sets(results, standard, snapshot, sources)
-show_details(results, snapshot, only_failed, sources)
+show_details(results, snapshot, only_failed, sources, standard)
 if len(store) > 1:
     show_trend(store, standard)
 

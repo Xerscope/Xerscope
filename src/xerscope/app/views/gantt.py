@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
 from xerscope.app.state import (
@@ -19,8 +20,10 @@ from xerscope.viz.gantt import CATEGORY_ORDER
 from xerscope.xer.model import STATUS
 
 NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
+NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker is drawn before the chart)
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
 PICK_KEY = "gantt_task_pick"  # that list
+FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
 
@@ -49,6 +52,9 @@ nodes = memo(
     baseline,
     ev_basis=False,  # reads bl_finish only
 )
+# a focus asked after the WBS picker was drawn (a double click in the chart) applies on the next run
+if (wanted := st.session_state.pop(NEXT_NODE_KEY, None)) in set(nodes["wbs_id"]):
+    st.session_state[NODE_KEY] = wanted
 if st.session_state.get(NODE_KEY) not in set(nodes["wbs_id"]):
     st.session_state[NODE_KEY] = ROOT  # first visit, or a node the picked update does not have
 labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
@@ -63,6 +69,28 @@ path_labels = {
 
 current = st.selectbox("WBS", nodes["wbs_id"].tolist(), format_func=path_labels.get, key=NODE_KEY)
 node = nodes[nodes["wbs_id"] == current].iloc[0]
+
+
+def _focus_node(wbs_id: str) -> None:
+    st.session_state[NODE_KEY] = wbs_id
+
+
+# the path to the node, each step a button that moves the focus up ("Project › CIV › ZA");
+# nothing at the top node (ancestors list the node itself first)
+path = [*(a for a in reversed(node["ancestors"]) if a != current), current]
+if len(path) > 1:
+    with st.container(horizontal=True, gap="small", vertical_alignment="center", key="gantt_crumbs"):
+        for step in path:
+            if step == current:
+                st.markdown(f"**{ui.md_text(labels[step])}**")
+            else:
+                st.button(
+                    f"{ui.md_text(labels[step])} ›",
+                    key=f"crumb_{step}",
+                    type="tertiary",
+                    on_click=_focus_node,
+                    args=(step,),
+                )
 ui.kpis(
     [
         ("Focus", node["wbs_code"] if current != ROOT else "Whole project", None, node["wbs_name"]),
@@ -81,7 +109,8 @@ ui.kpis(
         ),
         ("Labor hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
         ("Open critical", int(node["critical"])),
-    ]
+    ],
+    formulas=KPI_FORMULAS,
 )
 
 status_column, float_column, search_column = st.columns(3)
@@ -144,6 +173,14 @@ if search:
     tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
 if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
+focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
+if focus:
+    tasks = tasks[tasks["task_code"].isin(focus["codes"])]
+    with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+        st.markdown(f"Showing the **{len(tasks)}** tasks of **{ui.md_text(focus['label'])}**")
+        if st.button("Show all", icon=":material/close:", key="gantt_focus_clear", type="tertiary"):
+            st.session_state[FOCUS_KEY] = None
+            st.rerun()
 filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the outline stays closed
 
 rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
@@ -172,12 +209,17 @@ chart = ui.GANTT(
     ),
     key="gantt_chart",
     on_picked_change=lambda: None,  # a click on an activity row sends "a:<Activity ID>"
+    on_focus_change=lambda: None,  # a double click on a WBS row sends "w:<wbs_id>"
 )
 # the browser sends a row id only; it counts when it names an activity drawn in this chart
 clicked = task_from_row_id(chart.get("picked"))
 if clicked in drawn and clicked != picked:
     st.session_state[TASK_KEY] = clicked
     st.rerun()  # draw the chart again with the activity selected
+focused = chart.get("focus")
+if isinstance(focused, str) and focused.startswith("w:") and focused[2:] in branch_ids and focused[2:] != current:
+    st.session_state[NEXT_NODE_KEY] = focused[2:]
+    st.rerun()
 
 
 def _pick_from_list() -> None:

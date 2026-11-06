@@ -10,6 +10,8 @@ the same column names and number formats everywhere.
 
 from __future__ import annotations
 
+import base64
+import functools
 import re
 import sys
 import unicodedata
@@ -55,17 +57,68 @@ GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())
 
 
 STYLE = Path(__file__).parent / "style.css"
+STATIC = Path(__file__).parent / "static"
+# The theme's fonts (.streamlit/config.toml, [[theme.fontFaces]]): family -> file in app/static/.
+FONT_FILES = {"Onest": "Onest-latin-wght.woff2", "JetBrains Mono": "JetBrainsMono-latin-wght.woff2"}
+
+
+def theme_loaded() -> bool:
+    """Whether Streamlit read the app's .streamlit/config.toml: ``xerscope app`` runs from that folder,
+    and Streamlit 1.66 also reads it next to the script. An older Streamlit started from another
+    folder reads none: the page then shows Streamlit's defaults (its own fonts and colours, no
+    static folder, every interface listened on)."""
+    return st.get_option("theme.font") is not None and bool(st.get_option("server.enableStaticServing"))
+
+
+@functools.cache
+def font_fallback_css() -> str:
+    """@font-face rules with the two fonts inlined (data: URLs, ~100 KB), for a run without the
+    config: the static folder is not served then, so the theme's font URLs would 404."""
+    rules = []
+    for family, name in FONT_FILES.items():
+        data = base64.b64encode((STATIC / name).read_bytes()).decode("ascii")
+        rules.append(
+            f'@font-face {{ font-family: "{family}"; font-weight: 100 900; font-display: swap; '
+            f"src: url(data:font/woff2;base64,{data}) format('woff2'); }}"
+        )
+    rules.append('.stApp { font-family: "Onest", sans-serif; }')
+    rules.append('.stApp code, .stApp pre { font-family: "JetBrains Mono", monospace; }')
+    return "\n".join(rules)
+
+
+def runtime_table() -> pd.DataFrame:
+    """Debug block 12: where the app runs and what Streamlit read, one row per setting."""
+    import platform
+
+    import streamlit as st_module
+
+    fonts = ", ".join(f"{face.get('family')} ({face.get('url')})" for face in st.get_option("theme.fontFaces") or [])
+    rows = [
+        ("Config read", "yes" if theme_loaded() else "no — start with `xerscope app`"),
+        ("Working directory (config is read here)", str(Path.cwd())),
+        ("theme.font", str(st.get_option("theme.font"))),
+        ("theme.fontFaces", fonts or "none"),
+        ("server.enableStaticServing (fonts folder)", str(st.get_option("server.enableStaticServing"))),
+        ("Fonts inlined as fallback", "no" if theme_loaded() else "yes"),
+        ("Style sheet", f"{STYLE} ({STYLE.stat().st_size} bytes)"),
+        ("Package", str(Path(__file__).resolve().parents[1])),
+        ("Streamlit", st_module.__version__),
+        ("Python", platform.python_version()),
+    ]
+    return pd.DataFrame(rows, columns=["setting", "value"])
 
 
 def apply_style() -> None:
     """style.css with the app's colours (sent once per run, takes no space). The series colours
     hold on both themes, the accent is a CSS light-dark() pair resolved by the color-scheme
     Streamlit sets on the app, and the rest follows the page's text colour, so a theme switch
-    needs no rerun."""
+    needs no rerun. Without the config (``theme_loaded``), the fonts are inlined so the page at
+    least reads in the app's faces."""
     accent = f"light-dark({ACCENT['light']}, {ACCENT['dark']})"
     colours = {"accent": accent} | {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
     variables = "".join(f"--{name}: {value};" for name, value in colours.items())
-    st.html(f"<style>:root {{{variables}}}\n{STYLE.read_text(encoding='utf-8')}</style>")
+    fallback = "" if theme_loaded() else font_fallback_css()
+    st.html(f"<style>:root {{{variables}}}\n{fallback}\n{STYLE.read_text(encoding='utf-8')}</style>")
 
 
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
@@ -225,9 +278,11 @@ def delta_colour(delta, colour: str) -> str:
     return "off" if delta is not None and _ZERO.match(str(delta).strip()) else colour
 
 
-def kpis(items: Sequence[tuple]) -> None:
+def kpis(items: Sequence[tuple], formulas: Mapping[str, Mapping[str, str]] | None = None) -> None:
     """A readout, one line per figure: (label, value[, delta[, help[, delta_color]]]). Past four
-    figures the lines run in two columns. The lines are st.metric, drawn as rows by style.css."""
+    figures the lines run in two columns. The lines are st.metric, drawn as rows by style.css.
+    ``formulas`` (label -> standard -> formula, analysis/explain.py KPI_FORMULAS) opens a
+    "Formulas" popover under the readout for the labels it knows."""
     labels = tuple(str(item[0]) for item in items)
     with st.container(key=f"kpis_{zlib.crc32('|'.join(labels).encode()):08x}"):
         columns = st.columns(2, gap="large") if len(items) > 4 else [st.container()]
@@ -241,6 +296,13 @@ def kpis(items: Sequence[tuple]) -> None:
             columns[index // per_column].metric(
                 label, value, delta=delta, help=help_, delta_color=delta_colour(delta, colour)
             )
+    known = [label for label in labels if formulas and label in formulas]
+    if known:
+        with st.popover("Formulas", icon=":material/function:", help="How each figure is computed, by standard"):
+            for label in known:
+                by_standard = formulas[label].items()  # type: ignore[index]
+                lines = "\n".join(f"- *{standard}* · {formula}" for standard, formula in by_standard)
+                st.markdown(f"**{label}**\n{lines}")
 
 
 SCORE_HELP = (
@@ -253,12 +315,16 @@ SCORE_HELP = (
 def score_cards(scores: dict) -> None:
     """One card per standard: ``"<name> score"``, the share of evaluated checks that pass, then the
     count evaluated and the failed ids. A standard whose score is None is not computed yet."""
-    cols = st.columns(len(scores))
+    with st.container(key="score_cards"):
+        cols = st.columns(len(scores))
     for col, (name, score) in zip(cols, scores.items(), strict=True):
         label = f"{name} score"
         help_ = "\n\n".join(part for part in (SCORE_HELP, spelled_out(label)) if part)
         if score is None:
-            col.metric(label, "not computed yet", help=help_, border=True)
+            # a short value: a long one is cut with an ellipsis in a card
+            col.metric(
+                label, "–", delta="not computed yet", delta_color="off", delta_arrow="off", help=help_, border=True
+            )
         else:
             col.metric(
                 label,
@@ -490,6 +556,7 @@ def table(
     overrides: dict | None = None,
     status: str | None = None,
     raw_labels: bool = False,
+    open_task: Callable[[str], None] | None = None,
     **kwargs,
 ):
     """A labelled, formatted dataframe; height follows the rows up to ``max_height``.
@@ -497,18 +564,36 @@ def table(
     ``status`` names a pass/fail column to show as coloured labels; ``raw_labels`` keeps the
     column names as headers (see ``column_config``). A table longer than
     ``Settings.table_filter_min_rows`` gets column filters, kept per ``key`` (or per call site).
+    ``open_task`` (state.open_in_gantt) makes the rows selectable: a selected row's Task ID gets a
+    button that opens the Gantt on it.
     """
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
     frame = frame.drop(columns=[column for column in HIDDEN if column in frame.columns])
     config = column_config(frame, overrides, raw_labels)
+    key = kwargs.get("key") or _caller_key()
     if len(frame) > DEFAULT_SETTINGS.table_filter_min_rows:
-        frame = _filtered(frame, config, kwargs.get("key") or _caller_key(), status)
+        frame = _filtered(frame, config, key, status)
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
+    linked = open_task is not None and "task_code" in frame.columns and not frame.empty
+    if linked:
+        kwargs.setdefault("key", f"table:{key}")
+        kwargs.update(on_select="rerun", selection_mode="single-row")
     data = status_style(frame, status) if status else frame
-    return st.dataframe(data, column_config=config, **kwargs)
+    event = st.dataframe(data, column_config=config, **kwargs)
+    if linked:
+        rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
+        if rows:
+            code = str(frame.iloc[rows[0]]["task_code"])
+            if st.button(
+                f"Open {md_text(code)} in the Gantt", icon=":material/view_timeline:", key=f"{kwargs['key']}:open"
+            ):
+                open_task(code)
+        else:
+            st.caption("Select a row to open its task in the Gantt.")
+    return event
 
 
 def status_style(frame: pd.DataFrame, column: str = "status"):

@@ -46,6 +46,12 @@ The baseline, chosen in the same window, can also be any loaded update (default:
 first). Schedules stay on your machine: the app listens on localhost, and an uploaded file
 is held in the session's memory, never written to disk.
 
+If the page keeps an older look after an update (another font, no Files line in a
+monospaced face), the running copy is old: `uv sync` then `uv run xerscope app` for a
+checkout, `docker compose up -d --build` for the local image, and on a deployed stack pull
+the new image before the rebuild (docs/deploy.md §7). Then reload the page with the cache
+bypassed (Ctrl+Shift+R). Debug, block 12, shows what the running app read and from where.
+
 Windows (PowerShell) is identical with `\` paths. Install uv once:
 `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`.
 
@@ -166,7 +172,9 @@ Configuration (environment variables, also set by the `app` flags):
 | `XERSCOPE_DATA` | folder of weekly `.xer` files to preload |
 | `XERSCOPE_BASELINE` | baseline `.xer` |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
-| `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA` (remote deployment) |
+| `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA`; no Debug page (remote deployment) |
+| `XERSCOPE_DEBUG_PAGE` | `1`: the Debug page even when the data is locked. It describes the server's reading of every file: leave it off on an open URL |
+| `XERSCOPE_SYNC_LOAD` | `1`: every file read, and the Overview scores computed, in the page run instead of a background thread (the tests) |
 
 ## Definitions that matter
 
