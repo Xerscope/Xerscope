@@ -94,6 +94,16 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
         formula is taken in working time (assumed, unverified); `PV_COST_WORKING_TIME`
         switches to calendar time if a P6 Professional report contradicts it.
       - Manual future-period buckets are not modelled.
+      - Schedule % Complete: which finish? The P6 Professional 26 help (G57535-02, glossary)
+        gives two. Planned Value Labor Units: "how much of the activity's baseline duration has
+        been completed" (baseline finish). Planned Value Cost, activity without resources:
+        "(Data date - Baseline Start) / (Planned Finish - Baseline Start)" (current planned
+        finish). `schedule_pct` and the activity part of `planned_value_cost` use the baseline
+        finish (`ev_finish`). To settle: a P6 Activities export with "Planned Value Labor Units",
+        BL start / finish and Planned Finish, on an update whose Planned Finish has moved from
+        the baseline finish (no resource curve, data date inside both spans), compared with
+        `xerscope pv-compare UPDATE.xer --baseline BL.xer --p6 export.csv` (a separate
+        baseline file: with `--planned-baseline` the two finishes are the same date).
       - BAC, PV and EV cost are modelled (cost SPI); Actual Cost, CPI (cost) and EAC (cost) are
         not: AC, CPI and EAC stay in labour hours.
       - Cost uses the budgeted values (`target_cost`) whatever the EV basis.
@@ -133,6 +143,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Display rounding: a value beside its status can contradict it (P6-13 at 0.9545 shows
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
+- [ ] Gantt "Ask", a model: none deployed (docs/deploy.md §10 holds the measurements:
+      55 % understanding, a third of grounded summaries misusing a value, on a CPU without
+      AVX2). What would change the measurement, in order: a per-request literal grammar
+      (IDs, dates, floats as the only alternatives in a fixed sentence frame) with a role
+      check; `ngram-simple` speculation and `-lm mmap+mlock` on llama-server; a fine-tuned
+      Flan-T5-small on synthetic pairs under ONNX Runtime; or a GPU host on the tailnet. The
+      measurement client (`query.llm_backend`, `ask-bench --url --summary`) is in place.
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a
@@ -154,6 +171,16 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
       none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
       Caddy release that fixes them, or renew each entry with its reason.
+- [ ] Caddy image: `deploy/caddy/Dockerfile` replaces golang.org/x/net by v0.62.0 (CVE-2026-78661;
+      Caddy 2.11.8 and 2.11.9 pin v0.60.0). Drop the replace once a Caddy release requires
+      x/net >= 0.62.0: a replace pins one version and would hold back a newer one.
+- [ ] Tailscale image: CVE-2026-78661 (golang.org/x/net/html, fixed in x/net 0.62.0, in no
+      Tailscale release yet) accepted until 2026-11-10 (`deploy/tailscale.trivyignore.yaml`).
+      The CI job `deploy` proves the parser absent from the image's binaries on every run; at
+      expiry move to a Tailscale release with x/net >= 0.62.0, or renew the entry with its reason.
+- [ ] Trivy runs from `.github/trivy/Dockerfile` (pinned by digest, Dependabot after a 7-day
+      cooldown) and is scanned with itself daily (`scanner.yml`): a red run there means the
+      pinned Trivy has a fixed HIGH/CRITICAL finding; bump it then, without waiting for the cooldown.
 - [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
       GitHub's Docker, not on the Synology kernel) and the memory caps applied (no
       `does not support memory limit` in the Project's build output).

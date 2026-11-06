@@ -360,9 +360,14 @@ within the week is two commitments. Three series, each none when its denominator
 `ppc_start = 100 × starts kept / starts committed`, `ppc_all = 100 × kept / committed` over
 both kinds. Milestones are left out: a milestone repeats its predecessor's date, so
 counting it adds a commitment the week the predecessor ends. Activities deleted in W are
-listed (`status_now = deleted`) and left out of both counts. Pinned by
+listed (`status_now = deleted`) and left out of both counts. A pair more than 7 calendar days apart
+(an update missing) is counted the same way and carries a `note`: the point holds the
+commitments of every week between the two data dates. The PPC page shows the note in the
+Commitments section of that week, not on the chart. Pinned by
 test_ppc_counts_starts_and_finishes_and_leaves_milestones_out,
-test_ppc_counts_only_commitments_still_in_the_update, test_ppc_series_one_row_per_week.
+test_ppc_counts_only_commitments_still_in_the_update, test_ppc_series_one_row_per_week,
+test_ppc_notes_a_point_that_spans_a_missing_update, test_ppc_regular_weekly_series_has_no_note,
+test_ppc_week_at_another_hour_has_no_note.
 
 **Progress delta** (`progress_delta(prev, cur, baseline)`), per activity of either update:
 

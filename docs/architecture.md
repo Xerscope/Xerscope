@@ -21,8 +21,18 @@ The XER format is tab-separated:
 - **Lines:** splits on `\n` only, because calendar blobs can contain `\r`.
 - **Short rows:** padded to the field count.
 - **Values:** everything is kept as **strings**. The parser knows the format, not P6.
+- **Structure P6 never writes:** a table written twice or a column named twice in a `%F` line
+  raises `XerError`. Lines after `%E` are not read.
 
-Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings)`.
+Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings, header, ended)`.
+`ended` is False when the file has no `%E` line; the parse still succeeds (the file picker reads
+the header of a file being copied) and `build_snapshot` refuses it.
+
+**Load contract.** `build_snapshot` returns a `Snapshot` or raises `XerError`, nothing else,
+whatever the file holds: cut short, keys repeated (`task_id`, `wbs_id`, `clndr_id`), identity
+columns missing, values unreadable, dates outside 1900-2199 or numbers infinite (both read as
+blank). `tests/test_load_contract.py` documents each case and checks the contract over every
+table and column of a file built in code.
 `keep=` keeps only the named tables, each with the listed columns (the rows of the others
 are not split).
 
@@ -116,6 +126,10 @@ without one has no baseline for that update (checks that need one are n/a), stat
 The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
 has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never
 chosen for the user), gives the baseline of the updates whose file has no usable one, update by update.
+A separate baseline file may be a P6 XML export (`xer/pmxml.py`: its `BaselineProject` elements, converted
+to the XER tables `build_snapshot` reads; durations and units in hours, percentages x 100, calendar periods
+ending a minute later than the XML's last working minute). `load_snapshot(..., project_id=)` names the
+baseline; when the XML holds the one an update's file names, that update takes it (`_xml_baseline_of`).
 `Baseline.source` says where the baseline of an update comes from; `run_metric` copies it to
 `CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
 readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
@@ -138,6 +152,7 @@ carry no pointer logic of their own.
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source | read-only account of a result, shown under every check in the app |
+| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook: `llm_backend` asks a llama.cpp server (`XERSCOPE_QUERY_URL`, the optional `llm` service of `deploy/compose.yaml`) for JSON constrained by a schema, ids outside the vocabulary dropped; any failure or delay, and the grammar answers. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the model and the output seeing the new codes only) |
 
 Standards are data in `standards/*.toml`:
 
@@ -171,7 +186,8 @@ checks the code against it, so a change here must be made there too):
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
 - `cli.py` is the entry point: it imports every layer, `app/diagnostic.py` included (`pv-compare`
-  reads the same frames as the Debug page).
+  reads the same frames as the Debug page), `anonymize.py` (`ask-bench --anonymize`) and
+  `viz/` (`ask-bench --summary` categorises the float as the Gantt does).
 
 Outside `analysis/`:
 
@@ -235,11 +251,25 @@ Outside `analysis/`:
 
 ## 7. `app/`: Streamlit
 
-- **`streamlit_app.py`:** declares the pages (`st.navigation`).
+- **`streamlit_app.py`:** declares the pages (`st.navigation`); the Debug page is left out on a
+  locked deployment unless `XERSCOPE_DEBUG_PAGE=1` (`state.debug_page`).
 - **`state.py`:** the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
-  `_window`: files read on Done, baseline selectors kept in session state while it is closed),
-  pickers, a per-session cache keyed on the loaded files, and the list of standards (built-in,
-  `XERSCOPE_STANDARDS`, uploaded). The cache (`memo`) keys every entry on the files, the
+  `_window`: files read on Done, baseline selectors kept in session state while it is closed;
+  shortcuts F, B and Ctrl+Enter for Done), pickers, a per-session cache keyed on the loaded
+  files, and the list of standards (built-in, `XERSCOPE_STANDARDS`, uploaded). One update for
+  the session: `snapshot_picker` writes the choice to `snap_choice`, every page's picker starts
+  from it; `go_to` / `open_in_gantt` write the session then switch page (a check's tasks to the
+  Gantt, a table row to the Gantt, a check to the Audit). Two threads (`background_jobs`, off
+  with `XERSCOPE_SYNC_LOAD=1`, which the tests set): on Done `LoadJob` hands every file to
+  `app/reading.py`, which reads them on up to four worker processes (`spawn`, no Streamlit imported;
+  `XERSCOPE_LOAD_WORKERS`, 1 reads in the thread; a pool that fails falls back to that). The pages
+  wait and draw once on the complete series: `_poll_load`, a fragment, redraws only the progress bar
+  each second and reruns the app once when the reading is done. Once the series is complete the
+  Overview computes the built-in standards on the latest update in `ScoreJob` and writes the results
+  where `metric_result` reads them. Neither thread touches the session state: the script run
+  collects what they produced. A new choice of files cancels both jobs (files not started are not
+  read, standards not started are not computed), drops the memo and the baselines read from the
+  files, and keeps in the parse cache only the files of the new series. The cache (`memo`) keys every entry on the files, the
   project read from each and the baseline in use, then on what the analysis reads; it keeps the
   `MEMO_SIZE` most recently used entries. An analysis that reads no baseline (change log, PPC,
   milestones, exports, forecast) or not the EV basis (the checks, the WBS rollup) leaves it out of
@@ -299,6 +329,10 @@ Outside `analysis/`:
   the same `Snapshot.file_projects` rows, `absent` for a column the file lacks; of
   `baseline_names_to_export` only the number of names) with its tasks by `complete_pct_type`, and what
   each setting is in the XER data map and the P6 help (`SETTINGS_MEANING`). No KPI reads it.
+  Block 13, the calendar detail (`diagnostic.calendar_detail_frames`, also its own zip): each calendar's
+  hours per time period as stored (`day_hr_cnt` .. `year_hr_cnt`) beside the working time its
+  `clndr_data` periods add up to, the periods of each weekday, and each dated exception with what it does
+  to the weekday it replaces (non-working day, working day on a non-working weekday, other hours).
   `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
   `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
   unchanged, cost figures 0 as in the extract).
@@ -309,6 +343,104 @@ Outside `analysis/`:
   the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
   the page only an activity the chart draws); every value is read from the snapshot or the
   store, card text is escaped. The Task history page draws the same history.
+
+### The Gantt "Ask" field: talking to the schedule without a model reading it
+
+A planner types "critiques non démarrés en génie civil" and the Gantt filters itself. The
+sentence goes through layers that each answer only what they can prove, in this order; the
+first one sure enough answers, the next ones never see the schedule:
+
+```
+sentence ─▶ keyword grammar over the file's lexicon ─▶ Filter ─▶ funnel over the rows
+            exact phrases, trade synonyms (data),                 ▼
+            the company's words, typos (difflib)         answer sentence (template),
+                                                         chips, Gantt, table, CSV
+```
+
+- **The lexicon is the file's own** (`analysis/query.py: Vocabulary`, built from the
+  snapshot's frames: WBS nodes with their path, resources, activity-code values, the words
+  of the activity names, whether the file has milestones and LOE). Every layer matches the
+  sentence against these labels and nothing else; an id outside them is dropped.
+- **The trade words are data, not code** (`lexicon/fr-en.toml`, `[[group]] words = [...]`,
+  every word of a group read as every other: "mécanique" finds "Mechanical & electrical").
+  A company adds its own words in the folder `XERSCOPE_LEXICON` names (same format, as
+  `XERSCOPE_STANDARDS` for standards; `xerscope lexicon FOLDER` checks it); the grammar
+  reads both, so its reach grows without a release, and `ask-bench --lexicon` measures it.
+- **An automatic lexicon, from the file itself.** At the file's load, the words of the activity
+  names that appear under one WBS node alone become that node's aliases
+  (`Vocabulary.node_words`: "foundations", "earthworks" name Civil works; "piping" names
+  Mechanical & electrical); a word under several nodes names none and stays a search. Said
+  alone, such a word gives the node and a search in it: the same rows as the search, and the
+  answer names the node. Nothing to maintain: it follows the file.
+- **100 % of the loaded file, measured on the file.** `ask-bench --self` (`query.coverage`)
+  draws the phrases from the file's own lexicon (each node by code, name and every synonym,
+  each resource, each status and float in both languages, milestones, LOE) and lists the
+  labels the grammar cannot name: what the company's lexicon file should add. The demo is
+  covered in full (`tests/test_ask_bench.py`), as are its dev and held-out sentences.
+- **A word nothing holds is never silent.** It is set aside and named ("not in this file:
+  commiss"), the other filters apply, and the page offers the closest labels of the file
+  (`query.suggestions`, difflib over codes, names, name words and synonyms, from `SUGGEST`):
+  a click teaches the word for the session (`state.teach`, `query.learn`), and the words
+  taught download as a lexicon file (`query.learned_toml`) for `XERSCOPE_LEXICON`, since the
+  app container is read-only. A typo close enough (`FUZZY`) is read at once, marked unsure.
+- **One rule for a word that is both a node's and an activity's** ("electrical", in
+  "Mechanical & electrical" and in "Electrical installation"): the node, and a search in it.
+- **The output is a `Filter`** (WBS node, statuses, float categories, code values,
+  resources, milestones, LOE, search words): what the page's widgets offer, intersected
+  with them. The page runs it as a `populations.Funnel` (`query.apply`): one named step per
+  filter understood, source `ask`, so the caption reads "212 → WBS CIV · Civil works 48 →
+  status Not started 30 → float Critical 3" and the "Population, step by step" table under
+  the chart is the same table every check shows (`app/sets.py`). The count a planner asks
+  for is the last step's `left`; the steps are the trace. On the page the field comes first,
+  the answer sits in a banner under it (the Schedule health focus banner's shape, amber when
+  a word was left out or the reading is unsure, "Show all" empties the field), and what was
+  understood is one chip each (`st.pills`): a chip taken off drops its filter
+  (`query.without`). In the banner, `query.answer`
+  says it in one sentence, in the question's language (`query.language`): the count, what
+  was asked, the worst total float and the latest finish of the rows, each a column of the
+  frame, from a template, never from a model. It is to become a `Query`: a dataset (activities, milestones, relationships,
+  assignments, checks), the filter, and the measures asked (count, worst float, latest
+  finish, hours, % complete), every value computed by the existing analyses and shown with
+  its table and CSV. A one-line answer is a template over those values; a model may
+  rephrase it, with the raw values kept beside.
+- **Confidence** comes with each answer: 1.0 for exact phrases, the weakest fuzzy ratio
+  otherwise, lowered when two labels score as close (the sentence does not separate one
+  cluster from the other); under `SURE` the page says "unsure". `xerscope ask-bench`
+  measures every layer on sentences with known filters (`tests/ask/dev.toml` tuned on,
+  `heldout.toml` written blind, floors in `tests/test_ask_bench.py`), per field and per
+  confidence bucket; `--anonymize` runs it on a real file with every name replaced.
+- **No model is deployed.** `query.llm_backend` (a llama.cpp client: ask, warm, summarise)
+  and `query.facts` / `query.grounded` stay as the measurement path of `ask-bench --url`
+  and `--summary`; nothing in `app/` calls them (`tests/test_docker.py`), and the deployed
+  app has no outbound code. The figures of the last measurement are in docs/deploy.md §10.
+
+**Why the latest small Qwen (or any 1-4B model) alone does not help here.**
+
+1. *It would have to read the lexicon on every question.* A real schedule has hundreds of
+   WBS nodes and resources: thousands of prompt tokens. On the NAS's CPU (4-core Celeron,
+   no GPU) a 2B model reads a prompt at a few tokens per second, so a question would wait
+   minutes before the first output token; the KV cache helps from the second question on
+   the same file only, and the generated answer still costs 10 s. The grammar and the
+   embeddings answer in milliseconds, on the whole lexicon, every time.
+2. *Its strength is not our need.* Benchmarks of these models measure instruction following
+   and function calling on English prompts (IFEval, BFCL); our need is matching French and
+   English trade words to a file's own labels, deterministically. An encoder trained for
+   multilingual similarity (EmbeddingGemma 2, 270M) scores that task directly, costs a
+   tenth of the compute, and gives a cosine to calibrate a confidence from; a generative
+   model gives one answer with no score, and a wrong node looks exactly like a right one.
+3. *Truth.* The project's rule is that every number traces to a formula and a population.
+   A model that reads activities and answers "3 milestones are late" cannot be traced, and
+   small models invent ids and figures under pressure (their own cards say so). Kept to
+   routing over labels, a model can at worst pick the wrong label, which the schema, the id
+   check and the confidence bucket catch; it cannot invent a date.
+4. *Measurability.* The grammar and the embeddings are scored on held-out sentences with
+   floors a change cannot lower. A model's answers vary with the quantisation, the build and
+   the prompt; it can be scored the same way (`ask-bench --url`) but not pinned as a floor
+   in the suite, so it stays the optional last layer, on the few sentences left unsure, with
+   a prompt of 20 pre-chosen labels (hundreds of tokens, about 10 s), not the lexicon.
+
+So a small model is a re-ranker of last resort, not the engine; the engine is the file's
+lexicon, a grammar and an encoder, each measured.
 
 ## 8. `cli.py`
 
