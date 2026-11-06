@@ -143,35 +143,21 @@
 }
 
 /* ==== Files and baseline window (state._window) ===================================
-   A terminal-style sheet over the page: square, no border, opaque panel with a hard shadow over
-   a dimmed page, monospaced text, tick boxes drawn as [x] / [ ], sections split by hairlines.
-   Built on the tokens above (--xs-hairline, --xs-panel, --xs-motion) and --accent, which follow
-   the theme; --xd-* are the window's own (monospaced face, veil, shadow). Structure checked in Streamlit 1.66: [data-testid="stDialog"] is the overlay,
-   its first child the panel; react-aria removes both at once on closing, so only the opening is
-   animated. */
+   A plain sheet over a dimmed page, in the theme's own face and sizes: the file list must read at a
+   glance (file, project, status date, tasks), the tick boxes are the theme's. Sections are split by
+   a hairline. Structure checked in Streamlit 1.66: [data-testid="stDialog"] is the overlay, its first
+   child the panel. */
 [data-testid="stDialog"]:has(.st-key-files_sheet) {
-  --xd-mono: "JetBrains Mono", ui-monospace, monospace;
-  --xd-muted: color-mix(in srgb, currentColor 58%, transparent);
+  --xd-muted: color-mix(in srgb, currentColor 62%, transparent);
   --xd-hover: color-mix(in srgb, currentColor 6%, transparent);
-  --xd-veil: rgb(2 6 23 / 0.55);
-  --xd-shadow: 14px 14px 0 -6px rgb(0 0 0 / 0.22), 0 28px 56px -24px rgb(0 0 0 / 0.6);
-  background: var(--xd-veil);
+  background: rgb(2 6 23 / 0.45);
   animation: xd-veil var(--xs-motion) both;
 }
 [data-testid="stDialog"]:has(.st-key-files_sheet) > div {
-  border: 0;
-  border-radius: 0;
-  box-shadow: var(--xd-shadow);
   /* lifts the panel off the page in the dark theme, where the panel and the page share a colour */
   background-image: linear-gradient(var(--xs-panel), var(--xs-panel));
   animation: xd-sheet var(--xs-motion) both;
 }
-[data-testid="stDialog"]:has(.st-key-files_sheet) [role="dialog"] * { border-radius: 0 !important; }
-[data-testid="stDialog"]:has(.st-key-files_sheet) [role="dialog"] :is(h2, p, label, input, button, span:not([data-testid="stIconMaterial"]), small, [data-baseweb="select"]) {
-  font-family: var(--xd-mono);
-}
-[data-testid="stDialog"]:has(.st-key-files_sheet) [role="dialog"] h2 { font-size: 1rem; font-weight: 600; letter-spacing: 0; }
-[data-testid="stDialog"]:has(.st-key-files_sheet) [data-testid="stWidgetLabel"] p { font-size: 0.8rem; }
 [data-testid="stDialog"]:has(.st-key-files_sheet) [data-testid="stCaptionContainer"] p { color: var(--xd-muted); }
 
 /* section titles and the hairline between sections (state._section_title) */
@@ -179,54 +165,27 @@
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  font-family: var(--xd-mono);
-  font-size: 0.86rem;
+  font-size: 1rem;
   font-weight: 600;
 }
-.xd-title span:last-child { color: var(--xd-muted); font-weight: 400; }
-hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairline); }
+.xd-title span:last-child { color: var(--xd-muted); font-weight: 400; font-size: 0.9rem; }
+hr.xd-rule { margin: 0.5rem 0; border: 0; border-top: 1px solid var(--xs-hairline); }
 
-/* tick boxes as [ ] / [x], one row per file, rows aligned by the monospaced face */
-.st-key-files_sheet [data-testid="stCheckbox"] label {
-  align-items: center;
-  gap: 0.6ch;
-  padding: 0.1rem 0.35rem;
-  font-family: var(--xd-mono);
-}
+/* one row per file: the theme's tick box, the label on one line, a light hover */
+.st-key-files_sheet [data-testid="stCheckbox"] label { padding: 0.15rem 0.35rem; border-radius: 0.3rem; }
 .st-key-files_sheet [data-testid="stCheckbox"] label:hover { background: var(--xd-hover); }
-.st-key-files_sheet [data-testid="stCheckbox"] label:has(input:focus-visible) { outline: 1px solid var(--accent); }
-.st-key-files_sheet [data-testid="stCheckbox"] label > div:not([data-testid]) {
-  width: auto;
-  height: auto;
-  margin: 0;
-  border: 0;
-  background: none;
-}
-.st-key-files_sheet [data-testid="stCheckbox"] label > div:not([data-testid]) svg { display: none; }
-.st-key-files_sheet [data-testid="stCheckbox"] label > div:not([data-testid])::before {
-  content: "[ ]";
-  color: var(--xd-muted);
-  font-family: var(--xd-mono);
-  font-size: 0.82rem;
-  white-space: pre;
-}
-.st-key-files_sheet [data-testid="stCheckbox"][data-selected="true"] label > div:not([data-testid])::before {
-  content: "[x]";
-  color: var(--accent);
-  font-weight: 700;
-}
-.st-key-files_sheet [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p { font-size: 0.8rem; white-space: pre; }
+.st-key-files_sheet [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p { font-size: 0.92rem; }
 /* a long folder scrolls inside the window, Done stays in view */
 .st-key-files_list_folder,
-.st-key-files_list_upload { gap: 0; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
+.st-key-files_list_upload { gap: 0.1rem; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
 
-/* the project read from each file (state._projects_fields): small rows, a list under a file that holds several */
-.st-key-files_projects { gap: 0.3rem; }
-.st-key-files_projects [data-testid="stMarkdownContainer"] p { font-size: 0.8rem; }
+/* the project read from each file (state._projects_fields) */
+.st-key-files_projects { gap: 0.35rem; }
+.st-key-files_projects [data-testid="stMarkdownContainer"] p { font-size: 0.92rem; }
 
 /* help line and Done */
 .st-key-xd_foot { justify-content: space-between; padding-top: 0.6rem; border-top: 1px solid var(--xs-hairline); }
-.st-key-xd_foot [data-testid="stCaptionContainer"] p { margin: 0; font-family: var(--xd-mono); font-size: 0.76rem; }
+.st-key-xd_foot [data-testid="stCaptionContainer"] p { margin: 0; font-size: 0.85rem; }
 
 @keyframes xd-veil { from { opacity: 0; } }
 @keyframes xd-sheet { from { opacity: 0; transform: translateY(6px); } }
@@ -235,12 +194,12 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
   [data-testid="stDialog"]:has(.st-key-files_sheet) > div { animation: none; }
 }
 
-/* the sidebar lines that open the window: one monospaced row each, left aligned */
+/* the sidebar lines that open the window: left aligned, the theme's face */
 .st-key-files_button button,
 .st-key-baseline_button button {
   justify-content: flex-start;
   min-height: 0;
-  padding: 0.3rem 0.4rem;
+  padding: 0.35rem 0.5rem;
   border-left: 2px solid var(--xd-line, var(--xs-hairline));
   border-radius: 0;
   text-align: left;
@@ -253,16 +212,16 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 .st-key-files_button button > div,
 .st-key-baseline_button button > div { justify-content: flex-start; width: 100%; }
 .st-key-files_button button p,
-.st-key-baseline_button button p { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72rem; text-align: left; }
+.st-key-baseline_button button p { font-size: 0.86rem; text-align: left; }
 /* ==== end Files and baseline window ============================================== */
 
-/* the context banner under each page title (state.context_banner): one monospaced line, muted,
+/* the context banner under each page title (state.context_banner): one line in the theme's face,
    cut with an ellipsis when the page is narrow; it opens the window like the sidebar lines */
 .st-key-context_banner button {
   justify-content: flex-start;
   min-height: 0;
   margin-top: -0.6rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.3rem 0.6rem;
   border-left: 2px solid var(--xd-line, var(--xs-hairline));
   border-radius: 0;
   background: var(--xs-panel);
@@ -274,12 +233,10 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 .st-key-context_banner button > div { justify-content: flex-start; width: 100%; min-width: 0; }
 .st-key-context_banner button p {
   overflow: hidden;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.72rem;
+  font-size: 0.88rem;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.8;
 }
 
 /* Tables: no search button in the toolbar. It highlights a matching cell anywhere in the grid;
