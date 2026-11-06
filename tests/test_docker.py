@@ -218,7 +218,7 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     block = caddy[caddy.index("rate_limit {") : caddy.index("basic_auth {")]
     assert "key {client_ip}" in block  # the visitor; {remote_host} is tailscaled's 127.0.0.1 for everyone
-    assert "ipv6_prefix 64" in block and "events 120" in block and "window 1m" in block
+    assert "ipv6_prefix 64" in block and "events 300" in block and "window 1m" in block
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert 'docker build -t "$XERSCOPE_CADDY_IMAGE" caddy' in wf and "HTTP/1.1 429" in wf
 
