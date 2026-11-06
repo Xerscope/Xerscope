@@ -349,6 +349,12 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   each resource, each status and float in both languages, milestones, LOE) and lists the
   labels the grammar cannot name: what the company's lexicon file should add. The demo is
   covered in full (`tests/test_ask_bench.py`), as are its dev and held-out sentences.
+- **A word nothing holds is never silent.** It is set aside and named ("not in this file:
+  commiss"), the other filters apply, and the page offers the closest labels of the file
+  (`query.suggestions`, difflib over codes, names, name words and synonyms, from `SUGGEST`):
+  a click teaches the word for the session (`state.teach`, `query.learn`), and the words
+  taught download as a lexicon file (`query.learned_toml`) for `XERSCOPE_LEXICON`, since the
+  app container is read-only. A typo close enough (`FUZZY`) is read at once, marked unsure.
 - **One rule for a word that is both a node's and an activity's** ("electrical", in
   "Mechanical & electrical" and in "Electrical installation"): the node, and a search in it.
 - **The output is a `Filter`** (WBS node, statuses, float categories, code values,

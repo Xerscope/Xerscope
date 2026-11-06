@@ -173,3 +173,23 @@ def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store)
     empty = query.apply(query.Filter(search="nobodyhasthisname"), tasks, snapshot, nodes)
     assert query.answer(nothing, empty, vocab, "fr") == "Aucune activité ne correspond."
     assert query.language("what is late in procurement") == "en" and query.language("jalons en retard") == "fr"
+
+
+def test_an_unknown_word_gets_the_closest_labels_and_can_be_taught():
+    vocab = Vocabulary(
+        wbs={"1": "CIV · Civil works", "5": "COM · Commissioning", "2": "ENG · Ingénierie"},
+        resources={"r1": ("CREW", "Site crew")},
+        words=frozenset({"earthworks"}),
+    )
+    offers = query.suggestions("commiss", vocab)
+    assert offers[0][:2] == ("wbs", "COM · Commissioning") and offers[0][2] >= query.SUGGEST
+    assert query.suggestions("xyzzy", vocab) == []  # nothing close: nothing offered
+    assert query.parse_keywords("commiss", vocab).wbs_id is None  # not a typo close enough (FUZZY)
+    taught = query.learn(vocab.lexicon, "commiss", "COM · Commissioning")
+    assert "commissioning" in taught["commiss"] and "commiss" in taught["com"]
+    assert query.parse_keywords("commiss", Vocabulary(wbs=vocab.wbs, lexicon=taught)).wbs_id == "5"
+    text = query.learned_toml([("commiss", "COM · Commissioning"), ("bétonnage", "CIV · Civil works")])
+    assert '[[group]]\nwords = ["commiss", "COM", "Commissioning"]' in text and '"bétonnage"' in text
+    import tomllib
+
+    assert len(tomllib.loads(text)["group"]) == 2  # a file load_lexicon reads back

@@ -117,6 +117,23 @@ def lexicon() -> query.Lexicon:
     return found
 
 
+def session_lexicon() -> query.Lexicon:
+    """The app's lexicon plus the words taught this session (``teach``): what the Ask field reads."""
+    found = lexicon()
+    for word, label in st.session_state.get("taught", []):
+        found = query.learn(found, word, label)
+    return found
+
+
+def teach(word: str, label: str) -> None:
+    """Read ``word`` as ``label`` from now on in this session; the Gantt page offers the taught
+    words as a lexicon file to download (``query.learned_toml``), the app container being
+    read-only."""
+    taught = st.session_state.setdefault("taught", [])
+    if (word, label) not in taught:
+        taught.append((word, label))
+
+
 def warm_model(vocab: query.Vocabulary, source: str) -> None:
     """Hand the model the vocabulary of ``source`` once per session, in a thread: the server keeps
     the prefix's state (docs/deploy.md §10), so the first sentence typed does not wait for it.

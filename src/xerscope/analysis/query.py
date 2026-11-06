@@ -647,6 +647,61 @@ def funnel_line(funnel: Funnel) -> str:
     return " → ".join([str(funnel.start), *(f"{step.label} {step.left}" for step in funnel.steps)])
 
 
+# --- a word the file and the lexicon do not hold -------------------------------------------
+
+SUGGEST = 0.5  # difflib ratio from which a label is offered for an unknown word ("commiss" / "commissioning" = 0.7)
+
+
+def suggestions(word: str, vocab: Vocabulary, limit: int = 3) -> list[tuple[str, str, float]]:
+    """The labels of the file an unknown word may have meant: (kind, label, ratio), best first,
+    over the WBS nodes (code, name, name words and their synonyms) and the resources; at most
+    ``limit``, each at least SUGGEST. The page offers them as buttons; a click teaches the word."""
+    import difflib
+
+    word = fold(word)
+    best: dict[tuple[str, str], float] = {}
+    labels = [("wbs", label) for label in vocab.wbs.values()]
+    labels += [("resource", short or name) for short, name in vocab.resources.values()]
+    for kind, label in labels:
+        code, _, name = label.partition(" · ")
+        said = [_plain(code), _plain(name)] if kind == "wbs" else [_plain(label)]
+        said += [w for w in re.split(r"[^a-z0-9]+", _plain(name if kind == "wbs" else label)) if len(w) >= 4]
+        said = _with_synonyms([w for w in said if w], vocab.lexicon)
+        ratio = max((difflib.SequenceMatcher(None, word, candidate).ratio() for candidate in said), default=0.0)
+        if ratio >= SUGGEST:
+            best[(kind, label)] = max(best.get((kind, label), 0.0), ratio)
+    ranked = sorted(best.items(), key=lambda item: (-item[1], item[0][1]))
+    return [(kind, label, round(ratio, 2)) for (kind, label), ratio in ranked[:limit]]
+
+
+def learn(lexicon: Lexicon, word: str, label: str) -> Lexicon:
+    """The lexicon with ``word`` read as ``label`` (a WBS label "CODE · name", or a resource name):
+    one group of the word, the code and the name, so the grammar's node candidates reach it."""
+    code, _, name = label.partition(" · ")
+    group = [w for w in dict.fromkeys(_plain(t) for t in (word, code, name)) if w]
+    merged = {k: list(v) for k, v in lexicon.items()}
+    for member in group:
+        merged.setdefault(member, []).extend(w for w in group if w != member and w not in merged.get(member, []))
+    return {k: tuple(dict.fromkeys(v)) for k, v in merged.items()}
+
+
+def learned_toml(pairs: list[tuple[str, str]]) -> str:
+    """The words taught this session as a lexicon file (``[[group]] words = [...]``), to put in the
+    folder XERSCOPE_LEXICON names so every session reads them."""
+    lines = ["# Words taught in the Gantt Ask field: each read as the label it was matched to.", ""]
+    for word, label in pairs:
+        code, _, name = label.partition(" · ")
+        words = list(dict.fromkeys(t for t in (word, code, name) if t))
+        lines += ["[[group]]", "words = [" + ", ".join(json_quote(w) for w in words) + "]", ""]
+    return "\n".join(lines)
+
+
+def json_quote(text: str) -> str:
+    import json
+
+    return json.dumps(text, ensure_ascii=False)
+
+
 # --- the answer, in words, from the funnel's rows ----------------------------------------
 
 _FRENCH_WORDS = """

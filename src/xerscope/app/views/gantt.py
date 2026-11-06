@@ -14,12 +14,11 @@ from xerscope.app.state import (
     page_header,
     query_backend,
     require_store,
+    session_lexicon,
     snapshot_picker,
     sources_of,
+    teach,
     warm_model,
-)
-from xerscope.app.state import (
-    lexicon as app_lexicon,
 )
 from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
@@ -165,12 +164,13 @@ asked = st.text_input(
     placeholder='In words: "critical not started in civil works", "quasi critique en cours"',
     key=ASK_KEY,
 )
-lexicon = memo(
-    ("vocabulary", snapshot.source),
+taught = st.session_state.get("taught", [])
+lexicon = memo(  # rebuilt when a word is taught
+    ("vocabulary", snapshot.source, len(taught)),
     query.vocabulary,
     snapshot,
     nodes,
-    app_lexicon(),
+    session_lexicon(),
     baseline=False,
     ev_basis=False,
 )
@@ -178,13 +178,37 @@ warm_model(lexicon, snapshot.source)  # the model reads this file's vocabulary o
 ask = None
 if asked:
     ask = memo(  # one model call per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked), query.parse, asked, lexicon, query_backend(), baseline=False, ev_basis=False
+        ("ask", snapshot.source, asked, len(taught)),
+        query.parse,
+        asked,
+        lexicon,
+        query_backend(),
+        baseline=False,
+        ev_basis=False,
     )
 if ask is not None:
     how = " (model)" if ask.source == "model" else (" (unsure)" if ask.confidence < query.SURE else "")
     understood = f"Understood{how}: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all."
     left_out = f" — not in this file: {', '.join(ask.ignored)}" if ask.ignored else ""
     st.caption(understood + left_out)
+    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
+        offers = query.suggestions(word, lexicon)
+        if offers:
+            with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
+                st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
+                for _kind, label, _ratio in offers:
+                    if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
+                        teach(word, label)
+                        st.rerun()
+    if taught:
+        st.download_button(
+            f"Download the {len(taught)} word(s) taught (.toml, for XERSCOPE_LEXICON)",
+            data=query.learned_toml(taught).encode(),
+            file_name="lexicon-taught.toml",
+            mime="application/toml",
+            key="gantt_taught_download",
+            type="tertiary",
+        )
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)

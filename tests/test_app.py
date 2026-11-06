@@ -176,6 +176,14 @@ def test_gantt_wbs_choice_filters_and_options(app):
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
     assert any("not in this file: xyzzy" in c.value for c in app.caption)  # "génie civil" = CIV (synonyms)
+    app.text_input[1].set_value("commiss").run()  # a word nothing holds, close to Commissioning
+    _ok(app)
+    assert any("not in this file: commiss" in c.value for c in app.caption)
+    app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
+    _ok(app)
+    assert any("Understood: WBS: COM · Commissioning" in c.value for c in app.caption)
+    assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
+    assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
     app.text_input[1].set_value("").run()
     app.get("button_group")[0].set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
