@@ -156,6 +156,7 @@ update (actuals changed, riding the status date) work too.
 |---|---|
 | Overview | forecast finish per update, slips, snapshot table |
 | Gantt & WBS | Gantt grouped by WBS as in P6: tree grid with roll-ups (% complete by hours, float) beside the timeline, WBS rows fold open and closed; a WBS picked in the list sets the KPIs and opens the Gantt on it; comparison outline (previous update, baseline, any file), logic links, month / week timescale |
+| Gantt & WBS, Ask | a sentence in English or French ("critical not started in civil works", "jalons en retard") read against the file's own names (WBS, resources, codes, activity words, trade synonyms, the company's lexicon folder) into the page's filters, with a one-sentence answer, the population step by step, chips to drop a filter, and the closest names offered for a word nothing holds; no model, nothing leaves the app; `xerscope ask-bench` measures it |
 | Activity history | one activity across every update |
 | Schedule health | standard picker (P6, DECM, DCMA, Integrity, uploaded TOML), Check Summary, flagged items with the rule's definition, metric trend, CSV of every flagged item |
 | Audit | one check: the sets behind its count (counted, checked not counted, excluded), the check re-run with another target or threshold (this page only), the `[[metric]]` table to make it permanent |

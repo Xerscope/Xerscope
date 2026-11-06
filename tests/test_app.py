@@ -166,6 +166,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert [r["code"] for r in data["rows"] if r["kind"] == "task"] == ["C3020"]
     assert set(data["open"]) == {r["id"] for r in data["rows"] if r["kind"] == "wbs"}
     app.text_input[1].set_value("").run()
+    assert any(e.label == "How to ask" for e in app.expander)  # the guidance sits under the field
     # the Ask field, the page's first control: a sentence becomes filters, an answer and chips
     app.text_input[0].set_value("critical not started in civil works").run()
     _ok(app)

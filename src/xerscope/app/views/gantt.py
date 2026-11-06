@@ -80,6 +80,40 @@ asked = st.text_input(
     icon=":material/search:",
 )
 answer_box = st.container(key="ask_answer")
+with st.expander("How to ask", icon=":material/help:"):
+    st.markdown(
+        """
+The field reads your sentence, English or French, against **this file's own names** and turns it
+into the filters below; it never guesses beyond them. One sentence can hold several filters;
+they intersect with the widgets, and with each other.
+
+**What it reads**
+
+| Say | It filters on | Example |
+|---|---|---|
+| a WBS node: code, name, a word of it, a trade synonym | the node and all below it | `CIV`, `génie civil` |
+| a word only the activities of one node use | that node, and a search in it | `foundations`, `piping` |
+| not started · in progress · complete (non démarré · en cours · terminé) | status | `COM not started` |
+| critical · late · en retard · bloque · near critical · quasi critique · normal | float (bar colour) | `late` |
+| milestones · jalons, LOE · hamacs | milestones only, level of effort only | `critical path milestones` |
+| a resource by its short name or name | activities it is assigned to | `crew tasks not started` |
+| a P6 activity code value, by value or name | activities carrying it | `zone B2` |
+| any other word the file holds in an activity name or ID | a search in names and IDs | `drainage`, `C3050` |
+
+**What it does not read**: dates, durations, hours, percentages, "and / or / except", comparisons
+("later than", "more than 10 days"), and questions ("why", "when"). Use the widgets and the table for those.
+
+**Reading the answer**: the banner counts the activities left and names the worst total float and
+the latest finish of those rows, nothing else; the line under it is the population step by step
+(start → each filter → left), the same trace as under every check; the chips are the filters
+understood, take one off to drop it. The chart, the task list and the table show the same rows.
+
+**When a word is not understood**: the banner turns amber and names it; the other filters still
+apply. The page offers the closest names of the file, a click teaches the word for this session,
+and the words taught download as a lexicon file for the server (`XERSCOPE_LEXICON`). A typo close
+to a name is read at once and marked *unsure reading*: check the chips.
+"""
+    )
 taught = st.session_state.get("taught", [])
 lexicon = memo(  # rebuilt when a word is taught
     ("vocabulary", snapshot.source, len(taught)),
