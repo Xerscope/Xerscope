@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis import query
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
@@ -23,6 +24,7 @@ NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
 NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker is drawn before the chart)
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
 PICK_KEY = "gantt_task_pick"  # that list
+ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
@@ -149,6 +151,17 @@ if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has an
             code_ids.add(by_label[pick])
         else:
             code_ids |= {code_id for code_id, value in short.items() if ui.fold(pick) in ui.fold(value)}
+# a sentence on top of the widgets: "critical not started in civil works". The parser only
+# picks filters the widgets offer; a model backend (query.Backend) can replace the keyword
+# grammar later without touching this page.
+asked = st.text_input(
+    "Ask",
+    placeholder='In words: "critical not started in civil works", "quasi critique en cours"',
+    key=ASK_KEY,
+)
+ask = query.parse(asked, memo(("vocabulary", snapshot.source), query.vocabulary, snapshot, nodes)) if asked else None
+if ask is not None:
+    st.caption("Understood: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all.")
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
@@ -161,6 +174,8 @@ branch = nodes[nodes["wbs_id"].isin(branch_ids)]
 tasks = snapshot.activities
 if current != ROOT:
     tasks = tasks[tasks["wbs_id"].isin(branch_ids)]
+if ask is not None and ask.wbs_id in branch_ids:  # a node named in the sentence narrows the branch
+    tasks = tasks[tasks["wbs_id"].isin(subtree_ids(nodes, ask.wbs_id))]
 tasks = tasks.assign(category=categorise(tasks))
 if hide_loe:
     tasks = tasks[~tasks["is_loe"]]
@@ -173,6 +188,15 @@ if search:
     tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
 if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
+if ask is not None:  # the sentence's filters, intersected with the widgets'
+    if ask.status:
+        tasks = tasks[tasks["status"].isin(ask.status)]
+    if ask.categories:
+        tasks = tasks[tasks["category"].isin(ask.categories)]
+    if ask.search:
+        tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], ask.search)]
+    if ask.code_type and ask.code_ids:
+        tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(ask.code_type, ask.code_ids))]
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

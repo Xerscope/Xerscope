@@ -1,0 +1,302 @@
+"""A sentence turned into the Gantt page's filters: "critical not started in civil works".
+
+The page owns the filtering (WBS branch, status, float category, activity codes, text).
+This module only decides *which* filters a sentence asks for, so a number never comes from
+here: a filter the parser picks is the one the user could have ticked by hand.
+
+``parse`` tries the backend it is given (a local language model, step two of the feature,
+absent by default) and always falls back on ``parse_keywords``, a bilingual (English /
+French) phrase grammar over the file's own vocabulary (``Vocabulary``). The page therefore
+never depends on a model being up.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
+
+import pandas as pd
+
+from ..xer import Snapshot
+from ..xer.model import STATUS
+from .wbs import ROOT
+
+STATUSES = list(STATUS.values())  # "Not started", "In progress", "Complete"
+CATEGORIES = ["Critical", "Near critical", "Normal", "Complete"]  # viz.gantt.CATEGORY_ORDER (checked by a test)
+
+
+def fold(text) -> str:
+    """Lower-case without accents, for matching: fold("Béton") == "beton"."""
+    text = "" if text is None or (not isinstance(text, str) and pd.isna(text)) else str(text)
+    return "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
+
+
+@dataclass(frozen=True)
+class Filter:
+    """What a sentence asked for; every field empty means "no filter", as the page's widgets."""
+
+    wbs_id: str | None = None
+    status: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
+    code_type: str | None = None
+    code_ids: frozenset[str] = frozenset()
+    search: str = ""
+    matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's caption
+
+    @property
+    def empty(self) -> bool:
+        return not (self.wbs_id or self.status or self.categories or self.code_ids or self.search)
+
+
+@dataclass(frozen=True)
+class Vocabulary:
+    """The names a sentence can refer to in one update: WBS nodes and activity-code values.
+
+    Built once per update by ``vocabulary``; it is also the whole of what a model backend
+    receives (no activity, no date, no number)."""
+
+    wbs: Mapping[str, str]  # wbs_id -> "CIV · Civil works" (code and name)
+    codes: Mapping[str, tuple[str, str, str]] = field(default_factory=dict)  # code_id -> (type, value, name)
+
+    def to_prompt(self) -> dict:
+        """The vocabulary as plain data, for a model prompt."""
+        return {
+            "status": STATUSES,
+            "float": CATEGORIES,
+            "wbs": [{"id": k, "label": v} for k, v in self.wbs.items()],
+            "codes": [{"id": k, "type": t, "value": v, "name": n} for k, (t, v, n) in self.codes.items()],
+        }
+
+
+Backend = Callable[[str, Vocabulary], Filter | None]
+"""A parser that may decline (None): a model, step two; the keyword grammar is the fallback."""
+
+
+def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None) -> Vocabulary:
+    """``nodes`` is ``analysis.wbs.tree``/``rollup`` output (``wbs_id``, ``wbs_code``, ``wbs_name``);
+    ``snapshot.wbs`` when not given. The project node and the synthetic root are left out."""
+    frame = snapshot.wbs if nodes is None else nodes
+    codes_column = "wbs_code" if "wbs_code" in frame else "wbs_short_name"
+    flags = frame["proj_node_flag"] if "proj_node_flag" in frame else pd.Series("N", index=frame.index)
+    wbs = {}
+    for wbs_id, code, name, flag in zip(frame["wbs_id"], frame[codes_column], frame["wbs_name"], flags, strict=True):
+        if isinstance(wbs_id, str) and wbs_id and wbs_id != ROOT and flag != "Y":
+            wbs[wbs_id] = " · ".join(s for s in (code, name) if isinstance(s, str) and s)
+    codes = {}
+    values = snapshot.code_values
+    if not values.empty:
+        for code_id, code_type, value, name in zip(
+            values["code_id"], values["code_type"], values["value"], values["name"], strict=True
+        ):
+            codes[code_id] = (str(code_type), str(value), "" if pd.isna(name) else str(name))
+    return Vocabulary(wbs=wbs, codes=codes)
+
+
+# phrases are matched longest first on the folded sentence, as whole words
+_STATUS_PHRASES = {
+    "Not started": [
+        "not started",
+        "non demarre",
+        "non demarree",
+        "non demarrees",
+        "non demarres",
+        "a demarrer",
+        "pas commence",
+        "pas commencee",
+        "pas commencees",
+        "pas commences",
+        "non commence",
+        "unstarted",
+        "to start",
+        "a venir",
+        "upcoming",
+        "restant",
+        "restantes",
+        "restants",
+        "remaining",
+    ],
+    "In progress": [
+        "in progress",
+        "en cours",
+        "ongoing",
+        "started",
+        "demarre",
+        "demarree",
+        "demarrees",
+        "demarres",
+        "commence",
+        "commencee",
+        "commencees",
+        "commences",
+        "active",
+        "actives",
+    ],
+    "Complete": [
+        "complete",
+        "completed",
+        "completes",
+        "terminee",
+        "terminees",
+        "termines",
+        "termine",
+        "achevee",
+        "achevees",
+        "acheves",
+        "acheve",
+        "finished",
+        "fini",
+        "finie",
+        "finies",
+        "finis",
+        "done",
+        "finalise",
+        "finalisee",
+        "finalisees",
+        "finalises",
+    ],
+}
+_CATEGORY_PHRASES = {
+    "Near critical": [
+        "near critical",
+        "near-critical",
+        "quasi critique",
+        "quasi critiques",
+        "quasi-critique",
+        "quasi-critiques",
+        "presque critique",
+        "presque critiques",
+        "sub critical",
+        "sous critique",
+        "sous critiques",
+    ],
+    "Critical": [
+        "critical",
+        "critique",
+        "critiques",
+        "chemin critique",
+        "critical path",
+        "float negatif",
+        "negative float",
+        "marge negative",
+        "en retard",
+        "late",
+        "behind",
+    ],
+    "Normal": [
+        "normal",
+        "normales",
+        "normaux",
+        "non critique",
+        "non critiques",
+        "not critical",
+        "with float",
+        "avec marge",
+    ],
+}
+# words that carry no filter, dropped before the leftover becomes a text search
+_STOP_WORDS = """
+    a au aux avec ce ces cette d de des du en et l la le les ou pour qui que quoi sur un une tout toute
+    tous toutes dans lot phase partie est sont ont c qu celles ceux montre montrer affiche afficher voir
+    filtre filtrer activite activites tache taches noeud branche moi
+    the an and or of in on for with all every any at to from by is are that which ones show list display
+    filter task tasks activity activities wbs node branch me
+    """
+_STOP = frozenset(_STOP_WORDS.split())
+
+
+def _phrase_pattern(phrases: list[str]) -> re.Pattern:
+    alternatives = sorted({fold(p) for p in phrases}, key=len, reverse=True)
+    return re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, alternatives)) + r")(?![a-z0-9])")
+
+
+def _take(text: str, phrases: list[str]) -> tuple[str, list[int]]:
+    """Blank every occurrence of the phrases in ``text``; where each was found, in order."""
+    found: list[int] = []
+    pattern = _phrase_pattern(phrases)
+
+    def blank(match: re.Match) -> str:
+        found.append(match.start())
+        return " " * len(match.group(0))
+
+    return pattern.sub(blank, text), found
+
+
+def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
+    """Phrase grammar: status and float words, then a WBS node (code or name), then activity-code
+    values, then what is left (minus stop words) as a text search. Negation is carried by the
+    phrases themselves ("non démarré", "not critical"), longest match first."""
+    folded = " " + re.sub(r"[^a-z0-9]+", " ", fold(text)) + " "
+    if not folded.strip():
+        return Filter()
+    matched: list[tuple[int, str]] = []
+    result = Filter()
+
+    def record(position: int, label: str) -> None:
+        matched.append((position, label))
+
+    # near-critical before critical: "quasi critique" must not leave "critique" to the next pass
+    for category in ("Near critical", "Critical", "Normal"):
+        folded, found = _take(folded, _CATEGORY_PHRASES[category])
+        if found:
+            result = replace(result, categories=(*result.categories, category))
+            record(found[0], f"Float: {category}")
+    for status, phrases in _STATUS_PHRASES.items():
+        folded, found = _take(folded, phrases)
+        if found:
+            result = replace(result, status=(*result.status, status))
+            record(found[0], f"Status: {status}")
+
+    # WBS: the longest node label (code, then name, then any word of the name of 4+ letters) found in the text
+    best: tuple[int, str, str] | None = None
+    for wbs_id, label in vocab.wbs.items():
+        code, _, name = label.partition(" · ")
+        candidates = [fold(code), fold(name)]
+        candidates += [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in _STOP]
+        for candidate in candidates:
+            if (
+                candidate
+                and (best is None or len(candidate) > len(best[0]))
+                and _phrase_pattern([candidate]).search(folded)
+            ):
+                best = (candidate, wbs_id, label)
+    if best:
+        folded, found = _take(folded, [best[0]])
+        result = replace(result, wbs_id=best[1])
+        record(found[0], f"WBS: {best[2]}")
+
+    # activity codes: a value or a value name, whole word, longest first. One code type, as the
+    # page's widget: a value of another type is understood and dropped, never searched as text.
+    # The type's own name ("zone B2") is dropped too.
+    by_length = sorted(vocab.codes.items(), key=lambda kv: -max(len(kv[1][1]), len(kv[1][2])))
+    for code_id, (code_type, value, name) in by_length:
+        for candidate in (fold(value), fold(name)):
+            if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
+                folded, found = _take(folded, [candidate])
+                if result.code_type in (None, code_type):
+                    result = replace(result, code_type=code_type, code_ids=result.code_ids | {code_id})
+                    record(found[0], f"{code_type}: {value}")
+                break
+    for code_type in {t for t, _, _ in vocab.codes.values()}:
+        if len(fold(code_type)) >= 2:
+            folded, _ = _take(folded, [fold(code_type)])
+
+    rest = [w for w in folded.split() if w not in _STOP and len(w) > 1]
+    if rest:
+        search = " ".join(rest)
+        result = replace(result, search=search)
+        record(folded.find(rest[0]), f"Search: {search}")
+    return replace(result, matched=tuple(label for _, label in sorted(matched)))
+
+
+def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filter:
+    """The backend's answer when it gives one, the keyword grammar otherwise (or when it fails)."""
+    if backend is not None and text.strip():
+        try:
+            answer = backend(text, vocab)
+        except Exception:  # a model down or slow must never break the page
+            answer = None
+        if answer is not None:
+            return answer
+    return parse_keywords(text, vocab)

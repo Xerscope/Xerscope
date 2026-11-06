@@ -160,6 +160,16 @@ def test_gantt_wbs_choice_filters_and_options(app):
     data = _gantt_data(app)
     assert [r["code"] for r in data["rows"] if r["kind"] == "task"] == ["C3020"]
     assert set(data["open"]) == {r["id"] for r in data["rows"] if r["kind"] == "wbs"}
+    app.text_input[0].set_value("").run()
+    app.text_input[1].set_value("critical not started in civil works").run()  # the Ask field
+    _ok(app)
+    data = _gantt_data(app)
+    drawn = [r for r in data["rows"] if r["kind"] == "task"]
+    assert drawn and all(r["code"][0] in "CM" and r["category"] == "Critical" for r in drawn)
+    assert any(
+        "Understood: Float: Critical · Status: Not started · WBS: CIV · Civil works" in c.value for c in app.caption
+    )
+    app.text_input[1].set_value("").run()
     app.get("button_group")[0].set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
