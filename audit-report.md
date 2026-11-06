@@ -230,8 +230,10 @@ dans `compose.yaml`. Pinné par `tests/test_docker.py`. Conforme.
 
 ## 6. Non vérifié
 
-- **MPXJ crosscheck** : 37 tests skippés, pas de JDK dans le conteneur (`uv sync --extra crosscheck` requiert Java
-  21/25). Le différentiel moteur vs MPXJ n'a pas été rejoué.
+- **MPXJ crosscheck** : vérifié a posteriori (un JDK 21 était disponible) : `uv sync --extra crosscheck`,
+  `tests/reference/mpxj_cpm.py` puis `tests/test_crosscheck_mpxj.py` → 31 passés ; les 196 tests gardés par MPXJ
+  dans `test_cli`, `test_cpm`, `test_reference`, `test_shapes` passent sans skip, après la mise en conformité du
+  moteur (aucune nouvelle entrée `UNRESOLVED`).
 - **Witness P6** : 1 test skippé, dossier `tests/reference/data/witness` absent (données locales).
 - **Protection de branche GitHub, revue obligatoire, secrets du dépôt** : non interrogés.
 - **Comportement navigateur des téléchargements** (`Content-Disposition` avec un code projet contenant `../` ou des
