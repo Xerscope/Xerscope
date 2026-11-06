@@ -134,16 +134,56 @@ def teach(word: str, label: str) -> None:
         taught.append((word, label))
 
 
-def warm_model(vocab: query.Vocabulary, source: str) -> None:
+_SUMMARIES: dict[tuple[str, str], str] = {}  # (file, question) -> a grounded summary; process-wide, RAM only
+_SUMMARY_LOCK = threading.Lock()
+
+
+def summary_for(source: str, question: str) -> str | None:
+    """A summary already written for this file and question (pre-generated or kept from a visit)."""
+    with _SUMMARY_LOCK:
+        return _SUMMARIES.get((source, query.fold(question)))
+
+
+def keep_summary(source: str, question: str, text: str) -> None:
+    with _SUMMARY_LOCK:
+        if len(_SUMMARIES) >= 256:
+            _SUMMARIES.pop(next(iter(_SUMMARIES)))
+        _SUMMARIES[(source, query.fold(question))] = text
+
+
+def _pregenerate(backend, vocab: query.Vocabulary, tasks: pd.DataFrame, snapshot, nodes: pd.DataFrame) -> None:
+    """After the prefix is warm: the summaries of the standard questions, one model call each, in
+    the background, so the common questions answer at once (docs/deploy.md §10)."""
+    query.warm(backend, vocab)
+    for question in query.STANDARD_QUESTIONS:
+        if summary_for(snapshot.source, question) is not None:
+            continue
+        asked = query.parse(question, vocab)
+        funnel = query.apply(asked, tasks, snapshot, nodes)
+        if not funnel.steps:
+            continue
+        given = query.facts(funnel, snapshot)
+        text = "".join(query.summary(backend, question, given)).strip()
+        if text and query.grounded(text, given):
+            keep_summary(snapshot.source, question, text)
+
+
+def warm_model(
+    vocab: query.Vocabulary, source: str, tasks: pd.DataFrame | None = None, snapshot=None, nodes=None
+) -> None:
     """Hand the model the vocabulary of ``source`` once per session, in a thread: the server keeps
-    the prefix's state (docs/deploy.md §10), so the first sentence typed does not wait for it.
-    Nothing happens without a model."""
+    the prefix's state (docs/deploy.md §10), so the first sentence typed does not wait for it;
+    then, with ``tasks`` (the page's frame with its ``category``), the standard questions'
+    summaries are written ahead. Nothing happens without a model."""
     backend = query_backend()
     warmed = st.session_state.setdefault("_warmed", set())
     if backend is None or source in warmed:
         return
     warmed.add(source)
-    threading.Thread(target=query.warm, args=(backend, vocab), daemon=True).start()
+    if tasks is None or snapshot is None or nodes is None:
+        threading.Thread(target=query.warm, args=(backend, vocab), daemon=True).start()
+    else:
+        threading.Thread(target=_pregenerate, args=(backend, vocab, tasks, snapshot, nodes), daemon=True).start()
 
 
 @functools.cache

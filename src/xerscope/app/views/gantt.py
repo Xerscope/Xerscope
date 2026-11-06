@@ -10,6 +10,7 @@ from xerscope.app.state import (
     baseline_for,
     compare_picker,
     csv_download,
+    keep_summary,
     memo,
     page_header,
     query_backend,
@@ -17,6 +18,7 @@ from xerscope.app.state import (
     session_lexicon,
     snapshot_picker,
     sources_of,
+    summary_for,
     teach,
     warm_model,
 )
@@ -91,7 +93,13 @@ lexicon = memo(  # rebuilt when a word is taught
     baseline=False,
     ev_basis=False,
 )
-warm_model(lexicon, snapshot.source)  # the model reads this file's vocabulary once, in the background
+warm_model(  # the model reads this file's vocabulary once, then writes the standard summaries ahead
+    lexicon,
+    snapshot.source,
+    snapshot.activities.assign(category=categorise(snapshot.activities)),
+    snapshot,
+    nodes,
+)
 ask = None
 if asked:
     ask = memo(  # one model call per sentence and update, baseline-independent
@@ -267,11 +275,7 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             if ask.ignored
             else ""
         )
-        said = (
-            query.answer(ask, ask_funnel, lexicon, query.language(asked))
-            if ask_funnel.steps
-            else "Nothing understood: showing all."
-        )
+        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "Nothing understood: showing all."
         banner = st.container(
             border=True,
             horizontal=True,
@@ -283,6 +287,23 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
         how = " · model" if ask.source == "model" else (" · unsure reading" if ask.confidence < query.SURE else "")
         st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
+        if ask_funnel.steps and query_backend() is not None:  # the model's summary: cached, else streamed
+            given = query.facts(ask_funnel, snapshot)
+            written = summary_for(snapshot.source, asked)
+            with st.container(key="ask_summary"):
+                if written is None:
+                    slot = st.empty()
+                    with slot.container():
+                        st.caption("Summary…")
+                        written = slot.write_stream(query.summary(query_backend(), asked, given))
+                    written = (written or "").strip() if isinstance(written, str) else ""
+                    if written and query.grounded(written, given):
+                        keep_summary(snapshot.source, asked, written)
+                    else:
+                        slot.empty()  # nothing, or a value not in the facts: the template answer stands alone
+                        written = ""
+                if written:
+                    st.markdown(f"*{ui.md_text(written)}*")
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

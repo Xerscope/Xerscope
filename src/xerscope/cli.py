@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from xerscope.config import DATE_FMT, DATETIME_FMT
@@ -611,6 +612,12 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
         "the new codes only; a sentence still holding an original value is refused (real schedules)",
     )
     parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="with --url: print the model's summary of each sentence's answer, for a human to read, "
+        "and whether it is grounded in the values given",
+    )
     parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
 
 
@@ -731,6 +738,28 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
             for _, row in missed.head(args.show).iterrows():
                 wrong = ", ".join(field for field in query.FIELDS if not row[field])
                 print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
+        if args.summary and args.url:
+            from .analysis import wbs as wbs_tree
+            from .viz import categorise
+
+            nodes = wbs_tree.tree(snapshot)
+            tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
+            backend = parsers["model"]
+            grounded_count = 0
+            print("  summaries (model), for a human to read:")
+            for case in cases:
+                asked = query.parse(case["text"], vocab)
+                funnel = query.apply(asked, tasks, snapshot, nodes)
+                given = query.facts(funnel, snapshot)
+                started = time.perf_counter()
+                text = "".join(query.summary(backend, case["text"], given)).strip()
+                seconds = time.perf_counter() - started
+                ok = bool(text) and query.grounded(text, given)
+                grounded_count += ok
+                print(
+                    f"    {case['text']!r} ({seconds:.1f}s, {'grounded' if ok else 'DROPPED'}): {text or '(no answer)'}"
+                )
+            print(f"  grounded: {grounded_count}/{len(cases)}")
     return 0
 
 

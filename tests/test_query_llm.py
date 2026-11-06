@@ -41,6 +41,15 @@ class Server:
                     return
                 reply = outer.reply() if callable(outer.reply) else outer.reply
                 content = reply if isinstance(reply, str) else json.dumps(reply)
+                if body.get("stream"):  # SSE, as llama-server streams: one delta per word
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.end_headers()
+                    for word in content.split(" "):
+                        delta = json.dumps({"choices": [{"delta": {"content": word + " "}}]})
+                        self.wfile.write(f"data: {delta}\n\n".encode())
+                    self.wfile.write(b"data: [DONE]\n\n")
+                    return
                 answer = json.dumps({"choices": [{"message": {"role": "assistant", "content": content}}]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -247,3 +256,44 @@ def test_the_vocabulary_is_handed_over_once_and_every_request_reuses_the_prefix(
 
 def test_warm_against_a_server_down_is_false():
     assert query.warm(query.llm_backend("http://127.0.0.1:9"), VOCAB) is False
+
+
+def test_facts_hold_values_only_and_a_summary_is_kept_only_when_grounded(store, server):
+    from xerscope.analysis import wbs as wbs_tree
+    from xerscope.viz import categorise
+
+    snapshot = store.latest
+    nodes = wbs_tree.tree(snapshot)
+    tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
+    vocab = query.vocabulary(snapshot, nodes)
+    asked = query.parse_keywords("critical not started in civil works", vocab)
+    funnel = query.apply(asked, tasks, snapshot, nodes)
+    given = query.facts(funnel, snapshot)
+    assert given["count"] == len(funnel.rows) and given["steps"][0] == ["WBS CIV · Civil works", 8]
+    assert given["rows"][0][0] == funnel.rows.sort_values("total_float_d").iloc[0]["task_code"]
+    assert all(len(row) == 3 for row in given["rows"]) and len(given["rows"]) <= query.FACT_ROWS
+    text = json.dumps(given)
+    assert "Earthworks" not in text and "Foundations" not in text  # Activity IDs, floats and dates: no name
+    worst, worst_float, worst_finish = given["rows"][0]
+    good = (
+        f"{given['count']} critical activities are not started in CIV; "
+        f"{worst} ({worst_float:g} wd) finishes {worst_finish}."
+    )
+    assert query.grounded(good, given)
+    assert query.grounded(
+        good.replace(worst_finish, "/".join(reversed(worst_finish.split("-")))), given
+    )  # a date rewritten
+    assert not query.grounded("4 activities are late, the worst by -99 days.", given)  # invented numbers
+    assert not query.grounded(f"{worst} drives Z9999.", given)  # an invented Activity ID
+    server.reply = good
+    backend = query.llm_backend(server.url)
+    streamed = "".join(query.summary(backend, "critical not started in civil works", given)).strip()
+    assert streamed == good
+    body = server.requests[-1][1]
+    assert body["stream"] is True and body["max_tokens"] == 60 and body["cache_prompt"] is True
+    assert json.dumps(given, sort_keys=True) in body["messages"][1]["content"]
+    assert "".join(query.summary(None, "x", given)) == ""  # no model: nothing
+
+
+def test_a_summary_from_a_server_down_is_empty():
+    assert "".join(query.summary(query.llm_backend("http://127.0.0.1:9"), "x", {"count": 1})) == ""

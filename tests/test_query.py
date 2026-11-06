@@ -162,12 +162,14 @@ def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store)
     funnel = query.apply(asked, tasks, snapshot, nodes)
     rows = funnel.rows
     worst = rows.loc[rows["total_float_d"].idxmin()]
-    said = query.answer(asked, funnel, vocab, query.language("critiques non démarrés en génie civil"))
-    assert said.startswith(f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works, ")
-    assert f"pire marge {worst['total_float_d']:+.0f} j ({worst['task_code']})" in said
-    assert f"dernière fin {rows['finish'].max():%d/%m/%Y}." in said
+    said = query.answer(asked, funnel, vocab)  # English whatever the question's language
+    assert said.startswith(f"{len(rows)} activities critical not started in CIV · Civil works, ")
+    assert f"worst float {worst['total_float_d']:+.0f} wd ({worst['task_code']})" in said
+    assert f"latest finish {rows['finish'].max():%d/%m/%Y}." in said
+    french = query.answer(asked, funnel, vocab, "fr")  # kept for a French interface one day
+    assert french.startswith(f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works, ")
     english = query.parse_keywords("milestones", vocab)
-    said = query.answer(english, query.apply(english, tasks, snapshot, nodes), vocab, query.language("milestones"))
+    said = query.answer(english, query.apply(english, tasks, snapshot, nodes), vocab)
     assert said.startswith(f"{int(tasks['is_milestone'].sum())} milestones, ")
     nothing = query.parse_keywords("xyzzy", vocab)  # an ignored word: every row; a search for a name nobody has
     empty = query.apply(query.Filter(search="nobodyhasthisname"), tasks, snapshot, nodes)

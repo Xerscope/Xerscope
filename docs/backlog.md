@@ -141,6 +141,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       (`tests/test_ask_bench.py`). On a real schedule, `--anonymize` keeps every name out of
       the model and the terminal; only the sentences that name things by code or full name
       are then scorable.
+- [ ] Gantt "Ask" model, summary: measured with Qwen3.5-2B (docs/deploy.md §10), a third of
+      the grounded summaries misuse a value. Before enabling it: fewer and unambiguous facts
+      (no step counts beside day counts), a sentence frame the model fills rather than free
+      text, a re-measure with a person reading 20 summaries; or a larger model on a GPU host.
 - [ ] Gantt "Ask" model, tools: let the model call xerscope's own functions (WBS tree with
       counts, a search of activity names) through the chat endpoint's tool calls, the app
       running each call in-process on the loaded file (never a shell, never a path from the

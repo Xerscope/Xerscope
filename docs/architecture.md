@@ -172,7 +172,8 @@ checks the code against it, so a change here must be made there too):
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
 - `cli.py` is the entry point: it imports every layer, `app/diagnostic.py` included (`pv-compare`
-  reads the same frames as the Debug page) and `anonymize.py` (`ask-bench --anonymize`).
+  reads the same frames as the Debug page), `anonymize.py` (`ask-bench --anonymize`) and
+  `viz/` (`ask-bench --summary` categorises the float as the Gantt does).
 
 Outside `analysis/`:
 
@@ -381,10 +382,19 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   measures every layer on sentences with known filters (`tests/ask/dev.toml` tuned on,
   `heldout.toml` written blind, floors in `tests/test_ask_bench.py`), per field and per
   confidence bucket; `--anonymize` runs it on a real file with every name replaced.
-- **A model, when there is one, routes; it never reads the schedule.** It receives the
-  sentence and the labels (`Vocabulary.to_prompt()`: no activity, no date, no number) and
-  answers a JSON the schema constrains. It runs in a container of its own on a network of
-  its own, rootless, read-only, reaching nothing, behind TLS and a key (docs/deploy.md §10).
+- **A model, when there is one, summarises; it never reads the schedule.** With the `ai`
+  profile it writes one English sentence over the values xerscope computed (`query.facts`:
+  funnel steps and counts, the worst floats as Activity ID, float and finish date, the
+  successors of the worst), streamed into the banner under the template answer; a summary
+  holding a number, Activity ID or date that is not among those values is dropped
+  (`query.grounded`). The standard questions are summarised ahead at the file's load
+  (`state.warm_model`), in RAM only. The model's other role, understanding the sentence,
+  measured below the grammar, is kept for `ask-bench --url` only.
+- **The model's channel is the only outbound code.** `query.llm_backend` is the one place in
+  `src/` that opens a connection, to the fixed `XERSCOPE_QUERY_URL` (`tests/test_docker.py`);
+  the model answers data, never a URL the app would follow. It runs in a container of its
+  own on a network of its own with no gateway, rootless, read-only, reaching nothing, behind
+  TLS and a key (docs/deploy.md §10); the app's network has no gateway either.
   The values a user asks for are computed by xerscope; a model may only put them in words.
 
 **Why the latest small Qwen (or any 1-4B model) alone does not help here.**

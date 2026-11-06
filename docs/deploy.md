@@ -281,6 +281,25 @@ nodes without a model. `xerscope lexicon <folder>` checks the files; `xerscope a
 <folder> --cases <sentences>.toml --lexicon <folder> --anonymize` measures the gain on a
 real schedule without naming anything.
 
+What the model does, with the profile on: it **summarises** what a sentence found, in one
+English sentence, from the values xerscope computed (the funnel's steps and counts, the ten
+worst floats as Activity ID, float and finish date, the successors of the worst: never a
+name, never the file), streamed into the banner under the template answer (`query.facts`,
+`query.summary`). Every number, Activity ID and date of the summary must be among the values
+given, or the summary is dropped and the template answer stands alone (`query.grounded`).
+The standard questions ("what is critical", "what is late", "milestones not started",
+"what is in progress") are summarised ahead, in the background, when a file is loaded, so
+they answer at once; a new question streams, first words after about a second once the
+prefix is warm, forty words in ten to twenty seconds on the NAS. Measured on the demo's
+held-out sentences with Qwen3.5-2B Q4 (`ask-bench --url … --summary`, a 4-core x86 faster
+than the NAS): 20/20 summaries in 4 to 9 s, 17/20 kept by the guard, and, read by a person,
+about a third of the kept ones misuse a value (a step count called days, another activity's
+date): the guard proves the values exist, not that they are used right. The verdict, for
+now: leave the summary off and let the template answer, which is always right, stand; the
+code and `ask-bench --summary` stay for the day a better model or a GPU changes the
+measurement. The model is not used to understand the sentence either: measured at 55 %
+against the grammar's 100 %, that path stays for `ask-bench --url` only.
+
 **The link is TLS to the model's own certificate, with a key, or nothing.** The app refuses
 to configure a model over plain http, without the certificate or without the key
 (`query.llm_backend`); the model does not start without a key; nothing listens on the
