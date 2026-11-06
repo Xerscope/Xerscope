@@ -3,7 +3,7 @@ from functools import partial
 
 import streamlit as st
 
-from xerscope.analysis.cpm import CycleError
+from xerscope.analysis.cpm import ScheduleError
 from xerscope.app import diagnostic, ui
 from xerscope.app.state import (
     anonymous_exports,
@@ -49,7 +49,7 @@ try:
         baseline,
         p6_standard,
     )
-except CycleError as exc:
+except ScheduleError as exc:
     st.error(f"Cannot schedule this file: {exc}", icon=":material/block:")
     st.stop()
 
