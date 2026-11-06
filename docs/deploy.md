@@ -325,15 +325,15 @@ model's address but its TLS front; and the model's containers are rootless and s
 3. `.env`: `XERSCOPE_LLM_KEY=$(openssl rand -hex 24)`, `XERSCOPE_MODELS=<folder>`,
    `XERSCOPE_LLM_MODEL=<file>.gguf`.
 4. `compose.yaml`, `xerscope` service: uncomment the three `XERSCOPE_QUERY_*` lines, the
-   `llm-ca.crt` volume line and the `ai` network lines. The URL is `https://172.29.0.20:8443`,
+   `llm-ca.crt` volume line and the `llm` network lines. The URL is `https://172.29.0.20:8443`,
    the key is the one above, the certificate is the one made in step 2 (self-signed: it is
    its own CA, and the app trusts it alone).
-5. Build with the profile: Container Manager runs `docker compose --profile ai up -d`
-   (`llm` and `llm-tls` are in the `ai` profile only; without it nothing changes).
+5. Build with the profile: Container Manager runs `docker compose --profile llm up -d`
+   (`llm` and `llm-tls` are in the `llm` profile only; without it nothing changes).
 
 How the pieces hold (`tests/test_docker.py`, `tests/test_query_llm.py`):
 
-- **A network of its own, where nothing listens.** The model is on `ai` (`172.29.0.20`),
+- **A network of its own, where nothing listens.** The model is on `llm` (`172.29.0.20`),
   an internal network with no gateway that holds the model and the app alone. The app sits on
   it at `172.29.0.10` but Streamlit binds its `internal` address (`172.28.0.10`, the
   `command` and `healthcheck` of the service) and nothing else: from the model's namespace

@@ -90,7 +90,7 @@ services:
                                                     # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
     user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # NAS: a dedicated DSM account, the only one allowed to
                                                     # read the exports folder; default: the image's nonroot user
-    command: ["app", "--host", "172.28.0.10", "--port", "8501"]   # the `internal` address only: on the `ai`
+    command: ["app", "--host", "172.28.0.10", "--port", "8501"]   # the `internal` address only: on the `llm`
                                                     # network below (the model's) the app listens on nothing
     healthcheck:
       test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request as u; u.urlopen('http://172.28.0.10:8501/_stcore/health', timeout=4)"]
@@ -106,7 +106,7 @@ services:
       # XERSCOPE_BASELINE: /data/BL.xer
       # XERSCOPE_LEXICON: /lexicon                   # a folder of *.toml synonym groups for the Gantt Ask field
                                                     # (the company's own words; `xerscope lexicon` prints the format)
-      # XERSCOPE_QUERY_URL: https://172.29.0.20:8443 # the optional `llm` service below (profile ai), by its fixed
+      # XERSCOPE_QUERY_URL: https://172.29.0.20:8443 # the optional `llm` service below (profile llm), by its fixed
                                                     # address, over TLS: the Gantt page's Ask field asks it; unset, a
                                                     # keyword grammar answers. The three go together (docs/deploy.md §10):
       # XERSCOPE_QUERY_KEY: ${XERSCOPE_LLM_KEY:-}    # the key the model requires on every request
@@ -119,7 +119,7 @@ services:
         aliases: [app]
         ipv4_address: 172.28.0.10                   # fixed: Streamlit binds this address alone (command above)                              # Caddy's upstream: in the tailscale namespace Caddy shares,
                                                     # /etc/hosts maps "xerscope" (tailscale's hostname) to tailscale
-      # ai:                                         # with the `llm` profile: the model's own network (§10); the app
+      # llm:                                        # with the `llm` profile: the model's own network (§10); the app
       #   ipv4_address: 172.29.0.10                 # reaches 172.29.0.20 from here, and listens on nothing here
     read_only: true
     tmpfs:                                          # owned by the app's user: some Docker builds (Synology's)
@@ -134,8 +134,8 @@ services:
     pids_limit: 256
     restart: unless-stopped
 
-  llm:                                            # optional: `docker compose --profile ai up -d`. A llama.cpp
-    profiles: [ai]                                #   server the Gantt page's Ask field asks (analysis/query.py);
+  llm:                                            # optional: `docker compose --profile llm up -d`. A llama.cpp
+    profiles: [llm]                               #   server the Gantt page's Ask field asks (analysis/query.py);
     image: ghcr.io/ggml-org/llama.cpp:server-b12169   # it receives the file's WBS, code and resource names only
     entrypoint: ["/bin/sh", "-c"]                 # no key, no model: it exits instead of answering anyone
     command:
@@ -151,7 +151,7 @@ services:
     volumes:
       - ${XERSCOPE_MODELS:-../models}:/models:ro  # one GGUF file (docs/deploy.md §10), readable by XERSCOPE_UID
     networks:                                     # its own network, no gateway, no port: the app reaches it at this
-      ai:                                         #   address over TLS (`llm-tls`); it reaches nothing that listens
+      llm:                                        #   address over TLS (`llm-tls`); it reaches nothing that listens
         ipv4_address: 172.29.0.20
     read_only: true
     ipc: none                                     # no shared memory with anything
@@ -164,7 +164,7 @@ services:
     restart: unless-stopped
 
   llm-tls:                                        # TLS for the model (its image has no SSL): the only listener on
-    profiles: [ai]                                #   172.29.0.20, https://172.29.0.20:8443 -> 127.0.0.1:8080
+    profiles: [llm]                               #   172.29.0.20, https://172.29.0.20:8443 -> 127.0.0.1:8080
     image: caddy:2.11.8                           # stock Caddy: no module needed here
     network_mode: service:llm
     user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # rootless: the certificate is made once on the NAS
@@ -194,7 +194,7 @@ networks:
     internal: true                                  # no gateway: xerscope cannot reach the internet
     ipam:                                           # a fixed address for the app: Streamlit binds it alone, so the
       config: [{subnet: 172.28.0.0/24}]             # model's network (below) carries nothing that listens
-  ai:                                             # the model's network (§10): the model and the app alone, no gateway;
+  llm:                                            # the model's network (§10): the model and the app alone, no gateway;
     internal: true                                  # the model is reached by IP, not by a name another container could take
     ipam:
       config: [{subnet: 172.29.0.0/24}]

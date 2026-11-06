@@ -1,4 +1,4 @@
-# TLS in front of the language model (deploy/compose.yaml `llm-tls`, profile ai). The stock
+# TLS in front of the language model (deploy/compose.yaml `llm-tls`, profile llm). The stock
 # llama.cpp server image carries no SSL: the model listens on 127.0.0.1:8080 of the namespace
 # this Caddy shares, and this Caddy is the only thing on the model's fixed address, over TLS
 # with a certificate made once on the NAS (docs/deploy.md §10) and mounted read-only, so this

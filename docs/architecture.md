@@ -382,7 +382,7 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   measures every layer on sentences with known filters (`tests/ask/dev.toml` tuned on,
   `heldout.toml` written blind, floors in `tests/test_ask_bench.py`), per field and per
   confidence bucket; `--anonymize` runs it on a real file with every name replaced.
-- **A model, when there is one, summarises; it never reads the schedule.** With the `ai`
+- **A model, when there is one, summarises; it never reads the schedule.** With the `llm`
   profile it writes one English sentence over the values xerscope computed (`query.facts`:
   funnel steps and counts, the worst floats as Activity ID, float and finish date, the
   successors of the worst), streamed into the banner under the template answer; a summary

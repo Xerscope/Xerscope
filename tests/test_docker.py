@@ -102,14 +102,14 @@ def test_llm_sidecar_is_optional_and_reaches_nothing():
     tls = c[c.index("  llm-tls:") : c.index("\nvolumes:")]
     app = c[c.index("  xerscope:") : c.index("  llm:")]
     uid, gid = "${XERSCOPE_UID:-65532}", "${XERSCOPE_GID:-65532}"
-    assert "profiles: [ai]" in llm and "profiles: [ai]" in tls and "ports:" not in llm and "ports:" not in tls
+    assert "profiles: [llm]" in llm and "profiles: [llm]" in tls and "ports:" not in llm and "ports:" not in tls
     # the model's network holds the model and the app; the app listens on its `internal` address alone
-    assert re.search(r"networks:[^\n]*\n\s+ai:[^\n]*\n\s+ipv4_address: 172\.29\.0\.20", llm)
+    assert re.search(r"networks:[^\n]*\n\s+llm:[^\n]*\n\s+ipv4_address: 172\.29\.0\.20", llm)
     assert "internal:" not in llm and "egress" not in llm
     assert '["app", "--host", "172.28.0.10", "--port", "8501"]' in app
     assert "http://172.28.0.10:8501/_stcore/health" in app and "ipv4_address: 172.28.0.10" in app
-    assert "# ai:" in app and "#   ipv4_address: 172.29.0.10" in app
-    assert re.search(r"^  ai:[^\n]*\n\s+internal: true", c, re.M) and "subnet: 172.29.0.0/24" in c
+    assert "# llm:" in app and "#   ipv4_address: 172.29.0.10" in app
+    assert re.search(r"^  llm:[^\n]*\n\s+internal: true", c, re.M) and "subnet: 172.29.0.0/24" in c
     assert "subnet: 172.28.0.0/24" in c
     # rootless and sealed, both of them
     assert re.search(r"image: ghcr\.io/ggml-org/llama\.cpp:server-b\d+", llm)  # a build number, not a floating tag
@@ -329,5 +329,5 @@ def test_nothing_in_the_app_reaches_the_network_but_the_model_link():
     assert query.count('+ "/v1/chat/completions"') == 1 and "urlopen(answer" not in query
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert re.search(r"^  internal:\n\s+internal: true", c, re.M) and re.search(
-        r"^  ai:[^\n]*\n\s+internal: true", c, re.M
+        r"^  llm:[^\n]*\n\s+internal: true", c, re.M
     )
