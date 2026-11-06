@@ -604,6 +604,7 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
         help="score on the anonymised copy of the file: the model, the output and the sentences carry "
         "the new codes only; a sentence still holding an original value is refused (real schedules)",
     )
+    parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON)")
     parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
 
 
@@ -687,7 +688,10 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
                 print(f"  refused: {refused} still holding an original value after rewriting")
         else:
             print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
-        vocab = query.vocabulary(snapshot)
+        lexicon, lexicon_errors = query.load_lexicon(*([args.lexicon] if args.lexicon else []))
+        for error in lexicon_errors:
+            print(f"  lexicon error: {error}")
+        vocab = query.vocabulary(snapshot, lexicon=lexicon)
         for name, backend in parsers.items():
             scored = query.score(cases, vocab, backend)
             answered = (scored["source"] == name).mean() if name == "model" else 1.0
@@ -709,6 +713,29 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
     return 0
 
 
+def _args_lexicon(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("folder", nargs="?", default="", help="a folder of *.toml groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument("--word", default="", help="print the words read as this one")
+
+
+def _cmd_lexicon(args: argparse.Namespace) -> int:
+    """The trade words the Ask field reads as one: the packaged groups, plus a folder's; a bad
+    file is named (exit 1)."""
+    from .analysis import query
+
+    lexicon, errors = query.load_lexicon(*([args.folder] if args.folder else []))
+    for error in errors:
+        print(f"error: {error}")
+    if args.word:
+        print(f"{query.fold(args.word)}: {', '.join(lexicon.get(query.fold(args.word), ())) or '(no group)'}")
+    else:
+        groups = {tuple(sorted({w, *others})) for w, others in lexicon.items()}
+        for group in sorted(groups):
+            print(", ".join(group))
+        print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" + {args.folder}" if args.folder else ""))
+    return 1 if errors else 0
+
+
 # name: (help, adds its arguments, runs); the order is the order of `xerscope --help`
 COMMANDS = {
     "app": ("launch the web app", _args_app, _cmd_app),
@@ -725,6 +752,11 @@ COMMANDS = {
         "score the Gantt Ask field's parsers on sentences with known filters",
         _args_ask_bench,
         _cmd_ask_bench,
+    ),
+    "lexicon": (
+        "list the trade words the Ask field reads as one, or check a folder of them",
+        _args_lexicon,
+        _cmd_lexicon,
     ),
 }
 

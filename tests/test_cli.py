@@ -251,3 +251,13 @@ def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir):
     assert "exact 100%" in out and "15 sentences scored" in out  # the sentences naming things by code or full name
     for secret in ("Civil works", "CIV", "Site crew", "CREW", "PRJ-ALPHA", "Ingénierie", "earthworks"):
         assert secret not in out, secret
+
+
+def test_lexicon_command(capsys, tmp_path):
+    out = run(capsys, "lexicon")
+    assert "meca, mecanique, mechanical" in out and "group(s)" in out
+    out = run(capsys, "lexicon", "--word", "Mécanique")
+    assert out.startswith("mecanique: ") and "mechanical" in out
+    (tmp_path / "bad.toml").write_text("[[group]\n", encoding="utf-8")
+    assert cli.main(["lexicon", str(tmp_path)]) == 1
+    assert "error: bad.toml" in capsys.readouterr().out

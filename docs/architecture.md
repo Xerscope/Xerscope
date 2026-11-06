@@ -339,6 +339,11 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   snapshot's frames: WBS nodes with their path, resources, activity-code values, the words
   of the activity names, whether the file has milestones and LOE). Every layer matches the
   sentence against these labels and nothing else; an id outside them is dropped.
+- **The trade words are data, not code** (`lexicon/fr-en.toml`, `[[group]] words = [...]`,
+  every word of a group read as every other: "mécanique" finds "Mechanical & electrical").
+  A company adds its own words in the folder `XERSCOPE_LEXICON` names (same format, as
+  `XERSCOPE_STANDARDS` for standards; `xerscope lexicon FOLDER` checks it); the grammar
+  reads both, so its reach grows without a release, and `ask-bench --lexicon` measures it.
 - **The output is a `Filter`** (WBS node, statuses, float categories, code values,
   resources, milestones, LOE, search words): what the page's widgets offer, intersected
   with them. The page runs it as a `populations.Funnel` (`query.apply`): one named step per

@@ -17,6 +17,9 @@ from xerscope.app.state import (
     snapshot_picker,
     sources_of,
 )
+from xerscope.app.state import (
+    lexicon as app_lexicon,
+)
 from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER
@@ -163,7 +166,15 @@ asked = st.text_input(
 )
 ask = None
 if asked:
-    lexicon = memo(("vocabulary", snapshot.source), query.vocabulary, snapshot, nodes, baseline=False, ev_basis=False)
+    lexicon = memo(
+        ("vocabulary", snapshot.source),
+        query.vocabulary,
+        snapshot,
+        nodes,
+        app_lexicon(),
+        baseline=False,
+        ev_basis=False,
+    )
     ask = memo(  # one model call per sentence and update, baseline-independent
         ("ask", snapshot.source, asked), query.parse, asked, lexicon, query_backend(), baseline=False, ev_basis=False
     )

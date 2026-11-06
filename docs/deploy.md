@@ -273,6 +273,13 @@ receives the file's WBS, code and resource names only: no activity, no date, no 
 (`tests/test_query_llm.py` checks the request). An answer that does not come, in 20 s, or
 does not parse, is replaced by the grammar's: the page never waits on the model.
 
+Before any model: the grammar reads the trade words of `lexicon/fr-en.toml` and those of
+the folder `XERSCOPE_LEXICON` names, mounted read-only like the exports (`*.toml` files,
+`[[group]] words = ["CVC", "HVAC"]`): a company's own words and abbreviations find its
+nodes without a model. `xerscope lexicon <folder>` checks the files; `xerscope ask-bench
+<folder> --cases <sentences>.toml --lexicon <folder> --anonymize` measures the gain on a
+real schedule without naming anything.
+
 **The link is TLS to the model's own certificate, with a key, or nothing.** The app refuses
 to configure a model over plain http, without the certificate or without the key
 (`query.llm_backend`); the model does not start without a key; nothing listens on the

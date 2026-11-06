@@ -108,6 +108,16 @@ def background_jobs() -> bool:
 
 
 @functools.cache
+def lexicon() -> query.Lexicon:
+    """The Ask field's trade words: the packaged groups plus the *.toml of XERSCOPE_LEXICON (a
+    company's own words). Load errors are kept for the Debug page, never shown to a visitor."""
+    extra = os.environ.get("XERSCOPE_LEXICON", "")
+    found, errors = query.load_lexicon(*([extra] if extra else []))
+    st.session_state["lexicon_errors"] = errors
+    return found
+
+
+@functools.cache
 def query_backend() -> query.Backend | None:
     """The language model behind the Gantt page's Ask field (``analysis.query.llm_backend``), from
     XERSCOPE_QUERY_URL: a llama.cpp server on the compose network. Unset: the keyword grammar only."""

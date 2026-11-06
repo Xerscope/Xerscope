@@ -15,9 +15,12 @@ on a model being up.
 from __future__ import annotations
 
 import re
+import tomllib
 import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
+from importlib import resources
+from pathlib import Path
 
 import pandas as pd
 
@@ -86,6 +89,7 @@ class Vocabulary:
     words: frozenset[str] | None = None
     has_milestones: bool = False
     has_loe: bool = False
+    lexicon: Lexicon = field(default_factory=lambda: BUILTIN_LEXICON)  # trade words read as one (load_lexicon)
 
     def to_prompt(self) -> dict:
         """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
@@ -104,9 +108,10 @@ Backend = Callable[[str, Vocabulary], Filter | None]
 """A parser that may decline (None): a model, step two; the keyword grammar is the fallback."""
 
 
-def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None) -> Vocabulary:
+def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: Lexicon | None = None) -> Vocabulary:
     """``nodes`` is ``analysis.wbs.tree``/``rollup`` output (``wbs_id``, ``wbs_code``, ``wbs_name``);
-    ``snapshot.wbs`` when not given. The project node and the synthetic root are left out."""
+    ``snapshot.wbs`` when not given. The project node and the synthetic root are left out.
+    ``lexicon``: the packaged trade words by default (``load_lexicon`` adds a company's own)."""
     frame = snapshot.wbs if nodes is None else nodes
     codes_column = "wbs_code" if "wbs_code" in frame else "wbs_short_name"
     flags = frame["proj_node_flag"] if "proj_node_flag" in frame else pd.Series("N", index=frame.index)
@@ -138,6 +143,7 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None) -> Vocabul
         words=words,
         has_milestones=bool(activities["is_milestone"].any()),
         has_loe=bool(activities["is_loe"].any()),
+        lexicon=BUILTIN_LEXICON if lexicon is None else lexicon,
     )
 
 
@@ -258,47 +264,47 @@ _CATEGORY_PHRASES = {
 }
 _MILESTONE_PHRASES = ["milestone", "milestones", "jalon", "jalons", "evenement", "evenements", "event", "events"]
 _LOE_PHRASES = ["loe", "level of effort", "niveau d effort", "hamac", "hamacs", "hammock", "hammocks"]
-# planning and construction words a planner says in one language about a file written in the
-# other: each group's words are read as one, so "mécanique" finds the node "Mechanical & electrical"
-# and "commissioning" the node "Mise en service". Generic trade vocabulary only, never a file's own
-# names (those come from Vocabulary).
-_SYNONYMS = [
-    ["mecanique", "mechanical", "meca"],
-    ["electricite", "electrique", "electrical", "elec"],
-    ["genie civil", "civil", "civils", "gc"],
-    ["mise en service", "commissioning", "essais", "mes"],
-    ["ingenierie", "etudes", "engineering"],
-    ["achats", "approvisionnement", "procurement", "purchasing"],
-    ["construction", "travaux", "chantier"],
-    ["fondations", "foundations"],
-    ["terrassement", "terrassements", "earthworks"],
-    ["tuyauterie", "piping"],
-    ["instrumentation", "instrum"],
-    ["montage", "installation", "erection"],
-    ["livraison", "delivery", "livraisons"],
-    ["fabrication", "manufacturing"],
-    ["demarrage", "start up", "startup"],
-    ["reception", "handover", "transfert"],
-    ["gestion de projet", "project management", "pilotage", "direction de projet"],
-    ["equipements", "equipement", "equipment"],
-    ["structure", "charpente", "steel", "structural"],
-    ["voirie", "roads", "routes"],
-    ["reseaux", "utilities", "utilites"],
-    ["documentation", "documents", "dossier"],
-    ["fournisseur", "vendeur", "vendor", "supplier"],
-    ["equipe", "crew"],
-]
-_SYNONYM_OF: dict[str, list[str]] = {}
-for _group in _SYNONYMS:
-    for _word in _group:
-        _SYNONYM_OF.setdefault(_word, []).extend(w for w in _group if w != _word)
+# --- the lexicon: trade words read as one -----------------------------------------------
+
+LEXICON_DIR = resources.files("xerscope") / "lexicon"  # the packaged groups (fr-en.toml)
+Lexicon = dict[str, tuple[str, ...]]  # folded word -> the other words of its group
 
 
-def _with_synonyms(words: list[str]) -> list[str]:
+def load_lexicon(*dirs: str | Path) -> tuple[Lexicon, list[str]]:
+    """The packaged groups plus every ``*.toml`` of ``dirs`` (a company's own words, the folder
+    XERSCOPE_LEXICON names): ``[[group]] words = [...]`` tables, every word folded. Returns the
+    lexicon and the load errors (a bad file is skipped and named, never fatal)."""
+    groups: list[list[str]] = []
+    errors: list[str] = []
+    files = [entry for entry in sorted(LEXICON_DIR.iterdir(), key=lambda e: e.name) if entry.name.endswith(".toml")]
+    for directory in dirs:
+        root = Path(directory).expanduser()
+        if root.is_dir():
+            files += sorted(root.glob("*.toml"))
+    for file in files:
+        try:
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+            for table in data.get("group", []):
+                words = [fold(w) for w in table.get("words", []) if isinstance(w, str) and fold(w)]
+                if len(words) >= 2:
+                    groups.append(words)
+        except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError) as exc:
+            errors.append(f"{file.name}: {exc}")
+    lexicon: dict[str, list[str]] = {}
+    for group in groups:
+        for word in group:
+            lexicon.setdefault(word, []).extend(w for w in group if w != word)
+    return {word: tuple(dict.fromkeys(others)) for word, others in lexicon.items()}, errors
+
+
+BUILTIN_LEXICON, _ = load_lexicon()
+
+
+def _with_synonyms(words: list[str], lexicon: Lexicon) -> list[str]:
     """``words`` and, for each, the words of its group: what a sentence may say for it."""
     seen = dict.fromkeys(words)
     for word in words:
-        seen.update(dict.fromkeys(_SYNONYM_OF.get(word, ())))
+        seen.update(dict.fromkeys(lexicon.get(word, ())))
     return list(seen)
 
 
@@ -418,7 +424,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     for wbs_id, label in vocab.wbs.items():
         code, _, name = label.partition(" · ")
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in _STOP]
-        candidates = _with_synonyms([fold(code), fold(name), *words])
+        candidates = _with_synonyms([fold(code), fold(name), *words], vocab.lexicon)
         for candidate in candidates:
             if (
                 candidate
@@ -431,7 +437,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         for wbs_id, label in vocab.wbs.items():
             code, _, name = label.partition(" · ")
             words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 5 and w not in _STOP]
-            close = _closest(sentence_words(), _with_synonyms([fold(code), *words]))
+            close = _closest(sentence_words(), _with_synonyms([fold(code), *words], vocab.lexicon))
             if close:
                 scores[wbs_id] = close[2]
                 if best is None or close[2] > best[3]:
@@ -465,7 +471,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     # resources: short name or name, whole word, longest first
     by_length = sorted(vocab.resources.items(), key=lambda kv: -max(len(kv[1][0]), len(kv[1][1])))
     for rsrc_id, (short, name) in by_length:
-        for candidate in sorted(_with_synonyms([fold(short), fold(name)]), key=len, reverse=True):
+        for candidate in sorted(_with_synonyms([fold(short), fold(name)], vocab.lexicon), key=len, reverse=True):
             if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
                 folded, found = _take(folded, [candidate])
                 result = replace(result, resources=result.resources | {rsrc_id})
@@ -474,7 +480,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
 
     if not result.resources:  # a typo on a resource name
         for rsrc_id, (short, name) in by_length:
-            close = _closest(sentence_words(), _with_synonyms([fold(short), fold(name)]))
+            close = _closest(sentence_words(), _with_synonyms([fold(short), fold(name)], vocab.lexicon))
             if close:
                 folded, found = _take(folded, [close[0]])
                 result = replace(result, resources=frozenset({rsrc_id}))
@@ -489,7 +495,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     else:  # a word the file does not hold, whose synonym it does, searches that synonym
         known, ignored = [], []
         for word in rest:
-            match = next((w for w in (word, *_SYNONYM_OF.get(word, ())) if w in vocab.words), None)
+            match = next((w for w in (word, *vocab.lexicon.get(word, ())) if w in vocab.words), None)
             if match is None and (close := _closest([word], sorted(vocab.words))):  # a typo on a name word
                 match, confidence = close[1], min(confidence, close[2])
             (known.append(match) if match else ignored.append(word))

@@ -133,3 +133,18 @@ def test_filter_runs_as_a_funnel_of_named_steps(store):
     assert query.apply(query.Filter(), tasks, snapshot, nodes).steps == []  # nothing asked: one population, no step
     with_search = query.apply(query.Filter(search="earth", milestones=False), tasks, snapshot, nodes)
     assert with_search.steps[0].label == 'name contains "earth"' and with_search.rows["task_code"].tolist() == ["C3020"]
+
+
+def test_lexicon_is_data_the_user_extends(tmp_path):
+    builtin, errors = query.load_lexicon()
+    assert errors == [] and "mechanical" in builtin["mecanique"] and "meca" in builtin["mechanical"]
+    (tmp_path / "acme.toml").write_text(
+        '[[group]]\nwords = ["CVC", "HVAC", "chauffage ventilation"]\n', encoding="utf-8"
+    )
+    (tmp_path / "bad.toml").write_text("[[group]\n", encoding="utf-8")
+    mine, errors = query.load_lexicon(tmp_path)
+    assert errors and errors[0].startswith("bad.toml:")
+    assert mine["cvc"] == ("hvac", "chauffage ventilation") and mine["mecanique"] == builtin["mecanique"]
+    lexicon = Vocabulary(wbs={"h": "HVAC · HVAC works"}, lexicon=mine)
+    assert query.parse_keywords("CVC en cours", lexicon).wbs_id == "h"  # the company's word finds its node
+    assert query.parse_keywords("CVC en cours", Vocabulary(wbs={"h": "HVAC · HVAC works"})).wbs_id is None
