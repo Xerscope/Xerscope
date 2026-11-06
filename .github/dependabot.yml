@@ -29,3 +29,10 @@ updates:
     groups:
       caddy:
         patterns: ["caddy"]             # builder and runtime move together: one Caddy release
+  - package-ecosystem: docker           # the Trivy image the CI scans with (.github/trivy/Dockerfile)
+    directory: /.github/trivy
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7                   # a release waits a week: Trivy's compromised March 2026 releases
+                                        # were withdrawn within hours (GHSA-69fq-xp46-6x23)
