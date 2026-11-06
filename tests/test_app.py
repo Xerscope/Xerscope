@@ -91,16 +91,29 @@ def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
     assert keys and not [key for key in keys if str(sample_dir) in key]
 
 
-def test_milestone_trend_starts_empty_then_plots_the_picks(app, store):
+def test_milestone_trend_starts_on_finish_milestones_and_keeps_the_picks(app, store):
+    """The page opens on the finish milestones of the latest update (critical first, at most six);
+    Clear empties it; a pick survives a visit to another page."""
     from xerscope.analysis.progress import milestone_codes
 
     app.switch_page("views/milestones.py").run()
     _ok(app)
     picker = app.multiselect(key="mta_pick")
-    assert picker.value == [] and not app.get("plotly_chart")  # nothing picked, nothing drawn
-    picker.set_value(milestone_codes(store, open_only=True)[:2]).run()
+    latest = store.latest.activities
+    finish = latest[latest["is_milestone"] & ~latest["is_start_milestone"]]
+    assert picker.value and set(picker.value) <= set(finish["task_code"]) and len(picker.value) <= 6
+    assert len(app.get("plotly_chart")) == 1
+    app.button(key="mta_clear").click().run()
+    _ok(app)
+    assert app.multiselect(key="mta_pick").value == [] and not app.get("plotly_chart")
+    picks = milestone_codes(store, open_only=True)[:2]
+    app.multiselect(key="mta_pick").set_value(picks).run()
     _ok(app)
     assert len(app.get("plotly_chart")) == 1
+    app.switch_page("views/overview.py").run()
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    assert app.multiselect(key="mta_pick").value == picks
 
 
 def _ok(at):
@@ -1036,7 +1049,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 11 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 12 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1493,3 +1506,94 @@ def test_debug_block_10_compares_a_p6_export_and_keeps_the_activity_list_out_of_
         text = "".join(archive.read(n).decode("utf-8-sig") for n in names)
     assert len(names) == 4 and causes.loc[0, "gap_activities"] == 0
     assert not set(store.latest.activities["task_code"]) & {c for line in text.splitlines() for c in line.split(",")}
+
+
+def test_score_cards_not_computed_show_a_short_value(app):
+    """A card cuts a long value with an ellipsis: the state goes in the change line instead."""
+    cards = [m for m in app.metric if m.label.endswith(" score")]
+    assert len(cards) == 4
+    assert all(m.value == "–" and m.delta == "not computed yet" for m in cards)
+
+
+def test_runtime_block_names_what_the_app_read(app):
+    """Debug block 12: the fonts, the config and the package that runs, for a page that looks old."""
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    table = ui.runtime_table()
+    assert list(table["setting"])[:2] == ["Config read", "Working directory (config is read here)"]
+    assert any("12 · App runtime" in e.label for e in app.expander)
+    assert table.set_index("setting").loc["Config read", "value"] in ("yes", "no — start with `xerscope app`")
+    assert table.set_index("setting").loc["Package", "value"] == str(Path(ui.__file__).parents[1])
+
+
+def test_font_fallback_inlines_both_faces():
+    """Without the config (no static folder served), the theme's two fonts come as data: URLs."""
+    css = ui.font_fallback_css()
+    assert css.count("data:font/woff2;base64,") == 2
+    assert all(f'font-family: "{family}"' in css for family in ("Onest", "JetBrains Mono"))
+
+
+def test_the_update_picked_on_one_page_is_the_update_of_every_page(app, store):
+    """One choice of update for the session: picked on Schedule health, the Gantt and Earned value
+    open on it; a page never visited starts on it too."""
+    app.switch_page("views/health.py").run()
+    older = store.labels[0]
+    app.selectbox(key="health_snap").set_value(older).run()
+    _ok(app)
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    assert app.selectbox(key="gantt_snap").value == older
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    assert app.selectbox(key="ev_snap").value == older
+
+
+def test_a_check_opens_the_gantt_on_its_tasks_and_the_audit_on_itself(app):
+    """Schedule health: the tasks a failed check lists open the Gantt filtered on them, on the
+    update shown; Audit this check opens the Audit on that standard, check and update."""
+    app.switch_page("views/health.py").run()
+    _ok(app)
+    app.toggle(key="health_expand").set_value(True).run()
+    opener = next(b for b in app.button if b.key and b.key.startswith("gantt_P6-"))
+    metric_id = opener.key.removeprefix("gantt_")
+    opener.click().run()
+    _ok(app)
+    focus = app.session_state["gantt_focus"]
+    assert focus["label"].startswith(metric_id) and focus["codes"]
+    assert app.session_state["snap_choice"] == app.session_state["health_snap"]
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    drawn = {r["id"] for r in _gantt_data(app)["rows"] if r["kind"] == "task"}
+    assert drawn == {f"a:{code}" for code in focus["codes"]}
+    app.button(key="gantt_focus_clear").click().run()
+    _ok(app)
+    assert app.session_state["gantt_focus"] is None
+    app.switch_page("views/health.py").run()
+    app.toggle(key="health_expand").set_value(True).run()
+    app.button(key=f"audit_{metric_id}").click().run()
+    _ok(app)
+    assert app.session_state["audit_std"] == "P6" and app.session_state["audit_check:P6"] == metric_id
+
+
+def test_a_table_with_task_ids_offers_to_open_the_gantt(app):
+    """A table with Task IDs (here the milestone slips) is selectable: a selected row's task opens
+    in the Gantt. AppTest cannot select a row: the offer is checked here, the click in a browser."""
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    assert any(c.value.startswith("Select a row to open its task in the Gantt") for c in app.caption)
+
+
+def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sample_dir, monkeypatch):
+    """XERSCOPE_DATA_LOCKED (the remote stack): no Debug page unless XERSCOPE_DEBUG_PAGE=1, and even
+    then not the block that names the server's folders, package path and versions."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "1")
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    with pytest.raises(ValueError, match="Could not find a navigation page"):
+        at.switch_page("views/debug.py")
+    monkeypatch.setenv("XERSCOPE_DEBUG_PAGE", "1")
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    assert not any("12 · App runtime" in e.label for e in at.expander)
+    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 11
