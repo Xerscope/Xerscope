@@ -19,8 +19,15 @@ import pytest
 from xerkit import MON_FRI_8H, clndr_data, snap, todo, with_second_project, xer_text
 
 from xerscope.xer import XerError, build_snapshot, parse_bytes, parse_text
-from xerscope.xer.calendar import TimeAxis, WorkCalendar, hours_to_days, parse_clndr_data
-from xerscope.xer.model import HEADER_TABLES, to_datetime, to_number
+from xerscope.xer.calendar import (
+    EXCEPTION_FIRST_DATE,
+    EXCEPTION_LAST_DATE,
+    TimeAxis,
+    WorkCalendar,
+    hours_to_days,
+    parse_clndr_data,
+)
+from xerscope.xer.model import HEADER_TABLES, projects_text, to_datetime, to_number
 
 T = pd.Timestamp
 HEAD = "ERMHDR\t23.12\t2026-03-02\n"
@@ -97,20 +104,21 @@ def test_table_without_field_line_is_skipped_with_a_warning():
     assert raw.warnings == ["table A has rows but no %F field line; skipped"]
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-XER-01: a second %F line silently relabels the rows read under the first")
-def test_second_field_line_in_a_table_is_reported():
+def test_second_field_line_in_a_table_keeps_the_first_columns_and_ignores_the_rows_under_it():
+    """AUDIT-XER-01: the rows read under the first %F line kept their columns; the rows under a
+    contradicting %F line are left out, and the warning names the table."""
     raw = parse_text(HEAD + "%T\tA\n%F\tx\ty\n%R\t1\t2\n%F\tp\tq\tr\n%R\t3\t4\t5\n%E\n")
-    # today: [{'p': '1', 'q': '2', 'r': ''}, {'p': '3', 'q': '4', 'r': '5'}] and no warning
-    assert raw.warnings, "rows of the first header are re-labelled under the second without a word"
+    assert raw.table("A").to_dict("records") == [{"x": "1", "y": "2"}]
+    assert raw.warnings == ["table A: a %F line with other columns than its first one; the rows under it are ignored"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-01: a table split in two blocks with different %F lines is merged under the last one"
-)
-def test_table_appearing_twice_with_different_fields_is_reported():
+def test_table_appearing_twice_with_different_fields_keeps_the_first_block():
+    """AUDIT-XER-01: a table split in two blocks with different %F lines is not merged under the last one."""
     raw = parse_text(HEAD + "%T\tTASK\n%F\tx\ty\n%R\t1\t2\n%T\tTASK\n%F\tp\n%R\t3\n%E\n")
-    # today: rows [{'p': '1'}, {'p': '3'}]: the value of x is now called p, y is dropped as an "extra field"
-    assert "x" in raw.table("TASK").columns and raw.table("TASK").loc[0, "x"] == "1"
+    assert raw.table("TASK").to_dict("records") == [{"x": "1", "y": "2"}]
+    assert raw.warnings == [
+        "table TASK: a %F line with other columns than its first one; the rows under it are ignored"
+    ]
 
 
 def test_table_appearing_twice_with_the_same_fields_is_concatenated():
@@ -137,13 +145,13 @@ def test_cp1252_undefined_bytes_are_replaced_with_a_warning():
     assert any("undecodable" in w for w in raw.warnings)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-02: a UTF-16 file is reported as 'not an XER file', the encoding is not named"
-)
-def test_utf16_file_is_rejected_with_a_message_naming_the_encoding():
-    data = (HEAD + "%T\tA\n%F\tx\n%R\t1\n%E\n").encode("utf-16")  # BOM FF FE
-    with pytest.raises(XerError, match="(?i)utf-16|encoding"):
-        parse_bytes(data)
+def test_utf16_file_is_decoded_or_rejected_naming_the_encoding():
+    """AUDIT-XER-02: a UTF-16 / UTF-32 byte order mark is honoured instead of reading the bytes as cp1252."""
+    raw = parse_bytes((HEAD + "%T\tA\n%F\tx\n%R\t1\n%E\n").encode("utf-16"))  # BOM FF FE
+    assert (raw.encoding, raw.version, raw.table("A")["x"].tolist()) == ("utf-16", "23.12", ["1"])
+    assert parse_bytes((HEAD + "%T\tA\n%F\tx\n%R\t1\n%E\n").encode("utf-32")).encoding == "utf-32"
+    with pytest.raises(XerError, match="UTF-16 byte order mark"):
+        parse_bytes(b"\xff\xfe\x00\xd8")  # a lone high surrogate: not UTF-16 text
 
 
 def test_lone_carriage_return_inside_a_value_is_kept():
@@ -164,12 +172,11 @@ def test_lines_with_an_unknown_tag_are_dropped_without_a_count():
     assert raw.warnings == []  # only %R rows before any %T are counted (orphans)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-03: an empty %T name followed by %R rows raises KeyError('') instead of XerError"
-)
-def test_empty_table_name_followed_by_rows_is_a_xer_error():
-    with pytest.raises(XerError):
-        parse_text(HEAD + "%T\t\n%F\tx\n%R\t9\n%E\n")
+def test_empty_table_name_followed_by_rows_counts_them_as_outside_any_table():
+    """AUDIT-XER-03: a blank %T name opens no table (as a %T line without a name); its rows are reported."""
+    raw = parse_text(HEAD + "%T\t\n%F\tx\n%R\t9\n%E\n")
+    assert raw.tables == {}
+    assert raw.warnings == ["1 %R row(s) outside any named %T table; skipped"]
 
 
 def test_table_name_with_a_tab_keeps_the_first_field_and_tag_like_names_are_plain_names():
@@ -191,15 +198,16 @@ def test_keep_projection_tolerates_a_wanted_column_the_file_lacks():
     assert "TASK" not in raw.tables and any("no %F" in w for w in raw.warnings)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-04: duplicate column names in %F reach the model and crash it with AttributeError"
-)
-def test_duplicate_column_name_is_refused_by_parser_or_model_with_xer_error():
+def test_duplicate_column_name_is_suffixed_by_the_parser_and_the_model_builds():
+    """AUDIT-XER-04: the first column keeps its name, the repeat is ``name.1``, the warning reaches the snapshot."""
     text = xer_text([todo("A")])
     header = next(line for line in text.splitlines() if line.startswith("%F\ttask_id"))
     text = text.replace(header, header.replace("\ttask_name\t", "\ttask_code\t"), 1)  # two task_code columns
-    with pytest.warns(UserWarning, match="not unique"), pytest.raises(XerError):
-        build_snapshot(parse_text(text, source="t.xer"))
+    raw = parse_text(text, source="t.xer")
+    assert raw.warnings == ["table TASK: duplicate column(s) ['task_code'] renamed with a .1, .2 suffix"]
+    s = build_snapshot(raw)
+    assert s.tasks["task_code"].tolist() == ["A"] and s.tasks["task_code.1"].tolist() == ["A"]
+    assert raw.warnings[0] in s.warnings
 
 
 def test_a_single_50mb_line_parses_fast_in_bounded_memory():
@@ -217,15 +225,13 @@ def test_ten_million_tabs_on_one_row_are_dropped_with_no_warning_for_blank_extra
     assert raw.table("A").shape == (1, 1) and raw.warnings == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-05: parse_bytes holds ~12x the file size (whole decode, split, lists of lists)"
-)
 def test_peak_memory_of_parse_bytes_is_a_small_multiple_of_the_file_size():
+    """AUDIT-XER-05: the text (1x), the cell array and the distinct cell strings; measured 3.2x."""
     data = big_xer(10_000_000)
     with time_limit(120):
         raw, peak = peak_memory(lambda: parse_bytes(data))
     assert len(raw.table("TASK")) > 40_000
-    assert peak <= 5 * len(data), (
+    assert peak <= 4 * len(data), (
         f"peak {peak / 1e6:.0f} MB for a {len(data) / 1e6:.0f} MB file ({peak / len(data):.1f}x)"
     )
 
@@ -253,64 +259,53 @@ def test_task_codes_differing_by_case_or_trailing_space_are_distinct_identities(
     assert len(s.by_code) == 3 and not any("duplicate" in w for w in s.warnings)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-06: two TASK rows with the same task_id crash with pandas InvalidIndexError"
-)
-def test_duplicate_task_id_is_a_xer_error():
-    with pytest.raises(XerError):
-        snap([todo("A", task_id="1"), todo("B", task_id="1")], [("A", "B", "FS", 0)])
+def test_duplicate_task_id_keeps_the_first_row_and_warns():
+    """AUDIT-XER-06: two TASK rows with one task_id (impossible in P6) keep the first, with a warning."""
+    s = snap([todo("A", task_id="1"), todo("B", task_id="1")], [("A", "B", "FS", 0)])
+    assert s.tasks["task_code"].tolist() == ["A"]
+    assert "test.xer: 1 TASK row(s) repeat a task_id ['1']; the first row is kept" in s.warnings
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-XER-07: two PROJWBS rows with the same wbs_id crash with 'truth value of a Series is ambiguous'",
-)
-def test_duplicate_wbs_id_is_a_xer_error_or_first_row_wins():
+def test_duplicate_wbs_id_keeps_the_first_row_and_warns():
+    """AUDIT-XER-07: two PROJWBS rows with one wbs_id keep the first, with a warning."""
     wbs = [
         wbs_row("10", "A", "1"),
         wbs_row("10", "B", "2"),
     ]  # fmt: skip
-    try:
-        s = snap([todo("A", wbs_id="10")], wbs=wbs)
-    except XerError:
-        return
-    assert s.tasks.iloc[0]["wbs_code"] in {"A", "B"}
+    s = snap([todo("A", wbs_id="10")], wbs=wbs)
+    assert s.tasks.iloc[0]["wbs_code"] == "A"
+    assert "test.xer: 1 PROJWBS row(s) repeat a wbs_id ['10']; the first row is kept" in s.warnings
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-XER-08: a duplicated PROJECT row puts a Series repr in FileBaseline.note")
-def test_duplicate_project_row_keeps_file_baseline_readable():
+def test_duplicate_project_row_keeps_the_first_and_file_baseline_readable():
+    """AUDIT-XER-08: a duplicated PROJECT row is dropped with a warning; the baseline note stays text."""
     lines = xer_text([todo("A")]).splitlines()
     row = lines.index("%T\tPROJECT") + 2
     lines.insert(row + 1, lines[row])
     s = build_snapshot(parse_text("\n".join(lines), source="t.xer"))
-    assert len(s.file_projects) == 2
+    assert len(s.file_projects) == 1
+    assert "t.xer: 1 PROJECT row(s) repeat a proj_id ['1']; the first row is kept" in s.warnings
     assert "dtype" not in s.file_baseline.note and "dtype" not in s.file_baseline.proj_id
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-XER-09: project_task_counts / projects_in_file are keyed by code: two projects, one code, one entry",
-)
 def test_two_projects_with_the_same_code_are_both_counted():
+    """AUDIT-XER-09: project_task_counts / projects_in_file are keyed by proj_id; the text names each by code."""
     text = with_second_project(xer_text([todo("A")]), "T", ["X", "Y"], "2026-03-09 08:00")
     s = build_snapshot(parse_text(text, source="t.xer"))
     assert len(s.file_projects) == 2  # the file does hold two projects
-    assert sum(s.project_task_counts.values()) == 3, (
-        s.project_task_counts
-    )  # today {'T': 2}: the 1-task project vanished
+    assert s.project_task_counts == {"1": 1, "2": 2} and s.projects_in_file == ["1", "2"]
+    assert projects_text(s) == "T (1) · T (2)"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-XER-10: a local Activity ID written '[ext]<id>' collides with the external placeholder name",
-)
-def test_local_activity_named_like_an_external_placeholder_stays_distinguishable():
+def test_local_activity_named_like_an_external_placeholder_is_warned_about():
+    """AUDIT-XER-10: the placeholder name is kept (documented and tested); the collision is reported."""
     # project 2 owns task_id 100 and links it into B; this project also has an activity literally called "[ext]100"
     main = xer_text([todo("[ext]100"), todo("B")], [("[ext]100", "B", "FS", 0), ("100", "B", "FS", 8, "2")])
     s = build_snapshot(parse_text(with_second_project(main, "P2", ["X"], "2026-03-02 08:00"), source="t.xer"))
     preds = s.relationships[s.relationships["succ_code"] == "B"]
     assert preds["is_external"].tolist() == [False, True]
-    assert preds["pred_code"].nunique() == 2, preds["pred_code"].tolist()  # today: ['[ext]100', '[ext]100']
+    assert preds["pred_code"].tolist() == ["[ext]100", "[ext]100"]
+    assert any("activity ID(s) ['[ext]100'] are also the placeholder names" in w for w in s.warnings)
 
 
 def test_same_activity_id_in_two_projects_with_an_external_link_is_named_by_task_id():
@@ -366,13 +361,14 @@ def test_date_cells(text, expected):
     assert str(s.tasks.iloc[0]["early_start_date"]) == expected
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-XER-11: one timezone-suffixed date cell crashes to_datetime ('Mixed timezones') instead of NaT",
-)
-def test_a_timezone_suffixed_date_cell_does_not_crash_the_build():
-    s = snap([todo("A", early_start_date="2026-03-02 08:00+02:00"), todo("B")])
+def test_a_timezone_suffixed_date_cell_reads_as_blank_with_a_warning():
+    """AUDIT-XER-11: one time-zoned cell among naive ones is blanked before pandas sees the column."""
+    s = snap([todo("A", early_start_date="2026-03-02 08:00+02:00"), todo("B", early_end_date="2026-03-13 17:00Z")])
     assert len(s.tasks) == 2
+    assert pd.isna(s.tasks.iloc[0]["early_start_date"]) and pd.isna(s.tasks.iloc[1]["early_end_date"])
+    assert s.tasks.iloc[1]["early_start_date"] == T("2026-03-02 08:00")
+    assert "test.xer: 2 TASK date cell(s) carry a time zone; read as blank" in s.warnings
+    assert to_datetime(pd.Series(["2026-03-02 08:00+02:00", "2026-03-02 08:00"])).isna().tolist() == [True, False]
 
 
 def test_invalid_data_date_cells_fall_through_to_no_status_date():
@@ -389,9 +385,9 @@ def test_invalid_data_date_cells_fall_through_to_no_status_date():
         ("-0", 0.0, 0.0, True),
         ("NaN", np.nan, np.nan, False),
         ("1,5", np.nan, np.nan, False),  # decimal comma is not a number
-        ("inf", np.inf, np.inf, False),  # propagates: an infinite remaining duration
-        ("-inf", -np.inf, -np.inf, True),
-        ("-40", -40.0, -5.0, True),  # a negative remaining duration reads as -5 days
+        ("inf", 0.0, 0.0, False),  # an infinite remaining duration reads as 0 (with a warning)
+        ("-inf", 0.0, 0.0, True),
+        ("-40", 0.0, 0.0, True),  # a negative remaining duration reads as 0 (with a warning)
         (" 80 ", 80.0, 10.0, False),
         ("+80", 80.0, 10.0, False),
         ("0x10", np.nan, np.nan, False),
@@ -405,6 +401,30 @@ def test_number_cells(text, hours, days, critical):
     assert (pd.isna(t["remain_drtn_hr_cnt"]) and pd.isna(hours)) or t["remain_drtn_hr_cnt"] == hours
     assert (pd.isna(t["remaining_d"]) and pd.isna(days)) or t["remaining_d"] == days
     assert bool(t["is_critical"]) is critical
+
+
+def test_unusable_and_negative_remaining_durations_read_as_zero_with_one_warning_each():
+    tasks = [
+        todo("A", remain_drtn_hr_cnt="inf"),
+        todo("B", remain_drtn_hr_cnt="1e9"),
+        todo("C", remain_drtn_hr_cnt="-40"),
+    ]
+    s = snap(tasks + [todo("D", remain_drtn_hr_cnt="")])
+    assert s.tasks["remain_drtn_hr_cnt"].tolist()[:3] == [0.0, 0.0, 0.0] and np.isnan(s.tasks.iloc[3]["remaining_d"])
+    assert "test.xer: 2 activity remaining duration(s) not finite or above 1e+06 h ['A', 'B']; read as 0" in s.warnings
+    assert "test.xer: 1 activities with a negative remaining duration, read as 0" in s.warnings
+
+
+def test_unusable_lag_reads_as_zero_and_an_unknown_link_type_is_dropped():
+    links = [("A", "B", "FS", "inf"), ("B", "C", "XX", 0), ("A", "C", "SS", "2e6"), ("B", "C", "FF", 8)]
+    s = snap([todo("A"), todo("B"), todo("C")], links)
+    assert s.relationships[["pred_code", "succ_code", "type", "lag_hr"]].to_dict("records") == [
+        {"pred_code": "A", "succ_code": "B", "type": "FS", "lag_hr": 0.0},
+        {"pred_code": "A", "succ_code": "C", "type": "SS", "lag_hr": 0.0},
+        {"pred_code": "B", "succ_code": "C", "type": "FF", "lag_hr": 8.0},
+    ]
+    assert "test.xer: 1 relationship(s) with an unknown type ['PR_XX']; ignored" in s.warnings
+    assert "test.xer: 2 relationship lag(s) not finite or above 1e+06 h ['A->B', 'A->C']; read as 0" in s.warnings
 
 
 def test_negative_remaining_duration_reads_as_100_percent_complete():
@@ -434,19 +454,14 @@ def test_day_hr_cnt_zero_blank_or_invalid_falls_back_to_the_default_hours(hpd):
     assert s.tasks.iloc[0]["remaining_d"] == 10.0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-XER-12: day_hr_cnt under one minute: calendar with no working time, work_hours raises ValueError",
-)
-def test_tiny_day_hr_cnt_without_blob_gives_a_usable_calendar_or_a_xer_error():
+def test_tiny_day_hr_cnt_without_blob_falls_back_to_the_default_hours_with_a_warning():
+    """AUDIT-XER-12: a day under one minute has no working time on the axis: the default hours apply."""
     cal = [{"clndr_id": "Z", "clndr_name": "zero", "day_hr_cnt": "1e-9", "week_hr_cnt": "40", "clndr_data": ""}]
-    try:
-        s = snap([todo("A", clndr_id="Z")], calendars=cal)
-    except XerError:
-        return
+    s = snap([todo("A", clndr_id="Z")], calendars=cal)
+    assert s.calendar("Z").hours_per_day == 8.0 and s.tasks.iloc[0]["remaining_d"] == 10.0
+    assert any("calendar Z (zero): day_hr_cnt 1e-09 is under one minute; 8.0 h/day used" in w for w in s.warnings)
     with time_limit(20):
-        hours = s.calendar("Z").work_hours(T("2026-03-02 08:00"), T("2026-03-09 08:00"))
-    assert hours >= 0
+        assert s.calendar("Z").work_hours(T("2026-03-02 08:00"), T("2026-03-09 08:00")) == 40
 
 
 def test_unknown_clndr_id_with_a_lag_calendar_option_uses_the_project_hours_and_warns():
@@ -472,16 +487,16 @@ def test_a_file_without_calendar_table_uses_the_standard_calendar_and_warns():
     assert any("task calendars not in the file" in w for w in s.warnings)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-13: a PROJWBS seq_num beyond int64 overflows silently to a negative sort key"
-)
 def test_wbs_seq_num_beyond_int64_keeps_the_order():
+    """AUDIT-XER-13: seq_num is clipped to the six digits of the sort key before the integer conversion."""
     wbs = [
         wbs_row("10", "A", "1"),
         wbs_row("11", "B", "1e30"),
     ]  # fmt: skip
-    keys = snap([todo("A", wbs_id="10"), todo("B", wbs_id="11")], wbs=wbs).tasks.set_index("task_code")["wbs_sort"]
-    assert keys["A"] < keys["B"], keys.to_dict()  # today B sorts as '-9223372036854775808'
+    s = snap([todo("A", wbs_id="10"), todo("B", wbs_id="11")], wbs=wbs)
+    keys = s.tasks.set_index("task_code")["wbs_sort"]
+    assert keys["A"] < keys["B"] == "999999", keys.to_dict()
+    assert "test.xer: 1 PROJWBS seq_num value(s) outside 0..999999; clipped" in s.warnings
 
 
 # --- calendar blob -------------------------------------------------------------------------
@@ -504,43 +519,36 @@ def test_axis_on_a_calendar_without_working_time_fails_fast_with_a_value_error()
         TimeAxis(cal, date(2026, 1, 1), date(2026, 12, 31))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-XER-14: a malformed period time ('ab:cd') in clndr_data raises raw ValueError from build_snapshot",
-)
-def test_malformed_period_time_in_blob_is_a_xer_error_or_ignored():
+def test_malformed_period_time_in_blob_falls_back_to_the_inferred_week_with_a_warning():
+    """AUDIT-XER-14: a period time that is not HH:MM makes the blob unreadable; the workweek is inferred."""
     blob = clndr_data(range(2, 7), [("ab:cd", "09:00"), ("09:00", "17:00")])
     cal = [{"clndr_id": "G", "clndr_name": "g", "day_hr_cnt": "8", "week_hr_cnt": "40", "clndr_data": blob}]
-    try:
-        s = snap([todo("A", clndr_id="G")], calendars=cal)
-    except XerError:
-        return
-    assert s.calendar("G").hours_per_day == 8.0
+    s = snap([todo("A", clndr_id="G")], calendars=cal)
+    assert s.calendar("G").hours_per_day == 8.0 and s.calendar("G").from_data is False
+    assert any("calendar G (g): clndr_data unreadable (ValueError:" in w for w in s.warnings)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-14: an out-of-range exception serial raises raw OverflowError from build_snapshot"
-)
-def test_out_of_range_exception_serial_is_a_xer_error_or_ignored():
+def test_out_of_range_exception_serial_is_dropped_with_a_warning():
+    """AUDIT-XER-14: an exception the axis cannot hold (serial 99999999 = year 275 760) is left out."""
     blob = (
         "(0||CalendarData()((0||DaysOfWeek()((0||2()((0||0(s|08:00|f|12:00)())))))"
         "(0||Exceptions()((0||0(d|99999999)())))))"
     )
     cal = [{"clndr_id": "G", "clndr_name": "g", "day_hr_cnt": "8", "week_hr_cnt": "40", "clndr_data": blob}]
-    try:
-        s = snap([todo("A", clndr_id="G")], calendars=cal)
-    except XerError:
-        return
-    assert s.calendar("G").exceptions == {}
+    s = snap([todo("A", clndr_id="G")], calendars=cal)
+    assert s.calendar("G").exceptions == {} and s.calendar("G").from_data is True
+    outside = f"{EXCEPTION_FIRST_DATE}..{EXCEPTION_LAST_DATE}"
+    dropped = f"calendar G (g): 1 calendar exception(s) dated outside {outside}; dropped"
+    assert any(dropped in w for w in s.warnings)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-15: a deeply nested blob raises RecursionError (recursive descent, uncaught)"
-)
 def test_deeply_nested_blob_is_rejected_not_a_recursion_error():
+    """AUDIT-XER-15: the tree parser stops past MAX_TREE_DEPTH levels; the blob reads as unreadable."""
     blob = "(0||CalendarData()((0||DaysOfWeek()(" + "(0||2()(" * 3000 + "))" * 3000 + "))))"
+    notes: list[str] = []
     with time_limit(20):
-        assert parse_clndr_data(blob) is None or parse_clndr_data(blob)[0] is not None
+        assert parse_clndr_data(blob, notes) is None
+    assert len(notes) == 1 and notes[0].startswith("clndr_data unreadable (ValueError: nested deeper than 32 levels")
 
 
 def test_unbalanced_and_truncated_blobs_return_none():
@@ -673,23 +681,27 @@ def test_work_of_nat_raises_type_error_while_work_hours_returns_nan(axis):
     assert np.isnan(axis.cal.work_hours(pd.NaT, T("2026-03-02 08:00")))
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-XER-16: at() past the year 2262 grows the axis for seconds and 100s of MB before failing"
-)
 def test_a_duration_beyond_the_timestamp_range_fails_fast(axis):
-    def add_too_much():
-        with pytest.raises((OverflowError, pd.errors.OutOfBoundsDatetime)):
-            axis.add(T("2026-03-02 08:00"), 1e8)  # 1e8 working minutes: ~800 years
+    """AUDIT-XER-16: the axis stops at the Timestamp range with a ValueError instead of growing towards it."""
 
-    with time_limit(60):
+    def add_too_much():
+        with pytest.raises(ValueError, match="date out of range"):
+            axis.add(T("2026-03-02 08:00"), 1e8)  # 1e8 working minutes: ~800 years
+        with pytest.raises(ValueError, match="date out of range"):
+            axis.add(T("2026-03-02 08:00"), 1e9)  # more calendar minutes than the range holds: no growth at all
+        with pytest.raises(ValueError, match="date out of range"):
+            axis.add(T("2026-03-02 08:00"), -1e8)
+
+    with time_limit(10):
         _, peak = peak_memory(add_too_much)
-    assert peak < 20_000_000, f"peak {peak / 1e6:.0f} MB"  # measured: 67 MB and ~7 s (1e9: 278 MB, ~28 s, year 6129)
+    assert peak < 20_000_000, f"peak {peak / 1e6:.0f} MB"  # before: 67 MB and ~7 s (1e9: 278 MB, ~28 s, year 6129)
 
 
 def test_timestamps_at_the_nanosecond_bounds(axis):
     assert axis.work(T("2262-04-11")) > 0  # the last representable day is reachable
-    with pytest.raises(OverflowError):
-        axis.work(T("1677-09-22"))  # the axis start would fall before Timestamp.min
+    assert axis.work(T("1677-09-22")) < 0  # and the first
+    with pytest.raises(ValueError, match="date out of range"):
+        axis.work(T("1677-09-21"))  # before Timestamp.min
 
 
 def test_hours_to_days_by_zero_differs_between_scalar_and_series():

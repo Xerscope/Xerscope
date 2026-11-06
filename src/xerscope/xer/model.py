@@ -16,11 +16,14 @@ Key decisions
   units), as P6 displays it.
 - The forecast finish is the latest activity finish. ``PROJECT.scd_end_date`` is kept as
   ``scheduled_finish`` only: real P6 exports can carry a stale value there.
+- Values P6 would never write (a repeated key, a time-zoned date, an infinite or negative
+  remaining duration, an unknown link type) are repaired by ``validate.py``, one rule and one
+  warning line each, so the file still loads and says what was done to it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from operator import attrgetter
@@ -29,6 +32,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import DATE_FMT, DEFAULT_SETTINGS, Settings
+from . import validate
 from .calendar import TimeAxis, WorkCalendar, hours_to_days
 from .parser import RawXer, XerError
 
@@ -146,7 +150,15 @@ def forecast_dates(tasks: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
 
 def to_datetime(values: pd.Series) -> pd.Series:
     # XER dates are "YYYY-MM-DD HH:MM"; ISO8601 also tolerates exporters adding seconds.
-    return pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+    try:
+        return pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+    except ValueError:
+        # one cell with a time-zone offset among naive ones: pandas refuses the column even with
+        # errors="coerce" ("Mixed timezones"); such a cell reads as NaT (validate.blank_timezones
+        # does the same on the model's tables, with a warning)
+        return pd.to_datetime(
+            _blank_to_na(values.mask(validate.timezone_cells(values))), format="ISO8601", errors="coerce"
+        )
 
 
 def to_number(values: pd.Series) -> pd.Series:
@@ -214,6 +226,7 @@ def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.
     """TASK with the identity columns checked; a missing proj_id is the file's only project."""
     tasks = raw.table("TASK")
     _require(tasks, raw.source, "TASK", ["task_id", "task_code"])
+    tasks = validate.unique_rows(tasks, "task_id", "TASK", raw.source, warnings)
     if "proj_id" not in tasks.columns:
         _require(projects, raw.source, "PROJECT", ["proj_id"])
         if len(projects) != 1:
@@ -224,6 +237,22 @@ def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.
         tasks = tasks.assign(proj_id=projects["proj_id"].iloc[0])
         warnings.append(f"{raw.source}: TASK.proj_id missing: taken from the only project in the file")
     return tasks
+
+
+def _project_table(raw: RawXer, warnings: list[str]) -> pd.DataFrame:
+    """PROJECT with ``proj_id`` checked and unique (the first of two rows with one id is kept)."""
+    projects = raw.table("PROJECT")
+    if projects.empty or raw.table("TASK").empty:
+        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    _require(projects, raw.source, "PROJECT", ["proj_id"])
+    return validate.unique_rows(projects, "proj_id", "PROJECT", raw.source, warnings)
+
+
+def _typed_dates(frame: pd.DataFrame, columns: list[str], table: str, inputs: _BuildInputs) -> None:
+    """Type the date ``columns`` of ``frame`` in place; a time-zoned cell reads as NaT, with a warning."""
+    validate.blank_timezones(frame, columns, table, inputs.source, inputs.warnings)
+    for column in columns:
+        frame[column] = to_datetime(frame[column])
 
 
 def _taskpred_table(raw: RawXer, all_tasks: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
@@ -626,7 +655,7 @@ class _BuildInputs:
         return self.settings.default_hours_per_day
 
 
-def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
+def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.DataFrame, str | None]:
     wbs = raw.table("PROJWBS")
     if wbs.empty:
         return pd.DataFrame(
@@ -643,8 +672,9 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
             ]
         ), None
     _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
+    wbs = validate.unique_rows(wbs[wbs["proj_id"] == project_id], "wbs_id", "PROJWBS", raw.source, warnings)
     wbs = _ensure_cols(
-        wbs[wbs["proj_id"] == project_id].copy(),
+        wbs.copy(),
         [
             "parent_wbs_id",
             "proj_node_flag",
@@ -673,7 +703,7 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
             wbs_id = row["parent_wbs_id"]
         return chain[::-1]
 
-    sequence = pd.to_numeric(by_id["seq_num"], errors="coerce").fillna(0).astype(int)
+    sequence = validate.bounded_sequence(by_id["seq_num"], "PROJWBS", raw.source, warnings)
     codes, top_levels, sort_keys = [], [], []
     for wbs_id in wbs["wbs_id"]:
         chain = lineage(wbs_id)
@@ -729,8 +759,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     assignments["task_code"] = assignments["task_id"].map(tasks.set_index("task_id")["task_code"])
     for column in ASSIGNMENT_NUM_COLS:
         assignments[column] = to_number(assignments[column])
-    for column in ASSIGNMENT_DATE_COLS:
-        assignments[column] = to_datetime(assignments[column])
+    _typed_dates(assignments, ASSIGNMENT_DATE_COLS, "TASKRSRC", inputs)
     assignments["act_qty"] = assignments["act_reg_qty"].fillna(0) + assignments["act_ot_qty"].fillna(0)
 
     resources = _ensure_cols(
@@ -815,12 +844,12 @@ def _select_project(
     project_code: str | None,
     warnings: list[str],
     project_id: str | None = None,
-) -> tuple[pd.Series, dict[str, int], str]:
-    """The PROJECT row to build the snapshot for, the TASK row count of every project that owns
-    activities (by code, in file order), and how the row was selected (``_default_project``, or
-    ``chosen``). ``project_id`` names a project exactly; ``project_code`` names the projects of that
-    code, of which ``_default_project`` takes one: a baseline copy can carry the code of the project
-    it was copied from."""
+) -> tuple[pd.Series, dict[str, int], dict[str, str], str]:
+    """The PROJECT row to build the snapshot for, the TASK row count and the code of every project
+    that owns activities (both by ``proj_id``, in file order: two projects may share one code), and
+    how the row was selected (``_default_project``, or ``chosen``). ``project_id`` names a project
+    exactly; ``project_code`` names the projects of that code, of which ``_default_project`` takes
+    one: a baseline copy can carry the code of the project it was copied from."""
     task_counts = all_tasks["proj_id"].value_counts()
     projects = _ensure_cols(projects.copy(), ["sum_base_proj_id", "orig_proj_id"])
     copies = set(baseline_copies(projects))
@@ -840,21 +869,36 @@ def _select_project(
     if projects.empty:
         raise XerError(f"{source}: no project owns any task")
     projects["_n"] = projects["proj_id"].map(task_counts)
-    counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
+    counts = {str(pid): int(n) for pid, n in zip(projects["proj_id"], projects["_n"], strict=True)}
+    codes = {str(pid): str(code) for pid, code in zip(projects["proj_id"], projects["proj_short_name"], strict=True)}
     if project_id:
         selected = projects[projects["proj_id"] == project_id]
         if selected.empty:
             raise XerError(f"{source}: project {project_id!r} not found (has {list(counts)})")
-        return selected.iloc[0], counts, "chosen"
+        return selected.iloc[0], counts, codes, "chosen"
     if project_code:
         selected = projects[projects["proj_short_name"] == project_code]
         if selected.empty:
-            raise XerError(f"{source}: project {project_code!r} not found (has {list(counts)})")
-        return _default_project(selected, copies)[0], counts, "chosen"
+            raise XerError(f"{source}: project {project_code!r} not found (has {list(codes.values())})")
+        return _default_project(selected, copies)[0], counts, codes, "chosen"
     project_row, rule = _default_project(projects, copies)
     if len(projects) > 1:
         warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
-    return project_row, counts, rule
+    return project_row, counts, codes, rule
+
+
+def project_counts_text(counts: Mapping[str, int], codes: Mapping[str, str]) -> str:
+    """The "Projects in file" line: TASK rows by project, each named by its code ("UPD (3) · BL (2)").
+    ``counts`` and ``codes`` are keyed by ``proj_id``, so two projects with one code both appear."""
+    return " · ".join(f"{codes.get(proj_id, proj_id)} ({n})" for proj_id, n in counts.items())
+
+
+def projects_text(snapshot: Snapshot) -> str:
+    """``project_counts_text`` of a snapshot, the codes read from its ``file_projects``."""
+    projects = snapshot.file_projects
+    return project_counts_text(
+        snapshot.project_task_counts, dict(zip(projects["proj_id"], projects["proj_short_name"], strict=True))
+    )
 
 
 def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:
@@ -879,8 +923,12 @@ def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFr
     return table[FILE_PROJECT_COLUMNS + extra + PCT_TYPE_COUNT_COLUMNS].reset_index(drop=True)
 
 
-def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
-    """CALENDAR table, hours per working day by calendar id, and the parsed work calendars."""
+def _calendars(
+    raw: RawXer, settings: Settings, warnings: list[str]
+) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
+    """CALENDAR table, hours per working day by calendar id, and the parsed work calendars; what
+    ``WorkCalendar.from_row`` had to repair in a row (an unreadable blob, an exception out of range,
+    a day under a minute) is one warning per calendar."""
     calendars = raw.table("CALENDAR")
     if calendars.empty:
         return calendars, pd.Series(dtype=float), {}
@@ -891,6 +939,11 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
         str(row["clndr_id"]): WorkCalendar.from_row(row, settings.default_hours_per_day)
         for _, row in calendars.iterrows()
     }
+    for calendar in work_calendars.values():
+        if calendar.notes:
+            warnings.append(
+                f"{raw.source}: calendar {calendar.clndr_id} ({calendar.name}): {'; '.join(calendar.notes)}"
+            )
     # one reading of "hours per day": the calendar's own (a missing or zero count is the default)
     hours_per_day = pd.Series(
         {clndr_id: calendar.hours_per_day for clndr_id, calendar in work_calendars.items()}, dtype=float
@@ -961,10 +1014,14 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
         + TASK_DATE_COLS
         + TASK_NUM_COLS,
     )
-    for column in TASK_DATE_COLS:
-        tasks[column] = to_datetime(tasks[column])
+    _typed_dates(tasks, TASK_DATE_COLS, "TASK", inputs)
     for column in TASK_NUM_COLS:
         tasks[column] = to_number(tasks[column])
+    # The remaining duration drives the CPM and the % complete: unusable values read as 0, said once.
+    remaining = validate.usable_hours(
+        tasks["remain_drtn_hr_cnt"], "activity remaining duration", tasks["task_code"], source, inputs.warnings
+    )
+    tasks["remain_drtn_hr_cnt"] = validate.nonnegative_remaining(remaining, source, inputs.warnings)
 
     default_hours = inputs.fallback_hours_per_day
     task_hours_per_day = tasks["clndr_id"].map(inputs.hours_per_day).astype(float)
@@ -1041,6 +1098,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
         all_relationships[all_relationships["proj_id"] == project_id].copy(),
         ["pred_proj_id", "pred_type", "lag_hr_cnt"],
     )
+    relationships = validate.known_relationship_types(relationships, inputs.source, inputs.warnings).copy()
     all_tasks = _ensure_cols(inputs.all_tasks.copy(), ["clndr_id"])
     code_by_id = all_tasks.set_index("task_id")["task_code"]
     hours_per_day_by_id = (
@@ -1049,7 +1107,11 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     relationships["succ_code"] = relationships["task_id"].map(code_by_id)
     relationships["pred_code"] = relationships["pred_task_id"].map(code_by_id)
     relationships["type"] = relationships["pred_type"].map(REL_TYPE).fillna(relationships["pred_type"])
-    relationships["lag_hr"] = to_number(relationships["lag_hr_cnt"]).fillna(0.0)
+    lag_names = relationships["pred_code"].astype(str) + "->" + relationships["succ_code"].astype(str)
+    lag_hours = to_number(relationships["lag_hr_cnt"]).fillna(0.0)
+    relationships["lag_hr"] = validate.usable_hours(
+        lag_hours, "relationship lag", lag_names, inputs.source, inputs.warnings
+    )
     # Lag hours -> days. Oracle: "Lag entered in a unit other than hours is converted
     # to hours based on the predecessor activity's calendar", whatever calendar the lag
     # is then scheduled on (that one is the CPM's business, analysis/cpm.py).
@@ -1063,6 +1125,8 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     external_in_file = relationships["is_external"] & relationships["pred_code"].notna()
     external_names = "[ext]" + relationships.loc[external_in_file, "pred_task_id"].astype(str)
     relationships.loc[external_in_file, "pred_code"] = external_names
+    local_codes = all_tasks.loc[all_tasks["proj_id"] == project_id, "task_code"]
+    validate.placeholder_clashes(local_codes, external_names, inputs.source, inputs.warnings)
     # Counted before the unschedulable links go: those still have an external predecessor.
     external_predecessors = set(relationships.loc[relationships["is_external"], "task_id"])
 
@@ -1097,8 +1161,7 @@ def _external_links(
         all_tasks[all_tasks["task_id"].isin(other_ids)].copy(),
         ["task_code", "status_code", "clndr_id"] + TASK_DATE_COLS,
     )
-    for column in TASK_DATE_COLS:
-        external_tasks[column] = to_datetime(external_tasks[column])
+    _typed_dates(external_tasks, TASK_DATE_COLS, "TASK", inputs)
     external_tasks["task_code"] = "[ext]" + external_tasks["task_id"].astype(str)
     external_code = external_tasks.set_index("task_id")["task_code"]
     own_code = tasks.set_index("task_id")["task_code"]
@@ -1208,23 +1271,23 @@ class FileHeader:
     source: str
     project_code: str  # the project build_snapshot takes by default
     selected_by: str
-    project_task_counts: dict[str, int]  # TASK rows by project code
+    project_task_counts: dict[str, int]  # TASK rows by proj_id
     data_date: pd.Timestamp | None
     data_date_source: str
+    project_codes: dict[str, str] = field(default_factory=dict)  # proj_id -> project code
 
 
 def read_header(raw: RawXer) -> FileHeader:
     """The default project and data date of a file, by the rules of build_snapshot, from
     PROJECT and TASK alone (a RawXer parsed with ``keep=HEADER_TABLES`` is enough)."""
-    projects = raw.table("PROJECT")
-    if projects.empty or raw.table("TASK").empty:
-        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
-    _require(projects, raw.source, "PROJECT", ["proj_id"])
     warnings: list[str] = []
+    projects = _project_table(raw, warnings)
     all_tasks = _task_table(raw, projects, warnings)
-    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, None, warnings)
+    project_row, task_counts, codes, selected_by = _select_project(raw.source, projects, all_tasks, None, warnings)
     data_date, data_date_source = _data_date(project_row)
-    return FileHeader(raw.source, project_row["proj_short_name"], selected_by, task_counts, data_date, data_date_source)
+    return FileHeader(
+        raw.source, project_row["proj_short_name"], selected_by, task_counts, data_date, data_date_source, codes
+    )
 
 
 def build_snapshot(
@@ -1239,25 +1302,22 @@ def build_snapshot(
     project with the most activities is used and a warning is recorded. ``project_id``
     (PROJECT.proj_id) selects one exactly, over ``project_code``.
     """
-    projects = raw.table("PROJECT")
-    if projects.empty or raw.table("TASK").empty:
-        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
-    _require(projects, raw.source, "PROJECT", ["proj_id"])
     warnings = list(raw.warnings)  # appended to in the order the steps run: that order is observable
+    projects = _project_table(raw, warnings)
     all_tasks = _task_table(raw, projects, warnings)
     all_relationships = _taskpred_table(raw, all_tasks, warnings)
 
     # The project, its data date and its calendars
-    project_row, task_counts, selected_by = _select_project(
+    project_row, task_counts, _codes, selected_by = _select_project(
         raw.source, projects, all_tasks, project_code, warnings, project_id
     )
     planned_start = _parse_date(project_row["plan_start_date"])
     data_date, data_date_source = _data_date(project_row)
     if data_date is None:
         warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
-    calendars, hours_per_day, work_calendars = _calendars(raw, settings)
+    calendars, hours_per_day, work_calendars = _calendars(raw, settings, warnings)
     inputs = _BuildInputs(raw, all_tasks, all_relationships, project_row, hours_per_day, settings, warnings)
-    wbs, project_name = _wbs_frame(raw, inputs.project_id)
+    wbs, project_name = _wbs_frame(raw, inputs.project_id, warnings)
     options = _scheduling_options(inputs)
 
     # Activities, the logic between them, and the links to other projects

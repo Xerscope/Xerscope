@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from xerkit import active, snap, todo, xer_text
+from xerkit import active, snap, todo, with_second_project, xer_text
 
 from xerscope.xer import HEADER_TABLES, XerError, build_snapshot, parse_text, read_header, read_xer, xer_files
 
@@ -201,7 +201,7 @@ def test_task_without_proj_id_takes_the_only_project():
 
 
 def test_task_without_proj_id_and_several_projects_raises():
-    text = _linked_text().replace("%T\tTASK\n", "%T\tPROJECT\n%F\tproj_id\n%R\t2\n%T\tTASK\n", 1)
+    text = with_second_project(_linked_text(), "P2", ["X"], "2026-03-02 08:00")
     with pytest.raises(XerError, match=r"t\.xer.*TASK.*proj_id"):
         build_snapshot(parse_text(drop_column(text, "TASK", "proj_id"), source="t.xer"))
 
@@ -287,7 +287,8 @@ def test_header_takes_what_build_snapshot_takes(case):
     text = HEADER_CASES[case]
     header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, keep=HEADER_TABLES))
     if case == "two projects":
-        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
+        assert header.project_task_counts == {"1": 3, "2": 2} and header.selected_by == "most TASK rows"
+        assert header.project_codes == {"1": "UPD", "2": "BL"}
     if case == "no recalc date":
         assert header.data_date_source == "plan_start_date"
 

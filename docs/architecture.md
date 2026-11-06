@@ -16,11 +16,19 @@ The XER format is tab-separated:
 
 `parse_bytes` behaviour:
 
-- **Encoding:** tries UTF-8 (with or without BOM), then cp1252, which is what P6 writes on
-  Windows.
-- **Lines:** splits on `\n` only, because calendar blobs can contain `\r`.
-- **Short rows:** padded to the field count.
+- **Encoding:** a UTF-16 / UTF-32 byte order mark is honoured (`XerError` naming the encoding
+  when the bytes do not decode as it); otherwise UTF-8 (with or without BOM), then cp1252,
+  which is what P6 writes on Windows.
+- **Lines:** read one at a time, split on `\n` only, because calendar blobs can contain `\r`.
+- **Rows:** padded to the field count as they are appended; extra non-blank fields are
+  dropped with a warning. A `%F` line that contradicts the table's first one, or a `%T` that
+  reopens a table with other columns, leaves the rows under it out, with a warning naming
+  the table (the same columns keep concatenating). A repeated column name gets a `.1`, `.2`
+  suffix, with a warning. Rows outside any named table are counted in a warning.
 - **Values:** everything is kept as **strings**. The parser knows the format, not P6.
+- **Memory:** one pass; each table's cell array is built as its block ends, and equal values
+  of one table share one string. Peak is about 3 x the file size (the text itself, the cell
+  pointers and the distinct strings; `tests/test_audit_edges_xer.py` keeps it under 4 x).
 
 Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings)`.
 `keep=` keeps only the named tables, each with the listed columns (the rows of the others
@@ -29,7 +37,8 @@ are not split).
 ## 2. `xer/model.py`: what P6 means
 
 `build_snapshot(raw)` picks one project (`project_id` or `project_code` when given) and builds
-a typed `Snapshot`; `project_task_counts` and `selected_by` record that choice. By default
+a typed `Snapshot`; `project_task_counts` (TASK rows by `proj_id`: two projects of a file may
+share one code, `model.projects_text` names them) and `selected_by` record that choice. By default
 (`_default_project`) the baseline copies are set aside (a project another one names as its
 Project Baseline, `sum_base_proj_id`, or copied from a project of the file, `orig_proj_id`),
 then the most `TASK` rows win, then the latest data date, then the first in the file; when
@@ -57,6 +66,19 @@ reference files. Each P6 rule lives in one place:
 
 `Snapshot.activities` excludes WBS summary rows: every count and chart uses it.
 
+**Value checks (`xer/validate.py`).** One function per rule, called from the table builder
+that needs the clean value, each adding one line to `Snapshot.warnings`: a repeated
+`task_id` / `wbs_id` / `proj_id` keeps its first row; a date cell with a time-zone offset reads
+as blank (one such cell otherwise makes pandas refuse the whole column); `PROJWBS.seq_num`
+is clipped to the six digits of the sort key; a remaining duration or a lag that is infinite
+or above 1e6 h reads as 0, a negative remaining duration reads as 0; a relationship whose
+`pred_type` is not FS/SS/FF/SF is dropped; an Activity ID written like an external
+placeholder (`[ext]<task_id>`) is reported. The calendar reader adds its own repairs through
+`WorkCalendar.notes` (an unreadable `clndr_data`, an exception date the axis cannot hold, a
+`day_hr_cnt` under one minute), one warning per calendar. A file P6 would never write still
+loads, and says what was done to it; the CPM and the checks receive unique, finite, bounded
+values.
+
 **Snapshot contract.** `model.py` declares the minimum columns of each frame: `TASK_COLS` plus
 `LABOR_COLS` for `tasks`, `REL_COLS_MODEL` for `relationships`, `ASSIGNMENT_COLS_MODEL` for
 `assignments`. `build_snapshot` raises `XerError` if one is missing, and the store's
@@ -68,7 +90,9 @@ The frames may carry more (raw XER columns); the lists are a floor, not a filter
 - **`WorkCalendar`:** working periods per weekday plus dated exceptions, parsed from the
   `clndr_data` tree `(0||name(attrs)(children))`.
 - **`TimeAxis`:** the same periods laid out on an absolute minute axis with cumulative
-  work, which makes every date computation exact (details in [cpm.md](cpm.md)).
+  work, which makes every date computation exact (details in [cpm.md](cpm.md)). It is bounded
+  by the pandas `Timestamp` range and raises `ValueError("date out of range ...")` at once
+  for a date or a duration it cannot hold.
 
 ## 4. `store.py`: the weekly series
 

@@ -127,12 +127,19 @@ Everything else is built on these two, by binary search (`numpy.searchsorted`):
 
 The axis extends itself when a date falls outside it (a 600-day delay runs years ahead,
 negative float runs back before the data date). Work values stay anchored on the first
-origin, so a value computed before the axis grew is still valid after it.
+origin, so a value computed before the axis grew is still valid after it. The periods of a
+window are laid out with numpy from the weekday pattern and the exception dates. The axis
+stops at the pandas `Timestamp` range (1677-09-22 .. 2262-04-10): a date outside it, or a
+duration that no day of the calendar could fit inside it, raises
+`ValueError("date out of range ...")` at once instead of growing towards it.
 
 Calendars come from `CALENDAR.clndr_data`: the work week (P6 numbers days 1 = Sunday to
 7 = Saturday) and the exceptions (Excel serial dates; an empty exception is a holiday, one
-with periods is a working day with its own hours). If the blob is missing, the work week
-is inferred from `day_hr_cnt` and `week_hr_cnt`.
+with periods is a working day with its own hours). If the blob is missing or unreadable (a
+malformed node, a period time that is not `HH:MM`, a tree nested past 32 levels), the work
+week is inferred from `day_hr_cnt` and `week_hr_cnt`; a `day_hr_cnt` under one minute falls
+back to the default hours per day; an exception dated outside what the axis can hold is
+dropped. Each repair is a `WorkCalendar.notes` line, reported in the snapshot's warnings.
 
 ## Options read from the file (P6 Professional 24, Schedule Options › General)
 
