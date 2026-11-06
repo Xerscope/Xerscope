@@ -169,10 +169,10 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any(
         "Understood: Float: Critical · Status: Not started · WBS: CIV · Civil works" in c.value for c in app.caption
     )
-    app.text_input[1].set_value("jalons génie civil").run()  # a word the file does not hold is dropped
+    app.text_input[1].set_value("jalons xyzzy génie civil").run()  # a word the file does not hold is dropped
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
-    assert any("not in this file: genie" in c.value for c in app.caption)
+    assert any("not in this file: xyzzy" in c.value for c in app.caption)  # "génie civil" = CIV (synonyms)
     app.text_input[1].set_value("").run()
     app.get("button_group")[0].set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
