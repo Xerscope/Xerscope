@@ -463,7 +463,7 @@ class Snapshot:
     calendars: pd.DataFrame
     assignments: pd.DataFrame  # TASKRSRC rows, may be empty
     projects_in_file: list[str] = field(default_factory=list)
-    project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by project code
+    project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by proj_id
     selected_by: str = ""  # why this project of the file: chosen, only project, most TASK rows
     data_date_source: str = ""  # PROJECT column the data date was read from
     warnings: list[str] = field(default_factory=list)
@@ -747,6 +747,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     )
     if raw_assignments.empty:
         return pd.DataFrame(columns=columns)
+    _require(raw_assignments, inputs.raw.source, "TASKRSRC", ["task_id"])
     if "proj_id" in raw_assignments.columns:
         raw_assignments = raw_assignments[raw_assignments["proj_id"] == inputs.project_id]
     assignments = _ensure_cols(

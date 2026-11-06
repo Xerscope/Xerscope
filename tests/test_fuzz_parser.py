@@ -9,22 +9,17 @@ spliced in):
 
 ``HYPOTHESIS_PROFILE=ci`` runs 1000 examples per property instead of 200.
 
-A crash Hypothesis finds is recorded in ``KNOWN_CRASHES`` with its minimal example and the audit
-finding it belongs to (``AUDIT-XER-nn``, or "new"). ``test_known_crash_examples`` replays each as
-``xfail(strict=False)``: it fails while the defect exists and passes once it is fixed, without
-breaking the suite either way (Hypothesis's own ``@example(...).xfail`` is strict, so pytest's
-marker is used instead). The property tests discard an example that hits a known crash site,
-so they stay green and keep looking for crashes nobody has recorded. Fixing a defect: remove its
-entry here, the audit report's test loses its xfail marker at the same time.
+A crash Hypothesis finds is recorded in ``REGRESSIONS`` with its minimal example and the audit
+finding it belongs to, then fixed; ``test_former_crashes_stay_fixed`` replays each. The seven
+entries are the crashes the audit's fuzzing found, all fixed.
 """
 
 from __future__ import annotations
 
 import os
-import traceback
 
 import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from xerkit import clndr_data, xer_text
 
@@ -57,49 +52,30 @@ def _calendar_file(start: str, finish: str) -> bytes:
     ).encode()
 
 
-KNOWN_CRASHES = [
-    ("AUDIT-XER-03", KeyError, "parser.py:parse_text", b"%T\t\n%R"),  # empty table name, then a row
-    (
-        "new: TASKRSRC with an empty %F line reaches _assignments without task_id",
-        KeyError,
-        "model.py:_assignments",
+REGRESSIONS = [  # the crashes the audit's fuzzing found, each fixed since; replayed as plain inputs
+    pytest.param(b"%T\t\n%R", id="XER-03 empty table name then a row"),
+    pytest.param(
         b"%T\tPROJECT\n%F\tproj_id\n%R\t1\n%T\tTASK\n%F\ttask_id\ttask_code\n%R\t1\tA\n%T\tTASKRSRC\n%F\t\n%R",
+        id="TASKRSRC without columns",
     ),
-    (  # duplicate %F column: a DataFrame with two rsrc_id columns reaches the model
-        "AUDIT-XER-04",
-        NotImplementedError,
-        "model.py:_assignments",
+    pytest.param(
         b"%T\tPROJECT\n%F\tproj_id\n%R\t1\n%T\tTASK\n%F\ttask_id\ttask_code\n%R\t1\tA\n"
         b"%T\tTASKRSRC\n%F\trsrc_id\ttask_id\trsrc_id\n%R",
+        id="XER-04 duplicate TASKRSRC column",
     ),
-    (  # the same, with no activity row
-        "AUDIT-XER-04",
-        TypeError,
-        "model.py:_assignments",
+    pytest.param(
         b"%T\tPROJECT\n%F\tproj_id\n%R\t1\n%T\tTASK\n%F\ttask_id\ttask_code\n%R\n"
         b"%T\tTASKRSRC\n%F\trsrc_id\ttask_id\trsrc_id\n%R",
+        id="XER-04 duplicate TASKRSRC column, no activity",
     ),
-    (  # duplicate %F column in TASKPRED
-        "AUDIT-XER-04",
-        ValueError,
-        "model.py:_relationships",
+    pytest.param(
         b"%T\tPROJECT\n%F\tproj_id\n%R\t1\n%T\tTASK\n%F\ttask_id\ttask_code\n%R\t1\tA\n"
         b"%T\tTASKPRED\n%F\ttask_id\tpred_task_id\tproj_id\tproj_id\n%R",
+        id="XER-04 duplicate TASKPRED column",
     ),
-    ("AUDIT-XER-14", ValueError, "calendar.py:_interval", _calendar_file("a:b", "17:00")),  # start not hh:mm
-    ("AUDIT-XER-14", ValueError, "calendar.py:_interval", _calendar_file("8:00", "")),  # finish empty
+    pytest.param(_calendar_file("a:b", "17:00"), id="XER-14 period start not hh:mm"),
+    pytest.param(_calendar_file("8:00", ""), id="XER-14 period finish empty"),
 ]
-
-
-def _site(exc: BaseException) -> str:
-    frames = [f for f in traceback.extract_tb(exc.__traceback__) if "xerscope" in f.filename]
-    return f"{os.path.basename(frames[-1].filename)}:{frames[-1].name}" if frames else "?"
-
-
-def _known(exc: BaseException, raw: RawXer | None = None) -> bool:
-    if raw is not None and any(t.columns.duplicated().any() for t in raw.tables.values()):
-        return True  # AUDIT-XER-04: a duplicate %F column trips the model wherever that table is read
-    return any(isinstance(exc, kind) and _site(exc) == site for _, kind, site, _ in KNOWN_CRASHES)
 
 
 @st.composite
@@ -154,8 +130,7 @@ def test_parse_bytes_returns_rawxer_or_xererror(data: bytes):
         _parse(data)
     except XerError:
         raise
-    except Exception as exc:
-        assume(not _known(exc))  # recorded in KNOWN_CRASHES: the example is discarded, not passed
+    except Exception:
         raise
 
 
@@ -168,17 +143,10 @@ def test_build_snapshot_returns_snapshot_or_xererror(data: bytes):
             _snapshot(raw)
     except XerError:
         raise
-    except Exception as exc:
-        assume(not _known(exc, raw))
+    except Exception:
         raise
 
 
-@pytest.mark.parametrize(
-    "data",
-    [
-        pytest.param(data, id=site, marks=pytest.mark.xfail(strict=False, reason=reason))
-        for reason, _, site, data in KNOWN_CRASHES
-    ],
-)
-def test_known_crash_examples(data: bytes):
+@pytest.mark.parametrize("data", REGRESSIONS)
+def test_former_crashes_stay_fixed(data: bytes):
     _load(data)

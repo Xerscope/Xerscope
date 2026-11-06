@@ -343,7 +343,13 @@ def _schedule(
 ) -> Schedule:
     try:
         return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
+    except ScheduleError:
+        raise
     except (OverflowError, OutOfBoundsDatetime) as exc:  # a date past year 2262 the time axis cannot hold
+        raise ScheduleError(f"a date falls outside the schedulable range: {exc}") from exc
+    except ValueError as exc:  # the time axis refuses a date outside its range before growing to it
+        if "date out of range" not in str(exc):
+            raise
         raise ScheduleError(f"a date falls outside the schedulable range: {exc}") from exc
 
 
