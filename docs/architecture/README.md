@@ -26,6 +26,7 @@ placeholders such as `<tailnet>`, `<random>`, `<login>` and `PROJ-01`.
 | 10 Quality requirements | [10-quality-requirements.md](10-quality-requirements.md) | Quality tree and concrete scenarios |
 | 11 Risks and technical debt | [11-risks-and-technical-debt.md](11-risks-and-technical-debt.md) | Known gaps, hot spots, supply-chain debt |
 | 12 Glossary | [12-glossary.md](12-glossary.md) | Domain and technical terms |
+| 13 Patterns for one developer (closing note) | [13-patterns-for-a-solo-developer.md](13-patterns-for-a-solo-developer.md) | Cost of a change today, patterns to keep, add and refuse, order of work |
 
 ## How it relates to the existing documentation
 
