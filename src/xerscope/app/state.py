@@ -32,7 +32,7 @@ from xerscope.xer import (
     load_snapshot,
     xer_files,
 )
-from xerscope.xer.model import HEADER_TABLES, read_header
+from xerscope.xer.model import HEADER_TABLES, project_counts_text, read_header
 from xerscope.xer.parser import parse_bytes
 
 # Streamlit wants extensions without the dot.
@@ -233,7 +233,7 @@ def _describe_file(path: Path, widths: tuple[int, int] = (0, 0)) -> tuple[str, s
         label += f" · {len(counts)} projects"
     details = (
         f"Project: {header.project_code} ({header.selected_by})  \n"
-        f"Projects in file (TASK rows): {' · '.join(f'{code} ({n})' for code, n in counts.items())}  \n"
+        f"Projects in file (TASK rows): {project_counts_text(counts, header.project_codes)}  \n"
         f"Status date: {ui.fmt_date(header.data_date)} (from {header.data_date_source or 'nothing'})"
     )
     return label, details
