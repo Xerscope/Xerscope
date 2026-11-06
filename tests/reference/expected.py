@@ -92,7 +92,7 @@ DCMA = {
     },
     "DCMA-12": {"status": "pass"},  # +600 wd on MEP-020 moves MS-030 2026-09-08 -> 2028-12-27
     # xerlock states 1.0 (CPL 1080 h = 135 wd x 8 h, TF 0). The file has no Must Finish By
-    # date, so that float is 0 by construction and the index says nothing: n/a here
-    # (docs/formulas.md, DCMA-13).
-    "DCMA-13": {"status": "n/a"},
+    # date and the baseline is its planned dates, so that float is 0 by construction: the 1.0
+    # is reported for review, not judged (docs/standards.md, DCMA-13).
+    "DCMA-13": {"status": "info", "value": 1.0},
 }

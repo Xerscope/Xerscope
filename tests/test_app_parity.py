@@ -315,3 +315,40 @@ def test_audit_lists_the_rows_a_step_removed(app, store):
     _run(app)
     shown = [frame.value for frame in app.dataframe if "task_code" in frame.value.columns]
     assert any(sorted(frame["task_code"]) == sorted(removed["task_code"]) for frame in shown)
+
+
+def test_baseline_in_each_file_equals_check_baseline_in_file(tmp_path, monkeypatch, capsys):
+    """The app's "Baseline in each file" on a file holding its P6 Project Baseline: P6-12 and P6-13 on the Health page,
+    and the label of the baseline the app builds, equal ``xerscope check --baseline-in-file`` on that file.
+    By hand (file_projects.two_projects): 2 late of 2, 0 of the 2 baseline activities complete."""
+    from file_projects import two_projects
+
+    from xerscope import cli
+    from xerscope.app.state import BL_EACH
+
+    data, out_dir = tmp_path / "data", tmp_path / "out"
+    data.mkdir()
+    (data / "two.xer").write_text(two_projects())
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    assert baseline_box(at).value == BL_EACH
+    at.switch_page("views/health.py")
+    _run(at)
+    at.get("button_group")[0].set_value("P6")
+    _run(at)
+    checks, columns = ["P6-12", "P6-13"], ["status", "result", "count"]
+    shown = at.dataframe[0].value.set_index("id").loc[checks, columns]
+
+    dest = out_dir / "cli.csv"
+    out_dir.mkdir()
+    assert cli.main(["check", str(data / "two.xer"), "--standard", "P6", "--baseline-in-file", "--out", str(dest)]) == 0
+    printed = capsys.readouterr().out
+    got = pd.read_csv(dest, keep_default_na=False).set_index("id").loc[checks]
+    assert list(zip(got["found"], got["total"], strict=True)) == [(2, 2), (0, 2)]
+    expected = got[columns].astype(str).assign(status=got["status"].map(status_label))
+    pd.testing.assert_frame_equal(shown.astype(str), expected, check_names=False)
+    (built,) = at.session_state["_file_baselines"][1].values()
+    assert built.label == "BL (P6 Project Baseline in two.xer)"
+    assert f"baseline {built.label}" in printed

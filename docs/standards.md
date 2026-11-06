@@ -94,6 +94,12 @@ check with the activities (or relationships) found, to diff against the report's
 when several files are checked) typed from the report's summary; every line is printed as
 expected / got and the command exits 1 on any difference.
 
+`--baseline-in-file` measures each file against the P6 Project Baseline it holds
+(`PROJECT.sum_base_proj_id`, `Snapshot.file_baseline`), the project baseline Check Schedule reads for
+Late Activities and BEI (101248, P6 Professional 25 help). A file without a usable one falls back on
+`--baseline` or `--planned-baseline`, else none. It is the app's "Baseline in each file"
+(`analysis.baseline.baseline_in_file`, shared by both).
+
 On the Schedule health page, "Compare with a P6 Check Schedule report" does the same on the
 update and baseline picked there: type the report's counts or upload that CSV; lines left empty are
 not compared (`compare_counts` in `analysis/checks.py`, shared with `check --expect`). Nothing typed
@@ -101,10 +107,13 @@ or uploaded is kept on the server.
 
 The Schedule health page shows the same results as `xerscope check` when both read the same
 series with the same baseline (`tests/test_app_parity.py`). Two defaults differ: the app takes
-the first loaded update as baseline, `check` none unless `--baseline` or `--planned-baseline` is
-given; and the checks against an update one status period older (DECM 06A504a/b, 06A506c)
-depend on which files are read, so `check` must get the whole folder, not a single week. To compare on real exports,
-download "Summary (CSV)" from the page and run `check` on the same folder and baseline file.
+the P6 Project Baseline in each file when a file holds one, a file without one getting the
+fallback picked in the Files window (none by default), or the file named by `XERSCOPE_BASELINE`
+on a locked server; `check` takes none unless `--baseline`, `--planned-baseline` or
+`--baseline-in-file` is given. And the checks against an update one status period older (DECM
+06A504a/b, 06A506c) depend on which files are read, so `check` must get the whole folder, not a
+single week. To compare on real exports, download "Summary (CSV)" from the page and run `check`
+on the same folder and baseline file.
 
 ## DCMA DECM v8.0, Guideline 6 (schedule)
 
@@ -182,7 +191,13 @@ to check the export. The PAM asks that all tasks with a duration carry dollars o
 **DCMA-12.** Method: the first open activity of the longest path is lengthened by 600 wd, and the
 finish must move by as much (PAM §4.12 names "a task of the critical path"; the first open task and the lengthening are xerscope's choice). The
 delayed activity ignores its expected finish, which would otherwise fix its early finish and absorb the
-slip; the other activities keep theirs. The pamphlet's second criterion, "completion date shows
+slip. The move is read in working days of the delayed activity's calendar and, because the downstream path
+may run on calendars with other non-working days, also in calendar days against the delayed activity's own
+finish: the test passes when either reading reaches the delay, and the note gives both readings (hand case:
+a week off in the delayed activity's calendar between its finish and the project's reads +595 wd for a
++600 delay that fully reached the finish). The other activities keep their expected finishes, so an expected finish downstream absorbs the slip (its activity's
+remaining duration is cut, to 0 once pushed past that date, as P6 does with the option on): the test
+fails and names it with the working days absorbed, as it names a mandatory date. The pamphlet's second criterion, "completion date shows
 negative total float", adds no pass: with a Must Finish By the float of the end is `MFB - EF_end`,
 which falls by exactly what the finish moves (+16 h to -64 h for a +80 h slip), and a Mandatory Finish
 on the end keeps its float at 0 and fails both readings.
@@ -193,7 +208,7 @@ naming a calendar). Without a Must Finish By, the open finish milestone ending l
 TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
 finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
 has no float (a missing float is not 0).
-n/a too when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
+Reported for review (status info, value 1.00, note "by construction") when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish
 after scheduling and the margin is 0 by construction. A baseline file (or update) keeps the margin.

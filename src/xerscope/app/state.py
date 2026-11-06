@@ -15,11 +15,11 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, relinked, renumbered
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
-from xerscope.anonymize import Anonymizer, LeakError
+from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
@@ -1048,17 +1048,10 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
         cache = {}
     key = (snapshot.source, snapshot.project_id, pointer.proj_id, basis)
     if key not in cache:
-        try:
-            source = _parse(snapshot.source, data, project_id=pointer.proj_id)
-        except XerError:
+        built = baseline_in_file(snapshot, data, basis, lambda data, name, project_id: _parse(name, data, project_id))
+        if built is None:
             return None
-        built = Baseline.from_snapshot(source, basis)
-        updated = pointer.updated[:10] or "not recorded"
-        cache[key] = replace(
-            built,
-            label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-            source=f"P6 Project Baseline in the file (proj_id {pointer.proj_id}, last update {updated})",
-        )
+        cache[key] = built
     st.session_state["_file_baselines"] = (signature, cache)
     return cache[key]
 
@@ -1488,14 +1481,14 @@ def csv_download(
     table comes from, the only ones read to anonymise it. ``sensitive=False``: a table with no
     schedule data, always as is."""
     if not sensitive:
-        data = frame.to_csv(index=False).encode("utf-8-sig")
+        data = csv_bytes(frame)
         show_download(Fetched(data, "", False), label, filename, "text/csv", key=key)
         return
     download(
         label,
         filename,
         "text/csv",
-        lambda: frame.to_csv(index=False).encode("utf-8-sig"),
+        lambda: csv_bytes(frame),
         lambda anonymous: anonymous.csv(frame),
         key=key,
         sources=sources,

@@ -567,6 +567,46 @@ def test_critical_path_test_fails_when_a_mandatory_date_absorbs_the_delay():
     assert r.status == "fail" and "Z" in r.note
 
 
+def test_critical_path_test_names_the_expected_finish_that_absorbs_the_delay():
+    """B (10 wd) holds an expected finish at its own early finish. Pushed 600 wd later by A, B's
+    remaining duration falls to 0 (an expected finish before the early start, as P6 does): the end
+    moves +590 wd instead of +600. The test fails and names B and the 10 wd it absorbed."""
+    b = todo(
+        "B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00", expect_end_date="2026-03-27 17:00"
+    )
+    s = snap([CHAIN[0], b, CHAIN[2]], [("A", "B", "FS", 0), ("B", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and "moved +590.0 wd instead of +600" in r.note
+    assert "expected finish dates absorb it" in r.note and "B (10 wd)" in r.note
+    assert codes(r) == ["B"] and r.flagged.iloc[0]["reason"] == "expected finish"
+    assert r.flagged.iloc[0]["absorbed_wd"] == 10
+
+
+def test_critical_path_test_reads_the_proportion_in_calendar_days_across_calendars():
+    """A runs on a calendar with a week off (Mon 3 to Fri 7 Jul 2028) that falls after A's own delayed
+    finish and before the project's: measured on A's calendar the finish moves +595 wd, on the project
+    calendar +599, yet nothing absorbed the delay: the project finish moved as many calendar days as
+    A's own finish. The test passes and says why."""
+    from datetime import date
+
+    from xerkit import clndr_data
+
+    first_day_off = (date(2028, 7, 3) - date(1899, 12, 30)).days  # Excel serial, as P6 stores exception days
+    week_off = tuple(first_day_off + k for k in range(5))
+    calendar = {
+        "clndr_id": "11", "clndr_name": "week off", "day_hr_cnt": "8", "week_hr_cnt": "40",
+        "clndr_data": clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], week_off),
+    }  # fmt: skip
+    b = todo("B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00")
+    s = snap(
+        [dict(CHAIN[0], clndr_id="11"), b, CHAIN[2]], [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], calendars=[calendar]
+    )
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "pass"
+    assert "moved +595.0 wd (+599.0 wd on the project calendar; +840 calendar days against +840" in r.note
+    assert "a calendar effect, the whole delay reached the finish" in r.note
+
+
 def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     # a finished activity cannot absorb a delay: its mandatory date is not listed
     chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]
@@ -665,12 +705,13 @@ def test_cpli_is_na_without_a_baseline():
     assert r.status == "n/a" and "baseline" in r.note
 
 
-def test_cpli_is_na_with_the_planned_dates_baseline():
+def test_cpli_is_reported_for_review_with_the_planned_dates_baseline():
     """Oracle 47222: the planned finish of a not-started milestone follows its early finish, so the margin
-    to it is 0 by construction."""
+    to it is 0 by construction: 1.00 is shown, with the reason, but not judged against the target."""
     s = snap([A160, _end()], [("A", "Z", "FS", 0)])
     r = run(DCMA, "DCMA-13", s, Baseline.planned(s))
-    assert r.status == "n/a" and "choose a baseline file" in r.note and "47222" in r.note
+    assert r.status == "info" and r.value == 1.0
+    assert "by construction" in r.note and "47222" in r.note and "CPL 20 wd to Z" in r.note
 
 
 def test_cpli_is_na_when_the_end_milestone_has_no_baseline_finish():

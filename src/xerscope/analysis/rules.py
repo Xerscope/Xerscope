@@ -87,6 +87,7 @@ class RuleOutput:
     checked: pd.DataFrame | None = None  # the rows behind the denominator
     funnel: Funnel | None = None  # how ``checked`` was cut from the file, step by step
     counted: pd.DataFrame | None = None  # the rows behind the numerator, when they are not ``flagged``
+    status: str | None = None  # "info" when the rule reports a value for review, not against the target
 
 
 COMPARE = {"<": operator.lt, ">": operator.gt, "<=": operator.le, ">=": operator.ge, "==": operator.eq}
@@ -226,11 +227,19 @@ def link_funnel(
         funnel.keep("not both ends complete", source, lambda rows: ~(done(rows, "pred_code") & done(rows, "succ_code")))
     elif links == "succ_incomplete":
         funnel.keep("successor not complete", source, lambda rows: ~done(rows, "succ_code"))
-    if exclude:
-        # DCMA PAM 200.1 section 4.0 reading: a link counts when its successor is a retained
-        # task; the predecessor may itself be excluded (a link out of a milestone counts).
-        kept = without(snapshot.activities, snapshot.data_date, exclude)
-        funnel.keep("successor kept", source, lambda rows: rows["succ_code"].isin(kept["task_code"]))
+    # DCMA PAM 200.1 section 4.0 reading: a link counts when its successor is a retained task; the
+    # predecessor may itself be excluded (a link out of a milestone counts). One step per exclusion,
+    # so the audit page shows what each one removed.
+    for exclusion_key in exclude:
+        exclusion = EXCLUSIONS[exclusion_key]
+        excluded_task_codes = snapshot.activities.loc[
+            as_flag(exclusion.removes(snapshot.activities, snapshot.data_date)), "task_code"
+        ]
+        funnel.keep(
+            f"successor {exclusion.label}",
+            source,
+            lambda links, excluded=excluded_task_codes: ~links["succ_code"].isin(excluded),
+        )
     if exclude_loe:
         loe = tasks["is_loe"]
         funnel.keep(

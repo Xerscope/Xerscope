@@ -86,7 +86,7 @@ def dcma_01_logic(context) -> RuleOutput:
 def dcma_02_leads(context) -> RuleOutput:
     """Relationships with the lag in question.
     Counts: flagged / relationships checked
-    Relationships whose successor is excluded: level of effort, milestones.
+    Relationships whose successor is excluded: completed tasks, level of effort, milestones.
     Relationships counted: relationships into an incomplete successor.
     Flagged when lag < 0 hours.
 
@@ -127,7 +127,7 @@ def dcma_03_lags(context) -> RuleOutput:
 def dcma_04_relationship_types(context) -> RuleOutput:
     """Relationships of another type.
     Counts: of the required type / relationships checked
-    Relationships whose successor is excluded: level of effort, milestones.
+    Relationships whose successor is excluded: completed tasks, level of effort, milestones.
     Relationships counted: relationships into an incomplete successor.
     Counts relationships of type FS; the list shows the others.
 
@@ -385,12 +385,6 @@ def _baseline_margin(context, last_task) -> Margin:
             "",
             None,
         )
-    if context.baseline.is_planned:
-        note = (
-            "baseline = planned dates of this file: a not-started milestone's planned finish follows its early "
-            "finish (Oracle 47222); choose a baseline file"
-        )
-        return RuleOutput(note=note), "", 0, "", None
     activities = snapshot.activities
     ends = activities[
         ~activities["is_complete"] & ~activities["is_loe"] & (activities["task_type"] == "TT_FinMile")
@@ -399,10 +393,13 @@ def _baseline_margin(context, last_task) -> Margin:
         note = "no Must Finish By date and no open finish milestone to measure the float on"
         return RuleOutput(note=note), "", 0, "", None
     end = ends.sort_values(["finish", "task_code"]).iloc[-1]
+    forecast = schedule(snapshot).frame["ef"].get(end["task_code"], end["finish"])
+    if context.baseline.is_planned:
+        # the planned finish of a not-started milestone is its early finish (Oracle 47222): margin 0
+        return None, end["task_code"], 0.0, f"{forecast:%Y-%m-%d}", forecast
     baseline_finish = context.baseline.frame["bl_finish"].get(end["task_code"], pd.NaT)
     if pd.isna(baseline_finish):
         return RuleOutput(note=f"{end['task_code']} has no baseline finish"), "", 0, "", None
-    forecast = schedule(snapshot).frame["ef"].get(end["task_code"], end["finish"])
     margin = snapshot.project_working_days(forecast, baseline_finish)
     return None, end["task_code"], margin, f"{baseline_finish:%Y-%m-%d}", forecast
 
@@ -419,9 +416,10 @@ def dcma_13_cpli(context) -> RuleOutput:
     last is the measured milestone: CPL runs to its forecast finish and TF is its margin to its baseline
     finish (PAM: CPL "until the next program milestone that is being measured", TF "relative to the
     baselined finish date, when constrained") (recalculated early finish, project calendar;
-    negative when late); n/a without a baseline, with the planned dates baseline (the planned finish of a
-    not-started milestone follows its early finish: margin 0 by construction, Oracle 47222) or without a
-    baseline finish for it. No constraint is read
+    negative when late); n/a without a baseline or without a baseline finish for it. With the planned
+    dates baseline the value is reported for review, not judged: the planned finish of a not-started
+    milestone follows its early finish (Oracle 47222), so the margin is 0 and the CPLI 1.00 by
+    construction, whatever the schedule. No constraint is read
     """
     snapshot = context.snapshot
     last_task = finish_driver(snapshot)
@@ -443,6 +441,14 @@ def dcma_13_cpli(context) -> RuleOutput:
     if margin_note:
         total_float = margin
         note = f"CPL {length:g} wd {margin_note}"
+        if context.baseline.is_planned:
+            note = (
+                f"by construction: planned-dates baseline, the planned finish of a not-started milestone follows "
+                f"its early finish (Oracle 47222), so the margin is {margin:g} wd and the CPLI "
+                f"{(length + total_float) / length:.2f} whatever the schedule; {note}; choose a baseline file or "
+                "set a Must Finish By for a measure"
+            )
+            return RuleOutput(value=(length + total_float) / length, note=note, status="info")
     else:
         if pd.isna(last_task["total_float_hr_cnt"]):
             code = last_task["task_code"]
