@@ -167,7 +167,7 @@ if asked:
         ("ask", snapshot.source, asked), query.parse, asked, lexicon, query_backend(), baseline=False, ev_basis=False
     )
 if ask is not None:
-    how = " (model)" if ask.source == "model" else ""
+    how = " (model)" if ask.source == "model" else (" (unsure)" if ask.confidence < query.SURE else "")
     understood = f"Understood{how}: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all."
     left_out = f" — not in this file: {', '.join(ask.ignored)}" if ask.ignored else ""
     st.caption(understood + left_out)

@@ -51,9 +51,11 @@ def expected_fields(expected: Filter) -> dict:
 
 def test_search_keeps_the_words_of_the_file_only():
     lexicon = Vocabulary(wbs=VOCAB.wbs, words=frozenset({"earthworks", "design"}))
-    got = query.parse_keywords("génie civil earthworks design", lexicon)
-    assert (got.wbs_id, got.search, got.ignored) == ("1", "earthworks design", ("genie",))
-    assert "Search: earthworks design" in got.matched
+    got = query.parse_keywords("génie civil earthworks design", lexicon)  # "génie civil" = civil works (synonyms)
+    assert (got.wbs_id, got.search, got.ignored) == ("1", "earthworks design", ())
+    got = query.parse_keywords("xyzzy earthworks", lexicon)
+    assert (got.search, got.ignored) == ("earthworks", ("xyzzy",))
+    assert "Search: earthworks" in got.matched
     assert query.parse_keywords("genie", lexicon) == Filter(ignored=("genie",))  # nothing to filter on
     assert query.parse_keywords("genie", VOCAB).search == "genie"  # lexicon unknown: every word searched
 
@@ -88,3 +90,22 @@ def test_vocabulary_from_the_demo(store):
     assert set(prompt) == {"status", "float", "wbs", "codes", "resources", "milestones", "loe"}
     assert not any("earthworks" in str(v) for v in prompt.values())  # labels only, no activity
     assert query.fold(float("nan")) == "" and query.fold("Béton Armé") == "beton arme"
+
+
+def test_fuzzy_matches_carry_a_confidence_and_leave_known_words_alone():
+    lexicon = Vocabulary(wbs=VOCAB.wbs, resources=VOCAB.resources, words=frozenset({"equipment", "delivery"}))
+    typo = query.parse_keywords("mecanque critque not strated", lexicon)
+    assert (typo.wbs_id, typo.categories, typo.status) == ("3", ("Critical",), ("Not started",))
+    assert query.FUZZY <= typo.confidence < 1.0
+    exact = query.parse_keywords("mechanical critical", lexicon)
+    assert exact.confidence == 1.0
+    known = query.parse_keywords("equipment delivery", lexicon)  # "equipment" ~ "equipe" (crew): not a typo
+    assert known.resources == frozenset() and known.search == "equipment delivery" and known.confidence == 1.0
+
+
+def test_two_nodes_as_close_make_the_pick_unsure():
+    lexicon = Vocabulary(wbs={"a": "ZA · Piping north", "b": "ZB · Piping south"})
+    guess = query.parse_keywords("pipng", lexicon)  # both nodes score the same on "piping"
+    assert guess.wbs_id == "a" and guess.confidence < query.SURE
+    sure = query.parse_keywords("pipng north", lexicon)  # "north" names one node exactly
+    assert sure.wbs_id == "a" and sure.confidence == 1.0

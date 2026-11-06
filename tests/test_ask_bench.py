@@ -14,12 +14,13 @@ held-out files untouched while tuning the prompt or the grammar, exactly as held
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from xerscope.analysis import query
 
 ASK = Path(__file__).parent / "ask"
-FLOORS = {"dev": 1.00, "heldout": 0.80}  # share of sentences with every filter right (ratios()["exact"])
+FLOORS = {"dev": 1.00, "heldout": 0.95}  # share of sentences with every filter right (ratios()["exact"])
 
 
 @pytest.fixture(scope="module")
@@ -52,3 +53,12 @@ def test_a_model_backend_is_scored_as_such(lexicon):
     answer = query.Filter(categories=("Critical",), source="model")
     scored = query.score([{"text": "late", "float": ["Critical"]}], lexicon, backend=lambda text, vocab: answer)
     assert scored["exact"].tolist() == [True] and scored["source"].tolist() == ["model"]
+
+
+def test_confidence_buckets():
+    scored = pd.DataFrame(
+        {"exact": [True, True, False, True], "confidence": [1.0, 0.95, 0.85, 0.82]}, columns=["exact", "confidence"]
+    )
+    buckets = query.by_confidence(scored)
+    assert buckets["sentences"].tolist() == [2, 2]
+    assert buckets.loc["sure", "exact"] == 1.0 and buckets.loc["unsure", "exact"] == 0.5

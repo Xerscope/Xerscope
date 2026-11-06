@@ -618,10 +618,19 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
             answered = (scored["source"] == name).mean() if name == "model" else 1.0
             shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
             print(f"  {name:<9} {shares}" + (f"  (answered {answered:.0%}, the rest by keywords)" if args.url else ""))
+            buckets = query.by_confidence(scored)
+            print(
+                "            "
+                + "  ".join(
+                    f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
+                    for name, row in buckets.iterrows()
+                    if row["sentences"]
+                )
+            )
             missed = scored[~scored["exact"]]
             for _, row in missed.head(args.show).iterrows():
                 wrong = ", ".join(field for field in query.FIELDS if not row[field])
-                print(f"    missed: {row['text']!r} ({wrong})")
+                print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
     return 0
 
 

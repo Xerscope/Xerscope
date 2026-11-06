@@ -100,3 +100,64 @@ float = ["Near critical"]
 text = "project management critical"
 wbs = "PM"
 float = ["Critical"]
+
+# trade vocabulary in the other language than the file's (query._SYNONYMS)
+
+[[case]]
+text = "activités critiques de la mécanique"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "mise en service non commencée"
+wbs = "COM"
+status = ["Not started"]
+
+[[case]]
+text = "ce qui bloque la fin du lot électricité"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "fondations"
+search = "foundations"
+
+[[case]]
+text = "achats en retard"
+wbs = "PRC"
+float = ["Critical"]
+
+[[case]]
+text = "fournisseur en cours"
+status = ["In progress"]
+resources = ["VENDOR"]
+
+[[case]]
+text = "tuyauterie et instrumentation"
+search = "piping instrumentation"
+
+[[case]]
+text = "études terminées"
+wbs = "ENG"
+status = ["Complete"]
+
+# typos and near words: fuzzy matching (query.FUZZY), answered at a lower confidence
+
+[[case]]
+text = "mecanque critque"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "fondation"
+search = "foundations"
+
+[[case]]
+text = "comissioning not strated"
+wbs = "COM"
+status = ["Not started"]
+
+[[case]]
+text = "vendeur en cours"
+status = ["In progress"]
+resources = ["VENDOR"]

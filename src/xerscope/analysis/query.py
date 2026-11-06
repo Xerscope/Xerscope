@@ -51,6 +51,10 @@ class Filter:
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's caption
     ignored: tuple[str, ...] = ()  # words the file's own lexicon does not hold, left out of the search
     source: str = "keywords"  # "keywords" (the grammar) or "model" (a Backend), for the page's caption
+    # 1.0 when every phrase matched exactly; else the weakest fuzzy match, lowered under SURE when
+    # two WBS nodes scored as close (MARGIN): how well the sentence separates one cluster of the
+    # file's labels from the others
+    confidence: float = 1.0
 
     @property
     def empty(self) -> bool:
@@ -150,6 +154,9 @@ _STATUS_PHRASES = {
         "pas commencees",
         "pas commences",
         "non commence",
+        "non commencee",
+        "non commencees",
+        "non commences",
         "unstarted",
         "to start",
         "a venir",
@@ -225,6 +232,17 @@ _CATEGORY_PHRASES = {
         "en retard",
         "late",
         "behind",
+        "bloque",
+        "bloquent",
+        "bloquant",
+        "bloquante",
+        "bloquantes",
+        "bloquants",
+        "blocking",
+        "blocks",
+        "retard",
+        "retards",
+        "delayed",
     ],
     "Normal": [
         "normal",
@@ -239,6 +257,50 @@ _CATEGORY_PHRASES = {
 }
 _MILESTONE_PHRASES = ["milestone", "milestones", "jalon", "jalons", "evenement", "evenements", "event", "events"]
 _LOE_PHRASES = ["loe", "level of effort", "niveau d effort", "hamac", "hamacs", "hammock", "hammocks"]
+# planning and construction words a planner says in one language about a file written in the
+# other: each group's words are read as one, so "mécanique" finds the node "Mechanical & electrical"
+# and "commissioning" the node "Mise en service". Generic trade vocabulary only, never a file's own
+# names (those come from Vocabulary).
+_SYNONYMS = [
+    ["mecanique", "mechanical", "meca"],
+    ["electricite", "electrique", "electrical", "elec"],
+    ["genie civil", "civil", "civils", "gc"],
+    ["mise en service", "commissioning", "essais", "mes"],
+    ["ingenierie", "etudes", "engineering"],
+    ["achats", "approvisionnement", "procurement", "purchasing"],
+    ["construction", "travaux", "chantier"],
+    ["fondations", "foundations"],
+    ["terrassement", "terrassements", "earthworks"],
+    ["tuyauterie", "piping"],
+    ["instrumentation", "instrum"],
+    ["montage", "installation", "erection"],
+    ["livraison", "delivery", "livraisons"],
+    ["fabrication", "manufacturing"],
+    ["demarrage", "start up", "startup"],
+    ["reception", "handover", "transfert"],
+    ["gestion de projet", "project management", "pilotage", "direction de projet"],
+    ["equipements", "equipement", "equipment"],
+    ["structure", "charpente", "steel", "structural"],
+    ["voirie", "roads", "routes"],
+    ["reseaux", "utilities", "utilites"],
+    ["documentation", "documents", "dossier"],
+    ["fournisseur", "vendeur", "vendor", "supplier"],
+    ["equipe", "crew"],
+]
+_SYNONYM_OF: dict[str, list[str]] = {}
+for _group in _SYNONYMS:
+    for _word in _group:
+        _SYNONYM_OF.setdefault(_word, []).extend(w for w in _group if w != _word)
+
+
+def _with_synonyms(words: list[str]) -> list[str]:
+    """``words`` and, for each, the words of its group: what a sentence may say for it."""
+    seen = dict.fromkeys(words)
+    for word in words:
+        seen.update(dict.fromkeys(_SYNONYM_OF.get(word, ())))
+    return list(seen)
+
+
 # words that carry no filter, dropped before the leftover becomes a text search
 _STOP_WORDS = """
     a au aux avec ce ces cette d de des du en et l la le les ou pour qui que quoi sur un une tout toute
@@ -248,6 +310,30 @@ _STOP_WORDS = """
     filter task tasks activity activities wbs node branch me
     """
 _STOP = frozenset(_STOP_WORDS.split())
+
+
+FUZZY = 0.8  # difflib ratio under which two words are not the same word ("mecanque" / "mecanique" = 0.94)
+MARGIN = 0.05  # a fuzzy WBS pick whose runner-up node scores within this is unsure (two clusters as close)
+SURE = 0.9  # confidence at or above which the page shows no "unsure" mark
+
+
+def _closest(words: list[str], phrases: list[str]) -> tuple[str, str, float] | None:
+    """The sentence word closest to one of the phrases (single words of 5+ letters), with the
+    ratio, when at least FUZZY; the fuzzy pass runs only where no phrase matched exactly, so a
+    typo ("critque", "fondation" for "fondations") still finds its filter at a lower confidence."""
+    import difflib
+
+    best = None
+    for word in words:
+        if len(word) < 4:
+            continue
+        for phrase in phrases:
+            if " " in phrase or len(phrase) < 5:
+                continue
+            ratio = difflib.SequenceMatcher(None, word, phrase).ratio()
+            if ratio >= FUZZY and (best is None or ratio > best[2]):
+                best = (word, phrase, ratio)
+    return best
 
 
 def _phrase_pattern(phrases: list[str]) -> re.Pattern:
@@ -276,9 +362,16 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         return Filter()
     matched: list[tuple[int, str]] = []
     result = Filter()
+    confidence = 1.0
 
     def record(position: int, label: str) -> None:
         matched.append((position, label))
+
+    def sentence_words() -> list[str]:  # what a fuzzy pass may read: never a word the file holds as is
+        return [w for w in folded.split() if w not in _STOP and not (vocab.words and w in vocab.words)]
+
+    def negated(word: str) -> bool:
+        return re.search(rf"(?<![a-z0-9])(not|non|pas|un)\s*{re.escape(word)}(?![a-z0-9])", folded) is not None
 
     # near-critical before critical: "quasi critique" must not leave "critique" to the next pass
     for category in ("Near critical", "Critical", "Normal"):
@@ -286,11 +379,29 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         if found:
             result = replace(result, categories=(*result.categories, category))
             record(found[0], f"Float: {category}")
+    if not result.categories:  # a typo on a float word
+        for category in ("Near critical", "Critical", "Normal"):
+            if close := _closest(sentence_words(), _CATEGORY_PHRASES[category]):
+                folded, found = _take(folded, [close[0]])
+                result = replace(result, categories=(category,))
+                confidence = min(confidence, close[2])
+                record(found[0], f"Float: {category}")
+                break
     for status, phrases in _STATUS_PHRASES.items():
         folded, found = _take(folded, phrases)
         if found:
             result = replace(result, status=(*result.status, status))
             record(found[0], f"Status: {status}")
+    if not result.status:  # a typo on a status word
+        for status, phrases in _STATUS_PHRASES.items():
+            if close := _closest(sentence_words(), phrases):
+                # "not strated": the negation stays
+                found_status = "Not started" if status == "In progress" and negated(close[0]) else status
+                folded, found = _take(folded, [close[0]])
+                result = replace(result, status=(found_status,))
+                confidence = min(confidence, close[2])
+                record(found[0], f"Status: {found_status}")
+                break
 
     folded, found = _take(folded, _MILESTONE_PHRASES)
     if found:
@@ -302,11 +413,11 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         record(found[0], "Level of effort")
 
     # WBS: the longest node label (code, then name, then any word of the name of 4+ letters) found in the text
-    best: tuple[int, str, str] | None = None
+    best: tuple | None = None  # (phrase, wbs_id, label[, ratio])
     for wbs_id, label in vocab.wbs.items():
         code, _, name = label.partition(" · ")
-        candidates = [fold(code), fold(name)]
-        candidates += [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in _STOP]
+        words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in _STOP]
+        candidates = _with_synonyms([fold(code), fold(name), *words])
         for candidate in candidates:
             if (
                 candidate
@@ -314,9 +425,24 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
                 and _phrase_pattern([candidate]).search(folded)
             ):
                 best = (candidate, wbs_id, label)
+    scores: dict[str, float] = {}
+    if best is None:  # no node named exactly: the closest node word to a sentence word, per node
+        for wbs_id, label in vocab.wbs.items():
+            code, _, name = label.partition(" · ")
+            words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 5 and w not in _STOP]
+            close = _closest(sentence_words(), _with_synonyms([fold(code), *words]))
+            if close:
+                scores[wbs_id] = close[2]
+                if best is None or close[2] > best[3]:
+                    best = (close[0], wbs_id, label, close[2])
     if best:
         folded, found = _take(folded, [best[0]])
         result = replace(result, wbs_id=best[1])
+        if len(best) > 3:
+            confidence = min(confidence, best[3])
+            others = sorted((v for k, v in scores.items() if k != best[1]), reverse=True)
+            if others and best[3] - others[0] < MARGIN:  # two nodes as close: the pick is a guess
+                confidence = min(confidence, SURE - 0.01)
         record(found[0], f"WBS: {best[2]}")
 
     # activity codes: a value or a value name, whole word, longest first. One code type, as the
@@ -338,22 +464,42 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     # resources: short name or name, whole word, longest first
     by_length = sorted(vocab.resources.items(), key=lambda kv: -max(len(kv[1][0]), len(kv[1][1])))
     for rsrc_id, (short, name) in by_length:
-        for candidate in sorted((fold(short), fold(name)), key=len, reverse=True):
+        for candidate in sorted(_with_synonyms([fold(short), fold(name)]), key=len, reverse=True):
             if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
                 folded, found = _take(folded, [candidate])
                 result = replace(result, resources=result.resources | {rsrc_id})
                 record(found[0], f"Resource: {short or name}")
                 break
 
+    if not result.resources:  # a typo on a resource name
+        for rsrc_id, (short, name) in by_length:
+            close = _closest(sentence_words(), _with_synonyms([fold(short), fold(name)]))
+            if close:
+                folded, found = _take(folded, [close[0]])
+                result = replace(result, resources=frozenset({rsrc_id}))
+                confidence = min(confidence, close[2])
+                record(found[0], f"Resource: {short or name}")
+                break
+
     # what is left is a text search, kept to the words the file holds (Activity IDs and names)
     rest = [w for w in folded.split() if w not in _STOP and len(w) > 1]
-    known = rest if vocab.words is None else [w for w in rest if w in vocab.words]
-    ignored = tuple(w for w in rest if w not in known)
+    if vocab.words is None:
+        known, ignored = rest, ()
+    else:  # a word the file does not hold, whose synonym it does, searches that synonym
+        known, ignored = [], []
+        for word in rest:
+            match = next((w for w in (word, *_SYNONYM_OF.get(word, ())) if w in vocab.words), None)
+            if match is None and (close := _closest([word], sorted(vocab.words))):  # a typo on a name word
+                match, confidence = close[1], min(confidence, close[2])
+            (known.append(match) if match else ignored.append(word))
+        ignored = tuple(ignored)
     if known:
         search = " ".join(known)
         result = replace(result, search=search)
         record(folded.find(known[0]), f"Search: {search}")
-    return replace(result, matched=tuple(label for _, label in sorted(matched)), ignored=ignored)
+    return replace(
+        result, matched=tuple(label for _, label in sorted(matched)), ignored=ignored, confidence=round(confidence, 2)
+    )
 
 
 def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filter:
@@ -521,10 +667,34 @@ def score(cases: list[Mapping], vocab: Vocabulary, backend: Backend | None = Non
         expected = expected_filter(case, vocab)
         got = parse(case["text"], vocab, backend)
         fields = {name: getattr(got, name) == getattr(expected, name) for name in FIELDS}
-        rows.append({"text": case["text"], "exact": all(fields.values()), **fields, "source": got.source})
-    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "source"])
+        rows.append(
+            {
+                "text": case["text"],
+                "exact": all(fields.values()),
+                **fields,
+                "source": got.source,
+                "confidence": got.confidence,
+            }
+        )
+    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "source", "confidence"])
 
 
 def ratios(scored: pd.DataFrame) -> dict[str, float]:
     """Share of cases right, overall (``exact``) and per field."""
     return {name: float(scored[name].mean()) if len(scored) else 0.0 for name in ("exact", *FIELDS)}
+
+
+def by_confidence(scored: pd.DataFrame) -> pd.DataFrame:
+    """Sentences and share right, for the confident answers (>= SURE) and the unsure ones: the
+    confidence index is only worth showing if the unsure answers are indeed wrong more often."""
+    sure = scored["confidence"] >= SURE
+    return pd.DataFrame(
+        {
+            "sentences": [int(sure.sum()), int((~sure).sum())],
+            "exact": [
+                float(scored.loc[sure, "exact"].mean()) if sure.any() else float("nan"),
+                float(scored.loc[~sure, "exact"].mean()) if (~sure).any() else float("nan"),
+            ],
+        },
+        index=["sure", "unsure"],
+    )
