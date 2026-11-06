@@ -278,9 +278,11 @@ def delta_colour(delta, colour: str) -> str:
     return "off" if delta is not None and _ZERO.match(str(delta).strip()) else colour
 
 
-def kpis(items: Sequence[tuple]) -> None:
+def kpis(items: Sequence[tuple], formulas: Mapping[str, Mapping[str, str]] | None = None) -> None:
     """A readout, one line per figure: (label, value[, delta[, help[, delta_color]]]). Past four
-    figures the lines run in two columns. The lines are st.metric, drawn as rows by style.css."""
+    figures the lines run in two columns. The lines are st.metric, drawn as rows by style.css.
+    ``formulas`` (label -> standard -> formula, analysis/explain.py KPI_FORMULAS) opens a
+    "Formulas" popover under the readout for the labels it knows."""
     labels = tuple(str(item[0]) for item in items)
     with st.container(key=f"kpis_{zlib.crc32('|'.join(labels).encode()):08x}"):
         columns = st.columns(2, gap="large") if len(items) > 4 else [st.container()]
@@ -294,6 +296,13 @@ def kpis(items: Sequence[tuple]) -> None:
             columns[index // per_column].metric(
                 label, value, delta=delta, help=help_, delta_color=delta_colour(delta, colour)
             )
+    known = [label for label in labels if formulas and label in formulas]
+    if known:
+        with st.popover("Formulas", icon=":material/function:", help="How each figure is computed, by standard"):
+            for label in known:
+                by_standard = formulas[label].items()  # type: ignore[index]
+                lines = "\n".join(f"- *{standard}* · {formula}" for standard, formula in by_standard)
+                st.markdown(f"**{label}**\n{lines}")
 
 
 SCORE_HELP = (
@@ -547,6 +556,7 @@ def table(
     overrides: dict | None = None,
     status: str | None = None,
     raw_labels: bool = False,
+    open_task: Callable[[str], None] | None = None,
     **kwargs,
 ):
     """A labelled, formatted dataframe; height follows the rows up to ``max_height``.
@@ -554,18 +564,36 @@ def table(
     ``status`` names a pass/fail column to show as coloured labels; ``raw_labels`` keeps the
     column names as headers (see ``column_config``). A table longer than
     ``Settings.table_filter_min_rows`` gets column filters, kept per ``key`` (or per call site).
+    ``open_task`` (state.open_in_gantt) makes the rows selectable: a selected row's Task ID gets a
+    button that opens the Gantt on it.
     """
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
     frame = frame.drop(columns=[column for column in HIDDEN if column in frame.columns])
     config = column_config(frame, overrides, raw_labels)
+    key = kwargs.get("key") or _caller_key()
     if len(frame) > DEFAULT_SETTINGS.table_filter_min_rows:
-        frame = _filtered(frame, config, kwargs.get("key") or _caller_key(), status)
+        frame = _filtered(frame, config, key, status)
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
+    linked = open_task is not None and "task_code" in frame.columns and not frame.empty
+    if linked:
+        kwargs.setdefault("key", f"table:{key}")
+        kwargs.update(on_select="rerun", selection_mode="single-row")
     data = status_style(frame, status) if status else frame
-    return st.dataframe(data, column_config=config, **kwargs)
+    event = st.dataframe(data, column_config=config, **kwargs)
+    if linked:
+        rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
+        if rows:
+            code = str(frame.iloc[rows[0]]["task_code"])
+            if st.button(
+                f"Open {md_text(code)} in the Gantt", icon=":material/view_timeline:", key=f"{kwargs['key']}:open"
+            ):
+                open_task(code)
+        else:
+            st.caption("Select a row to open its task in the Gantt.")
+    return event
 
 
 def status_style(frame: pd.DataFrame, column: str = "status"):

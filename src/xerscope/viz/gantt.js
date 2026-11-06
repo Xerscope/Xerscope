@@ -390,6 +390,12 @@ export default function (component) {
     const r = shown[i];
     if (r.kind === "task") setTriggerValue("picked", r.id); else toggle(r);
   });
+  // a double click on a WBS row makes it the page's focus ("w:<wbs_id>"); the two single
+  // clicks before it toggled the branch twice, so it is left as it was
+  body.addEventListener("dblclick", (event) => {
+    const i = rowAt(event);
+    if (i >= 0 && shown[i].kind === "wbs") setTriggerValue("focus", shown[i].id);
+  });
 
   let pending = false;
   scroll.addEventListener("scroll", () => {

@@ -17,6 +17,7 @@ from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_stan
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric
 from xerscope.analysis.standards import Metric
+from xerscope.analysis.wbs import ROOT
 from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
@@ -333,7 +334,7 @@ def _window(store: SnapshotStore | None) -> None:
                 _baseline_fields(store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
             st.caption("Done applies · Esc cancels")
-            if st.button("Done", type="primary", key="files_done"):
+            if st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter"):
                 _apply_drafts()
                 st.session_state.update(files_source=choice, files_open=False)
                 st.rerun()
@@ -403,6 +404,11 @@ def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
     return store
 
 
+def data_locked() -> bool:
+    """Remote deployment (``_data_locked``): pages show nothing about the server (Debug block 12)."""
+    return _data_locked()
+
+
 def _data_locked() -> bool:
     """Remote deployment: the visitor reads the server's exports folder and nothing else. No path
     field (the app cannot be pointed elsewhere) and no upload (one parsed export of 40 MB takes
@@ -453,6 +459,7 @@ def sidebar_loader() -> None:
         else "Open to upload files or read a folder.",
         type="tertiary",
         width="stretch",
+        shortcut="F",
         on_click=_open_window,
         args=("files",),
     )
@@ -769,6 +776,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
         help="Open to change the baseline, the earned value basis and the fallback.",
         type="tertiary",
         width="stretch",
+        shortcut="B",
         on_click=_open_window,
         args=("baseline",),
     )
@@ -946,10 +954,37 @@ def require_store() -> SnapshotStore:
     return store
 
 
+SNAP_CHOICE = "snap_choice"  # the update picked on any page: every page's picker follows it
+
+
+def _follow_snapshot(key: str) -> None:
+    st.session_state[SNAP_CHOICE] = st.session_state[key]
+
+
 def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "snap") -> Snapshot:
+    """The update a page works on. One choice for the whole session (``SNAP_CHOICE``): picked on
+    Schedule health, the Gantt opens on the same update; the latest update until one is picked."""
     labels = store.labels
-    choice = st.selectbox(label, labels, index=len(labels) - 1, key=key)
+    wanted = st.session_state.get(SNAP_CHOICE)
+    st.session_state[key] = wanted if wanted in labels else labels[-1]
+    choice = st.selectbox(label, labels, key=key, on_change=_follow_snapshot, args=(key,))
     return store.by_label(choice)
+
+
+def go_to(page: str, **state) -> None:
+    """Open another page with ``state`` written to the session first: the page's widgets read
+    it (``views/gantt.py``, ``gantt_task=...``). Pages are named by their path under app/."""
+    st.session_state.update(state)
+    st.switch_page(f"views/{page}.py")
+
+
+def open_in_gantt(task_code: str, snapshot: Snapshot | None = None) -> None:
+    """The Gantt on ``task_code`` (its card and history under the chart), on ``snapshot``'s update
+    when given, the whole project in view and no filter. Passed to ``ui.table(open_task=...)``."""
+    state = {"gantt_task": task_code, "gantt_node": ROOT, "gantt_focus": None}
+    if snapshot is not None:
+        state[SNAP_CHOICE] = snapshot.label
+    go_to("gantt", **state)
 
 
 COMPARE_NONE = "None"
