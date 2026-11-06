@@ -3,6 +3,44 @@
 What keeps xerscope correct, secure and changeable with one maintainer. Each item says when, what
 to run, and what "done" means. Most of it is already automated; the rest is short.
 
+## 0. Major risks (Nov 2026)
+
+Two risks outweigh everything else in this plan; both are rated **major**.
+
+### R1. Type annotations nobody checks
+
+96 % of the functions carry type annotations (801 of 835), but no tool reads them: `mypy`
+reports **63 inconsistencies in 16 files** (`uvx --from mypy mypy src --ignore-missing-imports`).
+Most are an `Optional` value used without a check: `arg-type` 20, `union-attr` 10, `var-annotated`
+8, `misc` 6, `operator` 5. Some may be latent bugs (e.g. `xer/calendar.py:264` returns
+`TimeAxis | None` where callers expect a `TimeAxis`; `analysis/cpm.py:589` reads `base.frame`
+on a `Schedule | None`). Annotations that are not checked drift, and a reader trusts them.
+Hot spots: `sample.py` 12, `analysis/rules.py` 11, `analysis/cpm.py` 10, `app/state.py` 8.
+
+| Step | Effort | Done when |
+|---|---|---|
+| Fix the 63 findings, one commit per module, each `Optional` narrowed or its annotation corrected | 1 day | `mypy src` prints no error |
+| Add `mypy` to the dev group and to the `tests.yml` lint job, blocking | 1 h | a PR with a type error is red |
+| `[tool.mypy]` in `pyproject.toml`: `check_untyped_defs`, `warn_unused_ignores`, `strict_optional` | 1 h | config in the repository, not in a command line |
+| Later, module by module: `disallow_untyped_defs` on `xer/` and `analysis/` | ½ day per package | the core is fully typed |
+
+Do it when no other PR is open on `src/`: the fixes touch 16 files.
+
+### R2. One person knows everything (bus factor 1)
+
+The code, the P6 semantics, the deployment and the accounts live with one maintainer. The
+repository holds the knowledge (§5), but not the access, and nobody else has ever run the
+release or restored the deployment.
+
+| Step | Effort | Done when |
+|---|---|---|
+| Secrets and access inventory, kept outside the repository (password manager or sealed note): GitHub org owner, GHCR and Docker Hub tokens, Tailscale admin and auth keys, deployment `.env`, NAS account | 1 h | a second trusted person knows where it is and how to open it |
+| A second owner on the GitHub organisation and on the Tailscale tailnet | ½ h | two people can rotate a token or revoke access |
+| Recovery runbook: rebuild the remote stack from an empty machine (deploy.md §1–9 as one checklist, with timings) | 2 h | written in deploy.md |
+| Recovery drill: someone else follows the runbook and cuts a release from `CHANGELOG.md` | ½ day, yearly | done once, dated in this file |
+| Walkthrough recording or session: code-map.md, cpm.md, one check end to end, one release | 2 h | a second person can answer "where is X" without the maintainer |
+| Optional: require one review on `main` once a second contributor exists | — | Scorecard "Code-Review" passes |
+
 ## 1. What runs by itself
 
 | When | What | Where | If it goes red |
@@ -73,6 +111,8 @@ minor version, and is listed under "Changed" in the changelog.
 | Full suite | 1,651 passed, ~15 min | > 20 min: parallelise `test_p6_heldout.py` (backlog) |
 | Branch coverage | 90.7 % | below 88 % |
 | Functions with complexity ≥ 20 | 12 | any new one |
+| mypy errors (R1) | 63 | any, once mypy is in CI |
+| People with admin access to GitHub, GHCR, Tailscale (R2) | 1 | fewer than 2 |
 | Largest modules | `cpm.py` 1,828, `state.py` 1,538, `model.py` 1,403 lines | a module crosses 2,000 lines |
 | Open Dependabot / CodeQL alerts | 0 | older than 2 weeks |
 | Trivy exceptions | 1 (expires 2026-12-02) | any past its expiry |
