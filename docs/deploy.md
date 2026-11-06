@@ -160,6 +160,7 @@ XERSCOPE_GID=<gid>
 # XERSCOPE_IMAGE=ghcr.io/xerscope/xerscope:0.1.0@sha256:<digest>      # the build to run, pinned (§7)
 # XERSCOPE_CADDY_IMAGE=ghcr.io/xerscope/xerscope-caddy:0.1.0@sha256:<digest>   # the same for Caddy (§7, §8)
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
+# XERSCOPE_DEBUG_PAGE=1                    # the Debug page, for a diagnosis only (§9)
 ```
 
 Then Container Manager → **Project** → **Create**:
@@ -314,7 +315,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
 - [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`, loopback only) and the path, with the prefix replaced by `<prefix>` in the request line, Referer and redirect, in the access log and in the error log (global `log` block); it drops Streamlit's XSRF token (WebSocket subprotocol) and the downloaded file's name (the tables export carries the project code).
-- [ ] Caddy refuses with 429, before the password check, a visitor over 120 requests a minute (per IPv4 address, per IPv6 /64; the CI job `deploy` checks it); the `caddy` container runs the `xerscope-caddy` image (§2 step 3: `list-modules` shows `rate_limit`).
+- [ ] Caddy refuses with 429, before the password check, a visitor over 300 requests a minute (per IPv4 address, per IPv6 /64; the CI job `deploy` checks it); the `caddy` container runs the `xerscope-caddy` image (§2 step 3: `list-modules` shows `rate_limit`).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
@@ -331,7 +332,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 | 502, Caddy log `dial tcp <ip>:8501: connection refused` with the app *Healthy* | Caddy resolves `xerscope` to the tailscale container (its hostname, in the `/etc/hosts` of the namespace Caddy shares) | upstream `app:8501`, the app's network alias, as in `deploy/` (check: caddy → Terminal → `getent hosts app`) |
 | 502 | app not healthy yet, or `/data` unreadable | wait 40 s; xerscope log; §5 |
 | 401 loops | hash made for another login, or `$` mangled | regenerate with `caddy hash-password`, in `.env` between single quotes |
-| 429, Caddy log `"status": 429` | over 120 requests a minute from one address (a crawler, a retry loop, or many people behind one company proxy) | wait a minute; if it is real use, raise `events` in `deploy/Caddyfile`, Build |
+| 429, Caddy log `"status": 429` | over 300 requests a minute from one address (a crawler, a retry loop, or many people behind one company proxy; one first visit is ~125) | wait a minute; if it is real use, raise `events` in `deploy/Caddyfile`, Build |
 | caddy log `unrecognized directive: rate_limit` | the stock `caddy` image runs instead of `xerscope-caddy` | `compose.yaml` and `.env` (`XERSCOPE_CADDY_IMAGE`) as in `deploy/` |
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | the app container restarts while files load (Container Manager: exited, then running) | the memory cap: the kernel killed it | load fewer weeks at once, or raise `XERSCOPE_MEM_LIMIT` in `.env` within the NAS's free RAM (§7), Build |

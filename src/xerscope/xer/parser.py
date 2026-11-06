@@ -56,6 +56,7 @@ class RawXer:
     encoding: str = ""
     warnings: list[str] = field(default_factory=list)
     header: list[str] = field(default_factory=list)  # ERMHDR fields after the tag
+    ended: bool = True  # the %E line was read; False for a file cut short (build_snapshot refuses it)
 
     def table(self, name: str) -> pd.DataFrame:
         """Return a table, or an empty frame if the export does not contain it."""
@@ -82,20 +83,6 @@ def decode_xer(data: bytes) -> tuple[str, str]:
         except UnicodeDecodeError:
             continue
     return data.decode("cp1252", errors="replace"), "cp1252 (lossy)"
-
-
-def _unique_names(names: list[str], notes: list[str], table: str) -> list[str]:
-    """``names`` with a repeated name suffixed ``.1``, ``.2``... (the first keeps its name), noted."""
-    seen: dict[str, int] = {}
-    out = []
-    for name in names:
-        n = seen.get(name, 0)
-        seen[name] = n + 1
-        out.append(name if n == 0 else f"{name}.{n}")
-    duplicates = [name for name, n in seen.items() if n > 1]
-    if duplicates:
-        notes.append(f"table {table}: duplicate column(s) {duplicates[:5]} renamed with a .1, .2 suffix")
-    return out
 
 
 class _Rows:
@@ -131,8 +118,9 @@ class _Rows:
 class _Table:
     """One %T table while the file is read: its columns, the block being read, the blocks done."""
 
-    def __init__(self, name: str, wanted: Columns):
+    def __init__(self, name: str, wanted: Columns, where: str):
         self.name = name
+        self.where = where  # the file, for error messages
         self.wanted = wanted  # columns to keep (keep=), None for all
         self.names: list[str] | None = None  # the table's columns (the kept ones), from its first %F line
         self.declared: list[str] | None = None  # every column of that %F line
@@ -147,7 +135,10 @@ class _Table:
 
     def fields(self, names: list[str], capacity: int) -> None:
         """A %F line: the table's columns when it has none yet, else it must repeat them."""
-        names = _unique_names([name.strip() for name in names], self.notes, self.name)
+        names = [name.strip() for name in names]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        if twice:  # P6 names each column once; a second one would shadow the first (#133)
+            raise XerError(f"{self.where}: table {self.name} names column {twice[0]} twice")
         if self.declared is None:
             self.declared = names
             if self.wanted is None:
@@ -221,9 +212,11 @@ class _Table:
 class _Reader:
     """The state machine over the lines of one file: current table, skipped table, header."""
 
-    def __init__(self, text: str, keep: Mapping[str, Columns] | None):
+    def __init__(self, text: str, keep: Mapping[str, Columns] | None, source: str = ""):
         self.text = text
         self.keep = keep
+        self.where = source or "input"
+        self.ended = False  # the %E line was read
         self.tables: dict[str, _Table] = {}  # in order of first appearance
         self.current: _Table | None = None
         self.skipping = False  # inside a table left out by ``keep``
@@ -262,6 +255,7 @@ class _Reader:
                 if parts[0] == "ERMHDR":
                     self.header = parts[1:]
             elif line == "%E":
+                self.ended = True
                 break
 
     def row(self, parts: list[str]) -> None:
@@ -276,11 +270,9 @@ class _Reader:
         if self.skipping or not name:
             self.current = None
             return
-        table = self.tables.get(name)
-        if table is None:
-            table = self.tables[name] = _Table(name, self.keep.get(name) if self.keep is not None else None)
-        else:
-            table.open(self.rows_ahead(pos))  # a table in two blocks: same columns, more rows
+        if name in self.tables:  # P6 writes each table once; a second block would join the first's rows (#133)
+            raise XerError(f"{self.where}: table {name} appears twice")
+        table = self.tables[name] = _Table(name, self.keep.get(name) if self.keep is not None else None, self.where)
         self.current = table
 
     def rows_ahead(self, pos: int) -> int:
@@ -304,13 +296,13 @@ class _Reader:
         header = self.header or []
         version = header[0] if len(header) > 0 else None
         export_date = header[1] if len(header) > 1 else None
-        return RawXer(tables, source, version, export_date, encoding, warnings, header)
+        return RawXer(tables, source, version, export_date, encoding, warnings, header, self.ended)
 
 
 def parse_text(text: str, source: str = "", encoding: str = "", keep: Mapping[str, Columns] | None = None) -> RawXer:
     """Every table of the file, or only the tables named in ``keep``, each with the listed
     columns (``None``: all of them). Rows of the other tables are not split."""
-    reader = _Reader(text, keep)
+    reader = _Reader(text, keep, source)
     reader.run()
     return reader.result(source, encoding)
 

@@ -48,6 +48,10 @@ silent and a P6 Professional r22.12 report analysed by Ten Six shows the behavio
 (finish milestones counted in logic, milestones out of large durations), the report is
 followed. Where report R1 contradicts 101248, the report is followed:
 P6-12 leaves completed activities out, P6-13 divides by every baseline activity.
+A P6 Professional 26.8 report on the synthetic project of `tests/test_p6_checksched.py`, which
+anyone can rebuild, shows the same three populations. P6-04: 1 / 11, its 14 activities less 2
+milestones and 1 completed. P6-12: 2 / 11, the completed activity out. P6-13: BEI 1 / 12, every
+non-milestone activity, where 3 were due by the data date.
 Invalid Progress Dates is one check of the dialog but two lines of the report (before / after the data
 date, each with its own target, P6 Professional 26.8): P6-10a and P6-10b.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
@@ -62,7 +66,7 @@ checked subset.
 | P6-01 | Inflexibility and Inefficiency | Logic | WBS summary, actual finish removed; start exemptions above; finish milestones counted (101248; Ten Six report) | < 5 % |
 | P6-02 | | Hard constraints (Mandatory Start/Finish, Start On, Finish On) | WBS, actual finish, LOE removed; start constraints ignored once started | < 1 % |
 | P6-03 | | Soft constraints (On or Before/After, As Late As Possible) | idem | < 5 % |
-| P6-04 | | Large durations (remaining > `x` hours) | WBS, actual finish, LOE, milestones removed | < 5 % |
+| P6-04 | | Large durations (remaining > `x` hours) | WBS, actual finish, LOE, milestones removed (26.8 report) | < 5 % |
 | P6-05 | | Long lags (> `x` hours) | links, both-finished removed | < 5 % |
 | P6-06 | | Large float (> `x` hours) | WBS, actual finish, LOE removed | < 1 % |
 | P6-07 | | Relationship types (FS share) | links, both-finished removed | > 90 % |
@@ -71,8 +75,8 @@ checked subset.
 | P6-10a | | Invalid progress before data date (start, or remaining early start once started, before the data date) | WBS, LOE, finished-before-data-date removed | < 1 % |
 | P6-10b | | Invalid progress after data date (actual start or finish after the data date) | idem | < 1 % |
 | P6-11 | | Resource / cost | WBS, milestones, LOE removed (completed stay in); a role assignment counts | < 1 % |
-| P6-12 | Lateness | Late activities (finish variance < 0, working time; no baseline: finish later than planned finish) | WBS, milestones, LOE, completed removed (R1) | < 5 % |
-| P6-13 | | BEI: completed / every baseline activity (R1); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
+| P6-12 | Lateness | Late activities (finish variance < 0, working time; no baseline: finish later than planned finish) | WBS, milestones, LOE, completed removed (R1; 26.8 report) | < 5 % |
+| P6-13 | | BEI: completed / every baseline activity (R1; 26.8 report); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
 | P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
 | P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | `p6.toml` |
 | P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | `p6.toml` |

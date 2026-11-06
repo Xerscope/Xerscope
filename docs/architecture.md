@@ -29,8 +29,18 @@ The XER format is tab-separated:
 - **Memory:** one pass; each table's cell array is built as its block ends, and equal values
   of one table share one string. Peak is about 3 x the file size (the text itself, the cell
   pointers and the distinct strings; `tests/test_audit_edges_xer.py` keeps it under 4 x).
+- **Structure P6 never writes:** a table written twice or a column named twice in a `%F` line
+  raises `XerError`. Lines after `%E` are not read.
 
-Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings)`.
+Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings, header, ended)`.
+`ended` is False when the file has no `%E` line; the parse still succeeds (the file picker reads
+the header of a file being copied) and `build_snapshot` refuses it.
+
+**Load contract.** `build_snapshot` returns a `Snapshot` or raises `XerError`, nothing else,
+whatever the file holds: cut short, keys repeated (`task_id`, `wbs_id`, `clndr_id`), identity
+columns missing, values unreadable, dates outside 1900-2199 or numbers infinite (both read as
+blank). `tests/test_load_contract.py` documents each case and checks the contract over every
+table and column of a file built in code.
 `keep=` keeps only the named tables, each with the listed columns (the rows of the others
 are not split).
 
@@ -339,6 +349,10 @@ Outside `analysis/`:
   the same `Snapshot.file_projects` rows, `absent` for a column the file lacks; of
   `baseline_names_to_export` only the number of names) with its tasks by `complete_pct_type`, and what
   each setting is in the XER data map and the P6 help (`SETTINGS_MEANING`). No KPI reads it.
+  Block 13, the calendar detail (`diagnostic.calendar_detail_frames`, also its own zip): each calendar's
+  hours per time period as stored (`day_hr_cnt` .. `year_hr_cnt`) beside the working time its
+  `clndr_data` periods add up to, the periods of each weekday, and each dated exception with what it does
+  to the weekday it replaces (non-working day, working day on a non-working weekday, other hours).
   `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
   `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
   unchanged, cost figures 0 as in the extract).

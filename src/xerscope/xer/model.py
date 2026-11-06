@@ -148,21 +148,29 @@ def forecast_dates(tasks: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     )
 
 
+# Dates outside this range read as blank: P6 exports span years, not centuries (the reference
+# exports: 2000-2027), and pandas timestamps end in 2262, where calendar arithmetic overflows.
+EARLIEST_DATE, LATEST_DATE = pd.Timestamp("1900-01-01"), pd.Timestamp("2200-01-01")
+
+
 def to_datetime(values: pd.Series) -> pd.Series:
     # XER dates are "YYYY-MM-DD HH:MM"; ISO8601 also tolerates exporters adding seconds.
     try:
-        return pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+        dates = pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
     except ValueError:
         # one cell with a time-zone offset among naive ones: pandas refuses the column even with
         # errors="coerce" ("Mixed timezones"); such a cell reads as NaT (validate.blank_timezones
         # does the same on the model's tables, with a warning)
-        return pd.to_datetime(
+        dates = pd.to_datetime(
             _blank_to_na(values.mask(validate.timezone_cells(values))), format="ISO8601", errors="coerce"
         )
+    return dates.where((dates >= EARLIEST_DATE) & (dates < LATEST_DATE))
 
 
 def to_number(values: pd.Series) -> pd.Series:
-    return pd.to_numeric(_blank_to_na(values), errors="coerce")
+    """Numbers of an XER column; blank, unreadable or infinite ("1e400") values are NaN."""
+    numbers = pd.to_numeric(_blank_to_na(values), errors="coerce")
+    return numbers.mask(np.isinf(numbers))
 
 
 def _parse_date(value: object) -> pd.Timestamp | None:
@@ -230,11 +238,19 @@ def _warn_unknown_codes(codes: pd.Series, known: dict, column: str, reading: str
         warnings.append(f"{column} {name} is not a P6 code ({rows}): {reading}")
 
 
+def _unique(frame: pd.DataFrame, source: str, table: str, column: str) -> None:
+    """Raise a XerError when the key ``column`` repeats: every other table points at it, so a
+    lookup would fail or pick one of the rows. P6 writes each key once."""
+    repeated = frame[column][frame[column].duplicated()].unique()
+    if len(repeated):
+        raise XerError(f"{source}: table {table} has duplicate {column} {sorted(map(str, repeated))[:3]}")
+
+
 def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
     """TASK with the identity columns checked; a missing proj_id is the file's only project."""
     tasks = raw.table("TASK")
     _require(tasks, raw.source, "TASK", ["task_id", "task_code"])
-    tasks = validate.unique_rows(tasks, "task_id", "TASK", raw.source, warnings)
+    _unique(tasks, raw.source, "TASK", "task_id")
     if "proj_id" not in tasks.columns:
         _require(projects, raw.source, "PROJECT", ["proj_id"])
         if len(projects) != 1:
@@ -610,7 +626,7 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
             "parent_id": used.get("parent_actv_code_id", pd.Series("", index=used.index)).fillna(""),
             "value": used["short_name"],
             "name": used.get("actv_code_name", used["short_name"]),
-            "seq": pd.to_numeric(used.get("seq_num", pd.Series(0, index=used.index)), errors="coerce").fillna(0),
+            "seq": to_number(used.get("seq_num", pd.Series(0, index=used.index))).fillna(0),
         }
     )
     code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])
@@ -637,6 +653,8 @@ class _BuildInputs:
     hours_per_day: pd.Series  # by calendar id
     settings: Settings
     warnings: list[str]  # appended to in run order: that order is observable
+    # task_id of the TASK rows left out because their Activity ID repeats an earlier row of the project
+    left_out_task_ids: set[str] = field(default_factory=set)
 
     @property
     def source(self) -> str:
@@ -680,7 +698,8 @@ def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.Da
             ]
         ), None
     _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
-    wbs = validate.unique_rows(wbs[wbs["proj_id"] == project_id], "wbs_id", "PROJWBS", raw.source, warnings)
+    _unique(wbs, raw.source, "PROJWBS", "wbs_id")
+    wbs = wbs[wbs["proj_id"] == project_id]
     wbs = _ensure_cols(
         wbs.copy(),
         [
@@ -695,31 +714,48 @@ def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.Da
             "ev_etc_user_value",
         ],
     )
-    by_id = wbs.set_index("wbs_id")
     project_node = wbs.loc[wbs["proj_node_flag"] == "Y"]
     project_name = project_node["wbs_name"].iloc[0] if not project_node.empty else None
+
+    # The walk up the tree reads plain dicts: one .loc per node and level cost ~10-16 us each,
+    # 0.25 s on a WBS of 1 000 nodes. verify_integrity: a repeated wbs_id raises here rather than
+    # letting a dict keep the last row (_unique above already refuses the file).
+    by_id = wbs.set_index("wbs_id", verify_integrity=True)
+    parent = by_id["parent_wbs_id"].to_dict()
+    is_project_node = (by_id["proj_node_flag"] == "Y").to_dict()
+    short_name = by_id["wbs_short_name"].to_dict()
+    name = by_id["wbs_name"].to_dict()
+    sequence = to_number(by_id["seq_num"]).fillna(0).astype(int).to_dict()
+
+    in_loop: set[str] = set()  # P6 refuses a hierarchy loop (error PRM 009009044): a damaged file
 
     def lineage(wbs_id: str) -> list[str]:
         chain: list[str] = []
         seen: set[str] = set()
-        while wbs_id in by_id.index and wbs_id not in seen:
+        while wbs_id in parent and wbs_id not in seen:
             seen.add(wbs_id)
-            row = by_id.loc[wbs_id]
-            if row["proj_node_flag"] == "Y":
+            if is_project_node[wbs_id]:
                 break
             chain.append(wbs_id)
-            wbs_id = row["parent_wbs_id"]
+            wbs_id = parent[wbs_id]
+        if wbs_id in seen and not is_project_node[wbs_id]:
+            in_loop.update(chain[chain.index(wbs_id) :])
         return chain[::-1]
 
     sequence = validate.bounded_sequence(by_id["seq_num"], "PROJWBS", raw.source, warnings)
     codes, top_levels, sort_keys = [], [], []
     for wbs_id in wbs["wbs_id"]:
         chain = lineage(wbs_id)
-        codes.append(".".join(by_id.loc[element, "wbs_short_name"] for element in chain))
-        # P6 orders WBS siblings by seq_num, not alphabetically
+        codes.append(".".join(short_name[element] for element in chain))
+        # P6 orders WBS siblings by seq_num, not alphabetically. The key sorts as text, which holds
+        # for 0-999999 (the reference exports: 0-26381); a negative or 7-digit seq_num would not.
         sort_keys.append(".".join(f"{sequence[element]:06d}" for element in chain))
         top = chain[0] if chain else None
-        top_levels.append(f"{by_id.loc[top, 'wbs_short_name']} · {by_id.loc[top, 'wbs_name']}" if top else "")
+        top_levels.append(f"{short_name[top]} · {name[top]}" if top else "")
+    if in_loop:
+        warnings.append(
+            f"{raw.source}: WBS loop through {sorted(in_loop)[:5]}: their paths and top levels are not reliable"
+        )
     wbs["wbs_code"] = codes
     wbs["wbs_l1"] = top_levels
     wbs["wbs_sort"] = sort_keys
@@ -942,6 +978,7 @@ def _calendars(
     if calendars.empty:
         return calendars, pd.Series(dtype=float), {}
     _require(calendars, raw.source, "CALENDAR", ["clndr_id"])
+    _unique(calendars, raw.source, "CALENDAR", "clndr_id")
     calendars = _ensure_cols(calendars.copy(), ["clndr_name", "day_hr_cnt", "week_hr_cnt", "clndr_data"])
     calendars["day_hr_cnt"] = to_number(calendars["day_hr_cnt"])
     work_calendars = {
@@ -1094,9 +1131,19 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
         tasks = tasks.merge(wbs[["wbs_id", *wbs_columns]], on="wbs_id", how="left")
     tasks[wbs_columns] = tasks[wbs_columns].fillna("")
 
-    duplicates = tasks["task_code"][tasks["task_code"].duplicated()].unique()
-    if len(duplicates):
-        inputs.warnings.append(f"{source}: duplicate task IDs {list(duplicates)[:5]}; history joins may be wrong")
+    # P6 does not write two activities of one project with one Activity ID; a merged or hand-made file
+    # can. Every analysis keys activities by Activity ID, so the first TASK row is kept and the others
+    # go, with their relationships, assignments and expenses (those follow the kept task_id).
+    repeated_rows = tasks["task_code"].duplicated(keep="first")
+    if repeated_rows.any():
+        repeated_codes = sorted(tasks.loc[repeated_rows, "task_code"].astype(str).unique())
+        inputs.left_out_task_ids.update(tasks.loc[repeated_rows, "task_id"].astype(str))
+        inputs.warnings.append(
+            f"{source}: Activity ID repeated in the project {repeated_codes[:5]} "
+            f"({int(repeated_rows.sum())} TASK row(s) after the first): the first row of each is kept; "
+            "the others, their relationships, assignments and expenses are left out"
+        )
+        tasks = tasks[~repeated_rows]
     return tasks
 
 
@@ -1153,6 +1200,15 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     # A predecessor with no TASK row is a link to another project (P6 exports the link, not
     # the other project's activities) or a corrupt link. Either way it is not logic that can
     # be scheduled; only the corrupt ones are reported.
+    of_left_out_rows = relationships["task_id"].astype(str).isin(inputs.left_out_task_ids) | relationships[
+        "pred_task_id"
+    ].astype(str).isin(inputs.left_out_task_ids)
+    if of_left_out_rows.any():
+        inputs.warnings.append(
+            f"{inputs.source}: {int(of_left_out_rows.sum())} relationship(s) of the TASK rows left out for a "
+            "repeated Activity ID; ignored by the schedule and the checks"
+        )
+    relationships = relationships[~of_left_out_rows]
     lost = relationships["succ_code"].isna() | relationships["pred_code"].isna()
     corrupt = lost & ~relationships["is_external"]
     if corrupt.any():
@@ -1198,7 +1254,7 @@ def _external_links(
         {
             "pred_code": outbound_links["pred_task_id"].map(own_code),
             "succ_code": outbound_links["task_id"].map(external_code),
-            "type": outbound_links["pred_type"].map(REL_TYPE),
+            "type": outbound_links["pred_type"].map(REL_TYPE).fillna(outbound_links["pred_type"]),
             "lag_hr": to_number(outbound_links["lag_hr_cnt"]).fillna(0.0),
             "direction": "out",
         }
@@ -1323,6 +1379,9 @@ def build_snapshot(
     project with the most activities is used and a warning is recorded. ``project_id``
     (PROJECT.proj_id) selects one exactly, over ``project_code``.
     """
+    if not raw.ended:
+        # the last row read may be cut and the tables after it lost: no number of it can be trusted
+        raise XerError(f"{raw.source}: incomplete file, no %E end line (still being copied, or cut short)")
     warnings = list(raw.warnings)  # appended to in the order the steps run: that order is observable
     projects = _project_table(raw, warnings)
     all_tasks = _task_table(raw, projects, warnings)
@@ -1362,6 +1421,17 @@ def build_snapshot(
         expenses = pd.DataFrame(columns=["task_id"])
     elif "proj_id" in expenses.columns:
         expenses = expenses[expenses["proj_id"] == inputs.project_id].copy()
+        # An expense of the project on a task it does not hold (P6 keeps PROJCOST with its task)
+        # would drop out of every cost total without a word; the rows left out for a repeated
+        # Activity ID are already reported.
+        orphan = ~expenses["task_id"].isin(tasks["task_id"]) & ~expenses["task_id"].astype(str).isin(
+            inputs.left_out_task_ids
+        )
+        if orphan.any():
+            inputs.warnings.append(
+                f"{raw.source}: {int(orphan.sum())} PROJCOST row(s) of the project on a task it does not hold; "
+                "their cost is left out"
+            )
     tasks["has_expense"] = tasks["task_id"].isin(expenses["task_id"])
     tasks["constraint"] = tasks["cstr_type"].map(CONSTRAINT).fillna(tasks["cstr_type"])
     code_values, task_codes = _activity_codes(raw, tasks)

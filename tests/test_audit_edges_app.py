@@ -414,8 +414,9 @@ def test_what_leaves_the_file_and_what_is_dropped(tmp_path):
         project={"proj_short_name": "ACME-PLANT"},
         header="23.12\t2026-03-02\tProject\tjsmith\tJohn Smith\tdb_prod",
     )
-    text += "%T\tUDFVALUE\n%F\tudf_type_id\tfk_id\tudf_text\n%R\t1\t1\tConfidential memo\n"
-    text += "%T\tTASKMEMO\n%F\tmemo_id\ttask_id\ttask_memo\n%R\t1\t1\t<html>budget overrun</html>\n"
+    extra = "%T\tUDFVALUE\n%F\tudf_type_id\tfk_id\tudf_text\n%R\t1\t1\tConfidential memo\n"
+    extra += "%T\tTASKMEMO\n%F\tmemo_id\ttask_id\ttask_memo\n%R\t1\t1\t<html>budget overrun</html>\n"
+    text = text.replace("%E", extra + "%E")  # before the end line: nothing after %E is read
     path = tmp_path / "ACME-PLANT_2026-03-02.xer"
     path.write_text(text, encoding="utf-8")
     raw = read_xer(path)
@@ -456,10 +457,11 @@ def test_check_on_missing_path_exits_two(tmp_path, capsys):
     assert "exit 2" in cli._expand.__doc__
 
 
-def test_standard_pointing_to_a_directory_is_refused(tmp_path):
+def test_standard_pointing_to_a_directory_is_refused(tmp_path, capsys):
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
-    with pytest.raises(SystemExit, match="unknown standard"):
+    with pytest.raises(SystemExit) as caught:
         cli.main(["check", str(tmp_path / "a.xer"), "--standard", str(tmp_path)])
+    assert caught.value.code == 2 and "unknown standard" in capsys.readouterr().err
 
 
 def test_standard_through_symlink_and_dotdot_loads(tmp_path):

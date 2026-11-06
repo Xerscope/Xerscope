@@ -240,14 +240,20 @@ def _elapsed(
 
 
 def schedule_pct(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
-    """P6 Schedule % Complete of each baseline activity at ``when`` (on the EV basis dates)."""
+    """P6 Schedule % Complete of each baseline activity at ``when`` (on the EV basis dates).
+
+    UNRESOLVED: the P6 Professional 26 help measures it on the baseline duration for Planned Value
+    Labor Units and up to the current Planned Finish for Planned Value Cost; the baseline finish is
+    used (docs/backlog.md, Earned value against Oracle P6)."""
     # unrounded: per-activity PV must sum to ev_point's PV; tables round on display
     return 100 * _elapsed(baseline.snapshot, baseline.frame, "ev_start", "ev_finish", "bl_clndr_id", when)
 
 
 def planned_value_cost(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
     """Planned Value Cost of each baseline activity at ``when``: its assignments one by one on their
-    own dates, the rest of its budget (expenses, no resource) on the activity's dates."""
+    own dates, the rest of its budget (expenses, no resource) on the activity's dates.
+
+    The activity's share runs to the baseline finish, as in ``schedule_pct`` (UNRESOLVED there)."""
     snapshot, frame, costs = baseline.snapshot, baseline.frame, baseline.assignment_costs
     by_assignment = costs["cost"] * _elapsed(
         snapshot, costs, "start", "finish", "clndr_id", when, PV_COST_WORKING_TIME

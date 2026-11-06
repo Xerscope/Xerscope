@@ -35,6 +35,13 @@ ont changé par décision du plan, pas par correction : `project_task_counts` es
 projet) et une durée restante négative ou non finie est lue 0 avec warning (était : propagée). Les 12 questions
 métier du §7 restent ouvertes.
 
+**Mise à jour après fusion de `main` (#128 à #136).** Le contrat de chargement de `main` (#133) a tranché
+autrement que la branche sur quatre constats : une table écrite deux fois, une colonne nommée deux fois
+(XER-01, XER-04), un `task_id` ou un `wbs_id` répété (XER-06, XER-07) sont désormais **refusés** (`XerError`)
+au lieu d'être gardés avec un warning ; un fichier sans `%E` est refusé ; un nombre infini et une date hors
+1900–2199 se lisent vides. Un Activity ID répété garde sa première ligne (#135). Les constats restent fermés,
+par refus plutôt que par réparation ; les tests d'audit vérifient le comportement de `main`.
+
 ## 1. Résumé exécutif
 
 État général : **sain**. La suite complète passe (1 363 tests, 40 skips expliqués), ruff/format propres, bandit

@@ -65,15 +65,24 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       right in most of the corpus, but P6 lets successors drive the late dates of some
       unstarted Mandatory Start / Finish activities (H12-09 A1330 under Progress
       Override, H25-03 A1180 against H10-05 A1180): letting successors drive under
-      Progress Override alone loses 678 values for 407. The deciding factor is not found.
+      Progress Override alone loses 678 values for 407. Factors found by
+      docs/deep-dive/engine-gaps.md (50 % of all corpus differences): P6 pins only a mandatory
+      date in the first slot, on unstarted work, with no expected finish in force; a second-slot
+      mandatory date is a floor / cap, work under way gets no late bound from it. Experiment 1
+      there names the witnesses; it is cheaper after the link and constraint tables
+      (docs/architecture/13-patterns-for-a-solo-developer.md, P1).
 - [ ] Free float of unstarted mandatory-constrained work: 0 in P6 for 538 of 570 values,
       positive here; the 32 positive ones differ from the engine's too (H23-08 A1220).
+- [ ] **Milestones with an expected finish** (new, 9.6 % of the differences): P6 sits a start or
+      finish milestone at max(logic, expected finish); `forward` applies the expected finish
+      to tasks only (H23-09 A1200, H26-11 A1370; docs/deep-dive/engine-gaps.md, experiment 2).
 - [ ] The corpus is synthetic, one generator, scheduled by 23.12: shapes it never draws
       are untested. No public 24 export exists; 23.12 and 25.12 bracket it.
 - [ ] Sub-minute durations and lags: `TimeAxis.at` rounds half minutes to even, so 7.5 min
       lands on 7 or 8 depending on the axis anchor (other activities' dates), and the two passes
       can round apart (negative float on an unconstrained network). The corpus draws whole
-      hours; how P6 rounds below the minute is undocumented.
+      hours; how P6 rounds below the minute is undocumented (granularity documented in cpm.md,
+      AUDIT-CPM-08).
 
 ## Checks and earned value
 
@@ -88,12 +97,26 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
         divides by every baseline activity, which xerscope follows. The r22.12 figure fits
         neither reading and is not explained.
 
+- [ ] **Earned value against a P6 output**: no EV number is pinned against P6 yet, only hand
+      calculations. docs/deep-dive/ev-gaps.md ranks the global changes (Schedule % Complete time
+      convention, which baseline values P6 reads, the WBS ETC technique, read but not applied)
+      and lists the P6 Activities export that would settle them (§6).
 - [ ] **Earned value against Oracle P6** (pages under docs.oracle.com/cd/F88968_01/client_help/en_US/):
       - PV: Labor Units: per activity (Pro 26 glossary); Cost: per assignment (Pro 26 glossary),
         implemented for the cost SPI (`planned_value_cost`). The date difference of that
         formula is taken in working time (assumed, unverified); `PV_COST_WORKING_TIME`
         switches to calendar time if a P6 Professional report contradicts it.
       - Manual future-period buckets are not modelled.
+      - Schedule % Complete: which finish? The P6 Professional 26 help (G57535-02, glossary)
+        gives two. Planned Value Labor Units: "how much of the activity's baseline duration has
+        been completed" (baseline finish). Planned Value Cost, activity without resources:
+        "(Data date - Baseline Start) / (Planned Finish - Baseline Start)" (current planned
+        finish). `schedule_pct` and the activity part of `planned_value_cost` use the baseline
+        finish (`ev_finish`). To settle: a P6 Activities export with "Planned Value Labor Units",
+        BL start / finish and Planned Finish, on an update whose Planned Finish has moved from
+        the baseline finish (no resource curve, data date inside both spans), compared with
+        `xerscope pv-compare UPDATE.xer --baseline BL.xer --p6 export.csv` (a separate
+        baseline file: with `--planned-baseline` the two finishes are the same date).
       - BAC, PV and EV cost are modelled (cost SPI); Actual Cost, CPI (cost) and EAC (cost) are
         not: AC, CPI and EAC stay in labour hours.
       - Cost uses the budgeted values (`target_cost`) whatever the EV basis.
@@ -120,6 +143,9 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 
 ## App
 
+- [ ] Visual campaign leftovers (visual-debug-report.md): tap targets under 44 px on phones
+      (Streamlit theme sizes); author decisions on the "Task history (to be removed)" page, one
+      date format, the Method / Source texts, French demo data, the SPI delta "+0.00".
 - [ ] Not reachable by AppTest: the upload path (`file_uploader`) and a WBS row selection
       (`on_select`); both are checked by hand before a release.
 - [ ] Baseline file: the sidebar re-hashes its bytes on every rerun (`_parse` key);
@@ -133,10 +159,11 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Display rounding: a value beside its status can contradict it (P6-13 at 0.9545 shows
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
-- [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
+- [ ] CSV downloads: the page downloads write floats to four decimals (#119); the Power BI
+      CSVs (`export.py`) still write raw float digits, and dates come in two formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
-      fields without a warning; coerced numbers and dates are not counted in the warnings; a
-      duplicate task_id raises a pandas error. None in the 394 reference files.
+      fields without a warning (a longer row is warned, a shorter one is padded silently); coerced
+      numbers and dates are not counted in the warnings. None in the 394 reference files.
 
 ## Deployment and CI
 
@@ -144,14 +171,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       Hub login step now conditioned on a job-level secret; the tailscale state folder is
       a bind mount writable by uid 65532; the hardened sidecars (`cap_drop`, Caddy
       read-only) still start.
-- [ ] Tailscale in `deploy/compose.yaml` and the two caddy bases of `deploy/caddy/Dockerfile`
-      pinned by tag, not digest (the app's Dockerfile is): `docker buildx imagetools
-      inspect` each tag once and write `@sha256:` after it (Dependabot keeps tag and digest
-      together).
+- [ ] Tailscale in `deploy/compose.yaml` pinned by tag, not digest (the app's Dockerfile and the
+      two caddy bases are): `docker buildx imagetools inspect` the tag once and write `@sha256:`
+      after it (Dependabot keeps tag and digest together).
 - [ ] Verify on the NAS: the `xerscope-caddy` image starts with the capabilities of
       `deploy/compose.yaml` (cap_drop ALL + NET_BIND_SERVICE, like the stock image), and a
       wrong password in a loop from a PC ends in 429.
-- [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
+- [ ] Caddy image: Trivy findings accepted until 2026-12-02 (one entry left in the file today) (`deploy/caddy.trivyignore.yaml`,
       none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
       Caddy release that fixes them, or renew each entry with its reason.
 - [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
@@ -163,24 +189,36 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       into a memory cost against Caddy's 256 MB cap.
 - [ ] One login shared by every visitor: one `basic_auth` account each would let one be
       revoked, and told apart in the log, alone.
-- [ ] The published image carries no SBOM attestation and no signature: `sbom: true` and a
-      keyless cosign step in `image.yml` (verified from a PC; Container Manager checks none).
+- [ ] The published image carries provenance and SBOM attestations (`image.yml`, SLSA L2) but no
+      image signature: a keyless cosign step would add one (verified from a PC; Container
+      Manager checks none). First run on `main`: check that `push-to-registry` succeeds on GHCR.
+- [ ] Type annotations are not checked: `mypy` reports 63 inconsistencies in 16 files (risk R1,
+      docs/maintenance.md §0): fix, then make it blocking in the lint job.
+- [ ] Bus factor 1 (risk R2, docs/maintenance.md §0): access inventory, second owner on GitHub
+      and Tailscale, a recovery runbook and one drill.
 - [ ] The container job in CI starts the app image but opens no page: an AppTest-like
       request through the published port would catch a broken runtime.
 
 ## Structure (only once the above is done, at constant output)
 
-- [ ] Complexity hotspots still above 10 (`ruff check src --select C901`): `parse_text` 17,
-      `build_gantt` 16, and in the CPM `pred_bounds`, `forward`, `successor_limits`, `backward`,
-      `longest_path`; `sample.py` (`_cpm`, `_progress`, `generate`). CPM internals and
-      `sample.py` are left as they are.
-- [ ] Duplications: `set_index("task_code")` in 13 places where `Snapshot.by_code` could
+- [ ] Complexity hotspots still above 10 (`ruff check src --select C901`, Nov 2026): in the CPM
+      `successor_limits` 16, `forward`, `backward`, `level_of_effort`, `_loop_members` 13,
+      `pred_bounds`, `longest_path`, `_network` 12; the parser's `_Reader.run` 14 (the old
+      `parse_text` is gone); `anonymize.py` `table` 13, `frame` 12; `state.sidebar_loader` 12;
+      `standards._parse_metric` 12; `sample.py` `_cpm` 18, `_progress` 14.
+- [ ] Duplications: `set_index("task_code")` in 16 places where `Snapshot.by_code` could
       serve; three changelog row builders (`_change`, `assignment_change`,
       `relationship_change`).
 - [ ] Computations still inside `app/views` (changelog, health, ppc, gantt): pure
-      functions per page would be testable without AppTest. One cache policy
-      (`_parse` and `memo`, both in session state).
+      functions per page would be testable without AppTest (architecture/13, P3). One cache
+      policy (`_parse` and `memo`, both in session state). `app/state.py` is 1,538 lines:
+      split it behind its current names (P2).
 - [ ] `cpm.py`: the status × link × lag × option cases are spread over four methods; a
-      table read by both passes would make each cell a test.
+      table read by both passes would make each cell a test (architecture/13, P1: link,
+      constraint and placement tables, at constant output, before the mandatory-date experiment).
 - [ ] `tests/test_p6_heldout.py` is four of the suite's seven minutes: score the sets in
       parallel.
+- [ ] Test rigour (docs/deep-dive/tests-review.md): 20 stricter tests to write (exact
+      boundaries at each target, dates equal to the data date, the generic rules of a custom
+      standard); mutation scores to redo on `calendar.py` and `standards.py`; `FLOORS` H10 can
+      rise from 0.96 to 0.97.

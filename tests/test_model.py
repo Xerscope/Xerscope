@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from xerkit import active, done, snap, todo, with_second_project, xer_text
+from xerkit import active, done, snap, todo, xer_text
 
 from xerscope.xer import HEADER_TABLES, XerError, build_snapshot, parse_text, read_header, read_xer, xer_files
 
@@ -32,6 +32,113 @@ def test_wbs_path(store):
     assert t.loc["E1010", "wbs_sort"] < t.loc["P2010", "wbs_sort"] < t.loc["C3010", "wbs_sort"]
 
 
+# --- WBS paths: every lookup goes by wbs_id ----------------------------------------------------
+
+
+def _node(wbs_id, parent, *, seq="1", root="N", proj="1", short=None):
+    return {
+        "wbs_id": wbs_id,
+        "proj_id": proj,
+        "wbs_short_name": short or wbs_id,
+        "wbs_name": f"name {wbs_id}",
+        "proj_node_flag": root,
+        "parent_wbs_id": parent,
+        "seq_num": seq,
+    }
+
+
+def _wbs_paths(nodes, task_wbs=()):
+    """wbs_id -> (wbs_code, wbs_l1, wbs_sort) of the snapshot built on ``nodes``."""
+    tasks = [todo(f"T{i}", wbs_id=w) for i, w in enumerate(task_wbs)] or [todo("T0")]
+    s = build_snapshot(parse_text(xer_text(tasks, wbs=nodes), source="w.xer"))
+    return {row.wbs_id: (row.wbs_code, row.wbs_l1, row.wbs_sort) for row in s.wbs.itertuples()}, s
+
+
+def test_wbs_path_goes_by_id_not_by_short_name():
+    """Three nodes share one short name, as P6 allows under different parents: each path is built
+    from the node's own id up, so B (child of A) is S.S and C (child of the root) is S."""
+    paths, _ = _wbs_paths(
+        [_node("R", "", root="Y"), _node("A", "R", short="S"), _node("B", "A", short="S"), _node("C", "R", short="S")]
+    )
+    assert paths["A"] == ("S", "S · name A", "000001")
+    assert paths["B"] == ("S.S", "S · name A", "000001.000001")
+    assert paths["C"] == ("S", "S · name C", "000001")
+
+
+def test_wbs_path_stops_at_the_project_node_and_sorts_by_seq_num():
+    """The project node (proj_node_flag Y) is not part of the path; siblings sort by seq_num, so
+    Z (seq 1) comes before A (seq 2) whatever their names."""
+    paths, _ = _wbs_paths([_node("R", "", root="Y"), _node("Z", "R", seq="1"), _node("A", "R", seq="2")])
+    assert paths["R"] == ("", "", "")
+    assert paths["Z"][2] < paths["A"][2]
+
+
+@pytest.mark.parametrize(
+    ("case", "nodes", "expected"),
+    [
+        (
+            "parent not in the file: the path stops at the last known node",
+            [_node("R", "", root="Y"), _node("A", "GONE"), _node("B", "A")],
+            {"A": "A", "B": "A.B"},
+        ),
+        (
+            "parent in another project: not followed",
+            [_node("R", "", root="Y"), _node("X", "", proj="2"), _node("A", "X")],
+            {"A": "A"},
+        ),
+        (
+            "no project node: the path runs to the top",
+            [_node("A", ""), _node("B", "A"), _node("C", "B")],
+            {"A": "A", "B": "A.B", "C": "A.B.C"},
+        ),
+        (
+            "a node its own parent: one step, the walk does not spin",
+            [_node("R", "", root="Y"), _node("A", "A")],
+            {"A": "A"},
+        ),
+        (
+            "two nodes each the other's parent: the walk stops on the first node seen twice",
+            [_node("R", "", root="Y"), _node("A", "B"), _node("B", "A")],
+            {"A": "B.A", "B": "A.B"},
+        ),
+    ],
+)
+def test_wbs_path_on_a_damaged_tree(case, nodes, expected):
+    """P6 writes a tree under one project node; a hand-edited file may not. Each shape ends, in a
+    path built from the ids that exist, and never reads a node of another project."""
+    paths, _ = _wbs_paths(nodes)
+    assert {wbs_id: paths[wbs_id][0] for wbs_id in expected} == expected, case
+
+
+def test_a_wbs_loop_is_named_in_the_warnings():
+    """P6 refuses a hierarchy loop (Oracle error reference PRM 009009044: "You cannot create a
+    hierarchy loop"), so a loop comes from a damaged or hand-edited file. Its paths are then
+    made up (A shows under B and B under A, neither under the project) and so are the groupings
+    by top level: the loop is named, the file still loads. None of the 394 reference exports has one."""
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "B"), _node("B", "A"), _node("C", "R")])
+    assert [w for w in s.warnings if "WBS" in w] == [
+        "w.xer: WBS loop through ['A', 'B']: their paths and top levels are not reliable"
+    ]
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "A")])  # its own parent: a loop of one
+    assert [w for w in s.warnings if "WBS" in w] == [
+        "w.xer: WBS loop through ['A']: their paths and top levels are not reliable"
+    ]
+    # a node leading into the loop is not part of it: only A and B are named
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "B"), _node("B", "A"), _node("D", "A")])
+    assert [w for w in s.warnings if "WBS" in w] == [
+        "w.xer: WBS loop through ['A', 'B']: their paths and top levels are not reliable"
+    ]
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "R"), _node("B", "A")])
+    assert not [w for w in s.warnings if "WBS" in w]
+
+
+def test_an_activity_on_an_unknown_wbs_gets_no_path():
+    """TASK.wbs_id naming no PROJWBS row: blank path, the activity is kept."""
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "R")], task_wbs=["A", "NOPE"])
+    t = s.tasks.set_index("task_code")
+    assert t.loc["T0", "wbs_code"] == "A" and t.loc["T1", "wbs_code"] == "" and len(t) == 2
+
+
 def test_relationships_use_codes_and_days(store):
     r = store.first.relationships
     lead = r[(r["pred_code"] == "E1040") & (r["succ_code"] == "E1050")].iloc[0]
@@ -57,6 +164,7 @@ def test_blank_data_date_falls_back_to_planned_start():
         "%R\t1\tP\t\t2026-09-01 08:00\n"
         "%T\tTASK\n%F\ttask_id\tproj_id\ttask_code\ttask_name\ttask_type\tstatus_code\n"
         "%R\t1\t1\tA\tA\tTT_Task\tTK_NotStart\n"
+        "%E\n"
     )
     s = build_snapshot(parse_text(xer))
     assert s.data_date == pd.Timestamp("2026-09-01 08:00")
@@ -201,7 +309,8 @@ def test_task_without_proj_id_takes_the_only_project():
 
 
 def test_task_without_proj_id_and_several_projects_raises():
-    text = with_second_project(_linked_text(), "P2", ["X"], "2026-03-02 08:00")
+    project_row = next(line for line in _linked_text().split("\n") if line.startswith("%R\t1\tT\t"))
+    text = _linked_text().replace(project_row, f"{project_row}\n%R\t2\tU", 1)  # a second project, no task
     with pytest.raises(XerError, match=r"t\.xer.*TASK.*proj_id"):
         build_snapshot(parse_text(drop_column(text, "TASK", "proj_id"), source="t.xer"))
 

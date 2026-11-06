@@ -412,16 +412,22 @@ def _schedules_or_typed_error(s: Snapshot, members: tuple[str, ...]) -> None:
     assert s.warnings and sch.frame["ef"].notna().all()
 
 
-def test_infinite_remaining_duration_is_a_typed_error():
-    _schedules_or_typed_error(snap([todo("A", remain_drtn_hr_cnt="inf"), todo("B")], [("A", "B", "FS", 0)]), ("A",))
+def test_infinite_remaining_duration_reads_as_blank_and_schedules():
+    """AUDIT-CPM-01: an infinite number reads as blank on load (#133), so the engine never sees it."""
+    s = snap([todo("A", remain_drtn_hr_cnt="inf"), todo("B")], [("A", "B", "FS", 0)])
+    assert pd.isna(s.tasks.set_index("task_code").at["A", "remain_drtn_hr_cnt"])
+    assert schedule(s).frame["ef"].notna().all()
 
 
 def test_huge_remaining_duration_is_a_typed_error():
     _schedules_or_typed_error(snap([todo("A", remain_drtn_hr_cnt="1e9")]), ("A",))
 
 
-def test_infinite_lag_is_a_typed_error():
-    _schedules_or_typed_error(snap([todo("A"), todo("B")], [("A", "B", "FS", "inf")]), ("A", "B"))
+def test_infinite_lag_reads_as_zero_and_schedules():
+    """AUDIT-CPM-01: an infinite lag reads as blank on load (#133), then 0."""
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", "inf")])
+    assert s.relationships["lag_hr"].tolist() == [0.0]
+    assert schedule(s).frame["ef"].notna().all()
 
 
 def test_huge_assignment_duration_is_a_typed_error():
