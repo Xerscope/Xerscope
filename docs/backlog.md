@@ -94,6 +94,16 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
         formula is taken in working time (assumed, unverified); `PV_COST_WORKING_TIME`
         switches to calendar time if a P6 Professional report contradicts it.
       - Manual future-period buckets are not modelled.
+      - Schedule % Complete: which finish? The P6 Professional 26 help (G57535-02, glossary)
+        gives two. Planned Value Labor Units: "how much of the activity's baseline duration has
+        been completed" (baseline finish). Planned Value Cost, activity without resources:
+        "(Data date - Baseline Start) / (Planned Finish - Baseline Start)" (current planned
+        finish). `schedule_pct` and the activity part of `planned_value_cost` use the baseline
+        finish (`ev_finish`). To settle: a P6 Activities export with "Planned Value Labor Units",
+        BL start / finish and Planned Finish, on an update whose Planned Finish has moved from
+        the baseline finish (no resource curve, data date inside both spans), compared with
+        `xerscope pv-compare UPDATE.xer --baseline BL.xer --p6 export.csv` (a separate
+        baseline file: with `--planned-baseline` the two finishes are the same date).
       - BAC, PV and EV cost are modelled (cost SPI); Actual Cost, CPI (cost) and EAC (cost) are
         not: AC, CPI and EAC stay in labour hours.
       - Cost uses the budgeted values (`target_cost`) whatever the EV basis.
