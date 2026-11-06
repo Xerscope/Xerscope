@@ -244,9 +244,9 @@ def show_history(store, task_code: str) -> None:
     dates_column, float_column = st.columns(2, gap="large")
     with dates_column:
         ui.section("Forecast start and finish")
-        st.plotly_chart(build_activity_dates(history), width="stretch")
+        ui.chart(build_activity_dates(history))
     with float_column:
         ui.section("Total float (working days)")
-        st.plotly_chart(build_activity_float(history), width="stretch")
+        ui.chart(build_activity_float(history))
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history")

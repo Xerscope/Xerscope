@@ -26,6 +26,10 @@ STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "compl
 NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
 # Decoration (app/style.css, through CSS light-dark()), one per theme: the theme's linkColor.
 ACCENT = {"light": "#1d6a73", "dark": "#6cc0c9"}
+# The theme's textColor, for the hover text (app/ui.py: chart): Streamlit's Plotly theme fades it.
+TEXT = {"light": "#1c1917", "dark": "#ece9e4"}
+MIN_DATE_SPAN = pd.Timedelta(days=14)  # a date axis narrower than this is widened by DATE_PAD each side
+DATE_PAD = pd.Timedelta(days=7)
 LINE = 1.5  # data line width, px
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
@@ -377,10 +381,16 @@ def build_activity_dates(history: pd.DataFrame) -> go.Figure:
     fig = _layout(fig, 380, "Forecast date")
     fig.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
-    if pd.notna(low) and high - low < pd.Timedelta(days=14):
-        # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
-        fig.update_yaxes(range=[low - pd.Timedelta(days=7), high + pd.Timedelta(days=7)])
+    # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
+    _widen_dates(fig.update_yaxes, low, high)
     return fig
+
+
+def _widen_dates(update_axis, low, high) -> None:
+    """A date axis of less than MIN_DATE_SPAN (one update, a date that never moves) gets DATE_PAD
+    each side: zoomed to the hour, Plotly would repeat the same day label on every tick."""
+    if pd.notna(low) and pd.notna(high) and high - low < MIN_DATE_SPAN:
+        update_axis(range=[low - DATE_PAD, high + DATE_PAD])
 
 
 def build_activity_float(history: pd.DataFrame) -> go.Figure:
@@ -417,6 +427,9 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
     fig = _layout(fig, 380, "Forecast finish", legend=False)
     fig.update_yaxes(**DATE_AXIS)
     fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
+    if len(updates):  # one update: both axes would zoom on a point
+        _widen_dates(fig.update_xaxes, updates["data_date"].min(), updates["data_date"].max())
+        _widen_dates(fig.update_yaxes, updates["forecast_finish"].min(), updates["forecast_finish"].max())
     return fig
 
 

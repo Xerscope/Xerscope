@@ -302,7 +302,7 @@ def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_di
 
 def _costed_week(tmp_path, cost: str = "5000"):
     """A (cost 5000, 50 % complete) over Mon-Fri, data date Wednesday 08:00: PV cost 5000 x 0.4 = 2000,
-    EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
+    EV cost 5000 x 0.5 = 2500, SPI 1.25; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
     A second assignment without cost makes the count 1 of 2."""
     week = dict(
         target_start_date="2026-03-02 08:00",
@@ -331,14 +331,14 @@ def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
     _costs(at, True)
-    assert next(m for m in at.metric if m.label == "SPI").value == "1.250"
+    assert next(m for m in at.metric if m.label == "SPI").value == "1.25"
     assert not any("Costs ignored" in text for text in _caption_texts(at))
     table = _ev_table(at)
     assert table.loc["BAC cost"].iloc[-1] == "5,000.0"
     assert table.loc["PV cost"].iloc[-1].startswith("2,000.0")
     assert table.loc["EV cost"].iloc[-1].startswith("2,500.0")
     assert table.loc["SPI", "P6 column"] == "Schedule Performance Index"
-    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.250"
+    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.25"
 
 
 def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monkeypatch):
@@ -347,7 +347,7 @@ def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monk
     at.switch_page("views/earned_value.py").run()
     _ok(at)
     labour = next(m for m in at.metric if m.label == "SPI (labor units)")
-    assert labour.value == "1.250"
+    assert labour.value == "1.25"
     assert [m.label for m in at.metric].index("SPI (labor units)") == 2
     assert (
         "Costs ignored: 1 of 2 assignments carry a cost in the file (resource prices). "
@@ -440,8 +440,8 @@ def test_ev_calculation_rows_add_up_as_shown(app):
         if shown["SPI (labor units)"].endswith("–"):
             continue
         ev, pv, spi = numbers["SPI (labor units)"]
-        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
-        assert spi == pytest.approx(ev / pv, abs=0.001), label
+        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 2  # SPI to 2 decimals, as BEI and EV / AC
+        assert spi == pytest.approx(ev / pv, abs=0.005), label
 
 
 def test_changelog_and_ppc_pick_weeks(app):
@@ -1599,3 +1599,79 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     _ok(at)
     assert not any("12 · App runtime" in e.label for e in at.expander)
     assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 11
+
+
+# --- visual defects (Playwright campaign): what AppTest can see of each fix --------------------
+
+
+def test_audit_lists_every_standard_in_one_full_width_control(app):
+    """The segmented control stood in a narrow column and cut its labels: it is on a row of its
+    own, the Update and Check pickers under it."""
+    app.switch_page("views/audit.py").run()
+    _ok(app)
+    control = app.get("button_group")[0]
+    assert control.proto.label == "Standard"
+    names = [o.content for o in control.proto.options]
+    assert len(names) == 4 and "P6 Check Schedule" in names and "Integrity" in names
+
+
+def test_earned_value_vac_delta_starts_with_its_sign_and_indices_read_to_two_decimals(app):
+    """st.metric colours a delta by the sign it starts with: "VAC -648 h" read as a gain."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    metrics = {m.label: m for m in app.metric}
+    assert re.fullmatch(r"[+-][\d,]+ h", metrics["EAC"].delta), metrics["EAC"].delta
+    assert "VAC" in metrics["EAC"].proto.help
+    assert re.fullmatch(r"\d\.\d\d", metrics["SPI (labor units)"].value)
+    assert re.fullmatch(r"[+-]\d\.\d\d", metrics["SPI (labor units)"].delta)
+    series = next(d.value for d in app.dataframe if "spi" in d.value.columns)
+    assert series["spi"].iloc[0] == "–" and re.fullmatch(r"\d\.\d\d", series["spi"].iloc[-1])
+    assert "None" not in series.astype(str).to_numpy()
+
+
+def test_gantt_table_view_writes_a_dash_for_a_missing_float_and_shrinks_to_its_rows(app):
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    table = next(d.value for d in app.dataframe if "total_float_d" in d.value.columns)
+    assert "–" in set(table["total_float_d"]) and "None" not in table.astype(str).to_numpy()
+    data = _gantt_data(app)
+    opened = [r for r in data["rows"] if r["parent"] is None or r["parent"] in data["open"]]
+    assert len(opened) < 20 and data["height"] < 680  # a short tree takes less than the cap
+
+
+def test_charts_hide_the_plotly_mode_bar(app):
+    for page in ("views/overview.py", "views/earned_value.py", "views/ppc.py"):
+        app.switch_page(page).run()
+        _ok(app)
+        for chart in app.get("plotly_chart"):
+            assert json.loads(chart.proto.config) == {"displayModeBar": False}, page
+            assert "hoverlabel" in json.loads(chart.proto.spec)["layout"], page
+
+
+def test_health_names_each_group_once_and_offers_one_prepare_button(app):
+    app.switch_page("views/health.py").run()
+    _ok(app)
+    titles = [m.value for m in app.markdown if m.value.startswith("##### ")]
+    assert titles and len(titles) == len(set(titles)), titles
+    assert [b.label for b in app.button].count("Prepare anonymized downloads") == 1
+
+
+def test_changelog_offset_buttons_are_drawn_as_buttons(app):
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    for text in ("Previous", "4 back", "First"):
+        assert app.button(key=f"cl_from_{text}").proto.type == "secondary"
+
+
+def test_milestone_page_title_is_the_navigation_entry(app):
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    assert [t.value for t in app.title] == ["Milestone trend"]
+
+
+def test_score_cards_carry_the_whole_list_of_failed_checks_in_their_help(app):
+    app.switch_page("views/health.py").run()  # computes the P6 results
+    app.switch_page("views/overview.py").run()
+    _ok(app)
+    card = next(m for m in app.metric if m.label == "P6 Check Schedule score")
+    assert "evaluated" in card.delta and card.delta in card.proto.help.replace("\\", "")
