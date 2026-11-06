@@ -210,6 +210,14 @@ def _require(frame: pd.DataFrame, source: str, table: str, columns: list[str]) -
             raise XerError(f"{source}: table {table} has no column {column}")
 
 
+def _warn_unknown_codes(codes: pd.Series, known: dict, column: str, reading: str, warnings: list[str]) -> None:
+    """One warning per value of ``codes`` that is not in ``known``, with its row count."""
+    for code, count in codes[~codes.isin(known)].value_counts().sort_index().items():
+        name = repr(code) if code else "blank"
+        rows = "1 row" if count == 1 else f"{count} rows"
+        warnings.append(f"{column} {name} is not a P6 code ({rows}): {reading}")
+
+
 def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
     """TASK with the identity columns checked; a missing proj_id is the file's only project."""
     tasks = raw.table("TASK")
@@ -974,6 +982,7 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     tasks["type"] = tasks["task_type"].map(TASK_TYPE).fillna(tasks["task_type"])
     tasks["is_complete"] = tasks["status_code"] == "TK_Complete"
     tasks["is_started"] = tasks["status_code"] != "TK_NotStart"
+    _warn_unknown_codes(tasks["status_code"], STATUS, f"{source}: TASK.status_code", "read as started", inputs.warnings)
     tasks["is_start_milestone"] = tasks["task_type"].isin(START_MILESTONES)
     tasks["is_milestone"] = tasks["is_start_milestone"] | (tasks["task_type"] == "TT_FinMile")
     if (tasks["task_type"] == "TT_StartMile").any():

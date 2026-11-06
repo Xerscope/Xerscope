@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from xerkit import active, snap, todo, xer_text
+from xerkit import active, done, snap, todo, xer_text
 
 from xerscope.xer import HEADER_TABLES, XerError, build_snapshot, parse_text, read_header, read_xer, xer_files
 
@@ -413,3 +413,17 @@ def test_a_file_without_activity_codes_has_none():
     s = snap([todo("A")])
     assert s.code_values.empty and s.task_codes.empty
     assert s.tasks_with_codes("Zone", ["7000"]) == set()
+
+
+@pytest.mark.parametrize(("code", "name"), [("", "blank"), ("TK_Suspended", "'TK_Suspended'")])
+def test_unknown_status_code_warns_and_reads_as_started(code, name):
+    s = snap([todo("A", status_code=code), todo("B", status_code=code), todo("C")])
+    assert [w for w in s.warnings if "status_code" in w] == [
+        f"test.xer: TASK.status_code {name} is not a P6 code (2 rows): read as started"
+    ]
+    assert s.tasks.set_index("task_code")["is_started"].to_dict() == {"A": True, "B": True, "C": False}
+
+
+def test_p6_status_codes_do_not_warn():
+    s = snap([todo("A"), active("B"), done("C")])
+    assert not [w for w in s.warnings if "not a P6 code" in w]
