@@ -1645,16 +1645,34 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         snapshot.calendar(target["clndr_id"]), base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date()
     )
     shift = axis.between(base_finish, delayed_finish) / 60
-    # The finish must move by the whole delay. It can move further when the path crosses
-    # calendars with other non-working days (measured here on the delayed activity's
-    # calendar); moving less means a constraint or broken logic absorbed part of it.
-    passed = shift >= delay_hours - 1e-6
+    # The finish must move by the whole delay, measured on the delayed activity's calendar. It
+    # can move further when the path crosses calendars with other non-working days; it can also
+    # read less for the same reason (the window of the move holds non-working days of that
+    # calendar the downstream path does not observe), so the proportion is also read in calendar
+    # days: the finish must move at least as much as the delayed activity's own finish did.
+    # Less on both readings means a constraint, an expected finish or broken logic absorbed it.
+    own_move = late.frame.at[code, "ef"] - base.frame.at[code, "ef"]
+    end_move = delayed_finish - base_finish
+    passed = shift >= delay_hours - 1e-6 or end_move >= own_move
     note = (
         f"+{delay_days:g} wd on {code}: forecast finish {base_finish:%Y-%m-%d} -> {delayed_finish:%Y-%m-%d}, "
         f"moved {shift / hours_per_day:+.1f} wd"
         + ("" if passed else f" instead of {delay_days:+g}")
         + (" (more: the path crosses other calendars' non-working days)" if shift > delay_hours + 1e-6 else "")
     )
+    if shift < delay_hours - 1e-6:
+        # fewer working days than the delay on the delayed activity's calendar: say what the project
+        # calendar and the calendar days read, so a calendar effect is told from an absorbed delay
+        project = snapshot.calendar()
+        project_axis = TimeAxis(project, base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date())
+        project_shift_wd = (
+            project_axis.between(base_finish, delayed_finish) / 60 / (project.hours_per_day or hours_per_day)
+        )
+        note += (
+            f" ({project_shift_wd:+.1f} wd on the project calendar; {end_move.days:+d} calendar days against "
+            f"{own_move.days:+d} for {code}'s own finish"
+            + (": a calendar effect, the whole delay reached the finish)" if passed else ")")
+        )
     blocking = []
     if not passed:
         # only open work can absorb a delay: a finished activity's mandatory date is history

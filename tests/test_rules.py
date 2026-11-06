@@ -582,6 +582,31 @@ def test_critical_path_test_names_the_expected_finish_that_absorbs_the_delay():
     assert r.flagged.iloc[0]["absorbed_wd"] == 10
 
 
+def test_critical_path_test_reads_the_proportion_in_calendar_days_across_calendars():
+    """A runs on a calendar with a week off (Mon 3 to Fri 7 Jul 2028) that falls after A's own delayed
+    finish and before the project's: measured on A's calendar the finish moves +595 wd, on the project
+    calendar +599, yet nothing absorbed the delay: the project finish moved as many calendar days as
+    A's own finish. The test passes and says why."""
+    from datetime import date
+
+    from xerkit import clndr_data
+
+    first_day_off = (date(2028, 7, 3) - date(1899, 12, 30)).days  # Excel serial, as P6 stores exception days
+    week_off = tuple(first_day_off + k for k in range(5))
+    calendar = {
+        "clndr_id": "11", "clndr_name": "week off", "day_hr_cnt": "8", "week_hr_cnt": "40",
+        "clndr_data": clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], week_off),
+    }  # fmt: skip
+    b = todo("B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00")
+    s = snap(
+        [dict(CHAIN[0], clndr_id="11"), b, CHAIN[2]], [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], calendars=[calendar]
+    )
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "pass"
+    assert "moved +595.0 wd (+599.0 wd on the project calendar; +840 calendar days against +840" in r.note
+    assert "a calendar effect, the whole delay reached the finish" in r.note
+
+
 def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     # a finished activity cannot absorb a delay: its mandatory date is not listed
     chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]
