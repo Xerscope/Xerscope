@@ -25,15 +25,19 @@ from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
     XER_SUFFIXES,
     FileHeader,
+    RawXer,
     Snapshot,
     XerError,
     baseline_copies,
+    is_pmxml,
+    list_baselines,
     load_header,
     load_snapshot,
     xer_files,
 )
 from xerscope.xer.model import HEADER_TABLES, read_header
 from xerscope.xer.parser import parse_bytes
+from xerscope.xer.pmxml import read_pmxml_baseline
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
@@ -658,19 +662,41 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         return None
     if choice != BL_FILE:
         return Baseline.from_snapshot(store.by_label(choice), basis)
-    source = None if _data_locked() else st.session_state.get("bl_file")
-    if source is None and env_path and Path(env_path).is_file():
-        source = (Path(env_path).name, Path(env_path).read_bytes())
+    source = _baseline_file_source(env_path)
     if source is not None:
         st.session_state["baseline_digest"] = hashlib.sha256(source[1]).hexdigest()
     if source is None:
-        sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
+        sidebar.caption("Upload the baseline XER (or P6 XML), or pick one of the loaded snapshots.")
         return None
     try:
-        return Baseline.from_snapshot(_parse(*source), basis)
+        # a P6 XML export holds the baselines themselves: the one the latest update names, if it is there
+        pointer = _xml_baseline_id(source, store.latest.file_baseline.proj_id)
+        snapshot = _parse(*source, project_id=pointer)
     except XerError as exc:
         sidebar.error(f"Baseline not read: {exc}")
         return None
+    if is_pmxml(source[1]):
+        sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)} (project {snapshot.project_id})")
+    return Baseline.from_snapshot(snapshot, basis)
+
+
+def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes] | None:
+    """The separate baseline file: the one uploaded in the window, else XERSCOPE_BASELINE's."""
+    source = None if _data_locked() else st.session_state.get("bl_file")
+    env_path = os.environ.get("XERSCOPE_BASELINE", "") if env_path is None else env_path
+    if source is None and env_path and Path(env_path).is_file():
+        source = (Path(env_path).name, Path(env_path).read_bytes())
+    return source
+
+
+def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | None:
+    """For a P6 XML baseline file: ``pointer`` (an update's sum_base_proj_id) when the file holds that
+    baseline, else None (the file's Project Baseline is read). None for an XER file."""
+    name, data = source
+    if not pointer or not is_pmxml(data):
+        return None
+    baselines, _ = list_baselines(data, name)
+    return pointer if pointer in {b.object_id for b in baselines} else None
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
@@ -686,16 +712,19 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
 
 
 def _fallback_options(store: SnapshotStore) -> list[str]:
-    """What an update whose file has no usable baseline can be measured against. No separate file on
-    a locked server: it could only be uploaded."""
-    return ([] if _data_locked() else [BL_FILE]) + store.labels + [BL_PLANNED, BL_NONE]
+    """What an update whose file has no usable baseline can be measured against. A separate file on a
+    locked server only when XERSCOPE_BASELINE names one (nothing can be uploaded there)."""
+    file_choice = not _data_locked() or Path(os.environ.get("XERSCOPE_BASELINE", "")).is_file()
+    return ([BL_FILE] if file_choice else []) + store.labels + [BL_PLANNED, BL_NONE]
 
 
 def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
     """What an update whose file has no usable baseline is measured against: chosen, never imposed."""
     choice = st.session_state["bl_fallback"]
     st.session_state["fallback_choice"] = choice
-    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, "")
+    # the separate file: uploaded, else named by XERSCOPE_BASELINE (a locked server has only that one)
+    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, env_path)
 
 
 def _source_kind(snapshot: Snapshot) -> str:
@@ -869,7 +898,13 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
 def _baseline_options(store: SnapshotStore, env_path: str) -> tuple[list[str], str]:
     """The choices of "Baseline (BL)" and the default one. A separate file is offered when it can be
     had: uploaded, or named by XERSCOPE_BASELINE on a locked server."""
-    in_files = any(snapshot.file_baseline.usable for snapshot in store)
+    # an update's own baseline: in its file, or in a P6 XML baseline file holding the one its file names
+    source = _baseline_file_source(env_path)
+    in_files = any(
+        snapshot.file_baseline.usable
+        or (source is not None and _xml_baseline_id(source, snapshot.file_baseline.proj_id) is not None)
+        for snapshot in store
+    )
     file_choice = not _data_locked() or Path(env_path).is_file()
     options = ([BL_EACH] if in_files else []) + ([BL_FILE] if file_choice else []) + store.labels
     options += [BL_PLANNED, BL_NONE]
@@ -1015,7 +1050,13 @@ def _baseline_fields(store: SnapshotStore) -> None:
         )
     wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["draft_bl_fallback"] == BL_FILE)
     if wants_file and not _data_locked():
-        st.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
+        st.file_uploader(
+            "Baseline .xer, or a P6 XML export with its baselines",
+            type=[*UPLOAD_TYPES, "xml"],
+            key="bl_upload",
+            help="P6 Professional exports a project's baselines in XML only (Export > Primavera P6 XML, "
+            "Baselines to Export). Each update is then measured against the baseline its file names.",
+        )
         held = st.session_state.get("bl_file")
         if held:
             st.caption(f"Held: {held[0]}")
@@ -1027,10 +1068,27 @@ def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
     if fallback == BL_PLANNED:
         built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
         return replace(built, source=f"fallback ({BL_PLANNED})")
+    if choice == BL_FILE:
+        own = _xml_baseline_of(snapshot)  # the baseline this update's file names, from a P6 XML file
+        if own is not None:
+            return own
     if isinstance(fallback, Baseline):
         kind = "separate baseline file" if choice == BL_FILE else "loaded update"
         return replace(fallback, source=f"fallback ({kind}): {fallback.label}")
     return None
+
+
+def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
+    """When the separate baseline file is a P6 XML export holding the baseline ``snapshot``'s file names
+    (PROJECT.sum_base_proj_id) but does not export: that baseline, for this update. A series whose
+    Project Baseline changed over time is then measured, update by update, as P6 measured it."""
+    source = _baseline_file_source()
+    pointer = snapshot.file_baseline.proj_id
+    if source is None or _xml_baseline_id(source, pointer) is None:
+        return None
+    basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
+    built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
+    return replace(built, source=f"P6 Project Baseline {pointer} from {source[0]}")
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -1319,6 +1377,24 @@ def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) ->
     return found + ([baseline.snapshot.source] if baseline is not None else [])
 
 
+def baseline_items(session: MutableMapping) -> list[tuple[str, bytes]]:
+    """The separate baseline file as (name, bytes), when one is in use (uploaded or XERSCOPE_BASELINE)."""
+    if session.get("bl_choice") != BL_FILE and session.get("bl_fallback") != BL_FILE:
+        return []
+    held = None if _data_locked() else session.get("bl_file")
+    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    if held is None and env_path and Path(env_path).is_file():
+        held = (Path(env_path).name, Path(env_path).read_bytes())
+    return [held] if held is not None else []
+
+
+def source_raws(name: str, data: bytes) -> list[RawXer]:
+    """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
+    if is_pmxml(data):
+        return [read_pmxml_baseline(data, name, b.object_id) for b in list_baselines(data, name)[0]]
+    return [parse_bytes(data, source=name)]
+
+
 def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[str], Anonymizer]:
     """The anonymizers of the session, by the set of file names each one read."""
     session = st.session_state if session is None else session
@@ -1340,7 +1416,8 @@ def anonymizer(
     the same way. One built from more files also serves a download of fewer."""
     session = st.session_state if session is None else session
     signature = session.get("signature")
-    items = session.get("items") or []
+    # the updates and the separate baseline file: a name found only in the baseline is a secret too
+    items = [*(session.get("items") or []), *baseline_items(session)]
     wanted = frozenset(name for name, _ in items if sources is None or name in set(sources))
     built_anonymizers = session.get("_anonymizers")
     if built_anonymizers is None or built_anonymizers[0] != signature:
@@ -1355,7 +1432,7 @@ def anonymizer(
     key = session.setdefault("_anon_key", secrets.token_bytes(32))
     with st.spinner(f"Reading {len(wanted)} file(s) for the anonymized downloads…"):
         anonymous = Anonymizer.from_raws(
-            (parse_bytes(data, source=name) for name, data in items if name in wanted), key=key
+            (raw for name, data in items if name in wanted for raw in source_raws(name, data)), key=key
         )
     if len(built) >= 4:  # a few sets per session: each holds the text values of its files
         built.pop(next(iter(built)))
