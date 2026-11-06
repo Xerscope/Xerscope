@@ -253,7 +253,9 @@ dans `compose.yaml`. Pinné par `tests/test_docker.py`. Conforme.
 1. `24:00` lu comme `NaT` : P6 l'écrit-il pour minuit ?
 2. Blob calendrier sans jour ouvré remplacé en silence par une semaine inférée : à signaler ?
 3. Poste de nuit `22:00 → 02:00` tronqué à minuit (2 h au lieu de 4) : P6 exporte-t-il ces périodes ?
-4. Durée restante négative : borner à 0 ou rejeter le fichier ?
+4. ~~Durée restante négative : borner à 0 ou rejeter le fichier ?~~ **Tranché (2026-11-06) :** lue 0 avec
+   warning, comme P6 qui ne calcule jamais de reste négatif et le ramène à 0 (sources dans `docs/cpm.md`).
+   Une valeur négative signale un fichier écrit hors de P6 ; aucun des 394 exports de référence n'en a.
 5. `task_code` vide accepté comme identité : à signaler comme les doublons ?
 6. Boucle composée uniquement d'activités terminées : bloquer tout, ou planifier le reste et signaler ?
 7. Boucle passant par un LOE : invisible pour le moteur et INT-04 ; P6 la signale-t-elle ?

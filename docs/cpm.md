@@ -167,7 +167,14 @@ duration (units / units per hour) that is not finite or exceeds `MAX_HOURS` (1e6
 `ScheduleError`, the base of `CycleError`, naming the activities; a date the time axis
 still cannot hold (pandas stops at year 2262) is translated to the same error, so neither
 an `OverflowError` nor an `OutOfBoundsDatetime` leaves `schedule()`. A negative remaining
-duration is read as 0 with a warning. The integrity rules and the critical path test catch
+duration is read as 0 with a warning, as P6 itself floors it: P6 never computes a negative
+remaining duration and sets it to 0 when, for example, an expected finish falls before the data
+date (work without resource assignments; with assignments the remaining units drive it). Sources:
+Oracle, Primavera Cloud help 224787 ("negative duration values are not permitted on activities or
+assignments"); for P6 Professional, practitioner notes (Proove, "Invalid expected finish dates in
+Primavera P6"; PM ERA, "Expected Finish Date in Primavera P6"), not yet an Oracle P6 page. None of
+the 394 reference exports carries one, so a negative value means a file written outside P6 and the
+warning is its tripwire. What P6's XER import does with one is not settled. The integrity rules and the critical path test catch
 `ScheduleError` and report it in their note. These are the engine's own guards; the model
 clamps the same values on load, with its own warning, before the engine sees them.
 
