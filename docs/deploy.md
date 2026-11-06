@@ -266,8 +266,9 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
 and turns it into its own filters (`analysis/query.py`). Without a model, a keyword grammar
 over the file's lexicon (WBS, activity codes, resources, activity-name words, trade synonyms
-in both languages, typos) answers: 100 % of `tests/ask/dev.toml`, 95 % of the held-out
-sentences. The `llm` profile of `deploy/compose.yaml` adds a llama.cpp server for what the
+in both languages, typos) answers: 100 % of `tests/ask/dev.toml`, 100 % of the held-out
+sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a company's file,
+`ask-bench <folder> --self --lexicon <folder>` lists what its lexicon file should add. The `llm` profile of `deploy/compose.yaml` adds a llama.cpp server for what the
 grammar misses. It
 receives the file's WBS, code and resource names only: no activity, no date, no number
 (`tests/test_query_llm.py` checks the request). An answer that does not come, in 20 s, or

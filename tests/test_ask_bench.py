@@ -18,9 +18,10 @@ import pandas as pd
 import pytest
 
 from xerscope.analysis import query
+from xerscope.analysis.query import Vocabulary
 
 ASK = Path(__file__).parent / "ask"
-FLOORS = {"dev": 1.00, "heldout": 0.95}  # share of sentences with every filter right (ratios()["exact"])
+FLOORS = {"dev": 1.00, "heldout": 1.00}  # share of sentences with every filter right (ratios()["exact"])
 
 
 @pytest.fixture(scope="module")
@@ -62,3 +63,23 @@ def test_confidence_buckets():
     buckets = query.by_confidence(scored)
     assert buckets["sentences"].tolist() == [2, 2]
     assert buckets.loc["sure", "exact"] == 1.0 and buckets.loc["unsure", "exact"] == 0.5
+
+
+def test_the_grammar_covers_the_whole_lexicon_of_the_demo(lexicon):
+    """Every label of the loaded file, said by code, name, synonym, in both languages: 100 %. A
+    file whose labels the grammar cannot name lists them, for a company's lexicon file."""
+    scored, missed = query.coverage(lexicon)
+    assert missed == [], missed
+    labels = set(scored["label"])
+    assert {"WBS CIV · Civil works", "resource CREW", "status Not started", "float Critical", "milestones"} <= labels
+    assert len(scored) >= 40 and scored["exact"].all()
+
+
+def test_coverage_names_what_a_file_needs_in_its_lexicon():
+    vocab = Vocabulary(wbs={"h": "HVAC · HVAC works", "c": "CIV · Civil works"}, words=frozenset())
+    scored, missed = query.coverage(vocab)
+    assert missed == [] or missed == ["WBS HVAC · HVAC works"]  # "hvac" alone is a word the grammar reads as is
+    with_company_word = Vocabulary(
+        wbs=vocab.wbs, words=frozenset(), lexicon={**vocab.lexicon, "hvac": ("cvc",), "cvc": ("hvac",)}
+    )
+    assert query.parse_keywords("cvc", with_company_word).wbs_id == "h"

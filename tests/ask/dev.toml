@@ -27,9 +27,10 @@ wbs = "ENG"
 status = ["Complete"]
 
 [[case]]
-text = "en retard mechanical"
+text = "en retard mechanical"   # "mechanical" names the node and activities: the node, and a search in it
 wbs = "MEC"
 float = ["Critical"]
+search = "mechanical"
 
 [[case]]
 text = "earthworks"

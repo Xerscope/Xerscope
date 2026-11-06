@@ -594,7 +594,13 @@ def _cmd_sample(args: argparse.Namespace) -> int:
 
 def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("path", help="an XER file or a folder of them (the latest update is read)")
-    parser.add_argument("--cases", required=True, action="append", help="TOML of [[case]] sentences; repeatable")
+    parser.add_argument("--cases", action="append", default=[], help="TOML of [[case]] sentences; repeatable")
+    parser.add_argument(
+        "--self",
+        action="store_true",
+        help="score the file's own lexicon: every WBS node, resource, status and float, said every way the "
+        "grammar should read; prints the labels it cannot name (what a lexicon file should add)",
+    )
     parser.add_argument("--url", default="", help="a llama.cpp server to score as well (XERSCOPE_QUERY_URL)")
     parser.add_argument("--key", default="", help="the key that server requires (XERSCOPE_QUERY_KEY)")
     parser.add_argument("--ca", default="", help="that server's certificate, trusted alone (XERSCOPE_QUERY_CA)")
@@ -676,6 +682,21 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
     parsers = {"keywords": None}
     if args.url:
         parsers["model"] = query.llm_backend(args.url, key=args.key, cafile=args.ca)
+    if not args.cases and not args.self:
+        raise SystemExit("xerscope ask-bench: give --cases FILE and/or --self")
+    if args.self:
+        lexicon, lexicon_errors = query.load_lexicon(*([args.lexicon] if args.lexicon else []))
+        for error in lexicon_errors:
+            print(f"  lexicon error: {error}")
+        vocab = query.vocabulary(real, lexicon=lexicon)
+        for name, backend in parsers.items():
+            scored, missed = query.coverage(vocab, backend)
+            labels = scored["label"].nunique()
+            print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file ({name})")
+            print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
+            for label in missed:
+                phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
+                print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
     for cases_path in args.cases:
         cases = query.load_cases(cases_path)
         snapshot = real

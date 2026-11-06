@@ -344,6 +344,13 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   A company adds its own words in the folder `XERSCOPE_LEXICON` names (same format, as
   `XERSCOPE_STANDARDS` for standards; `xerscope lexicon FOLDER` checks it); the grammar
   reads both, so its reach grows without a release, and `ask-bench --lexicon` measures it.
+- **100 % of the loaded file, measured on the file.** `ask-bench --self` (`query.coverage`)
+  draws the phrases from the file's own lexicon (each node by code, name and every synonym,
+  each resource, each status and float in both languages, milestones, LOE) and lists the
+  labels the grammar cannot name: what the company's lexicon file should add. The demo is
+  covered in full (`tests/test_ask_bench.py`), as are its dev and held-out sentences.
+- **One rule for a word that is both a node's and an activity's** ("electrical", in
+  "Mechanical & electrical" and in "Electrical installation"): the node, and a search in it.
 - **The output is a `Filter`** (WBS node, statuses, float categories, code values,
   resources, milestones, LOE, search words): what the page's widgets offer, intersected
   with them. The page runs it as a `populations.Funnel` (`query.apply`): one named step per

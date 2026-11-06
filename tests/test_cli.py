@@ -242,7 +242,7 @@ def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_p
 def test_ask_bench(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--cases", "tests/ask/heldout.toml")
     assert "dev.toml: 32 sentences" in out and "keywords  exact 100%" in out
-    assert "heldout.toml: 20 sentences" in out and "missed:" in out
+    assert "heldout.toml: 20 sentences" in out and "missed:" not in out  # every held-out sentence right
 
 
 def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir):
@@ -261,3 +261,9 @@ def test_lexicon_command(capsys, tmp_path):
     (tmp_path / "bad.toml").write_text("[[group]\n", encoding="utf-8")
     assert cli.main(["lexicon", str(tmp_path)]) == 1
     assert "error: bad.toml" in capsys.readouterr().out
+
+
+def test_ask_bench_self_coverage(capsys, sample_dir):
+    out = run(capsys, "ask-bench", sample_dir, "--self")
+    assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
+    assert "not reached" not in out

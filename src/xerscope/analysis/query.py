@@ -350,6 +350,12 @@ def _closest(words: list[str], phrases: list[str]) -> tuple[str, str, float] | N
     return best
 
 
+def _plain(text: str) -> str:
+    """A label as the folded sentence spells it: letters and digits, single spaces ("Mechanical &
+    electrical" -> "mechanical electrical")."""
+    return re.sub(r"[^a-z0-9]+", " ", fold(text)).strip()
+
+
 def _phrase_pattern(phrases: list[str]) -> re.Pattern:
     alternatives = sorted({fold(p) for p in phrases}, key=len, reverse=True)
     return re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, alternatives)) + r")(?![a-z0-9])")
@@ -431,7 +437,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     for wbs_id, label in vocab.wbs.items():
         code, _, name = label.partition(" · ")
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in _STOP]
-        candidates = _with_synonyms([fold(code), fold(name), *words], vocab.lexicon)
+        candidates = [_plain(c) for c in _with_synonyms([fold(code), fold(name), *words], vocab.lexicon)]
         for candidate in candidates:
             if (
                 candidate
@@ -450,7 +456,14 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
                 if best is None or close[2] > best[3]:
                     best = (close[0], wbs_id, label, close[2])
     if best:
-        folded, found = _take(folded, [best[0]])
+        # a word of a node's name that also names activities of the file ("electrical", in
+        # "Mechanical & electrical" and in "Electrical installation") is the node and a search
+        # in it: the word stays in the sentence for the search step below
+        partial = best[0] not in (_plain(best[2].partition(" · ")[0]), _plain(best[2].partition(" · ")[2]))
+        if partial and vocab.words and best[0] in vocab.words:
+            found = [folded.find(best[0])]
+        else:
+            folded, found = _take(folded, [best[0]])
         result = replace(result, wbs_id=best[1])
         if len(best) > 3:
             confidence = min(confidence, best[3])
@@ -526,6 +539,59 @@ def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filte
         if answer is not None:
             return answer
     return parse_keywords(text, vocab)
+
+
+# --- coverage of a file's own lexicon ------------------------------------------------------
+
+_SAID = {  # one phrase per status and float category, in each language: what a planner says
+    "Not started": ["not started", "non démarré"],
+    "In progress": ["in progress", "en cours"],
+    "Complete": ["complete", "terminé"],
+    "Critical": ["critical", "critique"],
+    "Near critical": ["near critical", "quasi critique"],
+    "Normal": ["normal", "normales"],
+}
+
+
+def self_cases(vocab: Vocabulary) -> list[dict]:
+    """Cases drawn from the file's own lexicon: each WBS node by its code, its full name and
+    every synonym of its name (the lexicon, both languages); each resource by short name and
+    name; each status and float category in both languages; milestones and LOE when the file
+    has them. `ask-bench --self` scores them: the share of the file's labels the grammar can
+    name, and the labels it cannot (what a company's lexicon file should add)."""
+    cases: list[dict] = []
+    for label in vocab.wbs.values():
+        code, _, name = label.partition(" · ")
+        said = [code, name] if name else [code]
+        for word in re.split(r"[^a-z0-9]+", fold(name)):
+            if len(word) >= 4 and word not in _STOP:
+                said += [w for w in vocab.lexicon.get(word, ()) if " " in w or len(w) >= 4]
+        said += vocab.lexicon.get(fold(name), ())
+        for text in dict.fromkeys(t for t in said if t):
+            cases.append({"text": text, "wbs": code, "label": f"WBS {label}"})
+    for short, name in vocab.resources.values():
+        for text in dict.fromkeys(t for t in (short, name, *vocab.lexicon.get(fold(name), ())) if t):
+            cases.append({"text": text, "resources": [short or name], "label": f"resource {short or name}"})
+    for status in STATUSES:
+        cases += [{"text": t, "status": [status], "label": f"status {status}"} for t in _SAID[status]]
+    for category in CATEGORIES:
+        if category != "Complete":
+            cases += [{"text": t, "float": [category], "label": f"float {category}"} for t in _SAID[category]]
+    if vocab.has_milestones:
+        cases += [{"text": t, "milestones": True, "label": "milestones"} for t in ("milestones", "jalons")]
+    if vocab.has_loe:
+        cases += [{"text": t, "loe": True, "label": "level of effort"} for t in ("LOE", "hamacs")]
+    return cases
+
+
+def coverage(vocab: Vocabulary, backend: Backend | None = None) -> tuple[pd.DataFrame, list[str]]:
+    """``score`` on ``self_cases``: the scored frame with each case's label, and the labels of
+    the file no phrase reached (every one of a label's phrases right = covered)."""
+    cases = self_cases(vocab)
+    scored = score(cases, vocab, backend)
+    scored["label"] = [case["label"] for case in cases]
+    missed = sorted(set(scored.loc[~scored["exact"], "label"]))
+    return scored, missed
 
 
 # --- the filter as a population funnel ----------------------------------------------------
