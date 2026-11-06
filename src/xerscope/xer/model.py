@@ -1143,28 +1143,29 @@ def _labor_hours(tasks: pd.DataFrame, assignments: pd.DataFrame) -> str:
     """Add the labour / nonlabor columns to ``tasks`` in place and say where they came from.
 
     P6 keeps the activity totals on TASK (Budgeted / Actual / Remaining Labor Units;
-    nonlabor in *_equip_qty). Older or partial exports only have the assignments: sum them
-    by resource type (roles count as labour, as in P6).
+    nonlabor in *_equip_qty). Older or partial exports leave some blank: a blank value takes
+    the sum of the activity's assignments of that quantity by resource type (roles count as
+    labour, as in P6), zero without any.
     """
-    if tasks["target_work_qty"].notna().any():
-        tasks["labor_budget_hr"] = tasks["target_work_qty"].fillna(0.0)
-        tasks["labor_actual_hr"] = tasks["act_work_qty"].fillna(0.0)
-        tasks["labor_remaining_hr"] = tasks["remain_work_qty"].fillna(0.0)
-        tasks["nonlabor_budget_qty"] = tasks["target_equip_qty"].fillna(0.0)
-        tasks["nonlabor_actual_qty"] = tasks["act_equip_qty"].fillna(0.0)
-        tasks["nonlabor_remaining_qty"] = tasks["remain_equip_qty"].fillna(0.0)
-        return "TASK"
-    if assignments.empty:
-        for column in LABOR_COLS:
-            tasks[column] = 0.0
-        return "none"
-    for prefix, kinds in (("labor", ("RT_Labor", "role", "")), ("nonlabor", ("RT_Equip",))):
-        by_task = assignments[assignments["rsrc_type"].isin(kinds)].groupby("task_id")
-        unit = "hr" if prefix == "labor" else "qty"
-        tasks[f"{prefix}_budget_{unit}"] = tasks["task_id"].map(by_task["target_qty"].sum()).fillna(0.0)
-        tasks[f"{prefix}_actual_{unit}"] = tasks["task_id"].map(by_task["act_qty"].sum()).fillna(0.0)
-        tasks[f"{prefix}_remaining_{unit}"] = tasks["task_id"].map(by_task["remain_qty"].sum()).fillna(0.0)
-    return "TASKRSRC"
+    labour, nonlabor = ("RT_Labor", "role", ""), ("RT_Equip",)
+    sources = {  # column: (TASK column, TASKRSRC column, resource types)
+        "labor_budget_hr": ("target_work_qty", "target_qty", labour),
+        "labor_actual_hr": ("act_work_qty", "act_qty", labour),
+        "labor_remaining_hr": ("remain_work_qty", "remain_qty", labour),
+        "nonlabor_budget_qty": ("target_equip_qty", "target_qty", nonlabor),
+        "nonlabor_actual_qty": ("act_equip_qty", "act_qty", nonlabor),
+        "nonlabor_remaining_qty": ("remain_equip_qty", "remain_qty", nonlabor),
+    }
+    used: set[str] = set()
+    for column, (task_column, quantity, kinds) in sources.items():
+        by_task = assignments[assignments["rsrc_type"].isin(kinds)].groupby("task_id")[quantity].sum()
+        summed = tasks["task_id"].map(by_task)
+        if tasks[task_column].notna().any():
+            used.add("TASK")
+        if (tasks[task_column].isna() & summed.notna()).any():
+            used.add("TASKRSRC")
+        tasks[column] = tasks[task_column].fillna(summed).fillna(0.0)
+    return "+".join(sorted(used)) or "none"
 
 
 def leveled(tasks: pd.DataFrame) -> pd.Series:

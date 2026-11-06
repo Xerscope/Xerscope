@@ -454,3 +454,28 @@ def test_taskrsrc_without_task_id_raises_xer_error():
     text = xer_text([todo("A")], rsrc=["A"])
     with pytest.raises(XerError, match="table TASKRSRC has no column task_id"):
         build_snapshot(parse_text(drop_column(text, "TASKRSRC", "task_id"), source="t.xer"))
+
+
+def test_blank_task_units_fall_back_to_assignments_column_by_column():
+    s = snap(
+        [todo("A", target_work_qty="40"), todo("B"), todo("C"), todo("D", act_work_qty="5")],
+        rsrc=["A", "B", "D"],
+    )
+    assert s.options["labor_source"] == "TASK+TASKRSRC"
+    labour = s.activities.set_index("task_code")[["labor_budget_hr", "labor_actual_hr"]]
+    assert labour.to_dict("index") == {
+        "A": {"labor_budget_hr": 40, "labor_actual_hr": 0},
+        "B": {"labor_budget_hr": 80, "labor_actual_hr": 0},
+        "C": {"labor_budget_hr": 0, "labor_actual_hr": 0},
+        "D": {"labor_budget_hr": 80, "labor_actual_hr": 5},
+    }
+
+
+def test_blank_task_units_without_assignments_are_zero():
+    s = snap([todo("A", target_work_qty="40"), todo("B", act_work_qty="5")])
+    assert s.options["labor_source"] == "TASK"
+    labour = s.activities.set_index("task_code")[["labor_budget_hr", "labor_actual_hr"]]
+    assert labour.to_dict("index") == {
+        "A": {"labor_budget_hr": 40, "labor_actual_hr": 0},
+        "B": {"labor_budget_hr": 0, "labor_actual_hr": 5},
+    }
