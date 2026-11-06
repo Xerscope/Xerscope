@@ -413,8 +413,13 @@ CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Snapshot:
+    """One parsed file, read-only once built. Analyses cache their results on it (``by_code``,
+    the CPM's ``_xs_schedule`` / ``_xs_comparison``, written with ``object.__setattr__``), so a
+    changed snapshot is a new one: ``dataclasses.replace(snapshot, tasks=...)`` starts with an
+    empty cache, an in-place edit of a table would not (docs/cpm.md, Performance)."""
+
     source: str
     project_id: str
     project_code: str
