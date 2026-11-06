@@ -321,6 +321,71 @@ Outside `analysis/`:
   the page only an activity the chart draws); every value is read from the snapshot or the
   store, card text is escaped. The Task history page draws the same history.
 
+### The Gantt "Ask" field: talking to the schedule without a model reading it
+
+A planner types "critiques non démarrés en génie civil" and the Gantt filters itself. The
+sentence goes through layers that each answer only what they can prove, in this order; the
+first one sure enough answers, the next ones never see the schedule:
+
+```
+sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) small LLM ─▶ Filter / Query
+            exact phrases,       cosine between the      JSON over 20 pre-chosen      │
+            synonyms, typos      sentence and the        labels, schema-constrained   ▼
+            (difflib)            file's labels                                 xerscope computes:
+                                                                               tasks, counts, dates
+```
+
+- **The lexicon is the file's own** (`analysis/query.py: Vocabulary`, built from the
+  snapshot's frames: WBS nodes with their path, resources, activity-code values, the words
+  of the activity names, whether the file has milestones and LOE). Every layer matches the
+  sentence against these labels and nothing else; an id outside them is dropped.
+- **The output is a `Filter`** (WBS node, statuses, float categories, code values,
+  resources, milestones, LOE, search words): what the page's widgets offer, intersected
+  with them. It is to become a `Query`: a dataset (activities, milestones, relationships,
+  assignments, checks), the filter, and the measures asked (count, worst float, latest
+  finish, hours, % complete), every value computed by the existing analyses and shown with
+  its table and CSV. A one-line answer is a template over those values; a model may
+  rephrase it, with the raw values kept beside.
+- **Confidence** comes with each answer: 1.0 for exact phrases, the weakest fuzzy ratio
+  otherwise, lowered when two labels score as close (the sentence does not separate one
+  cluster from the other); under `SURE` the page says "unsure". `xerscope ask-bench`
+  measures every layer on sentences with known filters (`tests/ask/dev.toml` tuned on,
+  `heldout.toml` written blind, floors in `tests/test_ask_bench.py`), per field and per
+  confidence bucket; `--anonymize` runs it on a real file with every name replaced.
+- **A model, when there is one, routes; it never reads the schedule.** It receives the
+  sentence and the labels (`Vocabulary.to_prompt()`: no activity, no date, no number) and
+  answers a JSON the schema constrains. It runs in a container of its own on a network of
+  its own, rootless, read-only, reaching nothing, behind TLS and a key (docs/deploy.md §10).
+  The values a user asks for are computed by xerscope; a model may only put them in words.
+
+**Why the latest small Qwen (or any 1-4B model) alone does not help here.**
+
+1. *It would have to read the lexicon on every question.* A real schedule has hundreds of
+   WBS nodes and resources: thousands of prompt tokens. On the NAS's CPU (4-core Celeron,
+   no GPU) a 2B model reads a prompt at a few tokens per second, so a question would wait
+   minutes before the first output token; the KV cache helps from the second question on
+   the same file only, and the generated answer still costs 10 s. The grammar and the
+   embeddings answer in milliseconds, on the whole lexicon, every time.
+2. *Its strength is not our need.* Benchmarks of these models measure instruction following
+   and function calling on English prompts (IFEval, BFCL); our need is matching French and
+   English trade words to a file's own labels, deterministically. An encoder trained for
+   multilingual similarity (EmbeddingGemma 2, 270M) scores that task directly, costs a
+   tenth of the compute, and gives a cosine to calibrate a confidence from; a generative
+   model gives one answer with no score, and a wrong node looks exactly like a right one.
+3. *Truth.* The project's rule is that every number traces to a formula and a population.
+   A model that reads activities and answers "3 milestones are late" cannot be traced, and
+   small models invent ids and figures under pressure (their own cards say so). Kept to
+   routing over labels, a model can at worst pick the wrong label, which the schema, the id
+   check and the confidence bucket catch; it cannot invent a date.
+4. *Measurability.* The grammar and the embeddings are scored on held-out sentences with
+   floors a change cannot lower. A model's answers vary with the quantisation, the build and
+   the prompt; it can be scored the same way (`ask-bench --url`) but not pinned as a floor
+   in the suite, so it stays the optional last layer, on the few sentences left unsure, with
+   a prompt of 20 pre-chosen labels (hundreds of tokens, about 10 s), not the lexicon.
+
+So a small model is a re-ranker of last resort, not the engine; the engine is the file's
+lexicon, a grammar and an encoder, each measured.
+
 ## 8. `cli.py`
 
 | Command | Does |
