@@ -151,6 +151,16 @@ def test_remote_debug_page_follows_the_env_file_and_is_off_by_default():
     assert re.search(r"^# XERSCOPE_DEBUG_PAGE=1\b", (ROOT / "deploy" / ".env.example").read_text(), re.M)
 
 
+def test_remote_load_workers_follow_the_env_file_and_default_to_one():
+    """Each worker process holds one export while it reads it (about 1 GB parsed for a 40 MB export,
+    docs/deploy.md §7), inside the app's memory cap: under the default 2 GB cap the remote app reads
+    one file at a time. XERSCOPE_LOAD_WORKERS in .env raises it, with XERSCOPE_MEM_LIMIT."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    app = c[c.index("\n  xerscope:") :]
+    assert re.search(r"^\s+XERSCOPE_LOAD_WORKERS: \$\{XERSCOPE_LOAD_WORKERS:-1\}", app, re.M)
+    assert re.search(r"^# XERSCOPE_LOAD_WORKERS=\d", (ROOT / "deploy" / ".env.example").read_text(), re.M)
+
+
 def test_remote_app_settings_reach_streamlit():
     """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
     import os

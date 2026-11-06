@@ -157,6 +157,7 @@ XERSCOPE_GID=<gid>
 # XERSCOPE_IMAGE=<image>@sha256:<digest>    # the build to run, pinned (§7)
 # XERSCOPE_CADDY_IMAGE=<image>@sha256:<digest>   # the same for Caddy (§7, §8)
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
+# XERSCOPE_LOAD_WORKERS=1                  # files read at once (§7)
 # XERSCOPE_DEBUG_PAGE=1                    # the Debug page, for a diagnosis only (§9)
 ```
 
@@ -214,6 +215,14 @@ and keep the cap above it, within what the NAS can spare. If the Project's build
 `Your kernel does not support memory limit capabilities`, Docker dropped the cap. There is no
 CPU quota on purpose: Docker refuses to create a container with one on a kernel without CFS
 bandwidth control.
+
+**Files read at once.** On Done the app reads the chosen files on `XERSCOPE_LOAD_WORKERS`
+processes (default `1` here). Each holds the export it reads, about 1 GB at the peak for 40 MB,
+plus about 0.13 GB for its own Python, inside the same cap, while the app keeps the files already
+read (0.75 GB each). At the end of a load the peak is about `weeks × 0.75 + workers × 1.1` GB for
+exports of that size: 6 weeks on 2 workers, 6.7 GB, needs `XERSCOPE_MEM_LIMIT=8g`; the default
+`2g` holds one file at a time and a couple of weeks. Two workers read about 1.8 times faster than
+one; raise both values together, then read the peak in Container Manager as above.
 
 ## 8. Image on Docker Hub
 
