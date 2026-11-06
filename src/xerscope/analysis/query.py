@@ -23,6 +23,7 @@ import pandas as pd
 
 from ..xer import Snapshot
 from ..xer.model import STATUS
+from .populations import Funnel
 from .wbs import ROOT
 
 STATUSES = list(STATUS.values())  # "Not started", "In progress", "Complete"
@@ -512,6 +513,59 @@ def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filte
         if answer is not None:
             return answer
     return parse_keywords(text, vocab)
+
+
+# --- the filter as a population funnel ----------------------------------------------------
+
+
+def apply(filter: Filter, tasks: pd.DataFrame, snapshot: Snapshot, nodes: pd.DataFrame | None = None) -> Funnel:
+    """The sentence's filters as the steps of a ``Funnel`` over ``tasks`` (the page's frame, with
+    its ``category`` column), one named step per filter understood, source ``ask``: a reader
+    sees what each removed and how many are left, as under every check. ``nodes`` is the WBS
+    tree (``analysis.wbs.tree``) for the branch step; without it a WBS filter is skipped."""
+    from .wbs import subtree_ids
+
+    funnel = Funnel(tasks, snapshot.data_date)
+    if filter.wbs_id and nodes is not None and filter.wbs_id in set(nodes["wbs_id"]):
+        label = nodes.loc[nodes["wbs_id"] == filter.wbs_id].iloc[0]
+        branch = subtree_ids(nodes, filter.wbs_id)
+        funnel.keep(f"WBS {label['wbs_code']} · {label['wbs_name']}", "ask", lambda rows: rows["wbs_id"].isin(branch))
+    if filter.status:
+        funnel.keep(f"status {' / '.join(filter.status)}", "ask", lambda rows: rows["status"].isin(filter.status))
+    if filter.categories and "category" in tasks:
+        funnel.keep(
+            f"float {' / '.join(filter.categories)}", "ask", lambda rows: rows["category"].isin(filter.categories)
+        )
+    if filter.code_type and filter.code_ids:
+        with_codes = snapshot.tasks_with_codes(filter.code_type, filter.code_ids)
+        values = sorted(snapshot.code_values.loc[snapshot.code_values["code_id"].isin(filter.code_ids), "value"])
+        funnel.keep(f"{filter.code_type} {' / '.join(values)}", "ask", lambda rows: rows["task_code"].isin(with_codes))
+    if filter.resources:
+        assigned = snapshot.assignments
+        codes = set(assigned.loc[assigned["rsrc_id"].isin(filter.resources), "task_code"])
+        names = sorted(assigned.loc[assigned["rsrc_id"].isin(filter.resources), "rsrc_short_name"].dropna().unique())
+        funnel.keep(f"resource {' / '.join(map(str, names))}", "ask", lambda rows: rows["task_code"].isin(codes))
+    if filter.milestones:
+        funnel.keep("milestones", "ask", lambda rows: rows["is_milestone"])
+    if filter.loe:
+        funnel.keep("level of effort", "ask", lambda rows: rows["is_loe"])
+    if filter.search:
+        needle = fold(filter.search)
+        funnel.keep(
+            f'name contains "{filter.search}"',
+            "ask",
+            lambda rows: (
+                rows["task_code"].map(fold).str.contains(needle, regex=False)
+                | rows["task_name"].map(fold).str.contains(needle, regex=False)
+            ),
+        )
+    return funnel
+
+
+def funnel_line(funnel: Funnel) -> str:
+    """ "212 → WBS CIV · Civil works 48 → status Not started 30 → float Critical 3": the population
+    step by step, in one line, for the page's caption."""
+    return " → ".join([str(funnel.start), *(f"{step.label} {step.left}" for step in funnel.steps)])
 
 
 # --- a local language model as Backend (step two) ---------------------------------------

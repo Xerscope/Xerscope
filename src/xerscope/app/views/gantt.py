@@ -5,6 +5,7 @@ from xerscope.analysis import query
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.sets import show_steps
 from xerscope.app.state import (
     baseline_for,
     compare_picker,
@@ -183,8 +184,6 @@ branch = nodes[nodes["wbs_id"].isin(branch_ids)]
 tasks = snapshot.activities
 if current != ROOT:
     tasks = tasks[tasks["wbs_id"].isin(branch_ids)]
-if ask is not None and ask.wbs_id in branch_ids:  # a node named in the sentence narrows the branch
-    tasks = tasks[tasks["wbs_id"].isin(subtree_ids(nodes, ask.wbs_id))]
 tasks = tasks.assign(category=categorise(tasks))
 if hide_loe and not (ask is not None and ask.loe):  # "LOE" in the sentence overrides the toggle
     tasks = tasks[~tasks["is_loe"]]
@@ -197,22 +196,12 @@ if search:
     tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
 if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
-if ask is not None:  # the sentence's filters, intersected with the widgets'
-    if ask.status:
-        tasks = tasks[tasks["status"].isin(ask.status)]
-    if ask.categories:
-        tasks = tasks[tasks["category"].isin(ask.categories)]
-    if ask.search:
-        tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], ask.search)]
-    if ask.code_type and ask.code_ids:
-        tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(ask.code_type, ask.code_ids))]
-    if ask.resources:
-        assigned = snapshot.assignments
-        tasks = tasks[tasks["task_code"].isin(assigned.loc[assigned["rsrc_id"].isin(ask.resources), "task_code"])]
-    if ask.milestones:
-        tasks = tasks[tasks["is_milestone"]]
-    if ask.loe:
-        tasks = tasks[tasks["is_loe"]]
+ask_funnel = None
+if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
+    ask_funnel = query.apply(ask, tasks, snapshot, nodes)
+    tasks = ask_funnel.rows
+    if ask_funnel.steps:
+        st.caption(query.funnel_line(ask_funnel))
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]
@@ -285,6 +274,9 @@ if picked:
         ui.section("History across updates")
         show_history(store, picked)
 
+if ask_funnel is not None and ask_funnel.steps:
+    with st.expander("Population, step by step"):
+        show_steps(ask_funnel)
 with st.expander("Table view"):
     table_columns = [
         "task_code",

@@ -341,7 +341,11 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   sentence against these labels and nothing else; an id outside them is dropped.
 - **The output is a `Filter`** (WBS node, statuses, float categories, code values,
   resources, milestones, LOE, search words): what the page's widgets offer, intersected
-  with them. It is to become a `Query`: a dataset (activities, milestones, relationships,
+  with them. The page runs it as a `populations.Funnel` (`query.apply`): one named step per
+  filter understood, source `ask`, so the caption reads "212 → WBS CIV · Civil works 48 →
+  status Not started 30 → float Critical 3" and the "Population, step by step" table under
+  the chart is the same table every check shows (`app/sets.py`). The count a planner asks
+  for is the last step's `left`; the steps are the trace. It is to become a `Query`: a dataset (activities, milestones, relationships,
   assignments, checks), the filter, and the measures asked (count, worst float, latest
   finish, hours, % complete), every value computed by the existing analyses and shown with
   its table and CSV. A one-line answer is a template over those values; a model may

@@ -109,3 +109,27 @@ def test_two_nodes_as_close_make_the_pick_unsure():
     assert guess.wbs_id == "a" and guess.confidence < query.SURE
     sure = query.parse_keywords("pipng north", lexicon)  # "north" names one node exactly
     assert sure.wbs_id == "a" and sure.confidence == 1.0
+
+
+def test_filter_runs_as_a_funnel_of_named_steps(store):
+    from xerscope.analysis import wbs as wbs_tree
+    from xerscope.viz import categorise
+
+    snapshot = store.latest
+    nodes = wbs_tree.tree(snapshot)
+    tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
+    asked = query.parse_keywords("critical not started in civil works", query.vocabulary(snapshot, nodes))
+    funnel = query.apply(asked, tasks, snapshot, nodes)
+    assert [step.label for step in funnel.steps] == ["WBS CIV · Civil works", "status Not started", "float Critical"]
+    assert all(step.source == "ask" for step in funnel.steps)
+    assert funnel.start == len(tasks) and funnel.steps[-1].left == len(funnel.rows)
+    civ = tasks[tasks["wbs_id"] == "7003"]
+    assert funnel.steps[0].left == len(civ) and len(funnel.steps[0].removed) == len(tasks) - len(civ)
+    expected = civ[(civ["status"] == "Not started") & (civ["category"] == "Critical")]
+    assert set(funnel.rows["task_code"]) == set(expected["task_code"]) and len(expected) > 0
+    line = query.funnel_line(funnel)
+    assert line.startswith(f"{len(tasks)} → WBS CIV · Civil works {len(civ)} → status Not started ")
+    assert line.endswith(f"→ float Critical {len(expected)}")
+    assert query.apply(query.Filter(), tasks, snapshot, nodes).steps == []  # nothing asked: one population, no step
+    with_search = query.apply(query.Filter(search="earth", milestones=False), tasks, snapshot, nodes)
+    assert with_search.steps[0].label == 'name contains "earth"' and with_search.rows["task_code"].tolist() == ["C3020"]
