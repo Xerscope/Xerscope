@@ -92,7 +92,10 @@ P6-04 to P6-06 is a setting of the dialog: their values are in `p6.toml` only. E
 check with the activities (or relationships) found, to diff against the report's lists.
 `--expect report.csv` compares the counts: a CSV with columns `id,found,total` (plus `file`
 when several files are checked) typed from the report's summary; every line is printed as
-expected / got and the command exits 1 on any difference.
+expected / got and the command exits 1 on any difference. Exit codes of `check`: 0, 1 when
+`--fail-on` or `--expect` finds the schedule short of the standard, 2 for a usage or input
+error (no such file, unreadable XER or CSV, invalid standard), reported as one
+`xerscope: <message>` line on stderr.
 
 `--baseline-in-file` measures each file against the P6 Project Baseline it holds
 (`PROJECT.sum_base_proj_id`, `Snapshot.file_baseline`), the project baseline Check Schedule reads for
@@ -254,8 +257,17 @@ uv run xerscope app --data exports/ --standards folder-with-my-toml/
 
 A wrong rule, parameter name or value (choice, number, flag, list of names), population
 keyword, unit or target is rejected on load with the exact name, so a typo cannot silently
-change a result. `group` (optional) gives a section title. The formula behind every
-metric is in [formulas.md](formulas.md).
+change a result. The shape of the file is checked first, with the same kind of message
+(`my-standard.toml: metric #3 (ACME-03): ...`): `[[metric]]` must be an array of tables,
+`params` a table, `id`, `name`, `rule` and the optional text keys (`description`, `unit`,
+`target`, `source`, `group`) strings; an `id` holds letters, digits, `.`, `_` and `-` only
+(it names the `--flagged` files); a numeric parameter is finite (`nan` and `inf` would turn
+every comparison into a silent pass); `target = "pass"` goes with a `pass/fail` rule and only
+there, which takes no numeric target; a TOML nested thousands of levels deep is refused as
+"too deeply nested". Every load error is a `ValueError` naming the file: the app lists it
+under the standard picker, the CLI prints `xerscope: <message>` and exits 2. `group`
+(optional) gives a section title. The formula behind every metric is in
+[formulas.md](formulas.md).
 
 To try a target or a threshold before writing it down, open the check on the Audit page:
 it re-runs the check with the values set there, shows the sets behind the count, and gives

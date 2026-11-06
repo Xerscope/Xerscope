@@ -21,6 +21,7 @@ from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
 from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
 from xerscope.app import ui
+from xerscope.csv_safe import csv_safe
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
     XER_SUFFIXES,

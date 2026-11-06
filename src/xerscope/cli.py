@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 from xerscope.config import DATE_FMT, DATETIME_FMT
-from xerscope.store import DuplicateDataDate
 from xerscope.xer import xer_files
 
 APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
@@ -17,8 +16,22 @@ APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
 FAIL_ON = {"none": set(), "fail": {"fail", "error"}, "error": {"error"}}
 
 
+class UsageError(SystemExit):
+    """A usage or input error: ``main`` prints ``xerscope: <message>`` on stderr and exits 2.
+
+    Exit 1 is kept for a schedule that misses the standard (``--fail-on``, ``--expect``,
+    ``crosscheck``), so a script can tell a bad call from a bad schedule."""
+
+    def __init__(self, message: str):
+        super().__init__(2)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
+
+
 def _expand(paths: list[str]) -> list[Path]:
-    """Files as given; folders -> their *.xer, sorted. Nothing to read is an error (exit 2)."""
+    """Files as given; folders -> their *.xer, sorted. Nothing to read is a UsageError (exit 2)."""
     found: list[Path] = []
     for path in (Path(raw_path).expanduser() for raw_path in paths):
         if path.is_dir():
@@ -26,9 +39,9 @@ def _expand(paths: list[str]) -> list[Path]:
         elif path.is_file():
             found.append(path)
         else:
-            raise SystemExit(f"xerscope: {path}: no such file or folder")
+            raise UsageError(f"{path}: no such file or folder")
     if not found:
-        raise SystemExit(f"xerscope: no .xer file in {', '.join(paths)}")
+        raise UsageError(f"no .xer file in {', '.join(paths)}")
     return found
 
 
@@ -45,7 +58,10 @@ def _add_out(parser: argparse.ArgumentParser, help_text: str) -> None:
 
 
 def _write_csv(frame, path, *, index: bool = False) -> None:
-    frame.to_csv(path, index=index, encoding="utf-8-sig")  # the BOM makes Excel read UTF-8
+    from .csv_safe import csv_safe
+
+    # the BOM makes Excel read UTF-8; csv_safe keeps a text cell of the file from running as a formula
+    csv_safe(frame).to_csv(path, index=index, encoding="utf-8-sig")
 
 
 def _cmd_app(args: argparse.Namespace) -> int:
@@ -127,7 +143,7 @@ def _standard(spec: str):
         return found[spec.upper()]
     if Path(spec).is_file():
         return load_standard(spec)
-    raise SystemExit(f"unknown standard {spec!r}: use {', '.join(found)} or a .toml file")
+    raise UsageError(f"unknown standard {spec!r}: use {', '.join(found)} or a .toml file")
 
 
 def _args_check(parser: argparse.ArgumentParser) -> None:
@@ -222,14 +238,20 @@ def _expect_differs(results, expect_csv: str) -> bool:
 
     from .analysis import compare_counts
 
-    expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    try:
+        expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    except ValueError as exc:  # pandas.errors.ParserError is a ValueError
+        raise UsageError(f"{expect_csv}: not a readable CSV: {exc}") from None
     missing = {"id", "found", "total"} - set(expected.columns)
     if missing:
-        sys.exit(f"{expect_csv}: columns {', '.join(sorted(missing))} missing")
+        raise UsageError(f"{expect_csv}: columns {', '.join(sorted(missing))} missing")
     keys = ["file", "id"] if "file" in expected.columns else ["id"]
     if "file" not in expected.columns and results["file"].nunique() > 1:
-        sys.exit(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
-    merged = compare_counts(results, expected, keys)
+        raise UsageError(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
+    try:
+        merged = compare_counts(results, expected, keys)
+    except (ValueError, TypeError) as exc:  # pyarrow.lib.ArrowInvalid is a ValueError
+        raise UsageError(f"{expect_csv}: found and total must be whole numbers: {exc}") from None
     print(f"\nExpected (from {expect_csv}) vs xerscope:")
     print(merged.to_string(index=False))
     bad = int((~merged["match"]).sum())
@@ -403,18 +425,18 @@ def _cmd_pv_compare(args: argparse.Namespace) -> int:
     elif args.planned_baseline:
         baseline = Baseline.planned(snapshot)
     else:
-        sys.exit("pv-compare: give --baseline BL.xer or --planned-baseline")
+        raise UsageError("pv-compare: give --baseline BL.xer or --planned-baseline")
     if snapshot.data_date is None:
-        sys.exit(f"{args.path}: no data date")
+        raise UsageError(f"{args.path}: no data date")
     try:
         raw = diagnostic.read_p6_export(args.p6, Path(args.p6).read_bytes())
     except ValueError as exc:
-        sys.exit(f"{args.p6}: {exc}")
+        raise UsageError(f"{args.p6}: {exc}") from None
     chosen = {}
     for item in args.column:
         field, _, header = item.partition("=")
         if field not in diagnostic.P6_EXPORT_FIELDS or not header:
-            sys.exit(
+            raise UsageError(
                 f"--column {item!r}: expected FIELD=HEADER with FIELD among {' '.join(diagnostic.P6_EXPORT_FIELDS)}"
             )
         chosen[field] = header
@@ -423,7 +445,7 @@ def _cmd_pv_compare(args: argparse.Namespace) -> int:
         field for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required and columns[field] is None
     ]
     if missing:
-        sys.exit(
+        raise UsageError(
             f"{args.p6}: column(s) not found for {', '.join(missing)}; headers read: {', '.join(raw.columns)}. "
             "Name them with --column FIELD=HEADER."
         )
@@ -616,8 +638,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.fn(args)
-    except DuplicateDataDate as exc:
-        raise SystemExit(f"xerscope: {exc}") from None
+    except UsageError as exc:
+        print(f"xerscope: {exc}", file=sys.stderr)
+        raise
+    except (ValueError, OSError) as exc:
+        # a bad input is a message, not a traceback: XerError and DuplicateDataDate, an invalid
+        # standard (ValueError), a missing file (OSError), pandas.errors.ParserError and
+        # pyarrow.lib.ArrowInvalid (both ValueError subclasses: no pandas import at start-up)
+        print(f"xerscope: {exc}", file=sys.stderr)
+        raise UsageError(str(exc)) from None
 
 
 if __name__ == "__main__":

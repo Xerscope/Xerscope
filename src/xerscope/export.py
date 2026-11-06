@@ -19,6 +19,7 @@ from typing import Literal
 import pandas as pd
 
 from .config import DATETIME_FMT
+from .csv_safe import csv_safe  # noqa: F401 - the CSV writers' shared guard, re-exported
 from .store import SnapshotStore
 
 Fmt = Literal["parquet", "csv"]
@@ -38,7 +39,7 @@ def _bytes(df: pd.DataFrame, fmt: Fmt) -> bytes:
     if fmt == "parquet":
         df.to_parquet(buf, index=False)
     else:
-        df.to_csv(buf, index=False, date_format=DATETIME_FMT, encoding="utf-8-sig")
+        csv_safe(df).to_csv(buf, index=False, date_format=DATETIME_FMT, encoding="utf-8-sig")
     return buf.getvalue()
 
 

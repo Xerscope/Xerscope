@@ -40,6 +40,7 @@ from xerscope.app.state import (
     standard_results,
     standards,
 )
+from xerscope.csv_safe import csv_safe
 from xerscope.export import zip_frames
 from xerscope.viz.charts import build_metric_trend
 
@@ -150,7 +151,7 @@ def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> N
         per_check = by_check(table)
         csv_file = fetch(
             st.session_state,
-            lambda: table.to_csv(index=False).encode("utf-8-sig"),
+            lambda: csv_safe(table).to_csv(index=False).encode("utf-8-sig"),
             lambda anonymizer: anonymizer.csv(table),
             sources,
             prepare=True,

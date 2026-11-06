@@ -29,6 +29,7 @@ depends on their parameters (the generic ones) leave out the population lines:
 from __future__ import annotations
 
 import inspect
+import math
 import operator
 import typing
 from collections.abc import Callable, Sequence
@@ -144,6 +145,8 @@ def _check_value(where: str, hint, value) -> None:
     elif hint in (float, int):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{where}: expected a number, got {value!r}")
+        if not math.isfinite(value):  # TOML nan / inf: every comparison with it is False, a silent pass
+            raise ValueError(f"{where}: expected a finite number, got {value!r}")
     elif hint == Names and (isinstance(value, str) or not all(isinstance(name, str) for name in value)):
         raise ValueError(f"{where}: expected a list of names, got {value!r}")
 

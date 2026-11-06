@@ -1,7 +1,8 @@
 """Software audit of the app layer (rules/standards loading, explain, store, session cache, export,
 anonymiser, CLI): input validation, division by zero, float comparison, cache bounds, injection
-(CWE-22, CWE-78, CWE-1236), determinism. A test marked xfail(strict=True) documents a defect
-(AUDIT-APP-nn); the others pin behaviour found correct. Every schedule is built with xerkit."""
+(CWE-22, CWE-78, CWE-1236), determinism. A test marked xfail(strict=True) documents an open defect
+(AUDIT-APP-nn); a test whose docstring names a finding pins its fix; the others pin behaviour found
+correct. Every schedule is built with xerkit."""
 
 from __future__ import annotations
 
@@ -88,31 +89,49 @@ def test_target_zero_percent_rounds_to_six_decimals_before_comparing():
 # --- standards: TOML validation ----------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-01: metric id and name are not type-checked (int accepted)")
 def test_metric_id_and_name_must_be_strings():
-    with pytest.raises(ValueError):
+    """AUDIT-APP-01: the text keys are type-checked; the message names the file, the metric and the key."""
+    with pytest.raises(ValueError, match=r"uploaded\.toml: metric #1 \(5\): id must be a string, got 5"):
         std('[[metric]]\nid = 5\nname = 6\nrule = "constraints"\n')
+    with pytest.raises(ValueError, match="name must be a string, got 6"):
+        std('[[metric]]\nid = "M"\nname = 6\nrule = "constraints"\n')
+    with pytest.raises(ValueError, match="description must be a string"):
+        std('[[metric]]\nid = "M"\nname = "m"\nrule = "constraints"\ndescription = 1\n')
+    with pytest.raises(ValueError, match=r"\[standard\] name must be a string, got 1"):
+        loads_standard('[standard]\nid = "X"\nname = 1\n[[metric]]\nid = "M"\nname = "m"\nrule = "constraints"\n')
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-02: params as an array: TypeError, not the ValueError callers catch")
+def test_metric_id_is_a_file_name_safe_token():
+    """AUDIT-APP-12: the id goes into the `--flagged` file name and the memo keys."""
+    for bad in ("sub/M", "a b", "x\\y", "", "../M"):
+        with pytest.raises(ValueError, match="letters, digits, '.', '_' and '-' only"):
+            std(f'[[metric]]\nid = "{bad}"\nname = "m"\nrule = "constraints"\n'.replace("\\", "\\\\"))
+    assert std('[[metric]]\nid = "P6-01.a_b"\nname = "m"\nrule = "constraints"\n').metrics[0].id == "P6-01.a_b"
+
+
 def test_params_of_wrong_shape_raise_value_error():
-    with pytest.raises(ValueError):
+    """AUDIT-APP-02: params as an array is a ValueError (the handlers catch it), not a TypeError."""
+    with pytest.raises(ValueError, match=r"metric #1 \(M\): params must be a table"):
         std('[[metric]]\nid = "M"\nname = "m"\nrule = "constraints"\nparams = [1, 2]\n')
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-02: top-level 'metric' as a string raises AttributeError")
 def test_metric_table_of_wrong_type_raises_value_error():
-    with pytest.raises(ValueError):
+    """AUDIT-APP-02: 'metric' as a string, or a [[metric]] entry that is not a table."""
+    with pytest.raises(ValueError, match=r"uploaded\.toml: 'metric' must be an array of tables"):
         loads_standard('metric = "x"\n' + HEAD)
+    with pytest.raises(ValueError, match=r"metric #2: expected a \[\[metric\]\] table, got 7"):
+        loads_standard('metric = [{id = "M", name = "m", rule = "constraints"}, 7]\n' + HEAD)
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-03: 2000 nested inline tables: RecursionError escapes discover")
 def test_deeply_nested_toml_is_refused_as_a_load_error(tmp_path):
+    """AUDIT-APP-03: 2000 nested inline tables are a load error naming the file, not a RecursionError."""
     depth = 2000
     body = '[[metric]]\nid = "M"\nname = "m"\nrule = "constraints"\nparams = ' + "{a=" * depth + "1" + "}" * depth
     (tmp_path / "deep.toml").write_text(HEAD + body + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="deep.toml: TOML too deeply nested"):
+        load_standard(tmp_path / "deep.toml")
     found, errors = discover_standards(tmp_path)  # must report the file, not crash the app
-    assert len(errors) == 1 and "deep.toml" in errors[0]
+    assert len(errors) == 1 and "deep.toml" in errors[0] and "P6" in found
 
 
 def test_empty_and_header_only_files_fail_loudly():
@@ -140,16 +159,22 @@ def test_ten_megabyte_toml_loads_in_bounded_time():
     assert time.perf_counter() - start < 5
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-04: target 'pass' accepted on a % metric: becomes 'value == 1 %'")
 def test_pass_target_requires_pass_fail_unit():
-    with pytest.raises(ValueError):
+    """AUDIT-APP-04: 'pass' only on a pass/fail rule, and a pass/fail rule takes no number."""
+    with pytest.raises(ValueError, match="target 'pass' needs unit 'pass/fail', the metric unit is '%'"):
         std('[[metric]]\nid = "M"\nname = "m"\nrule = "constraints"\ntarget = "pass"\n')
+    with pytest.raises(ValueError, match="a pass/fail metric takes 'pass' or 'info'"):
+        std('[[metric]]\nid = "M"\nname = "m"\nrule = "dcma_12_critical_path_test"\ntarget = "== 1"\n')
+    metric = std('[[metric]]\nid = "M"\nname = "m"\nrule = "dcma_12_critical_path_test"\ntarget = "pass"\n').metrics[0]
+    assert (metric.comparator, metric.threshold, metric.threshold_label) == ("==", 1.0, "pass")
+    assert std('[[metric]]\nid = "M"\nname = "m"\nrule = "dcma_12_critical_path_test"\n').metrics[0].comparator is None
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-05: nan accepted as a numeric parameter: every comparison is False")
 def test_nan_parameter_is_refused():
-    with pytest.raises(ValueError):
-        std('[[metric]]\nid = "M"\nname = "m"\nrule = "lag"\nparams = { value = nan }\n')
+    """AUDIT-APP-05: nan or inf as a numeric parameter would make every comparison False (a silent pass)."""
+    for value in ("nan", "inf", "-inf"):
+        with pytest.raises(ValueError, match=f"lag.value: expected a finite number, got {value}"):
+            std(f'[[metric]]\nid = "M"\nname = "m"\nrule = "lag"\nparams = {{ value = {value} }}\n')
 
 
 def test_negative_target_is_accepted_and_always_fails():
@@ -205,10 +230,12 @@ def test_snapshots_without_data_date_sort_by_name_and_sort_last():
     assert [s.source for s in SnapshotStore([*undated, dated])] == ["z.xer", "a.xer", "b.xer"]
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-06: SnapshotStore([]) is accepted; summary then has a phantom row")
 def test_empty_store_is_refused_or_consistent():
-    with pytest.raises(ValueError):
+    """AUDIT-APP-06: a store holds at least one snapshot (summary had a phantom row, .first an IndexError)."""
+    with pytest.raises(ValueError, match="no snapshot"):
         SnapshotStore([])
+    with pytest.raises(ValueError, match="no snapshot"):
+        SnapshotStore(iter(()))
 
 
 # --- app/state: per-session caches -------------------------------------------------------------
@@ -262,14 +289,87 @@ def test_no_process_wide_cache_in_state_module():
 # --- export ------------------------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-APP-07: CWE-1236 CSV injection: a task name starting with =+-@ written as is"
-)
+# a tab or a carriage return cannot sit in a (tab-separated, line-based) XER field: csv_safe's own test covers them
+FORMULA_NAMES = {"A1": "=1+1", "A2": "@SUM(1)", "A3": "-2+3", "A4": "+1", "A5": "=cmd|' /C calc'!A0"}
+
+
+def formula_snapshot():
+    return snap_named([todo(code, task_name=name) for code, name in FORMULA_NAMES.items()])
+
+
+def read_names(data: bytes) -> dict[str, str]:
+    frame = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+    return dict(zip(frame["task_code"], frame["task_name"], strict=True))
+
+
+def assert_neutralised(names: dict[str, str]) -> None:
+    """Every formula-looking name leaves with a leading apostrophe (OWASP), nothing else changes."""
+    assert names == {code: "'" + name for code, name in FORMULA_NAMES.items()}, names
+
+
 def test_csv_export_neutralises_formula_cells(tmp_path):
-    s = snap_named([todo("A1", task_name="=1+1"), todo("A2", task_name="@SUM(1)"), todo("A3", task_name="-2+3")])
-    write_tables(SnapshotStore([s]), tmp_path, "csv")
-    names = pd.read_csv(tmp_path / "fact_activity.csv", dtype=str)["task_name"].tolist()
-    assert not any(name[0] in "=+-@" for name in names), names
+    """AUDIT-APP-07 (CWE-1236): the Power BI CSVs; the Parquet tables keep the text as is."""
+    store = SnapshotStore([formula_snapshot()])
+    write_tables(store, tmp_path, "csv")
+    assert_neutralised(read_names((tmp_path / "fact_activity.csv").read_bytes()))
+    csv_frame = pd.read_csv(tmp_path / "fact_activity.csv")
+    assert csv_frame["remaining_d"].dtype == float  # numeric columns are written as numbers
+    write_tables(store, tmp_path, "parquet")
+    parquet_names = pd.read_parquet(tmp_path / "fact_activity.parquet").set_index("task_code")["task_name"]
+    assert parquet_names.to_dict() == FORMULA_NAMES
+    with zipfile.ZipFile(io.BytesIO(zip_tables(store, "csv"))) as z:
+        assert_neutralised(read_names(z.read("fact_activity.csv")))
+
+
+def test_cli_csv_writers_neutralise_formula_cells(tmp_path):
+    """AUDIT-APP-07: `check --flagged` and `--out`, `recalc --out` go through the same guard."""
+    (tmp_path / "a.xer").write_text(xer_text([todo(code, task_name=name) for code, name in FORMULA_NAMES.items()]))
+    flagged = tmp_path / "fl"
+    out_csv = tmp_path / "o.csv"
+    assert cli.main(["check", str(tmp_path / "a.xer"), "--flagged", str(flagged), "--out", str(out_csv)]) == 0
+    open_ends = pd.read_csv(flagged / "a_P6-01.csv", dtype=str, keep_default_na=False)  # every task is an open end
+    assert_neutralised(dict(zip(open_ends["task_code"], open_ends["task_name"], strict=True)))
+    assert out_csv.read_bytes().startswith(b"\xef\xbb\xbf")  # the BOM stays
+    assert cli.main(["recalc", str(tmp_path / "a.xer"), "--out", str(tmp_path / "r.csv")]) == 0
+    recalc = pd.read_csv(tmp_path / "r.csv", dtype=str, keep_default_na=False)
+    assert_neutralised(dict(zip(recalc["task_code"], recalc["task_name"], strict=True)))
+
+
+def test_anonymised_csv_neutralises_formula_cells():
+    """AUDIT-APP-07: the anonymiser renames the codes and the names (a name of the file in a note is
+    a leak, refused before); a kept text column (here the note of a check result) goes through the
+    guard too."""
+    snapshot = formula_snapshot()
+    anonymizer = Anonymizer.from_raws([parse_text(xer_text([todo(c, task_name=n) for c, n in FORMULA_NAMES.items()]))])
+    notes = ["=note", "+note", "-note", "@note", "plain note"]
+    table = snapshot.activities[["task_code", "task_name"]].assign(note=notes)
+    out = pd.read_csv(io.BytesIO(anonymizer.csv(table)), dtype=str, keep_default_na=False)
+    assert out["task_code"].str.fullmatch(r"XA[0-9A-F]{12}").all()
+    assert out["note"].tolist() == ["'=note", "'+note", "'-note", "'@note", "plain note"]
+    frames = {"t": pd.DataFrame({"task_code": list(FORMULA_NAMES), "note": notes})}
+    with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames(frames))) as z:
+        zipped = pd.read_csv(io.BytesIO(z.read("t.csv")), dtype=str, keep_default_na=False)
+    assert zipped["note"].tolist() == ["'=note", "'+note", "'-note", "'@note", "plain note"]
+
+
+def test_csv_safe_touches_text_cells_only():
+    from xerscope.csv_safe import csv_safe
+
+    frame = pd.DataFrame(
+        {
+            "text": ["=1", "+1", "-1", "@a", "\tb", "\rc", "plain", "a=b", None],
+            "number": [-1, -2.5, 0, 1, 2, 3, 4, 5, 6],
+            "date": pd.date_range("2026-03-02", periods=9),
+            "mixed": ["-x", 1, None, pd.Timestamp("2026-03-02"), "=", "", " -", "ok", 2.5],
+        }
+    )
+    out = csv_safe(frame)
+    assert out["text"].tolist()[:8] == ["'=1", "'+1", "'-1", "'@a", "'\tb", "'\rc", "plain", "a=b"]
+    assert pd.isna(out["text"].iloc[8])
+    assert out["number"].tolist() == frame["number"].tolist() and out["number"].dtype == float
+    assert out["date"].equals(frame["date"])
+    assert out["mixed"].tolist()[:2] == ["'-x", 1] and out["mixed"].tolist()[4:] == ["'=", "", " -", "ok", 2.5]
+    assert frame["text"].iloc[0] == "=1"  # the caller's frame is untouched
 
 
 def test_parquet_export_with_empty_relationship_and_assignment_tables(tmp_path):
@@ -291,11 +391,18 @@ def test_same_key_gives_the_same_pseudonym_and_another_key_another_one():
     assert a.code("A", "A1000") != a.code("A", "A1001")
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-08: 8 hex digits: 100k IDs clash with p~0.7 (comment says 0.03 %)")
 def test_hundred_thousand_codes_get_distinct_pseudonyms():
-    anonymizer = Anonymizer(key=bytes(32))
-    for i in range(100_000):
-        anonymizer.code("A", f"T{i}")
+    """AUDIT-APP-08: 12 hex digits for activities (p(clash) ~ 2e-5 at 100k), 8 for the other kinds
+    (p ~ 1e-2 at 10k); under five keys here, none clashes. A clash is still refused (CodeClash)."""
+    from xerscope.anonymize import WIDTH
+
+    assert WIDTH == {"A": 12, "W": 8, "P": 8, "R": 8, "L": 8, "O": 8}
+    for key in (bytes(32), b"k" * 32, (1).to_bytes(32, "big"), (2).to_bytes(32, "big"), (3).to_bytes(32, "big")):
+        anonymizer = Anonymizer(key=key)
+        codes = {anonymizer.code("A", f"T{i}") for i in range(100_000)}
+        assert len(codes) == 100_000 and all(len(code) == 14 for code in codes)
+        wbs = {anonymizer.code("W", f"W{i}") for i in range(10_000)}
+        assert len(wbs) == 10_000 and all(len(code) == 10 for code in wbs)
 
 
 def test_what_leaves_the_file_and_what_is_dropped(tmp_path):
@@ -339,11 +446,14 @@ def test_app_command_runs_streamlit_without_a_shell_and_keeps_odd_paths_one_argu
     assert kw["env"].get("TS_AUTHKEY") == "tskey-test"  # the child inherits the environment (Info, not logged)
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-09: _expand docstring says exit 2, SystemExit(str) exits 1")
-def test_check_on_missing_path_exits_two(tmp_path):
+def test_check_on_missing_path_exits_two(tmp_path, capsys):
+    """AUDIT-APP-09: a usage error is `xerscope: <message>` on stderr and exit 2 (1 is --fail-on)."""
     with pytest.raises(SystemExit) as caught:
         cli.main(["check", str(tmp_path / "nope.xer")])
     assert caught.value.code == 2
+    out, err = capsys.readouterr()
+    assert err == f"xerscope: {tmp_path / 'nope.xer'}: no such file or folder\n" and out == ""
+    assert "exit 2" in cli._expand.__doc__
 
 
 def test_standard_pointing_to_a_directory_is_refused(tmp_path):
@@ -363,48 +473,71 @@ def test_standard_through_symlink_and_dotdot_loads(tmp_path):
     assert load_standard(link).id == "X"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-APP-10: an invalid --standard file is a ValueError traceback, not a CLI exit"
-)
-def test_invalid_standard_file_is_a_clean_cli_error(tmp_path):
+def clean_exit(capsys, argv: list[str]) -> str:
+    """Runs the CLI, asserts exit 2 with one `xerscope: ...` line on stderr, returns that line."""
+    with pytest.raises(SystemExit) as caught:
+        cli.main(argv)
+    assert caught.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("xerscope: ") and err.count("\n") == 1 and "Traceback" not in err, err
+    return err
+
+
+def test_invalid_standard_file_is_a_clean_cli_error(tmp_path, capsys):
+    """AUDIT-APP-10: an invalid --standard file is a message naming the file, not a ValueError traceback."""
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
     (tmp_path / "bad.toml").write_text(HEAD)
-    with pytest.raises(SystemExit):
-        cli.main(["check", str(tmp_path / "a.xer"), "--standard", str(tmp_path / "bad.toml")])
+    err = clean_exit(capsys, ["check", str(tmp_path / "a.xer"), "--standard", str(tmp_path / "bad.toml")])
+    assert err == "xerscope: bad.toml: no [[metric]] defined\n"
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-10: a missing --baseline file is a FileNotFoundError traceback")
-def test_missing_baseline_file_is_a_clean_cli_error(tmp_path):
+def test_missing_baseline_file_is_a_clean_cli_error(tmp_path, capsys):
+    """AUDIT-APP-10: a missing --baseline file is a message, not a FileNotFoundError traceback."""
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
-    with pytest.raises(SystemExit):
-        cli.main(["check", str(tmp_path / "a.xer"), "--baseline", str(tmp_path / "nope.xer")])
+    err = clean_exit(capsys, ["check", str(tmp_path / "a.xer"), "--baseline", str(tmp_path / "nope.xer")])
+    assert "nope.xer" in err
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-11: --expect with a malformed CSV is a pandas ParserError traceback")
-def test_expect_with_malformed_csv_is_a_clean_cli_error(tmp_path):
+def test_a_broken_xer_is_a_clean_cli_error(tmp_path, capsys):
+    (tmp_path / "a.xer").write_text("not an XER\n")
+    err = clean_exit(capsys, ["info", str(tmp_path / "a.xer")])
+    assert "a.xer" in err
+
+
+def test_expect_with_malformed_csv_is_a_clean_cli_error(tmp_path, capsys):
+    """AUDIT-APP-11: --expect with a malformed CSV names the file, no pandas ParserError traceback."""
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
     bad = tmp_path / "bad.csv"
     bad.write_text('id,found,total\n"P6-01,1,2\nx,y\n')
-    with pytest.raises(SystemExit):
-        cli.main(["check", str(tmp_path / "a.xer"), "--expect", str(bad)])
+    err = clean_exit(capsys, ["check", str(tmp_path / "a.xer"), "--expect", str(bad)])
+    assert err.startswith(f"xerscope: {bad}: not a readable CSV: ")
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-11: --expect with a non-numeric count is an ArrowInvalid traceback")
-def test_expect_with_non_numeric_count_is_a_clean_cli_error(tmp_path):
+def test_expect_with_non_numeric_count_is_a_clean_cli_error(tmp_path, capsys):
+    """AUDIT-APP-11: --expect with a non-numeric count names the file, no ArrowInvalid traceback."""
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
     bad = tmp_path / "bad.csv"
     bad.write_text("id,found,total\nP6-01,abc,2\n")
-    with pytest.raises(SystemExit):
-        cli.main(["check", str(tmp_path / "a.xer"), "--expect", str(bad)])
+    err = clean_exit(capsys, ["check", str(tmp_path / "a.xer"), "--expect", str(bad)])
+    assert err.startswith(f"xerscope: {bad}: found and total must be whole numbers: ")
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-APP-12: a metric id with '/' goes unsanitised into a file name (OSError)")
-def test_flagged_file_name_survives_a_metric_id_with_a_slash(tmp_path):
+def test_expect_without_the_columns_exits_two(tmp_path, capsys):
+    (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
+    (tmp_path / "bad.csv").write_text("id,n\nP6-01,1\n")
+    err = clean_exit(capsys, ["check", str(tmp_path / "a.xer"), "--expect", str(tmp_path / "bad.csv")])
+    assert err == f"xerscope: {tmp_path / 'bad.csv'}: columns found, total missing\n"
+
+
+def test_flagged_file_name_survives_a_metric_id_with_a_slash(tmp_path, capsys):
+    """AUDIT-APP-12: a metric id with '/' is refused on load (the id names the --flagged file), so
+    nothing is written outside the --flagged folder and the message names the file and the key."""
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))
     (tmp_path / "s.toml").write_text(HEAD + '[[metric]]\nid = "sub/M"\nname = "m"\nrule = "missing_logic"\n')
     argv = ["check", str(tmp_path / "a.xer"), "--standard", str(tmp_path / "s.toml"), "--flagged", str(tmp_path / "fl")]
-    assert cli.main(argv) == 0
-    assert all(p.parent == tmp_path / "fl" for p in (tmp_path / "fl").rglob("*.csv"))
+    err = clean_exit(capsys, argv)
+    assert err == "xerscope: s.toml: metric #1 (sub/M): id 'sub/M': letters, digits, '.', '_' and '-' only\n"
+    assert not (tmp_path / "fl").exists() and list(tmp_path.rglob("*.csv")) == []
 
 
 def test_expand_scans_ten_thousand_files_quickly(tmp_path):

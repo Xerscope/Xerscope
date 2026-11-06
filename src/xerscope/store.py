@@ -77,6 +77,8 @@ class DuplicateDataDate(ValueError):
 class SnapshotStore:
     def __init__(self, snapshots: Iterable[Snapshot]):
         snaps = sorted(snapshots, key=_sort_key)
+        if not snaps:
+            raise ValueError("no snapshot")
         # One update per data date: the weekly series, the earned-value and health histories
         # are keyed on it. Files sharing a data date are usually versions of one draft or an
         # update and its baseline copy; which one is the update is the user's call, not the
