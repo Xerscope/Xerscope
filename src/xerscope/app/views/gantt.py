@@ -161,7 +161,9 @@ asked = st.text_input(
 )
 ask = query.parse(asked, memo(("vocabulary", snapshot.source), query.vocabulary, snapshot, nodes)) if asked else None
 if ask is not None:
-    st.caption("Understood: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all.")
+    understood = "Understood: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all."
+    left_out = f" — not in this file: {', '.join(ask.ignored)}" if ask.ignored else ""
+    st.caption(understood + left_out)
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
@@ -177,7 +179,7 @@ if current != ROOT:
 if ask is not None and ask.wbs_id in branch_ids:  # a node named in the sentence narrows the branch
     tasks = tasks[tasks["wbs_id"].isin(subtree_ids(nodes, ask.wbs_id))]
 tasks = tasks.assign(category=categorise(tasks))
-if hide_loe:
+if hide_loe and not (ask is not None and ask.loe):  # "LOE" in the sentence overrides the toggle
     tasks = tasks[~tasks["is_loe"]]
 unfiltered = len(tasks)
 if status:
@@ -197,6 +199,13 @@ if ask is not None:  # the sentence's filters, intersected with the widgets'
         tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], ask.search)]
     if ask.code_type and ask.code_ids:
         tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(ask.code_type, ask.code_ids))]
+    if ask.resources:
+        assigned = snapshot.assignments
+        tasks = tasks[tasks["task_code"].isin(assigned.loc[assigned["rsrc_id"].isin(ask.resources), "task_code"])]
+    if ask.milestones:
+        tasks = tasks[tasks["is_milestone"]]
+    if ask.loe:
+        tasks = tasks[tasks["is_loe"]]
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

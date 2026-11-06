@@ -1,13 +1,15 @@
 """A sentence turned into the Gantt page's filters: "critical not started in civil works".
 
-The page owns the filtering (WBS branch, status, float category, activity codes, text).
+The page owns the filtering (WBS branch, status, float category, activity codes, resources,
+milestones, level of effort, text).
 This module only decides *which* filters a sentence asks for, so a number never comes from
 here: a filter the parser picks is the one the user could have ticked by hand.
 
 ``parse`` tries the backend it is given (a local language model, step two of the feature,
 absent by default) and always falls back on ``parse_keywords``, a bilingual (English /
-French) phrase grammar over the file's own vocabulary (``Vocabulary``). The page therefore
-never depends on a model being up.
+French) phrase grammar over the file's own lexicon (``Vocabulary``: its WBS, activity-code
+values, resources, and the words of its activity names). The page therefore never depends
+on a model being up.
 """
 
 from __future__ import annotations
@@ -42,12 +44,25 @@ class Filter:
     categories: tuple[str, ...] = ()
     code_type: str | None = None
     code_ids: frozenset[str] = frozenset()
+    resources: frozenset[str] = frozenset()  # rsrc_id of the file's resources named in the sentence
+    milestones: bool = False  # milestones only
+    loe: bool = False  # level-of-effort activities only
     search: str = ""
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's caption
+    ignored: tuple[str, ...] = ()  # words the file's own lexicon does not hold, left out of the search
 
     @property
     def empty(self) -> bool:
-        return not (self.wbs_id or self.status or self.categories or self.code_ids or self.search)
+        return not (
+            self.wbs_id
+            or self.status
+            or self.categories
+            or self.code_ids
+            or self.resources
+            or self.milestones
+            or self.loe
+            or self.search
+        )
 
 
 @dataclass(frozen=True)
@@ -59,14 +74,23 @@ class Vocabulary:
 
     wbs: Mapping[str, str]  # wbs_id -> "CIV · Civil works" (code and name)
     codes: Mapping[str, tuple[str, str, str]] = field(default_factory=dict)  # code_id -> (type, value, name)
+    resources: Mapping[str, tuple[str, str]] = field(default_factory=dict)  # rsrc_id -> (short name, name)
+    # every folded word of the Activity IDs and names: a search word the file does not hold is
+    # dropped (``Filter.ignored``) instead of emptying the chart; None = unknown, keep every word
+    words: frozenset[str] | None = None
+    has_milestones: bool = False
+    has_loe: bool = False
 
     def to_prompt(self) -> dict:
-        """The vocabulary as plain data, for a model prompt."""
+        """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
         return {
             "status": STATUSES,
             "float": CATEGORIES,
             "wbs": [{"id": k, "label": v} for k, v in self.wbs.items()],
             "codes": [{"id": k, "type": t, "value": v, "name": n} for k, (t, v, n) in self.codes.items()],
+            "resources": [{"id": k, "short": short, "name": name} for k, (short, name) in self.resources.items()],
+            "milestones": self.has_milestones,
+            "loe": self.has_loe,
         }
 
 
@@ -91,7 +115,24 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None) -> Vocabul
             values["code_id"], values["code_type"], values["value"], values["name"], strict=True
         ):
             codes[code_id] = (str(code_type), str(value), "" if pd.isna(name) else str(name))
-    return Vocabulary(wbs=wbs, codes=codes)
+    resources = {}
+    assigned = snapshot.assignments
+    if not assigned.empty and "rsrc_id" in assigned:
+        named = assigned.dropna(subset=["rsrc_id"]).drop_duplicates("rsrc_id")
+        for rsrc_id, short, name in zip(named["rsrc_id"], named["rsrc_short_name"], named["rsrc_name"], strict=True):
+            if isinstance(rsrc_id, str) and rsrc_id:
+                resources[rsrc_id] = tuple("" if pd.isna(s) else str(s) for s in (short, name))
+    activities = snapshot.activities
+    text = " ".join(activities["task_code"].astype(str)) + " " + " ".join(activities["task_name"].astype(str))
+    words = frozenset(w for w in re.split(r"[^a-z0-9]+", fold(text)) if len(w) > 1)
+    return Vocabulary(
+        wbs=wbs,
+        codes=codes,
+        resources=resources,
+        words=words,
+        has_milestones=bool(activities["is_milestone"].any()),
+        has_loe=bool(activities["is_loe"].any()),
+    )
 
 
 # phrases are matched longest first on the folded sentence, as whole words
@@ -195,6 +236,8 @@ _CATEGORY_PHRASES = {
         "avec marge",
     ],
 }
+_MILESTONE_PHRASES = ["milestone", "milestones", "jalon", "jalons", "evenement", "evenements", "event", "events"]
+_LOE_PHRASES = ["loe", "level of effort", "niveau d effort", "hamac", "hamacs", "hammock", "hammocks"]
 # words that carry no filter, dropped before the leftover becomes a text search
 _STOP_WORDS = """
     a au aux avec ce ces cette d de des du en et l la le les ou pour qui que quoi sur un une tout toute
@@ -248,6 +291,15 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
             result = replace(result, status=(*result.status, status))
             record(found[0], f"Status: {status}")
 
+    folded, found = _take(folded, _MILESTONE_PHRASES)
+    if found:
+        result = replace(result, milestones=True)
+        record(found[0], "Milestones")
+    folded, found = _take(folded, _LOE_PHRASES)
+    if found:
+        result = replace(result, loe=True)
+        record(found[0], "Level of effort")
+
     # WBS: the longest node label (code, then name, then any word of the name of 4+ letters) found in the text
     best: tuple[int, str, str] | None = None
     for wbs_id, label in vocab.wbs.items():
@@ -271,7 +323,7 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     # The type's own name ("zone B2") is dropped too.
     by_length = sorted(vocab.codes.items(), key=lambda kv: -max(len(kv[1][1]), len(kv[1][2])))
     for code_id, (code_type, value, name) in by_length:
-        for candidate in (fold(value), fold(name)):
+        for candidate in sorted((fold(value), fold(name)), key=len, reverse=True):
             if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
                 folded, found = _take(folded, [candidate])
                 if result.code_type in (None, code_type):
@@ -282,12 +334,25 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         if len(fold(code_type)) >= 2:
             folded, _ = _take(folded, [fold(code_type)])
 
+    # resources: short name or name, whole word, longest first
+    by_length = sorted(vocab.resources.items(), key=lambda kv: -max(len(kv[1][0]), len(kv[1][1])))
+    for rsrc_id, (short, name) in by_length:
+        for candidate in sorted((fold(short), fold(name)), key=len, reverse=True):
+            if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
+                folded, found = _take(folded, [candidate])
+                result = replace(result, resources=result.resources | {rsrc_id})
+                record(found[0], f"Resource: {short or name}")
+                break
+
+    # what is left is a text search, kept to the words the file holds (Activity IDs and names)
     rest = [w for w in folded.split() if w not in _STOP and len(w) > 1]
-    if rest:
-        search = " ".join(rest)
+    known = rest if vocab.words is None else [w for w in rest if w in vocab.words]
+    ignored = tuple(w for w in rest if w not in known)
+    if known:
+        search = " ".join(known)
         result = replace(result, search=search)
-        record(folded.find(rest[0]), f"Search: {search}")
-    return replace(result, matched=tuple(label for _, label in sorted(matched)))
+        record(folded.find(known[0]), f"Search: {search}")
+    return replace(result, matched=tuple(label for _, label in sorted(matched)), ignored=ignored)
 
 
 def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filter:
