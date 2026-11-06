@@ -63,7 +63,7 @@ description = "Activities that have a remaining duration greater than 352 hours"
 rule = "p6_04_large_durations"
 params = { limit_hours = 352 }  # the dialog's "x", in hours
 target = "< 5%"
-source = "101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional r22.12 report shows (Ten Six) and EPPM's 46282 states"
+source = "101248: completed, WBS summary and LOE not included; milestones also out, as a P6 Professional r22.12 report shows (Ten Six) and EPPM's 46282 states. A P6 Professional 26.8 report on a shareable synthetic project (tests/test_p6_checksched.py) gives the same population: 1 / 11, its 14 activities less 2 milestones and 1 completed"
 
 [[metric]]
 id = "P6-05"
@@ -150,7 +150,7 @@ name = "Late Activities"
 description = "Activities scheduled to finish later than the project baseline"
 rule = "p6_12_late_activities"
 target = "< 5%"
-source = "101248: milestones, WBS summary and LOE not included; a P6 Professional Check Schedule report (R1, docs/standards.md) checks the Large Durations population, so completed activities are out too. No baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time"
+source = "101248: milestones, WBS summary and LOE not included; a P6 Professional Check Schedule report (R1, docs/standards.md) checks the Large Durations population, so completed activities are out too. No baseline counterpart = late when the remaining early finish is later than the planned finish. 46278: finish variance in working time. A P6 Professional 26.8 report on a shareable synthetic project (tests/test_p6_checksched.py) shows the same: 2 / 11, its completed activity out of the 12 non-milestone activities"
 
 [[metric]]
 id = "P6-13"
@@ -159,7 +159,7 @@ name = "BEI"
 description = "Baseline Execution Index"
 rule = "p6_13_bei"
 target = "> 0.95"
-source = "101248 reads 'baseline activities calculated to finish before the data date', but a P6 Professional Check Schedule report (R1) divides by every baseline activity, whatever its finish date (target shown as > 0.95). The report wins. Milestones, WBS summary and LOE not included on either side"
+source = "101248 reads 'baseline activities calculated to finish before the data date', but a P6 Professional Check Schedule report (R1) divides by every baseline activity, whatever its finish date (target shown as > 0.95). The report wins. Milestones, WBS summary and LOE not included on either side. A P6 Professional 26.8 report on a shareable synthetic project (tests/test_p6_checksched.py) shows the same: BEI 1 / 12, every non-milestone activity, where 3 were due by the data date"
 
 [[metric]]
 id = "P6-14"

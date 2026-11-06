@@ -112,19 +112,22 @@ def test_second_field_line_in_a_table_keeps_the_first_columns_and_ignores_the_ro
     assert raw.warnings == ["table A: a %F line with other columns than its first one; the rows under it are ignored"]
 
 
-def test_table_appearing_twice_with_different_fields_keeps_the_first_block():
-    """AUDIT-XER-01: a table split in two blocks with different %F lines is not merged under the last one."""
-    raw = parse_text(HEAD + "%T\tTASK\n%F\tx\ty\n%R\t1\t2\n%T\tTASK\n%F\tp\n%R\t3\n%E\n")
+def test_table_written_twice_is_refused():
+    """AUDIT-XER-01, closed by the load contract (#133): P6 writes each table once; a second block,
+    with other columns or the same, is refused rather than merged."""
+    with pytest.raises(XerError, match="table TASK appears twice"):
+        parse_text(HEAD + "%T\tTASK\n%F\tx\ty\n%R\t1\t2\n%T\tTASK\n%F\tp\n%R\t3\n%E\n")
+    with pytest.raises(XerError, match="table TASK appears twice"):
+        parse_text(HEAD + "%T\tTASK\n%F\tx\n%R\t1\n%T\tOTHER\n%F\ty\n%R\t2\n%T\tTASK\n%F\tx\n%R\t3\n%E\n")
+
+
+def test_second_field_line_inside_one_table_ignores_the_rows_under_it():
+    """AUDIT-XER-01: a second %F line in the same block never relabels the rows read under the first."""
+    raw = parse_text(HEAD + "%T\tTASK\n%F\tx\ty\n%R\t1\t2\n%F\tp\n%R\t3\n%E\n")
     assert raw.table("TASK").to_dict("records") == [{"x": "1", "y": "2"}]
     assert raw.warnings == [
         "table TASK: a %F line with other columns than its first one; the rows under it are ignored"
     ]
-
-
-def test_table_appearing_twice_with_the_same_fields_is_concatenated():
-    raw = parse_text(HEAD + "%T\tTASK\n%F\tx\n%R\t1\n%T\tOTHER\n%F\ty\n%R\t2\n%T\tTASK\n%F\tx\n%R\t3\n%E\n")
-    assert raw.table("TASK")["x"].tolist() == ["1", "3"]
-    assert raw.warnings == []
 
 
 def test_row_longer_than_its_fields_is_truncated_and_reported_only_when_non_blank():
@@ -162,8 +165,8 @@ def test_lone_carriage_return_inside_a_value_is_kept():
 def test_cr_only_line_endings_give_no_tables_and_a_clear_model_error():
     raw = parse_text("ERMHDR\t1\r%T\tTASK\r%F\tx\r%R\t1\r%E\r", source="mac.xer")
     assert raw.tables == {}  # the parser accepts the header line, so no XerError at this level
-    with pytest.raises(XerError, match="PROJECT or TASK table missing"):
-        build_snapshot(raw)
+    with pytest.raises(XerError, match="incomplete file, no %E end line"):
+        build_snapshot(raw)  # "%E\r" is not the %E line: the file reads as cut short
 
 
 def test_lines_with_an_unknown_tag_are_dropped_without_a_count():
@@ -198,16 +201,13 @@ def test_keep_projection_tolerates_a_wanted_column_the_file_lacks():
     assert "TASK" not in raw.tables and any("no %F" in w for w in raw.warnings)
 
 
-def test_duplicate_column_name_is_suffixed_by_the_parser_and_the_model_builds():
-    """AUDIT-XER-04: the first column keeps its name, the repeat is ``name.1``, the warning reaches the snapshot."""
+def test_duplicate_column_name_is_refused_by_the_parser():
+    """AUDIT-XER-04, closed by the load contract (#133): a column named twice is a XerError."""
     text = xer_text([todo("A")])
     header = next(line for line in text.splitlines() if line.startswith("%F\ttask_id"))
     text = text.replace(header, header.replace("\ttask_name\t", "\ttask_code\t"), 1)  # two task_code columns
-    raw = parse_text(text, source="t.xer")
-    assert raw.warnings == ["table TASK: duplicate column(s) ['task_code'] renamed with a .1, .2 suffix"]
-    s = build_snapshot(raw)
-    assert s.tasks["task_code"].tolist() == ["A"] and s.tasks["task_code.1"].tolist() == ["A"]
-    assert raw.warnings[0] in s.warnings
+    with pytest.raises(XerError, match="table TASK names column task_code twice"):
+        parse_text(text, source="t.xer")
 
 
 def test_a_single_50mb_line_parses_fast_in_bounded_memory():
@@ -239,11 +239,11 @@ def test_peak_memory_of_parse_bytes_is_a_small_multiple_of_the_file_size():
 # --- model: identity ------------------------------------------------------------------------
 
 
-def test_duplicate_task_code_in_one_project_is_warned_and_by_code_keeps_the_first_row():
+def test_repeated_activity_id_keeps_the_first_row_with_a_warning():
+    """#135: the first row of a repeated Activity ID is kept, the others leave the snapshot."""
     s = snap([todo("A", task_name="first"), todo("A", task_name="second")])
-    assert len(s.tasks) == 2 and len(s.by_code) == 1
-    assert s.by_code.loc["A", "task_name"] == "first"
-    assert any("duplicate task IDs ['A']" in w for w in s.warnings)
+    assert len(s.tasks) == 1 and s.by_code.loc["A", "task_name"] == "first"
+    assert any("Activity ID repeated in the project ['A']" in w for w in s.warnings)
 
 
 def test_empty_task_code_is_accepted_as_an_identity_without_a_warning():
@@ -259,22 +259,20 @@ def test_task_codes_differing_by_case_or_trailing_space_are_distinct_identities(
     assert len(s.by_code) == 3 and not any("duplicate" in w for w in s.warnings)
 
 
-def test_duplicate_task_id_keeps_the_first_row_and_warns():
-    """AUDIT-XER-06: two TASK rows with one task_id (impossible in P6) keep the first, with a warning."""
-    s = snap([todo("A", task_id="1"), todo("B", task_id="1")], [("A", "B", "FS", 0)])
-    assert s.tasks["task_code"].tolist() == ["A"]
-    assert "test.xer: 1 TASK row(s) repeat a task_id ['1']; the first row is kept" in s.warnings
+def test_repeated_task_id_is_refused():
+    """AUDIT-XER-06, closed by the load contract (#133): every other table points at task_id."""
+    with pytest.raises(XerError, match=r"table TASK has duplicate task_id \['1'\]"):
+        snap([todo("A", task_id="1"), todo("B", task_id="1")], [("A", "B", "FS", 0)])
 
 
-def test_duplicate_wbs_id_keeps_the_first_row_and_warns():
-    """AUDIT-XER-07: two PROJWBS rows with one wbs_id keep the first, with a warning."""
+def test_repeated_wbs_id_is_refused():
+    """AUDIT-XER-07, closed by the load contract (#133)."""
     wbs = [
         wbs_row("10", "A", "1"),
         wbs_row("10", "B", "2"),
     ]  # fmt: skip
-    s = snap([todo("A", wbs_id="10")], wbs=wbs)
-    assert s.tasks.iloc[0]["wbs_code"] == "A"
-    assert "test.xer: 1 PROJWBS row(s) repeat a wbs_id ['10']; the first row is kept" in s.warnings
+    with pytest.raises(XerError, match=r"table PROJWBS has duplicate wbs_id \['10'\]"):
+        snap([todo("A", wbs_id="10")], wbs=wbs)
 
 
 def test_duplicate_project_row_keeps_the_first_and_file_baseline_readable():
@@ -353,7 +351,7 @@ def test_columns_present_but_all_blank_give_nat_nan_and_no_crash():
         ("2026-03-02T08:00", "2026-03-02 08:00:00"),
         ("  2026-03-02 08:00  ", "2026-03-02 08:00:00"),
         ("20260302", "2026-03-02 00:00:00"),
-        ("9999-12-31 23:59", "9999-12-31 23:59:00"),  # beyond the TimeAxis ns range: see the calendar tests
+        ("9999-12-31 23:59", "NaT"),  # outside 1900-2199: read as blank (#133)
     ],
 )
 def test_date_cells(text, expected):
@@ -385,8 +383,8 @@ def test_invalid_data_date_cells_fall_through_to_no_status_date():
         ("-0", 0.0, 0.0, True),
         ("NaN", np.nan, np.nan, False),
         ("1,5", np.nan, np.nan, False),  # decimal comma is not a number
-        ("inf", 0.0, 0.0, False),  # an infinite remaining duration reads as 0 (with a warning)
-        ("-inf", 0.0, 0.0, True),
+        ("inf", np.nan, np.nan, False),  # an infinite number reads as blank (#133)
+        ("-inf", np.nan, np.nan, False),
         ("-40", 0.0, 0.0, True),  # a negative remaining duration reads as 0 (with a warning)
         (" 80 ", 80.0, 10.0, False),
         ("+80", 80.0, 10.0, False),
@@ -403,15 +401,18 @@ def test_number_cells(text, hours, days, critical):
     assert bool(t["is_critical"]) is critical
 
 
-def test_unusable_and_negative_remaining_durations_read_as_zero_with_one_warning_each():
+def test_infinite_huge_and_negative_remaining_durations():
+    """An infinite number reads as blank (#133); a finite one above 1e6 h and a negative one read as
+    0, each with one warning."""
     tasks = [
         todo("A", remain_drtn_hr_cnt="inf"),
         todo("B", remain_drtn_hr_cnt="1e9"),
         todo("C", remain_drtn_hr_cnt="-40"),
     ]
     s = snap(tasks + [todo("D", remain_drtn_hr_cnt="")])
-    assert s.tasks["remain_drtn_hr_cnt"].tolist()[:3] == [0.0, 0.0, 0.0] and np.isnan(s.tasks.iloc[3]["remaining_d"])
-    assert "test.xer: 2 activity remaining duration(s) not finite or above 1e+06 h ['A', 'B']; read as 0" in s.warnings
+    remaining = s.tasks["remain_drtn_hr_cnt"].tolist()
+    assert np.isnan(remaining[0]) and remaining[1:3] == [0.0, 0.0] and np.isnan(remaining[3])
+    assert "test.xer: 1 activity remaining duration(s) not finite or above 1e+06 h ['B']; read as 0" in s.warnings
     assert "test.xer: 1 activities with a negative remaining duration, read as 0" in s.warnings
 
 
@@ -430,7 +431,7 @@ def test_unusable_lag_reads_as_zero_and_an_unknown_link_type_is_kept_and_named()
         "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
         "kept with its code, ignored by the recalculation"
     ]
-    assert "test.xer: 2 relationship lag(s) not finite or above 1e+06 h ['A->B', 'A->C']; read as 0" in s.warnings
+    assert "test.xer: 1 relationship lag(s) not finite or above 1e+06 h ['A->C']; read as 0" in s.warnings  # inf: blank
 
 
 def test_negative_remaining_duration_reads_as_100_percent_complete():

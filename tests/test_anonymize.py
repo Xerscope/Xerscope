@@ -234,7 +234,9 @@ def test_no_original_code_is_left_whatever_the_key(name):
 
 
 def test_unknown_tables_and_columns_are_left_out_and_named():
-    text = _file([todo("A1", wbs_id="")]) + "%T\tTASKMEMO\n%F\tmemo_id\ttask_memo\n%R\t1\tCall Jane re. crane\n"
+    text = _file([todo("A1", wbs_id="")]).replace(
+        "%E\n", "%T\tTASKMEMO\n%F\tmemo_id\ttask_memo\n%R\t1\tCall Jane re. crane\n%E\n"
+    )
     raw = parse_text(text, source="x.xer")
     raw.tables["TASK"]["new_p6_column"] = "Crane hire by Smith Ltd"
     anonymizer = Anonymizer.from_raws([raw])
@@ -295,7 +297,7 @@ def test_diagnostic_ev_settings_block_renames_the_wbs_and_keeps_the_enumerations
     ]
     raw = parse_text(_file([todo("A1", wbs_id="10")], wbs=wbs), source="x.xer")
     anonymizer = Anonymizer.from_raws([raw])
-    plain = diagnostic_frames(build_snapshot(raw), None, p6)
+    plain = diagnostic_frames(build_snapshot(raw), None, p6, anonymous=True)  # as the Debug page builds the zip
     with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames(plain))) as archive:
         data = {name: archive.read(name).decode("utf-8-sig") for name in archive.namelist()}
     assert "SECRETWBS" not in "".join(data.values())

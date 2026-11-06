@@ -141,6 +141,16 @@ def test_funnel_stack_bounds_what_it_takes_from_the_nas():
     assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
 
 
+def test_remote_debug_page_follows_the_env_file_and_is_off_by_default():
+    """Compose reads .env only for the ${...} of the compose file: a variable the app reads reaches
+    the container only through its environment block. XERSCOPE_DEBUG_PAGE=1 in .env then shows the
+    Debug page on the locked instance; left unset, it stays off."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    app = c[c.index("\n  xerscope:") :]
+    assert re.search(r"^\s+XERSCOPE_DEBUG_PAGE: \$\{XERSCOPE_DEBUG_PAGE:-\}", app, re.M)
+    assert re.search(r"^# XERSCOPE_DEBUG_PAGE=1\b", (ROOT / "deploy" / ".env.example").read_text(), re.M)
+
+
 def test_remote_app_settings_reach_streamlit():
     """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
     import os
@@ -218,7 +228,7 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     block = caddy[caddy.index("rate_limit {") : caddy.index("basic_auth {")]
     assert "key {client_ip}" in block  # the visitor; {remote_host} is tailscaled's 127.0.0.1 for everyone
-    assert "ipv6_prefix 64" in block and "events 120" in block and "window 1m" in block
+    assert "ipv6_prefix 64" in block and "events 300" in block and "window 1m" in block
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert 'docker build -t "$XERSCOPE_CADDY_IMAGE" caddy' in wf and "HTTP/1.1 429" in wf
 
