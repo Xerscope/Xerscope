@@ -222,6 +222,14 @@ def _require(frame: pd.DataFrame, source: str, table: str, columns: list[str]) -
             raise XerError(f"{source}: table {table} has no column {column}")
 
 
+def _warn_unknown_codes(codes: pd.Series, known: dict, column: str, reading: str, warnings: list[str]) -> None:
+    """One warning per value of ``codes`` that is not in ``known``, with its row count."""
+    for code, count in codes[~codes.isin(known)].value_counts().sort_index().items():
+        name = repr(code) if code else "blank"
+        rows = "1 row" if count == 1 else f"{count} rows"
+        warnings.append(f"{column} {name} is not a P6 code ({rows}): {reading}")
+
+
 def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
     """TASK with the identity columns checked; a missing proj_id is the file's only project."""
     tasks = raw.table("TASK")
@@ -747,7 +755,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     )
     if raw_assignments.empty:
         return pd.DataFrame(columns=columns)
-    _require(raw_assignments, inputs.raw.source, "TASKRSRC", ["task_id"])
+    _require(raw_assignments, inputs.source, "TASKRSRC", ["task_id"])
     if "proj_id" in raw_assignments.columns:
         raw_assignments = raw_assignments[raw_assignments["proj_id"] == inputs.project_id]
     assignments = _ensure_cols(
@@ -1037,8 +1045,12 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     tasks["type"] = tasks["task_type"].map(TASK_TYPE).fillna(tasks["task_type"])
     tasks["is_complete"] = tasks["status_code"] == "TK_Complete"
     tasks["is_started"] = tasks["status_code"] != "TK_NotStart"
+    _warn_unknown_codes(tasks["status_code"], STATUS, f"{source}: TASK.status_code", "read as started", inputs.warnings)
     tasks["is_start_milestone"] = tasks["task_type"].isin(START_MILESTONES)
     tasks["is_milestone"] = tasks["is_start_milestone"] | (tasks["task_type"] == "TT_FinMile")
+    _warn_unknown_codes(
+        tasks["task_type"], TASK_TYPE, f"{source}: TASK.task_type", "read as Task Dependent", inputs.warnings
+    )
     if (tasks["task_type"] == "TT_StartMile").any():
         inputs.warnings.append(f"{source}: non-standard task_type TT_StartMile read as a start milestone")
     tasks["is_loe"] = tasks["task_type"] == "TT_LOE"
@@ -1099,7 +1111,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
         all_relationships[all_relationships["proj_id"] == project_id].copy(),
         ["pred_proj_id", "pred_type", "lag_hr_cnt"],
     )
-    relationships = validate.known_relationship_types(relationships, inputs.source, inputs.warnings).copy()
+    relationships = relationships.copy()
     all_tasks = _ensure_cols(inputs.all_tasks.copy(), ["clndr_id"])
     code_by_id = all_tasks.set_index("task_id")["task_code"]
     hours_per_day_by_id = (
@@ -1108,6 +1120,13 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     relationships["succ_code"] = relationships["task_id"].map(code_by_id)
     relationships["pred_code"] = relationships["pred_task_id"].map(code_by_id)
     relationships["type"] = relationships["pred_type"].map(REL_TYPE).fillna(relationships["pred_type"])
+    _warn_unknown_codes(
+        relationships["pred_type"],
+        REL_TYPE,
+        f"{inputs.source}: TASKPRED.pred_type",
+        "kept with its code, ignored by the recalculation",
+        inputs.warnings,
+    )
     lag_names = relationships["pred_code"].astype(str) + "->" + relationships["succ_code"].astype(str)
     lag_hours = to_number(relationships["lag_hr_cnt"]).fillna(0.0)
     relationships["lag_hr"] = validate.usable_hours(
@@ -1192,28 +1211,29 @@ def _labor_hours(tasks: pd.DataFrame, assignments: pd.DataFrame) -> str:
     """Add the labour / nonlabor columns to ``tasks`` in place and say where they came from.
 
     P6 keeps the activity totals on TASK (Budgeted / Actual / Remaining Labor Units;
-    nonlabor in *_equip_qty). Older or partial exports only have the assignments: sum them
-    by resource type (roles count as labour, as in P6).
+    nonlabor in *_equip_qty). Older or partial exports leave some blank: a blank value takes
+    the sum of the activity's assignments of that quantity by resource type (roles count as
+    labour, as in P6), zero without any.
     """
-    if tasks["target_work_qty"].notna().any():
-        tasks["labor_budget_hr"] = tasks["target_work_qty"].fillna(0.0)
-        tasks["labor_actual_hr"] = tasks["act_work_qty"].fillna(0.0)
-        tasks["labor_remaining_hr"] = tasks["remain_work_qty"].fillna(0.0)
-        tasks["nonlabor_budget_qty"] = tasks["target_equip_qty"].fillna(0.0)
-        tasks["nonlabor_actual_qty"] = tasks["act_equip_qty"].fillna(0.0)
-        tasks["nonlabor_remaining_qty"] = tasks["remain_equip_qty"].fillna(0.0)
-        return "TASK"
-    if assignments.empty:
-        for column in LABOR_COLS:
-            tasks[column] = 0.0
-        return "none"
-    for prefix, kinds in (("labor", ("RT_Labor", "role", "")), ("nonlabor", ("RT_Equip",))):
-        by_task = assignments[assignments["rsrc_type"].isin(kinds)].groupby("task_id")
-        unit = "hr" if prefix == "labor" else "qty"
-        tasks[f"{prefix}_budget_{unit}"] = tasks["task_id"].map(by_task["target_qty"].sum()).fillna(0.0)
-        tasks[f"{prefix}_actual_{unit}"] = tasks["task_id"].map(by_task["act_qty"].sum()).fillna(0.0)
-        tasks[f"{prefix}_remaining_{unit}"] = tasks["task_id"].map(by_task["remain_qty"].sum()).fillna(0.0)
-    return "TASKRSRC"
+    labour, nonlabor = ("RT_Labor", "role", ""), ("RT_Equip",)
+    sources = {  # column: (TASK column, TASKRSRC column, resource types)
+        "labor_budget_hr": ("target_work_qty", "target_qty", labour),
+        "labor_actual_hr": ("act_work_qty", "act_qty", labour),
+        "labor_remaining_hr": ("remain_work_qty", "remain_qty", labour),
+        "nonlabor_budget_qty": ("target_equip_qty", "target_qty", nonlabor),
+        "nonlabor_actual_qty": ("act_equip_qty", "act_qty", nonlabor),
+        "nonlabor_remaining_qty": ("remain_equip_qty", "remain_qty", nonlabor),
+    }
+    used: set[str] = set()
+    for column, (task_column, quantity, kinds) in sources.items():
+        by_task = assignments[assignments["rsrc_type"].isin(kinds)].groupby("task_id")[quantity].sum()
+        summed = tasks["task_id"].map(by_task)
+        if tasks[task_column].notna().any():
+            used.add("TASK")
+        if (tasks[task_column].isna() & summed.notna()).any():
+            used.add("TASKRSRC")
+        tasks[column] = tasks[task_column].fillna(summed).fillna(0.0)
+    return "+".join(sorted(used)) or "none"
 
 
 def leveled(tasks: pd.DataFrame) -> pd.Series:

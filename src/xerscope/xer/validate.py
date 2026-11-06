@@ -94,16 +94,6 @@ def nonnegative_remaining(values: pd.Series, source: str, warnings: list[str]) -
     return values.mask(negative, 0.0)
 
 
-def known_relationship_types(relationships: pd.DataFrame, source: str, warnings: list[str]) -> pd.DataFrame:
-    """TASKPRED rows whose ``pred_type`` is one of FS, SS, FF, SF; the others are dropped and named."""
-    unknown = ~relationships["pred_type"].isin(RELATIONSHIP_TYPES)
-    if not unknown.any():
-        return relationships
-    kinds = _listed(relationships.loc[unknown, "pred_type"].astype(str).unique())
-    warnings.append(f"{source}: {int(unknown.sum())} relationship(s) with an unknown type {kinds}; ignored")
-    return relationships[~unknown]
-
-
 def placeholder_clashes(local_codes: pd.Series, placeholders: pd.Series, source: str, warnings: list[str]) -> None:
     """Warn when an Activity ID of the project is written like an external placeholder ``[ext]<task_id>``
     that the relationships also use: the two read as one predecessor."""
