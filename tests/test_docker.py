@@ -141,6 +141,16 @@ def test_funnel_stack_bounds_what_it_takes_from_the_nas():
     assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
 
 
+def test_remote_debug_page_follows_the_env_file_and_is_off_by_default():
+    """Compose reads .env only for the ${...} of the compose file: a variable the app reads reaches
+    the container only through its environment block. XERSCOPE_DEBUG_PAGE=1 in .env then shows the
+    Debug page on the locked instance; left unset, it stays off."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    app = c[c.index("\n  xerscope:") :]
+    assert re.search(r"^\s+XERSCOPE_DEBUG_PAGE: \$\{XERSCOPE_DEBUG_PAGE:-\}", app, re.M)
+    assert re.search(r"^# XERSCOPE_DEBUG_PAGE=1\b", (ROOT / "deploy" / ".env.example").read_text(), re.M)
+
+
 def test_remote_app_settings_reach_streamlit():
     """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
     import os

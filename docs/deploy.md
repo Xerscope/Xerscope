@@ -157,6 +157,7 @@ XERSCOPE_GID=<gid>
 # XERSCOPE_IMAGE=<image>@sha256:<digest>    # the build to run, pinned (§7)
 # XERSCOPE_CADDY_IMAGE=<image>@sha256:<digest>   # the same for Caddy (§7, §8)
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
+# XERSCOPE_DEBUG_PAGE=1                    # the Debug page, for a diagnosis only (§9)
 ```
 
 Then Container Manager → **Project** → **Create**:

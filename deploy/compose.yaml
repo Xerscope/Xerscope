@@ -94,6 +94,7 @@ services:
       XERSCOPE_DATA: /data
       HOME: /home/nonroot                           # an uid outside the image's /etc/passwd would get HOME=/
       XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field, no XER upload
+      XERSCOPE_DEBUG_PAGE: ${XERSCOPE_DEBUG_PAGE:-}  # 1 in .env: the Debug page, to whoever holds the URL; off when unset
       STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
