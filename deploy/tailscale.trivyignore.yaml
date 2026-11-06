@@ -1,12 +1,13 @@
 # Trivy exceptions for the Tailscale image of deploy/compose.yaml, read by the CI job deploy only.
 # The finding is fixed in golang.org/x/net 0.62.0 but not in any Tailscale release yet (v1.104.4
 # and v1.104.5 both pin x/net v0.60.0). Trivy flags the module; the vulnerable package is the HTML
-# parser, which no package of Tailscale's own source imports (v1.104.4), and tailscaled here only
-# carries Funnel traffic to Caddy: it parses no HTML. Not settled: an import through one of
-# Tailscale's dependencies (govulncheck -mode=binary on the image's binaries settles it).
+# parser, and the CI job deploy proves it absent from the image's three binaries before each scan
+# (step "No golang.org/x/net/html code in the Tailscale binaries"); tailscaled here only carries
+# Funnel traffic to Caddy. The entry covers that module version only (purls).
 # Each entry expires: the job turns red again and the list is reviewed (a newer Tailscale image
 # drops the entry, or the entry is renewed with its reason).
 vulnerabilities:
   - id: CVE-2026-78661
-    statement: golang.org/x/net/html DoS on crafted HTML; no Tailscale package imports the parser, tailscaled parses no HTML here
+    statement: golang.org/x/net/html DoS on crafted HTML; the parser is absent from the image's binaries (CI job deploy), tailscaled parses no HTML here
     expired_at: 2026-11-10
+    purls: [pkg:golang/golang.org/x/net@v0.60.0]   # this version only: another one is scanned again

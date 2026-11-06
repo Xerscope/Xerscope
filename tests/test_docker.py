@@ -74,7 +74,8 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
     assert "ruff check src tests" in wf and "ruff format --check src tests" in wf
-    assert "pull_request:" in wf and "load: true" in wf and "_stcore/health" in wf and "trivy-action" in wf
+    assert "pull_request:" in wf and "load: true" in wf and "_stcore/health" in wf
+    assert ".github/trivy/scan.sh xerscope:ci" in wf  # the app image is scanned
     for line in wf.splitlines():
         if "uses:" in line:
             assert re.search(r"@[0-9a-f]{40} # v", line), line  # pinned by commit, tag in the comment
@@ -266,8 +267,55 @@ def test_sidecar_scan_exceptions_are_dated_and_reasoned(image):
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     step = wf[wf.index(f"Known vulnerabilities in the {image.capitalize()} image") :]
     step = step[: step.index("- name:", 1)]
-    assert f"trivyignores: deploy/{image}.trivyignore.yaml" in step, image
-    assert wf.count("trivyignores:") == 2
+    assert f"deploy/{image}.trivyignore.yaml" in step and ".github/trivy/scan.sh" in step, image
+    assert wf.count(".trivyignore.yaml") == 2
+
+
+def test_tailscale_exception_is_scoped_to_one_module_version_and_proven_absent():
+    """The CVE-2026-78661 exception covers golang.org/x/net v0.60.0 only (purls): another version
+    in a new Tailscale image is scanned again. A step before the scan proves the vulnerable package
+    absent from the image's binaries: Go keeps every function name in its binaries even when
+    stripped (-s -w), so tailscale.com/ names must be found (the names are readable) and no
+    golang.org/x/net/html. name may be."""
+    text = (ROOT / "deploy" / "tailscale.trivyignore.yaml").read_text()
+    assert "purls: [pkg:golang/golang.org/x/net@v0.60.0]" in text
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    step = wf[wf.index("No golang.org/x/net/html code in the Tailscale binaries") :]
+    step = step[: step.index("- name:", 1)]
+    assert all(b in step for b in ("containerboot", "tailscaled", "tailscale "))
+    assert "grep -aq 'tailscale.com/'" in step and "grep -aq 'golang.org/x/net/html\\.'" in step
+    assert not re.search(r"^\s*! ", step, re.M)  # bash -e does not stop on a negated command: checks use if
+    assert wf.index("No golang.org/x/net/html code") < wf.index("Known vulnerabilities in the Tailscale image")
+
+
+def test_trivy_is_pinned_by_digest_and_proposed_a_week_after_release():
+    """CI scans with one Trivy image, pinned by digest in .github/trivy/Dockerfile and bumped by
+    Dependabot after a 7-day cooldown (Trivy's compromised March 2026 releases were withdrawn
+    within hours, GHSA-69fq-xp46-6x23). No Trivy GitHub Action runs: they were part of that
+    compromise. The image goes to Trivy as a tar, never with the Docker socket."""
+    pin = (ROOT / ".github" / "trivy" / "Dockerfile").read_text()
+    (image,) = re.findall(r"^FROM (\S+)", pin, re.M)  # one image, and it is Trivy's, by digest
+    assert re.fullmatch(r"ghcr\.io/aquasecurity/trivy:[\d.]+@sha256:[0-9a-f]{64}", image), image
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    entry = dependabot[dependabot.index("directory: /.github/trivy") :]
+    entry = entry[: entry.find("- package-ecosystem") if "- package-ecosystem" in entry else len(entry)]
+    days = re.search(r"default-days: (\d+)", entry)
+    assert days and int(days.group(1)) >= 7, entry
+    workflows = {p.name: p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml")}
+    assert not any("aquasecurity/trivy-action" in w or "setup-trivy" in w for w in workflows.values())
+    assert workflows["tests.yml"].count(".github/trivy/scan.sh") == 3
+    script = (ROOT / ".github" / "trivy" / "scan.sh").read_text()
+    assert "docker save" in script and "--input" in script and "docker.sock" not in script
+    assert "--exit-code 1" in script and "--ignore-unfixed" in script and "HIGH,CRITICAL" in script
+
+
+def test_the_pinned_trivy_is_scanned_every_day():
+    """New CVEs land without a push: the Trivy CI uses is scanned with itself every day and on any
+    change to its pin. A finding there allows a bump before the cooldown ends."""
+    wf = (ROOT / ".github" / "workflows" / "scanner.yml").read_text()
+    assert re.search(r"cron: \"\d+ \d+ \* \* \*\"", wf)  # daily
+    assert "permissions:\n  contents: read" in wf and "persist-credentials: false" in wf
+    assert ".github/trivy/**" in wf and '.github/trivy/scan.sh "$(sed -n' in wf
 
 
 def test_schedules_stay_out_of_git():

@@ -173,9 +173,11 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       Caddy release that fixes them, or renew each entry with its reason.
 - [ ] Tailscale image: CVE-2026-78661 (golang.org/x/net/html, fixed in x/net 0.62.0, in no
       Tailscale release yet) accepted until 2026-11-10 (`deploy/tailscale.trivyignore.yaml`).
-      Run `govulncheck -mode=binary` on the image's `tailscaled`, `tailscale` and
-      `containerboot` to settle whether a dependency compiles the parser in; at expiry move to
-      a Tailscale release with x/net >= 0.62.0, or renew the entry with its reason.
+      The CI job `deploy` proves the parser absent from the image's binaries on every run; at
+      expiry move to a Tailscale release with x/net >= 0.62.0, or renew the entry with its reason.
+- [ ] Trivy runs from `.github/trivy/Dockerfile` (pinned by digest, Dependabot after a 7-day
+      cooldown) and is scanned with itself daily (`scanner.yml`): a red run there means the
+      pinned Trivy has a fixed HIGH/CRITICAL finding; bump it then, without waiting for the cooldown.
 - [ ] Verify on the NAS: tailscaled on a read-only root (the CI job `deploy` checks it on
       GitHub's Docker, not on the Synology kernel) and the memory caps applied (no
       `does not support memory limit` in the Project's build output).
