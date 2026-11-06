@@ -19,11 +19,13 @@ VOCAB = Vocabulary(
 
 
 class Server:
-    """A fake llama.cpp server: ``reply`` is the JSON content the model answers, or a callable."""
+    """A fake llama.cpp server: ``reply`` is the JSON content the model answers, or a callable.
+    ``key`` set: a request without that bearer token gets 401, as llama-server's --api-key."""
 
-    def __init__(self):
+    def __init__(self, key: str = "", tls: tuple[str, str] | None = None):
         self.reply = {}
         self.requests = []
+        self.key = key
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -32,7 +34,11 @@ class Server:
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                outer.requests.append((self.path, body))
+                outer.requests.append((self.path, body, self.headers.get("Authorization")))
+                if outer.key and self.headers.get("Authorization") != f"Bearer {outer.key}":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
                 reply = outer.reply() if callable(outer.reply) else outer.reply
                 content = reply if isinstance(reply, str) else json.dumps(reply)
                 answer = json.dumps({"choices": [{"message": {"role": "assistant", "content": content}}]}).encode()
@@ -42,8 +48,16 @@ class Server:
                 self.wfile.write(answer)
 
         self.http = HTTPServer(("127.0.0.1", 0), Handler)
+        scheme = "http"
+        if tls:
+            import ssl
+
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*tls)
+            self.http.socket = context.wrap_socket(self.http.socket, server_side=True)
+            scheme = "https"
         threading.Thread(target=self.http.serve_forever, daemon=True).start()
-        self.url = f"http://127.0.0.1:{self.http.server_port}"
+        self.url = f"{scheme}://127.0.0.1:{self.http.server_port}"
 
 
 @pytest.fixture
@@ -83,7 +97,7 @@ def test_answer_becomes_a_filter_and_the_request_holds_labels_only(server):
         ),
         source="model",
     )
-    path, body = server.requests[0]
+    path, body, _ = server.requests[0]
     assert path == "/v1/chat/completions" and body["response_format"]["type"] == "json_schema"
     assert body["messages"][-1] == {"role": "user", "content": "critical not started civil works"}
     assert json.dumps(VOCAB.to_prompt(), ensure_ascii=False) in body["messages"][0]["content"]
@@ -114,11 +128,97 @@ def test_bad_or_slow_answers_fall_back_on_the_grammar(server, reply):
     assert got.categories == ("Critical",) and got.source == "keywords"
 
 
-def test_only_http_urls():
+def test_only_http_urls_and_tls_with_a_key_off_the_loopback():
     with pytest.raises(ValueError):
         query.llm_backend("file:///etc/passwd")
+    with pytest.raises(ValueError):  # the deployment's link: TLS, pinned CA and key, or nothing
+        query.llm_backend("http://172.28.0.20:8080", key="k")
+    with pytest.raises(ValueError):
+        query.llm_backend("https://172.28.0.20:8443", key="k")  # no CA
+    with pytest.raises(ValueError):
+        query.llm_backend("https://172.28.0.20:8443", cafile="ca.pem")  # no key
+    assert callable(query.llm_backend("https://172.28.0.20:8443", cafile="ca.pem", key="k"))  # the CA is read later
 
 
 def test_server_down_falls_back():
     got = query.parse("critical", VOCAB, backend=query.llm_backend("http://127.0.0.1:9"))
     assert got.source == "keywords" and got.categories == ("Critical",)
+
+
+def test_key_sent_and_a_refused_key_falls_back():
+    locked = Server(key="s3cret")
+    try:
+        locked.reply = {
+            "wbs_id": "1",
+            "status": [],
+            "float": [],
+            "code_ids": [],
+            "resource_ids": [],
+            "milestones": False,
+            "loe": False,
+            "search": "",
+        }
+        right = query.parse("civil", VOCAB, backend=query.llm_backend(locked.url, key="s3cret"))
+        assert right.source == "model" and locked.requests[-1][2] == "Bearer s3cret"
+        wrong = query.parse("critical", VOCAB, backend=query.llm_backend(locked.url, key="nope"))
+        assert wrong.source == "keywords" and wrong.categories == ("Critical",)
+    finally:
+        locked.http.shutdown()
+
+
+def _self_signed(tmp_path):
+    import subprocess
+
+    key, cert = tmp_path / "k.pem", tmp_path / "c.pem"
+    subprocess.run(  # noqa: S603
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            key,
+            "-out",
+            cert,
+            "-days",
+            "2",
+            "-subj",
+            "/CN=127.0.0.1",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return str(key), str(cert)
+
+
+def test_tls_pinned_to_the_models_own_ca(tmp_path):
+    pytest.importorskip("ssl")
+    import shutil
+
+    if not shutil.which("openssl"):
+        pytest.skip("openssl missing")
+    key, cert = _self_signed(tmp_path)
+    secure = Server(tls=(cert, key))
+    try:
+        secure.reply = {
+            "wbs_id": "1",
+            "status": [],
+            "float": [],
+            "code_ids": [],
+            "resource_ids": [],
+            "milestones": False,
+            "loe": False,
+            "search": "",
+        }
+        pinned = query.parse("civil", VOCAB, backend=query.llm_backend(secure.url, cafile=cert))
+        assert pinned.source == "model"
+        unpinned = query.parse("civil", VOCAB, backend=query.llm_backend(secure.url))  # system CAs: refused
+        assert unpinned.source == "keywords"
+    finally:
+        secure.http.shutdown()
+    with pytest.raises(ValueError):
+        query.llm_backend("http://127.0.0.1:1", cafile=cert)  # a CA needs https

@@ -576,17 +576,42 @@ def _strings(value) -> list[str]:
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
 
 
-def llm_backend(url: str, timeout: float = 20.0) -> Backend:
+def llm_backend(url: str, timeout: float = 20.0, key: str = "", cafile: str = "") -> Backend:
     """A ``Backend`` on a llama.cpp server (OpenAI-compatible ``/v1/chat/completions``) at
     ``url``, answering with JSON constrained by the schema. The request carries the sentence and
-    ``Vocabulary.to_prompt()`` only. Any failure (server down, slow, bad answer) is None, and the
-    keyword grammar answers."""
+    ``Vocabulary.to_prompt()`` only, with ``key`` as a bearer token (the server's ``--api-key``)
+    over https verified against ``cafile`` alone (the model's own CA, pinned). Off the loopback
+    all three are required: a plain http model is refused at configuration. Any failure
+    (server down, slow, bad answer, refused key, bad certificate) is None, and the keyword
+    grammar answers. Nothing here logs the URL, the key or the answer."""
     import json
+    import ssl
+    import urllib.parse
     import urllib.request
 
-    if not url.lower().startswith(("http://", "https://")):
-        raise ValueError(f"XERSCOPE_QUERY_URL must be an http(s) URL, not {url!r}")
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("XERSCOPE_QUERY_URL must be an http(s) URL")
+    loopback = parts.hostname in ("127.0.0.1", "localhost", "::1")
+    if not loopback and not (parts.scheme == "https" and cafile and key):
+        # off this host the link is TLS to a pinned CA, with a key, or nothing (docs/deploy.md §10)
+        raise ValueError(
+            "a model off this host needs an https XERSCOPE_QUERY_URL, XERSCOPE_QUERY_CA and XERSCOPE_QUERY_KEY"
+        )
+    if cafile and parts.scheme != "https":
+        raise ValueError("XERSCOPE_QUERY_CA needs an https URL")
     endpoint = url.rstrip("/") + "/v1/chat/completions"
+    contexts: list[ssl.SSLContext] = []  # built on the first call: the CA file may be written after the app starts
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    def context() -> ssl.SSLContext | None:
+        if not cafile:
+            return None
+        if not contexts:
+            contexts.append(ssl.create_default_context(cafile=cafile))
+        return contexts[0]
 
     def ask(text: str, vocab: Vocabulary) -> Filter | None:
         body = json.dumps(
@@ -599,9 +624,11 @@ def llm_backend(url: str, timeout: float = 20.0) -> Backend:
                 "temperature": 0,
             }
         ).encode()
-        request = urllib.request.Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+        request = urllib.request.Request(endpoint, data=body, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 # nosec B310 (http(s) checked above)
+            with urllib.request.urlopen(  # noqa: S310 # nosec B310 (http(s) checked above)
+                request, timeout=timeout, context=context()
+            ) as response:
                 answer = json.loads(response.read().decode())
             data = json.loads(answer["choices"][0]["message"]["content"])
         except Exception:  # noqa: BLE001  # whatever failed, the grammar answers

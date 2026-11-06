@@ -112,7 +112,11 @@ def query_backend() -> query.Backend | None:
     """The language model behind the Gantt page's Ask field (``analysis.query.llm_backend``), from
     XERSCOPE_QUERY_URL: a llama.cpp server on the compose network. Unset: the keyword grammar only."""
     url = os.environ.get("XERSCOPE_QUERY_URL", "").strip()
-    return query.llm_backend(url) if url else None
+    if not url:
+        return None
+    return query.llm_backend(
+        url, key=os.environ.get("XERSCOPE_QUERY_KEY", ""), cafile=os.environ.get("XERSCOPE_QUERY_CA", "")
+    )
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:

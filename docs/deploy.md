@@ -265,30 +265,73 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 
 The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
 and turns it into its own filters (`analysis/query.py`). Without a model, a keyword grammar
-over the file's lexicon (WBS, activity codes, resources, activity-name words) answers. The
-`llm` service of `deploy/compose.yaml` (profile `ai`) adds a llama.cpp server for the
-sentences the grammar misses (synonyms, "what blocks the end of the electrical lot"). It
+over the file's lexicon (WBS, activity codes, resources, activity-name words, trade synonyms
+in both languages, typos) answers: 100 % of `tests/ask/dev.toml`, 95 % of the held-out
+sentences. The `llm` profile of `deploy/compose.yaml` adds a llama.cpp server for what the
+grammar misses. It
 receives the file's WBS, code and resource names only: no activity, no date, no number
 (`tests/test_query_llm.py` checks the request). An answer that does not come, in 20 s, or
 does not parse, is replaced by the grammar's: the page never waits on the model.
 
+**The link is TLS to the model's own certificate, with a key, or nothing.** The app refuses
+to configure a model over plain http, without the certificate or without the key
+(`query.llm_backend`); the model does not start without a key; nothing listens on the
+model's address but its TLS front; and the model's containers are rootless and sealed.
+
 1. Put one GGUF model in a folder the `XERSCOPE_UID` account can read, e.g. `models/` next to
    `exports/`. On the DS918+ (Celeron J3455, 4 cores, no GPU) a 3B model quantised Q4_K_M
    (about 2 GB) answers in 8-15 s and fits `XERSCOPE_LLM_MEM_LIMIT=3g` with a 4k context; a
-   1.5B model answers in 4-6 s and misses more negations. The model must support JSON-schema
-   constrained output through llama.cpp's chat endpoint, which every GGUF chat model does.
-2. `.env`: `XERSCOPE_QUERY_URL=http://llm:8080`, `XERSCOPE_MODELS=<folder>`,
-   `XERSCOPE_LLM_MODEL=<file>.gguf`.
-3. Project → Action → Build with the profile: Container Manager runs
-   `docker compose --profile ai up -d`; without `--profile ai` the service does not start and
-   the app, `XERSCOPE_QUERY_URL` unset, uses the grammar alone.
-4. The model is on the `internal` network only (no gateway, no port), non-root, read-only,
-   `--parallel 1` (one visitor, one context). The budget on 8 GB: app 2 GB, model 3 GB,
-   Caddy and Tailscale 0.5 GB, the rest for DSM.
+   1.5B model answers in 4-6 s and misses more negations.
+2. Make the model's certificate once, in `docker/xerscope/llm-certs/` (not in git), readable
+   by the `XERSCOPE_UID` account only:
 
-A GPU machine on the tailnet instead of the NAS is the same `XERSCOPE_QUERY_URL` pointed at
-it, with its address added to the app's network: not covered here (the app would then leave
-the `internal` network, and `tests/test_docker.py` pins that it does not).
+   ```bash
+   mkdir -p llm-certs && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+     -days 3650 -subj /CN=xerscope-llm -addext subjectAltName=IP:172.29.0.20 \
+     -keyout llm-certs/llm.key -out llm-certs/llm.crt
+   ```
+
+   ```bash
+   chown -R <XERSCOPE_UID> llm-certs && chmod 700 llm-certs && chmod 600 llm-certs/llm.key
+   ```
+
+3. `.env`: `XERSCOPE_LLM_KEY=$(openssl rand -hex 24)`, `XERSCOPE_MODELS=<folder>`,
+   `XERSCOPE_LLM_MODEL=<file>.gguf`.
+4. `compose.yaml`, `xerscope` service: uncomment the three `XERSCOPE_QUERY_*` lines, the
+   `llm-ca.crt` volume line and the `ai` network lines. The URL is `https://172.29.0.20:8443`,
+   the key is the one above, the certificate is the one made in step 2 (self-signed: it is
+   its own CA, and the app trusts it alone).
+5. Build with the profile: Container Manager runs `docker compose --profile ai up -d`
+   (`llm` and `llm-tls` are in the `ai` profile only; without it nothing changes).
+
+How the pieces hold (`tests/test_docker.py`, `tests/test_query_llm.py`):
+
+- **A network of its own, where nothing listens.** The model is on `ai` (`172.29.0.20`),
+  an internal network with no gateway that holds the model and the app alone. The app sits on
+  it at `172.29.0.10` but Streamlit binds its `internal` address (`172.28.0.10`, the
+  `command` and `healthcheck` of the service) and nothing else: from the model's namespace
+  there is no app port, no Caddy, no tailscaled and no internet to reach. The app names the
+  model by its address, so a container that took the service name is not spoken to.
+- **Loopback and a TLS front.** The stock llama.cpp image is built without SSL, so the
+  model listens on `127.0.0.1:8080` of its own namespace (`LLAMA_ARG_HOST`) and `llm-tls`,
+  a stock Caddy sharing that namespace (`network_mode: service:llm`, as the funnel's Caddy
+  shares tailscaled's), is the only listener on `172.29.0.20`, on 8443, with the certificate
+  of step 2. The app verifies the connection against that certificate alone
+  (`XERSCOPE_QUERY_CA`, read at the first call); any other certificate is refused.
+- **A key on every request.** `XERSCOPE_LLM_KEY` is the model's `LLAMA_API_KEY`; the app
+  sends it as a bearer token; a request without it gets 401 and the app falls back on the
+  grammar. The front's log deletes the `Authorization` header; the app logs nothing of the
+  call; llama-server logs no header.
+- **Rootless and sealed.** Both containers run as `XERSCOPE_UID`, read-only, with every
+  capability dropped (the Caddy binary's file capability aside, as the funnel's Caddy),
+  `no-new-privileges`, `ipc: none`, `noexec,nosuid` tmpfs, memory and PID caps. The model
+  mounts its model folder read-only and nothing else; the front mounts its Caddyfile and the
+  certificate read-only and writes nothing. A model can answer wrongly at worst: every id it
+  answers is checked against the vocabulary.
+
+A GPU machine of the tailnet instead of the NAS would be the same three variables pointed
+at it, with the same front in front of it; it is not covered here (the app would then
+leave its networks, which `tests/test_docker.py` pins).
 
 ## 11. Troubleshooting
 

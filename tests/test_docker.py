@@ -80,9 +80,9 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert c.count("cap_drop: [ALL]") == 4 and c.count("no-new-privileges") == 4  # tailscale, caddy, app, llm
+    assert c.count("cap_drop: [ALL]") == 5 and c.count("no-new-privileges") == 5  # tailscale, caddy, app, llm, llm-tls
     # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
-    assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
+    assert c.count("cap_add:") == 2 and c.count("cap_add: [NET_BIND_SERVICE]") == 2  # the two Caddy binaries
     app = (ROOT / "compose.yaml").read_text()  # the app's writable dirs belong to its user, not root
     assert "/home/nonroot:uid=65532,gid=65532" in app and "/tmp:uid=65532,gid=65532" in app
     nas = (ROOT / "deploy" / "compose.yaml").read_text()  # same user as `user:`, the image's nonroot by default
@@ -94,19 +94,56 @@ def test_sidecars_hardened():
 
 
 def test_llm_sidecar_is_optional_and_reaches_nothing():
-    """The language model behind the Gantt Ask field: off unless asked, internal network only, non-root,
-    read-only, pinned; the app's own default stays the keyword grammar."""
+    """The language model behind the Gantt Ask field: off unless asked; on a network of its own where
+    nothing listens; rootless, read-only, noexec, no IPC, pinned; on its loopback behind a TLS front
+    with a certificate made on the NAS and a key on every request; the app's default stays the grammar."""
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    llm = c[c.index("  llm:") : c.index("\nvolumes:")]
-    assert "profiles: [ai]" in llm and "networks: [internal]" in llm and "ports:" not in llm
+    llm = c[c.index("  llm:") : c.index("  llm-tls:")]
+    tls = c[c.index("  llm-tls:") : c.index("\nvolumes:")]
+    app = c[c.index("  xerscope:") : c.index("  llm:")]
+    uid, gid = "${XERSCOPE_UID:-65532}", "${XERSCOPE_GID:-65532}"
+    assert "profiles: [ai]" in llm and "profiles: [ai]" in tls and "ports:" not in llm and "ports:" not in tls
+    # the model's network holds the model and the app; the app listens on its `internal` address alone
+    assert re.search(r"networks:[^\n]*\n\s+ai:[^\n]*\n\s+ipv4_address: 172\.29\.0\.20", llm)
+    assert "internal:" not in llm and "egress" not in llm
+    assert '["app", "--host", "172.28.0.10", "--port", "8501"]' in app
+    assert "http://172.28.0.10:8501/_stcore/health" in app and "ipv4_address: 172.28.0.10" in app
+    assert "# ai:" in app and "#   ipv4_address: 172.29.0.10" in app
+    assert re.search(r"^  ai:[^\n]*\n\s+internal: true", c, re.M) and "subnet: 172.29.0.0/24" in c
+    assert "subnet: 172.28.0.0/24" in c
+    # rootless and sealed, both of them
     assert re.search(r"image: ghcr\.io/ggml-org/llama\.cpp:server-b\d+", llm)  # a build number, not a floating tag
-    assert 'user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"' in llm  # the image has no USER
-    assert "read_only: true" in llm and ":/models:ro" in llm and "mem_limit:" in llm and "pids_limit:" in llm
-    assert '"--parallel", "1"' in llm  # one visitor: no second model context on the NAS's memory
-    assert "# XERSCOPE_QUERY_URL: http://llm:8080" in c  # the app is told about it by hand, never by default
+    assert f'user: "{uid}:{gid}"' in llm and f'user: "{uid}:{gid}"' in tls
+    for part in (llm, tls):
+        assert "read_only: true" in part and "ipc: none" in part and "mem_limit:" in part and "pids_limit:" in part
+        assert "cap_drop: [ALL]" in part and "no-new-privileges" in part
+        tmpfs = re.findall(r"^\s+- /[\w/]+:(\S+)", part, re.M)
+        assert tmpfs and all("noexec,nosuid" in opts and f"uid={uid}" in opts for opts in tmpfs), tmpfs
+    assert ":/models:ro" in llm and llm.count(":/") == 1  # one mount: the model folder, read-only
+    assert "- ./llm-certs:/certs:ro" in tls and "- ./llm.Caddyfile:/etc/caddy/Caddyfile:ro" in tls
+    assert "llm-pki" not in c  # no volume anything writes
+    assert "--parallel 1" in llm  # one visitor: no second model context on the NAS's memory
+    # the model listens on its loopback; the TLS front shares its namespace and is the only listener
+    # on the fixed address; the key is required (the model does not start without one), never logged
+    assert "LLAMA_ARG_HOST: 127.0.0.1" in llm and "LLAMA_API_KEY: ${XERSCOPE_LLM_KEY:-}" in llm
+    assert 'test -n "$$LLAMA_API_KEY" ||' in llm and "exit 1" in llm
+    assert "network_mode: service:llm" in tls and re.search(r"image: caddy:\d+\.\d+\.\d+", tls)
+    caddy = (ROOT / "deploy" / "llm.Caddyfile").read_text()
+    assert "admin off" in caddy and "auto_https off" in caddy and "default_bind 172.29.0.20" in caddy
+    assert "https://172.29.0.20:8443" in caddy and "tls /certs/llm.crt /certs/llm.key" in caddy
+    assert "reverse_proxy 127.0.0.1:8080" in caddy and "tls internal" not in caddy
+    assert "request>headers>Authorization delete" in caddy  # the key never reaches a log
+    # the app names the model by its fixed address, over TLS, trusting the model's certificate alone, with the key
+    assert "# XERSCOPE_QUERY_URL: https://172.29.0.20:8443" in app  # told by hand, never on by default
+    assert "# XERSCOPE_QUERY_KEY: ${XERSCOPE_LLM_KEY:-}" in app and "# XERSCOPE_QUERY_CA: /run/llm-ca.crt" in app
+    assert "# - ./llm-certs/llm.crt:/run/llm-ca.crt:ro" in app  # the certificate, never the key
+    assert "llm.key" not in app and "http://llm:" not in c
+    assert "http://172.2" not in c.replace("http://172.28.0.10:8501/_stcore", "")
     env = (ROOT / "deploy" / ".env.example").read_text()
-    assert "# XERSCOPE_QUERY_URL=http://llm:8080" in env and "# XERSCOPE_MODELS=" in env
-    for text in (c, env, (ROOT / "docs" / "deploy.md").read_text()):
+    assert "# XERSCOPE_QUERY_URL=https://172.29.0.20:8443" in env and "# XERSCOPE_MODELS=" in env
+    assert "# XERSCOPE_LLM_KEY=<random>" in env  # a placeholder, never a value
+    assert "deploy/llm-certs/" in (ROOT / ".gitignore").read_text()
+    for text in (c, env, caddy, (ROOT / "docs" / "deploy.md").read_text()):
         assert "api.openai.com" not in text and "anthropic.com" not in text  # self-hosted only
 
 
@@ -149,12 +186,12 @@ def test_funnel_stack_bounds_what_it_takes_from_the_nas():
     No CPU quota: Docker refuses to create a container with one on a kernel without CFS
     bandwidth control, while it only drops a memory or PID cap it cannot apply."""
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert c.count("mem_limit:") == 4 and c.count("pids_limit:") == 4  # tailscale, caddy, app, llm
+    assert c.count("mem_limit:") == 5 and c.count("pids_limit:") == 5  # tailscale, caddy, app, llm, llm-tls
     assert "mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}" in c
     assert not re.search(r"^\s+(cpus|cpu_quota|cpu_period|cpuset):", c, re.M)
     tmpfs = re.findall(r"^\s+- (/[\w/]+)(\S*)", c, re.M)  # tmpfs entries are the only "- /path" list items
-    assert len(tmpfs) == 8 and all("size=" in opts for _, opts in tmpfs), tmpfs
-    assert c.count("read_only: true") == 4  # tailscaled writes its socket to tmpfs, its state to the volume
+    assert len(tmpfs) == 11 and all("size=" in opts for _, opts in tmpfs), tmpfs
+    assert c.count("read_only: true") == 5  # tailscaled writes its socket to tmpfs, its state to the volume
     assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
 
 
