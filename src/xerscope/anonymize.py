@@ -134,6 +134,12 @@ WIDTH = {"A": 12, "W": 8, "P": 8, "R": 8, "L": 8, "O": 8}
 DRAWS = 1000  # draws of one code or GUID before giving up (CodeClash): 3-character originals made of hex digits
 # What CalendarData is written with (P6 5.0 to 25.12, every reference file): nothing else may pass.
 CALENDAR_WORDS = frozenset({"CalendarData", "DaysOfWeek", "Exceptions", "ShowTotal", "VIEW"})
+# File stems that are words of xerscope's own tables and labels: as a whole word they say nothing of a
+# project, and searching them would refuse every download ("baseline file", "use_project_baseline_flag").
+GENERIC_FILE_STEMS = frozenset(
+    {"baseline", "baselines", "bl", "export", "exports", "schedule", "project", "projects", "update", "updates",
+     "file", "files", "planned", "current", "target", "programme", "program", "planning", "xer", "p6"}
+)  # fmt: skip
 GENERIC_HEADER = frozenset({"Project", "Project Management", "dbxDatabaseNoName"})
 
 
@@ -215,8 +221,12 @@ class Anonymizer:
         if raw.source:
             name = re.split(r"[/\\]", raw.source)[-1]
             stem = name.rsplit(".", 1)[0]
-            self.secrets_.setdefault(stem, "file name")
-            self.file_names.update(part for part in (name, stem) if _is_text(part))
+            # a stem that is a word of xerscope's own output ("Baseline.xml") names no project and would
+            # be found in every table: the full name is still searched, the bare word is not
+            parts = (name,) if stem.lower() in GENERIC_FILE_STEMS else (name, stem)
+            if stem.lower() not in GENERIC_FILE_STEMS:
+                self.secrets_.setdefault(stem, "file name")
+            self.file_names.update(part for part in parts if _is_text(part))
         kept_values: set[str] = set()
         for table, frame in raw.tables.items():
             keep = KEEP.get(table, frozenset())

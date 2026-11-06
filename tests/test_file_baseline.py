@@ -394,8 +394,10 @@ def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
     d = {"pointer": "370", "data_date": "2026-03-16 08:00", "with_baseline": False}
     boxes = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c, "d.xer": d}))
     assert len(boxes) == 1
-    assert "project 370 (c.xer, d.xer)" in boxes[0] and "a.xer" not in boxes[0]
-    assert "Separate baseline file" in boxes[0]
+    # counts and dates, no file name: a long series of long names made the line unreadable
+    assert "2 updates of 3 name a P6 Project Baseline" in boxes[0]
+    assert "project 370 (2 updates, 09 Mar 2026 → 16 Mar 2026)" in boxes[0]
+    assert ".xer" not in boxes[0].replace("XER", "") and "Separate baseline file" in boxes[0]
 
 
 def test_the_request_gives_no_p6_procedure(tmp_path, monkeypatch):

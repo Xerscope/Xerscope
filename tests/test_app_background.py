@@ -1,11 +1,11 @@
-"""The two threads of the app: the series read after its most recent update, and the Overview
-scores. conftest sets XERSCOPE_SYNC_LOAD for every other test; here it is lifted and the thread
-joined before the next run, which is what the page's polling fragment does in a browser."""
+"""The two threads of the app: the series read on worker processes, and the Overview scores.
+conftest sets XERSCOPE_SYNC_LOAD for every other test; here it is lifted and the thread joined before
+the next run, which is what the sidebar's polling fragment does in a browser."""
 
 from pathlib import Path
 
 import pandas as pd
-from conftest import read_folder
+from conftest import file_boxes, files_done, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
@@ -26,27 +26,27 @@ def _joined(at, key: str):
     return job
 
 
-def test_the_most_recent_update_is_read_first_then_the_rest_in_a_thread(sample_dir, monkeypatch):
+def test_the_pages_wait_for_the_whole_series_then_draw_once(sample_dir, monkeypatch):
+    """No page is drawn on a partial series: they redrew on every file read and the default baseline
+    moved with them. The pages show the reading, then the complete series, its first update the
+    default baseline."""
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "2")  # the worker processes, not the in-thread fallback
     at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
     _ok(at)
-    # after Done: one update in the store, the latest of the folder, a progress line, no scores yet
-    store = at.session_state["store"]
-    assert len(store) == 1
-    latest_name = max(sample_dir.glob("*.xer"), key=lambda p: p.name).name
-    assert store.latest.source == latest_name
-    assert any(p.proto.text.startswith("Reading the updates") for p in at.get("progress"))
-    assert any(w.value.startswith("Reading the updates · 1/") for w in at.warning)  # under the page title
+    assert at.session_state["store"] is None
+    assert any(i.value.startswith("Reading 8 updates") for i in at.info)  # in place of the page
     job = _joined(at, "_load_job")
-    assert [name for name, _ in job.items][0] == latest_name
+    assert len(job.results) == len(list(sample_dir.glob("*.xer")))
     at.run()
     _ok(at)
     assert len(at.session_state["store"]) == len(list(sample_dir.glob("*.xer")))
     assert at.session_state["_load_job"] is None and not at.get("progress")
-    assert not any(w.value.startswith("Reading the updates") for w in at.warning)
-    # the default baseline is the first update of the whole series, not the first file read
+    assert not any(i.value.startswith("Reading") for i in at.info)
     assert at.session_state["bl_choice"] == at.session_state["store"].labels[0]
+    # the parse cache keeps the files of this series only
+    assert {key[0] for key in at.session_state["_parsed"]} == {p.name for p in sample_dir.glob("*.xer")}
     # the Overview then computes the four scores in a thread and fills the cards as they come
     assert any(c.value.startswith("Computing the scores") for c in at.caption)
     _joined(at, "_score_job")
@@ -55,6 +55,24 @@ def test_the_most_recent_update_is_read_first_then_the_rest_in_a_thread(sample_d
     cards = [m for m in at.metric if m.label.endswith(" score")]
     assert len(cards) == 4 and all(m.value.endswith("%") for m in cards)
     assert not any(c.value.startswith("Computing the scores") for c in at.caption)
+
+
+def test_a_new_choice_of_files_stops_the_reading_and_forgets_the_previous_series(sample_dir, monkeypatch):
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    first_job = at.session_state["_load_job"]
+    at.session_state["_memo"] = {("stale",): 1}
+    open_files(at)  # a new choice while the first one is read: the first three files only
+    for box in file_boxes(at)[3:]:
+        box.uncheck()
+    files_done(at)
+    _ok(at)
+    assert first_job.cancelled
+    assert "_memo" not in at.session_state or ("stale",) not in at.session_state["_memo"]
+    job = _joined(at, "_load_job")
+    assert len(job.items) == 3
 
 
 def test_most_recent_first_orders_by_status_date_unreadable_last(sample_dir):
