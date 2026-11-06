@@ -88,6 +88,9 @@ Any CLI command runs in the image:
 
 `uv run xerscope <command> --help` lists every option.
 
+Exit codes: `0` done, `1` a finding (`check --fail-on`, `--expect`), `2` input that cannot be
+used (a missing path, a file cut short or damaged, an unknown standard), with one line on stderr.
+
 ### Recalculate like P6
 
 ```bash

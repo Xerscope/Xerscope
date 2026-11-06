@@ -139,7 +139,9 @@ def test_xer_tables_lists_every_table_of_the_file_with_rows_and_columns():
 
     from xerscope.xer import build_snapshot, parse_text
 
-    text = xer_text([todo("A"), todo("B")]) + "%T\tMYSTERY\n%F\tx\ty\tz\n%R\ta\tb\tc\n%R\td\te\tf\n%R\tg\th\ti\n"
+    text = xer_text([todo("A"), todo("B")]).replace(
+        "%E\n", "%T\tMYSTERY\n%F\tx\ty\tz\n%R\ta\tb\tc\n%R\td\te\tf\n%R\tg\th\ti\n%E\n"
+    )
     s = build_snapshot(parse_text(text, source="test.xer"))
     table = diagnostic_frames(s, None, builtin_standards()["P6"])["09_xer_tables"].set_index("table")
     assert table.loc["MYSTERY"].tolist() == [3, 3]

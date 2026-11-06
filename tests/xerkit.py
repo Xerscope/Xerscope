@@ -185,6 +185,7 @@ def xer_text(
                 for k, c in enumerate(costs, start=1)
             ],
         )
+    lines.append("%E")  # P6 ends every export with it; build_snapshot refuses a file without it
     return "\n".join(lines) + "\n"
 
 

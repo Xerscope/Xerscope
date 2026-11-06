@@ -144,13 +144,21 @@ def forecast_dates(tasks: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     )
 
 
+# Dates outside this range read as blank: P6 exports span years, not centuries (the reference
+# exports: 2000-2027), and pandas timestamps end in 2262, where calendar arithmetic overflows.
+EARLIEST_DATE, LATEST_DATE = pd.Timestamp("1900-01-01"), pd.Timestamp("2200-01-01")
+
+
 def to_datetime(values: pd.Series) -> pd.Series:
     # XER dates are "YYYY-MM-DD HH:MM"; ISO8601 also tolerates exporters adding seconds.
-    return pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+    dates = pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+    return dates.where((dates >= EARLIEST_DATE) & (dates < LATEST_DATE))
 
 
 def to_number(values: pd.Series) -> pd.Series:
-    return pd.to_numeric(_blank_to_na(values), errors="coerce")
+    """Numbers of an XER column; blank, unreadable or infinite ("1e400") values are NaN."""
+    numbers = pd.to_numeric(_blank_to_na(values), errors="coerce")
+    return numbers.mask(np.isinf(numbers))
 
 
 def _parse_date(value: object) -> pd.Timestamp | None:
@@ -218,10 +226,19 @@ def _warn_unknown_codes(codes: pd.Series, known: dict, column: str, reading: str
         warnings.append(f"{column} {name} is not a P6 code ({rows}): {reading}")
 
 
+def _unique(frame: pd.DataFrame, source: str, table: str, column: str) -> None:
+    """Raise a XerError when the key ``column`` repeats: every other table points at it, so a
+    lookup would fail or pick one of the rows. P6 writes each key once."""
+    repeated = frame[column][frame[column].duplicated()].unique()
+    if len(repeated):
+        raise XerError(f"{source}: table {table} has duplicate {column} {sorted(map(str, repeated))[:3]}")
+
+
 def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
     """TASK with the identity columns checked; a missing proj_id is the file's only project."""
     tasks = raw.table("TASK")
     _require(tasks, raw.source, "TASK", ["task_id", "task_code"])
+    _unique(tasks, raw.source, "TASK", "task_id")
     if "proj_id" not in tasks.columns:
         _require(projects, raw.source, "PROJECT", ["proj_id"])
         if len(projects) != 1:
@@ -576,7 +593,7 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
             "parent_id": used.get("parent_actv_code_id", pd.Series("", index=used.index)).fillna(""),
             "value": used["short_name"],
             "name": used.get("actv_code_name", used["short_name"]),
-            "seq": pd.to_numeric(used.get("seq_num", pd.Series(0, index=used.index)), errors="coerce").fillna(0),
+            "seq": to_number(used.get("seq_num", pd.Series(0, index=used.index))).fillna(0),
         }
     )
     code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])
@@ -646,6 +663,7 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
             ]
         ), None
     _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
+    _unique(wbs, raw.source, "PROJWBS", "wbs_id")
     wbs = _ensure_cols(
         wbs[wbs["proj_id"] == project_id].copy(),
         [
@@ -676,7 +694,7 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
             wbs_id = row["parent_wbs_id"]
         return chain[::-1]
 
-    sequence = pd.to_numeric(by_id["seq_num"], errors="coerce").fillna(0).astype(int)
+    sequence = to_number(by_id["seq_num"]).fillna(0).astype(int)
     codes, top_levels, sort_keys = [], [], []
     for wbs_id in wbs["wbs_id"]:
         chain = lineage(wbs_id)
@@ -889,6 +907,7 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
     if calendars.empty:
         return calendars, pd.Series(dtype=float), {}
     _require(calendars, raw.source, "CALENDAR", ["clndr_id"])
+    _unique(calendars, raw.source, "CALENDAR", "clndr_id")
     calendars = _ensure_cols(calendars.copy(), ["clndr_name", "day_hr_cnt", "week_hr_cnt", "clndr_data"])
     calendars["day_hr_cnt"] = to_number(calendars["day_hr_cnt"])
     work_calendars = {
@@ -1258,6 +1277,9 @@ def build_snapshot(
     projects = raw.table("PROJECT")
     if projects.empty or raw.table("TASK").empty:
         raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    if not raw.ended:
+        # the last row read may be cut and the tables after it lost: no number of it can be trusted
+        raise XerError(f"{raw.source}: incomplete file, no %E end line (still being copied, or cut short)")
     _require(projects, raw.source, "PROJECT", ["proj_id"])
     warnings = list(raw.warnings)  # appended to in the order the steps run: that order is observable
     all_tasks = _task_table(raw, projects, warnings)

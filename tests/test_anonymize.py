@@ -234,7 +234,9 @@ def test_no_original_code_is_left_whatever_the_key(name):
 
 
 def test_unknown_tables_and_columns_are_left_out_and_named():
-    text = _file([todo("A1", wbs_id="")]) + "%T\tTASKMEMO\n%F\tmemo_id\ttask_memo\n%R\t1\tCall Jane re. crane\n"
+    text = _file([todo("A1", wbs_id="")]).replace(
+        "%E\n", "%T\tTASKMEMO\n%F\tmemo_id\ttask_memo\n%R\t1\tCall Jane re. crane\n%E\n"
+    )
     raw = parse_text(text, source="x.xer")
     raw.tables["TASK"]["new_p6_column"] = "Crane hire by Smith Ltd"
     anonymizer = Anonymizer.from_raws([raw])

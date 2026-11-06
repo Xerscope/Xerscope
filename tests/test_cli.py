@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 import pytest
 from xerkit import todo, xer_text
 
 from xerscope import cli
 from xerscope.analysis import builtin_standards, compare_counts
+
+
+def stops(capsys, *argv) -> bool:
+    """True when the command stops on its input with exit code 2 (cli.INPUT_ERROR)."""
+    with pytest.raises(SystemExit) as stop:
+        cli.main(list(argv))
+    return stop.value.code == cli.INPUT_ERROR
 
 
 def run(capsys, *argv) -> str:
@@ -88,17 +97,17 @@ def test_check_reads_the_p6_project_baseline_of_each_file(capsys, tmp_path):
     assert got[("a.xer", "P6-12")][1:] == (2, 2) and got[("a.xer", "P6-13")][1:] == (0, 2)
 
 
-def test_check_baseline_in_file_refuses_two_files_of_one_name(tmp_path):
+def test_check_baseline_in_file_refuses_two_files_of_one_name(capsys, tmp_path):
     for folder in ("w1", "w2"):
         (tmp_path / folder).mkdir()
         (tmp_path / folder / "a.xer").write_text(xer_text([todo("A1")]))
-    with pytest.raises(SystemExit, match="distinct file names"):
-        cli.main(["check", str(tmp_path / "w1"), str(tmp_path / "w2"), "--baseline-in-file"])
+    assert stops(capsys, "check", str(tmp_path / "w1"), str(tmp_path / "w2"), "--baseline-in-file")
+    assert "distinct file names" in capsys.readouterr().err
 
 
-def test_check_rejects_unknown_standard(sample_dir):
-    with pytest.raises(SystemExit, match="unknown standard"):
-        cli.main(["check", str(sample_dir), "--standard", "nope"])
+def test_check_rejects_unknown_standard(capsys, sample_dir):
+    assert stops(capsys, "check", str(sample_dir), "--standard", "nope")
+    assert "unknown standard" in capsys.readouterr().err
 
 
 def test_standards_list_rules_and_template(capsys, tmp_path):
@@ -165,21 +174,56 @@ def test_check_exit_code_follows_fail_on(capsys, sample_dir):
     capsys.readouterr()
 
 
-def test_paths_with_nothing_to_read_stop_with_a_message(tmp_path):
-    with pytest.raises(SystemExit, match="no .xer file"):
-        cli.main(["check", str(tmp_path)])
-    with pytest.raises(SystemExit, match="no such file"):
-        cli.main(["info", str(tmp_path / "missing.xer")])
+def test_paths_with_nothing_to_read_stop_with_a_message(capsys, tmp_path):
+    assert stops(capsys, "check", str(tmp_path))
+    assert "no .xer file" in capsys.readouterr().err
+    assert stops(capsys, "info", str(tmp_path / "missing.xer"))
+    assert "no such file" in capsys.readouterr().err
 
 
-def test_same_data_date_twice_stops_with_the_files(sample_dir, tmp_path):
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        ("empty file", "not an XER file"),
+        ("cut short", "no %E end line"),
+        ("task_id twice", "table TASK has duplicate task_id"),
+    ],
+)
+@pytest.mark.parametrize("command", ["info", "check", "recalc", "export"])
+def test_an_unusable_file_stops_with_one_line_and_exit_2(capsys, tmp_path, command, damage, message):
+    """An unusable .xer printed a Python traceback and exited 1, the code --fail-on and --expect
+    use for a finding: a script could not tell a bad file from a schedule that misses the
+    standard. Now: one line on stderr naming the file, exit 2."""
+    text = xer_text([todo("A1"), todo("A2")])
+    if damage == "empty file":
+        text = ""
+    elif damage == "cut short":
+        text = text[: text.index("%E")]
+    else:
+        text = text.replace("%R\t2\t1\t", "%R\t1\t1\t", 1)
+    folder = tmp_path / "exports"
+    folder.mkdir()
+    (folder / "bad.xer").write_text(text)
+    # export reads a folder of weekly files; the others take the file itself
+    target = [str(folder), "--out", str(tmp_path / "bi")] if command == "export" else [str(folder / "bad.xer")]
+    assert stops(capsys, command, *target)
+    err = capsys.readouterr().err
+    assert err.startswith("xerscope: bad.xer: ") and message in err and "Traceback" not in err
+
+
+def test_a_missing_baseline_file_stops_with_exit_2(capsys, sample_dir, tmp_path):
+    assert stops(capsys, "check", str(sample_dir), "--baseline", str(tmp_path / "absent.xer"))
+    assert "absent.xer" in capsys.readouterr().err
+
+
+def test_same_data_date_twice_stops_with_the_files(capsys, sample_dir, tmp_path):
     first = sorted(sample_dir.glob("*.xer"))[0]
     folder = tmp_path / "exports"
     folder.mkdir()
     for name in (first.name, "zz-copy.xer"):
         (folder / name).write_bytes(first.read_bytes())
-    with pytest.raises(SystemExit, match=f"several files per status date.*{first.name}, zz-copy.xer"):
-        cli.main(["export", str(folder), "--out", str(tmp_path / "bi")])
+    assert stops(capsys, "export", str(folder), "--out", str(tmp_path / "bi"))
+    assert re.search(f"several files per status date.*{first.name}, zz-copy.xer", capsys.readouterr().err)
 
 
 def test_pv_compare_writes_the_five_tables_from_the_disk(capsys, tmp_path):
@@ -221,17 +265,11 @@ def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_p
     (tmp_path / "bl.xer").write_text(xer_text(BASELINE))
     (tmp_path / "w.xer").write_text(xer_text(UPDATE, data_date=WED))
     (tmp_path / "p6.csv").write_text("Activity ID,PV,Earned Value Labor Units,Schedule % Complete\nA,50,62.5,40%\n")
-    with pytest.raises(SystemExit, match="pv_hr"):
-        cli.main(
-            [
-                "pv-compare",
-                str(tmp_path / "w.xer"),
-                "--baseline",
-                str(tmp_path / "bl.xer"),
-                "--p6",
-                str(tmp_path / "p6.csv"),
-            ]
-        )
+    assert stops(
+        capsys, "pv-compare", str(tmp_path / "w.xer"), "--baseline", str(tmp_path / "bl.xer"),
+        "--p6", str(tmp_path / "p6.csv"),
+    )  # fmt: skip
+    assert "pv_hr" in capsys.readouterr().err
     text = run(
         capsys, "pv-compare", tmp_path / "w.xer", "--planned-baseline", "--p6", tmp_path / "p6.csv",
         "--column", "pv_hr=PV", "--out", tmp_path / "cmp",

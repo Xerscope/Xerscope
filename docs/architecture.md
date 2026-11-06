@@ -21,8 +21,18 @@ The XER format is tab-separated:
 - **Lines:** splits on `\n` only, because calendar blobs can contain `\r`.
 - **Short rows:** padded to the field count.
 - **Values:** everything is kept as **strings**. The parser knows the format, not P6.
+- **Structure P6 never writes:** a table written twice or a column named twice in a `%F` line
+  raises `XerError`. Lines after `%E` are not read.
 
-Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings)`.
+Output: `RawXer(tables: {name: DataFrame[str]}, version, export_date, encoding, warnings, header, ended)`.
+`ended` is False when the file has no `%E` line; the parse still succeeds (the file picker reads
+the header of a file being copied) and `build_snapshot` refuses it.
+
+**Load contract.** `build_snapshot` returns a `Snapshot` or raises `XerError`, nothing else,
+whatever the file holds: cut short, keys repeated (`task_id`, `wbs_id`, `clndr_id`), identity
+columns missing, values unreadable, dates outside 1900-2199 or numbers infinite (both read as
+blank). `tests/test_load_contract.py` documents each case and checks the contract over every
+table and column of a file built in code.
 `keep=` keeps only the named tables, each with the listed columns (the rows of the others
 are not split).
 
