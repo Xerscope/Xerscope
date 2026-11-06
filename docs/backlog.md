@@ -133,23 +133,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Display rounding: a value beside its status can contradict it (P6-13 at 0.9545 shows
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
-- [ ] Gantt "Ask" field with a model (`deploy/compose.yaml` `llm`, docs/deploy.md §10): not yet
-      run on the NAS; the 3B/Q4 timing and memory figures are estimates to confirm there.
-      `xerscope ask-bench <folder> --cases tests/ask/heldout.toml --url http://<llm>:8080` scores
-      it against the grammar (80 % exact on the held-out sentences; the misses are synonyms the
-      file does not hold). A model tuned on real files is split by file, never by sentence
-      (`tests/test_ask_bench.py`). On a real schedule, `--anonymize` keeps every name out of
-      the model and the terminal; only the sentences that name things by code or full name
-      are then scorable.
-- [ ] Gantt "Ask" model, summary: measured with Qwen3.5-2B (docs/deploy.md §10), a third of
-      the grounded summaries misuse a value. Before enabling it: fewer and unambiguous facts
-      (no step counts beside day counts), a sentence frame the model fills rather than free
-      text, a re-measure with a person reading 20 summaries; or a larger model on a GPU host.
-- [ ] Gantt "Ask" model, tools: let the model call xerscope's own functions (WBS tree with
-      counts, a search of activity names) through the chat endpoint's tool calls, the app
-      running each call in-process on the loaded file (never a shell, never a path from the
-      model) and feeding the result back; three rounds at most. Worth it only once the model
-      is measured on `ask-bench`: a tool call is a second model round trip on the NAS.
+- [ ] Gantt "Ask", a model: none deployed (docs/deploy.md §10 holds the measurements:
+      55 % understanding, a third of grounded summaries misusing a value, on a CPU without
+      AVX2). What would change the measurement, in order: a per-request literal grammar
+      (IDs, dates, floats as the only alternatives in a fixed sentence frame) with a role
+      check; `ngram-simple` speculation and `-lm mmap+mlock` on llama-server; a fine-tuned
+      Flan-T5-small on synthetic pairs under ONNX Runtime; or a GPU host on the tailnet. The
+      measurement client (`query.llm_backend`, `ask-bench --url --summary`) is in place.
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a

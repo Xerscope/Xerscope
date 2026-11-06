@@ -251,7 +251,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env` (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume).
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
-- [ ] Memory and PID caps on the three containers (four with the optional `llm`, §10), bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
+- [ ] Memory and PID caps on the three containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
@@ -261,109 +261,25 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
-## 10. Optional: a local language model for the Gantt "Ask" field
+## 10. The Gantt "Ask" field
 
 The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
-and turns it into its own filters (`analysis/query.py`). Without a model, a keyword grammar
-over the file's lexicon (WBS, activity codes, resources, activity-name words, trade synonyms
-in both languages, typos) answers: 100 % of `tests/ask/dev.toml`, 100 % of the held-out
-sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a company's file,
-`ask-bench <folder> --self --lexicon <folder>` lists what its lexicon file should add. The `llm` profile of `deploy/compose.yaml` adds a llama.cpp server for what the
-grammar misses. It
-receives the file's WBS, code and resource names only: no activity, no date, no number
-(`tests/test_query_llm.py` checks the request). An answer that does not come, in 20 s, or
-does not parse, is replaced by the grammar's: the page never waits on the model.
+and turns it into its own filters, a one-sentence answer and a population funnel
+(`analysis/query.py`): a keyword grammar over the file's lexicon (WBS, activity codes,
+resources, activity-name words), the trade words of `lexicon/fr-en.toml` and the folder
+`XERSCOPE_LEXICON` names (`*.toml` files, `[[group]] words = ["CVC", "HVAC"]`, mounted
+read-only like the exports), typos read at a lower confidence. Nothing else runs: no model,
+no container, no network access. Measured on the demo: 100 % of `tests/ask/dev.toml`, 100 %
+of the held-out sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a
+company's file, `xerscope ask-bench <folder> --self --lexicon <folder> --anonymize` lists
+what its lexicon file should add, without naming anything.
 
-Before any model: the grammar reads the trade words of `lexicon/fr-en.toml` and those of
-the folder `XERSCOPE_LEXICON` names, mounted read-only like the exports (`*.toml` files,
-`[[group]] words = ["CVC", "HVAC"]`): a company's own words and abbreviations find its
-nodes without a model. `xerscope lexicon <folder>` checks the files; `xerscope ask-bench
-<folder> --cases <sentences>.toml --lexicon <folder> --anonymize` measures the gain on a
-real schedule without naming anything.
-
-What the model does, with the profile on: it **summarises** what a sentence found, in one
-English sentence, from the values xerscope computed (the funnel's steps and counts, the ten
-worst floats as Activity ID, float and finish date, the successors of the worst: never a
-name, never the file), streamed into the banner under the template answer (`query.facts`,
-`query.summary`). Every number, Activity ID and date of the summary must be among the values
-given, or the summary is dropped and the template answer stands alone (`query.grounded`).
-The standard questions ("what is critical", "what is late", "milestones not started",
-"what is in progress") are summarised ahead, in the background, when a file is loaded, so
-they answer at once; a new question streams, first words after about a second once the
-prefix is warm, forty words in ten to twenty seconds on the NAS. Measured on the demo's
-held-out sentences with Qwen3.5-2B Q4 (`ask-bench --url … --summary`, a 4-core x86 faster
-than the NAS): 20/20 summaries in 4 to 9 s, 17/20 kept by the guard, and, read by a person,
-about a third of the kept ones misuse a value (a step count called days, another activity's
-date): the guard proves the values exist, not that they are used right. The verdict, for
-now: leave the summary off and let the template answer, which is always right, stand; the
-code and `ask-bench --summary` stay for the day a better model or a GPU changes the
-measurement. The model is not used to understand the sentence either: measured at 55 %
-against the grammar's 100 %, that path stays for `ask-bench --url` only.
-
-**The link is TLS to the model's own certificate, with a key, or nothing.** The app refuses
-to configure a model over plain http, without the certificate or without the key
-(`query.llm_backend`); the model does not start without a key; nothing listens on the
-model's address but its TLS front; and the model's containers are rootless and sealed.
-
-1. Put one GGUF model in a folder the `XERSCOPE_UID` account can read, e.g. `models/` next to
-   `exports/`. On the DS918+ (Celeron J3455, 4 cores, no GPU) a 3B model quantised Q4_K_M
-   (about 2 GB) answers in 8-15 s and fits `XERSCOPE_LLM_MEM_LIMIT=3g` with a 4k context; a
-   1.5B model answers in 4-6 s and misses more negations.
-2. Make the model's certificate once, in `docker/xerscope/llm-certs/` (not in git), readable
-   by the `XERSCOPE_UID` account only:
-
-   ```bash
-   mkdir -p llm-certs && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
-     -days 3650 -subj /CN=xerscope-llm -addext subjectAltName=IP:172.29.0.20 \
-     -keyout llm-certs/llm.key -out llm-certs/llm.crt
-   ```
-
-   ```bash
-   chown -R <XERSCOPE_UID> llm-certs && chmod 700 llm-certs && chmod 600 llm-certs/llm.key
-   ```
-
-3. `.env`: `XERSCOPE_LLM_KEY=$(openssl rand -hex 24)`, `XERSCOPE_MODELS=<folder>`,
-   `XERSCOPE_LLM_MODEL=<file>.gguf`.
-4. `compose.yaml`, `xerscope` service: uncomment the three `XERSCOPE_QUERY_*` lines, the
-   `llm-ca.crt` volume line and the `llm` network lines. The URL is `https://172.29.0.20:8443`,
-   the key is the one above, the certificate is the one made in step 2 (self-signed: it is
-   its own CA, and the app trusts it alone).
-5. Build with the profile: Container Manager runs `docker compose --profile llm up -d`
-   (`llm` and `llm-tls` are in the `llm` profile only; without it nothing changes).
-
-How the pieces hold (`tests/test_docker.py`, `tests/test_query_llm.py`):
-
-- **A network of its own, where nothing listens.** The model is on `llm` (`172.29.0.20`),
-  an internal network with no gateway that holds the model and the app alone. The app sits on
-  it at `172.29.0.10` but Streamlit binds its `internal` address (`172.28.0.10`, the
-  `command` and `healthcheck` of the service) and nothing else: from the model's namespace
-  there is no app port, no Caddy, no tailscaled and no internet to reach. The app names the
-  model by its address, so a container that took the service name is not spoken to.
-- **Loopback and a TLS front.** The stock llama.cpp image is built without SSL, so the
-  model listens on `127.0.0.1:8080` of its own namespace (`LLAMA_ARG_HOST`) and `llm-tls`,
-  a stock Caddy sharing that namespace (`network_mode: service:llm`, as the funnel's Caddy
-  shares tailscaled's), is the only listener on `172.29.0.20`, on 8443, with the certificate
-  of step 2. The app verifies the connection against that certificate alone
-  (`XERSCOPE_QUERY_CA`, read at the first call); any other certificate is refused.
-- **A key on every request.** `XERSCOPE_LLM_KEY` is the model's `LLAMA_API_KEY`; the app
-  sends it as a bearer token; a request without it gets 401 and the app falls back on the
-  grammar. The front's log deletes the `Authorization` header; the app logs nothing of the
-  call; llama-server logs no header.
-- **The vocabulary is handed over once.** At a file's load the app sends the model the
-  static prefix of every prompt (rules, lexicon, the file's labels) in the background
-  (`query.warm`, `cache_prompt`, the server's `--cache-reuse`); the server keeps that state,
-  so a sentence then costs its own tokens. Nothing is learnt: the model's weights never
-  change, and a restart of the model forgets the prefix until the next load.
-- **Rootless and sealed.** Both containers run as `XERSCOPE_UID`, read-only, with every
-  capability dropped (the Caddy binary's file capability aside, as the funnel's Caddy),
-  `no-new-privileges`, `ipc: none`, `noexec,nosuid` tmpfs, memory and PID caps. The model
-  mounts its model folder read-only and nothing else; the front mounts its Caddyfile and the
-  certificate read-only and writes nothing. A model can answer wrongly at worst: every id it
-  answers is checked against the vocabulary.
-
-A GPU machine of the tailnet instead of the NAS would be the same three variables pointed
-at it, with the same front in front of it; it is not covered here (the app would then
-leave its networks, which `tests/test_docker.py` pins).
+A language model was measured against this and not kept (`analysis/query.py: llm_backend`
+stays as the measurement client of `ask-bench --url`): understanding the sentence,
+Qwen3.5-2B Q4 reached 55 % of the held-out sentences against the grammar's 100 %, in
+about 19 s a sentence on a 4-core x86 faster than the NAS; summarising an answer from
+computed values, 17 of 20 summaries passed a value check and about a third of those
+misused a value when read. The backlog says what would change that measurement.
 
 ## 11. Troubleshooting
 

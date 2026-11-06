@@ -827,8 +827,7 @@ def answer(filter: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") 
 
 # --- a summary of what came out, by a model, from computed values only ---------------------
 
-FACT_ROWS = 10  # activities handed to the model for a summary: the worst floats first
-STANDARD_QUESTIONS = ("what is critical", "what is late", "milestones not started", "what is in progress")
+FACT_ROWS = 10  # activities handed to a model for a summary: the worst floats first
 
 
 def facts(funnel: Funnel, snapshot: Snapshot, limit: int = FACT_ROWS) -> dict:
@@ -898,7 +897,10 @@ _SUMMARY = (
 )
 
 
-# --- a local language model as Backend (step two) ---------------------------------------
+# --- a language model, for measurement only (ask-bench --url, --summary) -------------------
+# Nothing deployed uses this: the app reads sentences with the grammar and the lexicon, and
+# answers from a template. The client stays so a model can be measured against them
+# (docs/deploy.md §10 holds the last figures) without wiring anything back.
 
 _SCHEMA = {  # what the model may answer: ids and labels of the vocabulary, nothing else
     "type": "object",

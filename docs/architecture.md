@@ -329,11 +329,10 @@ sentence goes through layers that each answer only what they can prove, in this 
 first one sure enough answers, the next ones never see the schedule:
 
 ```
-sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) small LLM ─▶ Filter / Query
-            exact phrases,       cosine between the      JSON over 20 pre-chosen      │
-            synonyms, typos      sentence and the        labels, schema-constrained   ▼
-            (difflib)            file's labels                                 xerscope computes:
-                                                                               tasks, counts, dates
+sentence ─▶ keyword grammar over the file's lexicon ─▶ Filter ─▶ funnel over the rows
+            exact phrases, trade synonyms (data),                 ▼
+            the company's words, typos (difflib)         answer sentence (template),
+                                                         chips, Gantt, table, CSV
 ```
 
 - **The lexicon is the file's own** (`analysis/query.py: Vocabulary`, built from the
@@ -382,20 +381,10 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   measures every layer on sentences with known filters (`tests/ask/dev.toml` tuned on,
   `heldout.toml` written blind, floors in `tests/test_ask_bench.py`), per field and per
   confidence bucket; `--anonymize` runs it on a real file with every name replaced.
-- **A model, when there is one, summarises; it never reads the schedule.** With the `llm`
-  profile it writes one English sentence over the values xerscope computed (`query.facts`:
-  funnel steps and counts, the worst floats as Activity ID, float and finish date, the
-  successors of the worst), streamed into the banner under the template answer; a summary
-  holding a number, Activity ID or date that is not among those values is dropped
-  (`query.grounded`). The standard questions are summarised ahead at the file's load
-  (`state.warm_model`), in RAM only. The model's other role, understanding the sentence,
-  measured below the grammar, is kept for `ask-bench --url` only.
-- **The model's channel is the only outbound code.** `query.llm_backend` is the one place in
-  `src/` that opens a connection, to the fixed `XERSCOPE_QUERY_URL` (`tests/test_docker.py`);
-  the model answers data, never a URL the app would follow. It runs in a container of its
-  own on a network of its own with no gateway, rootless, read-only, reaching nothing, behind
-  TLS and a key (docs/deploy.md §10); the app's network has no gateway either.
-  The values a user asks for are computed by xerscope; a model may only put them in words.
+- **No model is deployed.** `query.llm_backend` (a llama.cpp client: ask, warm, summarise)
+  and `query.facts` / `query.grounded` stay as the measurement path of `ask-bench --url`
+  and `--summary`; nothing in `app/` calls them (`tests/test_docker.py`), and the deployed
+  app has no outbound code. The figures of the last measurement are in docs/deploy.md §10.
 
 **Why the latest small Qwen (or any 1-4B model) alone does not help here.**
 

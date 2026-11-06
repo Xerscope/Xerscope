@@ -10,17 +10,13 @@ from xerscope.app.state import (
     baseline_for,
     compare_picker,
     csv_download,
-    keep_summary,
     memo,
     page_header,
-    query_backend,
     require_store,
     session_lexicon,
     snapshot_picker,
     sources_of,
-    summary_for,
     teach,
-    warm_model,
 )
 from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
@@ -73,9 +69,10 @@ def _clear_ask() -> None:
     st.session_state[ASK_KEY] = ""
 
 
-# The Ask field: a sentence turned into the page's filters (analysis/query.py), the first control
-# of the page. The answer (one sentence over the rows, the funnel line) is written into
-# ``answer_box`` once the rows are known, below; the chips let a filter go.
+# The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
+# lexicon, the file's own labels; no model), the first control of the page. The answer (one
+# sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
+# known, below; the chips let a filter go.
 asked = st.text_input(
     "Ask the schedule",
     placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
@@ -93,23 +90,10 @@ lexicon = memo(  # rebuilt when a word is taught
     baseline=False,
     ev_basis=False,
 )
-warm_model(  # the model reads this file's vocabulary once, then writes the standard summaries ahead
-    lexicon,
-    snapshot.source,
-    snapshot.activities.assign(category=categorise(snapshot.activities)),
-    snapshot,
-    nodes,
-)
 ask = None
 if asked:
-    ask = memo(  # one model call per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)),
-        query.parse,
-        asked,
-        lexicon,
-        query_backend(),
-        baseline=False,
-        ev_basis=False,
+    ask = memo(  # once per sentence and update, baseline-independent
+        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
     )
 if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
     kept = st.pills(
@@ -285,25 +269,8 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
         with banner:
             st.markdown(ui.md_text(said) + unknown, width="stretch")
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
-        how = " · model" if ask.source == "model" else (" · unsure reading" if ask.confidence < query.SURE else "")
+        how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
-        if ask_funnel.steps and query_backend() is not None:  # the model's summary: cached, else streamed
-            given = query.facts(ask_funnel, snapshot)
-            written = summary_for(snapshot.source, asked)
-            with st.container(key="ask_summary"):
-                if written is None:
-                    slot = st.empty()
-                    with slot.container():
-                        st.caption("Summary…")
-                        written = slot.write_stream(query.summary(query_backend(), asked, given))
-                    written = (written or "").strip() if isinstance(written, str) else ""
-                    if written and query.grounded(written, given):
-                        keep_summary(snapshot.source, asked, written)
-                    else:
-                        slot.empty()  # nothing, or a value not in the facts: the template answer stands alone
-                        written = ""
-                if written:
-                    st.markdown(f"*{ui.md_text(written)}*")
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

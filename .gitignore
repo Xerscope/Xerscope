@@ -11,5 +11,3 @@ tailscale-state/
 exports/
 *.xer
 *.XER
-# The model's TLS certificate and key, made on the NAS (docs/deploy.md §10)
-deploy/llm-certs/
