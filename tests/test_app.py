@@ -1003,6 +1003,28 @@ def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
     _assert_anonymised(tables, store, _session_anonymizer(app))
 
 
+def test_debug_calendar_detail_downloads_the_three_tables_anonymised(app, store, downloads):
+    """Block 13: the calendar zip holds the summary, the weekly periods and the exceptions, no calendar name."""
+    import io
+    import zipfile
+
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    next(b for b in app.button if b.label == "Build calendar detail").click().run()
+    _ok(app)
+    assert not app.error, [e.value for e in app.error]
+    content = _download(app, downloads, "Download calendar detail (.zip) · anonymized")
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        tables = {name: pd.read_csv(io.BytesIO(archive.read(name))) for name in archive.namelist()}
+    assert set(tables) == {"13_calendar_summary.csv", "13_calendar_week.csv", "13_calendar_exceptions.csv"}
+    assert "clndr_name" not in tables["13_calendar_summary.csv"].columns
+    calendars = set(store.latest.work_calendars)
+    assert set(tables["13_calendar_summary.csv"]["clndr_id"].astype(str)) == calendars
+    assert len(tables["13_calendar_week.csv"]) == 7 * len(calendars)
+    cells = {str(value) for table in tables.values() for value in table.astype(str).to_numpy().ravel()}
+    assert _session_anonymizer(app).leaks(cells) == {}  # no text value of the loaded files
+
+
 def test_debug_renders_a_held_out_case_with_an_expected_finish(tmp_path, monkeypatch, downloads):
     """H1-02 (corpus witness of ``expected_finish``): the page renders, block 2 lists A1170 with its
     remaining brought to 0, and the diagnostic leaves anonymised."""
@@ -1049,7 +1071,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 12 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 13 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1596,4 +1618,5 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     at.switch_page("views/debug.py").run()
     _ok(at)
     assert not any("12 · App runtime" in e.label for e in at.expander)
-    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 11
+    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 12
+    assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance

@@ -309,6 +309,10 @@ Outside `analysis/`:
   the same `Snapshot.file_projects` rows, `absent` for a column the file lacks; of
   `baseline_names_to_export` only the number of names) with its tasks by `complete_pct_type`, and what
   each setting is in the XER data map and the P6 help (`SETTINGS_MEANING`). No KPI reads it.
+  Block 13, the calendar detail (`diagnostic.calendar_detail_frames`, also its own zip): each calendar's
+  hours per time period as stored (`day_hr_cnt` .. `year_hr_cnt`) beside the working time its
+  `clndr_data` periods add up to, the periods of each weekday, and each dated exception with what it does
+  to the weekday it replaces (non-working day, working day on a non-working weekday, other hours).
   `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
   `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
   unchanged, cost figures 0 as in the extract).

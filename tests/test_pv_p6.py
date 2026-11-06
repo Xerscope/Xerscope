@@ -308,7 +308,7 @@ def test_zip_holds_counts_and_hours_without_code_or_name():
     from xerscope.xer import parse_text
 
     update = snap(UPDATE, data_date=WED)
-    frames = {**diagnostic_frames(update, None, builtin_standards()["P6"]), **pv_p6_frames(comparison)}
+    frames = {**diagnostic_frames(update, None, builtin_standards()["P6"], anonymous=True), **pv_p6_frames(comparison)}
     anonymous = Anonymizer.from_raws([parse_text(xer_text(UPDATE, data_date=WED), source="test.xer")])
     with zipfile.ZipFile(io.BytesIO(anonymous.zip_frames(frames))) as archive:
         names = archive.namelist()
