@@ -6,8 +6,9 @@ import hashlib
 import html
 import os
 import secrets
+import threading
 from collections.abc import Callable, Iterable, MutableMapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pandas as pd
@@ -15,8 +16,9 @@ import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
-from xerscope.analysis.checks import CheckResult, run_metric
+from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
+from xerscope.analysis.wbs import ROOT
 from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
 from xerscope.app import ui
 from xerscope.store import DuplicateDataDate, SnapshotStore
@@ -30,6 +32,7 @@ from xerscope.xer import (
     load_snapshot,
     xer_files,
 )
+from xerscope.xer.model import HEADER_TABLES, read_header
 from xerscope.xer.parser import parse_bytes
 
 # Streamlit wants extensions without the dot.
@@ -65,11 +68,16 @@ def _read(name: str, data: bytes) -> Snapshot:
     return snapshot
 
 
-def _build(items: list[tuple[str, bytes]]) -> tuple[SnapshotStore | None, list[str]]:
+def _build(
+    items: list[tuple[str, bytes]], on_file: Callable[[int, str], None] | None = None
+) -> tuple[SnapshotStore | None, list[str]]:
     """Each file read for the project picked for it, else its default project, so a project renamed
-    between updates still loads."""
+    between updates still loads. ``on_file(index, name)`` is called before each file is read (the
+    sidebar's progress line)."""
     snapshots, errors = [], []
-    for name, data in items:
+    for index, (name, data) in enumerate(items):
+        if on_file is not None:
+            on_file(index, name)
         try:
             snapshot = _read(name, data)
         except XerError as exc:
@@ -89,6 +97,111 @@ def _build(items: list[tuple[str, bytes]]) -> tuple[SnapshotStore | None, list[s
 
 def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def background_jobs() -> bool:
+    """Whether the files after the first and the Overview scores are read in a thread while the
+    pages draw. XERSCOPE_SYNC_LOAD=1 (the tests: AppTest returns when the script ends) does
+    everything in the script run."""
+    return os.environ.get("XERSCOPE_SYNC_LOAD", "").lower() not in ("1", "true", "yes")
+
+
+def _header_date(name: str, data: bytes) -> pd.Timestamp | None:
+    """The file's status date from its PROJECT rows only, for the reading order; None when unreadable."""
+    try:
+        return read_header(parse_bytes(data, source=name, keep=HEADER_TABLES)).data_date
+    except XerError:
+        return None
+
+
+def most_recent_first(items: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
+    """The files by status date, latest first (unreadable last): the pages open on the latest
+    update, so it is read first and the others follow in the background."""
+    dates = {name: _header_date(name, data) for name, data in items}
+    return sorted(items, key=lambda item: (dates[item[0]] is None, -(dates[item[0]] or pd.Timestamp(0)).value))
+
+
+@dataclass
+class LoadJob:
+    """The files being read in a thread: ``results`` fills in reading order (name -> Snapshot, or
+    the error text), ``done`` once every file was tried. ``seen`` is how many the page last drew."""
+
+    items: list[tuple[str, bytes]]
+    choices: dict[str, str]
+    results: dict[str, Snapshot | str] = field(default_factory=dict)
+    cache: dict[tuple, Snapshot] = field(default_factory=dict)  # _parse's keys, merged once collected
+    done: bool = False
+    seen: int = 0
+    thread: threading.Thread | None = None
+
+    def read(self, name: str, data: bytes) -> None:
+        """One file, as ``_read`` would read it: the project picked for it, else the default."""
+        digest = hashlib.sha256(data).hexdigest()
+        snapshot = load_snapshot(data, name=name)
+        self.cache[(name, digest, None)] = snapshot
+        chosen = self.choices.get(name)
+        if chosen in set(snapshot.file_projects["proj_id"]) and chosen != snapshot.project_id:
+            snapshot = load_snapshot(data, name=name, project_id=chosen)
+            self.cache[(name, digest, chosen)] = snapshot
+        self.results[name] = snapshot
+
+    def run(self) -> None:
+        for name, data in self.items:
+            if name in self.results:
+                continue
+            try:
+                self.read(name, data)
+            except Exception as exc:  # noqa: BLE001 - an error of a thread would otherwise be lost
+                self.results[name] = f"{name}: {exc}"
+        self.done = True
+
+
+def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
+    """The most recent file read now, the others in a daemon thread (the session's choice of
+    project per file taken as it stands)."""
+    job = LoadJob(most_recent_first(items), dict(_file_choices()))
+    first = job.items[0]
+    try:
+        job.read(*first)
+    except Exception as exc:  # noqa: BLE001
+        job.results[first[0]] = f"{first[0]}: {exc}"
+    if len(job.items) == 1:
+        job.done = True
+    else:
+        job.thread = threading.Thread(target=job.run, name="xerscope-load", daemon=True)
+        job.thread.start()
+    return job
+
+
+def _collect(job: LoadJob) -> tuple[SnapshotStore | None, list[str]]:
+    """The store of the files read so far, in the order of the series, and the errors met."""
+    snapshots, errors = [], []
+    for name, _ in job.items:
+        result = job.results.get(name)
+        if result is None:
+            continue
+        if isinstance(result, str):
+            errors.append(result)
+        elif result.data_date is None:
+            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
+        else:
+            snapshots.append(result)
+    job.seen = len(job.results)
+    st.session_state.setdefault("_parsed", {}).update(job.cache)
+    if not snapshots:
+        return None, errors
+    try:
+        return SnapshotStore(snapshots), errors
+    except DuplicateDataDate as exc:
+        return None, [*errors, f"{exc}. Untick the others."]
+
+
+@st.fragment(run_every=1.0)
+def _poll_load() -> None:
+    """Draws nothing; reruns the app when the thread read another file, or finished."""
+    job = st.session_state.get("_load_job")
+    if job is None or job.done or len(job.results) != job.seen:
+        st.rerun(scope="app")
 
 
 def _header(path: Path) -> FileHeader | str:
@@ -210,6 +323,7 @@ def _apply_drafts() -> None:
     for key, draft in DRAFTS.items():
         if draft in st.session_state:
             st.session_state[key] = st.session_state[draft]
+    st.session_state["bl_defaulted"] = False
     for snapshot in st.session_state.get("store") or ():
         chosen = st.session_state.get(_project_draft(snapshot.source))
         if chosen is not None and chosen != snapshot.project_id:
@@ -328,7 +442,7 @@ def _window(store: SnapshotStore | None) -> None:
                 _baseline_fields(store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
             st.caption("Done applies · Esc cancels")
-            if st.button("Done", type="primary", key="files_done"):
+            if st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter"):
                 _apply_drafts()
                 st.session_state.update(files_source=choice, files_open=False)
                 st.rerun()
@@ -398,6 +512,19 @@ def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
     return store
 
 
+def debug_page() -> bool:
+    """Whether the Debug page is in the navigation: always on a workstation; on a deployed
+    instance (``_data_locked``) only with XERSCOPE_DEBUG_PAGE=1, since the page describes the
+    server's reading of every file to whoever holds the URL."""
+    asked = os.environ.get("XERSCOPE_DEBUG_PAGE", "").lower() in ("1", "true", "yes")
+    return not _data_locked() or asked
+
+
+def data_locked() -> bool:
+    """Remote deployment (``_data_locked``): pages show nothing about the server (Debug block 12)."""
+    return _data_locked()
+
+
 def _data_locked() -> bool:
     """Remote deployment: the visitor reads the server's exports folder and nothing else. No path
     field (the app cannot be pointed elsewhere) and no upload (one parsed export of 40 MB takes
@@ -419,12 +546,41 @@ def sidebar_loader() -> None:
     files_line = sidebar.container()
 
     signature, items = _chosen_items()
-    if items is not None:
-        with st.spinner(f"Parsing {len(items)} file(s)…"):
-            store, errors = _build(items)
-        st.session_state.update(store=store, signature=signature, errors=errors, items=items)
+    if items is not None and background_jobs() and len(items) > 1:
+        # the most recent update now, the pages open on it; the rest in a thread, the store
+        # growing as they come (the memo keys follow the files in the store, so nothing computed
+        # on a partial series is read back for the full one)
+        job = _start_load(items)
+        st.session_state.update(signature=signature, items=items, _load_job=job)
+    elif items is not None:
+        # one line per file read, in the sidebar: a series of large exports takes a while
+        line = sidebar.empty()
+        count = len(items)
+        line.progress(0.0, text=f"Reading {count} file(s)…")
+        store, errors = _build(
+            items,
+            on_file=lambda index, name: line.progress(
+                index / count, text=f"Reading {ui.md_text(name)} · {index + 1}/{count}"
+            ),
+        )
+        line.empty()
+        st.session_state.update(store=store, signature=signature, errors=errors, items=items, _load_job=None)
     elif not signature:
-        st.session_state.update(store=None, signature=(), errors=[], items=None)
+        st.session_state.update(store=None, signature=(), errors=[], items=None, _load_job=None)
+    job: LoadJob | None = st.session_state.get("_load_job")
+    if job is not None:
+        store, errors = _collect(job)
+        st.session_state.update(store=store, errors=errors)
+        if job.done:
+            st.session_state["_load_job"] = None
+            # the default baseline (the first update) was taken on the partial series: taken again
+            if st.session_state.get("bl_defaulted"):
+                st.session_state.pop("bl_choice", None)
+        else:
+            read, total = len(job.results), len(job.items)
+            sidebar.progress(read / total, text=f"Reading the updates · {read}/{total}")
+            with sidebar:
+                _poll_load()
 
     store: SnapshotStore | None = st.session_state.get("store")
     if store is not None:
@@ -439,6 +595,7 @@ def sidebar_loader() -> None:
         else "Open to upload files or read a folder.",
         type="tertiary",
         width="stretch",
+        shortcut="F",
         on_click=_open_window,
         args=("files",),
     )
@@ -663,6 +820,13 @@ def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = No
     """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
     st.title(title)
     context_banner(store, snapshot or store.latest)
+    job: LoadJob | None = st.session_state.get("_load_job")
+    if job is not None and not job.done:
+        st.warning(
+            f"Reading the updates · {len(job.results)}/{len(job.items)}: the series is incomplete and the "
+            "figures change until every file is read.",
+            icon=":material/hourglass_top:",
+        )
     if lead:
         st.caption(lead)
 
@@ -736,6 +900,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
     options, default = _baseline_options(store, env_path)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default
+        st.session_state["bl_defaulted"] = True  # not the viewer's choice: set again when the series is complete
     if st.session_state.get("ev_basis") not in EV_BASES:
         st.session_state["ev_basis"] = DEFAULT_EV_BASIS
     if st.session_state.get("bl_fallback") not in _fallback_options(store):
@@ -755,6 +920,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
         help="Open to change the baseline, the earned value basis and the fallback.",
         type="tertiary",
         width="stretch",
+        shortcut="B",
         on_click=_open_window,
         args=("baseline",),
     )
@@ -770,14 +936,7 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
     """Tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``):
     a warning while they count as deleted and new, a caption once the option links them, nothing
     when there are none."""
-    found = {}
-    for snapshot in store:
-        baseline = baseline_for(snapshot, link=False)
-        if baseline is None or baseline.snapshot is snapshot:
-            continue
-        count = len(renumbered(baseline.snapshot, snapshot))
-        if count:
-            found[snapshot.source] = count
+    found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
     if not found:
         return
     total = sum(found.values())
@@ -792,6 +951,20 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
         "Option in the Baseline window: Link renumbered tasks by GUID.",
         icon=":material/warning:",
     )
+
+
+def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
+    """Renumbered tasks per update (file -> count), once per data set and baseline: the sidebar
+    draws the notice on every rerun of every page, and the GUID match reads every update."""
+    found = {}
+    for snapshot in store:
+        baseline = baseline_for(snapshot, link=False)
+        if baseline is None or baseline.snapshot is snapshot:
+            continue
+        count = len(renumbered(baseline.snapshot, snapshot))
+        if count:
+            found[snapshot.source] = count
+    return found
 
 
 def _baseline_fields(store: SnapshotStore) -> None:
@@ -918,10 +1091,37 @@ def require_store() -> SnapshotStore:
     return store
 
 
+SNAP_CHOICE = "snap_choice"  # the update picked on any page: every page's picker follows it
+
+
+def _follow_snapshot(key: str) -> None:
+    st.session_state[SNAP_CHOICE] = st.session_state[key]
+
+
 def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "snap") -> Snapshot:
+    """The update a page works on. One choice for the whole session (``SNAP_CHOICE``): picked on
+    Schedule health, the Gantt opens on the same update; the latest update until one is picked."""
     labels = store.labels
-    choice = st.selectbox(label, labels, index=len(labels) - 1, key=key)
+    wanted = st.session_state.get(SNAP_CHOICE)
+    st.session_state[key] = wanted if wanted in labels else labels[-1]
+    choice = st.selectbox(label, labels, key=key, on_change=_follow_snapshot, args=(key,))
     return store.by_label(choice)
+
+
+def go_to(page: str, **state) -> None:
+    """Open another page with ``state`` written to the session first: the page's widgets read
+    it (``views/gantt.py``, ``gantt_task=...``). Pages are named by their path under app/."""
+    st.session_state.update(state)
+    st.switch_page(f"views/{page}.py")
+
+
+def open_in_gantt(task_code: str, snapshot: Snapshot | None = None) -> None:
+    """The Gantt on ``task_code`` (its card and history under the chart), on ``snapshot``'s update
+    when given, the whole project in view and no filter. Passed to ``ui.table(open_task=...)``."""
+    state = {"gantt_task": task_code, "gantt_node": ROOT, "gantt_focus": None}
+    if snapshot is not None:
+        state[SNAP_CHOICE] = snapshot.label
+    go_to("gantt", **state)
 
 
 COMPARE_NONE = "None"
@@ -1029,6 +1229,63 @@ def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
 def standard_results(standard: Standard, snapshot: Snapshot, store: SnapshotStore) -> list[CheckResult]:
     """Every check of ``standard`` on ``snapshot``, each through :func:`metric_result`."""
     return [metric_result(metric, snapshot, store) for metric in standard.metrics]
+
+
+def hold_standard_results(standard: Standard, snapshot: Snapshot, results: list[CheckResult]) -> None:
+    """Results computed outside the script run (ScoreJob) stored where ``metric_result`` reads."""
+    for metric, result in zip(standard.metrics, results, strict=True):
+        memo(_metric_key(metric, snapshot), lambda result=result: result, ev_basis=False)
+
+
+@dataclass
+class ScoreJob:
+    """The standards' checks on one update, computed in a thread for the Overview's score cards:
+    ``results`` fills per standard id as each finishes."""
+
+    identity: tuple
+    snapshot: Snapshot
+    store: SnapshotStore
+    baseline: Baseline | None
+    standards: dict[str, Standard]
+    results: dict[str, list[CheckResult]] = field(default_factory=dict)
+    held: set[str] = field(default_factory=set)  # standard ids already written to the memo
+    done: bool = False
+    thread: threading.Thread | None = None
+
+    def run(self) -> None:
+        context = AnalysisContext(self.snapshot, self.store, self.baseline)
+        for key, standard in self.standards.items():
+            try:
+                self.results[key] = run_standard(standard, context)
+            except Exception as exc:  # noqa: BLE001 - shown as an error on the Overview, not lost
+                self.results[key] = str(exc)  # type: ignore[assignment]
+        self.done = True
+
+
+def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, Standard]) -> ScoreJob:
+    """The job computing ``standards_`` on ``snapshot`` for the current data set, started on the
+    first call; a new data set or baseline starts another. The results already in are written to
+    the memo, so Schedule health reads them."""
+    identity = (*data_identity(ev_basis=False), snapshot.source, str(snapshot.data_date), tuple(standards_))
+    job: ScoreJob | None = st.session_state.get("_score_job")
+    if job is None or job.identity != identity:
+        job = ScoreJob(identity, snapshot, store, baseline_for(snapshot), dict(standards_))
+        job.thread = threading.Thread(target=job.run, name="xerscope-scores", daemon=True)
+        job.thread.start()
+        st.session_state["_score_job"] = job
+    for key, results in list(job.results.items()):
+        if key not in job.held and not isinstance(results, str):
+            hold_standard_results(job.standards[key], snapshot, results)
+            job.held.add(key)
+    return job
+
+
+@st.fragment(run_every=1.0)
+def poll_scores() -> None:
+    """Draws nothing; reruns the app when a standard's results came in, or all did."""
+    job: ScoreJob | None = st.session_state.get("_score_job")
+    if job is None or job.done or len(job.results) != len(job.held):
+        st.rerun(scope="app")
 
 
 def standard_results_held(standard: Standard, snapshot: Snapshot) -> list[CheckResult] | None:

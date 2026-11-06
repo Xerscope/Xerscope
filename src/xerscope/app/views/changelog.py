@@ -1,9 +1,11 @@
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
 from xerscope.analysis.changelog import category_totals, changelog, summary, weekly_change_counts, weekly_change_matrix
 from xerscope.app import ui
-from xerscope.app.state import csv_download, memo, page_header, require_store, sources_of
+from xerscope.app.state import csv_download, memo, open_in_gantt, page_header, require_store, sources_of
 
 RETROACTIVE_ACTUALS = (
     "actual start changed (retroactive)",
@@ -81,7 +83,7 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
     if search:
         view = view[ui.search_mask(view, SEARCH_COLUMNS, search)]
     st.caption(f"{len(view):,} change(s) shown")
-    ui.table(view, max_height=640)
+    ui.table(view, max_height=640, key="changelog_all", open_task=partial(open_in_gantt, snapshot=new))
     csv_download(
         log,
         f"changelog_{ui.stamp(old.data_date)}_{ui.stamp(new.data_date)}.csv",
@@ -110,6 +112,17 @@ old_column, new_column = st.columns(2)
 new_label = new_column.selectbox("To (newer)", labels, index=len(labels) - 1, key="cl_new")
 new_index = labels.index(new_label)
 old_label = old_column.selectbox("From (older)", labels, index=max(new_index - 1, 0), key="cl_old")
+
+
+def _from(back: int | None) -> None:
+    """From = ``back`` updates before To (None: the first loaded)."""
+    index = labels.index(st.session_state["cl_new"])
+    st.session_state["cl_old"] = labels[0 if back is None else max(index - back, 0)]
+
+
+with old_column, st.container(horizontal=True, gap="small"):
+    for text, back in (("Previous", 1), ("4 back", 4), ("First", None)):
+        st.button(text, key=f"cl_from_{text}", type="tertiary", on_click=_from, args=(back,))
 old, new = store.by_label(old_label), store.by_label(new_label)
 with top:
     page_header(

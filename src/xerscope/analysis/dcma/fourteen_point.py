@@ -86,7 +86,7 @@ def dcma_01_logic(context) -> RuleOutput:
 def dcma_02_leads(context) -> RuleOutput:
     """Relationships with the lag in question.
     Counts: flagged / relationships checked
-    Relationships whose successor is excluded: level of effort, milestones.
+    Relationships whose successor is excluded: completed tasks, level of effort, milestones.
     Relationships counted: relationships into an incomplete successor.
     Flagged when lag < 0 hours.
 
@@ -127,7 +127,7 @@ def dcma_03_lags(context) -> RuleOutput:
 def dcma_04_relationship_types(context) -> RuleOutput:
     """Relationships of another type.
     Counts: of the required type / relationships checked
-    Relationships whose successor is excluded: level of effort, milestones.
+    Relationships whose successor is excluded: completed tasks, level of effort, milestones.
     Relationships counted: relationships into an incomplete successor.
     Counts relationships of type FS; the list shows the others.
 

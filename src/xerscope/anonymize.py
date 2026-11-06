@@ -139,7 +139,7 @@ def _is_text(value: str) -> bool:
     return len(value) >= 3 and any(character.isalpha() for character in value)
 
 
-CSV_FLOAT_FORMAT = "%.4f"  # hours to the minute (0.0167 h): no float noise (458870.999999, a gap of 1e-13)
+CSV_FLOAT_FORMAT = "%.4f"  # hours to the minute (0.0167 h): no float noise (12345.999999, a gap of 1e-13)
 
 
 def csv_bytes(frame: pd.DataFrame) -> bytes:

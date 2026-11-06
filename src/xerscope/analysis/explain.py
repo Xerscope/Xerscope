@@ -247,3 +247,40 @@ def explain(result: CheckResult) -> Explanation:
         subject=subject,
         baseline=result.baseline,
     )
+
+
+# Page figures (ui.kpis ``formulas``): label -> standard -> how it is computed. The page's own
+# calculation (docs/formulas.md) first, under the name of the standard it follows; a second line
+# where another standard words the same figure otherwise. Sources are in docs/formulas.md.
+P6 = "P6 Professional"
+EVMS = "DCMA EVMS (EIA-748)"
+LPS = "Last Planner (PPC)"
+XS = "xerscope"
+KPI_FORMULAS: dict[str, dict[str, str]] = {
+    "Forecast finish": {P6: "Latest Finish of the project's activities (actual, else remaining, else early finish)"},
+    "Shift since first update": {
+        XS: "working_days(forecast finish in the first update, forecast finish now), project calendar"
+    },
+    "Tasks complete": {P6: "Activities with status Complete / activities (WBS summaries left out)"},
+    "Critical tasks": {
+        P6: "Open activities critical as the project's critical path type says (float ≤ threshold, or driving path)"
+    },
+    "% complete": {
+        XS: "Σ (% complete × weight) / Σ weight over the node's activities; weight = budgeted hours, else duration"
+    },
+    "Labor hours": {P6: "Actual Labor Units / Budgeted Labor Units of the node's activities"},
+    "Open critical": {P6: "Open critical activities under the node"},
+    "Percent complete": {P6: "Earned Value Labor Units / Budget At Completion", EVMS: "BCWP / BAC"},
+    "Percent scheduled": {P6: "Planned Value Labor Units / Budget At Completion", EVMS: "BCWS / BAC"},
+    "SPI (labor units)": {P6: "Earned Value Labor Units / Planned Value Labor Units", EVMS: "SPI = BCWP / BCWS"},
+    "SPI": {P6: "Earned Value Cost / Planned Value Cost", EVMS: "SPI = BCWP / BCWS (cost)"},
+    "SV": {P6: "Earned Value − Planned Value (labor units)", EVMS: "SV = BCWP − BCWS"},
+    "BEI (P6 / DCMA)": {
+        P6: "Complete activities / activities with a baseline (P6-13)",
+        "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date (DCMA-14)",
+    },
+    "EAC": {P6: "Actual Labor Units + Remaining Labor Units", EVMS: "EAC = ACWP + ETC; VAC = BAC − EAC"},
+    "PPC this week": {LPS: "Finishes kept / finishes committed in the previous update (milestones and LOE left out)"},
+    "PPC Start": {LPS: "Starts kept / starts committed"},
+    "PPC all commitments": {LPS: "(finishes + starts kept) / (finishes + starts committed)"},
+}

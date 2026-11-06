@@ -338,12 +338,14 @@ def test_another_ev_basis_withdraws_the_diagnostic_built_before(app):
 @pytest.mark.parametrize("page", ["ppc", "changelog", "export"])
 def test_pages_that_read_no_baseline_are_not_recomputed_for_another(app, store, page):
     app.switch_page(f"views/{page}.py").run()
-    before = set(app.session_state["_memo"])
+    # the sidebar's renumbered notice is the one entry that follows the baseline on every page
+    entries = lambda: {key for key in app.session_state["_memo"] if key[-1] != "renumbered"}  # noqa: E731
+    before = entries()
     assert before
     baseline_box(app).set_value(store.labels[1])
     app.button(key="files_done").click().run()
     app.switch_page(f"views/{page}.py").run()
-    assert not app.exception and set(app.session_state["_memo"]) == before
+    assert not app.exception and entries() == before
 
 
 def _offered(at, label: str) -> bool:
@@ -460,7 +462,7 @@ def test_overview_scores_wait_for_the_button_then_schedule_health_reads_them(app
     card, which computes nothing more."""
     app.switch_page("views/overview.py").run()
     assert not app.exception and runs == []
-    assert _score_cards(app) == {f"{s.name} score": ("not computed yet", "") for s in builtin_standards().values()}
+    assert _score_cards(app) == {f"{s.name} score": ("–", "not computed yet") for s in builtin_standards().values()}
 
     app.button(key="overview_scores").click().run()
     assert not app.exception

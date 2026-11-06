@@ -1610,7 +1610,9 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
 
     The finish is measured on the project's end points (activities without successors),
     in working time of the delayed activity's calendar. Pass = it moved by at least the
-    delay (further is a calendar effect, less means something absorbed the delay).
+    delay (further is a calendar effect, less means something absorbed the delay: a mandatory
+    date, or an expected finish downstream, whose activity loses its remaining duration when the
+    delay pushes it past that date; both are named with what they absorbed).
     """
     activities = snapshot.activities
     try:
@@ -1643,22 +1645,60 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         snapshot.calendar(target["clndr_id"]), base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date()
     )
     shift = axis.between(base_finish, delayed_finish) / 60
-    # The finish must move by the whole delay. It can move further when the path crosses
-    # calendars with other non-working days (measured here on the delayed activity's
-    # calendar); moving less means a constraint or broken logic absorbed part of it.
-    passed = shift >= delay_hours - 1e-6
+    # The finish must move by the whole delay, measured on the delayed activity's calendar. It
+    # can move further when the path crosses calendars with other non-working days; it can also
+    # read less for the same reason (the window of the move holds non-working days of that
+    # calendar the downstream path does not observe), so the proportion is also read in calendar
+    # days: the finish must move at least as much as the delayed activity's own finish did.
+    # Less on both readings means a constraint, an expected finish or broken logic absorbed it.
+    own_move = late.frame.at[code, "ef"] - base.frame.at[code, "ef"]
+    end_move = delayed_finish - base_finish
+    passed = shift >= delay_hours - 1e-6 or end_move >= own_move
     note = (
         f"+{delay_days:g} wd on {code}: forecast finish {base_finish:%Y-%m-%d} -> {delayed_finish:%Y-%m-%d}, "
         f"moved {shift / hours_per_day:+.1f} wd"
         + ("" if passed else f" instead of {delay_days:+g}")
         + (" (more: the path crosses other calendars' non-working days)" if shift > delay_hours + 1e-6 else "")
     )
+    if shift < delay_hours - 1e-6:
+        # fewer working days than the delay on the delayed activity's calendar: say what the project
+        # calendar and the calendar days read, so a calendar effect is told from an absorbed delay
+        project = snapshot.calendar()
+        project_axis = TimeAxis(project, base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date())
+        project_shift_wd = (
+            project_axis.between(base_finish, delayed_finish) / 60 / (project.hours_per_day or hours_per_day)
+        )
+        note += (
+            f" ({project_shift_wd:+.1f} wd on the project calendar; {end_move.days:+d} calendar days against "
+            f"{own_move.days:+d} for {code}'s own finish"
+            + (": a calendar effect, the whole delay reached the finish)" if passed else ")")
+        )
     blocking = []
     if not passed:
         # only open work can absorb a delay: a finished activity's mandatory date is history
         mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
         pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
-        blocking = pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
+        blocking = [
+            {**row, "reason": "mandatory date", "absorbed_wd": None}
+            for row in pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
+        ]
         if blocking:
             note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"
+        # an expected finish downstream shortens the remaining duration of its activity when the
+        # delay pushes its start past that date (to 0 beyond it): the shortening is the absorption
+        shortened = (base.frame["rem_override_hr"] - late.frame["rem_override_hr"].reindex(base.frame.index)).fillna(0)
+        shortened = shortened[(shortened > 1e-6) & (shortened.index != code)]
+        if not shortened.empty:
+            names = activities.set_index("task_code")["task_name"]
+            hours = activities.set_index("task_code")["hours_per_day"].astype(float)
+            absorbing = [
+                {
+                    "task_code": task, "task_name": names.get(task, ""), "cstr_type": "", "cstr_type2": "",
+                    "reason": "expected finish", "absorbed_wd": round(float(cut / hours.get(task, hours_per_day)), 1),
+                }
+                for task, cut in shortened.sort_values(ascending=False).items()
+            ]  # fmt: skip
+            blocking += absorbing
+            listed = ", ".join(f"{item['task_code']} ({item['absorbed_wd']:g} wd)" for item in absorbing[:5])
+            note += f"; expected finish dates absorb it (remaining duration cut when pushed past them): {listed}"
     return CptResult(passed, note, code, shift, blocking)

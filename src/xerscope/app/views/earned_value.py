@@ -16,6 +16,7 @@ from xerscope.analysis.evm import (
     pv_curve,
     uses_pf,
 )
+from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.app import ui
 from xerscope.app.state import (
     baseline_for,
@@ -112,7 +113,8 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
                 f"VAC {row['bac_hr'] - row['eac_hr']:+,.0f} h",
                 "AC + remaining hours; VAC = BAC − EAC, negative = overrun",
             ),
-        ]
+        ],
+        formulas=KPI_FORMULAS,
     )
 
 

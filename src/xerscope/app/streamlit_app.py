@@ -1,8 +1,8 @@
 """Entry point: ``uv run xerscope app``.
 
 ``xerscope app`` runs Streamlit from this folder so ``.streamlit/config.toml`` (theme,
-localhost binding) applies. A plain ``streamlit run`` from elsewhere reads no config:
-the theme is lost and Streamlit listens on every interface.
+localhost binding) applies whatever the Streamlit version (1.66 also reads it next to the
+script). Debug, block 12, shows what was read.
 """
 
 import sys
@@ -14,7 +14,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from xerscope.app import ui  # noqa: E402
-from xerscope.app.state import sidebar_loader  # noqa: E402
+from xerscope.app.state import debug_page, sidebar_loader  # noqa: E402
 
 st.set_page_config(page_title="xerscope", page_icon=":material/calendar_month:", layout="wide")
 
@@ -36,7 +36,9 @@ pages = st.navigation(
         ],
         "Data": [
             st.Page(VIEWS / "export.py", title="Export for Power BI", icon=":material/download:"),
-            st.Page(VIEWS / "debug.py", title="Debug", icon=":material/bug_report:"),
+            # the Debug page lists what the app read and decided, file by file: not on a deployed
+            # instance (XERSCOPE_DATA_LOCKED) unless asked for with XERSCOPE_DEBUG_PAGE=1
+            *([st.Page(VIEWS / "debug.py", title="Debug", icon=":material/bug_report:")] if debug_page() else []),
         ],
     }
 )
