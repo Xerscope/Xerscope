@@ -334,9 +334,13 @@ def kpis(items: Sequence[tuple], formulas: Mapping[str, Mapping[str, str]] | Non
             help_ = rest[1] if len(rest) > 1 else None
             colour = rest[2] if len(rest) > 2 else "normal"
             help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
-            columns[index // per_column].metric(
-                label, value, delta=delta, help=help_, delta_color=delta_colour(delta, colour)
-            )
+            delta_color = delta_colour(delta, colour)
+            box = columns[index // per_column]
+            if delta_color == "off":
+                # marked for style.css: Streamlit's neutral chip is a fixed grey, too faint on the
+                # light theme, and the page's text colour replaces it
+                box = box.container(key=f"kpi_off_{index}_{zlib.crc32(label.encode()):08x}")
+            box.metric(label, value, delta=delta, help=help_, delta_color=delta_color)
     known = [label for label in labels if formulas and label in formulas]
     if known:
         with st.popover("Formulas", icon=":material/function:", help="How each figure is computed, by standard"):

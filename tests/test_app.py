@@ -455,11 +455,15 @@ def test_changelog_and_ppc_pick_weeks(app):
     _ok(app)
 
 
-def test_empty_state_explains_what_to_do(monkeypatch):
+def test_empty_state_explains_what_to_do_under_the_page_title(monkeypatch):
     monkeypatch.delenv("XERSCOPE_DATA", raising=False)
     at = AppTest.from_file(APP, default_timeout=60).run()
     _ok(at)
     assert any("xerscope sample" in i.value for i in at.info)
+    assert [title.value for title in at.title] == ["Overview"]
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    assert [title.value for title in at.title] == ["Debug"] and any("xerscope sample" in i.value for i in at.info)
 
 
 def _run(data_dir, monkeypatch, baseline=None):
@@ -668,6 +672,29 @@ def test_closing_the_window_without_done_reads_nothing(sample_dir, monkeypatch):
     assert files_line(at) == "Files · none read"
 
 
+def test_the_window_reopened_after_esc_shows_the_folder_and_its_files(sample_dir, monkeypatch):
+    """Esc leaves the folder field's key in the session state with an empty value (the browser's
+    doing, which AppTest does not reproduce: written here by hand): reopened, the window shows the
+    folder again, lists its files, and Select all then Done reads them."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    assert at.text_input(key="files_folder").value == str(sample_dir)
+    close_window(at)
+    at.session_state["files_folder"] = ""
+    at.run()
+    open_files(at)
+    _ok(at)
+    assert at.text_input(key="files_folder").value == str(sample_dir)
+    count = len(list(sample_dir.glob("*.xer")))
+    assert len(file_boxes(at)) == count
+    _button(at, "Select all").click()
+    at.run()
+    files_done(at)
+    _ok(at)
+    assert files_line(at) == f"Files · {count} files · 1 project"
+
+
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
     """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
     from xerscope.app import state
@@ -764,19 +791,52 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     assert files_line(at) == "Files · none read"
 
 
-def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path, monkeypatch):
+def test_select_all_ticks_one_file_per_data_date_and_the_list_names_the_double(sample_dir, tmp_path, monkeypatch):
+    """Two files of the folder share a status date: the list says which file the second doubles,
+    Select all ticks the first by name only, and Done reads the series."""
     files = sorted(sample_dir.glob("*.xer"))
-    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    for f in files[:2]:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    labels = {box.key.rsplit(":", 1)[-1]: box.label.replace("\u00a0", "") for box in file_boxes(at)}
+    assert f"— same date as {files[0].name}" in labels["zz-copy.xer"]
+    assert not any("same date as" in labels[f.name] for f in files[:2])
     _button(at, "Select all").click()
     at.run()
+    assert {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)} == {
+        files[0].name: True,
+        files[1].name: True,
+        "zz-copy.xer": False,
+    }
     files_done(at)
     _ok(at)
-    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
-    assert files_line(at) == "Files · none read"
+    assert not at.sidebar.error and files_line(at) == "Files · 2 files · 1 project"
+
+
+def test_select_all_skips_unreadable_files_and_the_error_names_the_file_once(sample_dir, tmp_path, monkeypatch):
+    """An unreadable file is listed but Select all leaves it unticked; ticked by hand, its error
+    carries the file name once (the XerError already names its source)."""
+    files = sorted(sample_dir.glob("*.xer"))
+    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    (tmp_path / "garbage.xer").write_bytes(bytes(range(256)) * 4)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    _button(at, "Select all").click()
+    at.run()
+    ticked = {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)}
+    assert ticked == {files[0].name: True, "garbage.xer": False}
+    next(box for box in file_boxes(at) if box.key.endswith("garbage.xer")).check()
+    files_done(at)
+    _ok(at)
+    (error,) = [e.value for e in at.sidebar.error]
+    assert error.startswith("garbage.xer: ") and error.count("garbage.xer") == 1
+    assert files_line(at) == "Files · 1 file · 1 project"
 
 
 @pytest.fixture
