@@ -233,9 +233,9 @@ jobs:
           ! grep -q "$XERSCOPE_PATH" caddy.log
           grep -q '"uri": "/<prefix>/"' caddy.log   # the prefix is masked, the rest of the path kept
       - name: Rate limit, last (it blocks the runner's address for a minute)
-        run: |  # 120 requests a minute per visitor, counted before the password check
+        run: |  # 300 requests a minute per visitor, counted before the password check
           docker compose exec -T caddy sh -c '
-            i=0; while [ $i -lt 130 ]; do
+            i=0; while [ $i -lt 310 ]; do
               wget -S -q -O /dev/null "http://127.0.0.1:8080/$XERSCOPE_PATH/" 2>&1 | grep -o "HTTP/1.1 [0-9]*"
               i=$((i+1))
             done' > codes.txt || true

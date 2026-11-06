@@ -42,8 +42,8 @@
             zone per_visitor {           # the limit gets 429 without a bcrypt run on the NAS's CPU
                 key {client_ip}          # the visitor (trusted_proxies), not tailscaled's 127.0.0.1
                 ipv6_prefix 64           # one bucket per IPv6 /64, which a single client can cycle through
-                events 120               # every request counts, not only wrong passwords: a page load is
-                window 1m                # about ten, a burst of downloads fifteen
+                events 300               # every request counts, not only wrong passwords: a first visit with
+                window 1m                # a cold cache fetches ~125 JS chunks within 20 s, each later page ~15
             }
         }
         basic_auth {
