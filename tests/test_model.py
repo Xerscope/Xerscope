@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from xerkit import active, snap, todo, xer_text
+from xerkit import active, done, snap, todo, xer_text
 
 from xerscope.xer import HEADER_TABLES, XerError, build_snapshot, parse_text, read_header, read_xer, xer_files
 
@@ -226,12 +226,15 @@ def test_task_without_task_code_raises_xer_error():
         ("PROJECT", "proj_short_name"),
         ("CALENDAR", "clndr_id"),
         ("PROJWBS", "proj_id"),
+        ("PROJWBS", "wbs_id"),
+        ("TASKRSRC", "task_id"),
     ],
 )
 def test_missing_column_never_leaks_a_key_error(table, column):
     text = xer_text(
         [active("A"), active("B")],
         [("A", "B", "FS", 0)],
+        rsrc=["A"],
         wbs=[{"wbs_id": "10", "proj_id": "1", "wbs_short_name": "W", "wbs_name": "W", "proj_node_flag": "Y"}],
     )
     with contextlib.suppress(XerError):  # a clear XerError is fine, a KeyError is not
@@ -413,3 +416,66 @@ def test_a_file_without_activity_codes_has_none():
     s = snap([todo("A")])
     assert s.code_values.empty and s.task_codes.empty
     assert s.tasks_with_codes("Zone", ["7000"]) == set()
+
+
+@pytest.mark.parametrize(("code", "name"), [("", "blank"), ("TK_Suspended", "'TK_Suspended'")])
+def test_unknown_status_code_warns_and_reads_as_started(code, name):
+    s = snap([todo("A", status_code=code), todo("B", status_code=code), todo("C")])
+    assert [w for w in s.warnings if "status_code" in w] == [
+        f"test.xer: TASK.status_code {name} is not a P6 code (2 rows): read as started"
+    ]
+    assert s.tasks.set_index("task_code")["is_started"].to_dict() == {"A": True, "B": True, "C": False}
+
+
+def test_p6_status_codes_do_not_warn():
+    s = snap([todo("A"), active("B"), done("C")])
+    assert not [w for w in s.warnings if "not a P6 code" in w]
+
+
+def test_unknown_task_type_warns_once_per_code():
+    s = snap([todo("A", task_type="TT_TASK"), todo("B", task_type="TT_TASK"), todo("C", task_type="TT_X"), todo("D")])
+    assert [w for w in s.warnings if "task_type" in w] == [
+        "test.xer: TASK.task_type 'TT_TASK' is not a P6 code (2 rows): read as Task Dependent",
+        "test.xer: TASK.task_type 'TT_X' is not a P6 code (1 row): read as Task Dependent",
+    ]
+    assert not s.tasks[["is_milestone", "is_loe", "is_wbs_summary"]].any().any()
+
+
+def test_unknown_pred_type_warns_and_keeps_its_code():
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FS", 0), ("B", "C", "XX", 0)])
+    assert [w for w in s.warnings if "pred_type" in w] == [
+        "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
+        "scheduled as SF in the forward pass, ignored in the backward pass"
+    ]
+    assert sorted(s.relationships["type"]) == ["FS", "PR_XX"]
+
+
+def test_taskrsrc_without_task_id_raises_xer_error():
+    text = xer_text([todo("A")], rsrc=["A"])
+    with pytest.raises(XerError, match="table TASKRSRC has no column task_id"):
+        build_snapshot(parse_text(drop_column(text, "TASKRSRC", "task_id"), source="t.xer"))
+
+
+def test_blank_task_units_fall_back_to_assignments_column_by_column():
+    s = snap(
+        [todo("A", target_work_qty="40"), todo("B"), todo("C"), todo("D", act_work_qty="5")],
+        rsrc=["A", "B", "D"],
+    )
+    assert s.options["labor_source"] == "TASK+TASKRSRC"
+    labour = s.activities.set_index("task_code")[["labor_budget_hr", "labor_actual_hr"]]
+    assert labour.to_dict("index") == {
+        "A": {"labor_budget_hr": 40, "labor_actual_hr": 0},
+        "B": {"labor_budget_hr": 80, "labor_actual_hr": 0},
+        "C": {"labor_budget_hr": 0, "labor_actual_hr": 0},
+        "D": {"labor_budget_hr": 80, "labor_actual_hr": 5},
+    }
+
+
+def test_blank_task_units_without_assignments_are_zero():
+    s = snap([todo("A", target_work_qty="40"), todo("B", act_work_qty="5")])
+    assert s.options["labor_source"] == "TASK"
+    labour = s.activities.set_index("task_code")[["labor_budget_hr", "labor_actual_hr"]]
+    assert labour.to_dict("index") == {
+        "A": {"labor_budget_hr": 40, "labor_actual_hr": 0},
+        "B": {"labor_budget_hr": 0, "labor_actual_hr": 5},
+    }
