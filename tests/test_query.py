@@ -193,3 +193,18 @@ def test_an_unknown_word_gets_the_closest_labels_and_can_be_taught():
     import tomllib
 
     assert len(tomllib.loads(text)["group"]) == 2  # a file load_lexicon reads back
+
+
+def test_a_chip_taken_off_drops_its_filter():
+    asked = query.parse_keywords("critical not started in civil works zone B2 site crew milestones", VOCAB)
+    assert asked.wbs_id == "1" and asked.code_ids == frozenset({"c1"}) and asked.resources == frozenset({"r1"})
+    assert query.without(asked, "WBS: CIV · Civil works", VOCAB).wbs_id is None
+    assert query.without(asked, "Status: Not started", VOCAB).status == ()
+    assert query.without(asked, "Float: Critical", VOCAB).categories == ()
+    assert (
+        query.without(asked, "Zone: B2", VOCAB).code_ids == frozenset()
+        and query.without(asked, "Zone: B2", VOCAB).code_type is None
+    )
+    assert query.without(asked, "Resource: CREW", VOCAB).resources == frozenset()
+    assert query.without(asked, "Milestones", VOCAB).milestones is False
+    assert query.without(asked, "Search: nothing", VOCAB) == asked  # a label the filter does not carry: unchanged

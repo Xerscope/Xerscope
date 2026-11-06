@@ -363,7 +363,11 @@ sentence ─▶ keyword grammar ─▶ (planned) embeddings ─▶ (optional) sm
   filter understood, source `ask`, so the caption reads "212 → WBS CIV · Civil works 48 →
   status Not started 30 → float Critical 3" and the "Population, step by step" table under
   the chart is the same table every check shows (`app/sets.py`). The count a planner asks
-  for is the last step's `left`; the steps are the trace. Above the caption, `query.answer`
+  for is the last step's `left`; the steps are the trace. On the page the field comes first,
+  the answer sits in a banner under it (the Schedule health focus banner's shape, amber when
+  a word was left out or the reading is unsure, "Show all" empties the field), and what was
+  understood is one chip each (`st.pills`): a chip taken off drops its filter
+  (`query.without`). In the banner, `query.answer`
   says it in one sentence, in the question's language (`query.language`): the count, what
   was asked, the worst total float and the latest finish of the rows, each a column of the
   frame, from a template, never from a model. It is to become a `Query`: a dataset (activities, milestones, relationships,

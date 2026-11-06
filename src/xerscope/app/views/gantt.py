@@ -67,6 +67,75 @@ if st.session_state.get(NODE_KEY) not in set(nodes["wbs_id"]):
 labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
 
 
+def _clear_ask() -> None:
+    st.session_state[ASK_KEY] = ""
+
+
+# The Ask field: a sentence turned into the page's filters (analysis/query.py), the first control
+# of the page. The answer (one sentence over the rows, the funnel line) is written into
+# ``answer_box`` once the rows are known, below; the chips let a filter go.
+asked = st.text_input(
+    "Ask the schedule",
+    placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
+    key=ASK_KEY,
+    icon=":material/search:",
+)
+answer_box = st.container(key="ask_answer")
+taught = st.session_state.get("taught", [])
+lexicon = memo(  # rebuilt when a word is taught
+    ("vocabulary", snapshot.source, len(taught)),
+    query.vocabulary,
+    snapshot,
+    nodes,
+    session_lexicon(),
+    baseline=False,
+    ev_basis=False,
+)
+warm_model(lexicon, snapshot.source)  # the model reads this file's vocabulary once, in the background
+ask = None
+if asked:
+    ask = memo(  # one model call per sentence and update, baseline-independent
+        ("ask", snapshot.source, asked, len(taught)),
+        query.parse,
+        asked,
+        lexicon,
+        query_backend(),
+        baseline=False,
+        ev_basis=False,
+    )
+if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
+    kept = st.pills(
+        "Understood",
+        list(ask.matched),
+        default=list(ask.matched),
+        selection_mode="multi",
+        key=f"ask_pills:{asked}",  # another sentence starts with every chip on
+        label_visibility="collapsed",
+    )
+    for label in ask.matched:
+        if label not in (kept or []):
+            ask = query.without(ask, label, lexicon)
+if ask is not None:
+    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
+        offers = query.suggestions(word, lexicon)
+        if offers:
+            with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
+                st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
+                for _kind, label, _ratio in offers:
+                    if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
+                        teach(word, label)
+                        st.rerun()
+    if taught:
+        st.download_button(
+            f"Download the {len(taught)} word(s) taught (.toml, for XERSCOPE_LEXICON)",
+            data=query.learned_toml(taught).encode(),
+            file_name="lexicon-taught.toml",
+            mime="application/toml",
+            key="gantt_taught_download",
+            type="tertiary",
+        )
+
+
 # "CIV · Civil works › ZA · Zone A": each node and the nodes above it, built once (the list
 # formats every node on each rerun)
 path_labels = {
@@ -156,64 +225,15 @@ if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has an
             code_ids.add(by_label[pick])
         else:
             code_ids |= {code_id for code_id, value in short.items() if ui.fold(pick) in ui.fold(value)}
-# a sentence on top of the widgets: "critical not started in civil works". The parser only
-# picks filters the widgets offer; a model backend (query.Backend) can replace the keyword
-# grammar later without touching this page.
-asked = st.text_input(
-    "Ask",
-    placeholder='In words: "critical not started in civil works", "quasi critique en cours"',
-    key=ASK_KEY,
-)
-taught = st.session_state.get("taught", [])
-lexicon = memo(  # rebuilt when a word is taught
-    ("vocabulary", snapshot.source, len(taught)),
-    query.vocabulary,
-    snapshot,
-    nodes,
-    session_lexicon(),
-    baseline=False,
-    ev_basis=False,
-)
-warm_model(lexicon, snapshot.source)  # the model reads this file's vocabulary once, in the background
-ask = None
-if asked:
-    ask = memo(  # one model call per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)),
-        query.parse,
-        asked,
-        lexicon,
-        query_backend(),
-        baseline=False,
-        ev_basis=False,
-    )
-if ask is not None:
-    how = " (model)" if ask.source == "model" else (" (unsure)" if ask.confidence < query.SURE else "")
-    understood = f"Understood{how}: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all."
-    left_out = f" — not in this file: {', '.join(ask.ignored)}" if ask.ignored else ""
-    st.caption(understood + left_out)
-    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
-        offers = query.suggestions(word, lexicon)
-        if offers:
-            with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
-                st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
-                for _kind, label, _ratio in offers:
-                    if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
-                        teach(word, label)
-                        st.rerun()
-    if taught:
-        st.download_button(
-            f"Download the {len(taught)} word(s) taught (.toml, for XERSCOPE_LEXICON)",
-            data=query.learned_toml(taught).encode(),
-            file_name="lexicon-taught.toml",
-            mime="application/toml",
-            key="gantt_taught_download",
-            type="tertiary",
-        )
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
 timescale = options.segmented_control(
-    "Timescale", ["Month", "Week"], default="Month", help="Week shows the 12 weeks around the status date"
+    "Timescale",
+    ["Month", "Week"],
+    default="Month",
+    help="Week shows the 12 weeks around the status date",
+    key="gantt_timescale",
 )
 
 branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)
@@ -237,9 +257,32 @@ ask_funnel = None
 if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
     ask_funnel = query.apply(ask, tasks, snapshot, nodes)
     tasks = ask_funnel.rows
-    if ask_funnel.steps:
-        st.markdown(ui.md_text(query.answer(ask, ask_funnel, lexicon, query.language(asked))))
-        st.caption(query.funnel_line(ask_funnel))
+    with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
+        unknown = (
+            " The word"
+            + ("s" if len(ask.ignored) > 1 else "")
+            + f" {', '.join(f'« {w} »' for w in ask.ignored)} "
+            + ("are" if len(ask.ignored) > 1 else "is")
+            + " in neither this file nor the lexicon."
+            if ask.ignored
+            else ""
+        )
+        said = (
+            query.answer(ask, ask_funnel, lexicon, query.language(asked))
+            if ask_funnel.steps
+            else "Nothing understood: showing all."
+        )
+        banner = st.container(
+            border=True,
+            horizontal=True,
+            vertical_alignment="center",
+            key="ask_banner_warn" if ask.ignored or ask.confidence < query.SURE else "ask_banner",
+        )
+        with banner:
+            st.markdown(ui.md_text(said) + unknown, width="stretch")
+            st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
+        how = " · model" if ask.source == "model" else (" · unsure reading" if ask.confidence < query.SURE else "")
+        st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

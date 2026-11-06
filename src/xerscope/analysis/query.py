@@ -647,6 +647,36 @@ def funnel_line(funnel: Funnel) -> str:
     return " → ".join([str(funnel.start), *(f"{step.label} {step.left}" for step in funnel.steps)])
 
 
+def without(filter: Filter, label: str, vocab: Vocabulary) -> Filter:
+    """``filter`` less the one item ``label`` names, as ``Filter.matched`` spells it ("WBS: CIV ·
+    Civil works", "Status: Not started", "Float: Critical", "Zone: B2", "Resource: CREW",
+    "Milestones", "Level of effort", "Search: piping"): the chip a user takes off the page."""
+    kind, _, value = label.partition(": ")
+    if kind == "WBS":
+        return replace(filter, wbs_id=None)
+    if kind == "Status":
+        return replace(filter, status=tuple(s for s in filter.status if s != value))
+    if kind == "Float":
+        return replace(filter, categories=tuple(c for c in filter.categories if c != value))
+    if kind == "Resource":
+        kept = frozenset(
+            r
+            for r in filter.resources
+            if (vocab.resources.get(r, ("", ""))[0] or vocab.resources.get(r, ("", ""))[1]) != value
+        )
+        return replace(filter, resources=kept)
+    if label == "Milestones":
+        return replace(filter, milestones=False)
+    if label == "Level of effort":
+        return replace(filter, loe=False)
+    if kind == "Search":
+        return replace(filter, search="")
+    if kind == filter.code_type:  # "Zone: B2"
+        kept = frozenset(c for c in filter.code_ids if vocab.codes.get(c, ("", "", ""))[1] != value)
+        return replace(filter, code_ids=kept, code_type=filter.code_type if kept else None)
+    return filter
+
+
 # --- a word the file and the lexicon do not hold -------------------------------------------
 
 SUGGEST = 0.5  # difflib ratio from which a label is offered for an unknown word ("commiss" / "commissioning" = 0.7)
