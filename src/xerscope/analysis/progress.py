@@ -145,6 +145,21 @@ def _outcome(plan: pd.DataFrame, now: pd.DataFrame, commitment: str, date: str, 
     )
 
 
+PPC_WEEK_DAYS = 7
+
+
+def _gap_note(previous: Snapshot, current: Snapshot) -> str | None:
+    """Note for a pair more than a week apart: an update is missing, so the point holds the
+    commitments of every week between the two data dates. Calendar days: Monday 08:00 to the
+    next Monday 17:00 is one week."""
+    if previous.data_date is None or current.data_date is None:
+        return None
+    days = (current.data_date.normalize() - previous.data_date.normalize()).days
+    if days <= PPC_WEEK_DAYS:
+        return None
+    return f"{days} days since the previous update: this point covers more than one week"
+
+
 def ppc_series(store: SnapshotStore) -> pd.DataFrame:
     rows = []
     for index in range(1, len(store)):
@@ -168,6 +183,7 @@ def ppc_series(store: SnapshotStore) -> pd.DataFrame:
                 "ppc": _share(finishes_kept, len(finishes)),
                 "ppc_start": _share(starts_kept, len(starts)),
                 "ppc_all": _share(kept, planned),
+                "note": _gap_note(store[index - 1], store[index]),
             }
         )
     return pd.DataFrame(
@@ -185,6 +201,7 @@ def ppc_series(store: SnapshotStore) -> pd.DataFrame:
             "ppc",
             "ppc_start",
             "ppc_all",
+            "note",
         ],
     )
 
