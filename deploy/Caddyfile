@@ -53,7 +53,36 @@
         header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
         @page path / /index.html         # the page names the hashed JS chunks of the running image
         header @page >Cache-Control no-cache   # revalidated: after an update a plain reload gets the new chunk names
-        reverse_proxy app:8501    # network alias: "xerscope" is tailscale's hostname here
+        # A tab opened before an update keeps the old page, which names chunks the new image no
+        # longer has: its first visit to another page imports one, gets 404 and shows "error loading
+        # dynamically imported module". A missing chunk answers instead a module that reloads the
+        # page once per chunk name (sessionStorage), so a page that is still broken does not loop.
+        # A missing stylesheet answers empty: Vite's preload fails on a CSS error before importing
+        # the chunk (static/js/preload-helper.*.js), the chunk itself is then the reloader.
+        # handle_response: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#intercepting-responses
+        reverse_proxy app:8501 {  # network alias: "xerscope" is tailscale's hostname here
+            @gone status 404
+            handle_response @gone {
+                handle /static/js/*.js {
+                    header Content-Type "text/javascript; charset=utf-8"
+                    header Cache-Control no-store   # an image rolled back to may hold this name again
+                    respond `const chunk = new URL(import.meta.url).pathname.split("/").pop();
+let first = false;
+try { first = !sessionStorage.getItem("reload:" + chunk); sessionStorage.setItem("reload:" + chunk, "1"); } catch (e) {}
+if (first) location.reload();
+else console.warn("xerscope: " + chunk + " is not in this version of the app");
+` 200
+                }
+                handle /static/css/*.css {
+                    header Content-Type "text/css; charset=utf-8"
+                    header Cache-Control no-store
+                    respond 200
+                }
+                handle {                 # any other 404: the app's own answer (its headers are already set)
+                    copy_response
+                }
+            }
+        }
     }
     handle {
         respond 404

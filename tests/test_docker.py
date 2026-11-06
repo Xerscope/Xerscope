@@ -186,6 +186,24 @@ def test_caddy_security_headers_and_their_ci_check():
     assert "Strict-Transport-Security" in wf and "Permissions-Policy" in wf
 
 
+def test_caddy_answers_a_chunk_gone_after_an_update_with_a_single_reload():
+    """A tab opened before an update imports chunks the new image no longer has: Caddy answers
+    such a 404 with a module that reloads the page once per chunk name, a missing stylesheet with
+    an empty one (Vite's preload rejects on a CSS error before it imports the chunk), and passes
+    every other 404 through."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    proxy = caddy[caddy.index("reverse_proxy app:8501 {") : caddy.index("\n    handle {\n")]
+    assert "@gone status 404" in proxy and "handle_response @gone {" in proxy
+    js = proxy[proxy.index("handle /static/js/*.js {") : proxy.index("handle /static/css/*.css {")]
+    assert 'header Content-Type "text/javascript; charset=utf-8"' in js  # nosniff blocks a module of another type
+    assert "header Cache-Control no-store" in js and "` 200" in js
+    assert 'sessionStorage.getItem("reload:" + chunk)' in js and 'sessionStorage.setItem("reload:" + chunk' in js
+    assert "if (first) location.reload();" in js and "console.warn(" in js
+    css = proxy[proxy.index("handle /static/css/*.css {") :]
+    assert 'header Content-Type "text/css; charset=utf-8"' in css and "respond 200" in css
+    assert "copy_response\n" in css and "copy_response_headers" not in css  # the headers are already there
+
+
 def test_caddy_logs_keep_no_token_and_no_project_code():
     """Streamlit's WebSocket subprotocol carries its XSRF token and session id, and the tables
     export is named after the project code: both logs drop them."""
