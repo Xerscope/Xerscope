@@ -214,6 +214,7 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
     ask_funnel = query.apply(ask, tasks, snapshot, nodes)
     tasks = ask_funnel.rows
     if ask_funnel.steps:
+        st.markdown(ui.md_text(query.answer(ask, ask_funnel, lexicon, query.language(asked))))
         st.caption(query.funnel_line(ask_funnel))
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:

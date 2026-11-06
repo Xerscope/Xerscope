@@ -148,3 +148,28 @@ def test_lexicon_is_data_the_user_extends(tmp_path):
     lexicon = Vocabulary(wbs={"h": "HVAC · HVAC works"}, lexicon=mine)
     assert query.parse_keywords("CVC en cours", lexicon).wbs_id == "h"  # the company's word finds its node
     assert query.parse_keywords("CVC en cours", Vocabulary(wbs={"h": "HVAC · HVAC works"})).wbs_id is None
+
+
+def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store):
+    from xerscope.analysis import wbs as wbs_tree
+    from xerscope.viz import categorise
+
+    snapshot = store.latest
+    nodes = wbs_tree.tree(snapshot)
+    tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
+    vocab = query.vocabulary(snapshot, nodes)
+    asked = query.parse_keywords("critiques non démarrés en génie civil", vocab)
+    funnel = query.apply(asked, tasks, snapshot, nodes)
+    rows = funnel.rows
+    worst = rows.loc[rows["total_float_d"].idxmin()]
+    said = query.answer(asked, funnel, vocab, query.language("critiques non démarrés en génie civil"))
+    assert said.startswith(f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works, ")
+    assert f"pire marge {worst['total_float_d']:+.0f} j ({worst['task_code']})" in said
+    assert f"dernière fin {rows['finish'].max():%d/%m/%Y}." in said
+    english = query.parse_keywords("milestones", vocab)
+    said = query.answer(english, query.apply(english, tasks, snapshot, nodes), vocab, query.language("milestones"))
+    assert said.startswith(f"{int(tasks['is_milestone'].sum())} milestones, ")
+    nothing = query.parse_keywords("xyzzy", vocab)  # an ignored word: every row; a search for a name nobody has
+    empty = query.apply(query.Filter(search="nobodyhasthisname"), tasks, snapshot, nodes)
+    assert query.answer(nothing, empty, vocab, "fr") == "Aucune activité ne correspond."
+    assert query.language("what is late in procurement") == "en" and query.language("jalons en retard") == "fr"

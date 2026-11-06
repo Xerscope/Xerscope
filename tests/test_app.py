@@ -171,6 +171,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     )
     # the page is on CIV already: the funnel starts from its 8 tasks and names each step
     assert any(c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started ") for c in app.caption)
+    assert any(m.value.startswith(f"{len(drawn)} activities critical not started in CIV") for m in app.markdown)
     app.text_input[1].set_value("jalons xyzzy génie civil").run()  # a word the file does not hold is dropped
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"

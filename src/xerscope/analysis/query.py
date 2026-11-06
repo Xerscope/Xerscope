@@ -647,6 +647,99 @@ def funnel_line(funnel: Funnel) -> str:
     return " → ".join([str(funnel.start), *(f"{step.label} {step.left}" for step in funnel.steps)])
 
 
+# --- the answer, in words, from the funnel's rows ----------------------------------------
+
+_FRENCH_WORDS = """
+    le la les des du de un une en dans et ou pour sur avec non pas quasi critique critiques jalon jalons
+    terminé terminée terminés démarré démarrée démarrés cours retard bloque lot chantier tâches activités
+    fin début équipe fournisseur études achats mécanique électricité génie
+    """
+_FRENCH = frozenset(_FRENCH_WORDS.split())
+
+
+def language(text: str) -> str:
+    """ "fr" when the sentence reads as French (accents or French words), "en" otherwise."""
+    words = set(re.split(r"[^a-zà-ÿ]+", text.lower()))
+    return "fr" if any(c in "àâçéèêëîïôûùüÿ" for c in text) or len(words & _FRENCH) >= 1 else "en"
+
+
+_WORDS = {
+    "en": {
+        "none": "No activity matches.",
+        "one": "1 activity",
+        "many": "{n} activities",
+        "milestone_one": "1 milestone",
+        "milestone_many": "{n} milestones",
+        "in": "in {label}",
+        "status": {"Not started": "not started", "In progress": "in progress", "Complete": "complete"},
+        "float": {"Critical": "critical", "Near critical": "near critical", "Normal": "with float"},
+        "worst": "worst float {f} wd ({code})",
+        "finish": "latest finish {date}",
+        "start": "earliest start {date}",
+        "resource": "with {name}",
+        "loe": "level of effort",
+        "named": 'named "{text}"',
+    },
+    "fr": {
+        "none": "Aucune activité ne correspond.",
+        "one": "1 activité",
+        "many": "{n} activités",
+        "milestone_one": "1 jalon",
+        "milestone_many": "{n} jalons",
+        "in": "dans {label}",
+        "status": {"Not started": "non démarrée(s)", "In progress": "en cours", "Complete": "terminée(s)"},
+        "float": {"Critical": "critique(s)", "Near critical": "quasi critique(s)", "Normal": "avec marge"},
+        "worst": "pire marge {f} j ({code})",
+        "finish": "dernière fin {date}",
+        "start": "premier début {date}",
+        "resource": "avec {name}",
+        "loe": "niveau d'effort",
+        "named": "nommée(s) « {text} »",
+    },
+}
+
+
+def answer(filter: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") -> str:
+    """One sentence from the funnel's rows, in the language of the question: the count, what was
+    asked (node, status, float, resource, milestones, LOE, search), then the worst total float
+    and the latest finish of the rows. Every number is a column of the frame (``total_float_d``
+    in working days, ``finish``); nothing is estimated. Empty rows: a sentence saying so."""
+    words = _WORDS["fr" if lang == "fr" else "en"]
+    rows = funnel.rows
+    n = len(rows)
+    if n == 0:
+        return words["none"]
+    if filter.milestones:
+        head = words["milestone_one"] if n == 1 else words["milestone_many"].format(n=n)
+    else:
+        head = words["one"] if n == 1 else words["many"].format(n=n)
+    parts = [head]
+    parts += [words["float"][c] for c in filter.categories if c in words["float"]]
+    parts += [words["status"][st] for st in filter.status if st in words["status"]]
+    if filter.loe:
+        parts.append(words["loe"])
+    if filter.wbs_id and filter.wbs_id in vocab.wbs:
+        parts.append(words["in"].format(label=vocab.wbs[filter.wbs_id]))
+    if filter.resources:
+        names = [
+            vocab.resources[r][0] or vocab.resources[r][1] for r in sorted(filter.resources) if r in vocab.resources
+        ]
+        if names:
+            parts.append(words["resource"].format(name=", ".join(names)))
+    if filter.search:
+        parts.append(words["named"].format(text=filter.search))
+    sentence = " ".join(parts)
+    details = []
+    floats = rows["total_float_d"].dropna() if "total_float_d" in rows else pd.Series(dtype=float)
+    if len(floats):
+        worst = floats.idxmin()
+        details.append(words["worst"].format(f=f"{floats[worst]:+.0f}", code=rows.loc[worst, "task_code"]))
+    finishes = rows["finish"].dropna() if "finish" in rows else pd.Series(dtype="datetime64[ns]")
+    if len(finishes):
+        details.append(words["finish"].format(date=f"{finishes.max():%d/%m/%Y}"))
+    return sentence + (", " + ", ".join(details) if details else "") + "."
+
+
 # --- a local language model as Backend (step two) ---------------------------------------
 
 _SCHEMA = {  # what the model may answer: ids and labels of the vocabulary, nothing else
