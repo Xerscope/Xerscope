@@ -265,7 +265,9 @@ Step by step on a Synology NAS (DSM 7.4, Container Manager), checks and troubles
 
 | Document | Read it for |
 |---|---|
+| [docs/code-map.md](docs/code-map.md) | where each concept lives, what to look at first when something goes wrong, which doc to read for which task |
 | [docs/architecture.md](docs/architecture.md) | module by module: data flow, layers, where each P6 concept lives, the test files |
+| [docs/maintenance.md](docs/maintenance.md) | what runs by itself, weekly / monthly / quarterly tasks, release steps, health indicators |
 | [docs/cpm.md](docs/cpm.md) | the CPM engine: time axis, options, algorithm, validation, conventions no reference settles |
 | [docs/standards.md](docs/standards.md) | the built-in standards, their sources, and where P6, DCMA and DECM count differently |
 | [docs/formulas.md](docs/formulas.md) | the formula, population and pinning test of every number |
