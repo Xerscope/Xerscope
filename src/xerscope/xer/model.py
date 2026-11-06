@@ -620,6 +620,8 @@ class _BuildInputs:
     hours_per_day: pd.Series  # by calendar id
     settings: Settings
     warnings: list[str]  # appended to in run order: that order is observable
+    # task_id of the TASK rows left out because their Activity ID repeats an earlier row of the project
+    left_out_task_ids: set[str] = field(default_factory=set)
 
     @property
     def source(self) -> str:
@@ -1067,9 +1069,19 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
         tasks = tasks.merge(wbs[["wbs_id", *wbs_columns]], on="wbs_id", how="left")
     tasks[wbs_columns] = tasks[wbs_columns].fillna("")
 
-    duplicates = tasks["task_code"][tasks["task_code"].duplicated()].unique()
-    if len(duplicates):
-        inputs.warnings.append(f"{source}: duplicate task IDs {list(duplicates)[:5]}; history joins may be wrong")
+    # P6 does not write two activities of one project with one Activity ID; a merged or hand-made file
+    # can. Every analysis keys activities by Activity ID, so the first TASK row is kept and the others
+    # go, with their relationships, assignments and expenses (those follow the kept task_id).
+    repeated_rows = tasks["task_code"].duplicated(keep="first")
+    if repeated_rows.any():
+        repeated_codes = sorted(tasks.loc[repeated_rows, "task_code"].astype(str).unique())
+        inputs.left_out_task_ids.update(tasks.loc[repeated_rows, "task_id"].astype(str))
+        inputs.warnings.append(
+            f"{source}: Activity ID repeated in the project {repeated_codes[:5]} "
+            f"({int(repeated_rows.sum())} TASK row(s) after the first): the first row of each is kept; "
+            "the others, their relationships, assignments and expenses are left out"
+        )
+        tasks = tasks[~repeated_rows]
     return tasks
 
 
@@ -1119,6 +1131,15 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     # A predecessor with no TASK row is a link to another project (P6 exports the link, not
     # the other project's activities) or a corrupt link. Either way it is not logic that can
     # be scheduled; only the corrupt ones are reported.
+    of_left_out_rows = relationships["task_id"].astype(str).isin(inputs.left_out_task_ids) | relationships[
+        "pred_task_id"
+    ].astype(str).isin(inputs.left_out_task_ids)
+    if of_left_out_rows.any():
+        inputs.warnings.append(
+            f"{inputs.source}: {int(of_left_out_rows.sum())} relationship(s) of the TASK rows left out for a "
+            "repeated Activity ID; ignored by the schedule and the checks"
+        )
+    relationships = relationships[~of_left_out_rows]
     lost = relationships["succ_code"].isna() | relationships["pred_code"].isna()
     corrupt = lost & ~relationships["is_external"]
     if corrupt.any():
@@ -1165,7 +1186,7 @@ def _external_links(
         {
             "pred_code": outbound_links["pred_task_id"].map(own_code),
             "succ_code": outbound_links["task_id"].map(external_code),
-            "type": outbound_links["pred_type"].map(REL_TYPE),
+            "type": outbound_links["pred_type"].map(REL_TYPE).fillna(outbound_links["pred_type"]),
             "lag_hr": to_number(outbound_links["lag_hr_cnt"]).fillna(0.0),
             "direction": "out",
         }
@@ -1335,6 +1356,17 @@ def build_snapshot(
         expenses = pd.DataFrame(columns=["task_id"])
     elif "proj_id" in expenses.columns:
         expenses = expenses[expenses["proj_id"] == inputs.project_id].copy()
+        # An expense of the project on a task it does not hold (P6 keeps PROJCOST with its task)
+        # would drop out of every cost total without a word; the rows left out for a repeated
+        # Activity ID are already reported.
+        orphan = ~expenses["task_id"].isin(tasks["task_id"]) & ~expenses["task_id"].astype(str).isin(
+            inputs.left_out_task_ids
+        )
+        if orphan.any():
+            inputs.warnings.append(
+                f"{raw.source}: {int(orphan.sum())} PROJCOST row(s) of the project on a task it does not hold; "
+                "their cost is left out"
+            )
     tasks["has_expense"] = tasks["task_id"].isin(expenses["task_id"])
     tasks["constraint"] = tasks["cstr_type"].map(CONSTRAINT).fillna(tasks["cstr_type"])
     code_values, task_codes = _activity_codes(raw, tasks)

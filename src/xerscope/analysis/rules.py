@@ -610,7 +610,13 @@ def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_ho
     flagged = population[as_flag(variance_hours > tolerance_hours)]
     variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
     extra = {"bl_finish": flagged["bl_finish"], "finish_variance_wd": variance_days}
-    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population), checked=population)
+    # A task with no finish date (a file never scheduled, or a blank early_end_date) has no variance: it
+    # cannot be judged late, yet stays in the denominator. Said in the note, so the reader sees the count.
+    without_finish = int(population["finish"].isna().sum())
+    note = f"{without_finish} task(s) without a finish date: not judged, still counted" if without_finish else ""
+    return RuleOutput(
+        flagged_activities(flagged, **extra), len(flagged), len(population), note=note, checked=population
+    )
 
 
 def bei_from_baseline(
