@@ -40,6 +40,7 @@ class RawXer:
     encoding: str = ""
     warnings: list[str] = field(default_factory=list)
     header: list[str] = field(default_factory=list)  # ERMHDR fields after the tag
+    ended: bool = True  # the %E line was read; False for a file cut short (build_snapshot refuses it)
 
     def table(self, name: str) -> pd.DataFrame:
         """Return a table, or an empty frame if the export does not contain it."""
@@ -66,8 +67,9 @@ def parse_text(text: str, source: str = "", encoding: str = "", keep: Mapping[st
     skipping = False  # inside a table left out by ``keep``
     version = export_date = None
     header: list[str] = []
-    saw_header = False
+    saw_header = ended = False
     orphans = 0  # %R rows outside any %T table
+    where = source or "input"
 
     # split("\n") rather than splitlines(): task names may contain characters
     # that splitlines() treats as line breaks (\x0b, \x1c,  ...).
@@ -92,10 +94,16 @@ def parse_text(text: str, source: str = "", encoding: str = "", keep: Mapping[st
             if skipping:
                 current = None
             elif current:
-                rows.setdefault(current, [])
+                # P6 writes each table once; a second block would be read with the first's rows
+                if current in rows:
+                    raise XerError(f"{where}: table {current} appears twice")
+                rows[current] = []
         elif tag == "%F":
             if current:
                 names = [c.strip() for c in parts[1:]]
+                twice = sorted({name for name in names if names.count(name) > 1})
+                if twice:
+                    raise XerError(f"{where}: table {current} names column {twice[0]} twice")
                 wanted = keep.get(current) if keep is not None else None
                 if wanted is None:
                     cols[current] = names
@@ -108,10 +116,11 @@ def parse_text(text: str, source: str = "", encoding: str = "", keep: Mapping[st
             version = parts[1] if len(parts) > 1 else None
             export_date = parts[2] if len(parts) > 2 else None
         elif tag == "%E":
+            ended = True
             break
 
     if not saw_header and not rows:
-        raise XerError(f"{source or 'input'}: not an XER file (no ERMHDR header, no tables)")
+        raise XerError(f"{where}: not an XER file (no ERMHDR header, no tables)")
 
     tables: dict[str, pd.DataFrame] = {}
     warnings: list[str] = []
@@ -134,7 +143,7 @@ def parse_text(text: str, source: str = "", encoding: str = "", keep: Mapping[st
         fixed = [(r + [""] * n)[:n] for r in table_rows]
         tables[name] = pd.DataFrame(fixed, columns=names, dtype=object)
 
-    return RawXer(tables, source, version, export_date, encoding, warnings, header)
+    return RawXer(tables, source, version, export_date, encoding, warnings, header, ended)
 
 
 def parse_bytes(data: bytes, source: str = "", keep: Mapping[str, Columns] | None = None) -> RawXer:

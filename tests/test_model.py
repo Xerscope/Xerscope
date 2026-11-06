@@ -57,6 +57,7 @@ def test_blank_data_date_falls_back_to_planned_start():
         "%R\t1\tP\t\t2026-09-01 08:00\n"
         "%T\tTASK\n%F\ttask_id\tproj_id\ttask_code\ttask_name\ttask_type\tstatus_code\n"
         "%R\t1\t1\tA\tA\tTT_Task\tTK_NotStart\n"
+        "%E\n"
     )
     s = build_snapshot(parse_text(xer))
     assert s.data_date == pd.Timestamp("2026-09-01 08:00")
@@ -201,7 +202,8 @@ def test_task_without_proj_id_takes_the_only_project():
 
 
 def test_task_without_proj_id_and_several_projects_raises():
-    text = _linked_text().replace("%T\tTASK\n", "%T\tPROJECT\n%F\tproj_id\n%R\t2\n%T\tTASK\n", 1)
+    project_row = next(line for line in _linked_text().split("\n") if line.startswith("%R\t1\tT\t"))
+    text = _linked_text().replace(project_row, f"{project_row}\n%R\t2\tU", 1)  # a second project, no task
     with pytest.raises(XerError, match=r"t\.xer.*TASK.*proj_id"):
         build_snapshot(parse_text(drop_column(text, "TASK", "proj_id"), source="t.xer"))
 

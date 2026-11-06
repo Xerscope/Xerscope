@@ -555,6 +555,24 @@ def test_same_data_date_twice_is_refused(sample_dir, tmp_path, monkeypatch):
     assert files_line(at) == "Files · none read"
 
 
+def test_a_file_the_model_cannot_type_is_named_and_the_others_load(sample_dir, tmp_path, monkeypatch):
+    """Two TASK rows on one task_id made the model raise a pandas error that only the background
+    reader caught. On the synchronous path (one ticked file, or XERSCOPE_SYNC_LOAD as here) every
+    page then failed and the Files line was no longer drawn: the session could not untick the
+    file. The file is now refused as unreadable, named in the sidebar, and the others load."""
+    files = sorted(sample_dir.glob("*.xer"))[:2]
+    for f in files:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
+    lines = files[0].read_bytes().decode("cp1252").split("\r\n")
+    first_task = lines.index("%T\tTASK") + 2
+    lines.insert(first_task, lines[first_task])
+    (tmp_path / "zz-crafted.xer").write_bytes("\r\n".join(lines).encode("cp1252"))
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    assert any("zz-crafted.xer" in e.value and "duplicate task_id" in e.value for e in at.sidebar.error)
+    assert files_line(at).startswith("Files · 2 files")
+
+
 def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
     at = _run(sample_dir, monkeypatch)
     open_files(at)
