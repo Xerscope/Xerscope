@@ -25,6 +25,7 @@ from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
     XER_SUFFIXES,
     FileHeader,
+    RawXer,
     Snapshot,
     XerError,
     baseline_copies,
@@ -36,6 +37,7 @@ from xerscope.xer import (
 )
 from xerscope.xer.model import HEADER_TABLES, read_header
 from xerscope.xer.parser import parse_bytes
+from xerscope.xer.pmxml import read_pmxml_baseline
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
@@ -1375,6 +1377,24 @@ def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) ->
     return found + ([baseline.snapshot.source] if baseline is not None else [])
 
 
+def baseline_items(session: MutableMapping) -> list[tuple[str, bytes]]:
+    """The separate baseline file as (name, bytes), when one is in use (uploaded or XERSCOPE_BASELINE)."""
+    if session.get("bl_choice") != BL_FILE and session.get("bl_fallback") != BL_FILE:
+        return []
+    held = None if _data_locked() else session.get("bl_file")
+    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    if held is None and env_path and Path(env_path).is_file():
+        held = (Path(env_path).name, Path(env_path).read_bytes())
+    return [held] if held is not None else []
+
+
+def source_raws(name: str, data: bytes) -> list[RawXer]:
+    """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
+    if is_pmxml(data):
+        return [read_pmxml_baseline(data, name, b.object_id) for b in list_baselines(data, name)[0]]
+    return [parse_bytes(data, source=name)]
+
+
 def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[str], Anonymizer]:
     """The anonymizers of the session, by the set of file names each one read."""
     session = st.session_state if session is None else session
@@ -1396,7 +1416,8 @@ def anonymizer(
     the same way. One built from more files also serves a download of fewer."""
     session = st.session_state if session is None else session
     signature = session.get("signature")
-    items = session.get("items") or []
+    # the updates and the separate baseline file: a name found only in the baseline is a secret too
+    items = [*(session.get("items") or []), *baseline_items(session)]
     wanted = frozenset(name for name, _ in items if sources is None or name in set(sources))
     built_anonymizers = session.get("_anonymizers")
     if built_anonymizers is None or built_anonymizers[0] != signature:
@@ -1411,7 +1432,7 @@ def anonymizer(
     key = session.setdefault("_anon_key", secrets.token_bytes(32))
     with st.spinner(f"Reading {len(wanted)} file(s) for the anonymized downloads…"):
         anonymous = Anonymizer.from_raws(
-            (parse_bytes(data, source=name) for name, data in items if name in wanted), key=key
+            (raw for name, data in items if name in wanted for raw in source_raws(name, data)), key=key
         )
     if len(built) >= 4:  # a few sets per session: each holds the text values of its files
         built.pop(next(iter(built)))

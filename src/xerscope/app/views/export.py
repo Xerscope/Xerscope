@@ -2,7 +2,19 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import anonymizer, download, fetch, held, hold, memo, page_header, require_store, show_download
+from xerscope.app.state import (
+    anonymizer,
+    baseline_items,
+    download,
+    fetch,
+    held,
+    hold,
+    memo,
+    page_header,
+    require_store,
+    show_download,
+    source_raws,
+)
 from xerscope.export import export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
 
@@ -45,15 +57,28 @@ with st.expander("Preview fact_activity"):
     ui.table(tables["fact_activity"].head(200), max_height=640)
 
 
+def _data_date(raw) -> pd.Timestamp | None:
+    """A file's status date from its PROJECT row (a baseline's, which the series does not hold)."""
+    project = raw.table("PROJECT")
+    if "last_recalc_date" not in project.columns or project.empty:
+        return None
+    value = pd.to_datetime(project["last_recalc_date"].iloc[0], errors="coerce")
+    return None if pd.isna(value) else value
+
+
 def build_anonymised_extract(store) -> None:
     data_dates = {snapshot.source: snapshot.data_date for snapshot in store}
     items = st.session_state.get("items") or []
-    with st.spinner(f"Anonymizing {len(items)} file(s)…"):
+    baselines = baseline_items(st.session_state)  # the separate baseline file, each baseline of an XML
+    with st.spinner(f"Anonymizing {len(items) + len(baselines)} file(s)…"):
         extract = fetch(
             st.session_state,
             None,
             lambda anonymous: anonymous.zip_xers(
-                (parse_bytes(data, source=name), data_dates.get(name)) for name, data in items
+                [
+                    *((parse_bytes(data, source=name), data_dates.get(name)) for name, data in items),
+                    *((raw, _data_date(raw)) for name, data in baselines for raw in source_raws(name, data)),
+                ]
             ),
             prepare=True,
             anonymous=True,
@@ -63,7 +88,8 @@ def build_anonymised_extract(store) -> None:
 
 ui.section(
     "Anonymized XER extract",
-    "Every loaded file with new Task IDs, WBS, project, resource and calendar names; no user, "
+    "Every loaded file, and the separate baseline file (each baseline of a P6 XML export, as an XER), with "
+    "new Task IDs, WBS, project, resource and calendar names; no user, "
     "free text or cost. Dates, durations, units and logic are unchanged, so P6 and xerscope compute "
     "the same results on it. The new IDs match the anonymized lists of Schedule health.",
 )

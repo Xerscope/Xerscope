@@ -10,7 +10,7 @@ from xerkit import snap, todo
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import ev_point
-from xerscope.xer import XerError, is_pmxml, list_baselines, load_snapshot
+from xerscope.xer import XerError, build_snapshot, is_pmxml, list_baselines, load_snapshot
 from xerscope.xer.pmxml import read_pmxml_baseline
 
 # activity dates as P6 XML writes them: the true end of the last period (17:00), unlike calendar periods
@@ -190,6 +190,21 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
 
     anonymized = ev_csv(at)
     assert b"Secret gone activity" not in anonymized and b"ZZGONE" not in anonymized
+    # the anonymized XER extract carries the baseline too, as an XER xerscope reads back, without its names
+    import io
+    import zipfile
+
+    from xerscope.xer import parse_bytes
+
+    at.switch_page("views/export.py").run()
+    next(b for b in at.button if b.label == "Build anonymized extract").click().run()
+    button = next(b for b in at.get("download_button") if b.proto.label == "Download anonymized XER (.zip)")
+    with zipfile.ZipFile(io.BytesIO(saved[button.proto.url.rsplit("/", 1)[-1].split(".")[0]])) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    assert len(files) == 3  # two updates and the baseline
+    assert not any(b"Secret gone activity" in body or b"ZZGONE" in body for body in files.values())
+    read_back = [build_snapshot(parse_bytes(body, source=name)) for name, body in files.items()]
+    assert sorted(len(s.activities) for s in read_back)[-1] == len(kept) + 1  # the baseline, deleted activity kept
     at.session_state["anon_exports"] = False
-    plain = ev_csv(at.run())
+    plain = ev_csv(at.switch_page("views/earned_value.py").run())
     assert b"ZZGONE" in plain  # the test exercises the case: the plain download does list it
