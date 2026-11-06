@@ -415,15 +415,21 @@ def test_unusable_and_negative_remaining_durations_read_as_zero_with_one_warning
     assert "test.xer: 1 activities with a negative remaining duration, read as 0" in s.warnings
 
 
-def test_unusable_lag_reads_as_zero_and_an_unknown_link_type_is_dropped():
+def test_unusable_lag_reads_as_zero_and_an_unknown_link_type_is_kept_and_named():
+    """An unknown link type keeps its code in ``relationships`` (#128) and is named once; the
+    recalculation ignores it (AUDIT-CPM-06, tests/test_audit_edges_cpm.py)."""
     links = [("A", "B", "FS", "inf"), ("B", "C", "XX", 0), ("A", "C", "SS", "2e6"), ("B", "C", "FF", 8)]
     s = snap([todo("A"), todo("B"), todo("C")], links)
     assert s.relationships[["pred_code", "succ_code", "type", "lag_hr"]].to_dict("records") == [
         {"pred_code": "A", "succ_code": "B", "type": "FS", "lag_hr": 0.0},
+        {"pred_code": "B", "succ_code": "C", "type": "PR_XX", "lag_hr": 0.0},
         {"pred_code": "A", "succ_code": "C", "type": "SS", "lag_hr": 0.0},
         {"pred_code": "B", "succ_code": "C", "type": "FF", "lag_hr": 8.0},
     ]
-    assert "test.xer: 1 relationship(s) with an unknown type ['PR_XX']; ignored" in s.warnings
+    assert [w for w in s.warnings if "pred_type" in w] == [
+        "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
+        "kept with its code, ignored by the recalculation"
+    ]
     assert "test.xer: 2 relationship lag(s) not finite or above 1e+06 h ['A->B', 'A->C']; read as 0" in s.warnings
 
 
