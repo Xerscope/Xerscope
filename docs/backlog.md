@@ -171,6 +171,9 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
       none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
       Caddy release that fixes them, or renew each entry with its reason.
+- [ ] Caddy image: `deploy/caddy/Dockerfile` replaces golang.org/x/net by v0.62.0 (CVE-2026-78661;
+      Caddy 2.11.8 and 2.11.9 pin v0.60.0). Drop the replace once a Caddy release requires
+      x/net >= 0.62.0: a replace pins one version and would hold back a newer one.
 - [ ] Tailscale image: CVE-2026-78661 (golang.org/x/net/html, fixed in x/net 0.62.0, in no
       Tailscale release yet) accepted until 2026-11-10 (`deploy/tailscale.trivyignore.yaml`).
       The CI job `deploy` proves the parser absent from the image's binaries on every run; at

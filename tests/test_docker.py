@@ -238,12 +238,25 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     assert "docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }}" in image  # the Docker Hub fallback
     dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
     assert "directory: /deploy/caddy" in dependabot
+
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     block = caddy[caddy.index("rate_limit {") : caddy.index("basic_auth {")]
     assert "key {client_ip}" in block  # the visitor; {remote_host} is tailscaled's 127.0.0.1 for everyone
     assert "ipv6_prefix 64" in block and "events 300" in block and "window 1m" in block
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert 'docker build -t "$XERSCOPE_CADDY_IMAGE" caddy' in wf and "HTTP/1.1 429" in wf
+
+
+def test_caddy_build_forces_the_fixed_x_net_and_proves_it():
+    """Caddy 2.11.8 and 2.11.9 pin golang.org/x/net v0.60.0 (CVE-2026-78661, fixed in 0.62.0). The
+    image is ours, so the build replaces the module rather than excepting the finding, and fails
+    unless the built binary records x/net v0.62.0 (go version -m reads the binary's build info)."""
+    df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
+    fixed = re.search(r"--replace golang\.org/x/net=golang\.org/x/net@(v\d+\.\d+\.\d+)", df)
+    assert fixed and tuple(map(int, fixed.group(1)[1:].split("."))) >= (0, 62, 0), fixed
+    pattern = "golang\\.org/x/net[[:space:]]+" + fixed.group(1).replace(".", "\\.")  # as the grep spells it
+    assert f"go version -m /usr/bin/caddy | grep -Eq '{pattern}'" in df
+    assert "CVE-2026-78661" not in (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()  # fixed, not excepted
 
 
 def test_base_images_pinned_by_digest():
