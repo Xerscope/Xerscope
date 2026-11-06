@@ -9,6 +9,32 @@ au moment de l'audit). Aucun fichier de `src/` n'a été modifié ; seuls des te
 Preuves : chaque constat est reproduit par un test `xfail(strict=True)` dans `tests/test_audit_edges_*.py`
 (il passe au vert dès que le défaut est corrigé) ; les comportements corrects sont des tests ordinaires.
 
+## 0. Statut au 2026-11-06 (après mise en conformité, branche `claude/wizardly-ptolemy-b4zjg4`)
+
+Les blocs A, B, C, D, E et F du plan ont été appliqués (`conformity-plan.md` §2, feu vert de l'auteur) ; le bloc G
+(découpage structurel) est reporté après la refonte visuelle et la revue d'architecture.
+
+| Zone | Constats | Fermés | Ouverts | Preuve |
+|---|---|---|---|---|
+| xer (parser, modèle, calendrier) | 16 | 16 | 0 | `tests/test_audit_edges_xer.py` : 0 `xfail` |
+| CPM | 9 | 9 | 0 | `tests/test_audit_edges_cpm.py` : 0 `xfail` |
+| app (standards, CLI, export, anonymisation, store) | 12 | 12 | 0 | `tests/test_audit_edges_app.py` : 0 `xfail` |
+| déploiement / supply chain | 4 | 3 (DEP-01, 02, 04) | DEP-03 : consigne documentée, pas de secret monté | `tests/test_docker.py` |
+
+Changements notables par rapport au §2 : parser réécrit en flux (pic mémoire mesuré **12,55 × → 3,21 ×** sur 10 MB,
+3,0 s → 1,5 s) ; `TimeAxis` borné à la plage pandas avec `ValueError` immédiat ; nouveau `xer/validate.py` (unicité,
+fuseaux, bornes, durées négatives ou non finies, types de lien inconnus → une ligne de `warnings` chacun) ;
+`ScheduleError(ValueError)` typée dans le moteur, `CycleError` en est une sous-classe, `Schedule` et `Snapshot`
+gelés, résultat renvoyé en copie (coût mesuré 0,008 % sur le plus gros fichier de référence) ; `csv_safe` appelé par
+tout écrivain CSV via `csv_bytes` ; pseudonymes 12/8 hex ; TOML et CLI validés (exit 2 usage, 1 `--fail-on`) ;
+images avec provenance, SBOM et attestation GitHub, CodeQL, Scorecard, fuzzing Hypothesis du parser (7 crashs
+trouvés puis corrigés, dont un hors audit : TASKRSRC sans colonne `task_id`), `CHANGELOG.md`.
+
+Aucune valeur calculée des fichiers de référence n'a bougé ; `FLOORS` du corpus P6 inchangés. Deux comportements
+ont changé par décision du plan, pas par correction : `project_task_counts` est indexé par `proj_id` (était : code
+projet) et une durée restante négative ou non finie est lue 0 avec warning (était : propagée). Les 12 questions
+métier du §7 restent ouvertes.
+
 ## 1. Résumé exécutif
 
 État général : **sain**. La suite complète passe (1 363 tests, 40 skips expliqués), ruff/format propres, bandit
