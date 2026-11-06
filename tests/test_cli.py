@@ -243,3 +243,11 @@ def test_ask_bench(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--cases", "tests/ask/heldout.toml")
     assert "dev.toml: 32 sentences" in out and "keywords  exact 100%" in out
     assert "heldout.toml: 20 sentences" in out and "missed:" in out
+
+
+def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir):
+    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--anonymize")
+    assert "anonymised copy XP" in out and "set aside:" in out and "sentences scored" in out
+    assert "exact 100%" in out and "15 sentences scored" in out  # the sentences naming things by code or full name
+    for secret in ("Civil works", "CIV", "Site crew", "CREW", "PRJ-ALPHA", "Ingénierie", "earthworks"):
+        assert secret not in out, secret

@@ -138,7 +138,14 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       `xerscope ask-bench <folder> --cases tests/ask/heldout.toml --url http://<llm>:8080` scores
       it against the grammar (80 % exact on the held-out sentences; the misses are synonyms the
       file does not hold). A model tuned on real files is split by file, never by sentence
-      (`tests/test_ask_bench.py`).
+      (`tests/test_ask_bench.py`). On a real schedule, `--anonymize` keeps every name out of
+      the model and the terminal; only the sentences that name things by code or full name
+      are then scorable.
+- [ ] Gantt "Ask" model, tools: let the model call xerscope's own functions (WBS tree with
+      counts, a search of activity names) through the chat endpoint's tool calls, the app
+      running each call in-process on the loaded file (never a shell, never a path from the
+      model) and feeding the result back; three rounds at most. Worth it only once the model
+      is measured on `ask-bench`: a tool call is a second model round trip on the NAS.
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a

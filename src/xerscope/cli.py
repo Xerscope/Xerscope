@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -595,7 +596,70 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("path", help="an XER file or a folder of them (the latest update is read)")
     parser.add_argument("--cases", required=True, action="append", help="TOML of [[case]] sentences; repeatable")
     parser.add_argument("--url", default="", help="a llama.cpp server to score as well (XERSCOPE_QUERY_URL)")
+    parser.add_argument("--key", default="", help="the key that server requires (XERSCOPE_QUERY_KEY)")
+    parser.add_argument("--ca", default="", help="that server's certificate, trusted alone (XERSCOPE_QUERY_CA)")
+    parser.add_argument(
+        "--anonymize",
+        action="store_true",
+        help="score on the anonymised copy of the file: the model, the output and the sentences carry "
+        "the new codes only; a sentence still holding an original value is refused (real schedules)",
+    )
     parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
+
+
+def _anonymised_bench(path: Path, cases: list[dict]):
+    """The anonymised file's snapshot and the cases rewritten for it: a WBS code, a resource, a
+    code value or a name in a sentence or an expectation becomes its new code; a case that
+    searches activity names is set aside (their words are rebuilt labels, not words); a
+    sentence that still holds an original text value is refused. Returns (snapshot, cases,
+    set aside, refused)."""
+    from .analysis import query
+    from .anonymize import Anonymizer
+    from .xer import build_snapshot, parse_bytes, read_xer
+
+    raw = read_xer(path)
+    real = build_snapshot(raw)
+    anonymous = Anonymizer.from_raws([raw])
+    copy = parse_bytes(anonymous.xer(raw), source=anonymous.xer_name(raw, real.data_date))
+    snapshot = build_snapshot(copy)
+    names = []  # (original text, new code) longest first: what a sentence may say, and what it becomes
+    for label in query.vocabulary(real).wbs.values():
+        code, _, name = label.partition(" · ")
+        names += [(code, anonymous.code("W", code)), (name, anonymous.code("W", code))]
+    for short, name in query.vocabulary(real).resources.values():
+        names += [(short, anonymous.code("R", short)), (name, anonymous.code("R", short))]
+    names = [(text, new) for text, new in names if text and new]
+    names.sort(key=lambda pair: -len(pair[0]))
+
+    def rewrite(text: str) -> str:
+        for original, new in names:
+            text = re.sub(rf"(?<![\w])(?:{re.escape(original)})(?![\w])", new, text, flags=re.IGNORECASE)
+        return text
+
+    rewritten, aside, refused = [], {}, 0
+    for case in cases:
+        if case.get("search") or case.get("codes"):
+            aside["searching activity names or code values"] = (
+                aside.get("searching activity names or code values", 0) + 1
+            )
+            continue
+        text = rewrite(case["text"])
+        if anonymous.leaks([text]):
+            refused += 1  # counted, never printed: it holds an original value
+            continue
+        new_case = {**case, "text": text}
+        if case.get("wbs"):
+            new_case["wbs"] = anonymous.code("W", case["wbs"])
+        if case.get("resources"):
+            new_case["resources"] = [anonymous.code("R", name) for name in case["resources"]]
+        wanted = [new_case.get("wbs") or "", *new_case.get("resources", [])]
+        if any(code and code not in text for code in wanted):  # "mécanique", "achats": a synonym or a part of a name
+            aside["naming a node or a resource by a synonym or a part of its name"] = (
+                aside.get("naming a node or a resource by a synonym or a part of its name", 0) + 1
+            )
+            continue
+        rewritten.append(new_case)
+    return snapshot, rewritten, aside, refused
 
 
 def _cmd_ask_bench(args: argparse.Namespace) -> int:
@@ -605,14 +669,25 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
     from .analysis import query
     from .store import SnapshotStore
 
-    snapshot = SnapshotStore.from_paths(_expand([args.path])).latest
-    vocab = query.vocabulary(snapshot)
+    files = _expand([args.path])
+    real = SnapshotStore.from_paths(files).latest
+    latest = next(f for f in files if f.name == real.source or str(f).endswith(real.source))
     parsers = {"keywords": None}
     if args.url:
-        parsers["model"] = query.llm_backend(args.url)
+        parsers["model"] = query.llm_backend(args.url, key=args.key, cafile=args.ca)
     for cases_path in args.cases:
         cases = query.load_cases(cases_path)
-        print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
+        snapshot = real
+        if args.anonymize:
+            snapshot, cases, aside, refused = _anonymised_bench(latest, cases)
+            print(f"\n{cases_path}: anonymised copy {snapshot.source}; {len(cases)} sentences scored")
+            for reason, count in aside.items():
+                print(f"  set aside: {count} {reason} (not expressible with the new codes)")
+            if refused:
+                print(f"  refused: {refused} still holding an original value after rewriting")
+        else:
+            print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
+        vocab = query.vocabulary(snapshot)
         for name, backend in parsers.items():
             scored = query.score(cases, vocab, backend)
             answered = (scored["source"] == name).mean() if name == "model" else 1.0
