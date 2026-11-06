@@ -126,6 +126,10 @@ without one has no baseline for that update (checks that need one are n/a), stat
 The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
 has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never
 chosen for the user), gives the baseline of the updates whose file has no usable one, update by update.
+A separate baseline file may be a P6 XML export (`xer/pmxml.py`: its `BaselineProject` elements, converted
+to the XER tables `build_snapshot` reads; durations and units in hours, percentages x 100, calendar periods
+ending a minute later than the XML's last working minute). `load_snapshot(..., project_id=)` names the
+baseline; when the XML holds the one an update's file names, that update takes it (`_xml_baseline_of`).
 `Baseline.source` says where the baseline of an update comes from; `run_metric` copies it to
 `CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
 readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the

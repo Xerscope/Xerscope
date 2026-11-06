@@ -88,7 +88,7 @@ def _cmd_app(args: argparse.Namespace) -> int:
 
 def _args_app(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--data", help="folder of weekly .xer files to preload")
-    parser.add_argument("--baseline", help="baseline .xer (contract baseline)")
+    parser.add_argument("--baseline", help="baseline .xer, or a P6 XML export holding the baseline")
     parser.add_argument("--standards", help="folder of your own standard .toml files")
     parser.add_argument("--port", type=int, default=8501)
     parser.add_argument(
@@ -144,7 +144,7 @@ def _standard(spec: str):
 def _args_check(parser: argparse.ArgumentParser) -> None:
     _add_paths(parser)
     parser.add_argument("--standard", default="P6", help="P6, DCMA or path to your .toml")
-    parser.add_argument("--baseline", help="baseline .xer for BEI / missed / late checks")
+    parser.add_argument("--baseline", help="baseline .xer (or P6 XML) for BEI / missed / late checks")
     parser.add_argument(
         "--planned-baseline", action="store_true", help="no baseline file: use each file's planned dates (target_*)"
     )
@@ -384,7 +384,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 
 def _args_pv_compare(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("path", help="the update .xer")
-    parser.add_argument("--baseline", help="baseline .xer (else --planned-baseline)")
+    parser.add_argument("--baseline", help="baseline .xer or P6 XML (else --planned-baseline)")
     parser.add_argument("--planned-baseline", action="store_true", help="use the update's planned dates (target_*)")
     parser.add_argument("--p6", required=True, metavar="CSV", help="P6 Activities view saved as CSV")
     parser.add_argument(
