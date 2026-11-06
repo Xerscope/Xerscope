@@ -199,7 +199,7 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     published by image.yml next to the app (ghcr and the Docker Hub copy), at one Caddy release
     and one caddy-ratelimit commit."""
     df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
-    froms = re.findall(r"^FROM (\S+)", df, re.M)
+    froms = [f.split("@")[0] for f in re.findall(r"^FROM (\S+)", df, re.M)]  # tags; the digests: their own test
     assert len(froms) == 2 and froms[0].startswith("caddy:") and froms[0].endswith("-builder"), froms
     assert froms[0].removesuffix("-builder") == froms[1]  # builder and runtime: the same Caddy release
     assert re.search(r"^FROM caddy:\d+\.\d+\.\d+", df, re.M)  # a release, not a moving 2 or latest
@@ -257,3 +257,86 @@ def test_schedules_stay_out_of_git():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     # the daemon's default driver: Container Manager's Log tab shows nothing for json-file or local
     assert not re.search(r"^\s+logging:", c, re.M)
+
+
+def _uses(workflow: str) -> list[str]:
+    return [line for line in workflow.splitlines() if "uses:" in line]
+
+
+def test_published_images_carry_provenance_sbom_and_an_attestation():
+    """SLSA provenance and an SBOM from BuildKit, a GitHub build attestation of the digest, with the
+    permissions those need and no more (AUDIT-DEP-02)."""
+    wf = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    assert "provenance: mode=max" in wf and "sbom: true" in wf
+    assert "actions/attest-build-provenance@" in wf
+    assert "subject-digest: ${{ steps.build.outputs.digest }}" in wf and "push-to-registry: true" in wf
+    assert "subject-name: ghcr.io/xerscope/${{ matrix.image }}" in wf  # lowercase, the name ghcr.io serves
+    job = wf[wf.index("  publish:") :]
+    perms = job[job.index("permissions:") : job.index("steps:")]
+    assert set(re.findall(r"^\s+([\w-]+): (read|write)", perms, re.M)) == {
+        ("contents", "read"),
+        ("packages", "write"),
+        ("id-token", "write"),
+        ("attestations", "write"),
+    }
+    assert re.search(r"^permissions:\n  contents: read\n\n", wf, re.M)  # the workflow default stays read-only
+    for line in _uses(wf):
+        assert re.search(r"@[0-9a-f]{40} # v", line), line
+    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01)
+    assert 'tags: ["v*"]' in wf and "type=semver,pattern={{version}}" in wf and "type=sha" in wf
+    assert "type=raw,value=latest,enable={{is_default_branch}}" in wf
+
+
+def test_codeql_and_scorecard_run_pinned_with_minimal_permissions():
+    """SAST and the Scorecard measure (AUDIT-DEP-04): on main, weekly, every action pinned by commit,
+    the job writing security events (and the Scorecard's OIDC token) only."""
+    codeql = (ROOT / ".github" / "workflows" / "codeql.yml").read_text()
+    scorecard = (ROOT / ".github" / "workflows" / "scorecard.yml").read_text()
+    for wf in (codeql, scorecard):
+        assert "branches: [main]" in wf and re.search(r"^\s+- cron: \"", wf, re.M)
+        assert "security-events: write" in wf and "persist-credentials: false" in wf
+        assert "pull_request_target" not in wf and "write-all" not in wf
+        assert not re.search(r"^\s+(contents|packages|actions|checks|pull-requests|issues): write", wf, re.M)
+        for line in _uses(wf):
+            assert re.search(r"@[0-9a-f]{40} # v", line), line
+    assert "pull_request:" in codeql and "languages: python" in codeql
+    assert "github/codeql-action/init@" in codeql and "github/codeql-action/analyze@" in codeql
+    assert "id-token: write" not in codeql
+    assert "ossf/scorecard-action@" in scorecard and "publish_results: true" in scorecard
+    assert "id-token: write" in scorecard and "github/codeql-action/upload-sarif@" in scorecard
+    assert "if: github.repository == 'Xerscope/xerscope'" in scorecard  # publish_results refuses a fork
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    assert "package-ecosystem: github-actions" in dependabot  # the pins move with Dependabot, not by hand
+
+
+def test_caddy_base_images_pinned_by_digest():
+    """deploy/caddy/Dockerfile pins its two caddy bases by digest like the app's Dockerfile (AUDIT-DEP-01);
+    Dependabot (docker ecosystem, /deploy/caddy) bumps tag and digest together."""
+    df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
+    froms = re.findall(r"^FROM (\S+)", df, re.M)
+    assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
+    assert froms[0].split("@")[0].removesuffix("-builder") == froms[1].split("@")[0]
+    assert froms[0].split("@")[1] != froms[1].split("@")[1]  # two images, two digests
+
+
+def test_deployment_documents_immutable_image_refs_and_the_key_check():
+    """compose keeps :latest as the first-start default only; the guide pins a release and its digest,
+    says how a release is cut and how to check TS_AUTHKEY left the container (AUDIT-DEP-01, -03)."""
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert compose.count(":latest}") == 2 and "docs/deploy.md §7" in compose
+    env = (ROOT / "deploy" / ".env.example").read_text()
+    assert "XERSCOPE_IMAGE=ghcr.io/xerscope/xerscope:0.1.0@sha256:<digest>" in env
+    assert "XERSCOPE_CADDY_IMAGE=ghcr.io/xerscope/xerscope-caddy:0.1.0@sha256:<digest>" in env
+    guide = (ROOT / "docs" / "deploy.md").read_text()
+    assert "### Pinning and upgrading the image" in guide
+    assert "docker buildx imagetools inspect ghcr.io/xerscope/xerscope:0.1.0" in guide
+    assert "docker-content-digest" in guide
+    assert "gh attestation verify oci://ghcr.io/xerscope/xerscope@sha256:<digest>" in guide
+    assert "git tag v0.1.0" in guide and "CHANGELOG.md" in guide
+    assert "docker inspect <tailscale-container> --format '{{.Config.Env}}'" in guide
+    assert not re.search(r"tskey-auth-[A-Za-z0-9]{4}", guide)  # placeholders only
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    assert changelog.startswith("# Changelog") and "## [Unreleased]" in changelog and "## [0.1.0]" in changelog
+    assert "keepachangelog.com" in changelog
+    readme = (ROOT / "README.md").read_text()
+    assert "git tag `v0.1.0`" in readme and "CHANGELOG.md" in readme

@@ -239,8 +239,11 @@ schedules, and any gap names a rule to fix.
   (`deploy/caddy/Dockerfile`: Caddy with the `caddy-ratelimit` module). tailscaled runs in
   userspace (no TUN device, route or DNS change), no port is published, and the five
   settings are environment variables in `deploy/.env` (template: `deploy/.env.example`). The host pulls the public images
-  `ghcr.io/xerscope/xerscope:latest` and `ghcr.io/xerscope/xerscope-caddy:latest` built by
-  `.github/workflows/image.yml` (a Docker Hub copy of each when configured, docs/deploy.md §8).
+  `ghcr.io/xerscope/xerscope` and `ghcr.io/xerscope/xerscope-caddy` built by
+  `.github/workflows/image.yml` (a Docker Hub copy of each when configured, docs/deploy.md §8),
+  pinned to a release and its digest rather than `latest` (docs/deploy.md §7). A release is a
+  git tag `v0.1.0` on `main`: the tag publishes `:0.1.0`, with SLSA provenance, an SBOM and a
+  GitHub build attestation; `CHANGELOG.md` lists what each release carries.
   `tests/test_docker.py` and the CI job `deploy` pin those properties.
 
 ```bash
