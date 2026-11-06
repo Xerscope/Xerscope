@@ -277,3 +277,22 @@ def test_schedules_stay_out_of_git():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     # the daemon's default driver: Container Manager's Log tab shows nothing for json-file or local
     assert not re.search(r"^\s+logging:", c, re.M)
+
+
+def test_nothing_in_the_app_reaches_the_network():
+    """The only outbound code in src/ is query.llm_backend, the measurement client of
+    `ask-bench --url`, which nothing in the app calls; the deployed app reaches nothing."""
+    outbound = re.compile(r"^\s*(import|from)\s+(urllib|socket|http\.client|requests|httpx|aiohttp|websocket)")
+    offenders = {}
+    for path in (ROOT / "src" / "xerscope").rglob("*.py"):
+        lines = [n for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1) if outbound.match(line)]
+        if lines:
+            offenders[path.relative_to(ROOT).as_posix()] = lines
+    assert set(offenders) == {"src/xerscope/analysis/query.py"}, offenders
+    query = (ROOT / "src" / "xerscope" / "analysis" / "query.py").read_text(encoding="utf-8")
+    assert query.count("urllib.request.urlopen(") == 2  # post (ask, warm) and summarise: the one endpoint
+    assert query.count('+ "/v1/chat/completions"') == 1 and "urlopen(answer" not in query
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert re.search(r"^  internal:\n\s+internal: true", c, re.M) and "llm" not in c and "XERSCOPE_QUERY" not in c
+    app_code = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "src" / "xerscope" / "app").rglob("*.py"))
+    assert "llm_backend" not in app_code and "XERSCOPE_QUERY" not in app_code  # the app never calls a model

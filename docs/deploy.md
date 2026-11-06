@@ -271,7 +271,27 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
-## 10. Troubleshooting
+## 10. The Gantt "Ask" field
+
+The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
+and turns it into its own filters, a one-sentence answer and a population funnel
+(`analysis/query.py`): a keyword grammar over the file's lexicon (WBS, activity codes,
+resources, activity-name words), the trade words of `lexicon/fr-en.toml` and the folder
+`XERSCOPE_LEXICON` names (`*.toml` files, `[[group]] words = ["CVC", "HVAC"]`, mounted
+read-only like the exports), typos read at a lower confidence. Nothing else runs: no model,
+no container, no network access. Measured on the demo: 100 % of `tests/ask/dev.toml`, 100 %
+of the held-out sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a
+company's file, `xerscope ask-bench <folder> --self --lexicon <folder> --anonymize` lists
+what its lexicon file should add, without naming anything.
+
+A language model was measured against this and not kept (`analysis/query.py: llm_backend`
+stays as the measurement client of `ask-bench --url`): understanding the sentence,
+Qwen3.5-2B Q4 reached 55 % of the held-out sentences against the grammar's 100 %, in
+about 19 s a sentence on a 4-core x86 faster than the NAS; summarising an answer from
+computed values, 17 of 20 summaries passed a value check and about a third of those
+misused a value when read. The backlog says what would change that measurement.
+
+## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|

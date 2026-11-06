@@ -143,6 +143,13 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Display rounding: a value beside its status can contradict it (P6-13 at 0.9545 shows
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
+- [ ] Gantt "Ask", a model: none deployed (docs/deploy.md §10 holds the measurements:
+      55 % understanding, a third of grounded summaries misusing a value, on a CPU without
+      AVX2). What would change the measurement, in order: a per-request literal grammar
+      (IDs, dates, floats as the only alternatives in a fixed sentence frame) with a role
+      check; `ngram-simple` speculation and `-lm mmap+mlock` on llama-server; a fine-tuned
+      Flan-T5-small on synthetic pairs under ONNX Runtime; or a GPU host on the tailnet. The
+      measurement client (`query.llm_backend`, `ask-bench --url --summary`) is in place.
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a

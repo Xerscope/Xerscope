@@ -250,3 +250,8 @@ hr.xd-rule { margin: 0.5rem 0; border: 0; border-top: 1px solid var(--xs-hairlin
 .xs-card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.2rem 1rem; margin: 0; }
 .xs-card dt { opacity: 0.7; }
 .xs-card dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+/* Gantt Ask: the answer banner, as the Schedule health focus; amber when a word was left out
+   or the reading is unsure (STATUS warning in viz/charts.py). */
+.st-key-ask_banner { box-shadow: inset 3px 0 0 var(--accent); border-radius: 8px; }
+.st-key-ask_banner_warn { box-shadow: inset 3px 0 0 #a15c00; border-radius: 8px; }

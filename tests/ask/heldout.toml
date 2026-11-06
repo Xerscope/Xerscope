@@ -1,0 +1,105 @@
+# Sentences written before the grammar was run on them, never used to tune it: the floor in
+# tests/test_ask_bench.py is what the grammar scored the first time, and a change that lowers
+# it fails. Same format as dev.toml. To add sentences: write them, run ask-bench once, record
+# the new ratio; do not edit the grammar to fit them without adding the shape to dev.toml.
+
+[[case]]
+text = "foundations"   # rule settled after the first run: a word of the activity names under one node
+wbs = "CIV"            # alone names that node and stays a search in it (the same rows); written blind
+search = "foundations" # as search only
+
+[[case]]
+text = "activités critiques de la mécanique"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "what is late in procurement"
+wbs = "PRC"
+float = ["Critical"]
+
+[[case]]
+text = "jalons non démarrés"
+milestones = true
+status = ["Not started"]
+
+[[case]]
+text = "piping"        # same rule: an own word of Mechanical & electrical
+wbs = "MEC"
+search = "piping"
+
+[[case]]
+text = "crew tasks not started"
+resources = ["CREW"]
+status = ["Not started"]
+
+[[case]]
+text = "ENG in progress"
+wbs = "ENG"
+status = ["In progress"]
+
+[[case]]
+text = "complete civil works"
+wbs = "CIV"
+status = ["Complete"]
+
+[[case]]
+text = "tâches normales commissioning"
+wbs = "COM"
+float = ["Normal"]
+
+[[case]]
+text = "equipment delivery"   # "delivery" is an own word of Procurement; "equipment" is under several nodes
+wbs = "PRC"
+search = "equipment delivery"
+
+[[case]]
+text = "les LOE"
+loe = true
+
+[[case]]
+text = "mise en service non commencée"
+wbs = "COM"
+status = ["Not started"]
+
+[[case]]
+text = "critical path milestones"
+milestones = true
+float = ["Critical"]
+
+[[case]]
+text = "sous critique en cours CIV"
+wbs = "CIV"
+status = ["In progress"]
+float = ["Near critical"]
+
+[[case]]
+text = "started by the vendor"
+status = ["In progress"]
+resources = ["VENDOR"]
+
+[[case]]
+text = "electrical"   # rule settled after the first run: a word of a node's name that also names activities
+wbs = "MEC"           # is the node and a search in it (the same rows as the search alone); written blind as
+search = "electrical" # search only
+
+[[case]]
+text = "unstarted roads"   # "roads" is an own word of Civil works
+wbs = "CIV"
+status = ["Not started"]
+search = "roads"
+
+[[case]]
+text = "ce qui bloque la fin du lot mécanique"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "handover"      # an own word of Commissioning
+wbs = "COM"
+search = "handover"
+
+[[case]]
+text = "achevées en ingénierie"
+wbs = "ENG"
+status = ["Complete"]

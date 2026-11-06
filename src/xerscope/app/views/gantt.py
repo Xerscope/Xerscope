@@ -1,9 +1,11 @@
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis import query
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.sets import show_steps
 from xerscope.app.state import (
     baseline_for,
     compare_picker,
@@ -11,8 +13,10 @@ from xerscope.app.state import (
     memo,
     page_header,
     require_store,
+    session_lexicon,
     snapshot_picker,
     sources_of,
+    teach,
 )
 from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
@@ -23,6 +27,7 @@ NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
 NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker is drawn before the chart)
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
 PICK_KEY = "gantt_task_pick"  # that list
+ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
@@ -58,6 +63,69 @@ if (wanted := st.session_state.pop(NEXT_NODE_KEY, None)) in set(nodes["wbs_id"])
 if st.session_state.get(NODE_KEY) not in set(nodes["wbs_id"]):
     st.session_state[NODE_KEY] = ROOT  # first visit, or a node the picked update does not have
 labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
+
+
+def _clear_ask() -> None:
+    st.session_state[ASK_KEY] = ""
+
+
+# The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
+# lexicon, the file's own labels; no model), the first control of the page. The answer (one
+# sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
+# known, below; the chips let a filter go.
+asked = st.text_input(
+    "Ask the schedule",
+    placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
+    key=ASK_KEY,
+    icon=":material/search:",
+)
+answer_box = st.container(key="ask_answer")
+taught = st.session_state.get("taught", [])
+lexicon = memo(  # rebuilt when a word is taught
+    ("vocabulary", snapshot.source, len(taught)),
+    query.vocabulary,
+    snapshot,
+    nodes,
+    session_lexicon(),
+    baseline=False,
+    ev_basis=False,
+)
+ask = None
+if asked:
+    ask = memo(  # once per sentence and update, baseline-independent
+        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
+    )
+if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
+    kept = st.pills(
+        "Understood",
+        list(ask.matched),
+        default=list(ask.matched),
+        selection_mode="multi",
+        key=f"ask_pills:{asked}",  # another sentence starts with every chip on
+        label_visibility="collapsed",
+    )
+    for label in ask.matched:
+        if label not in (kept or []):
+            ask = query.without(ask, label, lexicon)
+if ask is not None:
+    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
+        offers = query.suggestions(word, lexicon)
+        if offers:
+            with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
+                st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
+                for _kind, label, _ratio in offers:
+                    if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
+                        teach(word, label)
+                        st.rerun()
+    if taught:
+        st.download_button(
+            f"Download the {len(taught)} word(s) taught (.toml, for XERSCOPE_LEXICON)",
+            data=query.learned_toml(taught).encode(),
+            file_name="lexicon-taught.toml",
+            mime="application/toml",
+            key="gantt_taught_download",
+            type="tertiary",
+        )
 
 
 # "CIV · Civil works › ZA · Zone A": each node and the nodes above it, built once (the list
@@ -153,7 +221,11 @@ options = st.container(horizontal=True, vertical_alignment="bottom", gap="large"
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
 timescale = options.segmented_control(
-    "Timescale", ["Month", "Week"], default="Month", help="Week shows the 12 weeks around the status date"
+    "Timescale",
+    ["Month", "Week"],
+    default="Month",
+    help="Week shows the 12 weeks around the status date",
+    key="gantt_timescale",
 )
 
 branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)
@@ -162,7 +234,7 @@ tasks = snapshot.activities
 if current != ROOT:
     tasks = tasks[tasks["wbs_id"].isin(branch_ids)]
 tasks = tasks.assign(category=categorise(tasks))
-if hide_loe:
+if hide_loe and not (ask is not None and ask.loe):  # "LOE" in the sentence overrides the toggle
     tasks = tasks[~tasks["is_loe"]]
 unfiltered = len(tasks)
 if status:
@@ -173,6 +245,32 @@ if search:
     tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
 if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
+ask_funnel = None
+if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
+    ask_funnel = query.apply(ask, tasks, snapshot, nodes)
+    tasks = ask_funnel.rows
+    with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
+        unknown = (
+            " The word"
+            + ("s" if len(ask.ignored) > 1 else "")
+            + f" {', '.join(f'« {w} »' for w in ask.ignored)} "
+            + ("are" if len(ask.ignored) > 1 else "is")
+            + " in neither this file nor the lexicon."
+            if ask.ignored
+            else ""
+        )
+        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "Nothing understood: showing all."
+        banner = st.container(
+            border=True,
+            horizontal=True,
+            vertical_alignment="center",
+            key="ask_banner_warn" if ask.ignored or ask.confidence < query.SURE else "ask_banner",
+        )
+        with banner:
+            st.markdown(ui.md_text(said) + unknown, width="stretch")
+            st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
+        how = " · unsure reading" if ask.confidence < query.SURE else ""
+        st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]
@@ -245,6 +343,9 @@ if picked:
         ui.section("History across updates")
         show_history(store, picked)
 
+if ask_funnel is not None and ask_funnel.steps:
+    with st.expander("Population, step by step"):
+        show_steps(ask_funnel)
 with st.expander("Table view"):
     table_columns = [
         "task_code",

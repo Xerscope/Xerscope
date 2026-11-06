@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import NoReturn
 
@@ -600,6 +602,199 @@ def _cmd_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("path", help="an XER file or a folder of them (the latest update is read)")
+    parser.add_argument("--cases", action="append", default=[], help="TOML of [[case]] sentences; repeatable")
+    parser.add_argument(
+        "--self",
+        action="store_true",
+        help="score the file's own lexicon: every WBS node, resource, status and float, said every way the "
+        "grammar should read; prints the labels it cannot name (what a lexicon file should add)",
+    )
+    parser.add_argument("--url", default="", help="a llama.cpp server to score as well (XERSCOPE_QUERY_URL)")
+    parser.add_argument("--key", default="", help="the key that server requires (XERSCOPE_QUERY_KEY)")
+    parser.add_argument("--ca", default="", help="that server's certificate, trusted alone (XERSCOPE_QUERY_CA)")
+    parser.add_argument(
+        "--anonymize",
+        action="store_true",
+        help="score on the anonymised copy of the file: the model, the output and the sentences carry "
+        "the new codes only; a sentence still holding an original value is refused (real schedules)",
+    )
+    parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="with --url: print the model's summary of each sentence's answer, for a human to read, "
+        "and whether it is grounded in the values given",
+    )
+    parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
+
+
+def _anonymised_bench(path: Path, cases: list[dict]):
+    """The anonymised file's snapshot and the cases rewritten for it: a WBS code, a resource, a
+    code value or a name in a sentence or an expectation becomes its new code; a case that
+    searches activity names is set aside (their words are rebuilt labels, not words); a
+    sentence that still holds an original text value is refused. Returns (snapshot, cases,
+    set aside, refused)."""
+    from .analysis import query
+    from .anonymize import Anonymizer
+    from .xer import build_snapshot, parse_bytes, read_xer
+
+    raw = read_xer(path)
+    real = build_snapshot(raw)
+    anonymous = Anonymizer.from_raws([raw])
+    copy = parse_bytes(anonymous.xer(raw), source=anonymous.xer_name(raw, real.data_date))
+    snapshot = build_snapshot(copy)
+    names = []  # (original text, new code) longest first: what a sentence may say, and what it becomes
+    for label in query.vocabulary(real).wbs.values():
+        code, _, name = label.partition(" · ")
+        names += [(code, anonymous.code("W", code)), (name, anonymous.code("W", code))]
+    for short, name in query.vocabulary(real).resources.values():
+        names += [(short, anonymous.code("R", short)), (name, anonymous.code("R", short))]
+    names = [(text, new) for text, new in names if text and new]
+    names.sort(key=lambda pair: -len(pair[0]))
+
+    def rewrite(text: str) -> str:
+        for original, new in names:
+            text = re.sub(rf"(?<![\w])(?:{re.escape(original)})(?![\w])", new, text, flags=re.IGNORECASE)
+        return text
+
+    rewritten, aside, refused = [], {}, 0
+    for case in cases:
+        if case.get("search") or case.get("codes"):
+            aside["searching activity names or code values"] = (
+                aside.get("searching activity names or code values", 0) + 1
+            )
+            continue
+        text = rewrite(case["text"])
+        if anonymous.leaks([text]):
+            refused += 1  # counted, never printed: it holds an original value
+            continue
+        new_case = {**case, "text": text}
+        if case.get("wbs"):
+            new_case["wbs"] = anonymous.code("W", case["wbs"])
+        if case.get("resources"):
+            new_case["resources"] = [anonymous.code("R", name) for name in case["resources"]]
+        wanted = [new_case.get("wbs") or "", *new_case.get("resources", [])]
+        if any(code and code not in text for code in wanted):  # "mécanique", "achats": a synonym or a part of a name
+            aside["naming a node or a resource by a synonym or a part of its name"] = (
+                aside.get("naming a node or a resource by a synonym or a part of its name", 0) + 1
+            )
+            continue
+        rewritten.append(new_case)
+    return snapshot, rewritten, aside, refused
+
+
+def _cmd_ask_bench(args: argparse.Namespace) -> int:
+    """Share of sentences the Gantt Ask field turns into the right filters, per set and per field:
+    the keyword grammar always, a model when --url is given. The exit code is 0 whatever the
+    ratios: tests/test_ask_bench.py holds the floors."""
+    from .analysis import query
+    from .store import SnapshotStore
+
+    files = _expand([args.path])
+    real = SnapshotStore.from_paths(files).latest
+    latest = next(f for f in files if f.name == real.source or str(f).endswith(real.source))
+    parsers = {"keywords": None}
+    if args.url:
+        parsers["model"] = query.llm_backend(args.url, key=args.key, cafile=args.ca)
+    if not args.cases and not args.self:
+        raise SystemExit("xerscope ask-bench: give --cases FILE and/or --self")
+    if args.self:
+        lexicon, lexicon_errors = query.load_lexicon(*([args.lexicon] if args.lexicon else []))
+        for error in lexicon_errors:
+            print(f"  lexicon error: {error}")
+        vocab = query.vocabulary(real, lexicon=lexicon)
+        for name, backend in parsers.items():
+            scored, missed = query.coverage(vocab, backend)
+            labels = scored["label"].nunique()
+            print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file ({name})")
+            print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
+            for label in missed:
+                phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
+                print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
+    for cases_path in args.cases:
+        cases = query.load_cases(cases_path)
+        snapshot = real
+        if args.anonymize:
+            snapshot, cases, aside, refused = _anonymised_bench(latest, cases)
+            print(f"\n{cases_path}: anonymised copy {snapshot.source}; {len(cases)} sentences scored")
+            for reason, count in aside.items():
+                print(f"  set aside: {count} {reason} (not expressible with the new codes)")
+            if refused:
+                print(f"  refused: {refused} still holding an original value after rewriting")
+        else:
+            print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
+        lexicon, lexicon_errors = query.load_lexicon(*([args.lexicon] if args.lexicon else []))
+        for error in lexicon_errors:
+            print(f"  lexicon error: {error}")
+        vocab = query.vocabulary(snapshot, lexicon=lexicon)
+        for name, backend in parsers.items():
+            scored = query.score(cases, vocab, backend)
+            answered = (scored["source"] == name).mean() if name == "model" else 1.0
+            shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
+            print(f"  {name:<9} {shares}" + (f"  (answered {answered:.0%}, the rest by keywords)" if args.url else ""))
+            buckets = query.by_confidence(scored)
+            print(
+                "            "
+                + "  ".join(
+                    f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
+                    for name, row in buckets.iterrows()
+                    if row["sentences"]
+                )
+            )
+            missed = scored[~scored["exact"]]
+            for _, row in missed.head(args.show).iterrows():
+                wrong = ", ".join(field for field in query.FIELDS if not row[field])
+                print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
+        if args.summary and args.url:
+            from .analysis import wbs as wbs_tree
+            from .viz import categorise
+
+            nodes = wbs_tree.tree(snapshot)
+            tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
+            backend = parsers["model"]
+            grounded_count = 0
+            print("  summaries (model), for a human to read:")
+            for case in cases:
+                asked = query.parse(case["text"], vocab)
+                funnel = query.apply(asked, tasks, snapshot, nodes)
+                given = query.facts(funnel, snapshot)
+                started = time.perf_counter()
+                text = "".join(query.summary(backend, case["text"], given)).strip()
+                seconds = time.perf_counter() - started
+                ok = bool(text) and query.grounded(text, given)
+                grounded_count += ok
+                print(
+                    f"    {case['text']!r} ({seconds:.1f}s, {'grounded' if ok else 'DROPPED'}): {text or '(no answer)'}"
+                )
+            print(f"  grounded: {grounded_count}/{len(cases)}")
+    return 0
+
+
+def _args_lexicon(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("folder", nargs="?", default="", help="a folder of *.toml groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument("--word", default="", help="print the words read as this one")
+
+
+def _cmd_lexicon(args: argparse.Namespace) -> int:
+    """The trade words the Ask field reads as one: the packaged groups, plus a folder's; a bad
+    file is named (exit 1)."""
+    from .analysis import query
+
+    lexicon, errors = query.load_lexicon(*([args.folder] if args.folder else []))
+    for error in errors:
+        print(f"error: {error}")
+    if args.word:
+        print(f"{query.fold(args.word)}: {', '.join(lexicon.get(query.fold(args.word), ())) or '(no group)'}")
+    else:
+        groups = {tuple(sorted({w, *others})) for w, others in lexicon.items()}
+        for group in sorted(groups):
+            print(", ".join(group))
+        print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" + {args.folder}" if args.folder else ""))
+    return 1 if errors else 0
+
+
 # name: (help, adds its arguments, runs); the order is the order of `xerscope --help`
 COMMANDS = {
     "app": ("launch the web app", _args_app, _cmd_app),
@@ -612,6 +807,16 @@ COMMANDS = {
     "crosscheck": ("compare xerscope with MPXJ on XER files (needs Java)", _args_crosscheck, _cmd_crosscheck),
     "pv-compare": ("PV and EV labour units against a P6 Activities export (CSV)", _args_pv_compare, _cmd_pv_compare),
     "sample": ("generate demo weekly XER files", _args_sample, _cmd_sample),
+    "ask-bench": (
+        "score the Gantt Ask field's parsers on sentences with known filters",
+        _args_ask_bench,
+        _cmd_ask_bench,
+    ),
+    "lexicon": (
+        "list the trade words the Ask field reads as one, or check a folder of them",
+        _args_lexicon,
+        _cmd_lexicon,
+    ),
 }
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import html
 import os
@@ -14,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
+from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards, query
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
@@ -109,6 +110,33 @@ def background_jobs() -> bool:
     pages draw. XERSCOPE_SYNC_LOAD=1 (the tests: AppTest returns when the script ends) does
     everything in the script run."""
     return os.environ.get("XERSCOPE_SYNC_LOAD", "").lower() not in ("1", "true", "yes")
+
+
+@functools.cache
+def lexicon() -> query.Lexicon:
+    """The Ask field's trade words: the packaged groups plus the *.toml of XERSCOPE_LEXICON (a
+    company's own words). Load errors are kept for the Debug page, never shown to a visitor."""
+    extra = os.environ.get("XERSCOPE_LEXICON", "")
+    found, errors = query.load_lexicon(*([extra] if extra else []))
+    st.session_state["lexicon_errors"] = errors
+    return found
+
+
+def session_lexicon() -> query.Lexicon:
+    """The app's lexicon plus the words taught this session (``teach``): what the Ask field reads."""
+    found = lexicon()
+    for word, label in st.session_state.get("taught", []):
+        found = query.learn(found, word, label)
+    return found
+
+
+def teach(word: str, label: str) -> None:
+    """Read ``word`` as ``label`` from now on in this session; the Gantt page offers the taught
+    words as a lexicon file to download (``query.learned_toml``), the app container being
+    read-only."""
+    taught = st.session_state.setdefault("taught", [])
+    if (word, label) not in taught:
+        taught.append((word, label))
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:

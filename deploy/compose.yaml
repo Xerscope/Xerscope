@@ -100,6 +100,8 @@ services:
       STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
+      # XERSCOPE_LEXICON: /lexicon                   # a folder of *.toml synonym groups for the Gantt Ask field
+                                                    # (the company's own words; `xerscope lexicon` prints the format)
     volumes:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
     networks:                                       # nothing published: reachable from Caddy only
