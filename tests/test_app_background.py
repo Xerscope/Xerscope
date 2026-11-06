@@ -37,12 +37,14 @@ def test_the_most_recent_update_is_read_first_then_the_rest_in_a_thread(sample_d
     latest_name = max(sample_dir.glob("*.xer"), key=lambda p: p.name).name
     assert store.latest.source == latest_name
     assert any(p.proto.text.startswith("Reading the updates") for p in at.get("progress"))
+    assert any(w.value.startswith("Reading the updates · 1/") for w in at.warning)  # under the page title
     job = _joined(at, "_load_job")
     assert [name for name, _ in job.items][0] == latest_name
     at.run()
     _ok(at)
     assert len(at.session_state["store"]) == len(list(sample_dir.glob("*.xer")))
     assert at.session_state["_load_job"] is None and not at.get("progress")
+    assert not any(w.value.startswith("Reading the updates") for w in at.warning)
     # the default baseline is the first update of the whole series, not the first file read
     assert at.session_state["bl_choice"] == at.session_state["store"].labels[0]
     # the Overview then computes the four scores in a thread and fills the cards as they come

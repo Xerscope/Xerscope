@@ -820,6 +820,13 @@ def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = No
     """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
     st.title(title)
     context_banner(store, snapshot or store.latest)
+    job: LoadJob | None = st.session_state.get("_load_job")
+    if job is not None and not job.done:
+        st.warning(
+            f"Reading the updates · {len(job.results)}/{len(job.items)}: the series is incomplete and the "
+            "figures change until every file is read.",
+            icon=":material/hourglass_top:",
+        )
     if lead:
         st.caption(lead)
 
