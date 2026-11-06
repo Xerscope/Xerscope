@@ -70,6 +70,32 @@ Captures et scripts : `scratchpad/visual/` (hors dépôt, aucune donnée réelle
 - Première passe d'interactions : les listes déroulantes n'avaient pas été ouvertes (react-aria ComboBox, pas BaseWeb) ; reprise en run 3 (fichiers 7x-*). Les captures de la première passe pour ces pages (14–39) et les doublons d'une passe concurrente (41–53) ont été supprimés ; catalog.md liste les 286 captures conservées.
 
 
-## Statut
+## Statut au 2026-11-06 (après corrections)
 
-(rempli après les corrections : voir les commits « Visual: » de la branche)
+| Constat | Statut | Preuve |
+|---|---|---|
+| VIS-01, VIS-02 | Décision de conception conservée ; libellé « preload » corrigé (README, aide `--data`) | `tests/test_app.py` (nothing ticked at first) |
+| VIS-03 | Corrigé : la fenêtre rouverte après Esc retrouve le dossier et sa liste (`_open_window` sème `files_folder`) | test « window reopened after esc » ; `after/VIS-03-*.png` |
+| VIS-04 | Corrigé : le doublon de date est nommé dans la liste (« same date as … »), Select all coche un fichier par date ; le refus sur cochage manuel reste | test « select all ticks one file per data date » ; `after/VIS-04-*.png` |
+| VIS-05 | Corrigé : Select all ignore les fichiers illisibles, nom de fichier non doublé dans l'erreur | test « select all skips unreadable files » ; `after/VIS-05-*.png` |
+| VIS-06 | Corrigé : contrôle Standard pleine largeur, sélecteurs sur une ligne dédiée | `after/VIS-06-Audit--desktop--light.png` |
+| VIS-07 | Corrigé : delta EAC = nombre signé (« -648 h » rouge, flèche basse), VAC expliqué dans l'aide | `after/VIS-07-*.png` |
+| VIS-08 | Corrigé : tiret pour les valeurs manquantes (Gantt table, EV, Debug) via `ui.fmt_number` / `blank_missing` | `after/VIS-08-14-Gantt-table-view--desktop--light.png` |
+| VIS-09, 10, 11 | Corrigé : puces neutres 7,4:1 (clair) / 7,5:1 (sombre), lien de légende 5,9:1 / 8,5:1, raccourci Done 5,6:1 | `scripts/recheck.js` ; `after/VIS-09-*.png`, `VIS-10-*.png`, `VIS-11-29-*.png` |
+| VIS-12 | Corrigé : bannière de contexte en plusieurs lignes sous 640 px | `after/VIS-12-S3-Overview-mobile-light.png` |
+| VIS-13 | Partiel : barre Plotly masquée partout (`ui.chart`) ; tailles de boutons = thème Streamlit, non modifiées | `after/VIS-13-Overview--mobile--light.png` |
+| VIS-14 | Corrigé : hauteur du Gantt = lignes visibles (plafond 680 px) | `after/VIS-08-14-*.png` |
+| VIS-15 | Corrigé : plage minimale de 14 jours sur les axes de dates | `after/VIS-15-S2-Overview--desktop--light.png` |
+| VIS-16, 17 | Corrigé : un seul bouton « Prepare », titres de groupe émis une fois | `after/VIS-16-17-Health--mobile--light.png` |
+| VIS-18 | Corrigé : boutons de navigation du Changelog en style secondaire | `after/VIS-18-Changelog--laptop--light.png` |
+| VIS-19 | Corrigé : couleur de texte des infobulles Plotly par thème | `after/VIS-19-Overview-hover--desktop--*.png` |
+| VIS-22 | Corrigé : SPI à 2 décimales (KPI, delta, tables) | `after/VIS-07-08-22-EarnedValue--desktop--light.png` |
+| VIS-24 | Corrigé : titre de page affiché dans l'état vide | `after/VIS-24-S1-*.png` |
+| VIS-25 | Corrigé : titre « Milestone trend », graphique à hauteur fixe | `after/VIS-25-Milestones--desktop--light.png` |
+| VIS-26 | Corrigé : badges F/B masqués sous 640 px | `after/VIS-26-S3-SidebarOpen-mobile-light.png` |
+| VIS-28 | Corrigé : liste complète des échecs dans l'aide des cartes de score | `after/VIS-28-Overview-score-help--desktop--light.png` |
+| VIS-29 | Corrigé : ellipse sur le chemin du dossier | `after/VIS-11-29-S3-files-window-desktop-light.png` |
+| VIS-20, 21, 23, 27 | Laissés à l'auteur (choix de produit) | — |
+
+Reste à décider : le delta SPI affiche « +0.00 » quand la variation est inférieure à 0,005 ; masquer le delta sous ce
+seuil ou garder 3 décimales sur le delta seul.

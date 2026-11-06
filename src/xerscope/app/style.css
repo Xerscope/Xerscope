@@ -103,7 +103,6 @@
 .st-key-mta_pick [data-tag-index="5"] { --tag: var(--s6); }
 
 /* MTA: the chart box as tall as it is wide, so its square plot (1:1 dates) fills the width */
-.st-key-mta_chart { aspect-ratio: 1 / 1; }
 
 /* Score cards (ui.score_cards): the value never cut, a lift on hover */
 .st-key-score_cards [data-testid="stMetricValue"] { overflow: visible; }
