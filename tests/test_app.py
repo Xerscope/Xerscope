@@ -32,6 +32,7 @@ from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
 from xerscope.app.state import BL_FILE, BL_PLANNED, anonymizers_built
+from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
@@ -943,7 +944,7 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     )
     assert not set(flagged.astype(str).to_numpy().ravel()) & originals
     codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
-    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{12}").all()
 
     app.switch_page("views/export.py").run()
     next(b for b in app.button if b.label == "Build anonymized extract").click().run()
@@ -991,7 +992,7 @@ def _assert_anonymised(tables: dict, store, anonymous) -> None:
     assert anonymous.leaks(cells) == {}
     assert not cells & {name for name in names if len(name) >= 3}
     codes = pd.concat([table["task_code"].dropna() for table in tables.values() if "task_code" in table])
-    assert codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert codes.str.fullmatch(r"XA[0-9A-F]{12}").all()
 
 
 def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
@@ -1028,7 +1029,7 @@ def test_debug_block_6_lists_the_leveled_activities_anonymised(tmp_path, monkeyp
     tables = _debug_zip(at, downloads)
     assert any("1 open tasks have a remaining early start" in c.value for c in at.main.caption)
     leveling = tables["06_leveling.csv"]
-    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{12}").all()
     _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
 
 
@@ -1085,7 +1086,7 @@ def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, stor
     _ok(app)
     gantt = _csv(_download(app, downloads, "Download CSV · anonymized"))
     assert not set(gantt.astype(str).to_numpy().ravel()) & originals
-    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{12}").all()
 
     app.switch_page("views/export.py").run()
     _ok(app)
@@ -1389,7 +1390,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
     assert "wd on XA" in note  # the activity is named, by its new ID
     summary = _csv(_download(app, downloads, "Summary (CSV) · anonymized"))
     assert "wd on XA" in summary.loc[summary["id"] == "DCMA-12", "note"].iloc[0]
-    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{12}").all()
 
 
 def test_health_summary_file_gains_the_notes(app, store, downloads):
@@ -1398,7 +1399,8 @@ def test_health_summary_file_gains_the_notes(app, store, downloads):
     assert list(summary.columns[-2:]) == ["flagged", "note"]
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
-        assert (got if isinstance(got, str) else "") == result.note_with_baseline
+        expected = result.note_with_baseline  # a note starting with +/- is CSV-guarded (csv_safe)
+        assert (got if isinstance(got, str) else "") == csv_safe(pd.DataFrame({"n": [expected]}))["n"].iloc[0]
     assert "BL finish" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]
 
 

@@ -159,7 +159,8 @@ checks the code against it, so a change here must be made there too):
 
 - `xer/` imports only `config.py`; it knows nothing of the layers above.
 - `store.py` imports `xer/` and `config.py`; `export.py` imports `store.py` and `config.py`;
-  `anonymize.py` imports `xer/` only.
+  `anonymize.py` imports `xer/` only;
+  both, the CLI and the app pages write their CSVs through `csv_safe.py` (pandas only).
 - `analysis/` imports `xer/` and `store.py`; never `viz/`, `app/` or `verify/`.
 - `viz/` imports `config.py` and, from `analysis/wbs.py`, the constant `ROOT` only: it draws
   frames, it does not compute schedule results.
@@ -179,6 +180,11 @@ Outside `analysis/`:
   calendar is missing, critical and near-critical float for the Gantt colours). Settings are consumed at
   `build_snapshot` time (`xer/model.py`) and by `viz/gantt`; analysis reads the derived columns.
 - `export.py`: the Power BI star schema (`export_tables`, written as Parquet or CSV, also zipped).
+- `csv_safe.py`: `csv_safe(frame)`, the one guard against CSV injection (CWE-1236, OWASP): a text
+  cell starting with `= + - @`, a tab or a carriage return gets a leading `'`, numeric and date
+  columns are untouched. Every CSV xerscope writes goes through it, the Power BI CSVs included
+  (Power BI does not evaluate formulas, but the same files get opened in Excel; the Parquet export
+  keeps the raw text). A decision to revisit if a BI reader needs the raw text in CSV.
 - `sample.py`: the demo series generator, with the findings it plants week by week.
 - `anonymize.py`: anonymised copies of the loaded XER files and of every table the app hands
   out while the sidebar switch "Anonymous exports" is on (the default, per session): page CSVs,
@@ -187,7 +193,7 @@ Outside `analysis/`:
   names; the XER extract stays anonymised. The pages always show the files' own data. An allowlist
   per table keeps keys, dates, durations, units, flags and P6 enumerations; codes get new
   values, `X<kind>` and the first hex digits of an HMAC-SHA256 of the original under a key
-  drawn for the session (8 for activities; two IDs on one code are refused), names are rebuilt
+  drawn for the session (12 for activities, 8 for WBS, projects and resources; two IDs on one code are refused), names are rebuilt
   from them, costs set to 0, user, database and free text removed, unknown tables and columns
   left out and named. The `note` column (the rules' notes) is kept with each Activity ID and
   file name in it renamed; the rules write nothing else of the file into a note. A download reads only its own files (the update shown, W-1 and W for the
@@ -333,6 +339,12 @@ Outside `analysis/`:
 | `crosscheck` | compares the reading with MPXJ (Java); `--cpm` the recalculation with MPXJ's scheduler and the stored dates; `--p6` with P6's held-out corpus |
 | `info` | one line per snapshot (`--project`) |
 | `sample` | generates the demo series |
+
+Exit codes: 0; 1 when the schedule is short of what was asked (`check --fail-on`, `--expect`,
+`crosscheck` differences); 2 for a usage or input error (`UsageError`: no such file, unreadable
+XER or CSV, invalid standard), printed as one `xerscope: <message>` line on stderr. `main` turns
+every `ValueError` and `OSError` of a command into that line, so no input ends in a traceback.
+Every CSV the CLI writes goes through `csv_safe`.
 
 ## 9. Tests (`tests/`)
 

@@ -140,7 +140,8 @@ gap by Schedule % band, candidate causes, by calendar, activities in gap) and pr
 - **Targets:** the dialog's documented defaults (< 5 %, < 1 % for the inaccuracy checks,
   FS > 90 %, BEI > 0.95 as a P6 Professional report prints it). Copy `src/xerscope/standards/p6.toml` and set them to yours.
 - **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
-  diffs the counts against the ones typed from P6's summary (exit 1 on a difference).
+  diffs the counts against the ones typed from P6's summary (exit 1 on a difference; exit 2 and
+  one `xerscope: ...` line on stderr for a bad file or option).
 - **Definitions:** each check cites the Oracle page or report it comes from. Differences
   with DCMA and DECM: [docs/standards.md](docs/standards.md). Formula and pinning test of
   every number: [docs/formulas.md](docs/formulas.md).
