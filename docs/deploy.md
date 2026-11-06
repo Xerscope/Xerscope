@@ -284,8 +284,8 @@ of the held-out sentences, 100 % of the demo's own lexicon (`ask-bench --self`);
 company's file, `xerscope ask-bench <folder> --self --lexicon <folder> --anonymize` lists
 what its lexicon file should add, without naming anything.
 
-A language model was measured against this and not kept (`analysis/query.py: llm_backend`
-stays as the measurement client of `ask-bench --url`): understanding the sentence,
+A language model was measured against this and not kept (its measurement client has since
+been removed): understanding the sentence,
 Qwen3.5-2B Q4 reached 55 % of the held-out sentences against the grammar's 100 %, in
 about 19 s a sentence on a 4-core x86 faster than the NAS; summarising an answer from
 computed values, 17 of 20 summaries passed a value check and about a third of those

@@ -303,5 +303,5 @@ def test_lexicon_command(capsys, tmp_path):
 
 def test_ask_bench_self_coverage(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--self")
-    assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
+    assert "labels of the file\n" in out and "labels covered: " in out and "= 100%" in out
     assert "not reached" not in out

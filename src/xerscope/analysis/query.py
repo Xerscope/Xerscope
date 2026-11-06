@@ -5,11 +5,9 @@ milestones, level of effort, text).
 This module only decides *which* filters a sentence asks for, so a number never comes from
 here: a filter the parser picks is the one the user could have ticked by hand.
 
-``parse`` tries the backend it is given (a local language model, step two of the feature,
-absent by default) and always falls back on ``parse_keywords``, a bilingual (English /
-French) phrase grammar over the file's own lexicon (``Vocabulary``: its WBS, activity-code
-values, resources, and the words of its activity names). The page therefore never depends
-on a model being up.
+``parse_keywords`` reads it with a bilingual (English / French) phrase grammar over the
+file's own lexicon (``Vocabulary``: its WBS, activity-code values, resources, and the words
+of its activity names).
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ from __future__ import annotations
 import re
 import tomllib
 import unicodedata
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from importlib import resources
 from pathlib import Path
@@ -54,7 +52,6 @@ class Filter:
     search: str = ""
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's caption
     ignored: tuple[str, ...] = ()  # words the file's own lexicon does not hold, left out of the search
-    source: str = "keywords"  # "keywords" (the grammar) or "model" (a Backend), for the page's caption
     # 1.0 when every phrase matched exactly; else the weakest fuzzy match, lowered under SURE when
     # two WBS nodes scored as close (MARGIN): how well the sentence separates one cluster of the
     # file's labels from the others
@@ -78,8 +75,7 @@ class Filter:
 class Vocabulary:
     """The names a sentence can refer to in one update: WBS nodes and activity-code values.
 
-    Built once per update by ``vocabulary``; it is also the whole of what a model backend
-    receives (no activity, no date, no number)."""
+    Built once per update by ``vocabulary``."""
 
     wbs: Mapping[str, str]  # wbs_id -> "CIV · Civil works" (code and name)
     codes: Mapping[str, tuple[str, str, str]] = field(default_factory=dict)  # code_id -> (type, value, name)
@@ -94,29 +90,6 @@ class Vocabulary:
     # under ONE WBS node only ("foundations", "earthworks" -> Civil works; "piping" -> Mechanical &
     # electrical), wbs_id -> words. A word under several nodes names none of them (a search).
     node_words: Mapping[str, frozenset[str]] = field(default_factory=dict)
-
-    def to_prompt(self) -> dict:
-        """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
-        return {
-            "status": STATUSES,
-            "float": CATEGORIES,
-            "wbs": [{"id": k, "label": v} for k, v in self.wbs.items()],
-            "codes": [{"id": k, "type": t, "value": v, "name": n} for k, (t, v, n) in self.codes.items()],
-            "resources": [{"id": k, "short": short, "name": name} for k, (short, name) in self.resources.items()],
-            "milestones": self.has_milestones,
-            "loe": self.has_loe,
-        }
-
-
-Backend = Callable[[str, Vocabulary], Filter | None]
-"""A parser that may decline (None): a model, step two; the keyword grammar is the fallback. A
-model backend also carries ``warm(vocab)``: the vocabulary handed over once, at the file's load."""
-
-
-def warm(backend: Backend | None, vocab: Vocabulary) -> bool:
-    """``backend.warm(vocab)`` when the backend has one (a model), else False."""
-    warmer = getattr(backend, "warm", None)
-    return bool(warmer(vocab)) if callable(warmer) else False
 
 
 def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: Lexicon | None = None) -> Vocabulary:
@@ -598,18 +571,6 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
     )
 
 
-def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filter:
-    """The backend's answer when it gives one, the keyword grammar otherwise (or when it fails)."""
-    if backend is not None and text.strip():
-        try:
-            answer = backend(text, vocab)
-        except Exception:  # a model down or slow must never break the page
-            answer = None
-        if answer is not None:
-            return answer
-    return parse_keywords(text, vocab)
-
-
 # --- coverage of a file's own lexicon ------------------------------------------------------
 
 _SAID = {  # one phrase per status and float category, in each language: what a planner says
@@ -656,11 +617,11 @@ def self_cases(vocab: Vocabulary) -> list[dict]:
     return cases
 
 
-def coverage(vocab: Vocabulary, backend: Backend | None = None) -> tuple[pd.DataFrame, list[str]]:
+def coverage(vocab: Vocabulary) -> tuple[pd.DataFrame, list[str]]:
     """``score`` on ``self_cases``: the scored frame with each case's label, and the labels of
     the file no phrase reached (every one of a label's phrases right = covered)."""
     cases = self_cases(vocab)
-    scored = score(cases, vocab, backend)
+    scored = score(cases, vocab)
     scored["label"] = [case["label"] for case in cases]
     missed = sorted(set(scored.loc[~scored["exact"], "label"]))
     return scored, missed
@@ -897,275 +858,6 @@ def answer(filter: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") 
     return sentence + (", " + ", ".join(details) if details else "") + "."
 
 
-# --- a summary of what came out, by a model, from computed values only ---------------------
-
-FACT_ROWS = 10  # activities handed to a model for a summary: the worst floats first
-
-
-def facts(funnel: Funnel, snapshot: Snapshot, limit: int = FACT_ROWS) -> dict:
-    """What a model may read to summarise an answer: the funnel's steps and counts, the rows
-    with the worst total float (Activity ID, float in working days, finish date), and the
-    successors of the worst one. Values computed by xerscope, never a name, never the file."""
-    rows = funnel.rows
-    ordered = rows.sort_values("total_float_d", na_position="last").head(limit) if len(rows) else rows
-    listed = [
-        [str(code), None if pd.isna(tf) else float(tf), None if pd.isna(finish) else f"{finish:%Y-%m-%d}"]
-        for code, tf, finish in zip(ordered["task_code"], ordered["total_float_d"], ordered["finish"], strict=True)
-    ]
-    worst = listed[0][0] if listed else None
-    successors: list[str] = []
-    if worst is not None and not snapshot.relationships.empty:
-        links = snapshot.relationships
-        successors = sorted(set(links.loc[links["pred_code"] == worst, "succ_code"].astype(str)))[:5]
-    return {
-        "count": int(len(rows)),
-        "steps": [[step.label, int(step.left)] for step in funnel.steps],
-        "rows": listed,
-        "successors_of_worst": successors,
-        "data_date": None if snapshot.data_date is None else f"{snapshot.data_date:%Y-%m-%d}",
-    }
-
-
-_TOKEN = re.compile(r"[A-Za-z]*\d[\w./-]*")  # a number, an Activity ID, a date: anything with a digit
-
-
-def grounded(text: str, given: dict) -> bool:
-    """Whether every number, Activity ID and date of ``text`` is among the values given: a
-    summary that fails this is dropped, the template answer standing alone."""
-    allowed: set[str] = set()
-
-    def collect(value) -> None:
-        if isinstance(value, dict):
-            for v in value.values():
-                collect(v)
-        elif isinstance(value, list):
-            for v in value:
-                collect(v)
-        elif isinstance(value, bool) or value is None:
-            return
-        elif isinstance(value, int | float):
-            number = float(value)
-            allowed.update({f"{number:g}", f"{abs(number):g}", f"{number:.0f}", f"{abs(number):.0f}", f"{number:+.0f}"})
-        elif isinstance(value, str):
-            allowed.add(value)
-            allowed.update(_TOKEN.findall(value))
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):  # a date, however the model writes it
-                y, m, d = value.split("-")
-                allowed.update({f"{d}/{m}/{y}", f"{y}/{m}/{d}", f"{m}/{d}/{y}", d, m, y, f"{int(d)}", f"{int(m)}"})
-
-    collect(given)
-    for token in _TOKEN.findall(text):
-        plain = token.rstrip(".,;:")
-        if plain in allowed or plain.lstrip("+-") in allowed:
-            continue
-        return False
-    return True
-
-
-_SUMMARY = (
-    "You write one short English sentence (at most 40 words) for a planner, from the JSON facts given: what the "
-    "question found in the schedule. Use only the numbers, Activity IDs and dates in the facts, exactly as written; "
-    "never add, round or estimate a value; name the worst activity and what it drives when given. No preamble."
-)
-
-
-# --- a language model, for measurement only (ask-bench --url, --summary) -------------------
-# Nothing deployed uses this: the app reads sentences with the grammar and the lexicon, and
-# answers from a template. The client stays so a model can be measured against them
-# (docs/deploy.md §10 holds the last figures) without wiring anything back.
-
-_SCHEMA = {  # what the model may answer: ids and labels of the vocabulary, nothing else
-    "type": "object",
-    "properties": {
-        "wbs_id": {"type": ["string", "null"]},
-        "status": {"type": "array", "items": {"type": "string", "enum": STATUSES}},
-        "float": {"type": "array", "items": {"type": "string", "enum": CATEGORIES}},
-        "code_ids": {"type": "array", "items": {"type": "string"}},
-        "resource_ids": {"type": "array", "items": {"type": "string"}},
-        "milestones": {"type": "boolean"},
-        "loe": {"type": "boolean"},
-        "search": {"type": "string"},
-    },
-    "required": ["wbs_id", "status", "float", "code_ids", "resource_ids", "milestones", "loe", "search"],
-    "additionalProperties": False,
-}
-_SYSTEM = (
-    "You turn a planner's sentence (English or French) into filters over a Primavera P6 schedule. "
-    'Answer with JSON matching the schema, using only ids from the vocabulary; null, [] or "" when the '
-    "sentence does not ask for a filter. 'search' is a text to find in activity names, in the sentence's "
-    "language, for what no other filter covers. Vocabulary: "
-)
-
-
-def from_answer(data: Mapping, vocab: Vocabulary) -> Filter:
-    """A model's JSON answer as a ``Filter``: ids the vocabulary does not hold are dropped, so an
-    invented id filters nothing; a code type is taken from the first code id kept."""
-    wbs_id = data.get("wbs_id")
-    wbs_id = wbs_id if isinstance(wbs_id, str) and wbs_id in vocab.wbs else None
-    code_ids = frozenset(c for c in _strings(data.get("code_ids")) if c in vocab.codes)
-    code_type = next((vocab.codes[c][0] for c in sorted(code_ids)), None)
-    code_ids = frozenset(c for c in code_ids if vocab.codes[c][0] == code_type)
-    status = tuple(s for s in STATUSES if s in _strings(data.get("status")))
-    categories = tuple(c for c in CATEGORIES if c in _strings(data.get("float")))
-    resources = frozenset(r for r in _strings(data.get("resource_ids")) if r in vocab.resources)
-    search = data.get("search") if isinstance(data.get("search"), str) else ""
-    matched = [f"WBS: {vocab.wbs[wbs_id]}"] if wbs_id else []
-    matched += [f"Status: {s}" for s in status] + [f"Float: {c}" for c in categories]
-    matched += [f"{code_type}: {vocab.codes[c][1]}" for c in sorted(code_ids)]
-    matched += [f"Resource: {vocab.resources[r][0] or vocab.resources[r][1]}" for r in sorted(resources)]
-    matched += ["Milestones"] * bool(data.get("milestones")) + ["Level of effort"] * bool(data.get("loe"))
-    matched += [f"Search: {search.strip()}"] if search.strip() else []
-    return Filter(
-        wbs_id=wbs_id,
-        status=status,
-        categories=categories,
-        code_type=code_type,
-        code_ids=code_ids,
-        resources=resources,
-        milestones=bool(data.get("milestones")),
-        loe=bool(data.get("loe")),
-        search=search.strip(),
-        matched=tuple(matched),
-        source="model",
-    )
-
-
-def _strings(value) -> list[str]:
-    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
-
-
-def llm_backend(url: str, timeout: float = 20.0, key: str = "", cafile: str = "") -> Backend:
-    """A ``Backend`` on a llama.cpp server (OpenAI-compatible ``/v1/chat/completions``) at
-    ``url``, answering with JSON constrained by the schema. The request carries the sentence and
-    ``Vocabulary.to_prompt()`` only, with ``key`` as a bearer token (the server's ``--api-key``)
-    over https verified against ``cafile`` alone (the model's own CA, pinned). Off the loopback
-    all three are required: a plain http model is refused at configuration. Any failure
-    (server down, slow, bad answer, refused key, bad certificate) is None, and the keyword
-    grammar answers. Nothing here logs the URL, the key or the answer."""
-    import json
-    import ssl
-    import urllib.parse
-    import urllib.request
-
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise ValueError("XERSCOPE_QUERY_URL must be an http(s) URL")
-    loopback = parts.hostname in ("127.0.0.1", "localhost", "::1")
-    if not loopback and not (parts.scheme == "https" and cafile and key):
-        # off this host the link is TLS to a pinned CA, with a key, or nothing (docs/deploy.md §10)
-        raise ValueError(
-            "a model off this host needs an https XERSCOPE_QUERY_URL, XERSCOPE_QUERY_CA and XERSCOPE_QUERY_KEY"
-        )
-    if cafile and parts.scheme != "https":
-        raise ValueError("XERSCOPE_QUERY_CA needs an https URL")
-    endpoint = url.rstrip("/") + "/v1/chat/completions"
-    contexts: list[ssl.SSLContext] = []  # built on the first call: the CA file may be written after the app starts
-    headers = {"Content-Type": "application/json"}
-    if key:
-        headers["Authorization"] = f"Bearer {key}"
-
-    def context() -> ssl.SSLContext | None:
-        if not cafile:
-            return None
-        if not contexts:
-            contexts.append(ssl.create_default_context(cafile=cafile))
-        return contexts[0]
-
-    def prefix(vocab: Vocabulary) -> str:
-        """The static part of every prompt, byte for byte the same for one file: the rules and the
-        vocabulary. The server keeps its KV state (cache_prompt), so after ``warm`` a sentence
-        costs its own tokens only."""
-        return _SYSTEM + json.dumps(vocab.to_prompt(), ensure_ascii=False, sort_keys=True)
-
-    def post(payload: dict) -> dict | None:
-        request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers=headers)
-        try:
-            with urllib.request.urlopen(  # noqa: S310 # nosec B310 (http(s) checked above)
-                request, timeout=timeout, context=context()
-            ) as response:
-                return json.loads(response.read().decode())
-        except Exception:  # noqa: BLE001  # whatever failed, the grammar answers
-            return None
-
-    def ask(text: str, vocab: Vocabulary) -> Filter | None:
-        answer = post(
-            {
-                "messages": [{"role": "system", "content": prefix(vocab)}, {"role": "user", "content": text}],
-                "response_format": {"type": "json_schema", "json_schema": {"name": "filter", "schema": _SCHEMA}},
-                "temperature": 0,
-                "cache_prompt": True,
-            }
-        )
-        try:
-            data = json.loads(answer["choices"][0]["message"]["content"])
-        except (TypeError, KeyError, IndexError, ValueError):
-            return None
-        return from_answer(data, vocab) if isinstance(data, dict) else None
-
-    def warm(vocab: Vocabulary) -> bool:
-        """Hand the model the file's vocabulary once (at the file's load, in the background): the
-        server reads the prefix now and keeps its state, so the first sentence does not pay for
-        it. True when the server answered."""
-        answer = post(
-            {
-                "messages": [{"role": "system", "content": prefix(vocab)}, {"role": "user", "content": "ready?"}],
-                "max_tokens": 1,
-                "temperature": 0,
-                "cache_prompt": True,
-            }
-        )
-        return answer is not None
-
-    def summarise(question: str, given: dict, max_tokens: int = 60):
-        """The model's summary of ``given`` for ``question``, streamed: a generator of text
-        pieces as the server sends them (SSE), empty when the server fails. The caller joins the
-        pieces and keeps the text only when ``grounded``."""
-        payload = json.dumps(
-            {
-                "messages": [
-                    {"role": "system", "content": _SUMMARY},
-                    {"role": "user", "content": question + "\n" + json.dumps(given, sort_keys=True)},
-                ],
-                "max_tokens": max_tokens,
-                "temperature": 0,
-                "cache_prompt": True,
-                "stream": True,
-                "stop": ["\n"],
-            }
-        ).encode()
-        request = urllib.request.Request(endpoint, data=payload, headers=headers)
-        try:
-            with urllib.request.urlopen(  # noqa: S310 # nosec B310 (http(s) checked above)
-                request, timeout=timeout, context=context()
-            ) as response:
-                for raw in response:
-                    line = raw.decode(errors="replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        piece = json.loads(data)["choices"][0]["delta"].get("content", "")
-                    except (ValueError, KeyError, IndexError, TypeError):
-                        continue
-                    if piece:
-                        yield piece
-        except Exception:  # noqa: BLE001  # the template answer stands alone
-            return
-
-    ask.warm = warm  # type: ignore[attr-defined]
-    ask.summarise = summarise  # type: ignore[attr-defined]
-    return ask
-
-
-def summary(backend: Backend | None, question: str, given: dict):
-    """``backend.summarise`` when the backend has one, else an empty generator."""
-    summariser = getattr(backend, "summarise", None)
-    if callable(summariser):
-        yield from summariser(question, given)
-
-
 # --- scoring a parser on sentences with known filters --------------------------------------
 
 FIELDS = ("wbs_id", "status", "categories", "code_ids", "resources", "milestones", "loe", "search")
@@ -1213,25 +905,24 @@ def expected_filter(case: Mapping, vocab: Vocabulary) -> Filter:
     )
 
 
-def score(cases: list[Mapping], vocab: Vocabulary, backend: Backend | None = None) -> pd.DataFrame:
+def score(cases: list[Mapping], vocab: Vocabulary) -> pd.DataFrame:
     """One row per case: the sentence, whether every field matched (``exact``), one column per
-    field (True when it matched) and the parser that answered. A ratio of a column is the share
+    field (True when it matched) and the confidence. A ratio of a column is the share
     of cases it got right; ``exact`` is the share of sentences whose every filter was right."""
     rows = []
     for case in cases:
         expected = expected_filter(case, vocab)
-        got = parse(case["text"], vocab, backend)
+        got = parse_keywords(case["text"], vocab)
         fields = {name: getattr(got, name) == getattr(expected, name) for name in FIELDS}
         rows.append(
             {
                 "text": case["text"],
                 "exact": all(fields.values()),
                 **fields,
-                "source": got.source,
                 "confidence": got.confidence,
             }
         )
-    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "source", "confidence"])
+    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "confidence"])
 
 
 def ratios(scored: pd.DataFrame) -> dict[str, float]:

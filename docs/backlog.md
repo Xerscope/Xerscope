@@ -149,7 +149,7 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       (IDs, dates, floats as the only alternatives in a fixed sentence frame) with a role
       check; `ngram-simple` speculation and `-lm mmap+mlock` on llama-server; a fine-tuned
       Flan-T5-small on synthetic pairs under ONNX Runtime; or a GPU host on the tailnet. The
-      measurement client (`query.llm_backend`, `ask-bench --url --summary`) is in place.
+      measurement client was removed with the unused model path; any of these starts from a new one.
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a

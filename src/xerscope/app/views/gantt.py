@@ -93,7 +93,12 @@ lexicon = memo(  # rebuilt when a word is taught
 ask = None
 if asked:
     ask = memo(  # once per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
+        ("ask", snapshot.source, asked, len(taught)),
+        query.parse_keywords,
+        asked,
+        lexicon,
+        baseline=False,
+        ev_basis=False,
     )
 if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
     kept = st.pills(
