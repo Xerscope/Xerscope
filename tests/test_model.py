@@ -92,7 +92,7 @@ def test_wbs_path_stops_at_the_project_node_and_sorts_by_seq_num():
             {"A": "A", "B": "A.B", "C": "A.B.C"},
         ),
         (
-            "a node its own parent: one step, no loop",
+            "a node its own parent: one step, the walk does not spin",
             [_node("R", "", root="Y"), _node("A", "A")],
             {"A": "A"},
         ),
@@ -108,6 +108,28 @@ def test_wbs_path_on_a_damaged_tree(case, nodes, expected):
     path built from the ids that exist, and never reads a node of another project."""
     paths, _ = _wbs_paths(nodes)
     assert {wbs_id: paths[wbs_id][0] for wbs_id in expected} == expected, case
+
+
+def test_a_wbs_loop_is_named_in_the_warnings():
+    """P6 refuses a hierarchy loop (Oracle error reference PRM 009009044: "You cannot create a
+    hierarchy loop"), so a loop comes from a damaged or hand-edited file. Its paths are then
+    made up (A shows under B and B under A, neither under the project) and so are the groupings
+    by top level: the loop is named, the file still loads. None of the 394 reference exports has one."""
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "B"), _node("B", "A"), _node("C", "R")])
+    assert [w for w in s.warnings if "WBS" in w] == [
+        "w.xer: WBS loop through ['A', 'B']: their paths and top levels are not reliable"
+    ]
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "A")])  # its own parent: a loop of one
+    assert [w for w in s.warnings if "WBS" in w] == [
+        "w.xer: WBS loop through ['A']: their paths and top levels are not reliable"
+    ]
+    # a node leading into the loop is not part of it: only A and B are named
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "B"), _node("B", "A"), _node("D", "A")])
+    assert [w for w in s.warnings if "WBS" in w] == [
+        "w.xer: WBS loop through ['A', 'B']: their paths and top levels are not reliable"
+    ]
+    _, s = _wbs_paths([_node("R", "", root="Y"), _node("A", "R"), _node("B", "A")])
+    assert not [w for w in s.warnings if "WBS" in w]
 
 
 def test_an_activity_on_an_unknown_wbs_gets_no_path():

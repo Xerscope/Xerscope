@@ -646,7 +646,7 @@ class _BuildInputs:
         return self.settings.default_hours_per_day
 
 
-def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
+def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.DataFrame, str | None]:
     wbs = raw.table("PROJWBS")
     if wbs.empty:
         return pd.DataFrame(
@@ -691,6 +691,8 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
     name = by_id["wbs_name"].to_dict()
     sequence = to_number(by_id["seq_num"]).fillna(0).astype(int).to_dict()
 
+    in_loop: set[str] = set()  # P6 refuses a hierarchy loop (error PRM 009009044): a damaged file
+
     def lineage(wbs_id: str) -> list[str]:
         chain: list[str] = []
         seen: set[str] = set()
@@ -700,16 +702,23 @@ def _wbs_frame(raw: RawXer, project_id: str) -> tuple[pd.DataFrame, str | None]:
                 break
             chain.append(wbs_id)
             wbs_id = parent[wbs_id]
+        if wbs_id in seen and not is_project_node[wbs_id]:
+            in_loop.update(chain[chain.index(wbs_id) :])
         return chain[::-1]
 
     codes, top_levels, sort_keys = [], [], []
     for wbs_id in wbs["wbs_id"]:
         chain = lineage(wbs_id)
         codes.append(".".join(short_name[element] for element in chain))
-        # P6 orders WBS siblings by seq_num, not alphabetically
+        # P6 orders WBS siblings by seq_num, not alphabetically. The key sorts as text, which holds
+        # for 0-999999 (the reference exports: 0-26381); a negative or 7-digit seq_num would not.
         sort_keys.append(".".join(f"{sequence[element]:06d}" for element in chain))
         top = chain[0] if chain else None
         top_levels.append(f"{short_name[top]} · {name[top]}" if top else "")
+    if in_loop:
+        warnings.append(
+            f"{raw.source}: WBS loop through {sorted(in_loop)[:5]}: their paths and top levels are not reliable"
+        )
     wbs["wbs_code"] = codes
     wbs["wbs_l1"] = top_levels
     wbs["wbs_sort"] = sort_keys
@@ -1302,7 +1311,7 @@ def build_snapshot(
         warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
     calendars, hours_per_day, work_calendars = _calendars(raw, settings)
     inputs = _BuildInputs(raw, all_tasks, all_relationships, project_row, hours_per_day, settings, warnings)
-    wbs, project_name = _wbs_frame(raw, inputs.project_id)
+    wbs, project_name = _wbs_frame(raw, inputs.project_id, warnings)
     options = _scheduling_options(inputs)
 
     # Activities, the logic between them, and the links to other projects
