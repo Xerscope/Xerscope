@@ -20,7 +20,15 @@ import pytest
 from rulekit import STANDARDS, codes, run
 from xerkit import SM, active, done, hours, snap, todo, with_second_project, xer_text
 
-from xerscope.analysis.cpm import CycleError, Schedule, compare_with_stored, critical_path_test, schedule
+from xerscope.analysis.cpm import (
+    RESULT_COLS,
+    CycleError,
+    Schedule,
+    ScheduleError,
+    compare_with_stored,
+    critical_path_test,
+    schedule,
+)
 from xerscope.xer import Snapshot, XerError, build_snapshot, parse_text
 
 T = pd.Timestamp
@@ -209,20 +217,17 @@ def test_lag_on_a_zero_duration_milestone():
     assert f.at["M", "tf_hr"] == 0 and f.at["M", "ff_hr"] == 0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-CPM-06: an unknown relationship type (PR_XX) is read as SF forward and ignored backward, silently",
-)
-def test_unknown_relationship_type_is_rejected_or_reported():
-    """A ``PR_XX`` type survives the model (REL_TYPE.fillna keeps it). ``pred_bounds`` has no branch for
-    it and falls through to the SS/SF ``else`` (SF reading: B must finish 8 h after A starts, so B moves
-    to Tuesday), while ``successor_limits``' if/elif chain has no branch at all, so the backward pass
-    drops it. Acceptable: a warning, or the link ignored on both passes."""
+def test_unknown_relationship_type_is_ignored_on_both_passes_and_reported():
+    """AUDIT-CPM-06. A ``PR_XX`` type has no rule in either pass: the engine leaves the link out
+    (``_network``) instead of letting ``pred_bounds`` read it as SF (which moved B to Tuesday) while
+    the backward pass dropped it. Reported by the engine, or by the model when it drops the row first."""
     tasks = [todo("A", cstr_type="CS_MSOA", cstr_date="2026-03-03 08:00", **hours(16)), todo("B", **hours(8))]
-    sch = schedule(snap(tasks, [("A", "B", "XX", 8)]))
+    s = snap(tasks, [("A", "B", "XX", 8)])
+    sch = schedule(s)
     unlinked = schedule(snap(tasks)).frame
-    assert sch.frame.at["B", "es"] == T("2026-03-03 08:00")  # the SF reading did bind B's finish
-    assert sch.warnings or sch.frame.equals(unlinked)
+    assert sch.frame.at["B", "es"] == DD  # not the SF reading
+    assert sch.frame.equals(unlinked)
+    assert any("XX" in w for w in sch.warnings + s.warnings)
 
 
 # --- trivial networks ----------------------------------------------------------------------------
@@ -240,18 +245,23 @@ def test_single_activity():
 
 
 def test_all_activities_finished_empty_forward_pass():
+    """AUDIT-CPM-09: no open activity, so no float: NaN in a float column, not None in an object one."""
     sch = schedule(snap([done("A"), done("B")], [("A", "B", "FS", 0)]))
-    assert sch.frame["tf_hr"].tolist() == [None, None] and not sch.frame["longest_path"].any()
+    assert sch.frame["tf_hr"].isna().all() and sch.frame["tf_hr"].dtype == float
+    assert sch.frame["ff_hr"].isna().all() and not sch.frame["longest_path"].any()
     assert sch.finish == DD  # the carried date, not the last actual finish (see 'Questions au métier')
     assert critical_path_test(snap([done("A")]), 600).passed is False  # "critical path is not defined"
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-CPM-03: a snapshot with no schedulable activity crashes with KeyError")
 def test_only_wbs_summary_rows_gives_an_empty_schedule_not_a_key_error():
+    """AUDIT-CPM-03: explicit result columns, so a snapshot without a schedulable activity is an empty Schedule."""
     s = snap([todo("W", task_type="TT_WBS")])
     assert s.activities.empty
     sch = schedule(s)
-    assert sch.frame.empty and sch.finish is None
+    assert sch.frame.empty and sch.finish is None and sch.assignments.empty
+    assert list(sch.frame.columns) == RESULT_COLS[1:] and sch.frame.index.name == "task_code"
+    assert not critical_path_test(s, 600).passed
+    assert run(STANDARDS["INTEGRITY"], "INT-01", s).numerator == 0
 
 
 def test_empty_task_table_is_a_typed_parse_error():
@@ -291,7 +301,7 @@ def test_same_snapshot_twice_and_two_parses_are_bit_for_bit_equal(seed):
     tasks, links = _network(seed)
     s1, s2 = snap(tasks, links), snap(tasks, links)
     a, b, c = schedule(s1), schedule(s2), schedule(s1)
-    assert a is c  # the plain recalculation is cached
+    assert a is not c and a.frame.equals(c.frame)  # the plain recalculation is cached, handed out as copies
     for x, y in ((a.frame, b.frame), (a.assignments, b.assignments)):
         assert list(x.columns) == list(y.columns) and list(x.index) == list(y.index) and x.equals(y)
     assert a.finish == b.finish and a.warnings == b.warnings
@@ -316,35 +326,47 @@ def test_result_rows_follow_the_task_table_order_not_the_topological_order():
 # --- caching ------------------------------------------------------------------------------------
 
 
-def test_cache_identity_and_bypass():
+def test_cache_hands_out_copies_of_one_plain_recalculation():
+    """The plain recalculation is computed once and cached on the snapshot (``plain``); every caller
+    gets its own copy of it. A delayed run is neither cached nor marked plain."""
     s = snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])
     plain = schedule(s)
-    assert schedule(s) is plain and schedule(s, extra_hours={}) is plain
-    assert schedule(s, extra_hours={"A": 8}) is not plain
+    again = schedule(s, extra_hours={})
+    assert again is not plain and again.frame is not plain.frame and again.frame.equals(plain.frame)
+    cached = s._xs_schedule
+    assert plain.plain and again.plain and cached.plain
+    assert plain.frame is not cached.frame and plain.warnings is not cached.warnings
+    assert not schedule(s, extra_hours={"A": 8}).plain and s._xs_schedule is cached
     assert compare_with_stored(s) is not compare_with_stored(s)  # each caller gets a copy
-    assert not Snapshot.__dataclass_params__.frozen and not Schedule.__dataclass_params__.frozen
+    assert Snapshot.__dataclass_params__.frozen and Schedule.__dataclass_params__.frozen
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-CPM-04: schedule() hands out the cached Schedule itself; a caller's edit poisons it"
-)
 def test_mutating_the_returned_frame_does_not_change_the_cached_result():
+    """AUDIT-CPM-04: ``schedule`` returns a copy of the cached Schedule, and the Schedule is frozen."""
     s = snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])
     first = schedule(s)
     first.frame.loc["A", "tf_hr"] = 999.0
     first.warnings.append("edited by a caller")
+    first.assignment_minutes["x"] = 1.0
     again = schedule(s)
-    assert again.frame.at["A", "tf_hr"] == 0 and again.warnings == []
+    assert again.frame.at["A", "tf_hr"] == 0 and again.warnings == [] and again.assignment_minutes == {}
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        first.finish = DD
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-CPM-05: no cache invalidation; editing snapshot.tasks after a run returns stale dates"
-)
-def test_editing_the_tasks_after_a_run_is_seen_by_the_next_run():
+def test_a_changed_snapshot_is_a_new_snapshot_with_its_own_recalculation():
+    """AUDIT-CPM-05: the Snapshot is frozen, so a table cannot be swapped under a cached run; a change
+    goes through ``dataclasses.replace``, which starts with an empty cache and sees the new durations.
+    (An in-place edit of a table is outside the contract: docs/cpm.md, Performance.)"""
     s = snap([todo("A", **hours(8)), todo("B", **hours(8))], [("A", "B", "FS", 0)])
     assert schedule(s).frame.at["A", "ef"] == T("2026-03-02 17:00")
-    s.tasks.loc[s.tasks["task_code"] == "A", "remain_drtn_hr_cnt"] = 80.0
-    assert schedule(s).frame.at["A", "ef"] == T("2026-03-13 17:00")
+    longer = s.tasks.copy()
+    longer.loc[longer["task_code"] == "A", "remain_drtn_hr_cnt"] = 80.0
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        s.tasks = longer
+    edited = dataclasses.replace(s, tasks=longer)
+    assert schedule(edited).frame.at["A", "ef"] == T("2026-03-13 17:00")
+    assert schedule(s).frame.at["A", "ef"] == T("2026-03-02 17:00")  # the original keeps its own result
 
 
 def test_a_replaced_snapshot_starts_with_an_empty_cache():
@@ -357,13 +379,14 @@ def test_a_replaced_snapshot_starts_with_an_empty_cache():
 # --- degenerate inputs ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-CPM-02: a negative remaining duration gives an early finish before the early start, no warning",
-)
-def test_negative_remaining_duration_is_clamped_or_reported():
-    sch = schedule(snap([todo("A", remain_drtn_hr_cnt="-16"), todo("B")], [("A", "B", "FS", 0)]))
-    assert sch.warnings or sch.frame.at["A", "ef"] >= sch.frame.at["A", "es"]
+def test_negative_remaining_duration_is_read_as_zero_and_reported():
+    """AUDIT-CPM-02: remaining -16 h is read as 0 (A is a zero-duration task at the data date, B follows
+    at once) and reported, by the engine or by the model when it clamps the value first."""
+    s = snap([todo("A", remain_drtn_hr_cnt="-16"), todo("B")], [("A", "B", "FS", 0)])
+    sch = schedule(s)
+    assert sch.frame.at["A", "es"] == DD and sch.frame.at["A", "ef"] == DD and sch.frame.at["B", "es"] == DD
+    assert sch.finish >= DD and sch.frame.at["A", "tf_hr"] == 0
+    assert any("negative remaining" in w for w in sch.warnings + s.warnings)
 
 
 def test_blank_remaining_duration_reads_as_zero():
@@ -371,26 +394,61 @@ def test_blank_remaining_duration_reads_as_zero():
     assert f.at["A", "ef"] == DD and f.at["B", "es"] == DD
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-CPM-01: an infinite remaining duration escapes as OverflowError (untyped)"
-)
+def _schedules_or_typed_error(s: Snapshot, members: tuple[str, ...]) -> None:
+    """AUDIT-CPM-01: a value the time axis cannot place never escapes as OverflowError. Either the
+    engine refuses it (``ScheduleError``, a ``ValueError`` naming the activities) and every caller
+    reports instead of crashing, or the model clamped it on load, with a warning, and the run
+    completes with finite dates."""
+    try:
+        sch = schedule(s)
+    except ScheduleError as exc:
+        assert isinstance(exc, ValueError) and exc.members == members and not isinstance(exc, CycleError)
+        for rule in ("INT-01", "INT-03", "INT-04", "INT-07", "INT-08"):  # they report, they do not crash
+            checked = run(STANDARDS["INTEGRITY"], rule, s)
+            assert not checked.numerator and (rule == "INT-04" or str(exc) in checked.note)
+        result = critical_path_test(s, 600)
+        assert not result.passed and str(exc) in result.note
+        return
+    assert s.warnings and sch.frame["ef"].notna().all()
+
+
 def test_infinite_remaining_duration_is_a_typed_error():
-    with pytest.raises(ValueError):
-        schedule(snap([todo("A", remain_drtn_hr_cnt="inf")]))
+    _schedules_or_typed_error(snap([todo("A", remain_drtn_hr_cnt="inf"), todo("B")], [("A", "B", "FS", 0)]), ("A",))
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-CPM-01: a remaining duration past year 2262 escapes as OverflowError (untyped)"
-)
 def test_huge_remaining_duration_is_a_typed_error():
-    with pytest.raises(ValueError):
-        schedule(snap([todo("A", remain_drtn_hr_cnt="1e9")]))
+    _schedules_or_typed_error(snap([todo("A", remain_drtn_hr_cnt="1e9")]), ("A",))
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT-CPM-01: an infinite lag escapes as OverflowError (untyped)")
 def test_infinite_lag_is_a_typed_error():
-    with pytest.raises(ValueError):
-        schedule(snap([todo("A"), todo("B")], [("A", "B", "FS", "inf")]))
+    _schedules_or_typed_error(snap([todo("A"), todo("B")], [("A", "B", "FS", "inf")]), ("A", "B"))
+
+
+def test_huge_assignment_duration_is_a_typed_error():
+    """Remaining units 1e6 at 1e-6 units per hour: 1e12 h of work on a driving assignment."""
+    assignment = {
+        "task_code": "A",
+        "rsrc_id": "R1",
+        "remain_qty": "1e6",
+        "remain_qty_per_hr": "1e-6",
+        "relag_drtn_hr_cnt": "0",
+        "rollup_dates_flag": "Y",
+    }
+    s = snap([todo("A", task_type="TT_Rsrc"), todo("B")], [("A", "B", "FS", 0)], assign=[assignment])
+    _schedules_or_typed_error(s, ("A",))
+
+
+def test_a_long_remaining_duration_schedules_or_fails_typed():
+    """Within the bound, a date the time axis can hold is placed (4e5 h on an 8 h, 7-day calendar: 137
+    years); one it cannot (1e6 h: 342 years, past pandas' year 2262) is the same typed error, translated
+    from the time axis, not an OutOfBoundsDatetime or OverflowError out of the engine."""
+    sch = schedule(snap([todo("A", remain_drtn_hr_cnt="4e5", clndr_id="C7D")]))
+    assert sch.frame.at["A", "ef"] > T("2160-01-01") and sch.frame.at["A", "tf_hr"] == 0
+    s = snap([todo("A", remain_drtn_hr_cnt="1e6", clndr_id="C7D")])
+    with pytest.raises(ScheduleError, match="schedulable range"):
+        schedule(s)
+    assert "cannot schedule" in run(STANDARDS["INTEGRITY"], "INT-01", s).note
+    assert not critical_path_test(s, 600).passed
 
 
 def test_blank_lag_reads_as_zero():
@@ -416,12 +474,12 @@ def test_finished_without_actual_dates_is_warned_and_placed_at_the_data_date():
     assert sch.frame.at["A", "es"] == DD and sch.frame.at["B", "es"] == DD
 
 
-@pytest.mark.xfail(
-    strict=True, reason="AUDIT-CPM-07: a started activity without an actual start gets es = NaT, no warning"
-)
-def test_started_without_actual_start_is_warned_or_dated():
+def test_started_without_actual_start_is_warned_and_dated_at_its_remaining_start():
+    """AUDIT-CPM-07: the mirror of "complete without actual dates"."""
     sch = schedule(snap([active("A", act_start_date=""), todo("B")], [("A", "B", "FS", 0)]))
-    assert sch.warnings or pd.notna(sch.frame.at["A", "es"])
+    assert sch.warnings == ["A: in progress without an actual start"]
+    assert sch.frame.at["A", "es"] == DD == sch.frame.at["A", "remaining_start"]
+    assert sch.frame.at["A", "ef"] == T("2026-03-06 17:00") and sch.frame.at["B", "es"] == T("2026-03-09 08:00")
 
 
 def test_duplicate_activity_id_first_row_wins():

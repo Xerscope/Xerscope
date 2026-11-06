@@ -110,6 +110,14 @@ cumulative working minutes at each period start. Two functions do all the arithm
 - `at(w, finish)`: the inverse. On a boundary, Monday 17:00 and Tuesday 08:00 are the same
   working minute; `finish=True` returns the period end, `finish=False` the next start.
 
+**Granularity: the minute.** Every instant is a whole minute of the axis and every duration or
+lag is placed as a whole number of working minutes: `at` rounds `w` with Python's `round`,
+half to even, so a lag of 0.025 h (1.5 min) becomes 2 min and one of 0.008333 h (0.5 min)
+becomes 0 (`tests/test_audit_edges_cpm.py`, `test_sub_minute_lags_round_to_the_minute`).
+Total and free float are then exact multiples of 1/60 h (10 min = 0.1667 h, never 0.17). P6
+stores its dates to the minute too; how it rounds a sub-minute lag before placing it is not
+documented and no reference file carries one, so the half-to-even choice is xerscope's.
+
 Everything else is built on these two, by binary search (`numpy.searchsorted`):
 
 - adding or subtracting duration: `at(work(ts) ± d, …)`;
@@ -145,7 +153,16 @@ whatever calendar the lag is then scheduled on: `relationships.lag_d` uses it.
 
 **Graph.** Activities are matched by Activity ID. LOE and WBS summary activities are
 taken out of the network; the others are put in topological order. A logic loop raises
-`CycleError`, which names the activities involved.
+`CycleError`, which names the activities involved. A relationship whose type is none of
+FS / SS / FF / SF is left out of the network with a warning (the model drops such rows
+first; the engine never reads one as SF). A remaining duration, a lag or an assignment
+duration (units / units per hour) that is not finite or exceeds `MAX_HOURS` (1e6 h) raises
+`ScheduleError`, the base of `CycleError`, naming the activities; a date the time axis
+still cannot hold (pandas stops at year 2262) is translated to the same error, so neither
+an `OverflowError` nor an `OutOfBoundsDatetime` leaves `schedule()`. A negative remaining
+duration is read as 0 with a warning. The integrity rules and the critical path test catch
+`ScheduleError` and report it in their note. These are the engine's own guards; the model
+clamps the same values on load, with its own warning, before the engine sees them.
 
 **Earliest start.** `max(data date, project planned start)`. P6 never schedules remaining
 work before either.
@@ -186,6 +203,11 @@ work before either.
     expected finish and the remaining duration is recomputed from it, for the backward
     pass too; not for ALAP, nor with an FF / SF predecessor, nor before the early start
     or the data date (as MPXJ).
+- **Missing actual dates** (a file inconsistency P6 itself does not write): a complete
+  activity without them is placed at the date it has, else at the data date; an in-progress
+  activity without an actual start takes its remaining start as early start. Both are
+  reported in `warnings` (`"<id>: complete without actual dates"`, `"<id>: in progress
+  without an actual start"`).
 - **Complete:** shown with its actual dates. Under **Retained Logic** it passes logic
   through, as P6 does (MPXJ, issue #972, checked against real P6 schedules): it carries to
   its successors the date its own unfinished predecessors still impose (the data date if
@@ -364,6 +386,22 @@ activity that has the same Activity ID (`tests/test_cpm.py`).
 
 ## Performance
 
-Hotel (4,217 activities, 7,586 links, 2,278 assignments) schedules in about 2 s. The plain
-recalculation is cached on the snapshot, so INT-01, INT-03, the critical path test and the
-weekly trend share it; the critical path test adds one more run.
+Hotel (4,217 activities, 7,586 links, 2,278 assignments) schedules in about 1 to 2 s. The
+plain recalculation is cached on the snapshot, so INT-01, INT-03, the critical path test and
+the weekly trend share it; the critical path test adds one more run.
+
+**Cache and immutability contract.** `schedule(snapshot)` with no delay and no options
+computes the plain recalculation once and stores it on the snapshot (`_xs_schedule`, written
+with `object.__setattr__`); `compare_with_stored` caches its table the same way
+(`_xs_comparison`) when the `Schedule` it is given is that plain one (`Schedule.plain`).
+Every call returns its own copy of the `Schedule` (frames, warnings and minutes; 0.1 ms on
+Hotel against 1 s of scheduling), so a caller may edit what it receives without reaching the
+cache or another caller. `Schedule` and `Snapshot` are frozen dataclasses: an attribute
+cannot be rebound, and a changed schedule is a new snapshot,
+`dataclasses.replace(snapshot, tasks=...)`, which starts with an empty cache (`by_code` and
+the two CPM entries live in the instance's `__dict__`, so a replaced instance has none of
+them). The cache has no invalidation of its own: an in-place edit of a table of an existing
+snapshot (`snapshot.tasks.loc[...] = ...`) is outside the contract and would be served the
+cached result. The result frame has fixed columns (`RESULT_COLS`) whatever the file holds, so
+a snapshot without a schedulable activity gives an empty `Schedule` (`finish` None); `tf_hr`
+and `ff_hr` are floats, NaN for a finished activity.
