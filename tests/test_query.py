@@ -210,3 +210,26 @@ def test_a_chip_taken_off_drops_its_filter():
     assert query.without(asked, "Resource: CREW", VOCAB).resources == frozenset()
     assert query.without(asked, "Milestones", VOCAB).milestones is False
     assert query.without(asked, "Search: nothing", VOCAB) == asked  # a label the filter does not carry: unchanged
+
+
+def test_the_files_own_words_name_their_node(store):
+    """The automatic lexicon: a word of the activity names under one node alone names that node
+    (and stays a search in it); a word under several nodes names none."""
+    from xerscope.analysis import wbs as wbs_tree
+
+    snapshot = store.latest
+    vocab = query.vocabulary(snapshot, wbs_tree.tree(snapshot))
+    assert {"foundations", "earthworks", "roads"} <= vocab.node_words["7003"]  # CIV
+    assert {"piping", "instrumentation"} <= vocab.node_words["7004"]  # MEC
+    assert "installation" in vocab.node_words["7004"]  # every "installation" activity is under MEC
+    assert "equipment" not in {w for words in vocab.node_words.values() for w in words}  # PRC and MEC both
+    assert "design" in vocab.node_words["7001"]  # every "design" activity is under ENG
+    assert "complete" not in vocab.node_words["7003"] and "site" not in vocab.node_words["7003"]  # a status, a resource
+    assert query.parse_keywords("fondations", vocab).search == "foundations"  # a synonym of an own word: searched as it
+    got = query.parse_keywords("foundations", vocab)
+    assert got.wbs_id == "7003" and got.search == "foundations"
+    got = query.parse_keywords("equipment", vocab)
+    assert got.wbs_id is None and got.search == "equipment"
+    got = query.parse_keywords("installation", vocab)  # an own word of MEC, also a synonym of CIV's "erection"
+    assert got.wbs_id == "7004" and got.search == "installation"
+    assert query.vocabulary(snapshot).node_words["7003"] >= {"foundations"}  # without the tree: own node

@@ -90,6 +90,10 @@ class Vocabulary:
     has_milestones: bool = False
     has_loe: bool = False
     lexicon: Lexicon = field(default_factory=lambda: BUILTIN_LEXICON)  # trade words read as one (load_lexicon)
+    # the file's own aliases, drawn at the file's load: the words of the activity names that appear
+    # under ONE WBS node only ("foundations", "earthworks" -> Civil works; "piping" -> Mechanical &
+    # electrical), wbs_id -> words. A word under several nodes names none of them (a search).
+    node_words: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def to_prompt(self) -> dict:
         """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
@@ -151,7 +155,50 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: L
         has_milestones=bool(activities["is_milestone"].any()),
         has_loe=bool(activities["is_loe"].any()),
         lexicon=BUILTIN_LEXICON if lexicon is None else lexicon,
+        node_words=_node_words(activities, wbs, nodes, resources),
     )
+
+
+def _node_words(
+    activities: pd.DataFrame,
+    wbs: Mapping[str, str],
+    nodes: pd.DataFrame | None,
+    resources: Mapping[str, tuple[str, str]],
+) -> dict[str, frozenset[str]]:
+    """The automatic lexicon: for each node, the words (4+ letters, no stop word, no node's own
+    name word) of its activities' names that no other node's activities use. With ``nodes``
+    (the tree, with ``ancestors``) an activity counts for every node above it, so a word
+    specific to a branch names the branch; without it, for its own node only."""
+    above: dict[str, list[str]] = {}
+    if nodes is not None and "ancestors" in nodes:
+        above = {
+            wbs_id: [a for a in ancestors if a in wbs]
+            for wbs_id, ancestors in zip(nodes["wbs_id"], nodes["ancestors"], strict=True)
+        }
+    name_words = {w for label in wbs.values() for w in re.split(r"[^a-z0-9]+", fold(label))}
+    name_words |= {
+        w for phrases in (*_STATUS_PHRASES.values(), *_CATEGORY_PHRASES.values()) for ph in phrases for w in ph.split()
+    }
+    name_words |= {w for short, name in resources.values() for w in re.split(r"[^a-z0-9]+", fold(f"{short} {name}"))}
+    holders: dict[str, set[str]] = {}
+    for wbs_id, name in zip(activities["wbs_id"], activities["task_name"], strict=True):
+        if not isinstance(wbs_id, str):
+            continue
+        for word in set(re.split(r"[^a-z0-9]+", fold(name))):
+            if len(word) >= 4 and word not in _STOP and word not in name_words and not word.isdigit():
+                for node in above.get(wbs_id, [wbs_id] if wbs_id in wbs else []):
+                    holders.setdefault(word, set()).add(node)
+    result: dict[str, set[str]] = {}
+    for word, owners in holders.items():
+        # the deepest node holding the word alone: with the tree, a word under one leaf is held by
+        # the leaf and every node above it; the leaf is the one with no other holder below it
+        if len(owners) == 1:
+            result.setdefault(next(iter(owners)), set()).add(word)
+        elif above:
+            leaves = [o for o in owners if not any(o in above.get(other, []) and other != o for other in owners)]
+            if len(leaves) == 1:
+                result.setdefault(leaves[0], set()).add(word)
+    return {wbs_id: frozenset(words) for wbs_id, words in result.items()}
 
 
 # phrases are matched longest first on the folded sentence, as whole words
@@ -434,36 +481,55 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
 
     # WBS: the longest node label (code, then name, then any word of the name of 4+ letters) found in the text
     best: tuple | None = None  # (phrase, wbs_id, label[, ratio])
+    stands_for: dict[tuple[str, str], str] = {}  # (node, a node word or its synonym as said) -> the file's word
+    searched: list[tuple[int, str]] = []  # (where it was said, the file's word a node phrase stood for)
+    best_direct: set[str] = set()
     for wbs_id, label in vocab.wbs.items():
         code, _, name = label.partition(" · ")
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in _STOP]
+        words += sorted(vocab.node_words.get(wbs_id, ()))  # the file's own aliases of the node
         candidates = [_plain(c) for c in _with_synonyms([fold(code), fold(name), *words], vocab.lexicon)]
+        # an own word of the node (an activity word), said as is or by a synonym, and a partial
+        # name word that activities use, said as is: the node and a search for the file's word.
+        # A partial name word said by a synonym ("électricité"), the full name or the code: the
+        # node only, the planner did not say the activity's word.
+        own = vocab.node_words.get(wbs_id, frozenset())
+        for word in words:
+            if word in own:
+                for said in _with_synonyms([word], vocab.lexicon):
+                    stands_for.setdefault((wbs_id, _plain(said)), word)
+            elif vocab.words and word in vocab.words and word not in (_plain(name), _plain(code)):
+                stands_for.setdefault((wbs_id, word), word)
+        direct = {_plain(c) for c in (fold(code), fold(name), *words)}  # said as the file spells it
         for candidate in candidates:
-            if (
-                candidate
-                and (best is None or len(candidate) > len(best[0]))
-                and _phrase_pattern([candidate]).search(folded)
-            ):
-                best = (candidate, wbs_id, label)
+            if not candidate or not _phrase_pattern([candidate]).search(folded):
+                continue
+            # the longest phrase wins; at equal length a word of the file beats a synonym of another
+            rank = (len(candidate), candidate in direct)
+            if best is None or rank > (len(best[0]), best[0] in best_direct):
+                best, best_direct = (candidate, wbs_id, label), direct
     scores: dict[str, float] = {}
     if best is None:  # no node named exactly: the closest node word to a sentence word, per node
         for wbs_id, label in vocab.wbs.items():
             code, _, name = label.partition(" · ")
             words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 5 and w not in _STOP]
+            words += sorted(vocab.node_words.get(wbs_id, ()))
             close = _closest(sentence_words(), _with_synonyms([fold(code), *words], vocab.lexicon))
             if close:
                 scores[wbs_id] = close[2]
                 if best is None or close[2] > best[3]:
-                    best = (close[0], wbs_id, label, close[2])
+                    best = (close[0], wbs_id, label, close[2], close[1])
     if best:
         # a word of a node's name that also names activities of the file ("electrical", in
         # "Mechanical & electrical" and in "Electrical installation") is the node and a search
         # in it: the word stays in the sentence for the search step below
-        partial = best[0] not in (_plain(best[2].partition(" · ")[0]), _plain(best[2].partition(" · ")[2]))
-        if partial and vocab.words and best[0] in vocab.words:
-            found = [folded.find(best[0])]
-        else:
-            folded, found = _take(folded, [best[0]])
+        folded, found = _take(folded, [best[0]])
+        if len(best) > 3:  # a fuzzy pick: the sentence word it matched, not the candidate, was in the text
+            candidate = best[4]  # the sentence word it matched, best[0], was in the text, not the candidate
+            if (best[1], candidate) in stands_for:
+                searched.append((found[0], stands_for[(best[1], candidate)]))
+        elif (best[1], best[0]) in stands_for:
+            searched.append((found[0], stands_for[(best[1], best[0])]))
         result = replace(result, wbs_id=best[1])
         if len(best) > 3:
             confidence = min(confidence, best[3])
@@ -520,6 +586,9 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
                 match, confidence = close[1], min(confidence, close[2])
             (known.append(match) if match else ignored.append(word))
         ignored = tuple(ignored)
+    # a node's own word said (or its synonym) is searched too, every word in the sentence's order
+    placed = [*searched, *((folded.find(w) if w in folded else fold(text).find(w), w) for w in known)]
+    known = list(dict.fromkeys(w for _, w in sorted(placed)))
     if known:
         search = " ".join(known)
         result = replace(result, search=search)
@@ -569,6 +638,9 @@ def self_cases(vocab: Vocabulary) -> list[dict]:
         said += vocab.lexicon.get(fold(name), ())
         for text in dict.fromkeys(t for t in said if t):
             cases.append({"text": text, "wbs": code, "label": f"WBS {label}"})
+        wbs_id = next(k for k, v in vocab.wbs.items() if v == label)
+        for word in sorted(vocab.node_words.get(wbs_id, ()))[:5]:  # the file's own aliases: node and search
+            cases.append({"text": word, "wbs": code, "search": word, "label": f"WBS {label} (own word {word})"})
     for short, name in vocab.resources.values():
         for text in dict.fromkeys(t for t in (short, name, *vocab.lexicon.get(fold(name), ())) if t):
             cases.append({"text": text, "resources": [short or name], "label": f"resource {short or name}"})

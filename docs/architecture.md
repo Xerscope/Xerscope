@@ -344,6 +344,12 @@ sentence ─▶ keyword grammar over the file's lexicon ─▶ Filter ─▶ fun
   A company adds its own words in the folder `XERSCOPE_LEXICON` names (same format, as
   `XERSCOPE_STANDARDS` for standards; `xerscope lexicon FOLDER` checks it); the grammar
   reads both, so its reach grows without a release, and `ask-bench --lexicon` measures it.
+- **An automatic lexicon, from the file itself.** At the file's load, the words of the activity
+  names that appear under one WBS node alone become that node's aliases
+  (`Vocabulary.node_words`: "foundations", "earthworks" name Civil works; "piping" names
+  Mechanical & electrical); a word under several nodes names none and stays a search. Said
+  alone, such a word gives the node and a search in it: the same rows as the search, and the
+  answer names the node. Nothing to maintain: it follows the file.
 - **100 % of the loaded file, measured on the file.** `ask-bench --self` (`query.coverage`)
   draws the phrases from the file's own lexicon (each node by code, name and every synonym,
   each resource, each status and float in both languages, milestones, LOE) and lists the

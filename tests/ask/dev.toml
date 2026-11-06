@@ -33,7 +33,8 @@ float = ["Critical"]
 search = "mechanical"
 
 [[case]]
-text = "earthworks"
+text = "earthworks"    # an own word of Civil works: the node and a search in it
+wbs = "CIV"
 search = "earthworks"
 
 [[case]]
@@ -81,7 +82,8 @@ text = "tout ce qui est terminé"
 status = ["Complete"]
 
 [[case]]
-text = "design"
+text = "design"        # an own word of Ingénierie: the node and a search in it
+wbs = "ENG"
 search = "design"
 
 [[case]]
@@ -120,7 +122,8 @@ wbs = "MEC"
 float = ["Critical"]
 
 [[case]]
-text = "fondations"
+text = "fondations"    # a synonym of an own word of Civil works
+wbs = "CIV"
 search = "foundations"
 
 [[case]]
@@ -134,7 +137,8 @@ status = ["In progress"]
 resources = ["VENDOR"]
 
 [[case]]
-text = "tuyauterie et instrumentation"
+text = "tuyauterie et instrumentation"   # own words of Mechanical & electrical
+wbs = "MEC"
 search = "piping instrumentation"
 
 [[case]]
@@ -151,6 +155,7 @@ float = ["Critical"]
 
 [[case]]
 text = "fondation"
+wbs = "CIV"
 search = "foundations"
 
 [[case]]

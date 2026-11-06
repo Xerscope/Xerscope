@@ -4,8 +4,9 @@
 # the new ratio; do not edit the grammar to fit them without adding the shape to dev.toml.
 
 [[case]]
-text = "foundations"
-search = "foundations"
+text = "foundations"   # rule settled after the first run: a word of the activity names under one node
+wbs = "CIV"            # alone names that node and stays a search in it (the same rows); written blind
+search = "foundations" # as search only
 
 [[case]]
 text = "activités critiques de la mécanique"
@@ -23,7 +24,8 @@ milestones = true
 status = ["Not started"]
 
 [[case]]
-text = "piping"
+text = "piping"        # same rule: an own word of Mechanical & electrical
+wbs = "MEC"
 search = "piping"
 
 [[case]]
@@ -47,7 +49,8 @@ wbs = "COM"
 float = ["Normal"]
 
 [[case]]
-text = "equipment delivery"
+text = "equipment delivery"   # "delivery" is an own word of Procurement; "equipment" is under several nodes
+wbs = "PRC"
 search = "equipment delivery"
 
 [[case]]
@@ -81,7 +84,8 @@ wbs = "MEC"           # is the node and a search in it (the same rows as the sea
 search = "electrical" # search only
 
 [[case]]
-text = "unstarted roads"
+text = "unstarted roads"   # "roads" is an own word of Civil works
+wbs = "CIV"
 status = ["Not started"]
 search = "roads"
 
@@ -91,7 +95,8 @@ wbs = "MEC"
 float = ["Critical"]
 
 [[case]]
-text = "handover"
+text = "handover"      # an own word of Commissioning
+wbs = "COM"
 search = "handover"
 
 [[case]]
