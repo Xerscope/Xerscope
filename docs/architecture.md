@@ -138,7 +138,7 @@ carry no pointer logic of their own.
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source | read-only account of a result, shown under every check in the app |
-| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook for a local language model that may decline, in which case the grammar answers |
+| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook: `llm_backend` asks a llama.cpp server (`XERSCOPE_QUERY_URL`, the optional `llm` service of `deploy/compose.yaml`) for JSON constrained by a schema, ids outside the vocabulary dropped; any failure or delay, and the grammar answers |
 
 Standards are data in `standards/*.toml`:
 

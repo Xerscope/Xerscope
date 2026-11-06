@@ -80,7 +80,7 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    assert c.count("cap_drop: [ALL]") == 4 and c.count("no-new-privileges") == 4  # tailscale, caddy, app, llm
     # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
     assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
     app = (ROOT / "compose.yaml").read_text()  # the app's writable dirs belong to its user, not root
@@ -91,6 +91,23 @@ def test_sidecars_hardened():
     assert f"/home/nonroot:uid={uid},gid={gid}" in nas and f"/tmp:uid={uid},gid={gid}" in nas
     assert "65532," not in nas.replace(uid, "").replace(gid, "")  # no uid written outside the variables
     assert 'TS_NO_LOGS_NO_SUPPORT: "true"' in c and 'TS_USERSPACE: "true"' in c
+
+
+def test_llm_sidecar_is_optional_and_reaches_nothing():
+    """The language model behind the Gantt Ask field: off unless asked, internal network only, non-root,
+    read-only, pinned; the app's own default stays the keyword grammar."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    llm = c[c.index("  llm:") : c.index("\nvolumes:")]
+    assert "profiles: [ai]" in llm and "networks: [internal]" in llm and "ports:" not in llm
+    assert re.search(r"image: ghcr\.io/ggml-org/llama\.cpp:server-b\d+", llm)  # a build number, not a floating tag
+    assert 'user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"' in llm  # the image has no USER
+    assert "read_only: true" in llm and ":/models:ro" in llm and "mem_limit:" in llm and "pids_limit:" in llm
+    assert '"--parallel", "1"' in llm  # one visitor: no second model context on the NAS's memory
+    assert "# XERSCOPE_QUERY_URL: http://llm:8080" in c  # the app is told about it by hand, never by default
+    env = (ROOT / "deploy" / ".env.example").read_text()
+    assert "# XERSCOPE_QUERY_URL=http://llm:8080" in env and "# XERSCOPE_MODELS=" in env
+    for text in (c, env, (ROOT / "docs" / "deploy.md").read_text()):
+        assert "api.openai.com" not in text and "anthropic.com" not in text  # self-hosted only
 
 
 def test_runtime_image_carries_no_pip():
@@ -132,12 +149,12 @@ def test_funnel_stack_bounds_what_it_takes_from_the_nas():
     No CPU quota: Docker refuses to create a container with one on a kernel without CFS
     bandwidth control, while it only drops a memory or PID cap it cannot apply."""
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert c.count("mem_limit:") == 3 and c.count("pids_limit:") == 3
+    assert c.count("mem_limit:") == 4 and c.count("pids_limit:") == 4  # tailscale, caddy, app, llm
     assert "mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}" in c
     assert not re.search(r"^\s+(cpus|cpu_quota|cpu_period|cpuset):", c, re.M)
     tmpfs = re.findall(r"^\s+- (/[\w/]+)(\S*)", c, re.M)  # tmpfs entries are the only "- /path" list items
-    assert len(tmpfs) == 7 and all("size=" in opts for _, opts in tmpfs), tmpfs
-    assert c.count("read_only: true") == 3  # tailscaled writes its socket to tmpfs, its state to the volume
+    assert len(tmpfs) == 8 and all("size=" in opts for _, opts in tmpfs), tmpfs
+    assert c.count("read_only: true") == 4  # tailscaled writes its socket to tmpfs, its state to the volume
     assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
 
 

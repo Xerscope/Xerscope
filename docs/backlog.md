@@ -133,12 +133,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 - [ ] Display rounding: a value beside its status can contradict it (P6-13 at 0.9545 shows
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
-- [ ] Gantt "Ask" field, step two: a local language model as `analysis/query.py` `Backend`
-      (a `llm` container on the compose `internal` network, llama.cpp server, a 1.5-3B model
-      quantised Q4, JSON output constrained by a grammar, 20 s timeout, then the keyword
-      grammar answers). The model receives `Vocabulary.to_prompt()` only: WBS and code names,
-      no activity, no date, no number. Extend `tests/test_docker.py` (no published port, no
-      egress, non-root, read-only) and keep the page working with the container absent.
+- [ ] Gantt "Ask" field with a model (`deploy/compose.yaml` `llm`, docs/deploy.md §10): not yet
+      run on the NAS; the 3B/Q4 timing and memory figures are estimates to confirm there, and a
+      hand-made set of sentences with expected filters would measure the model against the
+      grammar (`tests/test_query.py` holds the grammar's).
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a

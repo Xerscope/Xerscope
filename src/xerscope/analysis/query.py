@@ -50,6 +50,7 @@ class Filter:
     search: str = ""
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's caption
     ignored: tuple[str, ...] = ()  # words the file's own lexicon does not hold, left out of the search
+    source: str = "keywords"  # "keywords" (the grammar) or "model" (a Backend), for the page's caption
 
     @property
     def empty(self) -> bool:
@@ -365,3 +366,100 @@ def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filte
         if answer is not None:
             return answer
     return parse_keywords(text, vocab)
+
+
+# --- a local language model as Backend (step two) ---------------------------------------
+
+_SCHEMA = {  # what the model may answer: ids and labels of the vocabulary, nothing else
+    "type": "object",
+    "properties": {
+        "wbs_id": {"type": ["string", "null"]},
+        "status": {"type": "array", "items": {"type": "string", "enum": STATUSES}},
+        "float": {"type": "array", "items": {"type": "string", "enum": CATEGORIES}},
+        "code_ids": {"type": "array", "items": {"type": "string"}},
+        "resource_ids": {"type": "array", "items": {"type": "string"}},
+        "milestones": {"type": "boolean"},
+        "loe": {"type": "boolean"},
+        "search": {"type": "string"},
+    },
+    "required": ["wbs_id", "status", "float", "code_ids", "resource_ids", "milestones", "loe", "search"],
+    "additionalProperties": False,
+}
+_SYSTEM = (
+    "You turn a planner's sentence (English or French) into filters over a Primavera P6 schedule. "
+    'Answer with JSON matching the schema, using only ids from the vocabulary; null, [] or "" when the '
+    "sentence does not ask for a filter. 'search' is a text to find in activity names, in the sentence's "
+    "language, for what no other filter covers. Vocabulary: "
+)
+
+
+def from_answer(data: Mapping, vocab: Vocabulary) -> Filter:
+    """A model's JSON answer as a ``Filter``: ids the vocabulary does not hold are dropped, so an
+    invented id filters nothing; a code type is taken from the first code id kept."""
+    wbs_id = data.get("wbs_id")
+    wbs_id = wbs_id if isinstance(wbs_id, str) and wbs_id in vocab.wbs else None
+    code_ids = frozenset(c for c in _strings(data.get("code_ids")) if c in vocab.codes)
+    code_type = next((vocab.codes[c][0] for c in sorted(code_ids)), None)
+    code_ids = frozenset(c for c in code_ids if vocab.codes[c][0] == code_type)
+    status = tuple(s for s in STATUSES if s in _strings(data.get("status")))
+    categories = tuple(c for c in CATEGORIES if c in _strings(data.get("float")))
+    resources = frozenset(r for r in _strings(data.get("resource_ids")) if r in vocab.resources)
+    search = data.get("search") if isinstance(data.get("search"), str) else ""
+    matched = [f"WBS: {vocab.wbs[wbs_id]}"] if wbs_id else []
+    matched += [f"Status: {s}" for s in status] + [f"Float: {c}" for c in categories]
+    matched += [f"{code_type}: {vocab.codes[c][1]}" for c in sorted(code_ids)]
+    matched += [f"Resource: {vocab.resources[r][0] or vocab.resources[r][1]}" for r in sorted(resources)]
+    matched += ["Milestones"] * bool(data.get("milestones")) + ["Level of effort"] * bool(data.get("loe"))
+    matched += [f"Search: {search.strip()}"] if search.strip() else []
+    return Filter(
+        wbs_id=wbs_id,
+        status=status,
+        categories=categories,
+        code_type=code_type,
+        code_ids=code_ids,
+        resources=resources,
+        milestones=bool(data.get("milestones")),
+        loe=bool(data.get("loe")),
+        search=search.strip(),
+        matched=tuple(matched),
+        source="model",
+    )
+
+
+def _strings(value) -> list[str]:
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
+def llm_backend(url: str, timeout: float = 20.0) -> Backend:
+    """A ``Backend`` on a llama.cpp server (OpenAI-compatible ``/v1/chat/completions``) at
+    ``url``, answering with JSON constrained by the schema. The request carries the sentence and
+    ``Vocabulary.to_prompt()`` only. Any failure (server down, slow, bad answer) is None, and the
+    keyword grammar answers."""
+    import json
+    import urllib.request
+
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError(f"XERSCOPE_QUERY_URL must be an http(s) URL, not {url!r}")
+    endpoint = url.rstrip("/") + "/v1/chat/completions"
+
+    def ask(text: str, vocab: Vocabulary) -> Filter | None:
+        body = json.dumps(
+            {
+                "messages": [
+                    {"role": "system", "content": _SYSTEM + json.dumps(vocab.to_prompt(), ensure_ascii=False)},
+                    {"role": "user", "content": text},
+                ],
+                "response_format": {"type": "json_schema", "json_schema": {"name": "filter", "schema": _SCHEMA}},
+                "temperature": 0,
+            }
+        ).encode()
+        request = urllib.request.Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 # nosec B310 (http(s) checked above)
+                answer = json.loads(response.read().decode())
+            data = json.loads(answer["choices"][0]["message"]["content"])
+        except Exception:  # noqa: BLE001  # whatever failed, the grammar answers
+            return None
+        return from_answer(data, vocab) if isinstance(data, dict) else None
+
+    return ask

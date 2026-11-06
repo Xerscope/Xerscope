@@ -11,6 +11,7 @@ from xerscope.app.state import (
     csv_download,
     memo,
     page_header,
+    query_backend,
     require_store,
     snapshot_picker,
     sources_of,
@@ -159,9 +160,15 @@ asked = st.text_input(
     placeholder='In words: "critical not started in civil works", "quasi critique en cours"',
     key=ASK_KEY,
 )
-ask = query.parse(asked, memo(("vocabulary", snapshot.source), query.vocabulary, snapshot, nodes)) if asked else None
+ask = None
+if asked:
+    lexicon = memo(("vocabulary", snapshot.source), query.vocabulary, snapshot, nodes, baseline=False, ev_basis=False)
+    ask = memo(  # one model call per sentence and update, baseline-independent
+        ("ask", snapshot.source, asked), query.parse, asked, lexicon, query_backend(), baseline=False, ev_basis=False
+    )
 if ask is not None:
-    understood = "Understood: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all."
+    how = " (model)" if ask.source == "model" else ""
+    understood = f"Understood{how}: " + " · ".join(ask.matched) if ask.matched else "Nothing understood: showing all."
     left_out = f" — not in this file: {', '.join(ask.ignored)}" if ask.ignored else ""
     st.caption(understood + left_out)
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")

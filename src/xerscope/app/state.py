@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import html
 import os
@@ -14,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards
+from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards, query
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
@@ -104,6 +105,14 @@ def background_jobs() -> bool:
     pages draw. XERSCOPE_SYNC_LOAD=1 (the tests: AppTest returns when the script ends) does
     everything in the script run."""
     return os.environ.get("XERSCOPE_SYNC_LOAD", "").lower() not in ("1", "true", "yes")
+
+
+@functools.cache
+def query_backend() -> query.Backend | None:
+    """The language model behind the Gantt page's Ask field (``analysis.query.llm_backend``), from
+    XERSCOPE_QUERY_URL: a llama.cpp server on the compose network. Unset: the keyword grammar only."""
+    url = os.environ.get("XERSCOPE_QUERY_URL", "").strip()
+    return query.llm_backend(url) if url else None
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:

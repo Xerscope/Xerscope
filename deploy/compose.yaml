@@ -97,6 +97,8 @@ services:
       STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
+      # XERSCOPE_QUERY_URL: http://llm:8080         # the optional `llm` service below (profile ai): the Gantt
+                                                    # page's Ask field asks it; unset, a keyword grammar answers
     volumes:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
     networks:                                       # nothing published: reachable from Caddy only
@@ -114,6 +116,23 @@ services:
     mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
                                                     # past the cap the kernel kills the app alone and Docker restarts it
     pids_limit: 256
+    restart: unless-stopped
+
+  llm:                                            # optional: `docker compose --profile ai up -d`. A llama.cpp
+    profiles: [ai]                                #   server the Gantt page's Ask field asks (analysis/query.py);
+    image: ghcr.io/ggml-org/llama.cpp:server-b12169   # it receives the file's WBS, code and resource names only
+    command: ["-m", "/models/${XERSCOPE_LLM_MODEL:-model.gguf}", "-c", "4096", "--parallel", "1", "--jinja"]
+    user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # the image has no USER: it would run as root
+    volumes:
+      - ${XERSCOPE_MODELS:-../models}:/models:ro  # one GGUF file (docs/deploy.md §10), readable by XERSCOPE_UID
+    networks: [internal]                          # reachable from the app only; no gateway, no port
+    read_only: true
+    tmpfs:
+      - /tmp:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=1777,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-3g}      # a 3B model quantised Q4 with a 4k context (docs/deploy.md §10)
+    pids_limit: 64
     restart: unless-stopped
 
 volumes:

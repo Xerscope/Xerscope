@@ -251,7 +251,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env` (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume).
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
-- [ ] Memory and PID caps on the three containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
+- [ ] Memory and PID caps on the three containers (four with the optional `llm`, §10), bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
@@ -261,7 +261,36 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
-## 10. Troubleshooting
+## 10. Optional: a local language model for the Gantt "Ask" field
+
+The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
+and turns it into its own filters (`analysis/query.py`). Without a model, a keyword grammar
+over the file's lexicon (WBS, activity codes, resources, activity-name words) answers. The
+`llm` service of `deploy/compose.yaml` (profile `ai`) adds a llama.cpp server for the
+sentences the grammar misses (synonyms, "what blocks the end of the electrical lot"). It
+receives the file's WBS, code and resource names only: no activity, no date, no number
+(`tests/test_query_llm.py` checks the request). An answer that does not come, in 20 s, or
+does not parse, is replaced by the grammar's: the page never waits on the model.
+
+1. Put one GGUF model in a folder the `XERSCOPE_UID` account can read, e.g. `models/` next to
+   `exports/`. On the DS918+ (Celeron J3455, 4 cores, no GPU) a 3B model quantised Q4_K_M
+   (about 2 GB) answers in 8-15 s and fits `XERSCOPE_LLM_MEM_LIMIT=3g` with a 4k context; a
+   1.5B model answers in 4-6 s and misses more negations. The model must support JSON-schema
+   constrained output through llama.cpp's chat endpoint, which every GGUF chat model does.
+2. `.env`: `XERSCOPE_QUERY_URL=http://llm:8080`, `XERSCOPE_MODELS=<folder>`,
+   `XERSCOPE_LLM_MODEL=<file>.gguf`.
+3. Project → Action → Build with the profile: Container Manager runs
+   `docker compose --profile ai up -d`; without `--profile ai` the service does not start and
+   the app, `XERSCOPE_QUERY_URL` unset, uses the grammar alone.
+4. The model is on the `internal` network only (no gateway, no port), non-root, read-only,
+   `--parallel 1` (one visitor, one context). The budget on 8 GB: app 2 GB, model 3 GB,
+   Caddy and Tailscale 0.5 GB, the rest for DSM.
+
+A GPU machine on the tailnet instead of the NAS is the same `XERSCOPE_QUERY_URL` pointed at
+it, with its address added to the app's network: not covered here (the app would then leave
+the `internal` network, and `tests/test_docker.py` pins that it does not).
+
+## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
