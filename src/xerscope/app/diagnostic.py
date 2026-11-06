@@ -31,6 +31,7 @@ from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard
 from xerscope.app.ui import as_dates
 from xerscope.config import DEFAULT_SETTINGS
+from xerscope.xer.calendar import Intervals
 from xerscope.xer.model import (
     FILE_PROJECT_COLUMNS,
     PCT_TYPE_COUNT_COLUMNS,
@@ -331,6 +332,153 @@ def calendars_table(snapshot: Snapshot) -> pd.DataFrame:
     return calendars.reset_index(drop=True)
 
 
+WEEKDAY_NAMES = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)  # WorkCalendar.week order
+HOUR_COUNT_COLUMNS = ["day_hr_cnt", "week_hr_cnt", "month_hr_cnt", "year_hr_cnt"]  # P6 "Hours per Time Period"
+CALENDAR_TEXT_COLUMNS = ["clndr_type", "default_flag", "base_clndr_id"]
+
+
+def working_periods_text(periods: Intervals) -> str:
+    """One day's working periods as written in P6, "08:00-12:00, 13:00-17:00"; "" for a non-working day."""
+
+    def clock(minute_of_day: int) -> str:
+        return f"{minute_of_day // 60:02d}:{minute_of_day % 60:02d}"  # the end of a 24 h day reads 24:00
+
+    return ", ".join(f"{clock(start)}-{clock(end)}" for start, end in periods)
+
+
+def working_hours_of(periods: Intervals) -> float:
+    """Working hours of one day's periods."""
+    return sum(end - start for start, end in periods) / 60
+
+
+EXCEPTION_KINDS = (
+    "non-working day",
+    "working day on a non-working weekday",
+    "other working hours",
+    "same hours as the weekday",
+)
+
+
+def exception_kind(exception_periods: Intervals, normal_periods: Intervals) -> str:
+    """What a calendar exception does to the day it replaces."""
+    if not exception_periods:
+        return "non-working day"
+    if not normal_periods:
+        return "working day on a non-working weekday"
+    if exception_periods != normal_periods:
+        return "other working hours"
+    return "same hours as the weekday"
+
+
+def calendar_summary_table(snapshot: Snapshot, anonymous: bool = False) -> pd.DataFrame:
+    """One row per calendar of the file: the hours per time period P6 stores (CALENDAR.*_hr_cnt), the
+    working time its periods (clndr_data) add up to, whether the two agree, and its exceptions by kind.
+    ``anonymous``: without the calendar name."""
+    activities_per_calendar = snapshot.activities["clndr_id"].value_counts()
+    calendar_rows = snapshot.calendars
+    stored = (
+        calendar_rows.drop_duplicates("clndr_id").set_index("clndr_id")
+        if "clndr_id" in calendar_rows
+        else pd.DataFrame()
+    )
+    rows = []
+    for clndr_id, calendar in snapshot.work_calendars.items():
+        stored_row = stored.loc[clndr_id] if clndr_id in stored.index else pd.Series(dtype=object)
+        stored_hours = {column: pd.to_numeric(stored_row.get(column), errors="coerce") for column in HOUR_COUNT_COLUMNS}
+        day_lengths = sorted({working_hours_of(periods) for periods in calendar.week if periods})
+        week_hours = sum(working_hours_of(periods) for periods in calendar.week)
+        kinds = pd.Series(
+            [exception_kind(periods, calendar.week[day.weekday()]) for day, periods in calendar.exceptions.items()],
+            dtype=object,
+        ).value_counts()
+        rows.append(
+            {
+                "clndr_id": clndr_id,
+                **({} if anonymous else {"clndr_name": calendar.name}),
+                **{column: stored_row.get(column, "") for column in CALENDAR_TEXT_COLUMNS},
+                **stored_hours,
+                "periods_read_from": "clndr_data" if calendar.from_data else "guessed from day/week hours",
+                "working_days_per_week": sum(1 for periods in calendar.week if periods),
+                "week_hours_from_periods": week_hours,
+                "day_lengths_from_periods": ", ".join(f"{hours:g}" for hours in day_lengths),
+                "day_hr_cnt_matches_periods": len(day_lengths) == 1 and stored_hours["day_hr_cnt"] == day_lengths[0],
+                "week_hr_cnt_matches_periods": stored_hours["week_hr_cnt"] == week_hours,
+                "hours_per_day_used_for_days": calendar.hours_per_day,
+                "exceptions": len(calendar.exceptions),
+                **{f"exceptions_{kind.replace(' ', '_')}": int(kinds.get(kind, 0)) for kind in EXCEPTION_KINDS},
+                "first_exception": min(calendar.exceptions, default=None),
+                "last_exception": max(calendar.exceptions, default=None),
+                "activities": int(activities_per_calendar.get(clndr_id, 0)),
+                "project_default": clndr_id == snapshot.project_clndr_id,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def calendar_week_table(snapshot: Snapshot) -> pd.DataFrame:
+    """One row per calendar and weekday: the working periods read from clndr_data (DaysOfWeek)."""
+    rows = [
+        {
+            "clndr_id": clndr_id,
+            "weekday": WEEKDAY_NAMES[weekday],
+            "working_periods": working_periods_text(periods),
+            "working_hours": working_hours_of(periods),
+        }
+        for clndr_id, calendar in snapshot.work_calendars.items()
+        for weekday, periods in enumerate(calendar.week)
+    ]
+    return pd.DataFrame(rows, columns=["clndr_id", "weekday", "working_periods", "working_hours"])
+
+
+def calendar_exceptions_table(snapshot: Snapshot) -> pd.DataFrame:
+    """One row per calendar exception (clndr_data Exceptions): its date, what it does to the weekday
+    it replaces, and the working periods of both."""
+    rows = []
+    for clndr_id, calendar in snapshot.work_calendars.items():
+        for day, periods in sorted(calendar.exceptions.items()):
+            normal_periods = calendar.week[day.weekday()]
+            rows.append(
+                {
+                    "clndr_id": clndr_id,
+                    "date": day,
+                    "weekday": WEEKDAY_NAMES[day.weekday()],
+                    "kind": exception_kind(periods, normal_periods),
+                    "working_periods": working_periods_text(periods),
+                    "working_hours": working_hours_of(periods),
+                    "weekday_working_periods": working_periods_text(normal_periods),
+                    "weekday_working_hours": working_hours_of(normal_periods),
+                }
+            )
+    columns = [
+        "clndr_id",
+        "date",
+        "weekday",
+        "kind",
+        "working_periods",
+        "working_hours",
+        "weekday_working_periods",
+        "weekday_working_hours",
+    ]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def calendar_detail_frames(snapshot: Snapshot, anonymous: bool = False) -> dict[str, pd.DataFrame]:
+    """Block 13: every calendar of the file, its weekly periods and its exceptions, named as in the zip."""
+    return {
+        "13_calendar_summary": calendar_summary_table(snapshot, anonymous),
+        "13_calendar_week": calendar_week_table(snapshot),
+        "13_calendar_exceptions": calendar_exceptions_table(snapshot),
+    }
+
+
 def leveling_table(snapshot: Snapshot) -> pd.DataFrame:
     """The activities the leveling load warning counts (``xer.model.leveled``)."""
     tasks = snapshot.tasks
@@ -518,7 +666,7 @@ def project_settings_meaning_table() -> pd.DataFrame:
 def diagnostic_frames(
     snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
 ) -> dict[str, pd.DataFrame]:
-    """Blocks 1 to 9 and 11, named as the files of the diagnostic zip (block 10 is ``pv_p6_frames``).
+    """Blocks 1 to 9, 11 and 13, named as the files of the diagnostic zip (block 10 is ``pv_p6_frames``).
     ``anonymous``: no file name in them."""
     project_finish, latest_finishes = finish_table(snapshot)
     ev_settings = etc_settings(snapshot)
@@ -543,6 +691,7 @@ def diagnostic_frames(
         "09_pv_labor_by_status": pv_by_status,
         "09_assignment_dates": assignment_dates_table(snapshot),
         "11_project_settings": project_settings_table(snapshot),
+        **calendar_detail_frames(snapshot, anonymous),
     }
 
 

@@ -250,6 +250,46 @@ with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key
     table(frames["11_project_settings"].astype(str))  # flags, dates, counts and "absent": one type for Arrow
     table(diagnostic.project_settings_meaning_table())
 
+with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time period)", key="debug_calendars"):
+    st.caption(
+        "Every calendar of the file as xerscope reads it. Summary: the hours per time period P6 stores "
+        "(day_hr_cnt, week_hr_cnt, month_hr_cnt, year_hr_cnt) beside the working time the periods of clndr_data "
+        "add up to; hours_per_day_used_for_days divides working hours into days. Week: the working periods of "
+        "each weekday (DaysOfWeek, P6 day 1 = Sunday). Exceptions: each dated exception and what it does to the "
+        "weekday it replaces. 24:00 is the end of the day."
+    )
+    calendar_frames = {name: frame for name, frame in frames.items() if name.startswith("13_")}
+    table(calendar_frames["13_calendar_summary"].astype(str))  # numbers, flags and blanks: one type for Arrow
+    table(calendar_frames["13_calendar_week"])
+    table(calendar_frames["13_calendar_exceptions"], max_height=480)
+
+    def calendar_zip_tag(anonymous: bool) -> tuple:
+        """What the calendar zip is built from: files, projects, update and the anonymous switch."""
+        return (*data_identity(), snapshot.source, str(snapshot.data_date), anonymous)
+
+    if st.button("Build calendar detail", icon=":material/calendar_month:", key="debug_calendars_build"):
+        hold(
+            st.session_state,
+            "debug_calendars_zip",
+            calendar_zip_tag(anonymous_exports()),
+            fetch(
+                st.session_state,
+                lambda: zip_frames(calendar_frames, "csv"),
+                lambda anonymizer: anonymizer.zip_frames(diagnostic.calendar_detail_frames(snapshot, anonymous=True)),
+                sources_of(snapshot),
+                prepare=True,
+            ),
+        )
+    calendar_zip = held(st.session_state, "debug_calendars_zip", calendar_zip_tag(anonymous_exports()))
+    if calendar_zip is not None:
+        show_download(
+            calendar_zip,
+            "Download calendar detail (.zip)",
+            f"xerscope_calendars_{ui.stamp(snapshot.data_date)}.zip",
+            "application/zip",
+            key="debug_calendars_download",
+        )
+
 # not on a deployed instance: the block names the server's folders, the package path and versions
 if not data_locked():
     with st.expander("12 · App runtime (where the theme and fonts come from)", key="debug_runtime"):
@@ -283,7 +323,7 @@ def build_diagnostic(anonymous: bool) -> None:
 anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
-    "Blocks 1 to 9 and 11 as CSV, and block 10 without its activity list when an export is loaded. With "
+    "Blocks 1 to 9, 11 and 13 as CSV, and block 10 without its activity list when an export is loaded. With "
     "anonymous exports on, Task IDs, resource codes and WBS codes are renamed as in the anonymized XER "
     "extract; the tables hold no name or project name. Dates are left as they are.",
 )

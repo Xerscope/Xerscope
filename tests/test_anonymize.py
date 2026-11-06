@@ -297,7 +297,7 @@ def test_diagnostic_ev_settings_block_renames_the_wbs_and_keeps_the_enumerations
     ]
     raw = parse_text(_file([todo("A1", wbs_id="10")], wbs=wbs), source="x.xer")
     anonymizer = Anonymizer.from_raws([raw])
-    plain = diagnostic_frames(build_snapshot(raw), None, p6)
+    plain = diagnostic_frames(build_snapshot(raw), None, p6, anonymous=True)  # as the Debug page builds the zip
     with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames(plain))) as archive:
         data = {name: archive.read(name).decode("utf-8-sig") for name in archive.namelist()}
     assert "SECRETWBS" not in "".join(data.values())

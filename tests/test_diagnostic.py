@@ -1,8 +1,10 @@
 """Debug page block 6: the activities behind each load warning of the file."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
-from xerkit import active, done, snap, todo
+from xerkit import active, clndr_data, done, snap, todo
 
 from xerscope.analysis import builtin_standards
 from xerscope.app.diagnostic import ABSENT, costs_table, diagnostic_frames, finish_table, leveling_table
@@ -381,3 +383,77 @@ def test_project_settings_meaning_covers_every_setting_and_marks_the_unverified(
     assert meaning.loc["PROJECT.next_data_date", "reading"] == "meaning unverified"
     assert meaning.loc["PROJECT.sum_base_proj_id", "xer_label"] == "Project Baseline"
     assert meaning.filter(like="PROJWBS", axis=0)["reading"].tolist() == [ABSENT]
+
+
+# --- block 13: calendar detail ------------------------------------------------------------------------
+# xerkit's C8 is Monday to Friday 08:00-12:00 / 13:00-17:00 with one holiday, Friday 2026-04-03 (serial
+# 46115); its CALENDAR row stores 8 h per day and 40 h per week. A calendar of uneven days is added:
+# Monday 07:00-11:30 (4.5 h), Tuesday 00:00-00:00 (a 24 h day), a working Saturday 2026-03-07 and a
+# shortened Monday 2026-03-02, with 8 h per day and 40 h per week stored.
+UNEVEN_DAYS = clndr_data(range(2, 4), [("07:00", "11:30")], ())
+UNEVEN_DAYS = UNEVEN_DAYS.replace("(0||3()((0||0(s|07:00|f|11:30)())))", "(0||3()((0||0(s|00:00|f|00:00)())))")
+UNEVEN_DAYS = UNEVEN_DAYS.replace(
+    "(0||Exceptions()())",
+    "(0||Exceptions()((0||0(d|46088)((0||0(s|08:00|f|12:00)())))(0||1(d|46083)((0||0(s|07:00|f|09:00)())))))",
+)
+UNEVEN_CALENDAR = {
+    "clndr_id": "U1",
+    "clndr_name": "Uneven",
+    "day_hr_cnt": "8",
+    "week_hr_cnt": "40",
+    "clndr_data": UNEVEN_DAYS,
+}
+
+
+@pytest.fixture(scope="module")
+def calendar_frames():
+    from xerscope.app.diagnostic import calendar_detail_frames
+
+    snapshot = snap([todo("A"), todo("B", clndr_id="U1")], calendars=[UNEVEN_CALENDAR])
+    return calendar_detail_frames(snapshot)
+
+
+def test_calendar_summary_sets_the_stored_hours_beside_the_periods(calendar_frames):
+    summary = calendar_frames["13_calendar_summary"].set_index("clndr_id")
+    standard = summary.loc["8"]  # xerkit writes C8 as clndr_id 8
+    assert standard["week_hours_from_periods"] == 40 and standard["day_lengths_from_periods"] == "8"
+    assert standard["day_hr_cnt_matches_periods"] and standard["week_hr_cnt_matches_periods"]
+    assert standard["exceptions_non-working_day"] == 1 and standard["activities"] == 1
+    uneven = summary.loc["U1"]
+    assert uneven["working_days_per_week"] == 2 and uneven["week_hours_from_periods"] == 28.5  # 4.5 + 24
+    assert uneven["day_lengths_from_periods"] == "4.5, 24"
+    assert not uneven["day_hr_cnt_matches_periods"] and not uneven["week_hr_cnt_matches_periods"]
+    assert uneven["hours_per_day_used_for_days"] == 8  # days still divide by the stored day_hr_cnt
+    assert uneven["exceptions_working_day_on_a_non-working_weekday"] == 1
+    assert uneven["exceptions_other_working_hours"] == 1
+
+
+def test_calendar_week_writes_each_weekday_as_p6_shows_it(calendar_frames):
+    week = calendar_frames["13_calendar_week"]
+    uneven = week[week["clndr_id"] == "U1"].set_index("weekday")
+    assert uneven.loc["Monday", "working_periods"] == "07:00-11:30" and uneven.loc["Monday", "working_hours"] == 4.5
+    assert uneven.loc["Tuesday", "working_periods"] == "00:00-24:00" and uneven.loc["Tuesday", "working_hours"] == 24
+    assert uneven.loc["Sunday", "working_periods"] == "" and uneven.loc["Sunday", "working_hours"] == 0
+    standard = week[week["clndr_id"] == "8"].set_index("weekday")
+    assert standard.loc["Friday", "working_periods"] == "08:00-12:00, 13:00-17:00"
+
+
+def test_calendar_exceptions_say_what_they_do_to_the_weekday(calendar_frames):
+    exceptions = calendar_frames["13_calendar_exceptions"].set_index(["clndr_id", "date"])
+    holiday = exceptions.loc[("8", date(2026, 4, 3))]
+    assert holiday["kind"] == "non-working day" and holiday["weekday_working_hours"] == 8
+    saturday = exceptions.loc[("U1", date(2026, 3, 7))]
+    assert saturday["kind"] == "working day on a non-working weekday" and saturday["working_hours"] == 4
+    monday = exceptions.loc[("U1", date(2026, 3, 2))]
+    assert monday["kind"] == "other working hours" and monday["working_periods"] == "07:00-09:00"
+    assert monday["weekday_working_periods"] == "07:00-11:30" and monday["weekday_working_hours"] == 4.5
+
+
+def test_calendar_detail_is_in_the_diagnostic_zip_without_names_when_anonymous():
+    from xerscope.app.diagnostic import calendar_summary_table
+
+    snapshot = snap([todo("A")], calendars=[UNEVEN_CALENDAR])
+    assert "clndr_name" in calendar_summary_table(snapshot).columns
+    assert "clndr_name" not in calendar_summary_table(snapshot, anonymous=True).columns
+    frames = diagnostic_frames(snapshot, None, builtin_standards()["P6"], anonymous=True)
+    assert {"13_calendar_summary", "13_calendar_week", "13_calendar_exceptions"} <= set(frames)
