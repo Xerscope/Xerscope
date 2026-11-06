@@ -16,7 +16,18 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
     "crosscheck": {"verify"},
     "sample": {"xer", "analysis.cpm", "config"},
     "app": {"xer", "store", "analysis", "viz", "export", "anonymize", "config"},
-    "cli": {"xer", "store", "analysis", "export", "sample", "verify", "crosscheck", "app.diagnostic", "config"},
+    "cli": {
+        "xer",
+        "store",
+        "analysis",
+        "export",
+        "sample",
+        "verify",
+        "crosscheck",
+        "anonymize",
+        "app.diagnostic",
+        "config",
+    },
 }
 
 

@@ -172,7 +172,7 @@ checks the code against it, so a change here must be made there too):
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
 - `cli.py` is the entry point: it imports every layer, `app/diagnostic.py` included (`pv-compare`
-  reads the same frames as the Debug page).
+  reads the same frames as the Debug page) and `anonymize.py` (`ask-bench --anonymize`).
 
 Outside `analysis/`:
 
