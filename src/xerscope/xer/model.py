@@ -985,6 +985,9 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     _warn_unknown_codes(tasks["status_code"], STATUS, f"{source}: TASK.status_code", "read as started", inputs.warnings)
     tasks["is_start_milestone"] = tasks["task_type"].isin(START_MILESTONES)
     tasks["is_milestone"] = tasks["is_start_milestone"] | (tasks["task_type"] == "TT_FinMile")
+    _warn_unknown_codes(
+        tasks["task_type"], TASK_TYPE, f"{source}: TASK.task_type", "read as Task Dependent", inputs.warnings
+    )
     if (tasks["task_type"] == "TT_StartMile").any():
         inputs.warnings.append(f"{source}: non-standard task_type TT_StartMile read as a start milestone")
     tasks["is_loe"] = tasks["task_type"] == "TT_LOE"
@@ -1053,6 +1056,13 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     relationships["succ_code"] = relationships["task_id"].map(code_by_id)
     relationships["pred_code"] = relationships["pred_task_id"].map(code_by_id)
     relationships["type"] = relationships["pred_type"].map(REL_TYPE).fillna(relationships["pred_type"])
+    _warn_unknown_codes(
+        relationships["pred_type"],
+        REL_TYPE,
+        f"{inputs.source}: TASKPRED.pred_type",
+        "scheduled as SF in the forward pass, ignored in the backward pass",
+        inputs.warnings,
+    )
     relationships["lag_hr"] = to_number(relationships["lag_hr_cnt"]).fillna(0.0)
     # Lag hours -> days. Oracle: "Lag entered in a unit other than hours is converted
     # to hours based on the predecessor activity's calendar", whatever calendar the lag

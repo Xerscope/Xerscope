@@ -427,3 +427,21 @@ def test_unknown_status_code_warns_and_reads_as_started(code, name):
 def test_p6_status_codes_do_not_warn():
     s = snap([todo("A"), active("B"), done("C")])
     assert not [w for w in s.warnings if "not a P6 code" in w]
+
+
+def test_unknown_task_type_warns_once_per_code():
+    s = snap([todo("A", task_type="TT_TASK"), todo("B", task_type="TT_TASK"), todo("C", task_type="TT_X"), todo("D")])
+    assert [w for w in s.warnings if "task_type" in w] == [
+        "test.xer: TASK.task_type 'TT_TASK' is not a P6 code (2 rows): read as Task Dependent",
+        "test.xer: TASK.task_type 'TT_X' is not a P6 code (1 row): read as Task Dependent",
+    ]
+    assert not s.tasks[["is_milestone", "is_loe", "is_wbs_summary"]].any().any()
+
+
+def test_unknown_pred_type_warns_and_keeps_its_code():
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FS", 0), ("B", "C", "XX", 0)])
+    assert [w for w in s.warnings if "pred_type" in w] == [
+        "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
+        "scheduled as SF in the forward pass, ignored in the backward pass"
+    ]
+    assert sorted(s.relationships["type"]) == ["FS", "PR_XX"]
