@@ -152,8 +152,14 @@ class LoadJob:
             try:
                 self.read(name, data)
             except Exception as exc:  # noqa: BLE001 - an error of a thread would otherwise be lost
-                self.results[name] = f"{name}: {exc}"
+                self.results[name] = _error_text(name, exc)
         self.done = True
+
+
+def _error_text(name: str, exc: BaseException) -> str:
+    """``name: error``; an XerError already names its source, so the name is not written twice."""
+    text = str(exc)
+    return text if text.startswith(f"{name}:") else f"{name}: {text}"
 
 
 def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
@@ -164,7 +170,7 @@ def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
     try:
         job.read(*first)
     except Exception as exc:  # noqa: BLE001
-        job.results[first[0]] = f"{first[0]}: {exc}"
+        job.results[first[0]] = _error_text(first[0], exc)
     if len(job.items) == 1:
         job.done = True
     else:
@@ -220,9 +226,11 @@ def _header(path: Path) -> FileHeader | str:
     return cache[key]
 
 
-def _describe_file(path: Path, widths: tuple[int, int] = (0, 0)) -> tuple[str, str]:
+def _describe_file(path: Path, widths: tuple[int, int] = (0, 0), same_date_as: str | None = None) -> tuple[str, str]:
     """Tick box label and help for a file not read yet: what build_snapshot would take from it.
-    ``widths``: name and project code padded to these lengths, so the list reads in columns."""
+    ``widths``: name and project code padded to these lengths, so the list reads in columns.
+    ``same_date_as``: the file of the folder that comes first with the same status date (the series
+    holds one update per date, so the two cannot be read together)."""
     header = _header(path)
     name = path.name.ljust(widths[0], NBSP)
     if isinstance(header, str):
@@ -231,6 +239,8 @@ def _describe_file(path: Path, widths: tuple[int, int] = (0, 0)) -> tuple[str, s
     label = f"{name} — {header.project_code.ljust(widths[1], NBSP)} · {ui.fmt_date(header.data_date)}"
     if len(counts) > 1:
         label += f" · {len(counts)} projects"
+    if same_date_as:
+        label += f" — same date as {same_date_as}"
     details = (
         f"Project: {header.project_code} ({header.selected_by})  \n"
         f"Projects in file (TASK rows): {project_counts_text(counts, header.project_codes)}  \n"
@@ -255,8 +265,23 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     for name, key in keys.items():
         st.session_state.setdefault(key, name in chosen)
 
+    headers = {path.name: _header(path) for path in files}
+    # the series holds one update per status date: of the files sharing one, the first by name is
+    # the one Select all ticks, the others say which file they double
+    first_by_date: dict[pd.Timestamp, str] = {}
+    same_date_as: dict[str, str] = {}
+    for name, header in headers.items():
+        if isinstance(header, str) or header.data_date is None:
+            continue
+        kept = first_by_date.setdefault(header.data_date, name)
+        if kept != name:
+            same_date_as[name] = kept
+    readable = [name for name, header in headers.items() if not isinstance(header, str) and name not in same_date_as]
+
     def tick_all(value: bool) -> None:
-        st.session_state.update(dict.fromkeys(keys.values(), value))
+        """Select all ticks every readable file but the doubles of a status date; Clear unticks all."""
+        names = readable if value else list(keys)
+        st.session_state.update({keys[name]: value for name in names})
 
     ticked = sum(bool(st.session_state[key]) for key in keys.values())
     count, select, clear = st.columns([2, 1, 1], vertical_alignment="center")
@@ -264,14 +289,13 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
     clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
     picked = []
-    headers = [_header(path) for path in files]
     widths = (
         max(len(path.name) for path in files),
-        max((len(header.project_code) for header in headers if not isinstance(header, str)), default=0),
+        max((len(header.project_code) for header in headers.values() if not isinstance(header, str)), default=0),
     )
     with st.container(key="files_list_folder"):
         for path in files:
-            label, details = _describe_file(path, widths)
+            label, details = _describe_file(path, widths, same_date_as.get(path.name))
             if st.checkbox(label, key=keys[path.name], help=details):
                 picked.append(path.name)
     if not picked:
@@ -310,6 +334,11 @@ def _project_draft(source: str) -> str:
 
 def _open_window(section: str) -> None:
     st.session_state.update(files_open=True, window_section=section)
+    # The folder field shows the folder of the last validated choice, else XERSCOPE_DATA. Set here,
+    # not as a default of the widget: when the window closes without Done, the browser leaves the
+    # field's key in the session state with an empty value, which a default would not fill.
+    source = st.session_state.get("files_source") or ("none",)
+    st.session_state["files_folder"] = source[1] if source[0] == "folder" else os.environ.get("XERSCOPE_DATA", "")
     for key, draft in DRAFTS.items():
         if key in st.session_state:
             st.session_state[draft] = st.session_state[key]
@@ -352,9 +381,6 @@ def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
         _section_title("Files")
         uploads = st.file_uploader(
             "Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True, key="files_upload"
-        )
-        st.session_state.setdefault(
-            "files_folder", source[1] if source[0] == "folder" else os.environ.get("XERSCOPE_DATA", "")
         )
         folder = st.text_input("…or read a folder", key="files_folder", placeholder="/path/to/exports")
     kept = _upload_boxes(uploads, source[1] if source[0] == "upload" else ())
@@ -1079,9 +1105,26 @@ def standards() -> dict[str, Standard]:
     return found
 
 
+def _page_title() -> str:
+    """The title of the page being drawn (st.navigation's), "" when Streamlit's registry does not
+    give it: an internal API, so a change of Streamlit only drops the title of the empty state."""
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        ctx = get_script_run_ctx()
+        return ctx.pages_manager.get_pages()[ctx.page_script_hash]["page_name"]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def require_store() -> SnapshotStore:
+    """The series read, or the empty state: the page's title, so the viewer knows where they are,
+    and what to do, then the page stops."""
     store = st.session_state.get("store")
     if store is None:
+        title = _page_title()
+        if title:
+            st.title(title)
         st.info(
             "Load your weekly XER exports from the sidebar's Files line (upload or folder path).\n\n"
             "No files yet? Generate a demo set with `uv run xerscope sample --out data/sample`, "

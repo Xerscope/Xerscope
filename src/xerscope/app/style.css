@@ -65,6 +65,17 @@
   [class*="st-key-kpis_"] [data-testid="stMetric"] > div { grid-template-columns: minmax(0, 1fr) auto; }
   [class*="st-key-kpis_"] [data-testid="stMetric"] > div > div:last-child { grid-column: 1 / -1; }
 }
+/* Neutral changes (delta_color "off": a change of zero, a count, "not computed yet"): Streamlit draws
+   them in a fixed grey at 60 % (#31333F, 3.4:1 on its chip in the light theme); the page's text colour
+   at 78 % reads at 6:1 or more on both themes. ui.kpis marks them with a kpi_off_ key, the score cards
+   are all neutral */
+[class*="st-key-kpi_off_"] [data-testid="stMetricDelta"],
+.st-key-score_cards [data-testid="stMetricDelta"] {
+  color: color-mix(in srgb, currentColor 78%, transparent);
+}
+/* the text inside takes the chip's colour once: a mix on each level would fade it again */
+[class*="st-key-kpi_off_"] [data-testid="stMetricDelta"] *,
+.st-key-score_cards [data-testid="stMetricDelta"] * { color: inherit; }
 
 /* Segmented control: the selected option's text in the accent; the dark theme's primaryColor
    is deep enough for white text on it, too dark for text on the page */
@@ -103,6 +114,11 @@
   box-shadow: 0 6px 18px -10px rgb(0 0 0 / 0.35);
   transform: translateY(-1px);
 }
+
+/* A caption that holds a link (Schedule health: the standard's "reference"): the caption's 60 %
+   opacity would dim the link to 2.6:1, so the text alone is faded and the link keeps its colour */
+[data-testid="stCaptionContainer"]:has(a) { opacity: 1; }
+[data-testid="stCaptionContainer"]:has(a) p { color: color-mix(in srgb, currentColor 60%, transparent); }
 
 /* Sidebar navigation: the current page carries a bar in the accent, the others light up on hover */
 [data-testid="stSidebarNavLink"] {
@@ -151,7 +167,7 @@
    animated. */
 [data-testid="stDialog"]:has(.st-key-files_sheet) {
   --xd-mono: "JetBrains Mono", ui-monospace, monospace;
-  --xd-muted: color-mix(in srgb, currentColor 58%, transparent);
+  --xd-muted: color-mix(in srgb, currentColor 66%, transparent);
   --xd-hover: color-mix(in srgb, currentColor 6%, transparent);
   --xd-veil: rgb(2 6 23 / 0.55);
   --xd-shadow: 14px 14px 0 -6px rgb(0 0 0 / 0.22), 0 28px 56px -24px rgb(0 0 0 / 0.6);
@@ -172,7 +188,14 @@
 }
 [data-testid="stDialog"]:has(.st-key-files_sheet) [role="dialog"] h2 { font-size: 1rem; font-weight: 600; letter-spacing: 0; }
 [data-testid="stDialog"]:has(.st-key-files_sheet) [data-testid="stWidgetLabel"] p { font-size: 0.8rem; }
+/* captions ("0 of 6 ticked", "Project read from each file · why", the foot line) at the muted colour
+   with the container's own fade removed: 66 % of the text colour reads at 5:1 or more */
+[data-testid="stDialog"]:has(.st-key-files_sheet) [data-testid="stCaptionContainer"] { opacity: 1; }
 [data-testid="stDialog"]:has(.st-key-files_sheet) [data-testid="stCaptionContainer"] p { color: var(--xd-muted); }
+/* a long folder path is cut with an ellipsis instead of running past the field */
+[data-testid="stDialog"]:has(.st-key-files_sheet) input[data-testid="stTextInputField"] { text-overflow: ellipsis; }
+/* the shortcut hint on Done ("Ctrl + Enter"): Streamlit fades it on the petrol button to 3.3:1 */
+[data-testid="stDialog"]:has(.st-key-files_sheet) .st-key-files_done kbd { color: inherit; opacity: 0.92; }
 
 /* section titles and the hairline between sections (state._section_title) */
 .xd-title {
@@ -254,10 +277,16 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
 .st-key-baseline_button button > div { justify-content: flex-start; width: 100%; }
 .st-key-files_button button p,
 .st-key-baseline_button button p { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72rem; text-align: left; }
+/* the shortcut badges (F, B) mean nothing on a phone */
+@media (max-width: 640px) {
+  .st-key-files_button button kbd,
+  .st-key-baseline_button button kbd { display: none; }
+}
 /* ==== end Files and baseline window ============================================== */
 
 /* the context banner under each page title (state.context_banner): one monospaced line, muted,
-   cut with an ellipsis when the page is narrow; it opens the window like the sidebar lines */
+   cut with an ellipsis when the page is narrow, wrapped on a phone where the cut would hide most of
+   it; it opens the window like the sidebar lines */
 .st-key-context_banner button {
   justify-content: flex-start;
   min-height: 0;
@@ -280,6 +309,9 @@ hr.xd-rule { margin: 0.25rem 0; border: 0; border-top: 1px solid var(--xs-hairli
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.8;
+}
+@media (max-width: 640px) {
+  .st-key-context_banner button p { white-space: normal; overflow-wrap: anywhere; }
 }
 
 /* Tables: no search button in the toolbar. It highlights a matching cell anywhere in the grid;

@@ -92,7 +92,7 @@ def _cmd_app(args: argparse.Namespace) -> int:
 
 
 def _args_app(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--data", help="folder of weekly .xer files to preload")
+    parser.add_argument("--data", help="folder of weekly .xer files listed at start (tick them in Files to read)")
     parser.add_argument("--baseline", help="baseline .xer (contract baseline)")
     parser.add_argument("--standards", help="folder of your own standard .toml files")
     parser.add_argument("--port", type=int, default=8501)

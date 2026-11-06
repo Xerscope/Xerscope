@@ -170,7 +170,7 @@ Configuration (environment variables, also set by the `app` flags):
 
 | Variable | Effect |
 |---|---|
-| `XERSCOPE_DATA` | folder of weekly `.xer` files to preload |
+| `XERSCOPE_DATA` | folder of weekly `.xer` files listed at start (tick them in Files to read) |
 | `XERSCOPE_BASELINE` | baseline `.xer` |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
 | `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA`; no Debug page (remote deployment) |
