@@ -591,6 +591,40 @@ def _cmd_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("path", help="an XER file or a folder of them (the latest update is read)")
+    parser.add_argument("--cases", required=True, action="append", help="TOML of [[case]] sentences; repeatable")
+    parser.add_argument("--url", default="", help="a llama.cpp server to score as well (XERSCOPE_QUERY_URL)")
+    parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
+
+
+def _cmd_ask_bench(args: argparse.Namespace) -> int:
+    """Share of sentences the Gantt Ask field turns into the right filters, per set and per field:
+    the keyword grammar always, a model when --url is given. The exit code is 0 whatever the
+    ratios: tests/test_ask_bench.py holds the floors."""
+    from .analysis import query
+    from .store import SnapshotStore
+
+    snapshot = SnapshotStore.from_paths(_expand([args.path])).latest
+    vocab = query.vocabulary(snapshot)
+    parsers = {"keywords": None}
+    if args.url:
+        parsers["model"] = query.llm_backend(args.url)
+    for cases_path in args.cases:
+        cases = query.load_cases(cases_path)
+        print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
+        for name, backend in parsers.items():
+            scored = query.score(cases, vocab, backend)
+            answered = (scored["source"] == name).mean() if name == "model" else 1.0
+            shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
+            print(f"  {name:<9} {shares}" + (f"  (answered {answered:.0%}, the rest by keywords)" if args.url else ""))
+            missed = scored[~scored["exact"]]
+            for _, row in missed.head(args.show).iterrows():
+                wrong = ", ".join(field for field in query.FIELDS if not row[field])
+                print(f"    missed: {row['text']!r} ({wrong})")
+    return 0
+
+
 # name: (help, adds its arguments, runs); the order is the order of `xerscope --help`
 COMMANDS = {
     "app": ("launch the web app", _args_app, _cmd_app),
@@ -603,6 +637,11 @@ COMMANDS = {
     "crosscheck": ("compare xerscope with MPXJ on XER files (needs Java)", _args_crosscheck, _cmd_crosscheck),
     "pv-compare": ("PV and EV labour units against a P6 Activities export (CSV)", _args_pv_compare, _cmd_pv_compare),
     "sample": ("generate demo weekly XER files", _args_sample, _cmd_sample),
+    "ask-bench": (
+        "score the Gantt Ask field's parsers on sentences with known filters",
+        _args_ask_bench,
+        _cmd_ask_bench,
+    ),
 }
 
 

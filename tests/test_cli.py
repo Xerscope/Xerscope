@@ -237,3 +237,9 @@ def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_p
         "--column", "pv_hr=PV", "--out", tmp_path / "cmp",
     )  # fmt: skip
     assert "activities in gap" in text
+
+
+def test_ask_bench(capsys, sample_dir):
+    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--cases", "tests/ask/heldout.toml")
+    assert "dev.toml: 20 sentences" in out and "keywords  exact 100%" in out
+    assert "heldout.toml: 20 sentences" in out and "missed:" in out

@@ -1,0 +1,102 @@
+# Sentences the keyword grammar was tuned on (analysis/query.py), with the filters a planner
+# means, on the demo series (`xerscope sample`). Names, not ids: a WBS by its code, a resource
+# by its short name, a code value as "Type:Value". Fields left out expect no filter.
+# `xerscope ask-bench <folder> --cases tests/ask/dev.toml` prints the ratios; heldout.toml holds
+# the sentences written blind, never used to tune.
+
+[[case]]
+text = "critical not started in civil works"
+wbs = "CIV"
+status = ["Not started"]
+float = ["Critical"]
+
+[[case]]
+text = "critiques non démarrées CIV"
+wbs = "CIV"
+status = ["Not started"]
+float = ["Critical"]
+
+[[case]]
+text = "quasi critique en cours"
+status = ["In progress"]
+float = ["Near critical"]
+
+[[case]]
+text = "ingénierie terminée"
+wbs = "ENG"
+status = ["Complete"]
+
+[[case]]
+text = "en retard mechanical"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "earthworks"
+search = "earthworks"
+
+[[case]]
+text = "show me the earthworks in CIV"
+wbs = "CIV"
+search = "earthworks"
+
+[[case]]
+text = "site crew in progress"
+status = ["In progress"]
+resources = ["CREW"]
+
+[[case]]
+text = "jalons en retard"
+milestones = true
+float = ["Critical"]
+
+[[case]]
+text = "hamacs vendor"
+loe = true
+resources = ["VENDOR"]
+
+[[case]]
+text = "critiques non démarrés en génie civil"
+wbs = "CIV"
+status = ["Not started"]
+float = ["Critical"]
+
+[[case]]
+text = "milestones"
+milestones = true
+
+[[case]]
+text = "commissioning not started"
+wbs = "COM"
+status = ["Not started"]
+
+[[case]]
+text = "procurement en cours"
+wbs = "PRC"
+status = ["In progress"]
+
+[[case]]
+text = "tout ce qui est terminé"
+status = ["Complete"]
+
+[[case]]
+text = "design"
+search = "design"
+
+[[case]]
+text = "vendor"
+resources = ["VENDOR"]
+
+[[case]]
+text = "level of effort"
+loe = true
+
+[[case]]
+text = "near critical commissioning"
+wbs = "COM"
+float = ["Near critical"]
+
+[[case]]
+text = "project management critical"
+wbs = "PM"
+float = ["Critical"]

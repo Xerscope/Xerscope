@@ -134,9 +134,11 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
 - [ ] Gantt "Ask" field with a model (`deploy/compose.yaml` `llm`, docs/deploy.md §10): not yet
-      run on the NAS; the 3B/Q4 timing and memory figures are estimates to confirm there, and a
-      hand-made set of sentences with expected filters would measure the model against the
-      grammar (`tests/test_query.py` holds the grammar's).
+      run on the NAS; the 3B/Q4 timing and memory figures are estimates to confirm there.
+      `xerscope ask-bench <folder> --cases tests/ask/heldout.toml --url http://<llm>:8080` scores
+      it against the grammar (80 % exact on the held-out sentences; the misses are synonyms the
+      file does not hold). A model tuned on real files is split by file, never by sentence
+      (`tests/test_ask_bench.py`).
 - [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
 - [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
       fields without a warning; coerced numbers and dates are not counted in the warnings; a

@@ -1,0 +1,99 @@
+# Sentences written before the grammar was run on them, never used to tune it: the floor in
+# tests/test_ask_bench.py is what the grammar scored the first time, and a change that lowers
+# it fails. Same format as dev.toml. To add sentences: write them, run ask-bench once, record
+# the new ratio; do not edit the grammar to fit them without adding the shape to dev.toml.
+
+[[case]]
+text = "foundations"
+search = "foundations"
+
+[[case]]
+text = "activités critiques de la mécanique"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "what is late in procurement"
+wbs = "PRC"
+float = ["Critical"]
+
+[[case]]
+text = "jalons non démarrés"
+milestones = true
+status = ["Not started"]
+
+[[case]]
+text = "piping"
+search = "piping"
+
+[[case]]
+text = "crew tasks not started"
+resources = ["CREW"]
+status = ["Not started"]
+
+[[case]]
+text = "ENG in progress"
+wbs = "ENG"
+status = ["In progress"]
+
+[[case]]
+text = "complete civil works"
+wbs = "CIV"
+status = ["Complete"]
+
+[[case]]
+text = "tâches normales commissioning"
+wbs = "COM"
+float = ["Normal"]
+
+[[case]]
+text = "equipment delivery"
+search = "equipment delivery"
+
+[[case]]
+text = "les LOE"
+loe = true
+
+[[case]]
+text = "mise en service non commencée"
+wbs = "COM"
+status = ["Not started"]
+
+[[case]]
+text = "critical path milestones"
+milestones = true
+float = ["Critical"]
+
+[[case]]
+text = "sous critique en cours CIV"
+wbs = "CIV"
+status = ["In progress"]
+float = ["Near critical"]
+
+[[case]]
+text = "started by the vendor"
+status = ["In progress"]
+resources = ["VENDOR"]
+
+[[case]]
+text = "electrical"
+search = "electrical"
+
+[[case]]
+text = "unstarted roads"
+status = ["Not started"]
+search = "roads"
+
+[[case]]
+text = "ce qui bloque la fin du lot mécanique"
+wbs = "MEC"
+float = ["Critical"]
+
+[[case]]
+text = "handover"
+search = "handover"
+
+[[case]]
+text = "achevées en ingénierie"
+wbs = "ENG"
+status = ["Complete"]

@@ -463,3 +463,68 @@ def llm_backend(url: str, timeout: float = 20.0) -> Backend:
         return from_answer(data, vocab) if isinstance(data, dict) else None
 
     return ask
+
+
+# --- scoring a parser on sentences with known filters --------------------------------------
+
+FIELDS = ("wbs_id", "status", "categories", "code_ids", "resources", "milestones", "loe", "search")
+
+
+def load_cases(path) -> list[dict]:
+    """Sentences with their expected filters, from a TOML file of ``[[case]]`` tables. Expected
+    values name things as a planner would (a WBS code, a resource short name, ``"Zone:B2"`` for a
+    code value) so a file of cases reads without ids; ``expected_filter`` resolves them."""
+    import tomllib
+    from pathlib import Path
+
+    return list(tomllib.loads(Path(path).read_text(encoding="utf-8")).get("case", []))
+
+
+def expected_filter(case: Mapping, vocab: Vocabulary) -> Filter:
+    """The ``Filter`` a case expects, its names resolved against the vocabulary; a name the
+    vocabulary does not hold raises, so a case cannot silently expect nothing."""
+    by_code = {label.split(" · ")[0]: wbs_id for wbs_id, label in vocab.wbs.items()}
+    wbs = case.get("wbs")
+    if wbs is not None and wbs not in by_code:
+        raise KeyError(f"WBS {wbs!r} is not in the file")
+    code_ids, code_type = set(), None
+    for item in case.get("codes", []):
+        kind, _, value = item.partition(":")
+        matches = [c for c, (t, v, _) in vocab.codes.items() if t == kind and v == value]
+        if not matches:
+            raise KeyError(f"code value {item!r} is not in the file")
+        code_ids.add(matches[0])
+        code_type = kind
+    by_short = {short or name: rsrc_id for rsrc_id, (short, name) in vocab.resources.items()}
+    for name in case.get("resources", []):
+        if name not in by_short:
+            raise KeyError(f"resource {name!r} is not in the file")
+    return Filter(
+        wbs_id=by_code.get(wbs) if wbs else None,
+        status=tuple(s for s in STATUSES if s in case.get("status", [])),
+        categories=tuple(c for c in CATEGORIES if c in case.get("float", [])),
+        code_type=code_type,
+        code_ids=frozenset(code_ids),
+        resources=frozenset(by_short[n] for n in case.get("resources", [])),
+        milestones=bool(case.get("milestones", False)),
+        loe=bool(case.get("loe", False)),
+        search=fold(case.get("search", "")),
+    )
+
+
+def score(cases: list[Mapping], vocab: Vocabulary, backend: Backend | None = None) -> pd.DataFrame:
+    """One row per case: the sentence, whether every field matched (``exact``), one column per
+    field (True when it matched) and the parser that answered. A ratio of a column is the share
+    of cases it got right; ``exact`` is the share of sentences whose every filter was right."""
+    rows = []
+    for case in cases:
+        expected = expected_filter(case, vocab)
+        got = parse(case["text"], vocab, backend)
+        fields = {name: getattr(got, name) == getattr(expected, name) for name in FIELDS}
+        rows.append({"text": case["text"], "exact": all(fields.values()), **fields, "source": got.source})
+    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "source"])
+
+
+def ratios(scored: pd.DataFrame) -> dict[str, float]:
+    """Share of cases right, overall (``exact``) and per field."""
+    return {name: float(scored[name].mean()) if len(scored) else 0.0 for name in ("exact", *FIELDS)}
