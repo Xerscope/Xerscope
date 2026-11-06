@@ -105,7 +105,14 @@ class Vocabulary:
 
 
 Backend = Callable[[str, Vocabulary], Filter | None]
-"""A parser that may decline (None): a model, step two; the keyword grammar is the fallback."""
+"""A parser that may decline (None): a model, step two; the keyword grammar is the fallback. A
+model backend also carries ``warm(vocab)``: the vocabulary handed over once, at the file's load."""
+
+
+def warm(backend: Backend | None, vocab: Vocabulary) -> bool:
+    """``backend.warm(vocab)`` when the backend has one (a model), else False."""
+    warmer = getattr(backend, "warm", None)
+    return bool(warmer(vocab)) if callable(warmer) else False
 
 
 def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: Lexicon | None = None) -> Vocabulary:
@@ -673,28 +680,52 @@ def llm_backend(url: str, timeout: float = 20.0, key: str = "", cafile: str = ""
             contexts.append(ssl.create_default_context(cafile=cafile))
         return contexts[0]
 
-    def ask(text: str, vocab: Vocabulary) -> Filter | None:
-        body = json.dumps(
-            {
-                "messages": [
-                    {"role": "system", "content": _SYSTEM + json.dumps(vocab.to_prompt(), ensure_ascii=False)},
-                    {"role": "user", "content": text},
-                ],
-                "response_format": {"type": "json_schema", "json_schema": {"name": "filter", "schema": _SCHEMA}},
-                "temperature": 0,
-            }
-        ).encode()
-        request = urllib.request.Request(endpoint, data=body, headers=headers)
+    def prefix(vocab: Vocabulary) -> str:
+        """The static part of every prompt, byte for byte the same for one file: the rules and the
+        vocabulary. The server keeps its KV state (cache_prompt), so after ``warm`` a sentence
+        costs its own tokens only."""
+        return _SYSTEM + json.dumps(vocab.to_prompt(), ensure_ascii=False, sort_keys=True)
+
+    def post(payload: dict) -> dict | None:
+        request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers=headers)
         try:
             with urllib.request.urlopen(  # noqa: S310 # nosec B310 (http(s) checked above)
                 request, timeout=timeout, context=context()
             ) as response:
-                answer = json.loads(response.read().decode())
-            data = json.loads(answer["choices"][0]["message"]["content"])
+                return json.loads(response.read().decode())
         except Exception:  # noqa: BLE001  # whatever failed, the grammar answers
+            return None
+
+    def ask(text: str, vocab: Vocabulary) -> Filter | None:
+        answer = post(
+            {
+                "messages": [{"role": "system", "content": prefix(vocab)}, {"role": "user", "content": text}],
+                "response_format": {"type": "json_schema", "json_schema": {"name": "filter", "schema": _SCHEMA}},
+                "temperature": 0,
+                "cache_prompt": True,
+            }
+        )
+        try:
+            data = json.loads(answer["choices"][0]["message"]["content"])
+        except (TypeError, KeyError, IndexError, ValueError):
             return None
         return from_answer(data, vocab) if isinstance(data, dict) else None
 
+    def warm(vocab: Vocabulary) -> bool:
+        """Hand the model the file's vocabulary once (at the file's load, in the background): the
+        server reads the prefix now and keeps its state, so the first sentence does not pay for
+        it. True when the server answered."""
+        answer = post(
+            {
+                "messages": [{"role": "system", "content": prefix(vocab)}, {"role": "user", "content": "ready?"}],
+                "max_tokens": 1,
+                "temperature": 0,
+                "cache_prompt": True,
+            }
+        )
+        return answer is not None
+
+    ask.warm = warm  # type: ignore[attr-defined]
     return ask
 
 

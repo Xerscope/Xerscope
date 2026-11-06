@@ -117,6 +117,18 @@ def lexicon() -> query.Lexicon:
     return found
 
 
+def warm_model(vocab: query.Vocabulary, source: str) -> None:
+    """Hand the model the vocabulary of ``source`` once per session, in a thread: the server keeps
+    the prefix's state (docs/deploy.md §10), so the first sentence typed does not wait for it.
+    Nothing happens without a model."""
+    backend = query_backend()
+    warmed = st.session_state.setdefault("_warmed", set())
+    if backend is None or source in warmed:
+        return
+    warmed.add(source)
+    threading.Thread(target=query.warm, args=(backend, vocab), daemon=True).start()
+
+
 @functools.cache
 def query_backend() -> query.Backend | None:
     """The language model behind the Gantt page's Ask field (``analysis.query.llm_backend``), from

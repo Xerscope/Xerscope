@@ -100,7 +100,7 @@ def test_answer_becomes_a_filter_and_the_request_holds_labels_only(server):
     path, body, _ = server.requests[0]
     assert path == "/v1/chat/completions" and body["response_format"]["type"] == "json_schema"
     assert body["messages"][-1] == {"role": "user", "content": "critical not started civil works"}
-    assert json.dumps(VOCAB.to_prompt(), ensure_ascii=False) in body["messages"][0]["content"]
+    assert json.dumps(VOCAB.to_prompt(), ensure_ascii=False, sort_keys=True) in body["messages"][0]["content"]
     assert "earthworks" not in body["messages"][0]["content"]  # the file's words never leave the app
 
 
@@ -222,3 +222,28 @@ def test_tls_pinned_to_the_models_own_ca(tmp_path):
         secure.http.shutdown()
     with pytest.raises(ValueError):
         query.llm_backend("http://127.0.0.1:1", cafile=cert)  # a CA needs https
+
+
+def test_the_vocabulary_is_handed_over_once_and_every_request_reuses_the_prefix(server):
+    server.reply = {
+        "wbs_id": None,
+        "status": [],
+        "float": [],
+        "code_ids": [],
+        "resource_ids": [],
+        "milestones": False,
+        "loe": False,
+        "search": "",
+    }
+    backend = query.llm_backend(server.url)
+    assert query.warm(backend, VOCAB) is True and query.warm(None, VOCAB) is False
+    query.parse("civil", VOCAB, backend=backend)
+    warm_body, ask_body = server.requests[0][1], server.requests[1][1]
+    assert warm_body["max_tokens"] == 1 and warm_body["cache_prompt"] is True and ask_body["cache_prompt"] is True
+    # the static prefix is byte for byte the same, first in the prompt: what the server's KV cache keys on
+    assert warm_body["messages"][0] == ask_body["messages"][0] and ask_body["messages"][1]["content"] == "civil"
+    assert "earthworks" not in warm_body["messages"][0]["content"]  # the file's words never leave the app
+
+
+def test_warm_against_a_server_down_is_false():
+    assert query.warm(query.llm_backend("http://127.0.0.1:9"), VOCAB) is False

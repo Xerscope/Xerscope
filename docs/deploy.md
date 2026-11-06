@@ -329,6 +329,11 @@ How the pieces hold (`tests/test_docker.py`, `tests/test_query_llm.py`):
   sends it as a bearer token; a request without it gets 401 and the app falls back on the
   grammar. The front's log deletes the `Authorization` header; the app logs nothing of the
   call; llama-server logs no header.
+- **The vocabulary is handed over once.** At a file's load the app sends the model the
+  static prefix of every prompt (rules, lexicon, the file's labels) in the background
+  (`query.warm`, `cache_prompt`, the server's `--cache-reuse`); the server keeps that state,
+  so a sentence then costs its own tokens. Nothing is learnt: the model's weights never
+  change, and a restart of the model forgets the prefix until the next load.
 - **Rootless and sealed.** Both containers run as `XERSCOPE_UID`, read-only, with every
   capability dropped (the Caddy binary's file capability aside, as the funnel's Caddy),
   `no-new-privileges`, `ipc: none`, `noexec,nosuid` tmpfs, memory and PID caps. The model

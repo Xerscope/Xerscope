@@ -16,6 +16,7 @@ from xerscope.app.state import (
     require_store,
     snapshot_picker,
     sources_of,
+    warm_model,
 )
 from xerscope.app.state import (
     lexicon as app_lexicon,
@@ -164,17 +165,18 @@ asked = st.text_input(
     placeholder='In words: "critical not started in civil works", "quasi critique en cours"',
     key=ASK_KEY,
 )
+lexicon = memo(
+    ("vocabulary", snapshot.source),
+    query.vocabulary,
+    snapshot,
+    nodes,
+    app_lexicon(),
+    baseline=False,
+    ev_basis=False,
+)
+warm_model(lexicon, snapshot.source)  # the model reads this file's vocabulary once, in the background
 ask = None
 if asked:
-    lexicon = memo(
-        ("vocabulary", snapshot.source),
-        query.vocabulary,
-        snapshot,
-        nodes,
-        app_lexicon(),
-        baseline=False,
-        ev_basis=False,
-    )
     ask = memo(  # one model call per sentence and update, baseline-independent
         ("ask", snapshot.source, asked), query.parse, asked, lexicon, query_backend(), baseline=False, ev_basis=False
     )

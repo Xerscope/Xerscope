@@ -123,6 +123,7 @@ def test_llm_sidecar_is_optional_and_reaches_nothing():
     assert "- ./llm-certs:/certs:ro" in tls and "- ./llm.Caddyfile:/etc/caddy/Caddyfile:ro" in tls
     assert "llm-pki" not in c  # no volume anything writes
     assert "--parallel 1" in llm  # one visitor: no second model context on the NAS's memory
+    assert "--cache-reuse 256" in llm  # the vocabulary prefix, read once at the file's load, is kept
     # the model listens on its loopback; the TLS front shares its namespace and is the only listener
     # on the fixed address; the key is required (the model does not start without one), never logged
     assert "LLAMA_ARG_HOST: 127.0.0.1" in llm and "LLAMA_API_KEY: ${XERSCOPE_LLM_KEY:-}" in llm

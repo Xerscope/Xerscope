@@ -142,6 +142,7 @@ services:
       - >-
         test -n "$$LLAMA_API_KEY" || { echo "XERSCOPE_LLM_KEY unset: not starting" >&2; exit 1; };
         exec /app/llama-server -m "/models/$${XERSCOPE_LLM_MODEL:-model.gguf}" -c 4096 --parallel 1 --jinja
+        --cache-reuse 256
     environment:
       LLAMA_ARG_HOST: 127.0.0.1                     # loopback of this namespace only: `llm-tls` is the only way in
       LLAMA_API_KEY: ${XERSCOPE_LLM_KEY:-}          # the key every request must carry (openssl rand -hex 24)
