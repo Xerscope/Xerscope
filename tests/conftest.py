@@ -13,6 +13,11 @@ if _MPXJ_CPM:
     os.environ.setdefault("XERSCOPE_MPXJ_CPM_JAR", str(_MPXJ_CPM[-1]))
 
 
+# AppTest returns when the script run ends: the app reads every file and computes the Overview
+# scores in that run (state.background_jobs). test_app_background.py lifts this for its own tests.
+os.environ.setdefault("XERSCOPE_SYNC_LOAD", "1")
+
+
 @pytest.fixture(scope="session")
 def sample_dir(tmp_path_factory):
     out = tmp_path_factory.mktemp("sample")

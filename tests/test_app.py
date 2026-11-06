@@ -1583,11 +1583,15 @@ def test_a_table_with_task_ids_offers_to_open_the_gantt(app):
     assert any(c.value.startswith("Select a row to open its task in the Gantt") for c in app.caption)
 
 
-def test_debug_runtime_block_is_not_shown_on_a_locked_deployment(sample_dir, monkeypatch):
-    """XERSCOPE_DATA_LOCKED (the remote stack): the block that names the server's folders, package
-    path and versions is not drawn."""
+def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sample_dir, monkeypatch):
+    """XERSCOPE_DATA_LOCKED (the remote stack): no Debug page unless XERSCOPE_DEBUG_PAGE=1, and even
+    then not the block that names the server's folders, package path and versions."""
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "1")
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    with pytest.raises(ValueError, match="Could not find a navigation page"):
+        at.switch_page("views/debug.py")
+    monkeypatch.setenv("XERSCOPE_DEBUG_PAGE", "1")
     at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
     at.switch_page("views/debug.py").run()
     _ok(at)

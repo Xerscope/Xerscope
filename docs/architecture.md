@@ -229,11 +229,21 @@ Outside `analysis/`:
 
 ## 7. `app/`: Streamlit
 
-- **`streamlit_app.py`:** declares the pages (`st.navigation`).
+- **`streamlit_app.py`:** declares the pages (`st.navigation`); the Debug page is left out on a
+  locked deployment unless `XERSCOPE_DEBUG_PAGE=1` (`state.debug_page`).
 - **`state.py`:** the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
-  `_window`: files read on Done, baseline selectors kept in session state while it is closed),
-  pickers, a per-session cache keyed on the loaded files, and the list of standards (built-in,
-  `XERSCOPE_STANDARDS`, uploaded). The cache (`memo`) keys every entry on the files, the
+  `_window`: files read on Done, baseline selectors kept in session state while it is closed;
+  shortcuts F, B and Ctrl+Enter for Done), pickers, a per-session cache keyed on the loaded
+  files, and the list of standards (built-in, `XERSCOPE_STANDARDS`, uploaded). One update for
+  the session: `snapshot_picker` writes the choice to `snap_choice`, every page's picker starts
+  from it; `go_to` / `open_in_gantt` write the session then switch page (a check's tasks to the
+  Gantt, a table row to the Gantt, a check to the Audit). Two threads (`background_jobs`, off
+  with `XERSCOPE_SYNC_LOAD=1`, which the tests set): on Done the most recent file is read in the
+  script run and the pages open on it while `LoadJob` reads the others, most recent first, the
+  store growing on each poll (`_poll_load`, a fragment); once the series is complete the Overview
+  computes the built-in standards on the latest update in `ScoreJob` and writes the results where
+  `metric_result` reads them. Neither thread touches the session state: the script run collects
+  what they produced. A memo entry computed on a partial series carries that series in its key. The cache (`memo`) keys every entry on the files, the
   project read from each and the baseline in use, then on what the analysis reads; it keeps the
   `MEMO_SIZE` most recently used entries. An analysis that reads no baseline (change log, PPC,
   milestones, exports, forecast) or not the EV basis (the checks, the WBS rollup) leaves it out of

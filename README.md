@@ -172,7 +172,9 @@ Configuration (environment variables, also set by the `app` flags):
 | `XERSCOPE_DATA` | folder of weekly `.xer` files to preload |
 | `XERSCOPE_BASELINE` | baseline `.xer` |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
-| `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA` (remote deployment) |
+| `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA`; no Debug page (remote deployment) |
+| `XERSCOPE_DEBUG_PAGE` | `1`: the Debug page even when the data is locked. It describes the server's reading of every file: leave it off on an open URL |
+| `XERSCOPE_SYNC_LOAD` | `1`: every file read, and the Overview scores computed, in the page run instead of a background thread (the tests) |
 
 ## Definitions that matter
 
