@@ -46,8 +46,8 @@ The baseline, chosen in the same window, can also be any loaded update (default:
 first). Schedules stay on your machine: the app listens on localhost, and an uploaded file
 is held in the session's memory, never written to disk.
 
-If the page keeps an older look after an update (another font, no Files line in a
-monospaced face), the running copy is old: `uv sync` then `uv run xerscope app` for a
+If the page keeps an older look after an update (another font, a Files line or a Files window
+in a monospaced face), the running copy is old: `uv sync` then `uv run xerscope app` for a
 checkout, `docker compose up -d --build` for the local image, and on a deployed stack pull
 the new image before the rebuild (docs/deploy.md §7). Then reload the page with the cache
 bypassed (Ctrl+Shift+R). Debug, block 12, shows what the running app read and from where.
@@ -137,6 +137,14 @@ data date and baseline as the file. Writes the five tables of Debug block 10 (to
 gap by Schedule % band, candidate causes, by calendar, activities in gap) and prints the totals.
 `--column pv_hr="PV Labor Units"` names a column the export spells otherwise.
 
+**Baselines from a P6 XML export.** P6 Professional does not export a project's baselines in
+XER, only in XML (File > Export > Primavera P6 XML, then tick them under Baselines to Export).
+`--baseline export.xml` reads such a file: the baseline the update's file names
+(PROJECT.sum_base_proj_id), else the file's Project Baseline, else the only one. In the app, load
+it as the separate baseline file; with "Baseline in each file", each update whose file names a
+baseline it does not export takes that baseline from the XML, so a series whose Project Baseline
+changed over time is measured update by update.
+
 - **Checks:** the 17 of `standards/p6.toml`, in Oracle's groups: the 14 of the P6
   Professional 24 dialog help, plus out of sequence and dangling start / finish as a P6
   Professional report prints them.
@@ -174,7 +182,7 @@ Configuration (environment variables, also set by the `app` flags):
 | Variable | Effect |
 |---|---|
 | `XERSCOPE_DATA` | folder of weekly `.xer` files listed at start (tick them in Files to read) |
-| `XERSCOPE_BASELINE` | baseline `.xer` |
+| `XERSCOPE_BASELINE` | baseline `.xer`, or a P6 XML export holding the baselines |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
 | `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA`; no Debug page (remote deployment) |
 | `XERSCOPE_DEBUG_PAGE` | `1`: the Debug page even when the data is locked. It describes the server's reading of every file: leave it off on an open URL |

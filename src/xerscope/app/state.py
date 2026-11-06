@@ -21,23 +21,28 @@ from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
 from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
 from xerscope.app import ui
+from xerscope.app.reading import read_updates
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
     XER_SUFFIXES,
     FileHeader,
+    RawXer,
     Snapshot,
     XerError,
     baseline_copies,
+    is_pmxml,
+    list_baselines,
     load_header,
     load_snapshot,
     xer_files,
 )
 from xerscope.xer.model import HEADER_TABLES, project_counts_text, read_header
 from xerscope.xer.parser import parse_bytes
+from xerscope.xer.pmxml import read_pmxml_baseline
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
-NBSP = "\u00a0"  # pads a label without collapsing, so a list in a monospaced face reads in columns
+NBSP = "\u00a0"  # thousands separator that does not break a label across lines
 
 
 def _parse(name: str, data: bytes, project_id: str | None = None) -> Snapshot:
@@ -123,59 +128,33 @@ def most_recent_first(items: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]
 
 @dataclass
 class LoadJob:
-    """The files being read in a thread: ``results`` fills in reading order (name -> Snapshot, or
-    the error text), ``done`` once every file was tried. ``seen`` is how many the page last drew."""
+    """The files being read in a thread, which hands them to worker processes (``reading``):
+    ``results`` fills as each file is read (name -> Snapshot, or the error text), ``done`` once every
+    file was tried. Nothing of a partial series is shown: the pages wait for ``done``."""
 
     items: list[tuple[str, bytes]]
     choices: dict[str, str]
     results: dict[str, Snapshot | str] = field(default_factory=dict)
     cache: dict[tuple, Snapshot] = field(default_factory=dict)  # _parse's keys, merged once collected
     done: bool = False
-    seen: int = 0
+    cancelled: bool = False  # set when another choice of files replaces this one: stop reading
     thread: threading.Thread | None = None
 
-    def read(self, name: str, data: bytes) -> None:
-        """One file, as ``_read`` would read it: the project picked for it, else the default."""
-        digest = hashlib.sha256(data).hexdigest()
-        snapshot = load_snapshot(data, name=name)
-        self.cache[(name, digest, None)] = snapshot
-        chosen = self.choices.get(name)
-        if chosen in set(snapshot.file_projects["proj_id"]) and chosen != snapshot.project_id:
-            snapshot = load_snapshot(data, name=name, project_id=chosen)
-            self.cache[(name, digest, chosen)] = snapshot
-        self.results[name] = snapshot
-
     def run(self) -> None:
-        for name, data in self.items:
-            if name in self.results:
-                continue
-            try:
-                self.read(name, data)
-            except Exception as exc:  # noqa: BLE001 - an error of a thread would otherwise be lost
-                self.results[name] = _error_text(name, exc)
-        self.done = True
-
-
-def _error_text(name: str, exc: BaseException) -> str:
-    """``name: error``; an XerError already names its source, so the name is not written twice."""
-    text = str(exc)
-    return text if text.startswith(f"{name}:") else f"{name}: {text}"
+        try:
+            for name, result, cache in read_updates(self.items, self.choices, lambda: self.cancelled):
+                self.cache.update(cache)
+                self.results[name] = result
+        finally:
+            self.done = True
 
 
 def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
-    """The most recent file read now, the others in a daemon thread (the session's choice of
-    project per file taken as it stands)."""
+    """Every chosen file read in a daemon thread (the session's choice of project per file taken as
+    it stands); the pages show the progress and draw once the series is complete."""
     job = LoadJob(most_recent_first(items), dict(_file_choices()))
-    first = job.items[0]
-    try:
-        job.read(*first)
-    except Exception as exc:  # noqa: BLE001
-        job.results[first[0]] = _error_text(first[0], exc)
-    if len(job.items) == 1:
-        job.done = True
-    else:
-        job.thread = threading.Thread(target=job.run, name="xerscope-load", daemon=True)
-        job.thread.start()
+    job.thread = threading.Thread(target=job.run, name="xerscope-load", daemon=True)
+    job.thread.start()
     return job
 
 
@@ -192,7 +171,6 @@ def _collect(job: LoadJob) -> tuple[SnapshotStore | None, list[str]]:
             errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
         else:
             snapshots.append(result)
-    job.seen = len(job.results)
     st.session_state.setdefault("_parsed", {}).update(job.cache)
     if not snapshots:
         return None, errors
@@ -204,10 +182,15 @@ def _collect(job: LoadJob) -> tuple[SnapshotStore | None, list[str]]:
 
 @st.fragment(run_every=1.0)
 def _poll_load() -> None:
-    """Draws nothing; reruns the app when the thread read another file, or finished."""
-    job = st.session_state.get("_load_job")
-    if job is None or job.done or len(job.results) != job.seen:
+    """The reading progress, redrawn alone every second (the page is not); one rerun of the app
+    once every file is read, which draws the pages on the complete series."""
+    job: LoadJob | None = st.session_state.get("_load_job")
+    if job is None:
+        return
+    if job.done:
         st.rerun(scope="app")
+    read, total = len(job.results), len(job.items)
+    st.progress(read / total, text=f"Reading the updates · {read}/{total}")
 
 
 def _header(path: Path) -> FileHeader | str:
@@ -226,17 +209,21 @@ def _header(path: Path) -> FileHeader | str:
     return cache[key]
 
 
-def _describe_file(path: Path, widths: tuple[int, int] = (0, 0), same_date_as: str | None = None) -> tuple[str, str]:
-    """Tick box label and help for a file not read yet: what build_snapshot would take from it.
-    ``widths``: name and project code padded to these lengths, so the list reads in columns.
-    ``same_date_as``: the file of the folder that comes first with the same status date (the series
-    holds one update per date, so the two cannot be read together)."""
+def _describe_file(path: Path, same_date_as: str | None = None) -> tuple[str, str]:
+    """Tick box label and help for a file not read yet: what build_snapshot would take from it, the
+    project, its status date and its number of tasks on the label itself. ``same_date_as``: the file
+    of the folder that comes first with the same status date (the series holds one update per date,
+    so the two cannot be read together)."""
     header = _header(path)
-    name = path.name.ljust(widths[0], NBSP)
+    name = path.name
     if isinstance(header, str):
         return f"{name} — unreadable", header
-    counts = header.project_task_counts
-    label = f"{name} — {header.project_code.ljust(widths[1], NBSP)} · {ui.fmt_date(header.data_date)}"
+    counts = header.project_task_counts  # keyed by proj_id
+    ids = [proj_id for proj_id, code in header.project_codes.items() if code == header.project_code]
+    tasks = counts.get(ids[0]) if len(ids) == 1 else None  # two projects with one code: no count
+    label = f"{name} — {header.project_code} · {ui.fmt_date(header.data_date)}"
+    if tasks is not None:
+        label += f" · {int(tasks):,} tasks".replace(",", NBSP)
     if len(counts) > 1:
         label += f" · {len(counts)} projects"
     if same_date_as:
@@ -289,13 +276,9 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
     clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
     picked = []
-    widths = (
-        max(len(path.name) for path in files),
-        max((len(header.project_code) for header in headers.values() if not isinstance(header, str)), default=0),
-    )
     with st.container(key="files_list_folder"):
         for path in files:
-            label, details = _describe_file(path, widths, same_date_as.get(path.name))
+            label, details = _describe_file(path, same_date_as.get(path.name))
             if st.checkbox(label, key=keys[path.name], help=details):
                 picked.append(path.name)
     if not picked:
@@ -448,7 +431,7 @@ def _projects_fields(store: SnapshotStore) -> None:
         )
 
 
-@st.dialog("Files and baseline", width="medium", on_dismiss=_close_window)
+@st.dialog("Files and baseline", width="large", on_dismiss=_close_window)
 def _window(store: SnapshotStore | None) -> None:
     """The window of the sidebar's Files and Baseline lines. A widget inside it reruns this function
     only (st.dialog is a fragment): nothing applies before Done, which reads the files and sets the
@@ -567,17 +550,41 @@ def _period(store: SnapshotStore) -> str:
     return f"{start} → {ui.fmt_date(last)}"
 
 
+def _forget_previous_series() -> None:
+    """Another choice of files was validated: stop the reading and the score computation still running
+    for the previous one, and drop what was cached for it (analysis results, baselines read from the
+    files). The parsed files are pruned once the new series is read (``_keep_parsed``): an unchanged
+    file is not read twice."""
+    for slot in ("_load_job", "_score_job"):
+        job = st.session_state.get(slot)
+        if job is not None and not job.done:
+            job.cancelled = True
+    st.session_state.update(_load_job=None, _score_job=None)
+    for cache in ("_memo", "_file_baselines"):
+        st.session_state.pop(cache, None)
+
+
+def _keep_parsed(items: list[tuple[str, bytes]]) -> None:
+    """Keep in the parse cache only the files of the series just read: a snapshot of a 4 000-activity
+    export holds about 30 MB, and the files of earlier choices are not read back."""
+    current = {(name, hashlib.sha256(data).hexdigest()) for name, data in items}
+    cache = st.session_state.get("_parsed", {})
+    for key in [key for key in cache if key[:2] not in current]:
+        del cache[key]
+
+
 def sidebar_loader() -> None:
     sidebar = st.sidebar
     files_line = sidebar.container()
 
     signature, items = _chosen_items()
+    if items is not None:
+        _forget_previous_series()
     if items is not None and background_jobs() and len(items) > 1:
-        # the most recent update now, the pages open on it; the rest in a thread, the store
-        # growing as they come (the memo keys follow the files in the store, so nothing computed
-        # on a partial series is read back for the full one)
+        # every file read in a thread on worker processes; the pages wait and draw once, on the
+        # complete series (a partial one redrew every page and moved the default baseline per file)
         job = _start_load(items)
-        st.session_state.update(signature=signature, items=items, _load_job=job)
+        st.session_state.update(store=None, signature=signature, items=items, errors=[], _load_job=job)
     elif items is not None:
         # one line per file read, in the sidebar: a series of large exports takes a while
         line = sidebar.empty()
@@ -591,20 +598,16 @@ def sidebar_loader() -> None:
         )
         line.empty()
         st.session_state.update(store=store, signature=signature, errors=errors, items=items, _load_job=None)
+        _keep_parsed(items)
     elif not signature:
         st.session_state.update(store=None, signature=(), errors=[], items=None, _load_job=None)
     job: LoadJob | None = st.session_state.get("_load_job")
     if job is not None:
-        store, errors = _collect(job)
-        st.session_state.update(store=store, errors=errors)
         if job.done:
-            st.session_state["_load_job"] = None
-            # the default baseline (the first update) was taken on the partial series: taken again
-            if st.session_state.get("bl_defaulted"):
-                st.session_state.pop("bl_choice", None)
+            store, errors = _collect(job)
+            st.session_state.update(store=store, errors=errors, _load_job=None)
+            _keep_parsed(job.items)
         else:
-            read, total = len(job.results), len(job.items)
-            sidebar.progress(read / total, text=f"Reading the updates · {read}/{total}")
             with sidebar:
                 _poll_load()
 
@@ -684,19 +687,41 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         return None
     if choice != BL_FILE:
         return Baseline.from_snapshot(store.by_label(choice), basis)
-    source = None if _data_locked() else st.session_state.get("bl_file")
-    if source is None and env_path and Path(env_path).is_file():
-        source = (Path(env_path).name, Path(env_path).read_bytes())
+    source = _baseline_file_source(env_path)
     if source is not None:
         st.session_state["baseline_digest"] = hashlib.sha256(source[1]).hexdigest()
     if source is None:
-        sidebar.caption("Upload the baseline XER, or pick one of the loaded snapshots.")
+        sidebar.caption("Upload the baseline XER (or P6 XML), or pick one of the loaded snapshots.")
         return None
     try:
-        return Baseline.from_snapshot(_parse(*source), basis)
+        # a P6 XML export holds the baselines themselves: the one the latest update names, if it is there
+        pointer = _xml_baseline_id(source, store.latest.file_baseline.proj_id)
+        snapshot = _parse(*source, project_id=pointer)
     except XerError as exc:
         sidebar.error(f"Baseline not read: {exc}")
         return None
+    if is_pmxml(source[1]):
+        sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)} (project {snapshot.project_id})")
+    return Baseline.from_snapshot(snapshot, basis)
+
+
+def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes] | None:
+    """The separate baseline file: the one uploaded in the window, else XERSCOPE_BASELINE's."""
+    source = None if _data_locked() else st.session_state.get("bl_file")
+    env_path = os.environ.get("XERSCOPE_BASELINE", "") if env_path is None else env_path
+    if source is None and env_path and Path(env_path).is_file():
+        source = (Path(env_path).name, Path(env_path).read_bytes())
+    return source
+
+
+def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | None:
+    """For a P6 XML baseline file: ``pointer`` (an update's sum_base_proj_id) when the file holds that
+    baseline, else None (the file's Project Baseline is read). None for an XER file."""
+    name, data = source
+    if not pointer or not is_pmxml(data):
+        return None
+    baselines, _ = list_baselines(data, name)
+    return pointer if pointer in {b.object_id for b in baselines} else None
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
@@ -712,16 +737,19 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
 
 
 def _fallback_options(store: SnapshotStore) -> list[str]:
-    """What an update whose file has no usable baseline can be measured against. No separate file on
-    a locked server: it could only be uploaded."""
-    return ([] if _data_locked() else [BL_FILE]) + store.labels + [BL_PLANNED, BL_NONE]
+    """What an update whose file has no usable baseline can be measured against. A separate file on a
+    locked server only when XERSCOPE_BASELINE names one (nothing can be uploaded there)."""
+    file_choice = not _data_locked() or Path(os.environ.get("XERSCOPE_BASELINE", "")).is_file()
+    return ([BL_FILE] if file_choice else []) + store.labels + [BL_PLANNED, BL_NONE]
 
 
 def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
     """What an update whose file has no usable baseline is measured against: chosen, never imposed."""
     choice = st.session_state["bl_fallback"]
     st.session_state["fallback_choice"] = choice
-    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, "")
+    # the separate file: uploaded, else named by XERSCOPE_BASELINE (a locked server has only that one)
+    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, env_path)
 
 
 def _source_kind(snapshot: Snapshot) -> str:
@@ -731,29 +759,46 @@ def _source_kind(snapshot: Snapshot) -> str:
     return "the fallback" if st.session_state.get("fallback") is not None else "no baseline"
 
 
+def _which_updates(snapshots: list[Snapshot]) -> str:
+    """The updates a sidebar line is about, short: the file of a single one, else a count and the dates
+    (a list of long file names made the lines unreadable on a long series)."""
+    if len(snapshots) == 1:
+        return ui.md_text(snapshots[0].source)
+    dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
+    span = f", {ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}" if dates else ""
+    return f"{_count(len(snapshots), 'update')}{span}"
+
+
+def _dates_or_file(snapshots: list[Snapshot]) -> str:
+    """The file of a single update, else the first and last data dates of the updates."""
+    if len(snapshots) == 1:
+        return ui.md_text(snapshots[0].source)
+    dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
+    return f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}" if dates else ""
+
+
 def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
-    """The per-file mode, file by file: no usable baseline (and what applies instead), a pointer that is
-    not used and why, a series that mixes sources."""
+    """The per-file mode: the updates with no usable baseline (and what applies instead), each reason a
+    pointer is not used with the updates it concerns, a series that mixes sources."""
     unusable = [snapshot for snapshot in store if not snapshot.file_baseline.usable]
     if unusable:
         choice = st.session_state.get("fallback_choice", BL_NONE)
         instead = "their baseline checks are n/a" if choice == BL_NONE else f"fallback: {choice}"
         sidebar.warning(
-            f"No usable P6 Project Baseline in the file of {ui.md_text(', '.join(s.source for s in unusable))}: "
-            f"{instead}.",
+            f"No usable P6 Project Baseline in the file of {_which_updates(unusable)}: {instead}.",
             icon=":material/warning:",
         )
+    reasons: dict[str, list[Snapshot]] = {}
     for snapshot in unusable:
         if snapshot.file_baseline.note:
-            sidebar.warning(
-                f"{ui.md_text(snapshot.source)}: {ui.md_text(snapshot.file_baseline.text)}. Not used.",
-                icon=":material/warning:",
-            )
-    groups: dict[str, list[str]] = {}
+            reasons.setdefault(snapshot.file_baseline.text, []).append(snapshot)
+    for reason, snapshots in reasons.items():
+        sidebar.warning(f"{_which_updates(snapshots)}: {ui.md_text(reason)}. Not used.", icon=":material/warning:")
+    groups: dict[str, list[Snapshot]] = {}
     for snapshot in store:
-        groups.setdefault(_source_kind(snapshot), []).append(snapshot.source)
+        groups.setdefault(_source_kind(snapshot), []).append(snapshot)
     if len(groups) > 1:
-        parts = [f"{len(files)} on {kind} ({ui.md_text(', '.join(files))})" for kind, files in groups.items()]
+        parts = [f"{len(snapshots)} on {kind} ({_dates_or_file(snapshots)})" for kind, snapshots in groups.items()]
         sidebar.warning(
             "The series mixes baseline sources, so its updates are not measured against the same plan: "
             + "; ".join(parts)
@@ -763,21 +808,37 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
-    """Files whose P6 Project Baseline (sum_base_proj_id) names a project the file does not hold: ask
-    for that baseline's XER. No P6 steps: restoring or converting a baseline changes the project."""
-    absent: dict[str, list[str]] = {}
+    """Updates whose P6 Project Baseline (sum_base_proj_id) names a project their file does not hold:
+    one short line, counts and dates only (file names make it unreadable on a long series), asking for
+    that baseline's XER. No P6 steps: restoring or converting a baseline changes the project. Which file
+    names which baseline: Debug, block 5."""
+    absent: dict[str, list[Snapshot]] = {}
     for snapshot in store:
         pointer = snapshot.file_baseline.proj_id
         if pointer and pointer not in set(snapshot.file_projects["proj_id"]):
-            absent.setdefault(pointer, []).append(snapshot.source)
+            absent.setdefault(pointer, []).append(snapshot)
     if not absent:
         return
-    named = "; ".join(f"project {proj_id} ({', '.join(files)})" for proj_id, files in absent.items())
+    updates = sum(len(snapshots) for snapshots in absent.values())
+
+    def one(proj_id: str, snapshots: list[Snapshot]) -> str:
+        dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
+        when = ui.fmt_date(dates[0]) if len(dates) == 1 else f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}"
+        return f"project {proj_id} ({_count(len(snapshots), 'update')}, {when})"
+
+    shown = sorted(absent.items(), key=lambda item: -len(item[1]))[:ABSENT_BASELINES_SHOWN]
+    named = "; ".join(one(proj_id, snapshots) for proj_id, snapshots in shown)
+    if len(absent) > ABSENT_BASELINES_SHOWN:
+        named += f"; {len(absent) - ABSENT_BASELINES_SHOWN} more"
     sidebar.info(
-        f"P6 Project Baseline not exported with the file: {ui.md_text(named)}. "
-        f"Load that baseline's XER under Baseline (BL) > {BL_FILE}.",
+        f"{_count(updates, 'update')} of {len(store)} name a P6 Project Baseline not exported with the file: "
+        f"{named}. To measure against one, load its XER under Baseline (BL) > {BL_FILE}. "
+        "Which file names which: Debug, block 5.",
         icon=":material/info:",
     )
+
+
+ABSENT_BASELINES_SHOWN = 3  # baselines named in the sidebar line; the rest counted
 
 
 MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must find
@@ -846,13 +907,6 @@ def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = No
     """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
     st.title(title)
     context_banner(store, snapshot or store.latest)
-    job: LoadJob | None = st.session_state.get("_load_job")
-    if job is not None and not job.done:
-        st.warning(
-            f"Reading the updates · {len(job.results)}/{len(job.items)}: the series is incomplete and the "
-            "figures change until every file is read.",
-            icon=":material/hourglass_top:",
-        )
     if lead:
         st.caption(lead)
 
@@ -895,7 +949,13 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
 def _baseline_options(store: SnapshotStore, env_path: str) -> tuple[list[str], str]:
     """The choices of "Baseline (BL)" and the default one. A separate file is offered when it can be
     had: uploaded, or named by XERSCOPE_BASELINE on a locked server."""
-    in_files = any(snapshot.file_baseline.usable for snapshot in store)
+    # an update's own baseline: in its file, or in a P6 XML baseline file holding the one its file names
+    source = _baseline_file_source(env_path)
+    in_files = any(
+        snapshot.file_baseline.usable
+        or (source is not None and _xml_baseline_id(source, snapshot.file_baseline.proj_id) is not None)
+        for snapshot in store
+    )
     file_choice = not _data_locked() or Path(env_path).is_file()
     options = ([BL_EACH] if in_files else []) + ([BL_FILE] if file_choice else []) + store.labels
     options += [BL_PLANNED, BL_NONE]
@@ -1041,7 +1101,13 @@ def _baseline_fields(store: SnapshotStore) -> None:
         )
     wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["draft_bl_fallback"] == BL_FILE)
     if wants_file and not _data_locked():
-        st.file_uploader("Baseline .xer", type=UPLOAD_TYPES, key="bl_upload")
+        st.file_uploader(
+            "Baseline .xer, or a P6 XML export with its baselines",
+            type=[*UPLOAD_TYPES, "xml"],
+            key="bl_upload",
+            help="P6 Professional exports a project's baselines in XML only (Export > Primavera P6 XML, "
+            "Baselines to Export). Each update is then measured against the baseline its file names.",
+        )
         held = st.session_state.get("bl_file")
         if held:
             st.caption(f"Held: {held[0]}")
@@ -1053,10 +1119,27 @@ def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
     if fallback == BL_PLANNED:
         built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
         return replace(built, source=f"fallback ({BL_PLANNED})")
+    if choice == BL_FILE:
+        own = _xml_baseline_of(snapshot)  # the baseline this update's file names, from a P6 XML file
+        if own is not None:
+            return own
     if isinstance(fallback, Baseline):
         kind = "separate baseline file" if choice == BL_FILE else "loaded update"
         return replace(fallback, source=f"fallback ({kind}): {fallback.label}")
     return None
+
+
+def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
+    """When the separate baseline file is a P6 XML export holding the baseline ``snapshot``'s file names
+    (PROJECT.sum_base_proj_id) but does not export: that baseline, for this update. A series whose
+    Project Baseline changed over time is then measured, update by update, as P6 measured it."""
+    source = _baseline_file_source()
+    pointer = snapshot.file_baseline.proj_id
+    if source is None or _xml_baseline_id(source, pointer) is None:
+        return None
+    basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
+    built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
+    return replace(built, source=f"P6 Project Baseline {pointer} from {source[0]}")
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -1121,6 +1204,14 @@ def require_store() -> SnapshotStore:
     """The series read, or the empty state: the page's title, so the viewer knows where they are,
     and what to do, then the page stops."""
     store = st.session_state.get("store")
+    job: LoadJob | None = st.session_state.get("_load_job")
+    if store is None and job is not None:
+        st.info(
+            f"Reading {len(job.items)} updates… The page draws once the whole series is read "
+            "(progress in the sidebar).",
+            icon=":material/hourglass_top:",
+        )
+        st.stop()
     if store is None:
         title = _page_title()
         if title:
@@ -1293,11 +1384,14 @@ class ScoreJob:
     results: dict[str, list[CheckResult]] = field(default_factory=dict)
     held: set[str] = field(default_factory=set)  # standard ids already written to the memo
     done: bool = False
+    cancelled: bool = False  # set when another data set or baseline replaces this one
     thread: threading.Thread | None = None
 
     def run(self) -> None:
         context = AnalysisContext(self.snapshot, self.store, self.baseline)
         for key, standard in self.standards.items():
+            if self.cancelled:
+                break
             try:
                 self.results[key] = run_standard(standard, context)
             except Exception as exc:  # noqa: BLE001 - shown as an error on the Overview, not lost
@@ -1312,6 +1406,8 @@ def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, St
     identity = (*data_identity(ev_basis=False), snapshot.source, str(snapshot.data_date), tuple(standards_))
     job: ScoreJob | None = st.session_state.get("_score_job")
     if job is None or job.identity != identity:
+        if job is not None:
+            job.cancelled = True  # its results are for another data set or baseline
         job = ScoreJob(identity, snapshot, store, baseline_for(snapshot), dict(standards_))
         job.thread = threading.Thread(target=job.run, name="xerscope-scores", daemon=True)
         job.thread.start()
@@ -1362,6 +1458,24 @@ def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) ->
     return found + ([baseline.snapshot.source] if baseline is not None else [])
 
 
+def baseline_items(session: MutableMapping) -> list[tuple[str, bytes]]:
+    """The separate baseline file as (name, bytes), when one is in use (uploaded or XERSCOPE_BASELINE)."""
+    if session.get("bl_choice") != BL_FILE and session.get("bl_fallback") != BL_FILE:
+        return []
+    held = None if _data_locked() else session.get("bl_file")
+    env_path = os.environ.get("XERSCOPE_BASELINE", "")
+    if held is None and env_path and Path(env_path).is_file():
+        held = (Path(env_path).name, Path(env_path).read_bytes())
+    return [held] if held is not None else []
+
+
+def source_raws(name: str, data: bytes) -> list[RawXer]:
+    """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
+    if is_pmxml(data):
+        return [read_pmxml_baseline(data, name, b.object_id) for b in list_baselines(data, name)[0]]
+    return [parse_bytes(data, source=name)]
+
+
 def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[str], Anonymizer]:
     """The anonymizers of the session, by the set of file names each one read."""
     session = st.session_state if session is None else session
@@ -1383,7 +1497,8 @@ def anonymizer(
     the same way. One built from more files also serves a download of fewer."""
     session = st.session_state if session is None else session
     signature = session.get("signature")
-    items = session.get("items") or []
+    # the updates and the separate baseline file: a name found only in the baseline is a secret too
+    items = [*(session.get("items") or []), *baseline_items(session)]
     wanted = frozenset(name for name, _ in items if sources is None or name in set(sources))
     built_anonymizers = session.get("_anonymizers")
     if built_anonymizers is None or built_anonymizers[0] != signature:
@@ -1398,7 +1513,7 @@ def anonymizer(
     key = session.setdefault("_anon_key", secrets.token_bytes(32))
     with st.spinner(f"Reading {len(wanted)} file(s) for the anonymized downloads…"):
         anonymous = Anonymizer.from_raws(
-            (parse_bytes(data, source=name) for name, data in items if name in wanted), key=key
+            (raw for name, data in items if name in wanted for raw in source_raws(name, data)), key=key
         )
     if len(built) >= 4:  # a few sets per session: each holds the text values of its files
         built.pop(next(iter(built)))

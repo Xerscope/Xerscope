@@ -472,3 +472,23 @@ def test_csv_exports_write_hours_to_four_decimals():
     with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames({"09_pv_labor_check": frame}))) as archive:
         text = archive.read("09_pv_labor_check.csv").decode("utf-8-sig")
     assert "12346.0000,0.0000" in text
+
+
+def test_a_file_named_with_a_word_of_the_output_does_not_refuse_the_downloads():
+    """A baseline exported as "Baseline.xml": "baseline" is a word of xerscope's own tables, so the bare
+    stem is not searched (every table would be refused); the full name still is."""
+    from xerscope.anonymize import Anonymizer
+    from xerscope.xer import parse_text
+
+    generic = Anonymizer.from_raws([parse_text(xer_text([todo("A1")]), source="Baseline.xml")])
+    assert generic.leaks(["baseline file", "use_project_baseline_flag"]) == {}
+    assert generic.leaks(["read from Baseline.xml"]) == {"file name": 1}
+
+
+def test_a_distinctive_file_name_is_still_found_inside_any_text():
+    from xerscope.anonymize import Anonymizer
+    from xerscope.xer import parse_text
+
+    distinctive = Anonymizer.from_raws([parse_text(xer_text([todo("A1")]), source="ACME-TOWER-B2_week12.xer")])
+    assert distinctive.leaks(["see ACME-TOWER-B2_week12 here"]) == {"file name": 1}
+    assert distinctive.leaks(["acme-tower-b2_week12"]) != {}
