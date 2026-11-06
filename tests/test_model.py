@@ -226,12 +226,15 @@ def test_task_without_task_code_raises_xer_error():
         ("PROJECT", "proj_short_name"),
         ("CALENDAR", "clndr_id"),
         ("PROJWBS", "proj_id"),
+        ("PROJWBS", "wbs_id"),
+        ("TASKRSRC", "task_id"),
     ],
 )
 def test_missing_column_never_leaks_a_key_error(table, column):
     text = xer_text(
         [active("A"), active("B")],
         [("A", "B", "FS", 0)],
+        rsrc=["A"],
         wbs=[{"wbs_id": "10", "proj_id": "1", "wbs_short_name": "W", "wbs_name": "W", "proj_node_flag": "Y"}],
     )
     with contextlib.suppress(XerError):  # a clear XerError is fine, a KeyError is not
@@ -445,3 +448,9 @@ def test_unknown_pred_type_warns_and_keeps_its_code():
         "scheduled as SF in the forward pass, ignored in the backward pass"
     ]
     assert sorted(s.relationships["type"]) == ["FS", "PR_XX"]
+
+
+def test_taskrsrc_without_task_id_raises_xer_error():
+    text = xer_text([todo("A")], rsrc=["A"])
+    with pytest.raises(XerError, match="table TASKRSRC has no column task_id"):
+        build_snapshot(parse_text(drop_column(text, "TASKRSRC", "task_id"), source="t.xer"))

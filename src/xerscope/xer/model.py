@@ -720,6 +720,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     )
     if raw_assignments.empty:
         return pd.DataFrame(columns=columns)
+    _require(raw_assignments, inputs.source, "TASKRSRC", ["task_id"])
     if "proj_id" in raw_assignments.columns:
         raw_assignments = raw_assignments[raw_assignments["proj_id"] == inputs.project_id]
     assignments = _ensure_cols(
