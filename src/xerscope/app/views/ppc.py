@@ -94,6 +94,8 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
             f" = {_pct(week['ppc_start'])}; all commitments = {week['kept']} / {week['committed']}"
             f" = {_pct(week['ppc_all'])}"
         )
+        if isinstance(week["note"], str):
+            formula += f". {week['note']}"
         ui.section("Commitments", formula)
         if commitments.empty:
             st.caption("Nothing was forecast to start or finish this week.")

@@ -458,6 +458,31 @@ def test_ppc_series_one_row_per_week():
     assert row["week_start"] == W1.data_date and row["data_date"] == W2.data_date
 
 
+def test_ppc_notes_a_point_that_spans_a_missing_update():
+    """Updates on 03-02, 03-09 and 03-23 (the 03-16 one missing): the second point holds two weeks
+    of commitments and says so; the first, seven days, has no note. The counts are unchanged."""
+    w1 = snap([todo("A", early_end_date="2026-03-20 17:00")], data_date="2026-03-02 08:00")
+    w2 = snap([todo("A", early_end_date="2026-03-20 17:00")], data_date="2026-03-09 08:00")
+    w4 = snap([done("A", act_end_date="2026-03-20 17:00")], data_date="2026-03-23 08:00")
+    s = ppc_series(SnapshotStore([w1, w2, w4]))
+    assert pd.isna(s["note"].iloc[0])
+    assert s["note"].iloc[1] == "14 days since the previous update: this point covers more than one week"
+    assert (s["finishes_kept"].iloc[1], s["finishes_committed"].iloc[1]) == (1, 1)
+
+
+def test_ppc_regular_weekly_series_has_no_note():
+    dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-16 08:00"]
+    s = ppc_series(SnapshotStore([snap([todo("A")], data_date=d) for d in dates]))
+    assert s["note"].isna().all()
+
+
+def test_ppc_week_at_another_hour_has_no_note():
+    """Monday 08:00 to the next Monday 17:00: seven calendar days, one week."""
+    dates = ["2026-03-02 08:00", "2026-03-09 17:00"]
+    s = ppc_series(SnapshotStore([snap([todo("A")], data_date=d) for d in dates]))
+    assert s["note"].isna().all()
+
+
 def test_evm_series_one_point_per_update_against_one_baseline():
     from xerscope.store import SnapshotStore
 
