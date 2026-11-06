@@ -95,7 +95,7 @@ ui.section(
     "Each point is one weekly XER: where its schedule puts the project finish. "
     "A rising line means the end date is slipping.",
 )
-st.plotly_chart(build_finish_trend(summary), width="stretch")
+ui.chart(build_finish_trend(summary))
 
 ui.section("Updates loaded")
 ui.table(summary.drop(columns=["snapshot_idx", "project"]))

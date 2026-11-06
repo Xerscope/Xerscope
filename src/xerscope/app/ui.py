@@ -26,7 +26,7 @@ import streamlit as st
 from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
-from xerscope.viz.charts import ACCENT, SERIES, STATUS
+from xerscope.viz.charts import ACCENT, SERIES, STATUS, TEXT
 from xerscope.xer.model import to_datetime
 
 
@@ -188,10 +188,10 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "bac_cost": ("BAC (cost)", "h0"),
     "pv_cost": ("PV (cost)", "h0"),
     "ev_cost": ("EV (cost)", "h0"),
-    "spi_cost": ("SPI", "d3"),
+    "spi_cost": ("SPI", "d2"),
     "pv_pct": ("Percent scheduled", "pct"),
     "ev_pct": ("Percent complete", "pct"),
-    "spi": ("SPI (labor units)", "d3"),
+    "spi": ("SPI (labor units)", "d2"),
     "productivity": ("EV / AC (baselined work)", "d2"),
     "cpi": ("CPI (labor units)", "d2"),
     "ac_unbaselined_hr": ("AC outside BL (h)", "h0"),
@@ -256,6 +256,47 @@ def fmt_date(timestamp, missing: str = "–") -> str:
 def stamp(timestamp) -> str:
     """A date for file names and titles (2026-11-02)."""
     return f"{timestamp:%Y-%m-%d}"
+
+
+def fmt_number(value, template: str = "{:.1f}", missing: str = "–") -> str:
+    """A number for display; ``missing`` stands for NaN / None."""
+    return missing if value is None or pd.isna(value) else template.format(value)
+
+
+def numbers_as_text(frame: pd.DataFrame, columns: Iterable[str], missing: str = "–") -> tuple[pd.DataFrame, dict]:
+    """``columns`` written as text in their usual format, ``missing`` for NaN: st.dataframe writes
+    "None" for a missing number. Returns the frame and the column_config overrides for ``table``
+    (right-aligned text under the usual label)."""
+    frame = frame.copy()
+    overrides = {}
+    for column in columns:
+        if column not in frame.columns:
+            continue
+        label, kind = COLUMNS.get(column, (str(column).replace("_", " ").capitalize(), ""))
+        template = PY_FORMATS.get(kind or _infer_kind(frame[column]), "{:.1f}")
+        frame[column] = [fmt_number(value, template, missing) for value in frame[column]]
+        overrides[column] = st.column_config.TextColumn(label, alignment="right", help=spelled_out(label) or None)
+    return frame, overrides
+
+
+def blank_missing(frame: pd.DataFrame, missing: str = "–") -> pd.DataFrame:
+    """None / NaN in the text columns written as ``missing``: st.dataframe would write "None"."""
+    out = None
+    for column in frame.columns:
+        values = frame[column]
+        if (pd.api.types.is_object_dtype(values) or pd.api.types.is_string_dtype(values)) and values.isna().any():
+            out = frame.copy() if out is None else out
+            out[column] = values.astype(object).where(values.notna(), missing)
+    return frame if out is None else out
+
+
+def chart(fig, **kwargs) -> None:
+    """A Plotly figure in the house style: no mode bar (it stays on screen on a touch screen), the
+    hover text in the theme's text colour (Streamlit's Plotly theme fades it to 3.5:1)."""
+    theme = getattr(st.context.theme, "type", None) or "light"
+    fig.update_layout(hoverlabel=dict(font=dict(color=TEXT.get(theme, TEXT["light"]))))
+    kwargs.setdefault("width", "stretch")
+    st.plotly_chart(fig, config={"displayModeBar": False}, **kwargs)
 
 
 def table_height(rows: int, max_height: int) -> int:
@@ -332,7 +373,8 @@ def score_cards(scores: dict) -> None:
                 delta=score.detail,
                 delta_color="off",
                 delta_arrow="off",
-                help=help_,
+                # the card cuts a long list of failed checks: the help carries the whole of it
+                help="\n\n".join((help_, md_text(score.detail))),
                 border=True,
             )
 
@@ -391,6 +433,16 @@ NUMBER_FORMATS = {
     "pct": "%.1f %%",
     "signed": "%+.1f",
     "int": "%d",
+}
+# The same formats for Python (numbers_as_text writes a column as text).
+PY_FORMATS = {
+    "d1": "{:.1f}",
+    "d2": "{:.2f}",
+    "d3": "{:.3f}",
+    "h0": "{:,.0f}",
+    "pct": "{:.1f} %",
+    "signed": "{:+.1f}",
+    "int": "{:.0f}",
 }
 
 
@@ -569,7 +621,7 @@ def table(
     """
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
-    frame = frame.drop(columns=[column for column in HIDDEN if column in frame.columns])
+    frame = blank_missing(frame.drop(columns=[column for column in HIDDEN if column in frame.columns]))
     config = column_config(frame, overrides, raw_labels)
     key = kwargs.get("key") or _caller_key()
     if len(frame) > DEFAULT_SETTINGS.table_filter_min_rows:

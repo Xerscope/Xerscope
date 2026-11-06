@@ -377,3 +377,35 @@ def test_scurve_marks_the_schedule_variance_at_the_data_date():
     mark = next(t for t in behind.data if t.name == "SV (EV − PV)")
     assert mark.line.color == STATUS["critical"] and list(mark.y) == [20.0, 15.0]  # % of BAC
     assert any(a.text == "SV -5.0 % of BAC" for a in behind.layout.annotations)
+
+
+def test_finish_trend_of_one_update_keeps_a_span_of_days_on_both_axes():
+    """One point: Plotly would zoom both axes to the hour and repeat "31 Aug" on every tick."""
+    summary = pd.DataFrame(
+        {
+            "data_date": [pd.Timestamp("2026-08-31")],
+            "forecast_finish": [pd.Timestamp("2027-03-08 16:00")],
+            "finish_shift_wd": [float("nan")],
+            "source": ["a.xer"],
+        }
+    )
+    trend = build_finish_trend(summary)
+    x0, x1 = (pd.Timestamp(v) for v in trend.layout.xaxis.range)
+    y0, y1 = (pd.Timestamp(v) for v in trend.layout.yaxis.range)
+    assert x1 - x0 >= pd.Timedelta(days=14) and x0 < summary["data_date"][0] < x1
+    assert y1 - y0 >= pd.Timedelta(days=14) and y0 < summary["forecast_finish"][0] < y1
+
+
+def test_gantt_height_follows_the_rows_drawn_up_to_the_cap():
+    rows = [
+        {"id": "w:0", "parent": None, "kind": "wbs", "start": None, "finish": None},
+        {"id": "w:1", "parent": "w:0", "kind": "wbs", "start": None, "finish": None},
+        *({"id": f"a:{i}", "parent": "w:1", "kind": "task", "start": None, "finish": None} for i in range(40)),
+    ]
+    assert gantt_module.visible_rows(rows, {"w:0"}) == 2
+    assert gantt_module.visible_rows(rows, {"w:0", "w:1"}) == 42
+    row, chrome, least = gantt_module.ROW_PX, gantt_module.CHROME_PX, gantt_module.MIN_ROWS
+    assert gantt_module.fitted_height(rows, {"w:0"}, 680) == chrome + least * row
+    assert gantt_module.fitted_height(rows, {"w:0", "w:1"}, 680) == 680
+    assert gantt_data(rows, open_ids={"w:0"}, height=680)["height"] == chrome + least * row
+    assert gantt_data(rows[:10], open_ids={"w:0", "w:1"}, height=680)["height"] == chrome + 10 * row

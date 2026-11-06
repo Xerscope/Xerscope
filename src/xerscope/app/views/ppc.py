@@ -138,7 +138,7 @@ with top:
 
 ppc = memo(("ppc",), ppc_series, store, baseline=False)
 ui.section("Percent plan complete by week")
-st.plotly_chart(build_ppc(ppc, target), width="stretch")
+ui.chart(build_ppc(ppc, target))
 
 commitments = committed(previous, current)
 baseline = baseline_for(current)

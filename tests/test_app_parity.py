@@ -111,9 +111,9 @@ def test_earned_value_kpis_equal_evm_series(app, store):
         shown = _metrics(app)
         assert shown["Percent complete"] == f"{row['ev_pct']:.1f} %", snapshot.label
         assert shown["Percent scheduled"] == f"{row['pv_pct']:.1f} %", snapshot.label
-        expected_cost_spi = "n/a — no cost in the baseline" if pd.isna(row["spi_cost"]) else f"{row['spi_cost']:.3f}"
+        expected_cost_spi = "n/a — no cost in the baseline" if pd.isna(row["spi_cost"]) else f"{row['spi_cost']:.2f}"
         assert shown["SPI"] == expected_cost_spi, snapshot.label
-        assert shown["SPI (labor units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.3f}"), snapshot.label
+        assert shown["SPI (labor units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.2f}"), snapshot.label
         assert shown["SV"] == f"{row['sv_hr']:+,.0f} h", snapshot.label
         assert shown["BEI (P6 / DCMA)"] == " / ".join(
             "–" if pd.isna(value) else f"{value:.2f}" for value in health_bei
@@ -299,7 +299,7 @@ def test_audit_funnel_equals_the_rule_steps(app, store, metric_id):
     expected += [(s.label, s.source, len(s.removed), s.left) for s in result.funnel.steps]
     expected += [("counted", "", None, result.numerator)]
     got = [
-        (row.step, row.source, None if pd.isna(row.removed) else int(row.removed), int(row.left))
+        (row.step, row.source, None if row.removed == "–" or pd.isna(row.removed) else int(row.removed), int(row.left))
         for row in shown.itertuples()
     ]
     assert got == expected
