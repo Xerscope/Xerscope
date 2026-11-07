@@ -325,6 +325,13 @@ def show_activity_detail(snapshot, baseline) -> None:
                 "this table, BAC, PV and EV, as P6 totals the tasks of the current project: "
                 f"{ui.md_text(', '.join(gone['task_code']))}"
             )
+            csv_download(
+                gone[ACTIVITY_COLUMNS],
+                f"earned_deleted_{ui.stamp(snapshot.data_date)}.csv",
+                label="Download deleted tasks (CSV)",
+                key="ev_deleted_csv",
+                sources=sources_of(snapshot, baseline=baseline),
+            )
 
 
 store = require_store()

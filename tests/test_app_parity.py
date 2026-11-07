@@ -357,7 +357,7 @@ def test_baseline_in_each_file_equals_check_baseline_in_file(tmp_path, monkeypat
 def test_earned_value_table_csv_and_chart_total_the_kpi_population(tmp_path, monkeypatch):
     """a (03-02): A and D, 40 h each over 03-02 → 03-06; b (03-04): A and N (D deleted, N new).
     Against a, at b by hand: BAC = 40 h (A only), PV = 16 h, EV = 0. The CSV of "Earned hours by
-    task" sums to those KPI values (D's 16 h of PV is not in it) and the PV curve ends at 40 h, its
+    task" sums to those KPI values (D and its 16 h of PV in a CSV of their own) and the PV curve ends at 40 h, its
     label naming its population."""
     import base64
     import io
@@ -390,9 +390,11 @@ def test_earned_value_table_csv_and_chart_total_the_kpi_population(tmp_path, mon
     store: SnapshotStore = at.session_state["store"]
     row = evm_series(store, Baseline.from_snapshot(store.first)).iloc[-1]
     assert (row["bac_hr"], row["pv_hr"], row["ev_hr"]) == pytest.approx((40, 16, 0))
-    files = [saved[b.proto.url.rsplit("/", 1)[-1].split(".")[0]] for b in at.get("download_button")]
-    (csv,) = [table for table in map(pd.read_csv, map(io.BytesIO, files)) if "task_code" in table]
-    assert "D" not in set(csv["task_code"])
+    files = {b.proto.label: saved[b.proto.url.rsplit("/", 1)[-1].split(".")[0]] for b in at.get("download_button")}
+    csv = pd.read_csv(io.BytesIO(files["Download CSV"]))
+    deleted = pd.read_csv(io.BytesIO(files["Download deleted tasks (CSV)"]))
+    assert list(csv["task_code"]) == ["A"] and list(deleted["task_code"]) == ["D"]
+    assert deleted["pv_hr"].sum() == pytest.approx(16)  # D's PV, apart from the KPI's
     assert csv[["ev_labor_hr", "pv_hr", "ev_hr"]].sum().tolist() == pytest.approx([40, 16, 0])
     # hours and finish of the EV basis, named as such: not the baseline's own (BL) columns
     assert not {"bl_labor_hr", "bl_finish"} & set(csv.columns)

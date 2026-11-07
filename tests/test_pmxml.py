@@ -181,15 +181,16 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
     app = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
     at = read_folder(AppTest.from_file(app, default_timeout=300).run()).switch_page("views/earned_value.py").run()
 
-    def ev_csv(at) -> bytes:
+    def ev_csv(at, label: str = "Download deleted tasks (CSV)") -> bytes:
         next(b for b in at.button if b.label == "Prepare anonymized downloads").click().run() if any(
             b.label == "Prepare anonymized downloads" for b in at.button
         ) else None
-        button = next(b for b in at.get("download_button") if b.proto.label.startswith("Download CSV"))
+        button = next(b for b in at.get("download_button") if b.proto.label.startswith(label))
         return saved[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
 
     anonymized = ev_csv(at)
     assert b"Secret gone activity" not in anonymized and b"ZZGONE" not in anonymized
+    assert b"ZZGONE" not in ev_csv(at, "Download CSV")  # the tasks the update holds only
     # the anonymized XER extract carries the baseline too, as an XER xerscope reads back, without its names
     import io
     import zipfile
