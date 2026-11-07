@@ -1458,6 +1458,12 @@ def baseline_items(session: MutableMapping) -> list[tuple[str, bytes]]:
     return [held] if held is not None else []
 
 
+def baseline_files_tag(session: MutableMapping) -> tuple[tuple[str, str], ...]:
+    """(name, digest) of each ``baseline_items`` file: with the signature, which files an anonymizer
+    or an extract was built from."""
+    return tuple((name, _digest(data)) for name, data in baseline_items(session))
+
+
 def source_raws(name: str, data: bytes) -> list[RawXer]:
     """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
     if is_pmxml(data):
@@ -1471,9 +1477,14 @@ def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[s
     built_anonymizers = session.get("_anonymizers")
     return (
         built_anonymizers[1]
-        if built_anonymizers is not None and built_anonymizers[0] == session.get("signature")
+        if built_anonymizers is not None and built_anonymizers[0] == _anonymizers_key(session)
         else {}
     )
+
+
+def _anonymizers_key(session: MutableMapping) -> tuple:
+    """The files the session's anonymizers read: a baseline file replaced under the same name is new text."""
+    return (session.get("signature"), baseline_files_tag(session))
 
 
 def anonymizer(
@@ -1485,13 +1496,13 @@ def anonymizer(
     session (HMAC), so an anonymizer of one update and one of the whole series name an activity
     the same way. One built from more files also serves a download of fewer."""
     session = st.session_state if session is None else session
-    signature = session.get("signature")
+    files_key = _anonymizers_key(session)
     # the updates and the separate baseline file: a name found only in the baseline is a secret too
     items = [*(session.get("items") or []), *baseline_items(session)]
     wanted = frozenset(name for name, _ in items if sources is None or name in set(sources))
     built_anonymizers = session.get("_anonymizers")
-    if built_anonymizers is None or built_anonymizers[0] != signature:
-        built_anonymizers = (signature, {})
+    if built_anonymizers is None or built_anonymizers[0] != files_key:
+        built_anonymizers = (files_key, {})
         session["_anonymizers"] = built_anonymizers
     built = built_anonymizers[1]
     for names, anonymous in built.items():
