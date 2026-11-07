@@ -246,3 +246,41 @@ def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(
         (table,) = [frame.value for frame in at.dataframe if "measure" in frame.value]
         bac[stamp] = table.loc[table["measure"] == "BAC", "this update"].iloc[0]
     assert bac == {"2026-03-02": "40.0 h", "2026-03-09": "80.0 h"}
+
+
+def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch):
+    """The P6 XML baseline of each update ("in each file", XML file as fallback) is listed and built once
+    per file content, EV basis and pointer: a rerun lists no baseline and builds none of them."""
+    from pathlib import Path
+
+    from conftest import baseline_box, read_folder
+    from file_projects import two_projects
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app import state
+    from xerscope.app.state import BL_EACH, BL_FILE
+
+    data = tmp_path / "updates"
+    data.mkdir()
+    (data / "a.xer").write_text(two_projects(pointer="370", with_baseline=False, data_date="2026-03-02 08:00"))
+    (data / "b.xer").write_text(two_projects(pointer="380", with_baseline=False, data_date="2026-03-09 08:00"))
+    (tmp_path / "export.xml").write_bytes(TWO)
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(tmp_path / "export.xml"))
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_fallback").select(BL_FILE)
+    at.switch_page("views/earned_value.py").run()
+    calls = []
+    listed, built = state.list_baselines, Baseline.from_snapshot.__func__
+    monkeypatch.setattr(state, "list_baselines", lambda *a, **k: calls.append("list") or listed(*a, **k))
+    monkeypatch.setattr(
+        Baseline, "from_snapshot", classmethod(lambda c, *a, **k: calls.append("build") or built(c, *a, **k))
+    )
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    # left: the sidebar's own separate-file baseline (the fallback), built on each rerun as before
+    assert calls == ["build"]

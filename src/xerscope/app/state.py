@@ -726,8 +726,17 @@ def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | No
     name, data = source
     if not pointer or not is_pmxml(data):
         return None
-    baselines, _ = list_baselines(data, name)
-    return pointer if pointer in {b.object_id for b in baselines} else None
+    return pointer if pointer in _xml_baseline_ids(name, data) else None
+
+
+def _xml_baseline_ids(name: str, data: bytes) -> set[str]:
+    """The BaselineProject ids of a P6 XML file, listed once per content (the sidebar asks on every rerun)."""
+    cache = st.session_state.setdefault("_xml_baseline_ids", {})
+    key = (name, hashlib.sha256(data).hexdigest())
+    if key not in cache:
+        cache.clear()  # one baseline file at a time
+        cache[key] = {b.object_id for b in list_baselines(data, name)[0]}
+    return cache[key]
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
@@ -1167,8 +1176,15 @@ def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
     if source is None or _xml_baseline_id(source, pointer) is None:
         return None
     basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
-    built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
-    return replace(built, source=f"P6 Project Baseline {pointer} from {source[0]}")
+    # built once per file content, baseline and EV basis: baseline_for asks for it on every page and rerun
+    cache = st.session_state.setdefault("_xml_baselines", {})
+    key = (source[0], hashlib.sha256(source[1]).hexdigest(), pointer, basis)
+    if key not in cache:
+        if len(cache) > 64:
+            cache.clear()
+        built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
+        cache[key] = replace(built, source=f"P6 Project Baseline {pointer} from {source[0]}")
+    return cache[key]
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
