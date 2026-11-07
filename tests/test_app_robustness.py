@@ -61,3 +61,28 @@ def test_an_anonymizer_is_not_served_for_a_baseline_file_replaced_under_the_same
     session["bl_file"] = ("bl.xer", xer_text([todo("A1", task_name="Second name")]).encode())
     assert state.anonymizer(session=session) is None
     assert "Second name" in state.anonymizer(prepare=True, session=session).secrets_
+
+
+CRAFTED = "![x](https://example.invalid/p.png)"
+
+
+def test_text_from_a_crafted_file_and_its_name_are_shown_literally(tmp_path, monkeypatch):
+    """A table name and a file name are the file's text: shown as written, never as a Markdown
+    image or link (which the browser would fetch, or show as a link the file chose)."""
+    from conftest import file_boxes, open_files
+
+    name = "![y](p).xer"
+    (tmp_path / name).write_text(f"ERMHDR\t23.12\t2026-03-02\n%T\tPROJECT\n%F\t{CRAFTED}\t{CRAFTED}\n")
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    (box,) = file_boxes(at)
+    assert box.label.startswith(r"\!\[y\]\(p\)\.xer") and r"\!\[x\]\(https" in box.help
+    box.check()
+    at.run()
+    files_done(at)
+    _ok(at)
+    (error,) = [e.value for e in at.sidebar.error]
+    assert r"\!\[y\]\(p\)" in error and r"\!\[x\]\(https" in error
+    assert "![" not in error

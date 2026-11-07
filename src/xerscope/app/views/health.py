@@ -363,10 +363,10 @@ def show_report_comparison(results, standard) -> None:
                 typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
                 missing = {"id", "found", "total"} - set(typed.columns)
                 if missing:
-                    st.error(f"Columns missing: {', '.join(sorted(missing))}")
+                    st.error(f"Columns missing: {ui.md_text(', '.join(sorted(missing)))}")
                     return
             except (ValueError, UnicodeDecodeError) as exc:
-                st.error(f"Unreadable CSV: {exc}")
+                st.error(f"Unreadable CSV: {ui.md_text(exc)}")
                 return
             typed = got[["id", "check"]].merge(typed[["id", "found", "total"]], on="id", how="left")
         else:
@@ -422,11 +422,11 @@ def show_own_standard() -> None:
                 if custom.id in builtin_standards():
                     raise ValueError(f"{upload.name}: id {custom.id!r} is a built-in standard's; give yours another id")
                 st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
-                st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
+                st.success(f"Loaded {ui.md_text(custom.name)} ({len(custom.metrics)} checks): pick it above.")
             except (ValueError, UnicodeDecodeError) as exc:
-                st.error(str(exc))
+                st.error(ui.md_text(exc))
         for error in st.session_state.get("standard_errors", []):
-            st.error(error)
+            st.error(ui.md_text(error))
 
 
 store = require_store()

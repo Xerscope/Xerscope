@@ -241,18 +241,19 @@ def _describe_file(path: Path) -> tuple[str, str]:
     """Tick box label and help for a file not read yet: what build_snapshot would take from it, the
     project, its status date and its number of tasks on the label itself."""
     header = _header(path)
-    name = path.name
+    name = ui.md_text(path.name)  # a widget label and its help are Markdown
     if isinstance(header, str):
-        return f"{name} — unreadable", header
-    counts = header.project_task_counts
-    tasks = counts.get(header.project_code)
-    label = f"{name} — {header.project_code} · {ui.fmt_date(header.data_date)}"
+        return f"{name} — unreadable", ui.md_text(header)
+    counts = {ui.md_text(code): n for code, n in header.project_task_counts.items()}
+    code = ui.md_text(header.project_code)
+    tasks = counts.get(code)
+    label = f"{name} — {code} · {ui.fmt_date(header.data_date)}"
     if tasks is not None:
         label += f" · {int(tasks):,} tasks".replace(",", NBSP)
     if len(counts) > 1:
         label += f" · {len(counts)} projects"
     details = (
-        f"Project: {header.project_code} ({header.selected_by})  \n"
+        f"Project: {code} ({header.selected_by})  \n"
         f"Projects in file (TASK rows): {' · '.join(f'{code} ({n})' for code, n in counts.items())}  \n"
         f"Status date: {ui.fmt_date(header.data_date)} (from {header.data_date_source or 'nothing'})"
     )
@@ -303,7 +304,9 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
     picked = []
     with st.container(key="files_list_upload"):
         for (name, digest), data in files.items():
-            if st.checkbox(name, value=True, key=f"keep:{digest[:12]}:{name}", help=f"{len(data) / 1e6:.1f} MB"):
+            if st.checkbox(
+                ui.md_text(name), value=True, key=f"keep:{digest[:12]}:{name}", help=f"{len(data) / 1e6:.1f} MB"
+            ):
                 picked.append((name, data))
     return tuple(picked)
 
@@ -635,7 +638,7 @@ def sidebar_loader() -> None:
         args=("files",),
     )
     for error in st.session_state.get("errors", []):
-        sidebar.error(error)
+        sidebar.error(ui.md_text(error))  # the file's text: a table or column name
     if store is not None:
         _baseline_picker(store)
     if st.session_state.get("files_open"):
@@ -704,7 +707,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         pointer = _xml_baseline_id(source, store.latest.file_baseline.proj_id)
         snapshot = _parse(*source, project_id=pointer)
     except XerError as exc:
-        sidebar.error(f"Baseline not read: {exc}")
+        sidebar.error(f"Baseline not read: {ui.md_text(exc)}")
         return None
     if is_pmxml(source[1]):
         sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)} (project {snapshot.project_id})")
@@ -731,7 +734,7 @@ def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | No
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
-    sidebar.caption(f"{baseline.label} · {len(baseline.frame)} tasks · {baseline.bac_hours:,.0f} labor h")
+    sidebar.caption(f"{ui.md_text(baseline.label)} · {len(baseline.frame)} tasks · {baseline.bac_hours:,.0f} labor h")
     baseline_date, first_date = baseline.snapshot.data_date, store.first.data_date
     if baseline_date is not None and first_date is not None and baseline_date > first_date:
         sidebar.warning(
@@ -1116,7 +1119,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
         )
         held = st.session_state.get("bl_file")
         if held:
-            st.caption(f"Held: {held[0]}")
+            st.caption(f"Held: {ui.md_text(held[0])}")
 
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:

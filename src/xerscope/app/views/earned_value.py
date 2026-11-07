@@ -333,7 +333,7 @@ if baseline is None:
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(
-        f"The baseline ({baseline.label}) has no budgeted labor hours, so there is nothing to earn. "
+        f"The baseline ({ui.md_text(baseline.label)}) has no budgeted labor hours, so there is nothing to earn. "
         "Export the BL with resource assignments (TASK.target_work_qty / TASKRSRC)."
     )
     st.stop()
