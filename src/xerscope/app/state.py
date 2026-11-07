@@ -225,7 +225,10 @@ def _header(path: Path) -> FileHeader | str:
     """The file's header (PROJECT and TASK only), or why it cannot be read. Kept in the session's
     state like the parsed files, keyed on name, size and modification time."""
     cache = st.session_state.setdefault("_headers", {})
-    stat = path.stat()
+    try:
+        stat = path.stat()
+    except OSError:  # removed since the folder was listed
+        return "no longer in the folder"
     key = (str(path), stat.st_size, stat.st_mtime_ns)
     if key not in cache:
         if len(cache) > 256:
@@ -466,31 +469,42 @@ def _window(store: SnapshotStore | None) -> None:
                 st.rerun()
 
 
-def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None]:
-    """Signature of the files validated in the window, and their contents when they changed since
-    the last run (None: unchanged, or nothing chosen when the signature is empty)."""
+def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None, list[str]]:
+    """Signature of the files validated in the window, their contents when they changed since the
+    last run (None: unchanged, or nothing chosen when the signature is empty), and a message per
+    file ticked that is no longer in the folder (moved or replaced on the share between two runs)."""
     source = st.session_state.get("files_source")
     if source is None:
-        return (), None
+        return (), None, []
     if source[0] == "upload":
         # keyed on content, so a corrected file of the same name and size is read again
         signature = ("upload",) + tuple(sorted((name, _digest(data)) for name, data in source[1]))
         if signature == st.session_state.get("signature"):
-            return signature, None
-        return signature, list(source[1])
+            return signature, None, []
+        return signature, list(source[1]), []
     _, folder, names = source
     root = Path(folder).expanduser()
-    files = [path for path in xer_files(root) if path.name in names] if root.is_dir() else []
-    if not files:
-        return (), None
-    signature = ("folder", str(root)) + tuple((path.name, _file_digest(path)) for path in files)
+    listed = {path.name: path for path in xer_files(root)} if root.is_dir() else {}
     previous = st.session_state.get("signature") or ()
-    if signature == previous:
-        return signature, None
     # the bytes of a file whose digest did not change are those already held: not read again
-    held = dict(st.session_state.get("items") or []) if previous[:2] == signature[:2] else {}
-    unchanged = {name for name, _ in set(signature[2:]) & set(previous[2:]) if name in held}
-    return signature, [(path.name, held[path.name] if path.name in unchanged else path.read_bytes()) for path in files]
+    held = dict(st.session_state.get("items") or []) if previous[:2] == ("folder", str(root)) else {}
+    digests, items, gone = [], [], []
+    for name in sorted(names):
+        try:
+            path = listed[name]
+            digest = _file_digest(path)
+            data = held[name] if name in held and (name, digest) in previous[2:] else path.read_bytes()
+        except (KeyError, OSError):
+            gone.append(f"{name}: no longer in the folder; the file is skipped")
+            continue
+        digests.append((name, digest))
+        items.append((name, data))
+    if not digests and not gone:
+        return (), None, []
+    signature = ("folder", str(root), *digests)
+    if signature == previous:
+        return signature, None, gone
+    return signature, items, gone
 
 
 def _file_digest(path: Path) -> str:
@@ -586,14 +600,14 @@ def sidebar_loader() -> None:
     sidebar = st.sidebar
     files_line = sidebar.container()
 
-    signature, items = _chosen_items()
+    signature, items, gone = _chosen_items()
     if items is not None:
         _forget_previous_series()
     if items is not None and background_jobs() and len(items) > 1:
         # every file read in a thread on worker processes; the pages wait and draw once, on the
         # complete series (a partial one redrew every page and moved the default baseline per file)
         job = _start_load(items)
-        st.session_state.update(store=None, signature=signature, items=items, errors=[], _load_job=job)
+        st.session_state.update(store=None, signature=signature, items=items, errors=gone, _load_job=job)
     elif items is not None:
         # one line per file read, in the sidebar: a series of large exports takes a while
         line = sidebar.empty()
@@ -606,7 +620,7 @@ def sidebar_loader() -> None:
             ),
         )
         line.empty()
-        st.session_state.update(store=store, signature=signature, errors=errors, items=items, _load_job=None)
+        st.session_state.update(store=store, signature=signature, errors=[*gone, *errors], items=items, _load_job=None)
         _keep_parsed(items)
     elif not signature:
         st.session_state.update(store=None, signature=(), errors=[], items=None, _load_job=None)
@@ -614,7 +628,7 @@ def sidebar_loader() -> None:
     if job is not None:
         if job.done:
             store, errors = _collect(job)
-            st.session_state.update(store=store, errors=errors, _load_job=None)
+            st.session_state.update(store=store, errors=[*st.session_state.get("errors", []), *errors], _load_job=None)
             _keep_parsed(job.items)
         else:
             with sidebar:

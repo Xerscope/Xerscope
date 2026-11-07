@@ -4,7 +4,7 @@ and what it shows stays true to the files read."""
 from pathlib import Path
 
 import pytest
-from conftest import baseline_box, files_done, read_folder
+from conftest import baseline_box, files_done, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
@@ -86,3 +86,50 @@ def test_text_from_a_crafted_file_and_its_name_are_shown_literally(tmp_path, mon
     (error,) = [e.value for e in at.sidebar.error]
     assert r"\!\[y\]\(p\)" in error and r"\!\[x\]\(https" in error
     assert "![" not in error
+
+
+def _folder_of(tmp_path, sample_dir, count):
+    for path in sorted(sample_dir.glob("*.xer"))[:count]:
+        (tmp_path / path.name).write_bytes(path.read_bytes())
+    return sorted(tmp_path.glob("*.xer"))
+
+
+def test_a_file_gone_from_the_folder_is_named_and_the_others_stay_read(tmp_path, sample_dir, monkeypatch):
+    """A ticked file removed from the folder (an export moved on the share) is named in the sidebar;
+    the series is read again without it."""
+    files = _folder_of(tmp_path, sample_dir, 3)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    assert len(at.session_state["store"]) == 3
+    files[1].unlink()
+    at.run()
+    _ok(at)
+    assert [s.source for s in at.session_state["store"]] == [files[0].name, files[2].name]
+    assert [e.value.replace("\\", "") for e in at.sidebar.error] == [
+        f"{files[1].name}: no longer in the folder; the file is skipped"
+    ]
+    at.run()  # the message stays while the choice is the same
+    assert len(at.sidebar.error) == 1
+
+
+def test_a_file_gone_between_the_listing_and_its_reading_does_not_crash_the_page(tmp_path, sample_dir, monkeypatch):
+    """The folder is listed, then each file is read: a file removed in between (os.stat fails) is
+    named, as one gone before the listing."""
+    from xerscope.app import state
+
+    files = _folder_of(tmp_path, sample_dir, 2)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    listed = state.xer_files(tmp_path)
+    monkeypatch.setattr(state, "xer_files", lambda root: listed)
+    files[0].unlink()
+    at.run()
+    _ok(at)
+    assert [s.source for s in at.session_state["store"]] == [files[1].name]
+    assert [e.value.replace("\\", "") for e in at.sidebar.error] == [
+        f"{files[0].name}: no longer in the folder; the file is skipped"
+    ]
+    open_files(at)  # the window lists the folder: the stale entry is described, not stat'ed blindly
+    _ok(at)
