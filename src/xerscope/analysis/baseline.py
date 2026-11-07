@@ -165,7 +165,7 @@ def baseline_in_file(
     return replace(
         Baseline.from_snapshot(held, ev_basis),
         label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-        source=f"P6 Project Baseline in the file (proj_id {pointer.proj_id}, last update {updated})",
+        source=f"P6 Project Baseline in the file ({pointer.code}, last update {updated})",
     )
 
 

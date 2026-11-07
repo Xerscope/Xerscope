@@ -125,14 +125,14 @@ def test_a_pointer_to_a_project_that_is_not_in_the_file_gives_no_baseline():
     # a file exported without its baseline: sum_base_proj_id names a project (370) the file does not hold
     pointer = _snapshot(pointer="370", with_baseline=False).file_baseline
     assert not pointer.usable
-    assert pointer.text == ("Baseline: none in file (project 370 absent)")
+    assert pointer.text == ("Baseline: none in file (the project it names is not in the file)")
 
 
 def test_a_pointer_to_a_project_without_activities_gives_no_baseline():
     raw = parse_text(two_projects(), source="two.xer")
     tasks = raw.tables["TASK"]
     raw.tables["TASK"] = tasks[tasks["proj_id"] != "2"]
-    assert build_snapshot(raw).file_baseline.note == "project 2 has no tasks"
+    assert build_snapshot(raw).file_baseline.note == "project BL has no tasks"
 
 
 def test_no_pointer_means_none_in_file():
@@ -143,7 +143,7 @@ def test_no_pointer_means_none_in_file():
 def test_a_baseline_copied_from_another_project_is_refused_and_says_so():
     pointer = _snapshot(original="7").file_baseline
     assert not pointer.usable
-    assert pointer.note == "project 2 was copied from project 7, not from the analysed project 1"
+    assert pointer.note == "project BL was copied from a project not in the file, not from the analysed project"
 
 
 def test_a_baseline_without_orig_proj_id_is_accepted():
@@ -212,12 +212,12 @@ def test_the_sidebar_keeps_its_choice_when_the_pointer_names_an_absent_project(t
     at = _app(tmp_path, monkeypatch, pointer="370", with_baseline=False)
     assert not at.exception
     assert BL_EACH not in _baseline_box(at).options and _baseline_box(at).value != BL_EACH
-    assert _selection(at)["baseline"].tolist() == ["Baseline: none in file (project 370 absent)"]
+    assert _selection(at)["baseline"].tolist() == ["Baseline: none in file (the project it names is not in the file)"]
 
 
 def test_the_panel_says_why_an_inconsistent_baseline_is_not_used(tmp_path, monkeypatch):
     at = _app(tmp_path, monkeypatch, original="7")
-    assert "copied from project 7" in _selection(at)["baseline"].iloc[0]
+    assert "copied from a project not in the file" in _selection(at)["baseline"].iloc[0]
 
 
 def test_schedule_health_runs_on_the_baseline_of_the_file(tmp_path, monkeypatch):
@@ -288,7 +288,7 @@ def test_the_fallback_selector_defaults_to_none_and_is_shown_with_the_file_mode(
 
 def test_each_update_uses_its_file_baseline_else_the_fallback(tmp_path, monkeypatch):
     at = _series(tmp_path, monkeypatch)
-    file_text = "P6 Project Baseline in the file (proj_id 2, last update 2026-01-12)"
+    file_text = "P6 Project Baseline in the file (BL, last update 2026-01-12)"
     a = _health(at, "2026-03-02")
     assert not a.exception and f"**Baseline** · {file_text}" in _markdown(a)
     b = _health(a, "2026-03-09")
@@ -381,7 +381,7 @@ def test_a_file_without_baseline_is_named_with_what_applies_instead(tmp_path, mo
 def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
     c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
     at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c})
-    assert any("c.xer: Baseline: none in file (project 370 absent)" in w for w in _warnings(at))
+    assert any("c.xer: Baseline: none in file (the project it names is not in the file)" in w for w in _warnings(at))
 
 
 def _absent_baseline_boxes(at):
@@ -397,7 +397,8 @@ def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
     assert len(boxes) == 1
     # counts and dates, no file name: a long series of long names made the line unreadable
     assert "P6 Project Baseline missing for 2 updates of 3" in boxes[0]
-    assert "project 370 (code unknown), named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
+    assert "a project no loaded file holds (its code is unknown), named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
+    assert "370" not in boxes[0]  # P6's internal project id: never shown
     assert "planned value, BEI, Late Activities and Missed tasks" in boxes[0]
     assert ".xer" not in boxes[0].replace("XER", "") and "Separate baseline file" in boxes[0]
 
@@ -407,7 +408,7 @@ def test_an_absent_baseline_is_named_by_its_code_when_another_loaded_file_holds_
     e = {"pointer": "2", "data_date": "2026-03-16 08:00", "with_baseline": False, "flag": "Y"}
     a = {**A, "baseline_code": "BL5"}
     (box,) = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": a, "e.xer": e}))
-    assert "BL5 (project 2), named by 1 update (16 Mar 2026)" in box
+    assert "BL5, named by 1 update (16 Mar 2026)" in box
     assert "without use_project_baseline_flag" not in box
 
 
@@ -431,7 +432,7 @@ def test_no_request_when_no_pointer_names_an_absent_project(tmp_path, monkeypatc
 def test_a_baseline_copied_from_another_project_is_refused_and_named(tmp_path, monkeypatch):
     c = {"original": "7", "data_date": "2026-03-09 08:00"}
     at = _series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c})
-    assert any("c.xer" in w and "copied from project 7" in w and "Not used" in w for w in _warnings(at))
+    assert any("c.xer" in w and "copied from a project not in the file" in w and "Not used" in w for w in _warnings(at))
 
 
 def test_a_series_that_mixes_baseline_sources_says_so_with_the_files(tmp_path, monkeypatch):
@@ -556,7 +557,7 @@ def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_aga
     from file_projects import with_other_projects
 
     at = _health(_series(tmp_path, monkeypatch, transform=with_other_projects), "2026-03-02")
-    used = "Baseline used for 2026-03-02: P6 Project Baseline in the file (proj_id 2"
+    used = "Baseline used for 2026-03-02: P6 Project Baseline in the file (BL"
     assert any(m.startswith(used) for m in _banner(at))
     before = {s.source: s for s in at.session_state["store"]}
     parsed = set(at.session_state["_parsed"])
@@ -571,7 +572,7 @@ def test_a_project_picked_for_one_file_reads_that_file_only_and_its_baseline_aga
     at = _health(at, "2026-03-02")
     # P3 names no baseline: the file's P6 Project Baseline is no longer used for this update
     shown = [m for m in _banner(at) if m.startswith("Baseline used for 2026-03-02")]
-    assert shown and not any("in the file (proj_id 2" in m for m in shown)
+    assert shown and not any("in the file (BL" in m for m in shown)
     # the memo is keyed on the project read from each file: nothing computed for project 1 is served
     keyed = [part for key in at.session_state["_memo"] for part in key if isinstance(part, tuple)]
     assert (("a.xer", "3"), ("b.xer", "1")) in keyed
@@ -658,4 +659,5 @@ def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointe
     at = _series(tmp_path, monkeypatch, {"c.xer": c}, keep_env=True)
     assert baseline_box(at).value == BL_FILE
     (warning,) = [w for w in _warnings(at) if "separate baseline file is" in w]
-    assert "OLDBL (project 1)" in warning and "code unknown (project 370, 1 update)" in warning
+    assert "is OLDBL, but" in warning and "a project no loaded file holds (1 update)" in warning
+    assert "370" not in warning

@@ -717,7 +717,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         sidebar.error(f"Baseline not read: {exc}")
         return None
     if is_pmxml(source[1]):
-        sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)} (project {snapshot.project_id})")
+        sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)}")
     return Baseline.from_snapshot(snapshot, basis)
 
 
@@ -838,7 +838,7 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     def one(proj_id: str, snapshots: list[Snapshot]) -> str:
         dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
         when = ui.fmt_date(dates[0]) if len(dates) == 1 else f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}"
-        name = f"{codes[proj_id]} (project {proj_id})" if proj_id in codes else f"project {proj_id} (code unknown)"
+        name = codes.get(proj_id, "a project no loaded file holds (its code is unknown)")
         unknown = sum(uses_project_baseline(s) is None for s in snapshots)
         flag = f", {_count(unknown, 'update')} without use_project_baseline_flag" if unknown else ""
         return f"{name}, named by {_count(len(snapshots), 'update')} ({when}{flag})"
@@ -874,13 +874,13 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
     codes = project_codes([*store, separate.snapshot])
     loaded = separate.snapshot
     named = "; ".join(
-        f"{codes.get(proj_id, 'code unknown')} (project {proj_id}, {_count(len(snapshots), 'update')})"
+        f"{codes.get(proj_id, 'a project no loaded file holds')} ({_count(len(snapshots), 'update')})"
         for proj_id, snapshots in sorted(others.items(), key=lambda item: -len(item[1]))
     )
     sidebar.warning(
-        f"The separate baseline file is {loaded.project_code} (project {loaded.project_id}), but the updates "
-        f"name another P6 Project Baseline: {named}. Their planned value, BEI and late tasks will not match "
-        "P6's. Project ids compare only within one P6 database.",
+        f"The separate baseline file is {loaded.project_code}, but the updates name another P6 Project "
+        f"Baseline: {named}. Their planned value, BEI and late tasks will not match P6's. (Compared by P6's "
+        "internal project id, which holds within one P6 database only.)",
         icon=":material/warning:",
     )
 
@@ -1187,7 +1187,7 @@ def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
         return None
     basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
     built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
-    return replace(built, source=f"P6 Project Baseline {pointer} from {source[0]}")
+    return replace(built, source=f"P6 Project Baseline {built.snapshot.project_code} from {source[0]}")
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
