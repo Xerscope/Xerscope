@@ -394,7 +394,8 @@ def p6_16_dangling_start(context) -> RuleOutput:
     total of tasks; the report lists a task without any predecessor under Logic only. Read as:
     predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore tasks with soft/hard constraints'
     (unchecked by default) is not read. Milestones are out: the report shows 0 for milestones with FF / SS
-    logic only"""
+    logic only. UNRESOLVED: a predecessor in another project is not read here (P6-01 lets it pass, 46291);
+    Oracle (113174, 101496) does not say how Dangling Start treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships
@@ -415,7 +416,8 @@ def p6_17_dangling_finish(context) -> RuleOutput:
 
     P6 Professional report: 'Tasks with finish dates that do not drive successors', against the total
     of tasks; a task without any successor is listed under Logic only. Read as: successors
-    exist, none of them FS or FF"""
+    exist, none of them FS or FF. UNRESOLVED: a successor in another project is not read here (P6-01 lets
+    it pass, 46291); Oracle (113174, 101497) does not say how Dangling Finish treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships

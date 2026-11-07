@@ -8,9 +8,10 @@ Overlaps tests/test_rules.py on purpose: here each test is one sentence of the s
 
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import DD, FM, SM, active, done, snap, todo
+from xerkit import DD, FM, SM, active, done, snap, todo, with_second_project, xer_text
 
 from xerscope.analysis import Baseline
+from xerscope.xer import build_snapshot, parse_text
 
 P6 = STANDARDS["P6"]
 DCMA = STANDARDS["DCMA"]
@@ -383,6 +384,38 @@ def test_p6_16_and_17_leave_milestones_out():
     )
     assert counts(run(P6, "P6-16", s)) == (0, 4)
     assert counts(run(P6, "P6-17", s)) == (0, 4)
+
+
+def _with_link_to_second_project(text: str, pred_task_id: str, succ_task_id: str, link_type: str) -> str:
+    """``text`` plus a TASKPRED row of project 2 whose predecessor is ``pred_task_id`` of project 1."""
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="99", task_id=succ_task_id, pred_task_id=pred_task_id, proj_id="2", pred_proj_id="1")
+    row.update(pred_type=f"PR_{link_type}", lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    return "\n".join(lines) + "\n"
+
+
+def test_p6_16_and_17_do_not_read_links_to_other_projects():
+    """UNRESOLVED (docs/standards.md): the Dangling help (113174) does not say how P6 treats a link to an
+    activity of another project. Pinned reading: P6-16 / P6-17 see only the links inside the project,
+    where P6-01 lets an external link pass (46291)."""
+    # B: FF from A and FS from X9 of project 2 (not in the file). Only the FF is read: B is listed.
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FF", 0), ("X9", "B", "FS", 0, "2"), ("B", "C", "FS", 0)])
+    r = run(P6, "P6-16", s)
+    assert (counts(r), codes(r)) == ((1, 3), ["B"])
+    # A: its only predecessor is an FF from project 2. No predecessor read: not listed, P6-01 passes it.
+    s = snap([todo("A"), todo("B")], [("X9", "A", "FF", 0, "2"), ("A", "B", "FS", 0)])
+    assert counts(run(P6, "P6-16", s)) == (0, 2)
+    assert codes(run(P6, "P6-01", s)) == ["B"]
+    # A: SS to B, FS to Z of project 2 (in the file). Only the SS is read: A is listed.
+    text = with_second_project(xer_text([todo("A"), todo("B")], [("A", "B", "SS", 0)]), "P2", ["Z"], DD)
+    s = build_snapshot(parse_text(_with_link_to_second_project(text, "1", "100", "FS"), source="t.xer"), "T")
+    assert s.activities.set_index("task_code").loc["A", "has_external_succ"]
+    r = run(P6, "P6-17", s)
+    assert (counts(r), codes(r)) == ((1, 2), ["A"])
 
 
 def test_p6_12_and_13_with_the_planned_dates_baseline_reproduce_p6():

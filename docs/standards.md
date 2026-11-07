@@ -56,7 +56,12 @@ Invalid Progress Dates is one check of the dialog but two lines of the report (b
 date, each with its own target, P6 Professional 26.8): P6-10a and P6-10b.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
 are written from R1 alone, and their open points are marked `UNRESOLVED` in the
-rule docstrings (`analysis/p6/check_schedule.py`).
+rule docstrings (`analysis/p6/check_schedule.py`). Among them: P6-16 and P6-17 read only the
+relationships between activities of the project, so a link to an activity of another project
+neither makes a task dangling nor drives it, whereas P6-01 lets such a link pass (46291). The
+Dangling help (113174, 101496, 101497) does not say how P6 treats it; the current reading is pinned by
+`test_p6_16_and_17_do_not_read_links_to_other_projects` until a P6 report on a schedule with external
+FS / FF links settles it.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.
