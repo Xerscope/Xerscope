@@ -422,7 +422,14 @@ def dcma_13_cpli(context) -> RuleOutput:
     finding); n/a without a baseline or without a baseline finish for it. With the planned
     dates baseline the value is reported for review, not judged: the planned finish of a not-started
     milestone follows its early finish (Oracle 47222), so the margin is 0 and the CPLI 1.00 by
-    construction, whatever the schedule. No constraint is read
+    construction, whatever the schedule. No constraint is read.
+
+    n/a with neither a Must Finish By date nor a baseline: PAM §3.1.2.3 "It measures critical path
+    "realism" relative to the baselined finish date, when constrained." and "Total Float used for this
+    method is the float for the completion milestone identified on the critical path."; unconstrained,
+    P6 gives the last milestone LF = EF, so TF = 0 and a 1.00 that measures nothing would pass "A CPLI
+    less than 0.95 should be considered a flag". UNRESOLVED: the margin to the baseline finish used
+    without a Must Finish By is xerscope's reading; the pamphlet inserts a task, it adds no constraint
     """
     snapshot = context.snapshot
     last_task = finish_driver(snapshot)

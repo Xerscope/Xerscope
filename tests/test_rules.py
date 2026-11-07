@@ -713,6 +713,9 @@ def test_cpli_without_must_finish_by_reads_the_stored_finish_as_the_must_finish_
 
 
 def test_cpli_is_na_without_a_baseline():
+    """PAM 200.1 §3.1.2.3: "It measures critical path "realism" relative to the baselined finish date,
+    when constrained." Neither a Must Finish By date nor a baseline: no finish to measure against, n/a
+    (TF = 0 by construction would give 1.00 whatever the schedule)."""
     r = run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)]))
     assert r.status == "n/a" and "baseline" in r.note
 
