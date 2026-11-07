@@ -70,6 +70,12 @@ P6-01 reads 46291 ("Activities with external predecessors or successors pass the
 link: an external predecessor satisfies the predecessor test only, an external successor the successor
 test only. The sentence could also mean that any external link passes the whole check; no report in
 hand shows it. Pinned by `test_p6_01_external_link_passes_only_its_own_end`.
+P6-16 / P6-17 leave milestones out because R1 shows 0 for milestones with FF / SS logic only; those
+milestones carried Start on or after constraints, which "Ignore activities with soft constraints"
+(113174) would also leave out of P6-17, and R1 does not record the options. The exclusion is a
+reading until a report with the options unchecked shows it (`test_p6_16_and_17_leave_milestones_out`).
+P6-15 reads FS and SS links between activities of the project; FF, SF and links to other projects
+are not read (`test_p6_15_reads_fs_and_ss_links_inside_the_project_only`).
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.

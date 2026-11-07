@@ -356,6 +356,18 @@ def test_p6_15_out_of_sequence_is_progress_while_a_predecessor_is_still_open():
     assert codes(r) == ["C", "C", "D"]  # one row per activity and predecessor, as the report lists them
 
 
+def test_p6_15_reads_fs_and_ss_links_inside_the_project_only():
+    """'Activities which are completed or in-progress before their predecessors' (R1). Pinned readings:
+    D's SS predecessor P has started: not listed. E's FF predecessor Q is open: not listed (UNRESOLVED, FF
+    and SF). F's FS predecessor X9 is in another project, not in the file: not read, not listed."""
+    s = snap(
+        [active("P"), todo("Q"), active("D"), active("E"), active("F")],
+        [("P", "D", "SS", 0), ("Q", "E", "FF", 0), ("X9", "F", "FS", 0, "2")],
+    )
+    r = run(P6, "P6-15", s)
+    assert (counts(r), codes(r)) == ((0, 5), [])
+
+
 def test_p6_16_dangling_start_ignores_in_progress_and_activities_without_predecessor():
     """'Activities with start dates that are not driven by predecessors', 'Ignore In Progress Activities'
     checked. The report's Logic check lists the activity with no predecessor; the dangling check does not."""
@@ -379,7 +391,10 @@ def test_p6_17_dangling_finish_needs_a_successor_that_is_not_driven():
 
 def test_p6_16_and_17_leave_milestones_out():
     """A milestone has a single date. On report R1, start and finish milestones with only FF or SS logic
-    (Start on or after constraints) are not dangling: none found by either check."""
+    are not dangling: none found by either check. Those milestones had Start on or after constraints, soft
+    for 'Ignore activities with soft constraints' (113174); the options' state in R1 is not recorded, so
+    for P6-17 the constraint alone could explain the 0. Rebuilt here without constraint: this pins the
+    milestone exclusion as a reading (UNRESOLVED, docs/standards.md)."""
     s = snap(
         [todo("P"), todo("FM", **FM), todo("SM", **SM), todo("S")],
         [("P", "FM", "FF", 0), ("SM", "S", "SS", 0)],
