@@ -326,6 +326,8 @@ TASK_COLS = [
     "has_expense",
     "has_external_pred",
     "has_external_succ",
+    "has_external_driving_pred",
+    "has_external_driving_succ",
     # working days
     "start",
     "finish",
@@ -1085,12 +1087,13 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     return tasks
 
 
-def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
-    """The project's schedulable relationships, and the successors that also have an external predecessor."""
+def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set, set]:
+    """The project's schedulable relationships, the successors that also have an external predecessor,
+    and those whose external predecessor is linked FS or SS (it drives their start)."""
     all_relationships = inputs.all_relationships
     if all_relationships.empty:
         columns = ["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
-        return pd.DataFrame(columns=columns), set()
+        return pd.DataFrame(columns=columns), set(), set()
     project_id, default_hours = inputs.project_id, inputs.fallback_hours_per_day
     relationships = _ensure_cols(
         all_relationships[all_relationships["proj_id"] == project_id].copy(),
@@ -1127,6 +1130,8 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     relationships.loc[external_in_file, "pred_code"] = external_names
     # Counted before the unschedulable links go: those still have an external predecessor.
     external_predecessors = set(relationships.loc[relationships["is_external"], "task_id"])
+    start_driving = relationships["is_external"] & relationships["type"].isin(("FS", "SS"))
+    external_driving_predecessors = set(relationships.loc[start_driving, "task_id"])
 
     # A predecessor with no TASK row is a link to another project (P6 exports the link, not
     # the other project's activities) or a corrupt link. Either way it is not logic that can
@@ -1147,7 +1152,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
             f"{inputs.source}: {int(corrupt.sum())} relationship(s) to a task "
             "not in the file; ignored by the schedule and the checks"
         )
-    return relationships[~lost].copy(), external_predecessors
+    return relationships[~lost].copy(), external_predecessors, external_driving_predecessors
 
 
 def _external_links(
@@ -1337,13 +1342,17 @@ def build_snapshot(
 
     # Activities, the logic between them, and the links to other projects
     tasks = _task_frame(inputs, wbs, options)
-    relationships, external_predecessors = _relationships(inputs)
+    relationships, external_predecessors, external_driving_predecessors = _relationships(inputs)
     links_out = pd.DataFrame(columns=["task_id", "pred_task_id", "pred_type", "lag_hr_cnt"])
     if not all_relationships.empty and "proj_id" in all_relationships.columns:
         from_other_projects = all_relationships["proj_id"] != inputs.project_id
         links_out = all_relationships[from_other_projects & all_relationships["pred_task_id"].isin(tasks["task_id"])]
     tasks["has_external_pred"] = tasks["task_id"].isin(external_predecessors)
     tasks["has_external_succ"] = tasks["task_id"].isin(set(links_out["pred_task_id"]))
+    tasks["has_external_driving_pred"] = tasks["task_id"].isin(external_driving_predecessors)
+    out_types = _ensure_cols(links_out.copy(), ["pred_type"])["pred_type"].map(REL_TYPE)
+    finish_driving = out_types.isin(("FS", "FF"))  # it drives our finish
+    tasks["has_external_driving_succ"] = tasks["task_id"].isin(set(links_out.loc[finish_driving, "pred_task_id"]))
     external_tasks, external_links = _external_links(inputs, relationships, links_out, tasks)
 
     # Resources, labour hours, leveling, expenses

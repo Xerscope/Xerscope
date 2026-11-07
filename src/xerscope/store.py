@@ -22,7 +22,8 @@ from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL
 # and the raw P6 values that a derived column replaces: task_id, wbs_id, hours_per_day,
 # is_wbs_summary, status_code, ev_user_pct, cstr_date, cstr_type2, cstr_date2, total_float_hr_cnt,
 # free_float_hr_cnt, target_drtn_hr_cnt, remain_drtn_hr_cnt, restart_date, reend_date, constraint,
-# has_resource, has_expense, has_external_pred, has_external_succ.
+# has_resource, has_expense, has_external_pred, has_external_succ, has_external_driving_pred,
+# has_external_driving_succ.
 HISTORY_COLS = [
     "task_code",
     "task_name",

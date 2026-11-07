@@ -73,8 +73,9 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     external_predecessor, external_successor = tasks["has_external_pred"], tasks["has_external_succ"]
     has_predecessor = codes.isin(relationships["succ_code"]) | external_predecessor
     has_successor = codes.isin(relationships["pred_code"]) | external_successor
-    driven_start = has_driving_predecessor(codes, relationships) | external_predecessor
-    drives_finish = has_driving_successor(codes, relationships) | external_successor
+    # a link to another project counts by its type, as a link within the project does (block 9)
+    driven_start = has_driving_predecessor(codes, relationships) | tasks["has_external_driving_pred"]
+    drives_finish = has_driving_successor(codes, relationships) | tasks["has_external_driving_succ"]
     milestone = tasks["is_milestone"]
     open_start = (~has_predecessor).where(milestone, ~driven_start)
     open_finish = (~has_successor).where(milestone, ~drives_finish)

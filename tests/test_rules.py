@@ -1235,6 +1235,51 @@ def test_decm_project_start_exemption_does_not_move_once_work_is_done():
     assert "C" not in codes(r)  # the last finish of the whole baseline: exempt
 
 
+def planned(code: str, start: str, finish: str, **extra) -> dict:
+    """A not-started task whose baseline (planned) and forecast dates are ``start`` -> ``finish``."""
+    dates = dict(target_start_date=start, target_end_date=finish, early_start_date=start, early_end_date=finish)
+    return todo(code, **dates, **hours(8), **extra)
+
+
+@pytest.mark.parametrize(("link_type", "expected"), [("FF", ["X"]), ("SF", ["X"]), ("FS", []), ("SS", [])])
+def test_decm_06a204b_reads_a_link_to_another_project_by_its_type(link_type, expected):
+    """06A204b v8.0, block 9: an open start is a task whose predecessors are "only finish to finish,
+    start to finish, or blanks"; the sheet does not set links to other projects apart. X's only
+    predecessor is X9 of project 2 (not in the file): linked FF or SF, X is an open start; FS or SS, not.
+    A (first start) -> B (last finish) and X -> B, all FS: nothing else is open."""
+    tasks = [
+        planned("A", "2026-03-02 08:00", "2026-03-02 17:00"),
+        planned("X", "2026-03-03 08:00", "2026-03-03 17:00"),
+        planned("B", "2026-03-04 08:00", "2026-03-05 17:00"),
+    ]
+    s = snap(tasks, [("A", "B", "FS", 0), ("X", "B", "FS", 0), ("X9", "X", link_type, 0, "2")])
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    assert (codes(r), r.denominator) == (expected, 3)
+
+
+def test_decm_06a204b_reads_a_link_to_another_project_as_successor_by_its_type():
+    """06A204b v8.0, block 9, open finish: successors "only start to start, start to finish, or blanks".
+    A (first start) -> M and A -> Z (last finish), FS. M's only successor is Y1 in project 2 of the same
+    file: linked SS, M is an open finish; linked FS, it is not."""
+    tasks = [
+        planned("A", "2026-03-02 08:00", "2026-03-02 17:00"),  # task_id 1
+        planned("M", "2026-03-03 08:00", "2026-03-03 17:00"),  # task_id 2
+        planned("Z", "2026-03-04 08:00", "2026-03-05 17:00"),  # task_id 3
+    ]
+    for link_type, expected in (("SS", ["M"]), ("FS", [])):
+        text = xer_text(tasks, [("A", "M", "FS", 0), ("A", "Z", "FS", 0)])
+        lines = with_second_project(text, "P2", ["Y1"], "2026-03-02 08:00").splitlines()  # Y1: task_id 100
+        i = lines.index("%T\tTASKPRED")
+        header = lines[i + 1].split("\t")[1:]
+        row = dict.fromkeys(header, "")
+        row.update(task_pred_id="9", task_id="100", pred_task_id="2", proj_id="2", pred_proj_id="1",
+                   pred_type=f"PR_{link_type}", lag_hr_cnt="0")  # fmt: skip
+        lines.insert(i + 2, "%R\t" + "\t".join(row[c] for c in header))
+        s = build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), project_code="T")
+        r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+        assert (codes(r), r.denominator) == (expected, 3)
+
+
 def test_decm_06a204b_first_and_last_are_read_among_non_loe_activities():
     """06A204b v8.0, block 6: "X = Count of incomplete Non-LOE tasks/activities & milestones with open
     starts or finishes"; block 9: "The first tasks/activities & milestones have the earliest baseline
@@ -1245,16 +1290,12 @@ def test_decm_06a204b_first_and_last_are_read_among_non_loe_activities():
     LOE 02/03-31/03; FIRST 03/03 -> LAST 04/03 (FS). FIRST has no predecessor but is the first start;
     LAST has no successor but is the last finish: nothing flagged, with or without the LOE.
     """
-    window = {"FIRST": ("2026-03-03 08:00", "2026-03-03 17:00"), "LAST": ("2026-03-04 08:00", "2026-03-04 17:00")}
-    window["LOE"] = ("2026-03-02 08:00", "2026-03-31 17:00")
-
-    def task(code, **extra):
-        start, finish = window[code]
-        dates = dict(target_start_date=start, target_end_date=finish, early_start_date=start, early_end_date=finish)
-        return todo(code, **dates, **hours(8), **extra)
-
-    discrete = [task("FIRST"), task("LAST")]
-    for tasks in (discrete, [task("LOE", task_type="TT_LOE"), *discrete]):
+    discrete = [
+        planned("FIRST", "2026-03-03 08:00", "2026-03-03 17:00"),
+        planned("LAST", "2026-03-04 08:00", "2026-03-04 17:00"),
+    ]
+    loe = planned("LOE", "2026-03-02 08:00", "2026-03-31 17:00", task_type="TT_LOE")
+    for tasks in (discrete, [loe, *discrete]):
         s = snap(tasks, [("FIRST", "LAST", "FS", 0)])
         r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
         assert (codes(r), r.denominator) == ([], 2)
