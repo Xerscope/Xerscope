@@ -214,6 +214,26 @@ def test_options_keep_the_raw_project_fields_they_derive_from():
     assert s.options["project"]["critical_path_type"] == "" and s.options["critical_path_type"] == "CT_TotFloat"
 
 
+def test_scheduling_options_of_another_project_only_warn_that_p6_defaults_are_used():
+    """SCHEDOPTIONS holds a row for project 1 (Actual Dates) and none for project 2: project 2
+    is scheduled under P6's defaults (Retained Logic), and the file says so."""
+    from xerkit import with_second_project
+
+    text = with_second_project(
+        xer_text([todo("A")], sched={"sched_retained_logic": "N", "sched_progress_override": "N"}),
+        "B",
+        ["X"],
+        "2026-03-02 08:00",
+    )
+    first = build_snapshot(parse_text(text, source="t.xer"), project_code="T")
+    assert first.options["progressed"] == "actual_dates"
+    assert not any("SCHEDOPTIONS" in w for w in first.warnings)
+    second = build_snapshot(parse_text(text, source="t.xer"), project_code="B")
+    assert second.options["progressed"] == "retained_logic" and second.options["sched"] == {}
+    assert "t.xer: SCHEDOPTIONS has no row for project B: P6's default scheduling options used" in second.warnings
+    assert "has_schedoptions" not in second.options
+
+
 def test_critical_defaults_to_zero_float_when_project_is_silent():
     s = build_snapshot(parse_text(_xer({}, tasks=TASKS)))
     assert s.activities.set_index("task_code")["is_critical"].to_dict() == {"A": True, "B": False, "C": False}

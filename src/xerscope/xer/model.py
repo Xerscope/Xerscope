@@ -1008,6 +1008,11 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         if "proj_id" in schedule_options.columns:
             rows = schedule_options[schedule_options["proj_id"] == inputs.project_id]
         schedule_row = rows.iloc[0].to_dict() if not rows.empty else {}
+        if rows.empty:
+            inputs.warnings.append(
+                f"{inputs.source}: SCHEDOPTIONS has no row for project {inputs.project_row['proj_short_name']}: "
+                "P6's default scheduling options used"
+            )
     # Oracle (P6 Professional 24, Schedule Options > General): "If you do not select a
     # calendar, Successor Activity Calendar is used to calculate lag."
     chosen_lag_calendar = schedule_row.get("sched_calendar_on_relationship_lag")
@@ -1028,7 +1033,6 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         "progressed": progressed,
         "critical_path_type": project_row["critical_path_type"] or "CT_TotFloat",
         "critical_float_hr": None if pd.isna(critical_hours) else float(critical_hours),
-        "has_schedoptions": not schedule_options.empty,
         "sched": schedule_row,  # the raw SCHEDOPTIONS row: read by analysis.cpm
         # ERMHDR: P6 version and product that wrote the file ("" when the header leaves them out)
         "export": {"version": _header_field(inputs.raw.header, 0), "product": _header_field(inputs.raw.header, 6)},
