@@ -943,7 +943,7 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
             icon=":material/warning:",
         )
     codes = set(snapshot.activities["task_code"])
-    matched = len(codes & set(baseline.frame.index))
+    matched = len(codes) - len(baseline.unbaselined(snapshot))
     if codes and matched / len(codes) < MATCH_WARN_BELOW:
         st.warning(
             f"{name}: the baseline finds {matched} of {len(codes)} tasks of the update "

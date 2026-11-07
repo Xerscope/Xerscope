@@ -648,7 +648,7 @@ def ev_point(snapshot: Snapshot, baseline: Baseline) -> EvPoint:
     current = earned_values[earned_values["in_snapshot"]]
     deleted = earned_values[~earned_values["in_snapshot"]]
     activities = snapshot.activities
-    unbaselined = sorted(set(activities["task_code"]) - set(baseline.frame.index))
+    unbaselined = baseline.unbaselined(snapshot)
     on_fallback = current["ev_technique"].isin(["wbs_milestones", "resource_curves"])
     curves = baseline.assignment_costs
     curve_codes = set(curves.loc[curves["curve"].astype(bool), "task_code"]) & set(current.index)

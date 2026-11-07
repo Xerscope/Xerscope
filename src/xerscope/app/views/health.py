@@ -479,7 +479,7 @@ if len(store) > 1:
     show_trend(store, standard)
 
 if baseline is not None:
-    missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
+    missing = baseline.unbaselined(snapshot)
     if missing:
         st.caption(
             f"{len(missing)} tasks are not in the baseline: "

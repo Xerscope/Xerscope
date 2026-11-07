@@ -304,7 +304,7 @@ def show_activity_detail(snapshot, baseline) -> None:
             st.caption(
                 f"EV technique not modelled (task % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
             )
-        missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
+        missing = baseline.unbaselined(snapshot)
         if missing:
             st.caption(f"Not in the baseline (earn nothing): {ui.md_text(', '.join(missing))}")
         gone = activities[~activities["in_snapshot"]]

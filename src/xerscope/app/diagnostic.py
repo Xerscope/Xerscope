@@ -313,7 +313,7 @@ def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: boo
                 else "project baseline in the file"
                 if in_file
                 else "separate file",
-                "matched": int(codes.isin(baseline.frame.index).sum()),
+                "matched": len(codes) - len(baseline.unbaselined(snapshot)),
                 "activities": len(codes),
             }
         ]
