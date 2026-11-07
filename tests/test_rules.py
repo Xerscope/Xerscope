@@ -276,6 +276,19 @@ def test_float_threshold_in_hours_vs_working_days():
     assert codes(run(P6, "P6-14", s)) == ["N"]
 
 
+def test_p6_06_and_14_say_how_many_tasks_have_no_total_float():
+    """113175: 'activities calculated by the scheduler to have a float'; P6's handling of a task with no
+    float is not documented. Count unchanged (U stays in the denominator), the note gives it."""
+    s = snap(
+        [todo("A", total_float_hr_cnt="400"), todo("N", total_float_hr_cnt="-8"), todo("U", total_float_hr_cnt="")]
+    )
+    for metric_id, flagged in (("P6-06", ["A"]), ("P6-14", ["N"])):
+        r = run(P6, metric_id, s)
+        assert (counts(r), codes(r)) == ((1, 3), flagged), metric_id
+        assert "1 task(s) without total float: not judged, still counted" in r.note, metric_id
+    assert not run(P6, "P6-14", snap([todo("A", total_float_hr_cnt="0")])).note
+
+
 def test_the_x_threshold_is_the_same_in_p6_toml_and_in_the_rules():
     """352 h is written in p6.toml (the value used) and as the rules' default (check_schedule.LARGE_HOURS,
     used when a standard sets no x): one cannot move without the other."""

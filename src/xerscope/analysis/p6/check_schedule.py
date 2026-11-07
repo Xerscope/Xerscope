@@ -61,6 +61,13 @@ def _open_not_loe(context) -> Funnel:
     return _open(context).exclude("loe", "101248")
 
 
+def _without_float_note(activities) -> str:
+    """A task with no total float (never scheduled, or blank in the export) is neither above nor below a
+    limit: it is not judged, and stays in the denominator. Said, so the reader sees the count."""
+    missing = int(activities["total_float_hr_cnt"].isna().sum())
+    return f"{missing} task(s) without total float: not judged, still counted" if missing else ""
+
+
 def _links(context) -> Funnel:
     return link_funnel(context, "not_both_complete", source="101248")
 
@@ -186,7 +193,14 @@ def p6_06_large_float(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
     activities = funnel.rows
 
     flagged = activities[activities["total_float_hr_cnt"] > limit_hours]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(flagged),
+        len(flagged),
+        len(activities),
+        note=_without_float_note(activities),
+        checked=activities,
+        funnel=funnel,
+    )
 
 
 @rule("p6_07_relationship_types", "%", links=True)
@@ -465,4 +479,11 @@ def p6_14_negative_float(context) -> RuleOutput:
     activities = funnel.rows
 
     flagged = activities[activities["total_float_hr_cnt"] < 0]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(flagged),
+        len(flagged),
+        len(activities),
+        note=_without_float_note(activities),
+        checked=activities,
+        funnel=funnel,
+    )
