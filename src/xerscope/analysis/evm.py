@@ -158,7 +158,7 @@ class _Spread:
     def build(
         cls, snapshot: Snapshot, frame: pd.DataFrame, hours: str, start: str, finish: str, calendar: str
     ) -> _Spread:
-        rows = frame[(frame[hours] > 0) & frame[start].notna() & frame[finish].notna()]
+        rows = frame[(frame[hours] != 0) & frame[start].notna() & frame[finish].notna()]
         spread = cls()
         if rows.empty:
             return spread
@@ -203,7 +203,7 @@ def pv_curve(baseline: Baseline, snapshot: Snapshot | None = None) -> pd.DataFra
     if snapshot is not None:
         frame = frame[frame.index.isin(snapshot.by_code.index)]
         bac = float(frame["ev_labor_hr"].sum())
-    frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
+    frame = frame[(frame["ev_labor_hr"] != 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
     if frame.empty:
         return pd.DataFrame(columns=["date", "pv_hr", "pv_cum_hr", "pv_pct"])
     dates = pd.concat([frame["ev_start"], frame["ev_finish"]])  # a finish before its start: _Spread

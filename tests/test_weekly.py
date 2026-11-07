@@ -856,3 +856,15 @@ def test_inverted_ev_dates_are_one_step_at_the_finish_in_the_kpi_and_the_curve()
     curve = pv_curve(baseline, update).set_index("date")["pv_cum_hr"]
     assert ev_point(update, baseline).pv_hr == pytest.approx(40) == curve[update.data_date]
     assert curve[pd.Timestamp("2026-03-02")] == 0 and curve.iloc[-1] == pytest.approx(40)
+
+
+def test_a_negative_budget_counts_in_the_curve_as_in_the_kpi():
+    """A 40 h and B -8 h (an invalid import) over Mon-Fri; Wed 08:00 is 2 of 5 days: by hand,
+    PV = (40 - 8) x 0.4 = 12.8 h in the KPI and in the curve at the data date."""
+    hours = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00"}
+    baseline = Baseline.from_snapshot(
+        snap([todo("A", target_work_qty="40", **hours), todo("B", target_work_qty="-8", **hours)])
+    )
+    update = snap([todo("A"), todo("B")], data_date="2026-03-04 08:00")
+    curve = pv_curve(baseline, update).set_index("date")["pv_cum_hr"]
+    assert ev_point(update, baseline).pv_hr == pytest.approx(12.8) == curve[update.data_date]
