@@ -307,3 +307,25 @@ def test_milestone_slip_is_blank_when_the_latest_forecast_is_missing():
     slip = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M"]
     assert pd.isna(slip["latest_forecast"])
     assert pd.isna(slip["slip_wd"]) and pd.isna(slip["last_week_wd"])
+
+
+# --- changelog float: hours, not days of a changing calendar ----------------------------------
+
+
+@pytest.mark.parametrize("before, after", [("C8", "C10"), ("C10", "C8")])
+def test_changelog_float_ignores_a_calendar_change_at_constant_hours(before, after):
+    """80 h of total float is 10 d on C8 and 8 d on C10: the same float, as P6 stores it in hours."""
+
+    def update(calendar: str, data_date: str):
+        return snap([todo("A", clndr_id=calendar, total_float_hr_cnt="80")], data_date=data_date)
+
+    log = changelog(update(before, FIRST), update(after, LAST)).query("category != 'Project'")
+    assert list(log["change"]) == ["calendar changed"]
+
+
+def test_changelog_float_change_hidden_by_a_calendar_change_is_listed_in_new_days():
+    """80 h on C8 (10 d) -> 100 h on C10 (10 d): +20 h, 2 d of the new 10 h calendar."""
+    old = snap([todo("A", clndr_id="C8", total_float_hr_cnt="80")], data_date=FIRST)
+    new = snap([todo("A", clndr_id="C10", total_float_hr_cnt="100")], data_date=LAST)
+    row = changelog(old, new).query("change == 'total float changed'").iloc[0]
+    assert row["delta"] == pytest.approx(2.0)
