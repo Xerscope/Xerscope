@@ -640,8 +640,9 @@ def test_cpli_uses_the_finish_float():
     assert r.status == "fail"
 
 
-def test_cpli_needs_a_must_finish_by_date():
-    """Without one P6 gives the last activity 0 float: 1.0 whatever the schedule, so n/a."""
+def test_cpli_is_na_without_must_finish_by_or_baseline():
+    """Without a Must Finish By, P6 gives the last activity 0 float (1.0 whatever the schedule); without a
+    baseline there is no finish for the margin either: n/a. With a baseline, see the tests below."""
     chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="0")]
     r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
     assert r.status == "n/a" and "Must Finish By" in r.note
