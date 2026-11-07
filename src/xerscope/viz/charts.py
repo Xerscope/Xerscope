@@ -447,16 +447,16 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     c = SERIES
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
-    text = _ppc_text(p["ppc"], p["finishes_kept"], p["finishes_committed"])
+    text = _ppc_text(p["ppc_finish"], p["finishes_kept"], p["finishes_committed"])
     noted = [isinstance(n, str) for n in p["note"]]
     # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
     # the hover keeps the counts)
     weeks = len(p)
-    short = ["" if weeks > LABEL_SHORT_MAX else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc"]]
+    short = ["" if weeks > LABEL_SHORT_MAX else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc_finish"]]
     fig = go.Figure(
         go.Bar(
             x=p["label"],
-            y=p["ppc"].astype(object).where(p["ppc"].notna(), None),  # no commitment: no bar, not 0
+            y=p["ppc_finish"].astype(object).where(p["ppc_finish"].notna(), None),  # no commitment: no bar, not 0
             text=text if weeks <= LABEL_FULL_MAX else short,
             customdata=_with_note(text, p["note"]),
             textposition="outside",
@@ -469,7 +469,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     )
     for column, kept, committed, name, colour in (
         ("ppc_start", "starts_kept", "starts_committed", "PPC Start", c[2]),
-        ("ppc_all", "kept", "committed", "PPC all commitments", c[1]),
+        ("ppc_week", "kept", "committed", "PPC all commitments", c[1]),
     ):
         fig.add_trace(
             go.Scatter(
@@ -497,7 +497,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         xshift=6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
-    for label in p.loc[p["ppc"].isna(), "label"]:  # a week with nothing committed has no PPC
+    for label in p.loc[p["ppc_finish"].isna(), "label"]:  # a week with nothing committed has no PPC
         fig.add_annotation(x=label, y=0, text="n/a", showarrow=False, yanchor="bottom", hovertext="no commitment")
     fig = _layout(fig, 400, "PPC (%)", legend=True)
     fig.update_layout(hovermode="closest")

@@ -6,15 +6,15 @@ milestone drops out of the updates whose data date is after its actual date: the
 repeats that date below the diagonal (`plotted_trend`).
 
 PPC (Percent Plan Complete): the commitments the W-1 update made for the week, kept in the
-W update. A finish commitment is an open activity forecast to finish before the W data
-date, kept when W shows it complete (Last Planner's PPC counts these only); a start
-commitment is a not-started activity forecast to start before that date, kept when W shows
-it started. PPC (Last Planner: complete / planned) = finishes kept / finishes committed;
-PPC Start = starts kept / starts committed; PPC all = kept / committed over both kinds.
-In a file P6 has recalculated no forecast
-falls before its own data date, so these are the dates of the week [W-1, W); an
-unscheduled file with stale forecasts also counts its overdue work, which was due and is
-not done.
+W update. A start commitment is an activity not started in W-1 whose W-1 start is on or
+before W's data date, kept when W gives it an actual start on or before that data date; a
+finish commitment is the same for an activity not complete in W-1, its finish and its
+actual finish. PPC Start = starts kept / starts committed; PPC Finish = finishes kept /
+finishes committed (Last Planner's PPC counts these only); PPC W/W-1 = (starts + finishes
+kept) / (starts + finishes committed). No commitment: none, not 0. In a file P6 has
+recalculated no forecast falls before its own data date, so these are the dates of the
+week [W-1, W]; an unscheduled file with stale forecasts also counts its overdue work,
+which was due and is not done.
 
 Progress delta ("actual W - actual W-1"): per activity, % complete and earned hours
 gained during the week (budget hours of week W x change in % complete), rolled up by WBS.
@@ -118,29 +118,36 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
 def committed(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
     """W-1's commitments for the week to W's data date, one row each, with their outcome in W.
 
-    An activity due to start and finish within the week is two commitments. Milestones and
-    level of effort are left out: a milestone repeats its predecessor's date, so it would
-    add a commitment the week the predecessor ends. Without a W data date nothing is due:
-    no commitment (`ppc_series` notes it)."""
+    Committed: W-1's start (finish) on or before W's data date, the activity not started
+    (not complete) in W-1. Kept: W's actual start (finish) on or before W's data date; an
+    actual after it (P6 flags it as invalid progress) is a miss. An activity due to start
+    and finish within the week is two commitments. Milestones and level of effort are left
+    out: a milestone repeats its predecessor's date, so it would add a commitment the week
+    the predecessor ends. Without a W data date nothing is due: no commitment (`ppc_series`
+    notes it)."""
     work = previous.activities
     work = work[~work["is_milestone"] & ~work["is_loe"]]
     due, now = current.data_date, current.by_code
     if due is None:
         finishes = starts = work.iloc[0:0]
     else:
-        finishes = work[~work["is_complete"] & (work["finish"] < due)]
-        starts = work[~work["is_started"] & (work["start"] < due)]
+        finishes = work[~work["is_complete"] & (work["finish"] <= due)]
+        starts = work[~work["is_started"] & (work["start"] <= due)]
     return pd.concat(
         [
-            _outcome(finishes, now, "Finish", date="finish", actual="act_end_date", kept="is_complete"),
-            _outcome(starts, now, "Start", date="start", actual="act_start_date", kept="is_started"),
+            _outcome(finishes, now, due, "Finish", date="finish", actual="act_end_date", done="is_complete"),
+            _outcome(starts, now, due, "Start", date="start", actual="act_start_date", done="is_started"),
         ],
         ignore_index=True,
     )
 
 
-def _outcome(plan: pd.DataFrame, now: pd.DataFrame, commitment: str, date: str, actual: str, kept: str) -> pd.DataFrame:
+def _outcome(
+    plan: pd.DataFrame, now: pd.DataFrame, due: pd.Timestamp | None, commitment: str, date: str, actual: str, done: str
+) -> pd.DataFrame:
     codes = plan["task_code"]
+    actual_now = codes.map(now[actual])
+    on_time = actual_now.notna() & (actual_now <= due) if due is not None else False
     return pd.DataFrame(
         {
             "task_code": codes,
@@ -149,8 +156,8 @@ def _outcome(plan: pd.DataFrame, now: pd.DataFrame, commitment: str, date: str, 
             "commitment": commitment,
             "planned_date": plan[date],
             "in_update": codes.isin(now.index),
-            "kept": codes.map(now[kept]).fillna(False).astype(bool),
-            "actual_date": codes.map(now[actual]),
+            "kept": codes.map(now[done]).fillna(False).astype(bool) & on_time,
+            "actual_date": actual_now,
             "forecast_now": codes.map(now[date]),
             "status_now": codes.map(now["status"]).fillna("deleted"),
         }
@@ -194,9 +201,9 @@ def ppc_series(store: SnapshotStore) -> pd.DataFrame:
                 "starts_kept": starts_kept,
                 "committed": planned,
                 "kept": kept,
-                "ppc": _share(finishes_kept, len(finishes)),
                 "ppc_start": _share(starts_kept, len(starts)),
-                "ppc_all": _share(kept, planned),
+                "ppc_finish": _share(finishes_kept, len(finishes)),
+                "ppc_week": _share(kept, planned),
                 "note": _gap_note(store[index - 1], store[index]),
             }
         )
@@ -212,9 +219,9 @@ def ppc_series(store: SnapshotStore) -> pd.DataFrame:
             "starts_kept",
             "committed",
             "kept",
-            "ppc",
             "ppc_start",
-            "ppc_all",
+            "ppc_finish",
+            "ppc_week",
             "note",
         ],
     )

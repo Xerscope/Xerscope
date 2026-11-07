@@ -84,7 +84,8 @@ def test_demo_series_gives_the_same_results(sample_dir):
         assert_same_checks(anonymizer, original, copy, store, copy_store, baseline, copy_baseline)
     numbers = ["pv_hr", "ev_hr", "ac_hr", "eac_hr", "spi"]
     pd.testing.assert_frame_equal(evm_series(store, baseline)[numbers], evm_series(copy_store, copy_baseline)[numbers])
-    pd.testing.assert_series_equal(ppc_series(store)["ppc"], ppc_series(copy_store)["ppc"])
+    ppc = ["ppc_start", "ppc_finish", "ppc_week"]
+    pd.testing.assert_frame_equal(ppc_series(store)[ppc], ppc_series(copy_store)[ppc])
 
 
 @pytest.mark.parametrize("name", REFERENCE_FILES)

@@ -46,7 +46,7 @@ def show_kpis(week: pd.Series, project_progress: pd.Series) -> None:
         [
             (
                 "PPC this week",
-                _pct(week["ppc"]),
+                _pct(week["ppc_finish"]),
                 None,
                 "Finishes kept / finishes committed (Last Planner: complete / planned), milestones left out",
             ),
@@ -58,7 +58,7 @@ def show_kpis(week: pd.Series, project_progress: pd.Series) -> None:
             ),
             (
                 "PPC all commitments",
-                _pct(week["ppc_all"]),
+                _pct(week["ppc_week"]),
                 None,
                 "Finishes and starts kept / finishes and starts committed",
             ),
@@ -90,9 +90,9 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
     with left:
         formula = (
             f"PPC = {week['finishes_kept']} finishes kept / {week['finishes_committed']} committed"
-            f" = {_pct(week['ppc'])}; PPC Start = {week['starts_kept']} / {week['starts_committed']}"
+            f" = {_pct(week['ppc_finish'])}; PPC Start = {week['starts_kept']} / {week['starts_committed']}"
             f" = {_pct(week['ppc_start'])}; all commitments = {week['kept']} / {week['committed']}"
-            f" = {_pct(week['ppc_all'])}"
+            f" = {_pct(week['ppc_week'])}"
         )
         if isinstance(week["note"], str):
             formula += f". {week['note']}"

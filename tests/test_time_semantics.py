@@ -298,10 +298,11 @@ def _week(previous_tasks, current_tasks):
 
 
 def test_ppc_commitments_are_the_dates_between_the_two_data_dates():
-    """progress.py (Last Planner, W-1 commitments vs W outcome): committed = forecast before W's data
-    date, so the week is [Thu 17:00, Fri 08:00), not an ISO week nor 7 days. C (Fri 6 Mar, ISO week 10 like
-    W-1) is committed; B starting Fri 08:00 and finishing Fri 12:00, at or after W's data date, is not
-    (strict "before": consistent with the engine, no P6 source)."""
+    """xerscope definition (docs/formulas.md section 4): "committed_starts = activities whose start
+    update W-1 planned on or before the status date (data date) of W and not started in W-1", the same
+    for finishes. The week is [Thu 17:00, Fri 08:00], not an ISO week nor 7 days. C (Fri 6 Mar, ISO
+    week 10 like W-1) is committed; B's start, Fri 08:00, is on W's data date: committed, and missed;
+    its finish, Fri 12:00, is after it: not committed. Starts 2 / 3 (A, C), finishes 1 / 2 (A)."""
     store = _week(
         [
             todo("A", early_start_date="2026-03-09 08:00", early_end_date="2026-03-12 17:00", **hours(32)),
@@ -318,12 +319,13 @@ def test_ppc_commitments_are_the_dates_between_the_two_data_dates():
     assert sorted(zip(plan["task_code"], plan["commitment"], plan["kept"], strict=True)) == [
         ("A", "Finish", True),
         ("A", "Start", True),
+        ("B", "Start", False),
         ("C", "Finish", False),
         ("C", "Start", True),
     ]
     week = ppc_series(store).iloc[0]
     assert (week["week_start"], week["data_date"]) == (T(THU_PM), T(FRI_AM))
-    assert (week["ppc"], week["ppc_start"]) == (50, 100)
+    assert (week["ppc_finish"], week["ppc_start"]) == (50, pytest.approx(200 / 3))
 
 
 # --- 5. MTA: slips in working days of the milestone's calendar ---------------------------------------
