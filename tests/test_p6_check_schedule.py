@@ -437,6 +437,16 @@ def test_p6_17_constraint_options():
         assert (counts(r), codes(r)) == ((len(expected), 5), expected), (soft, hard)
 
 
+def test_p6_16_and_17_never_count_a_completed_task():
+    """UNRESOLVED (docs/standards.md): no Oracle text takes completed tasks out of Dangling. Pinned reading:
+    C (completed, FF predecessor only, SS successor only) is counted by neither check, whatever the
+    in-progress option; it stays in the denominator."""
+    s = snap([todo("P"), done("C"), todo("S")], [("P", "C", "FF", 0), ("C", "S", "SS", 0), ("P", "S", "FS", 0)])
+    for standard in (P6, _with_params("P6-16", ignore_in_progress=False)):
+        assert counts(run(standard, "P6-16", s)) == (0, 3)
+    assert counts(run(P6, "P6-17", s)) == (0, 3)
+
+
 def _with_link_to_second_project(text: str, pred_task_id: str, succ_task_id: str, link_type: str) -> str:
     """``text`` plus a TASKPRED row of project 2 whose predecessor is ``pred_task_id`` of project 1."""
     lines = text.splitlines()

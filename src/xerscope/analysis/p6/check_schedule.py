@@ -433,8 +433,9 @@ def p6_17_dangling_finish(
     Finish On or After, Finish On or Before, As Late As Possible) and 'Ignore activities with hard
     constraints' (Mandatory Start, Mandatory Finish); Oracle documents no default. Read as: the primary or
     the secondary constraint is one of them, and the task leaves the numerator, not the denominator.
-    UNRESOLVED: a successor in another project is not read here (P6-01 lets it pass, 46291); Oracle
-    (113174, 101497) does not say how Dangling Finish treats it"""
+    UNRESOLVED: completed tasks are never counted, a reading no Oracle text states. UNRESOLVED: a
+    successor in another project is not read here (P6-01 lets it pass, 46291); Oracle (113174, 101497)
+    does not say how Dangling Finish treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships

@@ -61,7 +61,11 @@ relationships between activities of the project, so a link to an activity of ano
 neither makes a task dangling nor drives it, whereas P6-01 lets such a link pass (46291). The
 Dangling help (113174, 101496, 101497) does not say how P6 treats it; the current reading is pinned by
 `test_p6_16_and_17_do_not_read_links_to_other_projects` until a P6 report on a schedule with external
-FS / FF links settles it.
+FS / FF links settles it. Both checks also leave completed tasks out of the numerator: no Oracle
+text says so (113174 names in-progress tasks only, for Dangling Start), and the 26.8 report's one
+completed task has FS logic on both sides, so it does not tell. Pinned by
+`test_p6_16_and_17_never_count_a_completed_task`; settled by a P6 report on a completed task with
+FF-only predecessors and one with SS-only successors.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.
