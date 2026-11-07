@@ -28,6 +28,7 @@ NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker 
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
+DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
@@ -67,12 +68,19 @@ labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
 
 def _clear_ask() -> None:
     st.session_state[ASK_KEY] = ""
+    st.session_state[DROPPED_KEY] = ("", [])
+
+
+def _drop(sentence: str, label: str) -> None:
+    """Take one understood filter off (its × button), for this sentence only."""
+    held, labels = st.session_state.get(DROPPED_KEY, ("", []))
+    st.session_state[DROPPED_KEY] = (sentence, [*(labels if held == sentence else []), label])
 
 
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
-# known, below; the chips let a filter go.
+# known, below; a × button per filter understood takes it off.
 asked = st.text_input(
     "Ask the schedule",
     placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
@@ -95,18 +103,20 @@ if asked:
     ask = memo(  # once per sentence and update, baseline-independent
         ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
     )
-if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
-    kept = st.pills(
-        "Understood",
-        list(ask.matched),
-        default=list(ask.matched),
-        selection_mode="multi",
-        key=f"ask_pills:{asked}",  # another sentence starts with every chip on
-        label_visibility="collapsed",
-    )
-    for label in ask.matched:
-        if label not in (kept or []):
-            ask = query.without(ask, label, lexicon)
+if ask is not None:  # the filters taken off this sentence (× buttons), from query.without
+    held, dropped = st.session_state.get(DROPPED_KEY, ("", []))
+    for label in dropped if held == asked else []:
+        ask = query.without(ask, label, lexicon)
+if ask is not None and ask.matched:  # what was understood, one button each: "Critical ×" takes it off
+    with st.container(horizontal=True, gap="small", key="ask_chips"):
+        for label in ask.matched:
+            st.button(
+                f"{ui.md_text(label)} ×",
+                key=f"ask_drop:{label}",
+                help="Remove this filter",
+                on_click=_drop,
+                args=(asked, label),
+            )
 if ask is not None:
     for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
         offers = query.suggestions(word, lexicon)

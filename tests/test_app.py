@@ -138,6 +138,11 @@ def _group(at, key: str):
     return next(group for group in at.get("button_group") if group.key == key)
 
 
+def _chips(at) -> list[str]:
+    """The Ask filters understood, as their × buttons name them."""
+    return [b.key.removeprefix("ask_drop:") for b in at.button if b.key and b.key.startswith("ask_drop:")]
+
+
 def _toggle(at, label: str, value: bool) -> None:
     next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
     _ok(at)
@@ -175,10 +180,12 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any(m.value.startswith(f"{len(drawn)} activities critical not started in CIV") for m in app.markdown)
     # the page is on CIV already: the funnel starts from its 8 tasks and names each step
     assert any(c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started ") for c in app.caption)
-    chips = _group(app, "ask_pills:critical not started in civil works")
-    assert chips.value == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
-    chips.set_value(["Status: Not started", "WBS: CIV · Civil works"]).run()  # a chip off: its filter goes
+    assert _chips(app) == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
+    critical = app.button(key="ask_drop:Float: Critical")
+    assert critical.label == "Float: Critical ×"
+    critical.click().run()  # its × takes the filter off (query.without)
     _ok(app)
+    assert _chips(app) == ["Status: Not started", "WBS: CIV · Civil works"]
     rows = [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]
     assert len(rows) > len(drawn) and any(r["category"] != "Critical" for r in rows)
     line = next(c.value for c in app.caption if c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started "))
@@ -195,12 +202,12 @@ def test_gantt_wbs_choice_filters_and_options(app):
     _ok(app)
     app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
     _ok(app)
-    assert _group(app, "ask_pills:commiss").value == ["WBS: COM · Commissioning"]
+    assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
     assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
     app.button(key="ask_clear").click().run()  # Show all empties the field
     _ok(app)
-    assert app.text_input[0].value == "" and not app.get("button_group")[0].key.startswith("ask_pills")
+    assert app.text_input[0].value == "" and _chips(app) == []
     _group(app, "gantt_timescale").set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
