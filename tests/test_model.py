@@ -561,6 +561,18 @@ def test_p6_status_codes_do_not_warn():
     assert not [w for w in s.warnings if "not a P6 code" in w]
 
 
+def test_unknown_percent_complete_type_warns_and_reads_as_physical():
+    """Oracle names a fourth type, Scope (from Oracle Primavera Cloud; its XER code is not
+    documented): any code but CP_Phys / CP_Drtn / CP_Units reads the physical %, and says so."""
+    s = snap(
+        [todo("A", complete_pct_type="CP_Scope", phys_complete_pct="30"), todo("B"), todo("C", complete_pct_type="")]
+    )
+    assert [w for w in s.warnings if "complete_pct_type" in w] == [
+        "test.xer: TASK.complete_pct_type 'CP_Scope' is not a P6 code (1 row): % complete read as Physical"
+    ]
+    assert s.tasks.set_index("task_code").at["A", "pct_complete"] == 30.0
+
+
 def test_unknown_task_type_warns_once_per_code():
     s = snap([todo("A", task_type="TT_TASK"), todo("B", task_type="TT_TASK"), todo("C", task_type="TT_X"), todo("D")])
     assert [w for w in s.warnings if "task_type" in w] == [

@@ -1086,6 +1086,13 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     _warn_unknown_codes(
         tasks["task_type"], TASK_TYPE, f"{source}: TASK.task_type", "read as Task Dependent", inputs.warnings
     )
+    _warn_unknown_codes(
+        tasks["complete_pct_type"],
+        {**PCT_COMPLETE_TYPE, "": "blank"},  # a blank is counted per project (tasks_pct_blank), not warned
+        f"{source}: TASK.complete_pct_type",
+        "% complete read as Physical",
+        inputs.warnings,
+    )
     if (tasks["task_type"] == "TT_StartMile").any():
         inputs.warnings.append(f"{source}: non-standard task_type TT_StartMile read as a start milestone")
     tasks["is_loe"] = tasks["task_type"] == "TT_LOE"
