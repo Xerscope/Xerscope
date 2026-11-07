@@ -474,6 +474,13 @@ def dcma_14_bei(context, date_grain: Literal["timestamp", "day"] = "timestamp") 
     no original duration is out whatever its type; steps 2 and 5 keep the baseline finishes and the
     actual finishes "up to the current reporting period", the same bound for both; tasks missing
     baseline finish dates are included in the denominator
+
+    UNRESOLVED: "Tasks missing baseline finish dates are included in the denominator" is read as "with
+    no baseline finish date" (as §4.11's "tasks missing baseline start or finish dates"), so a task
+    added since the baseline is due. Steps 2-3 count only dates "up to the current reporting period",
+    which a task with no date cannot pass, and the formula's second term is "Total # of Tasks Missing
+    Baseline Finish Date"; a reading of "missing" as "missed" (incomplete and past its baseline finish)
+    would leave those tasks out
     """
     data_date = context.snapshot.data_date
     if data_date is None:

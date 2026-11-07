@@ -22,7 +22,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > `x` hours, milestones out | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships from an incomplete predecessor, actual else forecast dates, X = 0 |
-| BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
+| BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4, "Tasks missing baseline finish dates are included in the denominator", read as "with no baseline finish"; `UNRESOLVED`: "missing" could mean "missed") | n/a (EVMS cost metrics) |
 
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.

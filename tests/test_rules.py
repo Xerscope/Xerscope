@@ -482,6 +482,7 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     # DCMA-EA PAM 200.1 (Oct 2012) 3.1.2.4: "Tasks missing baseline finish dates are included in the
     # denominator." (step 1: "Filter out Level of Effort (LOE) tasks, summary tasks, and zero duration
     # tasks (milestones)."). NEW has no baseline finish: due, not finished -> A, B done / A, B, C, NEW.
+    # Pins the "with no baseline finish" reading of "missing" (UNRESOLVED in dcma_14_bei).
     dcma = run(DCMA, "DCMA-14", NOW, bl)
     assert (dcma.numerator, dcma.denominator) == (2, 4)
     assert dcma.value == pytest.approx(2 / 4)
