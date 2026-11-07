@@ -60,8 +60,8 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     Excludes: completed tasks, level of effort.
     Open start: a task whose predecessors are only FF / SF, or none; a milestone with no predecessor.
         Open finish: a task whose successors are only SS / SF, or none; a milestone with no successor.
-    Exempt: the earliest baseline start (start test) and the latest baseline finish (finish test); the
-        planned dates when no baseline is loaded.
+    Exempt: the earliest baseline start (start test) and the latest baseline finish (finish test) among
+        the Non-LOE activities, finished ones included; the planned dates when no baseline is loaded.
 
     06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no
     successor (milestone: none); earliest baseline start / latest baseline finish exempt
@@ -79,9 +79,12 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     open_start = (~has_predecessor).where(milestone, ~driven_start)
     open_finish = (~has_successor).where(milestone, ~drives_finish)
 
-    # The project's first start and last finish are looked up over every activity, finished ones
-    # included: once the first activity is done, the next one in line is not the project start.
-    frame = (context.baseline or Baseline.planned(context.snapshot)).frame
+    # The project's first start and last finish are looked up over the baseline's Non-LOE activities
+    # (the metric's population, block 6), finished ones included: once the first activity is done, the
+    # next one in line is not the project start.
+    baseline = context.baseline or Baseline.planned(context.snapshot)
+    in_baseline = baseline.snapshot.activities
+    frame = baseline.frame.drop(index=in_baseline.loc[in_baseline["is_loe"], "task_code"], errors="ignore")
     is_first = codes.map(frame["bl_start"]) == frame["bl_start"].min()
     is_last = codes.map(frame["bl_finish"]) == frame["bl_finish"].max()
     open_start &= ~as_flag(is_first)

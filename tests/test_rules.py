@@ -1235,6 +1235,31 @@ def test_decm_project_start_exemption_does_not_move_once_work_is_done():
     assert "C" not in codes(r)  # the last finish of the whole baseline: exempt
 
 
+def test_decm_06a204b_first_and_last_are_read_among_non_loe_activities():
+    """06A204b v8.0, block 6: "X = Count of incomplete Non-LOE tasks/activities & milestones with open
+    starts or finishes"; block 9: "The first tasks/activities & milestones have the earliest baseline
+    start date in the IMS and" "should be excluded from the open start portion of this metric." (and
+    the last, latest baseline finish, from the open finish portion). The first and last are those of
+    the metric's Non-LOE population: an LOE spanning the project does not take the exemption away.
+
+    LOE 02/03-31/03; FIRST 03/03 -> LAST 04/03 (FS). FIRST has no predecessor but is the first start;
+    LAST has no successor but is the last finish: nothing flagged, with or without the LOE.
+    """
+    window = {"FIRST": ("2026-03-03 08:00", "2026-03-03 17:00"), "LAST": ("2026-03-04 08:00", "2026-03-04 17:00")}
+    window["LOE"] = ("2026-03-02 08:00", "2026-03-31 17:00")
+
+    def task(code, **extra):
+        start, finish = window[code]
+        dates = dict(target_start_date=start, target_end_date=finish, early_start_date=start, early_end_date=finish)
+        return todo(code, **dates, **hours(8), **extra)
+
+    discrete = [task("FIRST"), task("LAST")]
+    for tasks in (discrete, [task("LOE", task_type="TT_LOE"), *discrete]):
+        s = snap(tasks, [("FIRST", "LAST", "FS", 0)])
+        r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+        assert (codes(r), r.denominator) == ([], 2)
+
+
 def test_actuals_changed_counts_a_removed_date_on_both_sides():
     """A loses its actual start, B's moves: 2 of the 2 activities dated in either update
     (the share was 200 % when the denominator counted only today's dates)."""
