@@ -11,6 +11,7 @@ license-files = ["LICENSE", "NOTICE"]
 # Floors = latest releases at the last audit (2026-10-28), so even an install that ignores
 # uv.lock cannot pull an older, vulnerable version. Bump them when you upgrade the lock.
 dependencies = [
+    "numpy>=2.4.6",  # imported directly; 2.4.6 is the last numpy for Python 3.11 in uv.lock
     "pandas>=3.1.0",
     "plotly>=7.1.0",
     "pyarrow>=26.0.0",
