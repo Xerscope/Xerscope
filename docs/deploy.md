@@ -276,11 +276,12 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
 and turns it into its own filters, a one-sentence answer and a population funnel
 (`analysis/query.py`): a keyword grammar over the file's lexicon (WBS, activity codes,
-resources, activity-name words), the trade words of `lexicon/fr-en.toml` and the folder
-`XERSCOPE_LEXICON` names (`*.toml` files, `[[group]] words = ["CVC", "HVAC"]`, mounted
-read-only like the exports), typos read at a lower confidence. Nothing else runs: no model,
-no container, no network access. Measured on the demo: 100 % of `tests/ask/dev.toml`, 100 %
-of the held-out sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a
+resources, activity-name words), the trade words of the folder `XERSCOPE_LEXICON` names
+(`*.toml` files, `[[group]] words = ["CVC", "HVAC"]`, kept outside the repository and mounted
+read-only like the exports; no lexicon ships with the image), typos read at a lower
+confidence. Nothing else runs: no model, no container, no network access. Measured on the
+demo with the tests' generic lexicon (`tests/asklex.py`): 100 % of `tests/ask/dev.toml`,
+100 % of the held-out sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a
 company's file, `xerscope ask-bench <folder> --self --lexicon <folder> --anonymize` lists
 what its lexicon file should add, without naming anything.
 

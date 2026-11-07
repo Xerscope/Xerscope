@@ -778,8 +778,8 @@ def _args_lexicon(parser: argparse.ArgumentParser) -> None:
 
 
 def _cmd_lexicon(args: argparse.Namespace) -> int:
-    """The trade words the Ask field reads as one: the packaged groups, plus a folder's; a bad
-    file is named (exit 1)."""
+    """The trade words the Ask field reads as one: a folder's groups (XERSCOPE_LEXICON; none ships
+    with the package); a bad file is named (exit 1)."""
     from .analysis import query
 
     lexicon, errors = query.load_lexicon(*([args.folder] if args.folder else []))
@@ -791,7 +791,7 @@ def _cmd_lexicon(args: argparse.Namespace) -> int:
         groups = {tuple(sorted({w, *others})) for w, others in lexicon.items()}
         for group in sorted(groups):
             print(", ".join(group))
-        print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" + {args.folder}" if args.folder else ""))
+        print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" in {args.folder}" if args.folder else ""))
     return 1 if errors else 0
 
 

@@ -114,8 +114,9 @@ def background_jobs() -> bool:
 
 @functools.cache
 def lexicon() -> query.Lexicon:
-    """The Ask field's trade words: the packaged groups plus the *.toml of XERSCOPE_LEXICON (a
-    company's own words). Load errors are kept for the Debug page, never shown to a visitor."""
+    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON (a company's own words, kept
+    outside the repository; none ships with the app). Load errors are kept for the Debug page,
+    never shown to a visitor."""
     extra = os.environ.get("XERSCOPE_LEXICON", "")
     found, errors = query.load_lexicon(*([extra] if extra else []))
     st.session_state["lexicon_errors"] = errors

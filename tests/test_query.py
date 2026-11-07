@@ -1,6 +1,7 @@
 """analysis/query.py: a sentence becomes the Gantt page's filters, never a number."""
 
 import pytest
+from asklex import LEXICON
 
 from xerscope.analysis import query, wbs
 from xerscope.analysis.query import Filter, Vocabulary
@@ -11,6 +12,7 @@ VOCAB = Vocabulary(
     wbs={"1": "CIV · Civil works", "2": "ENG · Ingénierie", "3": "MEC · Mechanical & electrical"},
     codes={"c1": ("Zone", "B2", "Zone B2 north"), "c2": ("Zone", "B3", ""), "c3": ("Phase", "P1", "Phase one")},
     resources={"r1": ("CREW", "Site crew"), "r2": ("VENDOR", "Vendor")},
+    lexicon=LEXICON,
 )
 
 
@@ -50,7 +52,7 @@ def expected_fields(expected: Filter) -> dict:
 
 
 def test_search_keeps_the_words_of_the_file_only():
-    lexicon = Vocabulary(wbs=VOCAB.wbs, words=frozenset({"earthworks", "design"}))
+    lexicon = Vocabulary(wbs=VOCAB.wbs, words=frozenset({"earthworks", "design"}), lexicon=LEXICON)
     got = query.parse_keywords("génie civil earthworks design", lexicon)  # "génie civil" = civil works (synonyms)
     assert (got.wbs_id, got.search, got.ignored) == ("1", "earthworks design", ())
     got = query.parse_keywords("xyzzy earthworks", lexicon)
@@ -80,7 +82,7 @@ def test_backend_answers_first_and_its_failures_fall_back():
 
 def test_vocabulary_from_the_demo(store):
     snapshot = store.latest
-    vocab = query.vocabulary(snapshot, wbs.tree(snapshot))
+    vocab = query.vocabulary(snapshot, wbs.tree(snapshot), LEXICON)
     assert vocab.wbs["7003"] == "CIV · Civil works" and "7000" not in vocab.wbs  # project node left out
     assert query.vocabulary(snapshot).wbs == vocab.wbs  # same names straight from snapshot.wbs
     assert query.parse_keywords("CIV critique", vocab).wbs_id == "7003"
@@ -93,7 +95,9 @@ def test_vocabulary_from_the_demo(store):
 
 
 def test_fuzzy_matches_carry_a_confidence_and_leave_known_words_alone():
-    lexicon = Vocabulary(wbs=VOCAB.wbs, resources=VOCAB.resources, words=frozenset({"equipment", "delivery"}))
+    lexicon = Vocabulary(
+        wbs=VOCAB.wbs, resources=VOCAB.resources, words=frozenset({"equipment", "delivery"}), lexicon=LEXICON
+    )
     typo = query.parse_keywords("mecanque critque not strated", lexicon)
     assert (typo.wbs_id, typo.categories, typo.status) == ("3", ("Critical",), ("Not started",))
     assert query.FUZZY <= typo.confidence < 1.0
@@ -118,7 +122,7 @@ def test_filter_runs_as_a_funnel_of_named_steps(store):
     snapshot = store.latest
     nodes = wbs_tree.tree(snapshot)
     tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
-    asked = query.parse_keywords("critical not started in civil works", query.vocabulary(snapshot, nodes))
+    asked = query.parse_keywords("critical not started in civil works", query.vocabulary(snapshot, nodes, LEXICON))
     funnel = query.apply(asked, tasks, snapshot, nodes)
     assert [step.label for step in funnel.steps] == ["WBS CIV · Civil works", "status Not started", "float Critical"]
     assert all(step.source == "ask" for step in funnel.steps)
@@ -136,18 +140,32 @@ def test_filter_runs_as_a_funnel_of_named_steps(store):
 
 
 def test_lexicon_is_data_the_user_extends(tmp_path):
-    builtin, errors = query.load_lexicon()
-    assert errors == [] and "mechanical" in builtin["mecanique"] and "meca" in builtin["mechanical"]
+    assert query.load_lexicon() == ({}, [])  # no lexicon ships with the package
     (tmp_path / "acme.toml").write_text(
         '[[group]]\nwords = ["CVC", "HVAC", "chauffage ventilation"]\n', encoding="utf-8"
     )
     (tmp_path / "bad.toml").write_text("[[group]\n", encoding="utf-8")
     mine, errors = query.load_lexicon(tmp_path)
     assert errors and errors[0].startswith("bad.toml:")
-    assert mine["cvc"] == ("hvac", "chauffage ventilation") and mine["mecanique"] == builtin["mecanique"]
+    assert mine["cvc"] == ("hvac", "chauffage ventilation") and "mecanique" not in mine
     lexicon = Vocabulary(wbs={"h": "HVAC · HVAC works"}, lexicon=mine)
     assert query.parse_keywords("CVC en cours", lexicon).wbs_id == "h"  # the company's word finds its node
     assert query.parse_keywords("CVC en cours", Vocabulary(wbs={"h": "HVAC · HVAC works"})).wbs_id is None
+
+
+def test_no_lexicon_file_is_packaged_or_tracked_under_src():
+    import subprocess
+    from pathlib import Path
+
+    import xerscope
+
+    package = Path(xerscope.__file__).parent
+    assert not [p for p in package.rglob("*.toml") if "lexicon" in p.parts or p.parent.name == "lexicon"]
+    root = package.parent.parent
+    tracked = subprocess.run(
+        ["git", "ls-files", "src"], cwd=root, capture_output=True, text=True, check=False
+    ).stdout.split()
+    assert not [p for p in tracked if "lexicon" in p and p.endswith(".toml")], tracked
 
 
 def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store):
@@ -157,7 +175,7 @@ def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store)
     snapshot = store.latest
     nodes = wbs_tree.tree(snapshot)
     tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
-    vocab = query.vocabulary(snapshot, nodes)
+    vocab = query.vocabulary(snapshot, nodes, LEXICON)
     asked = query.parse_keywords("critiques non démarrés en génie civil", vocab)
     funnel = query.apply(asked, tasks, snapshot, nodes)
     rows = funnel.rows
@@ -218,7 +236,7 @@ def test_the_files_own_words_name_their_node(store):
     from xerscope.analysis import wbs as wbs_tree
 
     snapshot = store.latest
-    vocab = query.vocabulary(snapshot, wbs_tree.tree(snapshot))
+    vocab = query.vocabulary(snapshot, wbs_tree.tree(snapshot), LEXICON)
     assert {"foundations", "earthworks", "roads"} <= vocab.node_words["7003"]  # CIV
     assert {"piping", "instrumentation"} <= vocab.node_words["7004"]  # MEC
     assert "installation" in vocab.node_words["7004"]  # every "installation" activity is under MEC

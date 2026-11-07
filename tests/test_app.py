@@ -183,7 +183,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert len(rows) > len(drawn) and any(r["category"] != "Critical" for r in rows)
     line = next(c.value for c in app.caption if c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started "))
     assert "float Critical" not in line  # the funnel lost that step
-    app.text_input[0].set_value("jalons xyzzy génie civil").run()  # a word the file does not hold is dropped
+    app.text_input[0].set_value("jalons xyzzy civil").run()  # a word the file does not hold is dropped
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
     assert any("« xyzzy » is in neither this file nor the lexicon" in m.value for m in app.markdown)

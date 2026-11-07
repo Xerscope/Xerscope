@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from asklex import LEXICON
 
 from xerscope.analysis import query
 from xerscope.analysis.query import Vocabulary
@@ -26,7 +27,7 @@ FLOORS = {"dev": 1.00, "heldout": 1.00}  # share of sentences with every filter 
 
 @pytest.fixture(scope="module")
 def lexicon(store):
-    return query.vocabulary(store.latest)
+    return query.vocabulary(store.latest, lexicon=LEXICON)
 
 
 @pytest.mark.parametrize("name", list(FLOORS))

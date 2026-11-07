@@ -19,7 +19,6 @@ import tomllib
 import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from importlib import resources
 from pathlib import Path
 
 import pandas as pd
@@ -89,7 +88,7 @@ class Vocabulary:
     words: frozenset[str] | None = None
     has_milestones: bool = False
     has_loe: bool = False
-    lexicon: Lexicon = field(default_factory=lambda: BUILTIN_LEXICON)  # trade words read as one (load_lexicon)
+    lexicon: Lexicon = field(default_factory=dict)  # trade words read as one (load_lexicon)
     # the file's own aliases, drawn at the file's load: the words of the activity names that appear
     # under ONE WBS node only ("foundations", "earthworks" -> Civil works; "piping" -> Mechanical &
     # electrical), wbs_id -> words. A word under several nodes names none of them (a search).
@@ -122,7 +121,7 @@ def warm(backend: Backend | None, vocab: Vocabulary) -> bool:
 def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: Lexicon | None = None) -> Vocabulary:
     """``nodes`` is ``analysis.wbs.tree``/``rollup`` output (``wbs_id``, ``wbs_code``, ``wbs_name``);
     ``snapshot.wbs`` when not given. The project node and the synthetic root are left out.
-    ``lexicon``: the packaged trade words by default (``load_lexicon`` adds a company's own)."""
+    ``lexicon``: the company's trade words (``load_lexicon``), none by default."""
     frame = snapshot.wbs if nodes is None else nodes
     codes_column = "wbs_code" if "wbs_code" in frame else "wbs_short_name"
     flags = frame["proj_node_flag"] if "proj_node_flag" in frame else pd.Series("N", index=frame.index)
@@ -154,7 +153,7 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: L
         words=words,
         has_milestones=bool(activities["is_milestone"].any()),
         has_loe=bool(activities["is_loe"].any()),
-        lexicon=BUILTIN_LEXICON if lexicon is None else lexicon,
+        lexicon={} if lexicon is None else lexicon,
         node_words=_node_words(activities, wbs, nodes, resources),
     )
 
@@ -319,18 +318,30 @@ _CATEGORY_PHRASES = {
 _MILESTONE_PHRASES = ["milestone", "milestones", "jalon", "jalons", "evenement", "evenements", "event", "events"]
 _LOE_PHRASES = ["loe", "level of effort", "niveau d effort", "hamac", "hamacs", "hammock", "hammocks"]
 # --- the lexicon: trade words read as one -----------------------------------------------
+# No lexicon ships with the package: the words a company says for its labels, in either
+# language, live in the private folder XERSCOPE_LEXICON names, outside the repository.
 
-LEXICON_DIR = resources.files("xerscope") / "lexicon"  # the packaged groups (fr-en.toml)
 Lexicon = dict[str, tuple[str, ...]]  # folded word -> the other words of its group
 
 
+def lexicon_from_groups(groups: list[list[str]]) -> Lexicon:
+    """Groups of words read as one (each word folded; a group of fewer than two is dropped)."""
+    lexicon: dict[str, list[str]] = {}
+    for group in groups:
+        words = [fold(w) for w in group if isinstance(w, str) and fold(w)]
+        if len(words) < 2:
+            continue
+        for word in words:
+            lexicon.setdefault(word, []).extend(w for w in words if w != word)
+    return {word: tuple(dict.fromkeys(others)) for word, others in lexicon.items()}
+
+
 def load_lexicon(*dirs: str | Path) -> tuple[Lexicon, list[str]]:
-    """The packaged groups plus every ``*.toml`` of ``dirs`` (a company's own words, the folder
-    XERSCOPE_LEXICON names): ``[[group]] words = [...]`` tables, every word folded. Returns the
-    lexicon and the load errors (a bad file is skipped and named, never fatal)."""
+    """Every ``*.toml`` of ``dirs`` (the folder XERSCOPE_LEXICON names): ``[[group]] words = [...]``
+    tables. Returns the lexicon and the load errors (a bad file is skipped and named, never fatal)."""
     groups: list[list[str]] = []
     errors: list[str] = []
-    files = [entry for entry in sorted(LEXICON_DIR.iterdir(), key=lambda e: e.name) if entry.name.endswith(".toml")]
+    files: list[Path] = []
     for directory in dirs:
         root = Path(directory).expanduser()
         if root.is_dir():
@@ -338,20 +349,10 @@ def load_lexicon(*dirs: str | Path) -> tuple[Lexicon, list[str]]:
     for file in files:
         try:
             data = tomllib.loads(file.read_text(encoding="utf-8"))
-            for table in data.get("group", []):
-                words = [fold(w) for w in table.get("words", []) if isinstance(w, str) and fold(w)]
-                if len(words) >= 2:
-                    groups.append(words)
+            groups += [list(table.get("words", [])) for table in data.get("group", [])]
         except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError) as exc:
             errors.append(f"{file.name}: {exc}")
-    lexicon: dict[str, list[str]] = {}
-    for group in groups:
-        for word in group:
-            lexicon.setdefault(word, []).extend(w for w in group if w != word)
-    return {word: tuple(dict.fromkeys(others)) for word, others in lexicon.items()}, errors
-
-
-BUILTIN_LEXICON, _ = load_lexicon()
+    return lexicon_from_groups(groups), errors
 
 
 def _with_synonyms(words: list[str], lexicon: Lexicon) -> list[str]:
