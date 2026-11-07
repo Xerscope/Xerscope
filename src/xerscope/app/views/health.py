@@ -40,7 +40,7 @@ from xerscope.app.state import (
     standard_results,
     standards,
 )
-from xerscope.export import zip_frames
+from xerscope.export import csv_bytes, zip_frames
 from xerscope.viz.charts import build_metric_trend
 
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
@@ -150,7 +150,7 @@ def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> N
         per_check = by_check(table)
         csv_file = fetch(
             st.session_state,
-            lambda: table.to_csv(index=False).encode("utf-8-sig"),
+            lambda: csv_bytes(table),
             lambda anonymizer: anonymizer.csv(table),
             sources,
             prepare=True,

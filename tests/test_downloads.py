@@ -5,6 +5,8 @@ Run on a plain dict standing in for the Streamlit session: no page is rendered.
 
 import csv
 import io
+import zipfile
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -98,3 +100,61 @@ def test_only_the_switch_decides(switch):
     out = fetch(session, lambda: b"plain", lambda anonymous: b"anon", prepare=True)
     assert out.anonymised is switch
     assert out.data == (b"anon" if switch else b"plain")
+
+
+def _members(data: bytes) -> dict[str, bytes]:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def _typed_frame() -> pd.DataFrame:
+    """A code, a date with minutes, float noise and a float of more than 4 decimals."""
+    return pd.DataFrame(
+        {
+            "task_code": ["A", "B"],
+            "data_date": pd.to_datetime(["2026-03-06 17:00", "2026-03-09 08:30"]),
+            "bac_hr": [12345.999999, 1 / 3],
+            "gap_hr": [6.9e-13, None],
+        }
+    )
+
+
+def test_every_csv_path_writes_the_same_bytes(tmp_path):
+    """The page CSV, the zipped CSV (All sets ZIP, Debug, Power BI) and the CLI file of one frame are
+    the same bytes; the anonymised CSV, the anonymised zip of the pages and the anonymised Debug zip
+    too, and differ from the plain ones by the codes only."""
+    from xerscope.cli import _write_csv
+    from xerscope.export import csv_bytes, zip_frames
+
+    frame = _typed_frame()
+    plain = csv_bytes(frame)
+    assert plain.decode("utf-8-sig").splitlines()[1:] == [
+        "A,2026-03-06 17:00,12346.0000,0.0000",
+        "B,2026-03-09 08:30,0.3333,",
+    ]
+    assert _members(zip_frames({"t": frame}, "csv")) == {"t.csv": plain}
+    _write_csv(frame, tmp_path / "t.csv")
+    assert (tmp_path / "t.csv").read_bytes() == plain
+
+    anonymous = anonymizer(prepare=True, session=_session())
+    anonymised = anonymous.csv(frame)
+    assert _members(zip_frames({"t": anonymous.frame(frame)}, "csv")) == {"t.csv": anonymised}
+    assert _members(anonymous.zip_frames({"t": frame})) == {"t.csv": anonymised}
+
+    def without_codes(data: bytes) -> list[list[str]]:
+        return [row[1:] for row in csv.reader(io.StringIO(data.decode("utf-8-sig")))]
+
+    assert anonymised != plain and without_codes(anonymised) == without_codes(plain)
+
+
+def test_csv_bytes_is_the_only_csv_writer():
+    """A second ``to_csv`` would write its own decimals and dates: every CSV goes through csv_bytes."""
+    import xerscope
+
+    found = [
+        f"{path.name}:{number}"
+        for path in sorted(Path(xerscope.__file__).parent.rglob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if ".to_csv(" in line
+    ]
+    assert len(found) == 1 and found[0].startswith("export.py:"), found

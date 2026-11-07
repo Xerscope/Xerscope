@@ -20,9 +20,10 @@ from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_f
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
-from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
+from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
 from xerscope.app.reading import read_updates
+from xerscope.export import csv_bytes
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
     XER_SUFFIXES,
