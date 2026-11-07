@@ -9,7 +9,7 @@ shows in the number. The interval Mon 2026-03-02 08:00 -> Tue 2026-03-03 12:00 i
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, run
-from xerkit import FM, active, clndr_data, hours, snap, todo
+from xerkit import FM, MON_FRI_10H, active, clndr_data, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, run_metric
 from xerscope.analysis.changelog import changelog
@@ -329,3 +329,20 @@ def test_changelog_float_change_hidden_by_a_calendar_change_is_listed_in_new_day
     new = snap([todo("A", clndr_id="C10", total_float_hr_cnt="100")], data_date=LAST)
     row = changelog(old, new).query("change == 'total float changed'").iloc[0]
     assert row["delta"] == pytest.approx(2.0)
+
+
+def test_activity_page_slip_of_a_deleted_activity_is_on_its_own_calendar():
+    """Z is on calendar 12 (Mon-Fri 10 h), which only the two updates holding Z define; the
+    latest update has neither. Its slip is measured on calendar 12 (1.4 wd), not on the latest
+    update's project calendar C8 (1.5 wd)."""
+    ten_hours = {"clndr_id": "12", "clndr_name": "Mon-Fri 10h bis", "day_hr_cnt": "10", "week_hr_cnt": "50"}
+    ten_hours["clndr_data"] = MON_FRI_10H
+
+    def update(finish: str, data_date: str):
+        z = todo("Z", clndr_id="12", early_start_date=FIRST, early_end_date=finish)
+        return snap([z], data_date=data_date, calendars=[ten_hours])
+
+    gone = snap([todo("Y")], data_date="2026-03-09 08:00")
+    store = SnapshotStore([update(FIRST, FIRST), update(LAST, LAST), gone])
+    history = store.history.query("task_code == 'Z'").sort_values("data_date")
+    assert activity_finish_shift(store, history) == pytest.approx(WD["C10"])

@@ -296,10 +296,13 @@ def finish_shift_since_first(store: SnapshotStore) -> float | None:
 
 def activity_finish_shift(store: SnapshotStore, history: pd.DataFrame) -> float | None:
     """Working days between an activity's first and last forecast finish, on its calendar in the
-    last row of ``history`` (as the latest update defines it); None with one update or a missing finish."""
+    last row of ``history``, as the update of that row defines it (the latest update for an
+    activity still in it; for one deleted since, the last update that holds it, where its
+    calendar exists); None with one update or a missing finish."""
     if len(history) < 2 or history["finish"].isna().any():
         return None
     clndr_id = history["clndr_id"].iloc[-1]
-    return store.latest.activity_working_days(
+    last_update = store[int(history["snapshot_idx"].iloc[-1])]
+    return last_update.activity_working_days(
         clndr_id if isinstance(clndr_id, str) else None, history["finish"].iloc[0], history["finish"].iloc[-1]
     )
