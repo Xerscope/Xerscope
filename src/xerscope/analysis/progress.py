@@ -232,6 +232,38 @@ def _share(kept: int, committed: int) -> float | None:
     return 100 * kept / committed if committed else None
 
 
+# --- start and finish variances against earlier updates ----------------------------------------
+
+VARIANCE_COLUMNS = ["start_var_w1", "finish_var_w1", "start_var_w2", "finish_var_w2"]
+
+
+def date_variances(store: SnapshotStore, index: int) -> pd.DataFrame:
+    """Per activity of update ``index`` (W): its start and finish against update W-1 and W-2.
+
+    ``<end>_var_w<k> = working_days(date in W, date in W-k)``, i.e. reference − current, on the
+    activity's calendar in W: negative = later than the reference (late), positive = earlier.
+    Dates are P6's Start / Finish (actual, else forecast). Blank, not 0, when either date is
+    missing: no such update, the activity not in it, or no date. A start milestone has only
+    the start columns, a finish milestone only the finish ones.
+    """
+    current = store[index]
+    now = current.by_code
+    out = now[["task_name", "wbs_code", "status", "start", "finish"]].copy()
+    for back in (1, 2):
+        reference = store[index - back].by_code if index >= back else None
+        for end in ("start", "finish"):
+            column = f"{end}_var_w{back}"
+            if reference is None:
+                out[column] = np.nan
+            else:
+                then = reference[end].reindex(now.index)
+                out[column] = current.working_days(now["clndr_id"], now[end], then)
+    finish_milestone = now["is_milestone"] & ~now["is_start_milestone"]
+    out.loc[now["is_start_milestone"], ["finish_var_w1", "finish_var_w2"]] = np.nan
+    out.loc[finish_milestone, ["start_var_w1", "start_var_w2"]] = np.nan
+    return out.reset_index()
+
+
 # --- progress delta --------------------------------------------------------------------------
 
 

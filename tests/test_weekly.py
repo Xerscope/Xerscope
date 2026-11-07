@@ -21,7 +21,9 @@ from xerscope.analysis.evm import (
     uses_pf,
 )
 from xerscope.analysis.progress import (
+    VARIANCE_COLUMNS,
     committed,
+    date_variances,
     milestone_codes,
     milestone_slips,
     milestone_trend,
@@ -611,6 +613,98 @@ def test_ppc_leaves_milestones_out_of_starts_and_finishes():
     assert _kept(committed(w1, w2)) == {("T", "Start"): True, ("T", "Finish"): True}
     row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
     assert (row["starts_committed"], row["finishes_committed"], row["committed"]) == (1, 1, 2)
+
+
+# --- start and finish variances vs W-1 and W-2 ---------------------------------------------------
+
+
+def _dates(start: str, finish: str, **kw) -> dict:
+    return dict(early_start_date=start, early_end_date=finish, **kw)
+
+
+# Three updates, a week apart. Fri 3 Apr 2026 is a holiday on C8 (Mon-Fri 8 h), not on C7D
+# (7 days, 08:00-16:00). H (C8) and S7 (C7D) slip the same way; E is new in W-1 and moves earlier
+# in W; SMS / FMS are start / finish milestones; N is new in W.
+VAR_W2 = snap(
+    [
+        todo("H", **_dates("2026-03-30 08:00", "2026-04-01 17:00")),
+        todo("S7", clndr_id="C7D", **_dates("2026-03-30 08:00", "2026-04-01 16:00")),
+        todo("SMS", **SM, **_dates("2026-03-31 08:00", "2026-03-31 08:00")),
+        todo("FMS", **FM, **_dates("2026-04-02 17:00", "2026-04-02 17:00")),
+    ],
+    data_date="2026-03-16 08:00",
+)
+VAR_W1 = snap(
+    [
+        todo("H", **_dates("2026-03-31 08:00", "2026-04-02 17:00")),
+        todo("S7", clndr_id="C7D", **_dates("2026-03-31 08:00", "2026-04-02 16:00")),
+        todo("E", **_dates("2026-04-06 08:00", "2026-04-08 17:00")),
+        todo("SMS", **SM, **_dates("2026-03-31 08:00", "2026-03-31 08:00")),
+        todo("FMS", **FM, **_dates("2026-04-02 17:00", "2026-04-02 17:00")),
+    ],
+    data_date="2026-03-23 08:00",
+)
+VAR_W = snap(
+    [
+        todo("H", **_dates("2026-04-02 08:00", "2026-04-06 17:00")),
+        todo("S7", clndr_id="C7D", **_dates("2026-04-02 08:00", "2026-04-06 16:00")),
+        todo("E", **_dates("2026-04-06 08:00", "2026-04-07 17:00")),
+        todo("SMS", **SM, **_dates("2026-04-02 08:00", "2026-04-02 08:00")),
+        todo("FMS", **FM, **_dates("2026-04-06 17:00", "2026-04-06 17:00")),
+        todo("N", **_dates("2026-04-06 08:00", "2026-04-10 17:00")),
+    ],
+    data_date="2026-03-30 08:00",
+)
+
+
+def _variances(index: int) -> pd.DataFrame:
+    return date_variances(SnapshotStore([VAR_W2, VAR_W1, VAR_W]), index).set_index("task_code")[VARIANCE_COLUMNS]
+
+
+def test_variances_count_working_days_of_the_activity_calendar_holiday_included():
+    """xerscope definition (docs/formulas.md section 4): "for each activity, four columns (start W-1,
+    finish W-1, start W-2, finish W-2) in working days of the activity's calendar, sign NEGATIVE = late
+    (reference − current)." H on C8: start Tue 31 Mar (W-1) / Mon 30 Mar (W-2) -> Thu 2 Apr: -2 / -3
+    wd. Finish Thu 2 Apr 17:00 (W-1) -> Mon 6 Apr 17:00: Fri 3 Apr is a holiday, so -1 wd (4
+    calendar days); from Wed 1 Apr (W-2): Thu + Mon = -2 wd. S7 has the same moves on C7D, which
+    works Fri to Sun: finish -4 wd vs W-1 and -5 wd vs W-2, starts -2 / -3 as on C8."""
+    v = _variances(2)
+    assert v.loc["H"].tolist() == [-2, -1, -3, -2]
+    assert v.loc["S7"].tolist() == [-2, -4, -3, -5]
+
+
+def test_variance_sign_is_reference_minus_current():
+    """xerscope definition (docs/formulas.md section 4): "sign NEGATIVE = late (reference − current)".
+    E finishes Wed 8 Apr in W-1 and Tue 7 Apr in W: one working day earlier, +1; its start does not
+    move: 0, not blank. H is later in W than in W-1: negative (test above)."""
+    e = _variances(2).loc["E"]
+    assert (e["start_var_w1"], e["finish_var_w1"]) == (0, 1)
+
+
+def test_variance_missing_reference_is_blank_not_zero():
+    """xerscope definition (docs/formulas.md section 4): "Missing date → blank, not 0." E is not in
+    W-2: its two W-2 columns are blank; N is only in W: all four blank. Read at W-1 (index 1) there
+    is no W-2: every W-2 column blank, and H moved Mon 30 -> Tue 31 Mar (start) and Wed 1 -> Thu 2
+    Apr (finish): -1 wd each. The first update has nothing to compare with: all blank."""
+    v = _variances(2)
+    assert v.loc["E", ["start_var_w2", "finish_var_w2"]].isna().all()
+    assert v.loc["N"].isna().all()
+    at_w1 = _variances(1)
+    assert at_w1[["start_var_w2", "finish_var_w2"]].isna().all().all()
+    assert (at_w1.loc["H", "start_var_w1"], at_w1.loc["H", "finish_var_w1"]) == (-1, -1)
+    assert _variances(0).isna().all().all()
+
+
+def test_variance_of_a_milestone_has_only_its_own_end():
+    """xerscope definition (docs/formulas.md section 4): "A milestone has only the relevant end."
+    SMS (start milestone) Tue 31 Mar -> Thu 2 Apr: start -2 wd vs W-1 and W-2, finish blank. FMS
+    (finish milestone) Thu 2 Apr 17:00 -> Mon 6 Apr 17:00 across the C8 holiday: finish -1 wd vs W-1
+    and W-2, start blank."""
+    v = _variances(2)
+    assert v.loc["SMS", ["start_var_w1", "start_var_w2"]].tolist() == [-2, -2]
+    assert v.loc["SMS", ["finish_var_w1", "finish_var_w2"]].isna().all()
+    assert v.loc["FMS", ["finish_var_w1", "finish_var_w2"]].tolist() == [-1, -1]
+    assert v.loc["FMS", ["start_var_w1", "start_var_w2"]].isna().all()
 
 
 def test_evm_series_one_point_per_update_against_one_baseline():
