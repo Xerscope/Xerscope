@@ -197,7 +197,11 @@ class WorkCalendar:
         if parsed is not None and any(parsed[0]):
             week, exc = parsed
             return cls(str(row["clndr_id"]), str(row.get("clndr_name", "")), hpd, week, exc, notes=tuple(notes))
-        # No usable blob: infer the number of working days from the week's hour count.
+        # No usable blob, or one without a working weekday: infer the number of working days
+        # from the week's hour count. The blob's exceptions still hold (MPXJ, ProjectCalendarHelper
+        # .ensureWorkingTime, also fills in a default week and keeps them).
+        if parsed is not None:
+            notes.append("no working weekday in clndr_data; workweek inferred from the hour counts")
         whc = pd.to_numeric(row.get("week_hr_cnt"), errors="coerce")
         n = int(round(whc / hpd)) if pd.notna(whc) and whc > 0 else DEFAULT_WORKING_DAYS
         n = min(max(n, 1), 7)
@@ -207,7 +211,7 @@ class WorkCalendar:
             str(row.get("clndr_name", "")),
             hpd,
             tuple([day] * n + [()] * (7 - n)),
-            {},
+            parsed[1] if parsed is not None else {},
             from_data=False,
             notes=tuple(notes),
         )

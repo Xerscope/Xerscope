@@ -66,6 +66,21 @@ def test_missing_blob_infers_workweek_from_hour_counts():
     assert [hours(day) for day in five.week] == [10] * 5 + [0, 0]
 
 
+def test_a_blob_without_a_working_weekday_keeps_its_exceptions():
+    """The work week is inferred from the hour counts, as when the blob is missing; the blob's
+    holiday and working exception still apply (MPXJ, ProjectCalendarHelper.ensureWorkingTime)."""
+    blob = clndr_data(range(0), [("08:00", "12:00")], (46115,)).replace(
+        "Exceptions()((0||0(d|46115)()))", "Exceptions()((0||0(d|46115)())(0||1(d|46117)((0||0(s|08:00|f|12:00)()))))"
+    )
+    cal = WorkCalendar.from_row(
+        pd.Series({"clndr_id": "X", "day_hr_cnt": "8", "week_hr_cnt": "40", "clndr_data": blob})
+    )
+    assert [hours(day) for day in cal.week] == [8] * 5 + [0, 0]
+    assert hours(cal.periods(date(2026, 4, 3))) == 0  # Friday holiday
+    assert hours(cal.periods(date(2026, 4, 5))) == 4  # Sunday worked by exception
+    assert cal.notes == ("no working weekday in clndr_data; workweek inferred from the hour counts",)
+
+
 def test_unknown_task_calendar_falls_back_to_the_project_calendar():
     """A clndr_id absent from CALENDAR: hours per day from the project's calendar, as
     Snapshot.calendar resolves it, and the file is flagged."""
