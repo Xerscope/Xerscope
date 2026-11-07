@@ -19,7 +19,7 @@ from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL
 
 # The columns of fact_activity, in the order Power BI users know them: a subset of the model's
 # TASK_COLS + LABOR_COLS (tests/test_store.py checks it). Left out on purpose, the internal keys
-# and the raw P6 values that a derived column replaces: task_id, wbs_id, hours_per_day,
+# and the raw P6 values that a derived column replaces: task_id, wbs_id,
 # is_wbs_summary, status_code, ev_user_pct, cstr_date, cstr_type2, cstr_date2, total_float_hr_cnt,
 # free_float_hr_cnt, target_drtn_hr_cnt, remain_drtn_hr_cnt, restart_date, reend_date, constraint,
 # has_resource, has_expense, has_external_pred, has_external_succ.
@@ -47,6 +47,7 @@ HISTORY_COLS = [
     "free_float_d",
     "remaining_d",
     "original_d",
+    "hours_per_day",  # of the activity's calendar: the _d columns x hours_per_day = P6's hours
     "pct_complete",
     "complete_pct_type",
     "is_complete",
