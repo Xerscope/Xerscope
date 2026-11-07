@@ -6,8 +6,7 @@
 # remains the industry's common screen.
 #
 # Population: incomplete activities, excluding LOE and milestones (PAM 200.1 section 4.0; WBS
-# summary always), except the checks that need finished work: invalid dates (09, which keeps a
-# task completed on or after the data date), missed tasks (11) and BEI (14).
+# summary always), except the checks that need finished work: missed tasks (11) and BEI (14).
 # Relationships: those into incomplete, non-LOE, non-milestone work. Durations and float in working days.
 # Inputs are weekly XERs: there is no detail planning period or rolling wave window (DCMA-08).
 # xerlock's published result on its sample schedule is a comparison, not the authority; where
@@ -96,7 +95,7 @@ rule = "dcma_09_invalid_dates"
 params = { date_grain = "day" }  # the pamphlet compares dates ("on or before 8/1/09"); P6 compares timestamps (p6.toml default)
 unit = "count"  # a 0 target reads the same in count and in %; the count is what the analyst acts on
 target = "<= 0"
-source = "DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an actual start/finish beyond it, by calendar day (§4.9 reasons in dates: \"on or before 8/1/09, not after 8/1/09\"); §4.0: LOE and milestones excluded. Completed tasks: §4.0 excludes them all, §4.9 flags an actual date beyond the status date; xerscope keeps those completed on or after it (its reading of §4.9 over §4.0)"
+source = "DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an actual start/finish beyond it, by calendar day (§4.9 reasons in dates: \"on or before 8/1/09, not after 8/1/09\"); §4.0: \"This analysis should exclude Completed tasks, LOE tasks, Subprojects (called Summary tasks in MS Project), and Milestones.\" A completed task with an actual finish after the status date is out (§4.9: \"Incomplete tasks ... are included in this metric.\"); 06A506a and P6-10b report it. UNRESOLVED: the intent of \"actual start/finish\" in §4.9"
 
 [[metric]]
 id = "DCMA-10"

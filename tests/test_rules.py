@@ -375,7 +375,7 @@ def test_invalid_progress_dates():
     assert codes(run(P6, "P6-10a", s)) == ["EARLY", "LATE", "RUN"]
     assert codes(run(P6, "P6-10b", s)) == ["FUT"]
     assert run(P6, "P6-10a", s).denominator == run(P6, "P6-10b", s).denominator == 5  # OK finished: removed
-    assert run(DCMA, "DCMA-09", s).numerator == 3  # DCMA reads the remaining finish: LATE passes
+    assert run(DCMA, "DCMA-09", s).numerator == 2  # remaining finish: LATE passes; FUT complete: out (§4.0)
 
 
 def test_dcma_09_follows_pam_200_1():
@@ -383,8 +383,9 @@ def test_dcma_09_follows_pam_200_1():
     the IMS status date, or has an actual start/finish date beyond the IMS status date are included in
     this metric."
 
-    4.0 excludes LOE, subprojects and milestones. Completed tasks are kept only when they could still
-    have an actual date beyond the status date: one finished before it is out of the population.
+    4.0: "This analysis should exclude Completed tasks, LOE tasks, Subprojects (called Summary tasks in
+    MS Project), and Milestones." FUT, complete with an actual finish beyond the status date, is out:
+    the metric's subject is "Incomplete tasks" (DECM 06A506a and P6-10b report that date).
     """
     s = snap(
         [
@@ -392,15 +393,15 @@ def test_dcma_09_follows_pam_200_1():
             active("RUN", restart_date="2026-02-26 08:00", reend_date="2026-02-27 17:00"),  # remaining finish: flagged
             todo("MEARLY", task_type="TT_Mile", target_drtn_hr_cnt="0", early_start_date="2026-02-27 08:00"),
             done("OK"),  # finished 2026-02-13, before DD: out
-            done("FUT", act_end_date="2026-03-04 17:00"),  # actual finish beyond DD: flagged
+            done("FUT", act_end_date="2026-03-04 17:00"),  # complete: out, even with an actual beyond DD
             todo("FINE"),
             todo("LOE", task_type="TT_LOE", early_start_date="2026-02-27 08:00"),
         ]
     )
     r = run(DCMA, "DCMA-09", s)
-    # Population: EARLY, RUN, FUT, FINE = 4 (MEARLY milestone, OK done before DD, LOE out).
-    assert codes(r) == ["EARLY", "FUT", "RUN"]
-    assert (r.numerator, r.denominator) == (3, 4)
+    # Population: EARLY, RUN, FINE = 3 (MEARLY milestone, OK and FUT complete, LOE out).
+    assert codes(r) == ["EARLY", "RUN"]
+    assert (r.numerator, r.denominator) == (2, 3)
 
 
 def test_resource_or_expense():
@@ -1437,15 +1438,19 @@ def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
 
 
 def test_dcma_09_compares_dates_by_day_p6_by_timestamp():
-    """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual finish
+    """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual start
     on the status date, later in the day, is not beyond it. P6 Check Schedule keeps the timestamp
-    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference. SAMEDAY,
-    completed on the status date's day, is also out of the population (§4.0), at the same grain: 1 / 2."""
+    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference. SAMEDAY
+    and LATE are under way (§4.9 counts incomplete tasks): 1 / 3."""
     s = snap(
-        [done("SAMEDAY", act_end_date="2026-03-02 12:00"), done("LATE", act_end_date="2026-03-03 09:00"), todo("FINE")]
+        [
+            active("SAMEDAY", act_start_date="2026-03-02 12:00", early_end_date="2026-03-13 17:00"),
+            active("LATE", act_start_date="2026-03-03 09:00", early_end_date="2026-03-13 17:00"),
+            todo("FINE"),
+        ]
     )
     r = run(DCMA, "DCMA-09", s)
-    assert (codes(r), r.denominator) == (["LATE"], 2)
+    assert (codes(r), r.denominator) == (["LATE"], 3)
     assert "day" in r.note
     assert codes(run(P6, "P6-10b", s)) == ["LATE", "SAMEDAY"]
 

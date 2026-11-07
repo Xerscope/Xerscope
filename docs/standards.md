@@ -183,7 +183,7 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 6 | High float | > 44 wd; a task without a float stays in the base, counted in the note | ≤ 5 % |
 | 7 | Negative float | < 0; a task without a float stays in the base, counted in the note | 0 |
 | 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
-| 9 | Invalid dates | forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
+| 9 | Invalid dates | incomplete tasks (§4.0, §4.9): forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
 | 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
 | 11 | Missed tasks | due by the data date (baseline finish, by calendar day); missed when finished, or forecast to finish, on a later calendar date or with a Finish Variance > 0 in working time (PAM's two criteria, "or") | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |

@@ -96,12 +96,21 @@ def test_dcma_09_reads_actual_dates_by_day(dd):
 
 
 @pytest.mark.parametrize("dd", DD_HOURS)
-def test_dcma_09_leaves_out_tasks_completed_on_the_status_date_by_day(dd):
-    """PAM 200.1 §4.0 leaves completed tasks out; DCMA-09 keeps only those whose actual date is beyond
-    the status date (§4.9, "the actual start or finish date should be on or before 8/1/09"), at the same
-    calendar-day grain as its flags. F, finished Monday 12:00, is on the status date's day: out at any
-    hour of the data date. O, not started, forecast from Monday: in, not flagged. 0 / 1."""
-    s = snap([done("F", act_end_date=SAME_DAY), todo("O", early_start_date=at("17:00"))], data_date=at(dd))
+def test_dcma_09_leaves_out_completed_tasks_whatever_their_actual_finish(dd):
+    """PAM 200.1 §4.0: "This analysis should exclude Completed tasks, LOE tasks, Subprojects (called
+    Summary tasks in MS Project), and Milestones."; §4.9: "Incomplete tasks that have a forecast
+    start/finish date prior to the IMS status date, or has an actual start/finish date beyond the IMS
+    status date are included in this metric." F finished Monday 12:00 (the status date's day) and L
+    finished Tuesday 09:00 (after it): both out, neither flagged. O, not started, forecast from Monday:
+    in, not flagged. 0 / 1 at any hour of the data date."""
+    s = snap(
+        [
+            done("F", act_end_date=SAME_DAY),
+            done("L", act_end_date="2026-03-03 09:00"),
+            todo("O", early_start_date=at("17:00")),
+        ],
+        data_date=at(dd),
+    )
     r = run(DCMA, "DCMA-09", s)
     assert (codes(r), r.denominator) == ([], 1)
 
