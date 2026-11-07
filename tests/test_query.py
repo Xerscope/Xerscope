@@ -398,3 +398,35 @@ def test_constraints_open_ends_and_longest_path(store):
 def test_an_activity_id_is_that_activity_exactly(store):
     assert _rows("C3020", store) == {"C3020"}
     assert _rows("c3020 ou c3030", store) == _rows("c3020 c3030", store) == {"C3020", "C3030"}
+
+
+def test_a_typo_is_bounded_never_an_id_never_a_common_word_onto_a_node():
+    """M8: an Activity ID is never read as another; a common word is never a node by a fuzzy
+    score ("starting" is not "Equipment setting"); "long" is no alias of a node."""
+    vocab = Vocabulary(
+        wbs={"1": "MEC · Mechanical & electrical", "2": "PRC · Procurement"},
+        words=frozenset({"a1001", "setting", "long", "lead", "equipment"}),
+        node_words={"1": frozenset({"setting"})},
+        lexicon=LEXICON,
+    )
+    for text in ("A1000", "a1005", "starting"):
+        got = query.parse_keywords(text, vocab)
+        assert got.empty and got.ignored == (query.fold(text),), text
+    assert query.parse_keywords("equipmnt", vocab).search == "equipment"  # a typo on a name word: read, unsure
+    assert query.parse_keywords("mecanque critque", vocab).wbs_id == "1"
+
+
+def test_unknown_words_cost_no_more_than_a_few_lookups():
+    """L8: 30 unknown words against 20 000 words of a file: at most MAX_FUZZY words are tried, each
+    against the words of the same first letter and close length."""
+    import random
+    import time
+
+    rng = random.Random(1)
+    word = lambda n: "".join(rng.choice("abcdefghij") for _ in range(n))  # noqa: E731
+    vocab = Vocabulary(wbs={}, words=frozenset(word(rng.randint(5, 12)) for _ in range(20_000)))
+    sentence = " ".join(word(9) for _ in range(30))
+    start = time.perf_counter()
+    got = query.parse_keywords(sentence, vocab)
+    assert time.perf_counter() - start < 0.5 and len(got.ignored) + len(got.search.split()) == 30
+    assert len(query.parse_keywords("x" * 5000, vocab).ignored) <= 2  # read up to MAX_CHARS

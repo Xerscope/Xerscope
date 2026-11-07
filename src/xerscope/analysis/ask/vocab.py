@@ -11,7 +11,7 @@ from ...xer import Snapshot
 from ..wbs import ROOT
 from .grammar import CATEGORIES, GRAMMAR_WORDS, STATUSES
 from .lexicon import Lexicon
-from .text import STOP, tokens, words_of
+from .text import COMMON, STOP, tokens, words_of
 
 
 @dataclass(frozen=True)
@@ -158,8 +158,8 @@ def _above(wbs: Mapping[str, str], nodes: pd.DataFrame | None) -> dict[str, list
 
 
 def _reserved(wbs: Mapping[str, str], resources: Mapping[str, tuple[str, str]]) -> set[str]:
-    """Words no node may take as its own: stop words, the grammar's, the labels' own."""
-    reserved = set(STOP) | set(GRAMMAR_WORDS)
+    """Words no node may take as its own: stop words, common words, the grammar's, the labels' own."""
+    reserved = set(STOP) | set(GRAMMAR_WORDS) | set(COMMON)
     reserved |= {w for label in wbs.values() for w in words_of(label)}
     return reserved | {w for short, name in resources.values() for w in words_of(f"{short} {name}")}
 

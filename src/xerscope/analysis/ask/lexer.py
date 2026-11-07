@@ -11,7 +11,20 @@ import re
 
 from .clauses import Composer, raw
 from .grammar import LONGEST, PHRASES_OF_SIZE, TABLE, And, Atom
-from .text import MARGIN, STOP, SURE, closest, fold, phrase_pattern, plain, take, with_synonyms
+from .text import (
+    MARGIN,
+    MAX_FUZZY,
+    STOP,
+    SURE,
+    closest,
+    fold,
+    phrase_pattern,
+    plain,
+    take,
+    typo_word,
+    with_synonyms,
+)
+from .text import index as word_index
 from .vocab import Vocabulary
 
 Item = tuple[int, str, object]
@@ -74,10 +87,11 @@ def _id_items(tokens: list[str], used: set[int], vocab: Vocabulary, found: list[
 def _typo_items(tokens: list[str], used: set[int], found: list[Item], vocab: Vocabulary) -> float:
     """A typo on a grammar phrase ("critque", "not strated"): a word nothing else reads, alone,
     with the next one, or with the NOT before it (the phrase "not started", not NOT "started")."""
-    confidence = 1.0
+    confidence, tries = 1.0, 0
     for i, token in enumerate(tokens):
-        if i in used or not _typo_candidate(token, vocab):
+        if i in used or not _typo_candidate(token, vocab) or tries >= MAX_FUZZY:
             continue
+        tries += 1
         before = next((item for item in found if item[0] == i - 1 and item[1] == "not"), None)
         attempts = [(i, f"{token} {tokens[i + 1]}")] if i + 1 < len(tokens) and i + 1 not in used else []
         attempts += [(i - 1, f"{tokens[i - 1]} {token}")] if before else []
@@ -95,13 +109,8 @@ def _typo_items(tokens: list[str], used: set[int], found: list[Item], vocab: Voc
 
 
 def _typo_candidate(token: str, vocab: Vocabulary) -> bool:
-    """A word a typo pass may read: not a stop word, not a word of the file, no digit."""
-    return (
-        len(token) >= 4
-        and token not in STOP
-        and not any(c.isdigit() for c in token)
-        and not (vocab.words and token in vocab.words)
-    )
+    """A word a typo pass may read: ``typo_word``, and not a word of the file as is."""
+    return typo_word(token) and not (vocab.words and token in vocab.words)
 
 
 class _Rest:
@@ -194,6 +203,8 @@ def _typo_node(rest: _Rest, vocab: Vocabulary, add) -> float:
     best = None
     for wbs_id, label in vocab.wbs.items():
         code, _, name = label.partition(" · ")
+        # the node's code, name words and own words: a common word is no typo candidate
+        # (typo_word) and no own word (vocab._reserved), so "starting" never reads "setting"
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 5 and w not in STOP]
         words += sorted(vocab.node_words.get(wbs_id, ()))
         close = closest(rest.unread(vocab), with_synonyms([fold(code), *words], vocab.lexicon))
@@ -256,7 +267,7 @@ def _resource_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
 def _word_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
     """What is left: a word of the Activity IDs and names (or its synonym, or a typo on one) is
     a search word; a word nothing holds is a ``u`` item; stop words drop."""
-    confidence = 1.0
+    confidence, tries = 1.0, 0
     for match in re.finditer(r"\S+", rest.text):
         word = match.group(0)
         if word in STOP or len(word) < 2:
@@ -266,7 +277,9 @@ def _word_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
             found.append((index, "x", Atom("word", word)))
             continue
         known = next((w for w in (word, *vocab.lexicon.get(word, ())) if w in vocab.words), None)
-        if known is None and (close := closest([word], sorted(vocab.words))):
-            known, confidence = close[1], min(confidence, close[2])
+        if known is None and tries < MAX_FUZZY and typo_word(word):  # a typo on a name word, bounded
+            tries += 1
+            if close := closest([word], word_index(vocab.words)):
+                known, confidence = close[1], min(confidence, close[2])
         found.append((index, "x", Atom("word", known)) if known else (index, "u", word))
     return confidence

@@ -24,7 +24,7 @@ from xerscope.analysis.query import Vocabulary
 ASK = Path(__file__).parent / "ask"
 FLOORS = {"dev": 1.00, "heldout": 1.00}  # share of sentences with every filter right (ratios()["exact"])
 # share of tests/ask/cases.toml understood exactly (query.understood): raise it when it goes up, never lower it
-UNDERSTOOD = 0.97
+UNDERSTOOD = 1.00
 
 
 @pytest.fixture(scope="module")

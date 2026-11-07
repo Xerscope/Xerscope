@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import difflib
+import functools
 import re
 import unicodedata
 from collections.abc import Mapping
 
 import pandas as pd
 
-FUZZY = 0.8  # difflib ratio under which two words are not the same word ("mecanque" / "mecanique" = 0.94)
+# A typo is read only between a word of 5+ letters, no digit, and a name or grammar phrase of
+# 5+ letters starting with the same letter, at a difflib ratio of FUZZY or more ("mecanque" /
+# "mecanique" = 0.94; "starting" / "setting" = 0.80, refused). At most MAX_FUZZY words of a
+# sentence are tried per pass, each against the names of close length only: no pass grows as
+# unknown words x the file's words.
+FUZZY = 0.85
+MAX_FUZZY = 5
 MARGIN = 0.05  # a fuzzy WBS pick whose runner-up node scores within this is unsure (two clusters as close)
 SURE = 0.9  # confidence at or above which the page shows no "unsure" mark
 
@@ -78,21 +85,59 @@ def take(text: str, phrases: list[str]) -> tuple[str, list[int]]:
     return phrase_pattern(phrases).sub(blank, text), found
 
 
+# common words a typo pass never reads as a label ("long" is not "Long-lead", "next" not "nest")
+_COMMON_WORDS = """
+    next this last long short week weeks month start starting end ending time first early high low big small
+    new old more less what which when where how why who need want give make take see get set week today
+    prochain prochaine dernier derniere semaine mois debut fin long longue court courte tous quand quel quelle
+    """
+COMMON = frozenset(_COMMON_WORDS.split())
+
+
+def typo_word(word: str) -> bool:
+    """A word a typo pass may read: 5+ letters, no digit (never an Activity ID: "A1000" is not
+    "A1001"), not a stop word nor a common word."""
+    return len(word) >= 5 and not any(c.isdigit() for c in word) and word not in STOP and word not in COMMON
+
+
 def closest(words: list[str], phrases: list[str], spaced: bool = False) -> tuple[str, str, float] | None:
-    """The word closest to one of the phrases (5+ letters; single words unless ``spaced``), with
-    the ratio, when at least FUZZY: a typo ("critque", "fondation") still finds its phrase, at a
-    lower confidence."""
+    """The word closest to one of the phrases (5+ letters, same first letter, length within 2;
+    single words unless ``spaced``), with the ratio, when at least FUZZY: a typo ("critque",
+    "fondation") still finds its phrase, at a lower confidence. The first MAX_FUZZY words only."""
     best = None
-    for word in words:
-        if len(word) < 4:
-            continue
-        for phrase in phrases:
-            if (" " in phrase and not spaced) or len(phrase) < 5:
-                continue
+    for word in [w for w in words if typo_word(w.split()[-1])][:MAX_FUZZY]:  # the typo is in the last word
+        candidates = [p for p in _near(phrases, word) if spaced or " " not in p]
+        for phrase in difflib.get_close_matches(word, candidates, n=1, cutoff=FUZZY):
             ratio = difflib.SequenceMatcher(None, word, phrase).ratio()
-            if ratio >= FUZZY and (best is None or ratio > best[2]):
+            if best is None or ratio > best[2]:
                 best = (word, phrase, ratio)
     return best
+
+
+def _near(phrases, word: str) -> list[str]:
+    """The phrases a typo on ``word`` may stand for: same first letter, length within 2, 5+ letters."""
+    if isinstance(phrases, Index):
+        return phrases.near(word)
+    return [p for p in phrases if len(p) >= 5 and p[:1] == word[:1] and abs(len(p) - len(word)) <= 2]
+
+
+@functools.lru_cache(maxsize=4)
+def index(words: frozenset[str]) -> Index:
+    """The ``Index`` of a vocabulary's words, built once per vocabulary."""
+    return Index(words)
+
+
+class Index:
+    """A file's words by first letter and length, built once: a typo looks at a handful of them."""
+
+    def __init__(self, words) -> None:
+        self.buckets: dict[tuple[str, int], list[str]] = {}
+        for word in sorted(words):
+            if len(word) >= 5:
+                self.buckets.setdefault((word[0], len(word)), []).append(word)
+
+    def near(self, word: str) -> list[str]:
+        return [w for n in range(len(word) - 2, len(word) + 3) for w in self.buckets.get((word[:1], n), [])]
 
 
 def with_synonyms(words: list[str], lexicon: Mapping[str, tuple[str, ...]]) -> list[str]:
