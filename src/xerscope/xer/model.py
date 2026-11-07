@@ -21,7 +21,7 @@ Key decisions
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from operator import attrgetter
 
@@ -919,7 +919,9 @@ def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFr
     return table[FILE_PROJECT_COLUMNS + extra + PCT_TYPE_COUNT_COLUMNS].reset_index(drop=True)
 
 
-def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
+def _calendars(
+    raw: RawXer, settings: Settings, warnings: list[str]
+) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
     """CALENDAR table, hours per working day by calendar id, and the parsed work calendars."""
     calendars = raw.table("CALENDAR")
     if calendars.empty:
@@ -936,7 +938,56 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
     hours_per_day = pd.Series(
         {clndr_id: calendar.hours_per_day for clndr_id, calendar in work_calendars.items()}, dtype=float
     )
+    work_calendars = _inherit_base_exceptions(calendars, work_calendars, raw.source, warnings)
     return calendars.drop(columns=["clndr_data"]), hours_per_day, work_calendars  # parsed above; the blob is large
+
+
+def _inherit_base_exceptions(
+    calendars: pd.DataFrame, work_calendars: dict[str, WorkCalendar], source: str, warnings: list[str]
+) -> dict[str, WorkCalendar]:
+    """Each calendar with the holidays and exceptions of its base (``CALENDAR.base_clndr_id``),
+    and of the base's base; on a date both carry, the calendar's own exception wins. The work
+    week stays the calendar's own.
+
+    Oracle, "Assigning a Base Calendar to a Project Calendar": "Assign a base calendar to
+    determine holidays and exceptions for the selected project calendar." MPXJ reads a XER the
+    same way: ``TableContextReader.processCalendars`` sets the base as parent, and
+    ``ProjectCalendar.getException`` looks in the parent when the calendar has no exception of
+    its own on the date. Whether P6 already copies the base's exceptions into the derived blob
+    is not documented; the reference files that have a base (Hotel, Terminal) carry them, and
+    then nothing is added. Each calendar that does gain exceptions is named in ``warnings``.
+    """
+    if "base_clndr_id" not in calendars.columns:
+        return work_calendars
+    base_of = {
+        str(clndr_id): str(base)
+        for clndr_id, base in zip(calendars["clndr_id"], calendars["base_clndr_id"], strict=True)
+        if isinstance(base, str) and base.strip()
+    }
+    out = dict(work_calendars)
+    for clndr_id, calendar in work_calendars.items():
+        chain = [clndr_id]  # the calendar, its base, the base's base...
+        base = base_of.get(clndr_id)
+        while base is not None:
+            if base in chain:
+                warnings.append(f"{source}: calendar {clndr_id}: loop of base calendars {[*chain, base]}")
+                break
+            if base not in work_calendars:
+                warnings.append(f"{source}: calendar {chain[-1]}: base calendar {base} is not in the file")
+                break
+            chain.append(base)
+            base = base_of.get(base)
+        exceptions: dict = {}
+        for member in reversed(chain):  # the farthest base first, the calendar's own last
+            exceptions.update(work_calendars[member].exceptions)
+        inherited = len(exceptions) - len(calendar.exceptions)
+        if inherited:
+            out[clndr_id] = replace(calendar, exceptions=exceptions)
+            warnings.append(
+                f"{source}: calendar {clndr_id}: {inherited} holiday or exception{'s' if inherited > 1 else ''}"
+                f" inherited from base calendar {chain[1]}"
+            )
+    return out
 
 
 def _header_field(header: list[str], index: int) -> str:
@@ -1330,7 +1381,7 @@ def build_snapshot(
     data_date, data_date_source = _data_date(project_row)
     if data_date is None:
         warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
-    calendars, hours_per_day, work_calendars = _calendars(raw, settings)
+    calendars, hours_per_day, work_calendars = _calendars(raw, settings, warnings)
     inputs = _BuildInputs(raw, all_tasks, all_relationships, project_row, hours_per_day, settings, warnings)
     wbs, project_name = _wbs_frame(raw, inputs.project_id, warnings)
     options = _scheduling_options(inputs)
