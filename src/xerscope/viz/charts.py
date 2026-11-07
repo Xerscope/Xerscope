@@ -198,7 +198,7 @@ def build_scurve(
             fig,
             curve["date"].iloc[-1],
             curve["pv_cum_hr"].iloc[-1] * k,
-            f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f}",
+            f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f} · baseline tasks of this update",
         )
     # drawn last, over the AC marker and the data-date line it shares x with; k: that update's BAC
     if len(now):

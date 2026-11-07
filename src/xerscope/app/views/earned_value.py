@@ -47,7 +47,6 @@ ACTIVITY_COLUMNS = [
     "ev_hr",
     "labor_actual_hr",
     "bl_finish",
-    "in_snapshot",
 ]
 
 
@@ -291,7 +290,9 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
 
 def show_activity_detail(snapshot, baseline) -> None:
     with st.expander(f"Earned hours by task ({ui.stamp(snapshot.data_date)})"):
-        activities = earned(snapshot, baseline).reset_index()
+        values = earned(snapshot, baseline).reset_index()
+        # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
+        activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
         csv_download(
             activities[ACTIVITY_COLUMNS],
@@ -306,12 +307,15 @@ def show_activity_detail(snapshot, baseline) -> None:
             )
         missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
         if missing:
-            st.caption(f"Not in the baseline (earn nothing): {ui.md_text(', '.join(missing))}")
-        gone = activities[~activities["in_snapshot"]]
+            st.caption(
+                f"Not in the baseline (earn nothing; their actual hours count in AC, not in this table): "
+                f"{ui.md_text(', '.join(missing))}"
+            )
         if not gone.empty:
             st.caption(
-                f"In the baseline, no longer in the update ({gone['pv_hr'].sum():,.1f} h of PV): left out of BAC, "
-                f"PV and EV, as P6 totals the tasks of the current project: {ui.md_text(', '.join(gone['task_code']))}"
+                f"In the baseline, no longer in the update ({gone['pv_hr'].sum():,.1f} h of PV): left out of "
+                "this table, BAC, PV and EV, as P6 totals the tasks of the current project: "
+                f"{ui.md_text(', '.join(gone['task_code']))}"
             )
 
 

@@ -187,17 +187,20 @@ class _Spread:
         return total
 
 
-def _pv_spread(baseline: Baseline) -> _Spread:
-    return _Spread.build(baseline.snapshot, baseline.frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
-
-
 def pv_curve(baseline: Baseline, snapshot: Snapshot | None = None) -> pd.DataFrame:
     """Cumulative planned labour hours of the baseline at instants: every midnight from the first
-    EV start's day to the day after the last EV finish, and ``snapshot``'s data date when given, so
-    the curve there is the update's PV (``ev_point.pv_hr``). ``pv_cum_hr`` is the PV at ``date``;
-    ``pv_hr`` the hours planned since the previous row. Every baseline activity: the plan itself.
-    An update's PV (``ev_point``) leaves out the activities it no longer holds."""
+    EV start's day to the day after the last EV finish, and ``snapshot``'s data date when given.
+    ``pv_cum_hr`` is the PV at ``date``; ``pv_hr`` the hours planned since the previous row.
+
+    Population: with ``snapshot``, the baseline activities the update holds, as ``ev_point``: the
+    curve at the data date is the update's PV, ``pv_pct`` is over its BAC and the curve ends at that
+    BAC (less the hours of activities without both EV dates, which never earn PV). Without, every
+    baseline activity: the plan itself, ``pv_pct`` over ``baseline.bac_hours``."""
     frame = baseline.frame
+    bac = baseline.bac_hours
+    if snapshot is not None:
+        frame = frame[frame.index.isin(snapshot.by_code.index)]
+        bac = float(frame["ev_labor_hr"].sum())
     frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
     if frame.empty:
         return pd.DataFrame(columns=["date", "pv_hr", "pv_cum_hr", "pv_pct"])
@@ -205,9 +208,9 @@ def pv_curve(baseline: Baseline, snapshot: Snapshot | None = None) -> pd.DataFra
     instants = pd.date_range(first, last, freq="D")
     if snapshot is not None and snapshot.data_date is not None:
         instants = instants.union([snapshot.data_date])
-    curve = pd.DataFrame({"date": instants, "pv_cum_hr": _pv_spread(baseline).at(instants)})
+    spread = _Spread.build(baseline.snapshot, frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
+    curve = pd.DataFrame({"date": instants, "pv_cum_hr": spread.at(instants)})
     curve["pv_hr"] = curve["pv_cum_hr"].diff().fillna(curve["pv_cum_hr"])
-    bac = baseline.bac_hours
     curve["pv_pct"] = 100 * curve["pv_cum_hr"] / bac if bac else np.nan
     return curve[["date", "pv_hr", "pv_cum_hr", "pv_pct"]]
 
