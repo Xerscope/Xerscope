@@ -314,3 +314,13 @@ def test_ask_bench_self_coverage(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--self")
     assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
     assert "not reached" not in out
+
+
+def test_lexicon_build_writes_the_variants_to_the_file_named_only(capsys, sample_dir, tmp_path):
+    out = run(capsys, "lexicon", "build", sample_dir, "--out", tmp_path / "generated.toml")
+    assert out.strip().endswith("group(s) from 8 file(s) written")  # counts, never a word
+    text = (tmp_path / "generated.toml").read_text(encoding="utf-8")
+    assert text.startswith("# Variants generated from the files") and list(tmp_path.iterdir()) == [
+        tmp_path / "generated.toml"
+    ]
+    assert cli.main(["lexicon", "build", str(sample_dir)]) == 2  # --out required

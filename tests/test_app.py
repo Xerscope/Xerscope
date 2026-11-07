@@ -1140,7 +1140,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 13 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 14 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1687,5 +1687,6 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     at.switch_page("views/debug.py").run()
     _ok(at)
     assert not any("12 · App runtime" in e.label for e in at.expander)
-    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 12
+    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 13
     assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance
+    assert any("14 · Ask vocabulary" in e.label for e in at.expander)  # counts only; the download needs exports plain

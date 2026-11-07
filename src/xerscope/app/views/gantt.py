@@ -10,6 +10,7 @@ from xerscope.app.state import (
     baseline_for,
     compare_picker,
     csv_download,
+    file_variants,
     memo,
     page_header,
     require_store,
@@ -89,6 +90,8 @@ asked = st.text_input(
 )
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
+# the variants of each source column, generated from every loaded file, in memory (never written)
+generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
 lexicon = memo(  # the labels of every loaded file (memo's key names them all), rebuilt when a word is taught
     ("vocabulary", snapshot.source, len(taught)),
     query.vocabulary,
@@ -96,6 +99,7 @@ lexicon = memo(  # the labels of every loaded file (memo's key names them all), 
     nodes,
     session_lexicon(),
     [other for other in store if other is not snapshot],
+    query.lexicons(generated, file_variants()),
     baseline=False,
     ev_basis=False,
 )

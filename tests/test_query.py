@@ -459,3 +459,64 @@ def test_a_word_of_another_loaded_file_is_understood_on_the_displayed_update():
         assert (query.canonical(got, vocab), got.ignored) == (expected, ()), text
     rows = query.apply(query.parse_keywords("pump", vocab), shown.activities, shown).rows
     assert rows.empty  # understood, and no activity of this update holds it
+
+
+# --- variants generated from the files (analysis/ask/generated.py) ---------------------------
+
+NAMES = [  # written by hand: each group below, and the pairs that must stay apart
+    "Mec. installation", "Mechanical test", "Fondation pieux", "Fondations radier", "Béton coulage",
+    "Beton armé", "Montage pompe", "Montages pompes", "Installation vanne", "Instalation câbles", "Pose câble",
+    "Poste HT", "Pre-test", "Prefabrication", "Excavation", "Excavatoin", "Canal", "Canaux", "Piping", "Paving",
+]  # fmt: skip
+GROUPS = [  # plural (FR/EN, -al/-aux), abbreviation with its dot, one letter apart at 6+ letters
+    ["cable", "cables"], ["canal", "canaux"], ["fondation", "fondations"], ["instalation", "installation"],
+    ["mec", "mechanical"], ["montage", "montages"], ["pompe", "pompes"],
+]  # fmt: skip
+APART = [("pose", "poste"), ("pre", "prefabrication"), ("excavation", "excavatoin"), ("piping", "paving")]
+
+
+def test_variants_are_grouped_by_written_rules_within_one_column():
+    from xerkit import snap, todo
+
+    file = snap(
+        [todo(f"A{i}", task_name=name) for i, name in enumerate(NAMES)],
+        wbs=[{"wbs_id": "10", "proj_id": "1", "wbs_short_name": "W", "wbs_name": "Pompes", "proj_node_flag": "N"}],
+    )
+    groups = query.variants([file])
+    assert groups == {"TASK.task_name": GROUPS}  # every group expected, none other: precision and recall 1
+    together = {frozenset(g) for g in groups["TASK.task_name"]}
+    assert not any({a, b} <= g for a, b in APART for g in together)
+    # "Pompes" (a WBS name) and "pompe" (an activity name) stay apart: a group never crosses a column
+    assert "PROJWBS.wbs_name" not in groups
+    assert query.variants([file]) == groups  # deterministic
+    assert query.variant_counts(groups) == {"TASK.task_name": 7}
+
+
+def test_the_demo_series_holds_no_variant(store):
+    """The demo's names have no plural pair, abbreviation or near-spelling within a column: no
+    group, so no false one ("complete" / "completion", "piping" / "paving", "setting" / "site")."""
+    assert query.variants(list(store)) == {}
+
+
+def test_variants_read_within_their_column_only():
+    variants = query.lexicons({"TASK.task_name": [["fondation", "fondations"], ["travaux", "works"]]})
+    vocab = Vocabulary(wbs={"1": "CIV · Civil works"}, words=frozenset({"fondations", "works"}), variants=variants)
+    assert query.parse_keywords("fondation", vocab).search == "fondations"  # a variant of an activity name word
+    got = query.parse_keywords("travaux", vocab)  # a group of the names column: a search, not the WBS node
+    assert (got.wbs_id, got.search) == (None, "works")
+    on_wbs = Vocabulary(wbs=vocab.wbs, words=vocab.words, variants={"PROJWBS.wbs_name": variants["TASK.task_name"]})
+    assert query.parse_keywords("travaux", on_wbs).wbs_id == "1"  # the same group on the WBS column names the node
+
+
+def test_a_generated_file_is_read_back_per_column(tmp_path):
+    groups = {"TASK.task_name": [["pompe", "pompes"]], "RSRC.rsrc_name": [["grue", "grues"]]}
+    (tmp_path / "generated.toml").write_text(query.variants_toml(groups), encoding="utf-8")
+    assert query.load_variants(tmp_path) == groups
+    assert query.load_lexicon(tmp_path) == ({}, [])  # column groups never join the global lexicon
+    merged = query.lexicons(groups, {"TASK.task_name": [["vanne", "vannes"]]})
+    assert merged["TASK.task_name"] == {
+        "pompe": ("pompes",),
+        "pompes": ("pompe",),
+        "vanne": ("vannes",),
+        "vannes": ("vanne",),
+    }

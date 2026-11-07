@@ -773,15 +773,26 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
 
 
 def _args_lexicon(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("folder", nargs="?", default="", help="a folder of *.toml groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument(
+        "folder",
+        nargs="?",
+        default="",
+        help="a folder of *.toml groups to check (XERSCOPE_LEXICON); or `build`, then a folder of XER files",
+    )
+    parser.add_argument("source", nargs="?", default="", help="with build: the folder of XER files to read")
     parser.add_argument("--word", default="", help="print the words read as this one")
+    parser.add_argument("--out", default="", help="with build: the .toml file to write (nothing else is written)")
 
 
 def _cmd_lexicon(args: argparse.Namespace) -> int:
     """The trade words the Ask field reads as one: a folder's groups (XERSCOPE_LEXICON; none ships
-    with the package); a bad file is named (exit 1)."""
+    with the package); a bad file is named (exit 1). ``lexicon build FOLDER --out FILE``: the
+    variants of each source column of the folder's XER files, written to FILE only; the output
+    prints counts, never a word."""
     from .analysis import query
 
+    if args.folder == "build":
+        return _build_lexicon(args.source, args.out)
     lexicon, errors = query.load_lexicon(*([args.folder] if args.folder else []))
     for error in errors:
         print(f"error: {error}")
@@ -793,6 +804,22 @@ def _cmd_lexicon(args: argparse.Namespace) -> int:
             print(", ".join(group))
         print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" in {args.folder}" if args.folder else ""))
     return 1 if errors else 0
+
+
+def _build_lexicon(source: str, out: str) -> int:
+    from .analysis import query
+    from .store import SnapshotStore
+
+    if not source or not out:
+        print("usage: xerscope lexicon build FOLDER --out FILE.toml")
+        return 2
+    store = SnapshotStore.from_folder(source)
+    groups = query.variants(list(store))
+    Path(out).write_text(query.variants_toml(groups), encoding="utf-8")
+    for column, count in query.variant_counts(groups).items():
+        print(f"{column}: {count} group(s)")
+    print(f"{sum(len(g) for g in groups.values())} group(s) from {len(store)} file(s) written")
+    return 0
 
 
 # name: (help, adds its arguments, runs); the order is the order of `xerscope --help`
@@ -813,7 +840,7 @@ COMMANDS = {
         _cmd_ask_bench,
     ),
     "lexicon": (
-        "list the trade words the Ask field reads as one, or check a folder of them",
+        "list or check the trade words the Ask field reads as one; `build` writes the files' own variants",
         _args_lexicon,
         _cmd_lexicon,
     ),

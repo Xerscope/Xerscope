@@ -1,8 +1,10 @@
 import hashlib
 from functools import partial
 
+import pandas as pd
 import streamlit as st
 
+from xerscope.analysis import query
 from xerscope.analysis.cpm import CycleError
 from xerscope.app import diagnostic, ui
 from xerscope.app.state import (
@@ -318,6 +320,27 @@ def build_diagnostic(anonymous: bool) -> None:
         prepare=True,
     )
     hold(st.session_state, "debug_zip", zip_tag(anonymous), fetched)
+
+
+with st.expander("14 · Ask vocabulary (variants generated per source column)", key="debug_ask_variants"):
+    # counts only on screen; the words leave as a file for review, with anonymous exports off
+    generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
+    st.caption(
+        "Words of one XER column read as one by the Gantt Ask field (plural, an abbreviation with its dot, one "
+        "letter apart), generated in memory from every loaded file; `xerscope lexicon build` writes the same file."
+    )
+    table(pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"]))
+    if anonymous_exports():
+        st.caption("Turn anonymous exports off to download the groups (they hold the files' words).")
+    else:
+        st.download_button(
+            "Download the generated groups (.toml, for review and XERSCOPE_LEXICON)",
+            data=query.variants_toml(generated).encode(),
+            file_name="lexicon-generated.toml",
+            mime="application/toml",
+            key="debug_variants_download",
+            type="tertiary",
+        )
 
 
 anonymous = anonymous_exports()

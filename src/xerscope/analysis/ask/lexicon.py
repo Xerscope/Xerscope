@@ -35,7 +35,8 @@ def load_lexicon(*dirs: str | Path) -> tuple[Lexicon, list[str]]:
     for file in files:
         try:
             data = tomllib.loads(file.read_text(encoding="utf-8"))
-            groups += [list(table.get("words", [])) for table in data.get("group", [])]
+            # a group naming its source column (generated.load_variants) holds within that column only
+            groups += [list(table.get("words", [])) for table in data.get("group", []) if "column" not in table]
         except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError) as exc:
             errors.append(f"{file.name}: {exc}")
     return lexicon_from_groups(groups), errors

@@ -34,6 +34,9 @@ from .ask.bench import (
 )
 from .ask.filters import Filter, canonical, conjuncts, said, without, written
 from .ask.funnel import apply, funnel_line, mask
+from .ask.generated import counts as variant_counts
+from .ask.generated import lexicons, load_variants, variants
+from .ask.generated import to_toml as variants_toml
 from .ask.grammar import CATEGORIES, STATUSES, And, Atom, Expr, Not, Or
 from .ask.lexicon import Lexicon, json_quote, learn, learned_toml, lexicon_from_groups, load_lexicon
 from .ask.parser import MAX_CHARS, Backend, parse, parse_keywords, warm
@@ -47,7 +50,8 @@ __all__ = [
     "canonical", "conjuncts", "coverage", "expected_filter", "facts", "fold", "from_answer", "funnel_line",
     "grounded", "json_quote", "language", "learn", "learned_toml", "lexicon_from_groups", "llm_backend",
     "load_cases", "load_lexicon", "mask", "parse", "parse_keywords", "ratios", "said", "score", "self_cases",
-    "suggestions", "summary", "understood", "vocabulary", "warm", "without", "written",
+    "suggestions", "summary", "understood", "vocabulary", "warm", "without", "written", "variants", "lexicons",
+    "load_variants", "variant_counts", "variants_toml",
 ]  # fmt: skip
 
 

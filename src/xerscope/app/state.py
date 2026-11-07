@@ -123,6 +123,14 @@ def lexicon() -> query.Lexicon:
     return found
 
 
+@functools.cache
+def file_variants() -> dict[str, list[list[str]]]:
+    """The variant groups of XERSCOPE_LEXICON that name their source column (a file ``xerscope
+    lexicon build`` wrote and the company reviewed), merged with those derived in memory."""
+    extra = os.environ.get("XERSCOPE_LEXICON", "")
+    return query.load_variants(extra) if extra else {}
+
+
 def session_lexicon() -> query.Lexicon:
     """The app's lexicon plus the words taught this session (``teach``): what the Ask field reads."""
     found = lexicon()
