@@ -66,6 +66,10 @@ text says so (113174 names in-progress tasks only, for Dangling Start), and the 
 completed task has FS logic on both sides, so it does not tell. Pinned by
 `test_p6_16_and_17_never_count_a_completed_task`; settled by a P6 report on a completed task with
 FF-only predecessors and one with SS-only successors.
+P6-01 reads 46291 ("Activities with external predecessors or successors pass the check") link by
+link: an external predecessor satisfies the predecessor test only, an external successor the successor
+test only. The sentence could also mean that any external link passes the whole check; no report in
+hand shows it. Pinned by `test_p6_01_external_link_passes_only_its_own_end`.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.

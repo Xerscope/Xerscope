@@ -124,6 +124,14 @@ def test_external_successor_passes_p6_logic():
     assert codes(r) == ["B"]  # A passes thanks to the external link; B has no successor
 
 
+def test_p6_01_external_link_passes_only_its_own_end():
+    """UNRESOLVED (docs/standards.md): 46291 'Activities with external predecessors or successors pass the
+    check'. Pinned reading: A's external predecessor answers the predecessor test only; A, with no
+    successor, is still listed."""
+    r = run(P6, "P6-01", snap([todo("A")], [("X9", "A", "FS", 0, "2")]))
+    assert (counts(r), codes(r)) == ((1, 1), ["A"])
+
+
 def test_external_link_counts_only_when_the_option_says_so():
     from xerscope.analysis.rules import RULES
 

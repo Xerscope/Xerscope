@@ -75,7 +75,9 @@ def p6_01_logic(context) -> RuleOutput:
     101248 also exempts start milestones, but a P6 Professional 26.8 report lists a not-started start
     milestone without predecessor (tests/test_p6_checksched.py), as the r22.12 report analysed by Ten Six
     lists its Notice to Proceed milestone: the reports win. A finish milestone without successor is
-    counted (same reports); external links pass (46291)
+    counted (same reports); external links pass (46291). UNRESOLVED: 46291 says "Activities with external
+    predecessors or successors pass the check"; read as: an external link stands for the predecessor or
+    the successor it is, so a task with an external predecessor and no successor still misses a successor
     """
     funnel = _open(context)
     activities = funnel.rows
