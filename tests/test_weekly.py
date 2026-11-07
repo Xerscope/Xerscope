@@ -600,6 +600,44 @@ def test_wbs_rollup_hours_weighting_and_tree():
     assert subtree_ids(rollup(s), "W1") == {"W1", "W11"}
 
 
+CIVIL = [
+    {
+        "wbs_id": "10",
+        "proj_id": "1",
+        "parent_wbs_id": "",
+        "wbs_short_name": "T",
+        "wbs_name": "P",
+        "proj_node_flag": "Y",
+        "seq_num": "0",
+    },
+    {
+        "wbs_id": "11",
+        "proj_id": "1",
+        "parent_wbs_id": "10",
+        "wbs_short_name": "CIV",
+        "wbs_name": "Civil",
+        "seq_num": "1",
+    },
+]
+
+
+@pytest.mark.parametrize("a_now, variance", [("2026-03-13 17:00", 0.0), ("2026-03-16 17:00", 1.0)])
+def test_wbs_finish_variance_compares_the_baselined_activities_only(a_now, variance):
+    """A is in the baseline (finish Fri 13 March), NEW was added after it (finish Fri 10 April).
+    The node's finish against its baseline finish is read on A only: 0 wd while A holds, 1 wd
+    when A moves to Mon 16 March. Reading the node's finish over every activity gave
+    13 March -> 10 April = 20 weekdays less Good Friday (3 April, a C8 holiday) = 19 wd."""
+    baseline = snap([todo("A", wbs_id="11", early_end_date="2026-03-13 17:00")], wbs=CIVIL)
+    now = snap(
+        [todo("A", wbs_id="11", early_end_date=a_now), todo("NEW", wbs_id="11", early_end_date="2026-04-10 17:00")],
+        wbs=CIVIL,
+    )
+    node = rollup(now, Baseline.from_snapshot(baseline)).set_index("wbs_id").loc["11"]
+    assert node["finish"] == pd.Timestamp("2026-04-10 17:00")  # the bar still ends with NEW
+    assert node["finish_variance_wd"] == variance
+    assert node["outside_bl"] == 1
+
+
 # --- milestone trend -----------------------------------------------------------------------------
 
 
