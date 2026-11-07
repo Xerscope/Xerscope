@@ -44,7 +44,8 @@ SOFT_CONSTRAINTS = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"]
 DANGLING_SOFT_CONSTRAINTS = ["CS_MSO", "CS_MSOA", "CS_MSOB", "CS_MEO", "CS_MEOA", "CS_MEOB", "CS_ALAP"]
 DANGLING_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]
 # The "x" of P6-04, P6-05 and P6-06 in hours: 352 h, the value report R1 prints for the Check Schedule
-# dialog (docs/standards.md, Sources). It is P6's own setting, not DCMA's 44 working days; p6.toml repeats it.
+# dialog (docs/standards.md, Sources). It is P6's own setting, not DCMA's 44 working days. p6.toml sets the
+# value used; this is the default when a standard sets none (tests/test_rules.py ties the two).
 LARGE_HOURS = 352
 
 

@@ -276,6 +276,17 @@ def test_float_threshold_in_hours_vs_working_days():
     assert codes(run(P6, "P6-14", s)) == ["N"]
 
 
+def test_the_x_threshold_is_the_same_in_p6_toml_and_in_the_rules():
+    """352 h is written in p6.toml (the value used) and as the rules' default (check_schedule.LARGE_HOURS,
+    used when a standard sets no x): one cannot move without the other."""
+    from xerscope.analysis.p6.check_schedule import LARGE_HOURS
+    from xerscope.analysis.rules import RULES
+
+    for metric_id in ("P6-04", "P6-05", "P6-06"):
+        metric = P6[metric_id]
+        assert metric.params["limit_hours"] == RULES[metric.rule].params["limit_hours"] == LARGE_HOURS, metric_id
+
+
 def test_the_x_threshold_of_the_built_in_checks_is_a_parameter():
     """The dialog's x (P6, hours) and DCMA's 44 days are parameters: the default is the standard's
     value, another value moves the count. Float 400 h (C10 = 40 d), 353 h (44.1 d), 352 h, 160 h (20 d)."""
