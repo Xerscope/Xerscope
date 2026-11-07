@@ -9,21 +9,52 @@ import pandas as pd
 
 from ..populations import Funnel
 from .filters import Filter, said
-from .text import fold, plain, with_synonyms
+from .lexer import phrase_languages
+from .text import fold, plain, tokens, with_synonyms
 from .vocab import Vocabulary
 
-_FRENCH_WORDS = """
-    le la les des du de un une en dans et ou pour sur avec non pas quasi critique critiques jalon jalons
-    terminé terminée terminés démarré démarrée démarrés cours retard bloque lot chantier tâches activités
-    fin début équipe fournisseur études achats mécanique électricité génie
-    """
-_FRENCH = frozenset(_FRENCH_WORDS.split())
+# words that tell the language when no phrase of the grammar does ("le", "the")
+_LANGUAGE_WORDS = {
+    "fr": frozenset(
+        [
+            "le",
+            "la",
+            "les",
+            "des",
+            "du",
+            "de",
+            "un",
+            "une",
+            "dans",
+            "pour",
+            "sur",
+            "avec",
+            "qui",
+            "que",
+            "quoi",
+            "tout",
+            "toutes",
+            "montre",
+            "affiche",
+        ]
+    ),
+    "en": frozenset(["the", "of", "in", "on", "for", "with", "which", "what", "show", "list", "all", "every"]),
+}
 
 
 def language(text: str) -> str:
-    """ "fr" when the sentence reads as French (accents or French words), "en" otherwise."""
-    words = set(re.split(r"[^a-zà-ÿ]+", text.lower()))
-    return "fr" if any(c in "àâçéèêëîïôûùüÿ" for c in text) or len(words & _FRENCH) >= 1 else "en"
+    """ "fr" or "en": the language of the grammar's phrases the sentence holds (each phrase is
+    tagged), then of its common words; a tie is French when the sentence has an accent, else
+    English. The answer is written in it."""
+    votes = {"fr": 0, "en": 0}
+    found = tokens(text)
+    for lang in phrase_languages(found):
+        votes[lang] = votes.get(lang, 0) + 1
+    for lang, words in _LANGUAGE_WORDS.items():
+        votes[lang] += sum(token in words for token in found)
+    if votes["fr"] != votes["en"]:
+        return "fr" if votes["fr"] > votes["en"] else "en"
+    return "fr" if any(c in "àâçéèêëîïôûùüÿœ" for c in text.lower()) else "en"
 
 
 WORDS = {

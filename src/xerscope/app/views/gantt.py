@@ -251,7 +251,11 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
     tasks = ask_funnel.rows
     with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
         # nothing understood but words left out: no row (query.apply); only stop words: no filter
-        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "No filter: showing all."
+        said = (  # in the question's language
+            query.answer(ask, ask_funnel, lexicon, query.language(asked))
+            if ask_funnel.steps
+            else "No filter: showing all."
+        )
         banner = st.container(
             border=True,
             horizontal=True,

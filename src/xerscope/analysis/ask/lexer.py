@@ -57,6 +57,12 @@ def _grammar_items(tokens: list[str]) -> tuple[list[tuple[int, int, str, object]
     return found, used
 
 
+def phrase_languages(tokens: list[str]) -> list[str]:
+    """The language ("en", "fr") of each grammar phrase found in the tokens, neutral ones left out."""
+    found, _ = _grammar_items(tokens)
+    return [TABLE[tuple(tokens[i : i + size])][2] for i, size, _, _ in found if TABLE[tuple(tokens[i : i + size])][2]]
+
+
 def _clause_items(tokens: list[str], vocab: Vocabulary) -> tuple[list[Item], set[int]]:
     """The grammar's phrases, with the clause parts (measures, comparisons, dates) composed."""
     found, used = _grammar_items(tokens)

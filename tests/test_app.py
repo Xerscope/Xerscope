@@ -186,7 +186,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     app.text_input[0].set_value("jalons xyzzy civil").run()  # a word the file does not hold is dropped
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
-    assert any("« xyzzy » is in neither this file nor the lexicon" in m.value for m in app.markdown)
+    assert any("« xyzzy » n'est ni dans ce fichier" in m.value for m in app.markdown)  # the answer in French
     app.text_input[0].set_value("xyzzy").run()  # nothing understood: no activity, never every activity
     _ok(app)
     assert not [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]

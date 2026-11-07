@@ -184,12 +184,15 @@ def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store)
     funnel = query.apply(asked, tasks, snapshot, nodes)
     rows = funnel.rows
     worst = rows.loc[rows["total_float_d"].idxmin()]
-    said = query.answer(asked, funnel, vocab)  # English whatever the question's language
+    said = query.answer(asked, funnel, vocab)
     assert said.startswith(f"{len(rows)} activities critical not started in CIV · Civil works; ")
     assert f"worst float {worst['total_float_d']:+.0f} wd ({worst['task_code']})" in said
     assert f"latest finish {rows['finish'].max():%d/%m/%Y}." in said
-    french = query.answer(asked, funnel, vocab, "fr")  # kept for a French interface one day
-    assert french.startswith(f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works; ")
+    lang = query.language("critiques non démarrés en génie civil")
+    french = query.answer(asked, funnel, vocab, lang)  # L1: the question's language
+    assert lang == "fr" and french.startswith(
+        f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works; "
+    )
     english = query.parse_keywords("milestones", vocab)
     said = query.answer(english, query.apply(english, tasks, snapshot, nodes), vocab)
     assert said.startswith(f"{int(tasks['is_milestone'].sum())} milestones; ")
@@ -204,6 +207,15 @@ def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store)
         query.answer(query.Filter(search="nobodyhasthisname"), empty, vocab, "fr") == "Aucune activité ne correspond."
     )
     assert query.language("what is late in procurement") == "en" and query.language("jalons en retard") == "fr"
+    # phrases of the grammar vote; a tie goes to the accent, else English
+    assert [query.language(t) for t in ("marge négative", "late milestones", "C3020", "critique not started")] == [
+        "fr",
+        "en",
+        "en",
+        "en",
+    ]
+    late = query.parse_keywords("jalons sans successeur", vocab)
+    assert "sans successeur" in query.answer(late, query.apply(late, tasks, snapshot, nodes), vocab, "fr")
 
 
 def test_an_unknown_word_gets_the_closest_labels_and_can_be_taught():
