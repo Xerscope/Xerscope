@@ -39,6 +39,10 @@ from ..rules import (
 
 P6_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"]
 SOFT_CONSTRAINTS = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"]
+# The constraints the Dangling Finish options name (113174), not those of P6-02 / P6-03: Start On and
+# Finish On are soft there.
+DANGLING_SOFT_CONSTRAINTS = ["CS_MSO", "CS_MSOA", "CS_MSOB", "CS_MEO", "CS_MEOA", "CS_MEOB", "CS_ALAP"]
+DANGLING_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]
 # The "x" of P6-04, P6-05 and P6-06 in hours: 352 h, the value report R1 prints for the Check Schedule
 # dialog (docs/standards.md, Sources). It is P6's own setting, not DCMA's 44 working days; p6.toml repeats it.
 LARGE_HOURS = 352
@@ -383,23 +387,27 @@ def p6_15_out_of_sequence(context) -> RuleOutput:
 
 
 @rule("p6_16_dangling_start", "%")
-def p6_16_dangling_start(context) -> RuleOutput:
+def p6_16_dangling_start(context, ignore_in_progress: bool = True) -> RuleOutput:
     """Start not driven by any predecessor.
     Counts: dangling / tasks
-    Counted among: not started tasks that are not milestones (P6's 'Ignore In Progress
-        Tasks', checked); the others stay in the denominator.
+    Counted among: not started tasks that are not milestones, in-progress tasks too when
+        'Ignore in-progress activities' is off; the others stay in the denominator.
     A task with no predecessor at all is the Logic check's, not this one's.
 
     P6 Professional report: 'Tasks with start dates that are not driven by predecessors', against the
     total of tasks; the report lists a task without any predecessor under Logic only. Read as:
-    predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore tasks with soft/hard constraints'
-    (unchecked by default) is not read. Milestones are out: the report shows 0 for milestones with FF / SS
-    logic only. UNRESOLVED: a predecessor in another project is not read here (P6-01 lets it pass, 46291);
+    predecessors exist, none of them FS or SS. ``ignore_in_progress``: 113174 'Ignore in-progress
+    activities for dangling start activities', checked in R1; Oracle documents no default. Read as: the
+    task leaves the numerator, not the denominator. Milestones are out: the report shows 0 for milestones
+    with FF / SS logic only. UNRESOLVED: completed tasks are never counted, a reading no Oracle text
+    states. UNRESOLVED: a predecessor in another project is not read here (P6-01 lets it pass, 46291);
     Oracle (113174, 101496) does not say how Dangling Start treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships
-    candidates = activities[~activities["is_started"] & ~activities["is_milestone"]]
+    candidates = activities[~activities["is_complete"] & ~activities["is_milestone"]]
+    if ignore_in_progress:
+        candidates = candidates[~candidates["is_started"]]
     has_logic = candidates["task_code"].isin(relationships["succ_code"])
     driven = has_driving_predecessor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driven]
@@ -407,21 +415,32 @@ def p6_16_dangling_start(context) -> RuleOutput:
 
 
 @rule("p6_17_dangling_finish", "%")
-def p6_17_dangling_finish(context) -> RuleOutput:
+def p6_17_dangling_finish(
+    context, ignore_soft_constraints: bool = False, ignore_hard_constraints: bool = False
+) -> RuleOutput:
     """Finish that drives no successor.
     Counts: dangling / tasks
-    Counted among: not complete tasks that are not milestones; the others stay in the
-        denominator.
+    Counted among: not complete tasks that are not milestones, less the constrained tasks the
+        dialog options leave out; the others stay in the denominator.
     A task with no successor at all is the Logic check's, not this one's.
 
     P6 Professional report: 'Tasks with finish dates that do not drive successors', against the total
     of tasks; a task without any successor is listed under Logic only. Read as: successors
-    exist, none of them FS or FF. UNRESOLVED: a successor in another project is not read here (P6-01 lets
-    it pass, 46291); Oracle (113174, 101497) does not say how Dangling Finish treats it"""
+    exist, none of them FS or FF. ``ignore_soft_constraints`` / ``ignore_hard_constraints``: 113174
+    'Ignore activities with soft constraints' (Start On, Start On or After, Start On or Before, Finish On,
+    Finish On or After, Finish On or Before, As Late As Possible) and 'Ignore activities with hard
+    constraints' (Mandatory Start, Mandatory Finish); Oracle documents no default. Read as: the primary or
+    the secondary constraint is one of them, and the task leaves the numerator, not the denominator.
+    UNRESOLVED: a successor in another project is not read here (P6-01 lets it pass, 46291); Oracle
+    (113174, 101497) does not say how Dangling Finish treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships
     candidates = activities[~activities["is_complete"] & ~activities["is_milestone"]]
+    ignored = (DANGLING_SOFT_CONSTRAINTS if ignore_soft_constraints else []) + (
+        DANGLING_HARD_CONSTRAINTS if ignore_hard_constraints else []
+    )
+    candidates = candidates[~constrained_by(candidates, ignored, ignore_started_starts=False)]
     has_logic = candidates["task_code"].isin(relationships["pred_code"])
     driving = has_driving_successor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driving]

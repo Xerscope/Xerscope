@@ -6,6 +6,8 @@ the P6 EPPM 25 dialog help (G18294_01 / 91574) for the default targets.
 Overlaps tests/test_rules.py on purpose: here each test is one sentence of the source.
 """
 
+import dataclasses
+
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
 from xerkit import DD, FM, SM, active, done, snap, todo, with_second_project, xer_text
@@ -384,6 +386,55 @@ def test_p6_16_and_17_leave_milestones_out():
     )
     assert counts(run(P6, "P6-16", s)) == (0, 4)
     assert counts(run(P6, "P6-17", s)) == (0, 4)
+
+
+def _with_params(metric_id, **params):
+    return {metric_id: dataclasses.replace(P6[metric_id], params={**P6[metric_id].params, **params})}
+
+
+def test_p6_16_ignore_in_progress_option():
+    """113174: 'Ignore in-progress activities for dangling start activities: Mark to disregard activities that
+    are in progress'. Checked (p6.toml, as in R1): Y, in progress with an FF predecessor only, is not counted;
+    unchecked it is. D, completed, is counted in neither case; every task stays in the denominator."""
+    s = snap(
+        [todo("P"), todo("X"), active("Y"), done("D"), todo("Z")],
+        [("P", "X", "FF", 0), ("P", "Y", "FF", 0), ("P", "D", "FF", 0), ("X", "Z", "FS", 0)],
+    )
+    assert P6["P6-16"].params == {"ignore_in_progress": True}
+    checked = run(P6, "P6-16", s)
+    assert (counts(checked), codes(checked)) == ((1, 5), ["X"])
+    unchecked = run(_with_params("P6-16", ignore_in_progress=False), "P6-16", s)
+    assert (counts(unchecked), codes(unchecked)) == ((2, 5), ["X", "Y"])
+
+
+def test_p6_17_constraint_options():
+    """113174: 'Ignore activities with soft constraints' (Start On, Start On or After, Start On or Before,
+    Finish On, Finish On or After, Finish On or Before, As Late As Possible) and 'Ignore activities with
+    hard constraints' (Mandatory Start, Mandatory Finish), for Dangling Finish. Each of U, SO, MF, SEC has a
+    single SS successor K. SO is Start On, soft here (hard in P6-02); MF Mandatory Finish; SEC Mandatory
+    Start with a Finish On or Before secondary, so either option leaves it out. Denominator: the 5 tasks."""
+    on = "2026-03-10 08:00"
+    s = snap(
+        [
+            todo("U"),
+            todo("SO", cstr_type="CS_MSO", cstr_date=on),
+            todo("MF", cstr_type="CS_MANDFIN", cstr_date=on),
+            todo("SEC", cstr_type="CS_MANDSTART", cstr_date=on, cstr_type2="CS_MEOB", cstr_date2=on),
+            todo("K"),
+        ],
+        [("U", "K", "SS", 0), ("SO", "K", "SS", 0), ("MF", "K", "SS", 0), ("SEC", "K", "SS", 0)],
+    )
+    assert P6["P6-17"].params == {"ignore_soft_constraints": False, "ignore_hard_constraints": False}
+    cases = {
+        (False, False): ["MF", "SEC", "SO", "U"],
+        (True, False): ["MF", "U"],
+        (False, True): ["SO", "U"],
+        (True, True): ["U"],
+    }
+    for (soft, hard), expected in cases.items():
+        standard = _with_params("P6-17", ignore_soft_constraints=soft, ignore_hard_constraints=hard)
+        r = run(standard, "P6-17", s)
+        assert (counts(r), codes(r)) == ((len(expected), 5), expected), (soft, hard)
 
 
 def _with_link_to_second_project(text: str, pred_task_id: str, succ_task_id: str, link_type: str) -> str:

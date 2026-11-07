@@ -84,8 +84,8 @@ checked subset.
 | P6-13 | | BEI: completed / every baseline activity (R1; 26.8 report); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
 | P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
 | P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | `p6.toml` |
-| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | `p6.toml` |
-| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted | `p6.toml` |
+| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; completed and milestones not counted, in progress not counted while `ignore_in_progress` is on (R1) | `p6.toml` |
+| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted, nor the constrained tasks `ignore_soft_constraints` / `ignore_hard_constraints` leave out | `p6.toml` |
 
 **Targets** are those of the Check Schedule dialog as the P6 EPPM 25 help prints them
 ([91574](https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm): "should be less than 5 %",
@@ -94,6 +94,37 @@ print them. BEI follows report R1 instead (`> 0.95`), so exactly 0.95 fails as i
 report. P6-15 to P6-17 have no documented default, and the duration limit `x` of
 P6-04 to P6-06 is a setting of the dialog: their values are in `p6.toml` only. Edit
 `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
+
+**Dangling options.** The Relationships and Assignments tab of the dialog
+([113174](https://docs.oracle.com/cd/G48902_01/client_help/en_US/113174.htm), P6 Professional 26)
+has three options, read from `p6.toml` as rule parameters:
+
+> **Ignore in-progress activities for dangling start activities**: Mark to disregard activities that
+> are in progress when checking for activities with start dates not driven by their predecessors.
+
+> **Ignore activities with soft constraints**: Mark to disregard activities with soft constraints when
+> checking for activities with finish dates that do not drive successors. Soft constraints are Start On,
+> Start On or After, Start On or Before, Finish On, Finish On or After, Finish On or Before, and As Late
+> As Possible
+
+> **Ignore activities with hard constraints**: Mark to disregard activities with hard constraints when
+> checking for activities with finish dates that do not drive successors. Hard constraints are:
+> Mandatory Start and Mandatory Finish.
+
+| Option | Check | Parameter | `p6.toml` |
+|---|---|---|---|
+| Ignore in-progress activities | P6-16 | `ignore_in_progress` | `true` (checked in R1) |
+| Ignore activities with soft constraints | P6-17 | `ignore_soft_constraints` | `false` |
+| Ignore activities with hard constraints | P6-17 | `ignore_hard_constraints` | `false` |
+
+These constraint sets are the options' own, not those of P6-02 / P6-03: Start On and Finish On
+are soft here and hard on the Constraints tab
+([113176](https://docs.oracle.com/cd/G48902_01/client_help/en_US/113176.htm)). Oracle documents no
+default for the three options, nor whether "disregard" also removes the task from the
+denominator: xerscope keeps it in the denominator and out of the numerator, as for every other
+task P6-16 / P6-17 do not count. A constraint counts whether it is primary or secondary, as in
+P6-02 / P6-03. The Debug page (block 04) shows the values in use. The XER data map lists no
+column for Check Schedule settings, so they are not read from the file.
 
 ### Comparing with a P6 Check Schedule report
 

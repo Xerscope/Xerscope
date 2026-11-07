@@ -1307,7 +1307,7 @@ def test_debug_block_4_follows_an_uploaded_standard_with_the_builtin_id(app):
     app.session_state["uploaded_standards"] = {"P6": dataclasses.replace(builtin, metrics=builtin.metrics[:-1])}
     app.run()
     _ok(app)
-    assert _check_parameters_rows(app) == before - 1
+    assert _check_parameters_rows(app) == before - 3  # P6-17 and its two Dangling options
 
 
 def test_memo_recomputes_for_a_baseline_file_of_other_content(store):

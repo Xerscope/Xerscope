@@ -46,12 +46,17 @@ def test_parameters_show_standard_and_defaults(results, store):
     late = next(r for r in results if r.metric.id == "P6-12")
     assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
     assert any("milestones" in line for line in explain(late).population)
-    # a built-in check takes no parameter but its x threshold, shown with its default and its sentence
+    # a built-in check takes no parameter but its x threshold or its dialog options, shown with their values
     with_parameters = {r.metric.id: explain(r) for r in results if explain(r).parameters}
     assert set(with_parameters) == {
-        "P6-04", "P6-05", "P6-06", "DCMA-06", "DCMA-08", "DCMA-09", "DCMA-11", "DCMA-12", "DCMA-14",
-        "06A211a", "06A401a", "06A504a", "06A504b", "06A506c",
+        "P6-04", "P6-05", "P6-06", "P6-16", "P6-17", "DCMA-06", "DCMA-08", "DCMA-09", "DCMA-11", "DCMA-12",
+        "DCMA-14", "06A211a", "06A401a", "06A504a", "06A504b", "06A506c",
     }  # fmt: skip
+    assert with_parameters["P6-16"].parameters == [("ignore_in_progress", "yes", "standard")]
+    assert with_parameters["P6-17"].parameters == [
+        ("ignore_soft_constraints", "no", "standard"),
+        ("ignore_hard_constraints", "no", "standard"),
+    ]
     assert with_parameters["DCMA-09"].parameters == [("date_grain", "day", "standard")]
     assert any("by calendar day" in line for line in with_parameters["DCMA-09"].population)
     assert with_parameters["P6-04"].parameters == [("limit_hours", "352", "standard")]
