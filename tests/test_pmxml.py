@@ -43,6 +43,34 @@ def test_an_ambiguous_or_absent_baseline_is_refused_with_the_list():
         load_snapshot(pmxml_bytes([]), name="export.xml")
 
 
+def _link(object_id: str, successor_project: str) -> str:
+    return (
+        f"<Relationship><ObjectId>{object_id}</ObjectId><PredecessorActivityObjectId>1001</PredecessorActivityObjectId>"
+        "<SuccessorActivityObjectId>1002</SuccessorActivityObjectId>"
+        f"<SuccessorProjectObjectId>{successor_project}</SuccessorProjectObjectId>"
+        "<Type>Finish to Start</Type><Lag>0</Lag></Relationship>"
+    )
+
+
+def test_a_value_p6_would_not_write_is_a_xer_error():
+    bad_percent = activity("A1", "1001", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40, PhysicalPercentComplete="x")
+    with pytest.raises(XerError, match="unreadable value in P6 XML"):
+        load_snapshot(pmxml_bytes([baseline("370", "BL-1", [bad_percent])]), name="export.xml")
+    bad_date = pmxml_bytes([baseline("370", "BL-1", [A1])]).replace(b"2026-04-03T00:00:00", b"2026-13-03T00:00:00")
+    with pytest.raises(XerError, match="unreadable value in P6 XML"):
+        load_snapshot(bad_date, name="export.xml")
+
+
+def test_a_baseline_link_naming_another_successor_project_is_counted():
+    """Successor project 370 (the baseline) is kept; 1 (the original project) is left out and counted."""
+    data = pmxml_bytes([baseline("370", "BL-1", [A1, A2, _link("1", "370"), _link("2", "1")])])
+    snapshot = load_snapshot(data, name="export.xml")
+    assert len(snapshot.relationships) == 1
+    assert (
+        "export.xml: 1 relationship(s) of baseline 370 name another project as successor project; left out of its logic"
+    ) in snapshot.warnings
+
+
 def test_a_calendar_reads_as_the_xer_writes_it():
     """XML work periods end on their last working minute (11:59), the XER's on the next one (12:00);
     an exception without work time is a holiday, one with work time a worked day."""
