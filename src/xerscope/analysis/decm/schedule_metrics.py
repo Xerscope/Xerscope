@@ -448,6 +448,12 @@ def decm_06a506c_riding_status_date(
     not-started task rides when its forecast start is within the riding window of the status date in
     both; a started one when its remaining duration moved by no more than the tolerance (its finish
     slides with the status date)
+
+    v8.0 block 10, step 3: forecast starts "within 3 working days" "(5 calendar days) of the status
+    date", the calendar days restating the working days, not a second criterion; step 4: started work
+    whose "remaining duration value has remained consistent within +/- 2 working days".
+    UNRESOLVED: block 6 counts Y as "Total count of incomplete tasks/activities & milestones" of the
+    current update; here Y leaves out level of effort and the tasks absent from the earlier update
     """
     previous = _update_a_period_ago(context, status_period_days)
     if previous is None:

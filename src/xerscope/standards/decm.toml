@@ -169,4 +169,4 @@ description = "Forecasts that moved with the status date over two monthly update
 rule = "decm_06a506c_riding_status_date"
 params = { status_period_days = 28, riding_window_wd = 3, remaining_tolerance_wd = 2 }  # calendar days; working days; working days
 target = "<= 1%"
-source = "06A506c: X/Y <= 1%; start within 3 wd of the status date in both updates, or remaining duration within +/- 2 wd"
+source = "06A506c v8.0: X/Y <= 1%; start within 3 wd of the status date in both updates (the sheet's \"(5 calendar days)\" restates the 3 working days), or remaining duration within +/- 2 wd (block 10, step 4). UNRESOLVED: Y here leaves out LOE and the tasks absent from the earlier update; block 6 counts every incomplete task and milestone"

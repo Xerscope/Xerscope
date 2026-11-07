@@ -1200,6 +1200,22 @@ def test_decm_riding_the_status_date_takes_the_status_period_as_a_parameter():
     assert run_metric(with_settings(DECM["06A506c"], params={"status_period_days": 8}), context).status == "n/a"
 
 
+def test_decm_riding_the_status_date_population_is_pinned():
+    """UNRESOLVED (06A506c v8.0, block 6: "Y = Total count of incomplete tasks/activities & milestones").
+    Pins the current population: R rides; L (level of effort) and NEW (not in the earlier update) are
+    left out of Y, so 1 / 1, where the sheet's Y would count 3."""
+    from xerscope.store import SnapshotStore
+
+    m1 = snap([todo("R", early_start_date="2026-03-02 08:00"), todo("L", task_type="TT_LOE")])
+    m2 = snap(
+        [todo("R", early_start_date="2026-04-06 08:00"), todo("L", task_type="TT_LOE"), todo("NEW")],
+        data_date="2026-04-06 08:00",
+    )
+    store = SnapshotStore([m1, m2])
+    r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
+    assert (codes(r), r.denominator) == (["R"], 1)
+
+
 def test_decm_riding_the_status_date_started_work():
     from xerscope.store import SnapshotStore
 
