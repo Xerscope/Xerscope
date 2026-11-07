@@ -49,9 +49,17 @@ def words_of(text: str) -> list[str]:
     return [w for w in re.split(r"[^a-z0-9]+", fold(text)) if w]
 
 
+_WITH_UNIT = re.compile(r"(\d+(?:[.,]\d+)?)(d|j|h|hr|hrs|jo|wd)")
+
+
 def tokens(text: str) -> list[str]:
-    """The folded sentence as tokens: words, numbers, dates, comparison signs, parentheses."""
-    return _LEXEME.findall(fold(text).replace("≤", "<=").replace("≥", ">="))
+    """The folded sentence as tokens: words, numbers, dates, comparison signs, parentheses; a
+    number glued to its unit ("10d", "8h") is two tokens."""
+    found = []
+    for token in _LEXEME.findall(fold(text).replace("≤", "<=").replace("≥", ">=")):
+        glued = _WITH_UNIT.fullmatch(token)
+        found += list(glued.groups()) if glued else [token]
+    return found
 
 
 def phrase_pattern(phrases: list[str]) -> re.Pattern:

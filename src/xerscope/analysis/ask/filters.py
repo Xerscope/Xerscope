@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+import pandas as pd
+
 from .grammar import CATEGORIES, STATUSES, And, Atom, Expr, Not, Or
 from .vocab import Vocabulary
 
@@ -195,7 +197,17 @@ def _atom_written(atom: Atom, vocab: Vocabulary) -> str:
         return f"code:{code_type}={code_value}"
     if kind == "resource":
         return "resource:" + resource_name(value, vocab)
+    if kind == "cmp":
+        measure, op, number, unit = value
+        return f"{measure}{op}{number:g}{unit}"
+    if kind == "date":
+        column, low, high = value
+        return f"{column}:[{_iso(low)},{_iso(high)})"
     return kind if value is None else f"{kind}:{value}"
+
+
+def _iso(day) -> str:
+    return "" if day is None else f"{day:%Y-%m-%d}"
 
 
 SAY = {
@@ -213,6 +225,17 @@ SAY = {
         "milestone": "milestones",
         "loe": "level of effort",
         "late": "late (total float < 0)",
+        "id": "Activity ID {}",
+        "constraint": {"any": "with a constraint", "hard": "with a hard constraint", "soft": "with a soft constraint"},
+        "pred": "with a predecessor",
+        "succ": "with a successor",
+        "longest": "on the longest path",
+        "without": {"constraint": "without constraint", "pred": "without predecessor", "succ": "without successor"},
+        "measure": {"tf": "total float", "od": "original duration", "rd": "remaining duration", "pct": "% complete"},
+        "unit": {"d": " d", "h": " h", "%": " %"},
+        "column": {"start": "start", "finish": "finish", "active": "active"},
+        "before": "before {}",
+        "from": "from {}",
         "not": "not {}",
         "or": " or ",
         "and": " and ",
@@ -231,6 +254,17 @@ SAY = {
         "milestone": "jalons",
         "loe": "niveau d'effort",
         "late": "en retard (marge totale < 0)",
+        "id": "activité {}",
+        "constraint": {"any": "avec contrainte", "hard": "avec contrainte dure", "soft": "avec contrainte souple"},
+        "pred": "avec prédécesseur",
+        "succ": "avec successeur",
+        "longest": "sur le chemin le plus long",
+        "without": {"constraint": "sans contrainte", "pred": "sans prédécesseur", "succ": "sans successeur"},
+        "measure": {"tf": "marge totale", "od": "durée originale", "rd": "durée restante", "pct": "avancement"},
+        "unit": {"d": " j", "h": " h", "%": " %"},
+        "column": {"start": "début", "finish": "fin", "active": "en cours sur"},
+        "before": "avant le {}",
+        "from": "à partir du {}",
         "not": "non {}",
         "or": " ou ",
         "and": " et ",
@@ -242,6 +276,8 @@ def said(expr: Expr, vocab: Vocabulary, lang: str = "en") -> str:
     """The expression in words, in ``lang`` ("en" or "fr"): the answer's words and, in English,
     a chip's label."""
     words = SAY["fr" if lang == "fr" else "en"]
+    if _without(expr, words):
+        return words["without"][expr.item.kind]
     if isinstance(expr, Not):
         inner = said(expr.item, vocab, lang)
         return words["not"].format(f"({inner})" if isinstance(expr.item, And | Or) else inner)
@@ -250,6 +286,12 @@ def said(expr: Expr, vocab: Vocabulary, lang: str = "en") -> str:
         parts = (said(e, vocab, lang) for e in expr.items)
         return sign.join(f"({p})" if isinstance(e, And | Or) else p for e, p in zip(expr.items, parts, strict=True))
     return _say_atom(expr, vocab, words)
+
+
+def _without(expr: Expr, words: dict) -> bool:
+    """NOT on a predecessor, a successor or any constraint reads "without ..."."""
+    item = expr.item if isinstance(expr, Not) else None
+    return isinstance(item, Atom) and item.kind in words["without"] and item.value in (None, "any")
 
 
 def _say_atom(atom: Atom, vocab: Vocabulary, words: dict) -> str:
@@ -263,9 +305,26 @@ def _say_atom(atom: Atom, vocab: Vocabulary, words: dict) -> str:
         return f"{code_type} {code_value}".strip()
     if kind == "resource":
         return words["resource"].format(resource_name(value, vocab))
-    if kind == "word":
-        return words["word"].format(value)
+    if kind in ("word", "id"):
+        return words[kind].format(value)
+    if kind == "constraint":
+        return words["constraint"][value]
+    if kind == "cmp":
+        measure, op, number, unit = value
+        return f"{words['measure'][measure]} {op} {number:g}{words['unit'][unit]}"
+    if kind == "date":
+        return _say_dates(value, words)
     return words.get(kind, kind)
+
+
+def _say_dates(value, words: dict) -> str:
+    """ "start 26/10/2026–01/11/2026", "finish before 01/01/2027", "start from 16/11/2026"."""
+    column, low, high = value
+    if low is not None and high is not None:
+        span = f"{low:%d/%m/%Y}–{high - pd.Timedelta(days=1):%d/%m/%Y}"
+    else:
+        span = words["before"].format(f"{high:%d/%m/%Y}") if low is None else words["from"].format(f"{low:%d/%m/%Y}")
+    return f"{words['column'][column]} {span}"
 
 
 def say_label(expr: Expr, vocab: Vocabulary) -> str:

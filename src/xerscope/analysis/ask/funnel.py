@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass
 
 import pandas as pd
@@ -126,6 +127,59 @@ def _category(rows: pd.DataFrame, value, context: Context) -> pd.Series:
     return rows["category"] == value if "category" in rows else pd.Series(False, index=rows.index)
 
 
+def _compare(rows: pd.DataFrame, value, context: Context) -> pd.Series:
+    """measure op number unit: hours against hours (a number of days times the activity's own
+    hours per day), % complete against its percentage; total float only on open work."""
+    measure, op, number, unit = value
+    column = rows[MEASURE_COLUMNS[measure]]
+    if measure == "tf":
+        column = column.where(~rows["is_complete"].astype(bool))
+    limit = number * rows["hours_per_day"] if unit == "d" else number
+    return OPERATORS[op](column, limit)
+
+
+def _dated(rows: pd.DataFrame, value, context: Context) -> pd.Series:
+    """start or finish in [low, high); active: the activity overlaps [low, high)."""
+    column, low, high = value
+    first = rows["start"] if column == "active" else rows[column]
+    last = rows["finish"] if column == "active" else rows[column]
+    kept = pd.Series(True, index=rows.index)
+    if high is not None:
+        kept &= first < high
+    if low is not None:
+        kept &= last >= low
+    return kept
+
+
+def _constrained(rows: pd.DataFrame, value, context: Context) -> pd.Series:
+    """Any primary or secondary constraint, or P6 Professional's hard / soft set (101248) with a
+    start constraint ignored once started, as P6-02 and P6-03 count."""
+    from ..p6.check_schedule import P6_HARD_CONSTRAINTS, SOFT_CONSTRAINTS
+    from ..populations import constrained_by
+
+    if value == "any":
+        return rows["cstr_type"].fillna("").astype(str).ne("") | rows["cstr_type2"].fillna("").astype(str).ne("")
+    kinds = P6_HARD_CONSTRAINTS if value == "hard" else SOFT_CONSTRAINTS
+    return constrained_by(rows, kinds, ignore_started_starts=True)
+
+
+def _linked(rows: pd.DataFrame, value, context: Context) -> pd.Series:
+    """A predecessor (pred) or successor (succ) in the project, or in another project (as P6-01)."""
+    from ..populations import has_predecessor_in_project, has_successor_in_project
+
+    if value == "pred":
+        return has_predecessor_in_project(context.snapshot, rows) | rows["has_external_pred"].astype(bool)
+    return has_successor_in_project(context.snapshot, rows) | rows["has_external_succ"].astype(bool)
+
+
+MEASURE_COLUMNS = {
+    "tf": "total_float_hr_cnt",
+    "od": "target_drtn_hr_cnt",
+    "rd": "remain_drtn_hr_cnt",
+    "pct": "pct_complete",
+}
+OPERATORS = {"<": operator.lt, "<=": operator.le, "=": operator.eq, ">=": operator.ge, ">": operator.gt}
+
 ATOMS = {  # atom kind -> the rows it names
     "status": lambda rows, value, context: rows["status"] == value,
     "float": _category,  # viz.gantt.categorise: Critical follows the project's critical path definition
@@ -137,4 +191,11 @@ ATOMS = {  # atom kind -> the rows it names
     "word": lambda rows, value, context: all_words(rows, [value]),
     # total float below zero on open work (Oracle 47223, Total Float); complete work has none
     "late": lambda rows, value, context: ~rows["is_complete"].astype(bool) & (rows["total_float_hr_cnt"] < 0),
+    "id": lambda rows, value, context: rows["task_code"] == value,
+    "cmp": _compare,
+    "date": _dated,
+    "constraint": _constrained,
+    "pred": lambda rows, value, context: _linked(rows, "pred", context),
+    "succ": lambda rows, value, context: _linked(rows, "succ", context),
+    "longest": lambda rows, value, context: rows["on_longest_path"],  # P6's Longest Path flag (driving_path_flag)
 }

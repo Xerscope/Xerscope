@@ -1,5 +1,6 @@
 """analysis/query.py: a sentence becomes the Gantt page's filters, never a number."""
 
+import pandas as pd
 import pytest
 from asklex import LEXICON
 
@@ -327,3 +328,73 @@ def test_a_clause_holding_an_unknown_word_is_not_applied_and_is_named():
         assert (got.categories, got.clauses, got.ignored) == (("Critical",), (), ("xyzzy",))
     got = query.parse_keywords("critique ou xyzzy", Vocabulary(wbs={}, words=frozenset()))
     assert got.empty and got.ignored == ("xyzzy",)  # an OR with an unknown operand: nothing applied
+
+
+def test_late_is_negative_total_float_not_critical(store):
+    """Oracle P6 help 47223, Total Float: "a negative float indicates that the project is already
+    behind schedule". Critical follows the project's critical path definition, another set."""
+    _, _, tasks, _ = _demo(store)
+    negative = set(tasks.loc[~tasks["is_complete"] & (tasks["total_float_hr_cnt"] < 0), "task_code"])
+    assert negative and _rows("en retard", store) == _rows("late", store) == _rows("marge négative", store) == negative
+    assert _rows("en retard", store) != _rows("critique", store)  # K5010 (TF 0) is critical, not late
+
+
+@pytest.mark.parametrize(
+    ("text", "column", "check"),
+    [
+        ("float < 10", "total_float_d", lambda tf: tf < 10),  # a number without unit: working days
+        ("marge totale au moins 15 jours", "total_float_d", lambda tf: tf >= 15),
+        ("float zero", "total_float_d", lambda tf: tf == 0),
+        ("float < 80h", "total_float_hr_cnt", lambda tf: tf < 80),
+        ("durée supérieure à 20 jours", "original_d", lambda od: od > 20),
+        ("avancement > 50%", "pct_complete", lambda pct: pct > 50),
+    ],
+)
+def test_a_comparison_reads_the_column_in_its_unit(store, text, column, check):
+    _, _, tasks, _ = _demo(store)
+    open_float = column.startswith("total_float")
+    population = tasks[~tasks["is_complete"]] if open_float else tasks
+    expected = set(population.loc[check(population[column]).fillna(False), "task_code"])
+    assert expected and _rows(text, store) == expected
+
+
+def test_long_durations_are_the_p6_check_schedule_set(store):
+    """P6 Check Schedule "Long Durations" (101248): remaining duration over x = 352 h."""
+    _, _, tasks, _ = _demo(store)
+    assert _rows("long durations", store) == set(tasks.loc[tasks["remain_drtn_hr_cnt"] > 352, "task_code"])
+
+
+def test_dates_count_from_the_data_date(store):
+    """Demo data date 2026-10-19 (a Monday): this week = [19/10, 26/10), next week = [26/10, 02/11)."""
+    snapshot, _, tasks, vocab = _demo(store)
+    assert snapshot.data_date == pd.Timestamp("2026-10-19 08:00")
+    week = (pd.Timestamp("2026-10-26"), pd.Timestamp("2026-11-02"))
+    starting = set(tasks.loc[(tasks["start"] >= week[0]) & (tasks["start"] < week[1]), "task_code"])
+    assert starting and _rows("starting next week", store) == _rows("commence la semaine prochaine", store) == starting
+    finishing = set(tasks.loc[tasks["finish"] < pd.Timestamp("2027-01-01"), "task_code"])
+    assert _rows("finissent avant fin décembre", store) == finishing
+    active = set(tasks.loc[(tasks["start"] < week[1]) & (tasks["finish"] >= week[0]), "task_code"])
+    assert _rows("next week", store) == active and active > starting
+    got = query.parse_keywords("starting next week", vocab)
+    assert got.matched == ("Start 26/10/2026–01/11/2026",) and got.wbs_id is None  # not "setting" (MEC)
+
+
+def test_constraints_open_ends_and_longest_path(store):
+    from xerscope.analysis.p6.check_schedule import P6_HARD_CONSTRAINTS, SOFT_CONSTRAINTS
+    from xerscope.analysis.populations import constrained_by, has_predecessor_in_project, has_successor_in_project
+
+    snapshot, _, tasks, _ = _demo(store)
+    soft = set(tasks.loc[constrained_by(tasks, SOFT_CONSTRAINTS, ignore_started_starts=True), "task_code"])
+    hard = set(tasks.loc[constrained_by(tasks, P6_HARD_CONSTRAINTS, ignore_started_starts=True), "task_code"])
+    assert soft == {"P2040", "X4050"} and _rows("soft constraints", store) == soft
+    assert _rows("hard constraints", store) == hard and _rows("contraintes", store) >= soft
+    no_pred = set(tasks.loc[~has_predecessor_in_project(snapshot, tasks) & ~tasks["has_external_pred"], "task_code"])
+    no_succ = set(tasks.loc[~has_successor_in_project(snapshot, tasks) & ~tasks["has_external_succ"], "task_code"])
+    assert no_pred and _rows("sans prédécesseur", store) == no_pred and _rows("sans successeur", store) == no_succ
+    assert _rows("open ends", store) == no_pred | no_succ
+    assert _rows("longest path", store) == set(tasks.loc[tasks["on_longest_path"], "task_code"])
+
+
+def test_an_activity_id_is_that_activity_exactly(store):
+    assert _rows("C3020", store) == {"C3020"}
+    assert _rows("c3020 ou c3030", store) == _rows("c3020 c3030", store) == {"C3020", "C3030"}

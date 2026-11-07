@@ -11,7 +11,7 @@ from ...xer import Snapshot
 from ..wbs import ROOT
 from .grammar import CATEGORIES, GRAMMAR_WORDS, STATUSES
 from .lexicon import Lexicon
-from .text import STOP, words_of
+from .text import STOP, tokens, words_of
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,10 @@ class Vocabulary:
     # under ONE WBS node only ("foundations", "earthworks" -> Civil works; "piping" -> Mechanical &
     # electrical), wbs_id -> words. A word under several nodes names none of them (a search).
     node_words: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    # the Activity IDs holding a digit, as the sentence's tokens spell them -> the ID: an ID said
+    # is that activity exactly ("C3020", never "C30201")
+    ids: Mapping[tuple[str, ...], str] = field(default_factory=dict)
+    data_date: pd.Timestamp | None = None  # what "this week", "next month" count from
 
     def to_prompt(self) -> dict:
         """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
@@ -64,7 +68,15 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: L
         has_loe=bool(activities["is_loe"].any()),
         lexicon={} if lexicon is None else lexicon,
         node_words=node_words(activities, wbs, nodes, resources),
+        ids=activity_ids(activities),
+        data_date=snapshot.data_date,
     )
+
+
+def activity_ids(activities: pd.DataFrame) -> dict[tuple[str, ...], str]:
+    """The Activity IDs that hold a digit, keyed by their tokens ("EL-100" -> ("el", "100"))."""
+    codes = activities["task_code"].dropna().astype(str)
+    return {tuple(tokens(code)): code for code in codes if any(c.isdigit() for c in code) and tokens(code)}
 
 
 def wbs_labels(frame: pd.DataFrame) -> dict[str, str]:

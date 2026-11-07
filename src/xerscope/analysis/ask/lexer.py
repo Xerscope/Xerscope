@@ -9,6 +9,7 @@ from __future__ import annotations
 import bisect
 import re
 
+from .clauses import Composer, raw
 from .grammar import LONGEST, PHRASES_OF_SIZE, TABLE, And, Atom
 from .text import MARGIN, STOP, SURE, closest, fold, phrase_pattern, plain, take, with_synonyms
 from .vocab import Vocabulary
@@ -18,7 +19,8 @@ Item = tuple[int, str, object]
 
 def items(tokens: list[str], vocab: Vocabulary) -> tuple[list[Item], float]:
     """Every token the grammar or the file reads, in sentence order, and the weakest typo ratio."""
-    found, used = _grammar_items(tokens)
+    found, used = _clause_items(tokens, vocab)
+    _id_items(tokens, used, vocab, found)
     confidence = _typo_items(tokens, used, found, vocab)
     rest = _Rest(tokens, used)
     confidence = min(confidence, _wbs_items(rest, vocab, found))
@@ -27,19 +29,46 @@ def items(tokens: list[str], vocab: Vocabulary) -> tuple[list[Item], float]:
     return sorted(found, key=lambda item: item[0]), confidence
 
 
-def _grammar_items(tokens: list[str]) -> tuple[list[Item], set[int]]:
-    """The grammar's phrases, longest first, left to right."""
-    found: list[Item] = []
+def _grammar_items(tokens: list[str]) -> tuple[list[tuple[int, int, str, object]], set[int]]:
+    """The grammar's phrases, longest first, left to right: (index, size, kind, value)."""
+    found: list[tuple[int, int, str, object]] = []
     used: set[int] = set()
     i = 0
     while i < len(tokens):
         size = next((n for n in range(min(LONGEST, len(tokens) - i), 0, -1) if tuple(tokens[i : i + n]) in TABLE), 0)
         if size:
-            kind, expr, _ = TABLE[tuple(tokens[i : i + size])]
-            found.append((i, kind, expr))
+            kind, value, _ = TABLE[tuple(tokens[i : i + size])]
+            found.append((i, size, kind, value))
             used.update(range(i, i + size))
         i += max(size, 1)
     return found, used
+
+
+def _clause_items(tokens: list[str], vocab: Vocabulary) -> tuple[list[Item], set[int]]:
+    """The grammar's phrases, with the clause parts (measures, comparisons, dates) composed."""
+    found, used = _grammar_items(tokens)
+    numbers = [(i, 1, *r) for i, token in enumerate(tokens) if i not in used and (r := raw(token))]
+    composed, taken, freed = Composer(tokens, sorted(found + numbers), vocab.data_date).run()
+    return composed, (used | taken) - freed
+
+
+def _id_items(tokens: list[str], used: set[int], vocab: Vocabulary, found: list[Item]) -> None:
+    """An Activity ID said as the file spells it: that activity, exactly."""
+    longest = max((len(key) for key in vocab.ids), default=0)
+    i = 0
+    while i < len(tokens):
+        size = next(
+            (
+                n
+                for n in range(min(longest, len(tokens) - i), 0, -1)
+                if tuple(tokens[i : i + n]) in vocab.ids and not used & set(range(i, i + n))
+            ),
+            0,
+        )
+        if size:
+            found.append((i, "x", Atom("id", vocab.ids[tuple(tokens[i : i + size])])))
+            used.update(range(i, i + size))
+        i += max(size, 1)
 
 
 def _typo_items(tokens: list[str], used: set[int], found: list[Item], vocab: Vocabulary) -> float:
@@ -50,10 +79,10 @@ def _typo_items(tokens: list[str], used: set[int], found: list[Item], vocab: Voc
         if i in used or not _typo_candidate(token, vocab):
             continue
         before = next((item for item in found if item[0] == i - 1 and item[1] == "not"), None)
-        tries = [(i, f"{token} {tokens[i + 1]}")] if i + 1 < len(tokens) and i + 1 not in used else []
-        tries += [(i - 1, f"{tokens[i - 1]} {token}")] if before else []
-        tries.append((i, token))
-        for start, said in tries:
+        attempts = [(i, f"{token} {tokens[i + 1]}")] if i + 1 < len(tokens) and i + 1 not in used else []
+        attempts += [(i - 1, f"{tokens[i - 1]} {token}")] if before else []
+        attempts.append((i, token))
+        for start, said in attempts:
             close = closest([said], PHRASES_OF_SIZE[len(said.split())], spaced=True)
             if close:
                 if start < i:
