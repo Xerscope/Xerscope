@@ -233,7 +233,7 @@ def test_schedule_health_runs_on_the_baseline_of_the_file(tmp_path, monkeypatch)
 # --- the fallback, update by update, and the baseline every result names ----------------------------
 
 
-def _series(tmp_path, monkeypatch, files=None, transform=lambda text: text):
+def _series(tmp_path, monkeypatch, files=None, transform=lambda text: text, keep_env=False):
     """Updates in a folder, ``{name: two_projects arguments}``; by default ``a`` (2026-03-02) points to its
     baseline copy and ``b`` (2026-03-09) points to none. ``transform`` edits each file's text."""
     from pathlib import Path
@@ -249,7 +249,8 @@ def _series(tmp_path, monkeypatch, files=None, transform=lambda text: text):
     for name, arguments in files.items():
         (tmp_path / name).write_text(transform(two_projects(**arguments)))
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
-    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    if not keep_env:
+        monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
     return read_folder(at.run())
 
@@ -384,7 +385,7 @@ def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
 
 
 def _absent_baseline_boxes(at):
-    return [element.value.replace("\\", "") for element in at.sidebar.info if "not exported" in element.value]
+    return [element.value.replace("\\", "") for element in at.sidebar.error if "Baseline missing" in element.value]
 
 
 def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
@@ -395,9 +396,25 @@ def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
     boxes = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c, "d.xer": d}))
     assert len(boxes) == 1
     # counts and dates, no file name: a long series of long names made the line unreadable
-    assert "2 updates of 3 name a P6 Project Baseline" in boxes[0]
-    assert "project 370 (2 updates, 09 Mar 2026 → 16 Mar 2026)" in boxes[0]
+    assert "P6 Project Baseline missing for 2 updates of 3" in boxes[0]
+    assert "project 370 (code unknown), named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
+    assert "planned value, BEI, Late Activities and Missed tasks" in boxes[0]
     assert ".xer" not in boxes[0].replace("XER", "") and "Separate baseline file" in boxes[0]
+
+
+def test_an_absent_baseline_is_named_by_its_code_when_another_loaded_file_holds_it(tmp_path, monkeypatch):
+    # e.xer names project 2, held (code BL5) by a.xer only: the request gives the code to export
+    e = {"pointer": "2", "data_date": "2026-03-16 08:00", "with_baseline": False, "flag": "Y"}
+    a = {**A, "baseline_code": "BL5"}
+    (box,) = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": a, "e.xer": e}))
+    assert "BL5 (project 2), named by 1 update (16 Mar 2026)" in box
+    assert "without use_project_baseline_flag" not in box
+
+
+def test_no_request_for_updates_whose_earned_value_uses_each_users_primary_baseline(tmp_path, monkeypatch):
+    # use_project_baseline_flag N: P6 measures against each user's primary baseline, not the pointer
+    c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False, "flag": "N"}
+    assert not _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c}))
 
 
 def test_the_request_gives_no_p6_procedure(tmp_path, monkeypatch):
@@ -623,3 +640,22 @@ def test_a_file_holding_its_project_and_its_baseline_copy_has_no_project_list(tm
     assert project_box(at, "a.xer") is None
     assert _project_row(at, "a.xer") == "**UPD** · only project not a baseline copy · + baseline copy"
     assert _project_row(at, "b.xer") == "**UPD** · only project"
+
+
+def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointer(tmp_path, monkeypatch):
+    """The updates name project 370 (flag Y); the separate baseline file is project 1 (code OLDBL):
+    a warning names both, since the numbers will not be P6's."""
+    from xerkit import todo, xer_text
+
+    from xerscope.app.state import BL_FILE
+
+    c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False, "flag": "Y"}
+    baseline_file = tmp_path.parent / f"{tmp_path.name}-bl.xer"
+    baseline_file.write_text(
+        xer_text([todo("A1"), todo("A2")], project={"proj_short_name": "OLDBL"}, data_date="2026-03-02 08:00")
+    )
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(baseline_file))
+    at = _series(tmp_path, monkeypatch, {"c.xer": c}, keep_env=True)
+    assert baseline_box(at).value == BL_FILE
+    (warning,) = [w for w in _warnings(at) if "separate baseline file is" in w]
+    assert "OLDBL (project 1)" in warning and "code unknown (project 370, 1 update)" in warning
