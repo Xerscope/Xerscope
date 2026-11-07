@@ -250,16 +250,8 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
     ask_funnel = query.apply(ask, tasks, snapshot, nodes)
     tasks = ask_funnel.rows
     with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
-        unknown = (
-            " The word"
-            + ("s" if len(ask.ignored) > 1 else "")
-            + f" {', '.join(f'« {w} »' for w in ask.ignored)} "
-            + ("are" if len(ask.ignored) > 1 else "is")
-            + " in neither this file nor the lexicon."
-            if ask.ignored
-            else ""
-        )
-        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "Nothing understood: showing all."
+        # nothing understood but words left out: no row (query.apply); only stop words: no filter
+        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "No filter: showing all."
         banner = st.container(
             border=True,
             horizontal=True,
@@ -267,7 +259,7 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             key="ask_banner_warn" if ask.ignored or ask.confidence < query.SURE else "ask_banner",
         )
         with banner:
-            st.markdown(ui.md_text(said) + unknown, width="stretch")
+            st.markdown(ui.md_text(said), width="stretch")
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
         how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)

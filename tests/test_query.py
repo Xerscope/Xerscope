@@ -16,6 +16,9 @@ VOCAB = Vocabulary(
 )
 
 
+LATE = ("Late (total float < 0)", query.Atom("late"))
+
+
 def test_vocabulary_matches_the_page_widgets():
     assert list(STATUS.values()) == query.STATUSES
     assert query.CATEGORIES == CATEGORY_ORDER
@@ -31,14 +34,14 @@ def test_vocabulary_matches_the_page_widgets():
         ("critiques non démarrées CIV", Filter(wbs_id="1", status=("Not started",), categories=("Critical",))),
         ("quasi critique en cours", Filter(status=("In progress",), categories=("Near critical",))),  # not "Critical"
         ("ingenierie terminée", Filter(wbs_id="2", status=("Complete",))),
-        ("en retard mechanical", Filter(wbs_id="3", categories=("Critical",))),
+        ("en retard mechanical", Filter(wbs_id="3", clauses=(LATE,))),  # late = total float < 0, not Critical
         ("zone B2 not started", Filter(status=("Not started",), code_type="Zone", code_ids=frozenset({"c1"}))),
         ("B2 et B3", Filter(code_type="Zone", code_ids=frozenset({"c1", "c2"}))),
         ("B2 P1", Filter(code_type="Zone", code_ids=frozenset({"c1"}))),  # one code type at a time
         ("earthworks", Filter(search="earthworks")),
         ("show me the earthworks in CIV", Filter(wbs_id="1", search="earthworks")),
         ("site crew in progress", Filter(status=("In progress",), resources=frozenset({"r1"}))),  # name over short
-        ("jalons en retard", Filter(categories=("Critical",), milestones=True)),
+        ("jalons en retard", Filter(milestones=True, clauses=(LATE,))),
         ("hamacs vendor", Filter(loe=True, resources=frozenset({"r2"}))),
     ],
 )
@@ -181,17 +184,24 @@ def test_the_answer_is_a_sentence_over_the_rows_in_the_questions_language(store)
     rows = funnel.rows
     worst = rows.loc[rows["total_float_d"].idxmin()]
     said = query.answer(asked, funnel, vocab)  # English whatever the question's language
-    assert said.startswith(f"{len(rows)} activities critical not started in CIV · Civil works, ")
+    assert said.startswith(f"{len(rows)} activities critical not started in CIV · Civil works; ")
     assert f"worst float {worst['total_float_d']:+.0f} wd ({worst['task_code']})" in said
     assert f"latest finish {rows['finish'].max():%d/%m/%Y}." in said
     french = query.answer(asked, funnel, vocab, "fr")  # kept for a French interface one day
-    assert french.startswith(f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works, ")
+    assert french.startswith(f"{len(rows)} activités critique(s) non démarrée(s) dans CIV · Civil works; ")
     english = query.parse_keywords("milestones", vocab)
     said = query.answer(english, query.apply(english, tasks, snapshot, nodes), vocab)
-    assert said.startswith(f"{int(tasks['is_milestone'].sum())} milestones, ")
-    nothing = query.parse_keywords("xyzzy", vocab)  # an ignored word: every row; a search for a name nobody has
+    assert said.startswith(f"{int(tasks['is_milestone'].sum())} milestones; ")
+    nothing = query.parse_keywords("xyzzy", vocab)  # nothing understood, a word left out: no row, never every row
+    shown = query.apply(nothing, tasks, snapshot, nodes)
+    assert shown.rows.empty and [step.label for step in shown.steps] == ["nothing understood"]
+    assert query.answer(nothing, shown, vocab, "fr") == (
+        "Rien de compris : aucune activité affichée. Le mot « xyzzy » n'est ni dans ce fichier ni dans le lexique."
+    )
     empty = query.apply(query.Filter(search="nobodyhasthisname"), tasks, snapshot, nodes)
-    assert query.answer(nothing, empty, vocab, "fr") == "Aucune activité ne correspond."
+    assert (
+        query.answer(query.Filter(search="nobodyhasthisname"), empty, vocab, "fr") == "Aucune activité ne correspond."
+    )
     assert query.language("what is late in procurement") == "en" and query.language("jalons en retard") == "fr"
 
 
@@ -251,3 +261,69 @@ def test_the_files_own_words_name_their_node(store):
     got = query.parse_keywords("installation", vocab)  # an own word of MEC, also a synonym of CIV's "erection"
     assert got.wbs_id == "7004" and got.search == "installation"
     assert query.vocabulary(snapshot).node_words["7003"] >= {"foundations"}  # without the tree: own node
+
+
+def _demo(store):
+    from xerscope.viz import categorise
+
+    snapshot = store.latest
+    nodes = wbs.tree(snapshot)
+    tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
+    return snapshot, nodes, tasks, query.vocabulary(snapshot, nodes, LEXICON)
+
+
+def _rows(text, store) -> set[str]:
+    snapshot, nodes, tasks, vocab = _demo(store)
+    return set(query.apply(query.parse_keywords(text, vocab), tasks, snapshot, nodes).rows["task_code"])
+
+
+@pytest.mark.parametrize(
+    ("text", "complement_of"),
+    [
+        ("not critical", "critical"),
+        ("non critique", "critique"),
+        ("pas critique", "critique"),
+        ("not complete", "complete"),
+        ("non terminées", "terminées"),
+        ("not in progress", "in progress"),
+        ("not normal", "normal"),
+        ("sauf jalons", "jalons"),
+    ],
+)
+def test_a_negation_is_the_complement_in_the_page_population(store, text, complement_of):
+    _, _, tasks, _ = _demo(store)
+    asked, positive = _rows(text, store), _rows(complement_of, store)
+    assert positive and asked == set(tasks["task_code"]) - positive
+
+
+def test_or_is_a_union_across_facets_and_binds_tighter_than_and(store):
+    _, _, tasks, _ = _demo(store)
+    critical = set(tasks.loc[tasks["category"] == "Critical", "task_code"])
+    complete = set(tasks.loc[tasks["status"] == "Complete", "task_code"])
+    assert _rows("critique ou terminé", store) == critical | complete and critical and complete
+    civ = set(tasks.loc[tasks["wbs_code"] == "CIV", "task_code"])
+    assert _rows("critique ou terminé en génie civil", store) == (critical | complete) & civ
+    assert _rows("non critique ou terminé", store) == (set(tasks["task_code"]) - critical) | complete
+    assert _rows("pas non critique", store) == critical  # double negation
+
+
+def test_search_words_are_each_found_in_any_order(store):
+    """H3: "installation piping" finds "Piping installation" (each word, not one phrase)."""
+    assert _rows("installation piping", store) == _rows("piping installation", store) == {"X4020"}
+    lexicon = Vocabulary(wbs={}, words=frozenset({"pump", "motor", "test"}))
+    asked = query.parse_keywords("motor pump", lexicon)
+    assert asked.search == "motor pump"
+    import pandas as pd
+
+    from xerscope.analysis.ask.funnel import all_words
+
+    rows = pd.DataFrame({"task_code": ["A1", "A2"], "task_name": ["Pump motor test", "Motor alignment"]})
+    assert all_words(rows, asked.search.split()).tolist() == [True, False]
+
+
+def test_a_clause_holding_an_unknown_word_is_not_applied_and_is_named():
+    for text in ("pas xyzzy critique", "critique xyzzy"):
+        got = query.parse_keywords(text, Vocabulary(wbs={}, words=frozenset()))
+        assert (got.categories, got.clauses, got.ignored) == (("Critical",), (), ("xyzzy",))
+    got = query.parse_keywords("critique ou xyzzy", Vocabulary(wbs={}, words=frozenset()))
+    assert got.empty and got.ignored == ("xyzzy",)  # an OR with an unknown operand: nothing applied

@@ -1,6 +1,7 @@
 # Sentences the keyword grammar was tuned on (analysis/query.py), with the filters a planner
 # means, on the demo series (`xerscope sample`). Names, not ids: a WBS by its code, a resource
-# by its short name, a code value as "Type:Value". Fields left out expect no filter.
+# by its short name, a code value as "Type:Value"; `clauses` lists what no facet says, in
+# query.canonical form ("late", "!float:Critical"). Fields left out expect no filter.
 # `xerscope ask-bench <folder> --cases tests/ask/dev.toml` prints the ratios; heldout.toml holds
 # the sentences written blind, never used to tune.
 
@@ -29,7 +30,7 @@ status = ["Complete"]
 [[case]]
 text = "en retard mechanical"   # "mechanical" names the node and activities: the node, and a search in it
 wbs = "MEC"
-float = ["Critical"]
+clauses = ["late"]   # late = total float < 0 (Oracle 47223), not Critical
 search = "mechanical"
 
 [[case]]
@@ -50,7 +51,7 @@ resources = ["CREW"]
 [[case]]
 text = "jalons en retard"
 milestones = true
-float = ["Critical"]
+clauses = ["late"]
 
 [[case]]
 text = "hamacs vendor"
@@ -117,9 +118,8 @@ wbs = "COM"
 status = ["Not started"]
 
 [[case]]
-text = "ce qui bloque la fin du lot électricité"
+text = "ce qui bloque la fin du lot électricité"   # "bloque" has no P6 meaning: named, not read as Critical
 wbs = "MEC"
-float = ["Critical"]
 
 [[case]]
 text = "fondations"    # a synonym of an own word of Civil works
@@ -129,7 +129,7 @@ search = "foundations"
 [[case]]
 text = "achats en retard"
 wbs = "PRC"
-float = ["Critical"]
+clauses = ["late"]
 
 [[case]]
 text = "fournisseur en cours"
