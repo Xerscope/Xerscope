@@ -1278,9 +1278,10 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
 
 def _baseline_identity(ev_basis: bool = True) -> tuple:
     """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
-    with the GUID link option, and, for an uploaded file, its bytes."""
+    with the GUID link option (always: ``baseline_for`` relinks the baseline whatever the analysis
+    reads), and, for an uploaded file, its bytes."""
     baseline = st.session_state.get("baseline")
-    basis = (st.session_state.get("ev_basis"), st.session_state.get("guid_link", False)) if ev_basis else None
+    basis = (st.session_state.get("ev_basis") if ev_basis else None, st.session_state.get("guid_link", False))
     if isinstance(baseline, Baseline):
         return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names

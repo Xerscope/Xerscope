@@ -488,3 +488,50 @@ def test_overview_shows_the_scores_schedule_health_computed_without_running_a_ch
     assert not app.exception and len(runs) == computed
     assert not [b for b in app.button if b.key == "overview_scores"]
     assert _score_cards(app) == health == _expected_scores(app, store)
+
+
+# --- the GUID link option -------------------------------------------------------------------------
+
+
+def _missed_tasks_script():
+    import streamlit as st
+
+    from xerscope.app.state import data_identity, metric_result
+
+    store = st.session_state["store"]
+    st.session_state["identity"] = data_identity(ev_basis=False)  # the score job's identity starts with it
+    st.session_state["denominator"] = metric_result(st.session_state["metric"], store.latest, store).denominator
+
+
+def test_ticking_the_guid_link_gives_the_checks_of_the_linked_baseline():
+    """Baseline A (done by 03-06) and B; the update renumbers A as A2 (same GUID). DCMA-11 counts the
+    tasks due in the baseline that are in the update: unlinked, A is deleted (1: B); linked, A2 takes
+    A's baseline row (2). The cached result follows the option, as a fresh calculation does."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis.baseline import relinked
+
+    week = {"target_start_date": "2026-03-02 08:00", "target_end_date": "2026-03-06 17:00"}
+    finished = {**week, "act_start_date": "2026-03-02 08:00", "act_end_date": "2026-03-06 17:00"}
+    finished["status_code"] = "TK_Complete"
+    first = snap([todo("A", guid="g1", **finished), todo("B", guid="g2", **week)], data_date="2026-03-02 08:00")
+    update = snap([todo("A2", guid="g1", **finished), todo("B", guid="g2", **week)], data_date="2026-03-16 08:00")
+    first, update = dataclasses.replace(first, source="a.xer"), dataclasses.replace(update, source="b.xer")
+    store = SnapshotStore([first, update])
+    missed = builtin_standards()["DCMA"]["DCMA-11"]
+    baseline = Baseline.from_snapshot(first)
+    at = AppTest.from_function(_missed_tasks_script, default_timeout=120)
+    at.session_state["store"] = store
+    at.session_state["signature"] = ("folder", "renumbered")
+    at.session_state["metric"] = missed
+    at.session_state["ev_basis"] = "budgeted_planned"
+    at.session_state["baseline"] = baseline
+    at.session_state["guid_link"] = False
+    at.run()
+    unlinked = at.session_state["identity"]
+    assert not at.exception and at.session_state["denominator"] == 1
+    at.session_state["guid_link"] = True
+    at.run()
+    fresh = run_metric(missed, AnalysisContext(update, store, relinked(baseline, update)))
+    assert not at.exception and at.session_state["denominator"] == fresh.denominator == 2
+    assert at.session_state["identity"] != unlinked
