@@ -44,12 +44,14 @@ p6_standard = standards()["P6"]
 try:
     frames = memo(
         ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
-        diagnostic.diagnostic_frames,
+        partial(
+            diagnostic.diagnostic_frames,
+            updates=[s.source for s in store],
+            guid_link=st.session_state.get("guid_link", False),
+        ),
         snapshot,
         baseline,
         p6_standard,
-        updates=[s.source for s in store],
-        guid_link=st.session_state.get("guid_link", False),
     )
 except CycleError as exc:
     st.error(f"Cannot schedule this file: {exc}", icon=":material/block:")
