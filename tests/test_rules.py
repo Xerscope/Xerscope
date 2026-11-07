@@ -1398,12 +1398,13 @@ def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
 def test_dcma_09_compares_dates_by_day_p6_by_timestamp():
     """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual finish
     on the status date, later in the day, is not beyond it. P6 Check Schedule keeps the timestamp
-    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference."""
+    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference. SAMEDAY,
+    completed on the status date's day, is also out of the population (§4.0), at the same grain: 1 / 2."""
     s = snap(
         [done("SAMEDAY", act_end_date="2026-03-02 12:00"), done("LATE", act_end_date="2026-03-03 09:00"), todo("FINE")]
     )
     r = run(DCMA, "DCMA-09", s)
-    assert (codes(r), r.denominator) == (["LATE"], 3)
+    assert (codes(r), r.denominator) == (["LATE"], 2)
     assert "day" in r.note
     assert codes(run(P6, "P6-10b", s)) == ["LATE", "SAMEDAY"]
 

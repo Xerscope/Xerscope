@@ -241,18 +241,23 @@ def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOu
 def dcma_09_invalid_dates(context, date_grain: Literal["timestamp", "day"] = "timestamp") -> RuleOutput:
     """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
-    Excludes: level of effort, milestones, tasks completed before the status date.
+    Excludes: level of effort, milestones, tasks completed on or before the status date.
 
     DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an
     actual start/finish beyond it, compared by calendar day as the pamphlet does ("on or before 8/1/09,
     not after 8/1/09"; ``date_grain``, "timestamp" being P6's reading); §4.0: LOE and milestones
     excluded. Completed tasks: §4.0 excludes them all, §4.9 flags an actual date beyond the status date,
-    so xerscope keeps the tasks completed on or after it (its reading of §4.9 over §4.0)
+    so xerscope keeps the tasks completed after it (its reading of §4.9 over §4.0), "after" read at
+    ``date_grain`` as the flag is: one finished on the status date's day is out
     """
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
-    funnel = _discrete_tasks(activity_funnel(context.snapshot)).exclude("complete_before_data_date", "PAM 200.1")
+    funnel = _discrete_tasks(activity_funnel(context.snapshot)).keep(
+        "not completed on or before the status date",
+        "PAM 200.1",
+        lambda rows: ~(rows["is_complete"] & ~actual_after(rows, data_date, date_grain)),
+    )
     tasks = funnel.rows
 
     forecast = forecast_before(tasks, data_date, date_grain)

@@ -96,6 +96,17 @@ def test_dcma_09_reads_actual_dates_by_day(dd):
 
 
 @pytest.mark.parametrize("dd", DD_HOURS)
+def test_dcma_09_leaves_out_tasks_completed_on_the_status_date_by_day(dd):
+    """PAM 200.1 §4.0 leaves completed tasks out; DCMA-09 keeps only those whose actual date is beyond
+    the status date (§4.9, "the actual start or finish date should be on or before 8/1/09"), at the same
+    calendar-day grain as its flags. F, finished Monday 12:00, is on the status date's day: out at any
+    hour of the data date. O, not started, forecast from Monday: in, not flagged. 0 / 1."""
+    s = snap([done("F", act_end_date=SAME_DAY), todo("O", early_start_date=at("17:00"))], data_date=at(dd))
+    r = run(DCMA, "DCMA-09", s)
+    assert (codes(r), r.denominator) == ([], 1)
+
+
+@pytest.mark.parametrize("dd", DD_HOURS)
 @pytest.mark.parametrize(("std", "metric_id"), [(P6, "P6-10a"), (DECM, "06A506b")], ids=["P6-10a 101248", "06A506b"])
 def test_forecast_start_same_day_is_compared_by_timestamp(std, metric_id, dd):
     """101248: "Invalid dates for not started activities are start dates earlier than the data date";
