@@ -25,9 +25,12 @@ Allowlist, table by table (column meanings: Oracle "XER Import/Export Data Map G
 Any other column is emptied and any other table left out; both are reported by name. The
 ERMHDR line loses the exporting user, his full name and the database name.
 
-Before a file or a table is handed out, every one of its fields is compared with every text
-value of the originals that was not kept, and searched for every original code
-(``Anonymizer.leaks``): one match and it is refused.
+Before a file or a table is handed out, every one of its fields and column names is compared
+with every text value of the originals that was not kept, searched for those values inside it
+(between a letter or digit and anything else: "calendar 'Night Shift' has no working time")
+and for every original code anywhere (``Anonymizer.leaks``): one match and it is refused. The
+notes of the rules are the one free text copied out: a value of the originals found inside one
+(an error message naming a calendar) is replaced by ``HIDDEN``.
 The names of the source files (``PROJ-01.xer``) and their stems (``PROJ-01``) are refused the same
 way, but anywhere in a field: they carry the project code and are written into labels
 ("planned dates of <date> · <file>").
@@ -42,7 +45,7 @@ import io
 import re
 import secrets
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -149,6 +152,10 @@ GENERIC_FILE_STEMS = frozenset(
      "file", "files", "planned", "current", "target", "programme", "program", "planning", "xer", "p6"}
 )  # fmt: skip
 GENERIC_HEADER = frozenset({"Project", "Project Management", "dbxDatabaseNoName"})
+# Words the anonymiser writes itself (label prefixes, header): a file value equal to one (a financial
+# period template named "Calendar") is still refused whole, not searched inside "Calendar 638".
+OWN_WORDS = frozenset({prefix for prefix, _ in LABELS.values()} | {"Project", "ANON", "file"})
+HIDDEN = "[hidden]"  # what replaces a value of the originals found inside a note
 
 
 PROJECT_ID_IN_NOTE = re.compile(r"(?<!\w)proj_id (\d+)")  # Baseline.source: "(proj_id 370, last update …)"
@@ -275,11 +282,13 @@ class Anonymizer:
         found: dict[str, int] = {}
         values = list(fields)
         inside: dict[str, str | None] = {}
+        longest = max(map(len, self.secrets_), default=0)
         for value in values:
             origin = self.secrets_.get(value.strip())
             if origin is None and value not in self.kept and _is_text(value):
                 if value not in inside:
-                    inside[value] = self._code_inside(value)
+                    secret = next(self._secrets_inside(value, longest), None)
+                    inside[value] = self._code_inside(value) or (self.secrets_[secret] if secret else None)
                 origin = inside[value]
             if origin is not None:
                 found[origin] = found.get(origin, 0) + 1
@@ -291,6 +300,19 @@ class Anonymizer:
             if hits:
                 found["file name"] = max(found.get("file name", 0), hits)
         return found
+
+    def _secrets_inside(self, value: str, longest: int) -> Iterator[str]:
+        """Text values of the originals inside ``value`` (not ``value`` itself), each starting and
+        ending where a run of letters and digits does: "Night Shift" in "calendar 'Night Shift' has
+        no working time", not "Shift" in "Shifts"."""
+        bounds = [p for p in range(len(value) + 1) if p in (0, len(value)) or not value[p - 1 : p + 1].isalnum()]
+        for i, start in enumerate(bounds):
+            for end in bounds[i + 1 :]:
+                if end - start > longest:
+                    break
+                part = value[start:end]
+                if end - start >= 3 and part != value and part in self.secrets_ and part not in OWN_WORDS:
+                    yield part
 
     def _code_inside(self, value: str) -> str | None:
         """Where the original code found inside ``value`` came from ("Activity C3050", "XA69C30507")."""
@@ -452,6 +474,7 @@ class Anonymizer:
             if out is None:
                 continue
             lines += [f"%T\t{name}", "\t".join(["%F", *out.columns])]
+            fields.extend(out.columns)
             for row in out.itertuples(index=False):
                 lines.append("\t".join(["%R", *row]))
                 fields.extend(row)
@@ -485,8 +508,9 @@ class Anonymizer:
 
     def _notes(self, notes: pd.Series) -> list[str]:
         """The notes of the rules: they name an activity by its Activity ID, a file by its name
-        (``Baseline.label``) and a project by its id ("proj_id 370", ``Baseline.source``), nothing
-        else; all three are renamed."""
+        (``Baseline.label``) and a project by its id ("proj_id 370", ``Baseline.source``); all three
+        are renamed. A note can also copy an error message (``checks.run_metric``): any other value
+        of the originals in it is hidden."""
         names = dict(self.codes.get("A", {}))
         names.update({stem: "file" for stem, origin in self.secrets_.items() if origin == "file name"})
         texts = [
@@ -495,11 +519,23 @@ class Anonymizer:
             else ""
             for note in notes
         ]
-        if not names:
-            return texts
-        found = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
-        pattern = re.compile(rf"(?<![\w.-])(?:{found})(?![\w-])")
-        return [pattern.sub(lambda match: names[match.group(0)], note) for note in texts]
+        if names:
+            found = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+            pattern = re.compile(rf"(?<![\w.-])(?:{found})(?![\w-])")
+            texts = [pattern.sub(lambda match: names[match.group(0)], note) for note in texts]
+        longest = max(map(len, self.secrets_), default=0)
+        return [self._hide(note, longest) for note in texts]
+
+    def _hide(self, note: str, longest: int) -> str:
+        """``note`` with every text value of the originals found in it replaced by ``HIDDEN``, longest
+        first: an error message copied into a note names what it failed on."""
+        if not _is_text(note):
+            return note
+        if note in self.secrets_ and note not in OWN_WORDS:
+            return HIDDEN
+        for secret in sorted(set(self._secrets_inside(note, longest)), key=len, reverse=True):
+            note = note.replace(secret, HIDDEN)
+        return note
 
     def _code_list(self, text: object) -> str:
         if not isinstance(text, str) or not text:
@@ -541,7 +577,8 @@ class Anonymizer:
             if column in frame.columns:
                 codes = out[source] if source in out.columns else pd.Series("", index=out.index)
                 out[column] = [f"Activity {code}" if code else "" for code in codes]
-        self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), "table")
+        cells = (str(value) for value in out.astype(str).to_numpy().ravel())
+        self._refuse_leaks([*map(str, out.columns), *cells], "table")
         return out
 
     def csv(self, frame: pd.DataFrame) -> bytes:
@@ -594,7 +631,8 @@ class Anonymizer:
             for column in self.DIAGNOSTIC_MONEY:
                 if column in out.columns:
                     out[column] = [self._zeroed(value) for value in out[column]]
-            self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), f"table {name}")
+            cells = (str(value) for value in out.astype(str).to_numpy().ravel())
+            self._refuse_leaks([*map(str, out.columns), *cells], f"table {name}")
             outputs[f"{name}.csv"] = csv_bytes(out)
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:

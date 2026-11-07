@@ -593,3 +593,63 @@ def test_a_new_project_id_equal_to_an_original_is_drawn_again():
     raw = parse_text(xer_text([todo("A1")], project={"sum_base_proj_id": first_draw}), source="x.xer")
     anonymizer = Anonymizer.from_raws([raw], key=key)
     assert anonymizer.project_ids["1"] not in {"1", first_draw}
+
+
+# --- free text: names inside a sentence, column names, error messages ------------------------------
+
+CALENDAR_NAME = "Acme Client Night Shift"
+
+
+def _named_file():
+    """A file whose calendar and one activity carry names the outputs must not hold."""
+    raw = parse_text(_file([todo("PUMP-7", task_name="Pour slab level three")]), source="x.xer")
+    raw.tables["CALENDAR"]["clndr_name"] = CALENDAR_NAME
+    return raw
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        pd.DataFrame({"task_code": ["PUMP-7"], "reason": ["blocked by Pour slab level three (FS)"]}),
+        pd.DataFrame({"task_code": ["PUMP-7"], "Pour slab level three": [1]}),
+        pd.DataFrame({"task_code": ["PUMP-7"], "status": [f"calendar '{CALENDAR_NAME}' has no working time"]}),
+    ],
+    ids=["inside a kept text", "column name", "inside a status"],
+)
+def test_a_name_inside_a_cell_or_a_column_name_is_refused(table):
+    anonymizer = Anonymizer.from_raws([_named_file()])
+    with pytest.raises(LeakError):
+        anonymizer.frame(table)
+    with pytest.raises(LeakError):
+        anonymizer.zip_frames({"block": table})
+
+
+def test_a_word_inside_a_longer_word_is_not_a_name():
+    """Searched between a letter or digit and anything else: "Night" is not inside "Nightly"."""
+    raw = parse_text(_file([todo("A1", task_name="Night")]), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    assert anonymizer.leaks(["Nightly works", "overnight"]) == {}
+    assert anonymizer.leaks(["works at Night (2)"]) == {"TASK.task_name": 1}
+
+
+def test_an_error_message_naming_a_calendar_leaves_with_the_name_hidden(monkeypatch):
+    """A rule that raises: run_metric copies the message into the note (ValueError of
+    WorkCalendar, "calendar '<clndr_name>' has no working time"). The summary CSV keeps the error
+    and hides the name."""
+    from dataclasses import replace
+
+    from xerscope.analysis.checks import results_frame, run_metric
+    from xerscope.analysis.rules import RULES
+
+    raw = _named_file()
+    metric = STANDARDS["P6"].metrics[0]
+
+    def fails(context, **params):
+        raise ValueError(f"calendar {CALENDAR_NAME!r} has no working time")
+
+    monkeypatch.setitem(RULES, metric.rule, replace(RULES[metric.rule], fn=fails))
+    result = run_metric(metric, AnalysisContext(build_snapshot(raw)))
+    assert result.status == "error" and CALENDAR_NAME in result.note
+    text = Anonymizer.from_raws([raw]).csv(results_frame([result])).decode("utf-8-sig")
+    assert CALENDAR_NAME not in text and "Night Shift" not in text
+    assert "ValueError: calendar '[hidden]' has no working time" in text
