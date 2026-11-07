@@ -52,6 +52,12 @@ A P6 Professional 26.8 report on the synthetic project of `tests/test_p6_checksc
 anyone can rebuild, shows the same three populations. P6-04: 1 / 11, its 14 activities less 2
 milestones and 1 completed. P6-12: 2 / 11, the completed activity out. P6-13: BEI 1 / 12, every
 non-milestone activity, where 3 were due by the data date.
+Unresolved: both reports measure a project that is its own baseline. Ten Six reads an r22.12 report
+with a separate baseline at 6 / 6 where 11 were due (https://tensix.com/using-the-p6-check-schedule-tool/),
+which fits neither the help text nor these reports. The P6 26.8 report of a project with a separate
+baseline assigned, holding a baseline activity that finishes after the data date and one finished early,
+settles whether every baseline activity is counted there too. Without a data date P6-13 stays n/a: the
+help defines it against the data date and no report exists for that case.
 Invalid Progress Dates is one check of the dialog but two lines of the report (before / after the data
 date, each with its own target, P6 Professional 26.8): P6-10a and P6-10b.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
