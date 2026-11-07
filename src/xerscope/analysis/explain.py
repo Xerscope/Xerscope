@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from ..xer import Snapshot
 from ..xer.model import CONSTRAINT
 from .checks import CheckResult, fmt_value
 from .populations import EXCLUSIONS
@@ -249,6 +250,20 @@ def explain(result: CheckResult) -> Explanation:
     )
 
 
+def critical_definition(snapshot: Snapshot, default_days: float) -> str:
+    """What ``is_critical`` counts in this update (xer/model.py): the project's critical path
+    type (PROJECT.critical_path_type), longest path or total float <= threshold
+    (PROJECT.critical_drtn_hr_cnt, else ``default_days``, the Settings the file was read with)."""
+    options = snapshot.options
+    if options.get("critical_path_type") == "CT_DrivPath":
+        rule = "on the longest path (P6 Longest Path flag)"
+    elif options.get("critical_float_hr") is not None:
+        rule = f"total float ≤ {options['critical_float_hr']:g} h"
+    else:
+        rule = f"total float ≤ {default_days:g} d"
+    return f"Open tasks (LOE and milestones included) {rule}"
+
+
 # Page figures (ui.kpis ``formulas``): label -> standard -> how it is computed. The page's own
 # calculation (docs/formulas.md) first, under the name of the standard it follows; a second line
 # where another standard words the same figure otherwise. Sources are in docs/formulas.md.
@@ -256,6 +271,8 @@ P6 = "P6 Professional"
 EVMS = "DCMA EVMS (EIA-748)"
 LPS = "Last Planner (PPC)"
 XS = "xerscope"
+
+
 KPI_FORMULAS: dict[str, dict[str, str]] = {
     "Forecast finish": {P6: "Latest Finish of the project's activities (actual, else remaining, else early finish)"},
     "Shift since first update": {
