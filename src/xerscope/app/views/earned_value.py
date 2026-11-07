@@ -357,7 +357,10 @@ if baseline.bac_hours <= 0:
     )
     st.stop()
 
-cache_key = ("evm", baseline.label, baseline.ev_basis)  # "planned dates" baselines differ per update
+# which baseline: its label alone is not unique (two baselines of one P6 XML export with the same data
+# date); its source and the project it was read from are ("planned dates" baselines differ per update)
+identity = (baseline.label, baseline.source, baseline.snapshot.source, baseline.snapshot.project_id)
+cache_key = ("evm", *identity, baseline.ev_basis)
 curve = memo(cache_key + ("pv", snapshot.source, str(snapshot.data_date)), pv_curve, baseline, snapshot)
 series = memo(
     cache_key + ("series",),

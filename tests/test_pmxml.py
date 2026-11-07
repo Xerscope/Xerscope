@@ -209,3 +209,40 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
     at.session_state["anon_exports"] = False
     plain = ev_csv(at.switch_page("views/earned_value.py").run())
     assert b"ZZGONE" in plain  # the test exercises the case: the plain download does list it
+
+
+def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(tmp_path, monkeypatch):
+    """a.xer names Project Baseline 370 (A1, 40 h), b.xer 380 (A1 and A2, 80 h); both baselines of the
+    XML export have the same data date, so the same label. The Earned value page of b, opened after
+    a's, measures b against 380: BAC 80 h, not a's cached 40 h."""
+    from pathlib import Path
+
+    from conftest import baseline_box, read_folder
+    from file_projects import two_projects
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app.state import BL_EACH, BL_FILE
+
+    data = tmp_path / "updates"
+    data.mkdir()
+    (data / "a.xer").write_text(two_projects(pointer="370", with_baseline=False, data_date="2026-03-02 08:00"))
+    (data / "b.xer").write_text(two_projects(pointer="380", with_baseline=False, data_date="2026-03-09 08:00"))
+    (tmp_path / "export.xml").write_bytes(TWO)
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(tmp_path / "export.xml"))
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_fallback").select(BL_FILE)
+    at.switch_page("views/earned_value.py").run()
+    bac = {}
+    for stamp in ("2026-03-02", "2026-03-09"):
+        picker = at.selectbox(key="ev_snap")
+        picker.select(next(option for option in picker.options if option.startswith(stamp)))
+        at.run()
+        assert not at.exception, [e.value for e in at.exception]
+        (table,) = [frame.value for frame in at.dataframe if "measure" in frame.value]
+        bac[stamp] = table.loc[table["measure"] == "BAC", "this update"].iloc[0]
+    assert bac == {"2026-03-02": "40.0 h", "2026-03-09": "80.0 h"}
