@@ -18,6 +18,10 @@ from xerscope.config import DATETIME_FMT
 from xerscope.viz.charts import build_activity_dates, build_activity_float
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
+# The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
+# on, Finish on or before, Mandatory start / finish); P6-02 counts a narrower set. The label says which.
+HARD_CONSTRAINT_LABEL = "Hard constraint (DCMA-05 set)"
+
 ROW_PREFIX = "a:"  # Gantt row id of an activity (viz/gantt.py); "w:" is a WBS row
 MAX_ID = 200  # characters: longer than any Activity ID P6 stores, shorter than a forged payload
 
@@ -135,7 +139,7 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
             [
                 ("Primary constraint", _constraint(task["cstr_type"], task["cstr_date"])),
                 ("Secondary constraint", _constraint(task["cstr_type2"], task["cstr_date2"])),
-                ("Hard constraint", _yes(task["has_hard_constraint"])),
+                (HARD_CONSTRAINT_LABEL, _yes(task["has_hard_constraint"])),
             ],
         ),
     ]
