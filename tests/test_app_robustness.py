@@ -157,3 +157,27 @@ def test_two_uploads_of_the_same_name_are_refused_until_one_is_unticked(sample_d
     _ok(at)
     (read,) = at.session_state["store"]
     assert read.source == "a.xer" and read.data_date == load_snapshot(first.read_bytes(), name="a.xer").data_date
+
+
+def test_a_check_that_errors_is_counted_as_an_error_not_as_not_applicable(app, monkeypatch):
+    """A rule that raises is a defect of the check, not a check with no population: the KPIs count it
+    under Errors, as the Results table does, and its header shows "error"."""
+    from dataclasses import replace
+
+    from xerscope.analysis import builtin_standards
+    from xerscope.analysis.rules import RULES
+
+    def boom(context, **params):
+        raise ValueError("rule failed")
+
+    name = builtin_standards()["P6"]["P6-01"].rule
+    monkeypatch.setitem(RULES, name, replace(RULES[name], fn=boom))
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+    _ok(app)
+    status = app.dataframe[0].value["status"]
+    shown = {metric.label: metric.value for metric in app.metric}
+    assert (status == "Error").sum() == 1 and shown["Errors"] == "1"
+    assert shown["Not applicable"] == str((status == "N/A").sum())
+    (header,) = [e.label for e in app.expander if "P6-01" in e.label]
+    assert "— error" in header

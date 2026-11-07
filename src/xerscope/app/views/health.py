@@ -70,11 +70,12 @@ def show_kpis(results, standard) -> None:
             ("Checks passed", f"{int(counts.get('pass', 0))} / {scored}", None, "Checks with a target that meet it"),
             ("Checks failed", int(counts.get("fail", 0)), None, "Checks with a target that miss it"),
             ("For review", int(counts.get("info", 0)), None, "Reported without a pass/fail target"),
-            (
-                "Not applicable",
-                int(counts.get("n/a", 0) + counts.get("error", 0)),
-                None,
-                "No population, or no baseline",
+            ("Not applicable", int(counts.get("n/a", 0)), None, "No population, or no baseline"),
+            # a rule that raised: a defect of the check, shown apart from n/a, only when there is one
+            *(
+                [("Errors", int(counts["error"]), None, "Checks that could not be computed: see their note")]
+                if counts.get("error", 0)
+                else []
             ),
         ]
     )
@@ -235,7 +236,7 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
     metric = result.metric
     row = results_frame([result]).iloc[0]
     counts = f" ({row['count']})" if result.numerator is not None and result.denominator else ""
-    value = "n/a" if result.status in ("n/a", "error") else row["result"]
+    value = result.status if result.status in ("n/a", "error") else row["result"]
     label = (
         f"{ui.STATUS_STYLE[result.status].mark}  {metric.id} · **{metric.name}** — {value}{counts}"
         f" · target {typeset(row['target'])}"
