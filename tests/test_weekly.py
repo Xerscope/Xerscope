@@ -681,6 +681,28 @@ def test_mta_drops_a_milestone_complete_before_the_data_date(tmp_path):
     assert s.loc["M1", "updates"] == 3  # the table keeps every update
 
 
+def test_mta_marks_a_deleted_milestone_and_leaves_it_out_of_the_open_ones():
+    """M1 moves Fri 10 -> Fri 17 April in the second update and is deleted in the third. It
+    is not open: it is deleted, as the changelog says. Its last move (+5 wd) dates from two
+    updates back, not from the last one: the last update has no move for it. M2 holds."""
+    weeks = {
+        "2026-03-02 08:00": [todo("M1", early_end_date="2026-04-10 17:00", **FM)],
+        "2026-03-09 08:00": [todo("M1", early_end_date="2026-04-17 17:00", **FM)],
+        "2026-03-16 08:00": [],
+    }
+    updates = [
+        snap([*tasks, todo("M2", early_end_date="2026-04-10 17:00", **FM)], data_date=dd) for dd, tasks in weeks.items()
+    ]
+    store = SnapshotStore(updates)
+    s = milestone_slips(milestone_trend(store), store).set_index("task_code")
+    assert s["deleted"].to_dict() == {"M1": True, "M2": False}
+    assert s.loc["M1", "slip_wd"] == 5  # 10 -> 17 April while it existed
+    assert pd.isna(s.loc["M1", "last_week_wd"])
+    assert s.loc["M2", "last_week_wd"] == 0
+    assert milestone_codes(store, open_only=True) == ["M2"]
+    assert milestone_codes(store) == ["M2", "M1"]  # the trend still draws its history
+
+
 def test_changelog_lists_assignment_changes():
     res = [
         {"rsrc_id": "R1", "rsrc_short_name": "CRANE", "rsrc_type": "RT_Equip", "clndr_id": "C8"},

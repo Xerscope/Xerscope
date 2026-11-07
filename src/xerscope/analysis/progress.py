@@ -34,12 +34,14 @@ from ..xer import Snapshot
 def milestone_codes(store: SnapshotStore, open_only: bool = False) -> list[str]:
     """Milestones present in any update, ordered by their latest forecast.
 
-    `open_only` keeps those not complete in the last update that holds them.
+    `open_only` keeps those in the latest update and not complete there (a deleted milestone
+    is not open).
     """
     history = store.history
     milestones = history[history["is_milestone"]].sort_values("snapshot_idx").groupby("task_code").last()
     if open_only:
-        milestones = milestones[~milestones["is_complete"].astype(bool)]
+        in_latest = milestones.index.isin(store.latest.by_code.index)
+        milestones = milestones[in_latest & ~milestones["is_complete"].astype(bool)]
     return milestones.sort_values("finish").index.tolist()
 
 
@@ -68,7 +70,10 @@ def plotted_trend(trend: pd.DataFrame) -> pd.DataFrame:
 
 
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
-    """First vs latest forecast per milestone, in working days of its own calendar (latest update)."""
+    """First vs latest forecast per milestone, in working days of its own calendar (latest update).
+
+    ``deleted``: not in the latest update (the changelog's Scope / deleted); its last move is
+    blank, the latest update having none for it."""
     latest = store.latest
     calendar_ids = latest.by_code["clndr_id"]
     by_milestone = trend.groupby("task_code")
@@ -82,6 +87,7 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
             "updates": by_milestone.size(),
         }
     )
+    slips["deleted"] = ~slips.index.isin(latest.by_code.index)
     slips["slip_wd"] = [
         round(latest.activity_working_days(calendar_ids.get(code), first, latest_forecast), 1)
         for code, first, latest_forecast in zip(
@@ -102,6 +108,7 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
         else 0.0
         for code in slips.index
     ]
+    slips["last_week_wd"] = slips["last_week_wd"].mask(slips["deleted"])
     return slips.reset_index().sort_values("latest_forecast")
 
 
