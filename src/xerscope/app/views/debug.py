@@ -48,6 +48,8 @@ try:
         snapshot,
         baseline,
         p6_standard,
+        updates=[s.source for s in store],
+        guid_link=st.session_state.get("guid_link", False),
     )
 except CycleError as exc:
     st.error(f"Cannot schedule this file: {exc}", icon=":material/block:")
@@ -312,7 +314,17 @@ def build_diagnostic(anonymous: bool) -> None:
         st.session_state,
         lambda: zip_frames({**frames, **p6_frames}, "csv"),
         lambda anonymizer: anonymizer.zip_frames(
-            {**diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True), **p6_frames}
+            {
+                **diagnostic.diagnostic_frames(
+                    snapshot,
+                    baseline,
+                    p6_standard,
+                    anonymous=True,
+                    updates=[s.source for s in store],
+                    guid_link=st.session_state.get("guid_link", False),
+                ),
+                **p6_frames,
+            }
         ),
         sources,
         prepare=True,

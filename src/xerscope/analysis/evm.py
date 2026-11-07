@@ -273,7 +273,8 @@ def planned_value_cost(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
 
 
 PV_LABOR_COLUMNS = [
-    "data_date", "activities", "assignments", "labor_assignments", "labor_assignments_with_curve",
+    "data_date", "ev_basis", "baseline_activities", "activities", "deleted_activities",
+    "assignments", "labor_assignments", "labor_assignments_with_curve",
     "bl_hr_with_curve", "bac_activity_hr", "bac_assignment_hr", "pv_activity_hr", "pv_assignment_hr", "gap_hr",
     "pv_calendar_time_hr", "pv_end_of_day_hr", "pv_calendar_time_end_of_day_hr",
 ]  # fmt: skip
@@ -292,7 +293,8 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     are counted. ``gap_hr`` = assignment - activity. Variants of the activity value, to tell which
     convention P6 uses: ``pv_calendar_time_hr`` (Schedule % in calendar time, the glossary writes a
     date difference), ``pv_end_of_day_hr`` (working time, at the end of the data date's day) and
-    both together. Baseline activities the update holds, as ``ev_point``. Returns the totals (one
+    both together. Baseline activities the update holds, as ``ev_point`` (``activities``, of
+    ``baseline_activities``; ``deleted_activities`` left out), on ``ev_basis``. Returns the totals (one
     row) and the split by Schedule % (0 not started, 100 complete). No activity code in either.
     """
     if baseline is None or snapshot.data_date is None:
@@ -324,7 +326,10 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
         [
             {
                 "data_date": snapshot.data_date,
+                "ev_basis": baseline.ev_basis,
+                "baseline_activities": len(baseline.frame),
                 "activities": len(values),
+                "deleted_activities": len(baseline.frame) - len(values),
                 "assignments": len(costs),
                 "labor_assignments": len(labor),
                 "labor_assignments_with_curve": len(curved),
