@@ -439,7 +439,8 @@ def _with_note(texts: list[str], notes: pd.Series) -> list[str]:
 
 
 def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
-    """Bars: PPC (finishes kept / committed, Last Planner). Lines: PPC Start and PPC all commitments.
+    """Bars: PPC Finish (finishes kept / committed, Last Planner). Lines: PPC Start and PPC W/W-1
+    (starts and finishes together).
 
     A point with a ``note`` (`ppc_series`: more than a week since the previous update) has a
     hatched bar and the note in every hover of that week. A week with no finish committed has
@@ -463,13 +464,13 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
             cliponaxis=False,
             marker=dict(color=c[0], cornerradius=4, pattern=dict(shape=["/" if n else "" for n in noted])),
             width=0.6,
-            name="PPC (finishes)",
-            hovertemplate="Week to %{x}: finishes %{customdata}<extra></extra>",
+            name="PPC Finish",
+            hovertemplate="Week to %{x}: PPC Finish %{customdata}<extra></extra>",
         )
     )
     for column, kept, committed, name, colour in (
         ("ppc_start", "starts_kept", "starts_committed", "PPC Start", c[2]),
-        ("ppc_week", "kept", "committed", "PPC all commitments", c[1]),
+        ("ppc_week", "kept", "committed", "PPC W/W−1", c[1]),
     ):
         fig.add_trace(
             go.Scatter(
@@ -481,7 +482,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
                 marker=dict(size=7),
                 connectgaps=False,
                 customdata=_with_note(_ppc_text(p[column], p[kept], p[committed]), p["note"]),
-                hovertemplate="Week to %{x}: " + name.lower() + " %{customdata}<extra></extra>",
+                hovertemplate="Week to %{x}: " + name + " %{customdata}<extra></extra>",
             )
         )
     critical = STATUS["critical"]

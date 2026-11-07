@@ -154,7 +154,7 @@ def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
     frame["ppc_week"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
     fig = build_ppc(frame, 80)
     assert [t.type for t in fig.data] == ["bar", "scatter", "scatter"]
-    assert [t.name for t in fig.data] == ["PPC (finishes)", "PPC Start", "PPC all commitments"]
+    assert [t.name for t in fig.data] == ["PPC Finish", "PPC Start", "PPC W/W−1"]
     assert list(fig.data[0].y) == [50.0, None] and fig.data[0].customdata[0] == "50% (1/2)"
     assert fig.data[1].y[0] == pytest.approx(200 / 3) and fig.data[1].customdata[0] == "67% (2/3)"
     assert fig.data[2].y[0] == 60.0 and fig.data[2].customdata[0] == "60% (3/5)"

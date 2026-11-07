@@ -132,9 +132,9 @@ def test_ppc_kpis_equal_ppc_series(app, store):
         row, shown = series.loc[index], _metrics(app)
         assert shown["Finishes kept"] == f"{row['finishes_kept']} / {row['finishes_committed']}", label
         assert shown["Starts kept"] == f"{row['starts_kept']} / {row['starts_committed']}", label
-        tiles = (("PPC this week", "ppc_finish"), ("PPC Start", "ppc_start"), ("PPC all commitments", "ppc_week"))
+        tiles = (("PPC Start", "ppc_start"), ("PPC Finish", "ppc_finish"), ("PPC W/W−1", "ppc_week"))
         for tile, column in tiles:
-            assert shown[tile] == ("–" if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
+            assert shown[tile] == ("n/a" if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
 
 
 def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
@@ -152,8 +152,8 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     at.switch_page("views/ppc.py")
     _run(at)
     shown = _metrics(at)
-    assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC this week"]) == ("1 / 2", "1 / 2", "50 %")
-    assert (shown["PPC Start"], shown["PPC all commitments"]) == ("50 %", "50 %")
+    assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC Finish"]) == ("1 / 2", "1 / 2", "50 %")
+    assert (shown["PPC Start"], shown["PPC W/W−1"]) == ("50 %", "50 %")
 
 
 def test_overview_kpis_equal_store_summary(app, store):

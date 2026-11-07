@@ -19,6 +19,19 @@ COMMITMENT_COLUMNS = [
     "wbs_code",
     "in_update",
 ]
+PPC_COLUMNS = [
+    "data_date",
+    "starts_kept",
+    "starts_committed",
+    "ppc_start",
+    "finishes_kept",
+    "finishes_committed",
+    "ppc_finish",
+    "kept",
+    "committed",
+    "ppc_week",
+    "note",
+]
 WBS_COLUMNS = ["wbs_code", "progress_pts", "earned_hr_week", "actual_hr_week", "budget_hr", "activities_progressed"]
 ACTIVITY_COLUMNS = [
     "task_code",
@@ -38,41 +51,56 @@ ACTIVITY_COLUMNS = [
 
 
 def _pct(value) -> str:
-    return "–" if pd.isna(value) else f"{value:.0f} %"
+    return "n/a" if pd.isna(value) else f"{value:.0f} %"
+
+
+def show_ppc_weeks(ppc: pd.DataFrame) -> None:
+    with st.expander("Every week: counts behind the three PPC"):
+        count = st.column_config.NumberColumn
+        ui.table(
+            ppc.sort_values("data_date", ascending=False),
+            columns=PPC_COLUMNS,
+            overrides={
+                "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
+                "kept": count("Kept (starts + finishes)", format="%d"),
+                "committed": count("Committed (starts + finishes)", format="%d"),
+            },
+        )
 
 
 def show_kpis(week: pd.Series, project_progress: pd.Series) -> None:
     ui.kpis(
         [
             (
-                "PPC this week",
-                _pct(week["ppc_finish"]),
-                None,
-                "Finishes kept / finishes committed (Last Planner: complete / planned), milestones left out",
-            ),
-            (
                 "PPC Start",
                 _pct(week["ppc_start"]),
                 None,
-                "Starts kept / starts committed",
+                "Starts kept / starts committed; n/a when nothing was due to start",
             ),
             (
-                "PPC all commitments",
+                "PPC Finish",
+                _pct(week["ppc_finish"]),
+                None,
+                "Finishes kept / finishes committed (Last Planner: complete / planned); n/a when nothing "
+                "was due to finish",
+            ),
+            (
+                "PPC W/W−1",
                 _pct(week["ppc_week"]),
                 None,
-                "Finishes and starts kept / finishes and starts committed",
-            ),
-            (
-                "Finishes kept",
-                f"{week['finishes_kept']} / {week['finishes_committed']}",
-                None,
-                "Forecast at W−1 to finish before this status date, complete now (Last Planner PPC)",
+                "(Starts + finishes kept) / (starts + finishes committed); n/a when nothing was due",
             ),
             (
                 "Starts kept",
                 f"{week['starts_kept']} / {week['starts_committed']}",
                 None,
-                "Not started at W−1, forecast to start before this status date, started now",
+                "Not started at W−1, start at W−1 on or before this status date; actual start on or before it now",
+            ),
+            (
+                "Finishes kept",
+                f"{week['finishes_kept']} / {week['finishes_committed']}",
+                None,
+                "Not complete at W−1, finish at W−1 on or before this status date; actual finish on or before it now",
             ),
             (
                 "Project progress",
@@ -89,10 +117,9 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
     left, right = st.columns(2, gap="large")
     with left:
         formula = (
-            f"PPC = {week['finishes_kept']} finishes kept / {week['finishes_committed']} committed"
-            f" = {_pct(week['ppc_finish'])}; PPC Start = {week['starts_kept']} / {week['starts_committed']}"
-            f" = {_pct(week['ppc_start'])}; all commitments = {week['kept']} / {week['committed']}"
-            f" = {_pct(week['ppc_week'])}"
+            f"PPC Start = {week['starts_kept']} / {week['starts_committed']} = {_pct(week['ppc_start'])}; "
+            f"PPC Finish = {week['finishes_kept']} / {week['finishes_committed']} = {_pct(week['ppc_finish'])}; "
+            f"PPC W/W−1 = {week['kept']} / {week['committed']} = {_pct(week['ppc_week'])}"
         )
         if isinstance(week["note"], str):
             formula += f". {week['note']}"
@@ -133,14 +160,15 @@ with top:
         "PPC & weekly progress",
         store,
         current,
-        lead="PPC = of the finishes update W−1 forecast before W's status date, the share update W shows "
-        "complete (Last Planner: complete / planned); PPC Start the same for starts; all commitments = both "
-        "together. Milestones left out. Weekly progress = actual in W minus actual in W−1.",
+        lead="PPC Start = of the starts update W−1 planned on or before W's status date, the share W shows "
+        "actually started by then; PPC Finish the same for finishes (Last Planner: complete / planned); "
+        "PPC W/W−1 = both together. Milestones and LOE left out. Weekly progress = actual in W minus actual in W−1.",
     )
 
 ppc = memo(("ppc",), ppc_series, store, baseline=False)
 ui.section("Percent plan complete by week")
 st.plotly_chart(build_ppc(ppc, target), width="stretch")
+show_ppc_weeks(ppc)
 
 commitments = committed(previous, current)
 baseline = baseline_for(current)
