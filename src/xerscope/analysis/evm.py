@@ -289,10 +289,12 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     """Diagnostic, not used by any KPI: planned value labour units by activity (``earned`` pv_hr)
     against the same by assignment, at the data date.
 
-    By assignment (P6 Pro 26 glossary, "Planned Value Labor Units"): Σ ``target_qty`` of the
-    labour assignments x the share of their own start-to-finish elapsed, with the convention of the
+    By assignment: Σ ``target_qty`` of the labour assignments x the share of their own
+    start-to-finish elapsed, with the convention of the
     PV cost (``PV_COST_WORKING_TIME``); an activity without labour assignment keeps its activity
-    value. The glossary's resource-curve distribution is not modelled; assignments naming a curve
+    value. Not the P6 24 glossary ("Planned Value Labor Units"), which takes the activity's
+    Schedule % for assignments without a curve (docs/backlog.md): a diagnostic, to detect curves
+    and assignment dates. The curve distribution is not modelled; assignments naming a curve
     are counted. ``gap_hr`` = assignment - activity. Variants of the activity value, to tell which
     convention P6 uses: ``pv_calendar_time_hr`` (Schedule % in calendar time, the glossary writes a
     date difference), ``pv_end_of_day_hr`` (working time, at the end of the data date's day) and
