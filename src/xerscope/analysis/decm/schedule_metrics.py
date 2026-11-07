@@ -406,14 +406,17 @@ def decm_06a506a_actual_dates_after_status_date(context) -> RuleOutput:
 def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
     """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
+    Excludes: completed tasks.
 
     06A506b: X = 0, forecast on or before the status date (= before P6's status date); an incomplete
-    task is flagged when its start (not started) or its finish is before the status date
+    task is flagged when its start (not started) or its finish is before the status date. v8.0 block 6
+    counts "incomplete tasks/activities & milestones" and block 9 reads incomplete as "no actual finish
+    date in the IMS": a completed task has no forecast to check and is out of the population
     """
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
-    funnel = activity_funnel(context.snapshot)
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0")
     tasks = funnel.rows
     flagged = tasks[forecast_before(tasks, data_date)]
     return RuleOutput(

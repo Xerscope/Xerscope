@@ -1165,6 +1165,16 @@ def test_decm_actuals_changed_needs_the_previous_update():
     assert run_metric(DECM["06A504a"], AnalysisContext(week, SnapshotStore([w1, week]))).status == "n/a"  # 7 days
 
 
+def test_decm_06a506b_counts_incomplete_tasks_only():
+    """06A506b v8.0, block 6: "X = Count of incomplete tasks/activities & milestones with either forecast
+    start or" "forecast finish on or before the status date"; block 9: "Incomplete tasks/activities or
+    milestones equals no actual finish date in the IMS." D1, D2 finished: out. L, not started, forecast
+    start Fri 27 Feb before the data date (Mon 2 Mar 08:00): flagged. 1 / 1."""
+    s = snap([done("D1"), done("D2"), todo("L", early_start_date="2026-02-27 08:00")])
+    r = run(DECM, "06A506b", s)
+    assert (codes(r), r.denominator) == (["L"], 1)
+
+
 def test_decm_riding_the_status_date():
     from xerscope.store import SnapshotStore
 
