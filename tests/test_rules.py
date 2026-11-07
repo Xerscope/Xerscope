@@ -1079,6 +1079,23 @@ def test_decm_out_of_sequence_ignores_a_completed_predecessor():
     assert links(r) == [("P2", "S2")] and r.denominator == 1
 
 
+def test_decm_06a212a_threshold_is_a_count_of_zero():
+    """06A212a v8.0, block 6: "X = Count of out of sequence conditions"; block 7: "X = 0". One
+    condition among 100 links from incomplete predecessors (1 %) fails; none passes. T000..T100 run one
+    hour each, back to back."""
+    hour = pd.Timestamp("2026-03-02 08:00")
+    chain = [
+        todo(f"T{i:03}", early_start_date=f"{hour + pd.Timedelta(hours=i):%Y-%m-%d %H:%M}",
+             early_end_date=f"{hour + pd.Timedelta(hours=i + 1):%Y-%m-%d %H:%M}")
+        for i in range(101)
+    ]  # fmt: skip
+    in_sequence = [(f"T{i:03}", f"T{i + 1:03}", "FS", 0) for i in range(100)]
+    assert run(DECM, "06A212a", snap(chain, in_sequence)).status == "pass"
+    chain[100] = active("T100", act_start_date="2026-02-23 08:00")  # started before T099 finishes
+    r = run(DECM, "06A212a", snap(chain, in_sequence))
+    assert (links(r), r.denominator, r.status) == ([("T099", "T100")], 100, "fail")
+
+
 def test_decm_baseline_and_actual_dates():
     bl = Baseline.from_snapshot(snap([todo("A"), todo("B")]))
     now = snap(
