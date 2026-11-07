@@ -83,7 +83,7 @@ description = "Relationships whose successor started or finishes before the logi
 rule = "decm_06a212a_out_of_sequence"
 unit = "count"
 target = "<= 0"
-source = "06A212a v8.0 (8/21/2025): block 6 \"X = Count of out of sequence conditions\", block 7 \"X = 0\" (a count, not the X/Y <= 1% of the SSI index page); FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) < P.FS"
+source = "06A212a v8.0 (8/21/2025): block 6 \"X = Count of out of sequence conditions\", block 7 \"X = 0\" (a count, not the X/Y <= 1% of the SSI index page); LOE predecessors kept, the sheet does not set them apart (UNRESOLVED, also counted by 06A210a); FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) < P.FS"
 
 [[metric]]
 id = "06A401a"

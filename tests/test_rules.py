@@ -1079,6 +1079,15 @@ def test_decm_out_of_sequence_ignores_a_completed_predecessor():
     assert links(r) == [("P2", "S2")] and r.denominator == 1
 
 
+def test_decm_06a212a_keeps_a_level_of_effort_predecessor():
+    """UNRESOLVED (06A212a v8.0 does not mention LOE; block 10 takes "all the finish-to-start
+    relationships in the IMS containing an incomplete predecessor task/activity or milestone"). Pins the
+    current reading: LOE (to 13/03) -> A FS, A started 23/02: out of sequence."""
+    s = snap([active("LOE", task_type="TT_LOE"), active("A")], [("LOE", "A", "FS", 0)])
+    r = run(DECM, "06A212a", s)
+    assert (links(r), r.denominator) == ([("LOE", "A")], 1)
+
+
 def test_decm_06a212a_threshold_is_a_count_of_zero():
     """06A212a v8.0, block 6: "X = Count of out of sequence conditions"; block 7: "X = 0". One
     condition among 100 links from incomplete predecessors (1 %) fails; none passes. T000..T100 run one

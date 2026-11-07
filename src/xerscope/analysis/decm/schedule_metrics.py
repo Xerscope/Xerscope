@@ -225,7 +225,12 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
         once the predecessor has finished, a successor that started before it is no longer out of
         sequence, as in P6's own check).
     Actual dates first, else forecast; lags are not added, so a lead that lets work overlap is also an
-        out-of-sequence condition.
+        out-of-sequence condition. A level of effort predecessor counts like any other.
+
+    UNRESOLVED: v8.0 block 10 takes "all the finish-to-start relationships in the IMS containing an
+    incomplete predecessor task/activity or milestone" and says nothing of LOE, so an LOE predecessor
+    is kept; an LOE -> discrete link is also what 06A210a counts, and an LOE finishing with the work it
+    spans puts its started successors out of sequence.
 
     06A212a: X = 0; FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) <
     P.FS
