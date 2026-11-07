@@ -103,20 +103,32 @@ def _attrs(text: str) -> dict[str, str]:
 Intervals = tuple[tuple[int, int], ...]  # working periods of one day, minutes from midnight
 
 
-def _interval(n: _Node) -> tuple[int, int] | None:
+def _interval(n: _Node, notes: list[str] | None = None) -> tuple[int, int] | None:
+    """One working period, minutes from midnight; None for no work.
+
+    Only "f|00:00" ends at midnight, as MPXJ reads it (``LocalTimeHelper.getMillisecondsInRange``:
+    an end at MIDNIGHT runs to the end of the day, any other end gives end - start). A period
+    ending at its start is empty. One ending before its start has no P6 reading (P6 writes no
+    period across midnight: none in the reference files): it is ignored and noted.
+    """
     a = _attrs(n.attrs)
     if "s" not in a or "f" not in a:
         return None
     h0, m0 = map(int, a["s"].split(":"))
     h1, m1 = map(int, a["f"].split(":"))
     start, end = h0 * 60 + m0, h1 * 60 + m1
-    if end <= start:  # "f|00:00" = midnight at the end of the day
-        end += MINUTES_PER_DAY
-    return start, min(end, MINUTES_PER_DAY)
+    if end == 0:  # "f|00:00" = midnight at the end of the day
+        end = MINUTES_PER_DAY
+    if end < start:
+        note = f"work period {a['s']}-{a['f']} ends before it starts; ignored"
+        if notes is not None and note not in notes:
+            notes.append(note)
+        return None
+    return (start, min(end, MINUTES_PER_DAY)) if end > start else None
 
 
-def _day(n: _Node) -> Intervals:
-    return _merge(i for i in (_interval(c) for c in n.children) if i)
+def _day(n: _Node, notes: list[str] | None = None) -> Intervals:
+    return _merge(i for i in (_interval(c, notes) for c in n.children) if i)
 
 
 def _merge(periods) -> Intervals:
@@ -130,8 +142,12 @@ def _merge(periods) -> Intervals:
     return tuple((a, b) for a, b in out)
 
 
-def parse_clndr_data(text: str) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
-    """Return (working periods Monday..Sunday, {date: periods} exceptions), or None."""
+def parse_clndr_data(
+    text: str, notes: list[str] | None = None
+) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
+    """Return (working periods Monday..Sunday, {date: periods} exceptions), or None.
+
+    A period the reading had to leave out adds one line to ``notes`` when given."""
     if not isinstance(text, str) or "DaysOfWeek" not in text:
         return None
     try:
@@ -144,13 +160,13 @@ def parse_clndr_data(text: str) -> tuple[tuple[Intervals, ...], dict[date, Inter
     week: list[Intervals] = [()] * 7
     for d in dow.children:
         if d.name.isdigit() and 1 <= int(d.name) <= 7:
-            week[(int(d.name) + 5) % 7] = _day(d)  # P6 1=Sunday -> Python weekday 6
+            week[(int(d.name) + 5) % 7] = _day(d, notes)  # P6 1=Sunday -> Python weekday 6
     exceptions: dict[date, Intervals] = {}
     exc = next((r.find("Exceptions") for r in roots if r.find("Exceptions")), None)
     for e in exc.children if exc is not None else []:
         serial = _attrs(e.attrs).get("d")
         if serial and serial.lstrip("-").isdigit():
-            exceptions[EXCEL_EPOCH + timedelta(days=int(serial))] = _day(e)
+            exceptions[EXCEL_EPOCH + timedelta(days=int(serial))] = _day(e, notes)
     return tuple(week), exceptions
 
 
@@ -168,17 +184,19 @@ class WorkCalendar:
     week: tuple[Intervals, ...]  # Monday .. Sunday
     exceptions: dict[date, Intervals] = field(default_factory=dict, hash=False, compare=False)
     from_data: bool = True  # False = workweek guessed from the day/week hour counts
+    notes: tuple[str, ...] = field(default=(), compare=False, hash=False)  # what from_row had to repair
     # the calendar's own TimeAxis, built on first use (a cache, not part of the value)
     _axis: TimeAxis | None = field(default=None, init=False, repr=False, hash=False, compare=False)
 
     @classmethod
     def from_row(cls, row: pd.Series, default_hpd: float = DEFAULT_SETTINGS.default_hours_per_day) -> WorkCalendar:
+        notes: list[str] = []
         hpd = pd.to_numeric(row.get("day_hr_cnt"), errors="coerce")
         hpd = float(hpd) if pd.notna(hpd) and hpd > 0 else default_hpd
-        parsed = parse_clndr_data(row.get("clndr_data", ""))
+        parsed = parse_clndr_data(row.get("clndr_data", ""), notes)
         if parsed is not None and any(parsed[0]):
             week, exc = parsed
-            return cls(str(row["clndr_id"]), str(row.get("clndr_name", "")), hpd, week, exc)
+            return cls(str(row["clndr_id"]), str(row.get("clndr_name", "")), hpd, week, exc, notes=tuple(notes))
         # No usable blob: infer the number of working days from the week's hour count.
         whc = pd.to_numeric(row.get("week_hr_cnt"), errors="coerce")
         n = int(round(whc / hpd)) if pd.notna(whc) and whc > 0 else DEFAULT_WORKING_DAYS
@@ -191,6 +209,7 @@ class WorkCalendar:
             tuple([day] * n + [()] * (7 - n)),
             {},
             from_data=False,
+            notes=tuple(notes),
         )
 
     @classmethod

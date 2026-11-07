@@ -934,6 +934,11 @@ def _calendars(
         str(row["clndr_id"]): WorkCalendar.from_row(row, settings.default_hours_per_day)
         for _, row in calendars.iterrows()
     }
+    for calendar in work_calendars.values():
+        if calendar.notes:
+            warnings.append(
+                f"{raw.source}: calendar {calendar.clndr_id} ({calendar.name}): {'; '.join(calendar.notes)}"
+            )
     # one reading of "hours per day": the calendar's own (a missing or zero count is the default)
     hours_per_day = pd.Series(
         {clndr_id: calendar.hours_per_day for clndr_id, calendar in work_calendars.items()}, dtype=float
