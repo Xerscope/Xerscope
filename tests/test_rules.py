@@ -508,11 +508,10 @@ def test_missed_tasks_and_late_activities():
 
 def test_dcma_11_follows_pam_200_1():
     """DCMA-EA PAM 200.1 (Oct 2012) 4.11: a task is due when its baseline finish is on or before the status
-    date; it is missed when its actual or forecast finish is after the baseline finish. The base is the
-    tasks "not missing baseline start or finish dates". 4.0 leaves out completed tasks, LOE, summary tasks and
-    milestones; 4.11 counts actual finishes, so completed tasks stay (4.11 overrides 4.0 there).
-
-    UNRESOLVED: the pamphlet's Finish Variance is working time; the calendar date is compared here.
+    date; it is missed when its actual or forecast finish is after the baseline finish by calendar date,
+    or when its Finish Variance (working time) is greater than zero. The base is the tasks "not missing
+    baseline start or finish dates". 4.0 leaves out completed tasks, LOE, summary tasks and milestones;
+    4.11 counts actual finishes, so completed tasks stay (4.11 overrides 4.0 there).
     """
     st = "2026-02-02 08:00"
     s = snap(
