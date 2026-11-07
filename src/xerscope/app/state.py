@@ -1408,14 +1408,6 @@ def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, St
     return job
 
 
-@st.fragment(run_every=1.0)
-def poll_scores() -> None:
-    """Draws nothing; reruns the app when a standard's results came in, or all did."""
-    job: ScoreJob | None = st.session_state.get("_score_job")
-    if job is None or job.done or len(job.results) != len(job.held):
-        st.rerun(scope="app")
-
-
 def standard_results_held(standard: Standard, snapshot: Snapshot) -> list[CheckResult] | None:
     """The results :func:`standard_results` would return, if every one is already cached, else None.
     Computes nothing."""

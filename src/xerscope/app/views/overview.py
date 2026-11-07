@@ -8,7 +8,6 @@ from xerscope.app import ui
 from xerscope.app.state import (
     background_jobs,
     page_header,
-    poll_scores,
     require_store,
     score_job,
     standard_results,
@@ -71,24 +70,39 @@ ui.section(
     "on a large file.",
 )
 built_in = {key: standard for key, standard in standards().items() if key in builtin_standards()}
-held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
-missing = [key for key, results in held.items() if results is None]
 loading = st.session_state.get("_load_job") is not None  # the series is still being read
-if missing and background_jobs() and not loading:
-    # computed in a thread once the series is read; the cards fill as each standard finishes
-    job = score_job(latest, store, built_in)
+
+
+def score_section(polling: bool) -> None:
+    """The score cards. ``polling``: the scores are computed in a thread (``score_job``); this runs
+    as a fragment every second and fills each card as its standard finishes, the rest of the page
+    not drawn again. The timer goes with the next full run of the page, which no longer polls."""
     held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
-    failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
-    for message in failed:
-        st.error(message, icon=":material/error:")
-    if not job.done:
-        st.caption(f"Computing the scores · {len(job.held)}/{len(built_in)} standards")
-        poll_scores()
-elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
-    held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
-ui.score_cards(
-    {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}
+    missing = [key for key, results in held.items() if results is None]
+    if missing and polling:
+        job = score_job(latest, store, built_in)
+        held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
+        failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
+        for message in failed:
+            st.error(message, icon=":material/error:")
+        if not job.done:
+            st.caption(f"Computing the scores · {len(job.held)}/{len(built_in)} standards")
+    elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
+        held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
+    ui.score_cards(
+        {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}
+    )
+
+
+polling = (
+    background_jobs()
+    and not loading
+    and any(standard_results_held(standard, latest) is None for standard in built_in.values())
 )
+if polling:
+    st.fragment(score_section, run_every=1.0)(polling=True)
+else:
+    score_section(polling=False)
 
 ui.section(
     "Forecast finish by update",
