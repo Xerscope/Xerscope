@@ -393,7 +393,7 @@ class Anonymizer:
                 lines.append("\t".join(["%R", *row]))
                 fields.extend(row)
         lines.append("%E")
-        self._refuse_leaks(fields, "anonymised XER")
+        self._refuse_leaks(fields, "anonymized XER")
         encoding = "cp1252" if raw.encoding.startswith("cp1252") else "utf-8"
         return ("\r\n".join(lines) + "\r\n").encode(encoding, errors="strict")
 

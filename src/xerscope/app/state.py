@@ -666,7 +666,7 @@ def _project_labels(snapshot: Snapshot) -> dict[str, str]:
     copies = baseline_copies(table)
     labels = {}
     for _, row in table[table["tasks"] > 0].iterrows():
-        label = f"{row['proj_short_name']} · {ui.fmt_date(row['data_date'])} · {row['tasks']} activities"
+        label = f"{row['proj_short_name']} · {ui.fmt_date(row['data_date'])} · {row['tasks']} tasks"
         if row["proj_id"] in copies:
             label += f" · baseline of {codes[copies[row['proj_id']]]}"
         labels[row["proj_id"]] = label
@@ -887,13 +887,13 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
     basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
     costs = "on" if costs_shown() else "off"
     label = (
-        f"{projects} · data date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
+        f"{projects} · status date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
         f"EV {basis.lower().replace(' · ', ', ')} · costs {costs} · {_files_count(store)}"
     )
     used = ui.md_text(baseline.source or baseline.label) if baseline is not None else ui.md_text(kind)
     details = [
         f"Project(s) read: {', '.join(ui.md_text(code) for code in codes)}",
-        f"Data date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
+        f"Status date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
         f"Baseline used for {ui.stamp(snapshot.data_date)}: {used}",
         f"Earned value basis: {basis}",
         f"Costs: {costs} (sidebar)",
@@ -1039,7 +1039,7 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
         sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
         return
     sidebar.warning(
-        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Activity ID "
+        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Task ID "
         f"({files}): against the baseline {'it counts' if total == 1 else 'they count'} as deleted and new. "
         "Option in the Baseline window: Link renumbered tasks by GUID.",
         icon=":material/warning:",
@@ -1092,7 +1092,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
     st.checkbox(
         "Link renumbered tasks by GUID",
         key="draft_guid_link",
-        help="A task of an update that carries a baseline task's GUID (TASK.guid) under a new Activity ID is "
+        help="A task of an update that carries a baseline task's GUID (TASK.guid) under a new Task ID is "
         "measured against that baseline task, as P6 does when the renumbering was carried to the baseline "
         "(Renumber Activity IDs > Renumber Selected Activities in Baselines). Off: it counts as deleted and "
         "new, as P6 does otherwise.",

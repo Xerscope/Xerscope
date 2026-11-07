@@ -649,7 +649,7 @@ SETTINGS_MEANING = [
      "DT_* codes"),
     ("PROJECT.next_data_date", NO_LABEL, "", "", "meaning unverified"),
     ("PROJECT.last_recalc_date", "Last Recalc Date", "", DATA_MAP,
-     "xerscope's data date (else plan_start_date)"),
+     "xerscope's status date (else plan_start_date)"),
     ("TASK.complete_pct_type", "% Complete Type", "Activity % Complete Type", "xer/model.py PCT_COMPLETE_TYPE",
      "tasks_* counts of the project"),
     ("PROJWBS: Use resource curves \\ future period buckets", "no column in data map v23 nor in the reference files",
