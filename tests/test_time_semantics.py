@@ -110,8 +110,8 @@ def test_dcma_09_leaves_out_tasks_completed_on_the_status_date_by_day(dd):
 @pytest.mark.parametrize(("std", "metric_id"), [(P6, "P6-10a"), (DECM, "06A506b")], ids=["P6-10a 101248", "06A506b"])
 def test_forecast_start_same_day_is_compared_by_timestamp(std, metric_id, dd):
     """101248: "Invalid dates for not started activities are start dates earlier than the data date";
-    06A506b "on or before the status date" = before P6's data date (decm.toml). A forecast start at 12:00
-    is before a data date at 17:00 only."""
+    06A506b "on or before the status date", the status date being the data date (decm.toml). A forecast
+    start at 12:00 is before a data date at 17:00 only."""
     s = snap([todo("A", early_start_date=SAME_DAY, early_end_date="2026-03-13 17:00")], data_date=at(dd))
     assert codes(run(std, metric_id, s)) == (["A"] if dd == "17:00" else [])
 
@@ -189,7 +189,7 @@ def test_p6_12_late_does_not_depend_on_the_data_date_hour(dd):
 
 @pytest.mark.parametrize(
     ("std", "metric_id"),
-    [(P6, "P6-10a"), (P6, "P6-10b"), (INTEGRITY, "INT-06"), (DECM, "06A506a"), (DECM, "06A506b"), (DCMA, "DCMA-09")],
+    [(P6, "P6-10a"), (P6, "P6-10b"), (INTEGRITY, "INT-06"), (DECM, "06A506a"), (DCMA, "DCMA-09")],
 )
 def test_dates_exactly_on_the_data_date_are_valid(std, metric_id):
     """Help l.15836: the data date starts the work period. An actual start, a remaining early start or a
@@ -203,6 +203,26 @@ def test_dates_exactly_on_the_data_date_are_valid(std, metric_id):
         data_date=dd,
     )
     assert codes(run(std, metric_id, s)) == []
+
+
+def test_06a506b_flags_a_forecast_on_the_data_date():
+    """06A506b v8.0 block 6: "X = Count of incomplete tasks/activities & milestones with either forecast
+    start or forecast finish on or before the status date"; the status date is the data date (IPMR DID
+    §3.7.1.3.5.13). N, not started, remaining start exactly at the data date: flagged. F, under way, 0 h
+    left, forecast finish exactly at the data date: flagged (block 6; step 3 reads "before",
+    UNRESOLVED). S, under way since 23/02, remaining start at the data date, finish 13/03: the start is
+    checked for not-started work only (step 2), not flagged. 2 / 3."""
+    dd = at("08:00")
+    s = snap(
+        [
+            todo("N", early_start_date=dd, early_end_date="2026-03-13 17:00"),
+            active("F", remain_drtn_hr_cnt="0", early_start_date=dd, early_end_date=dd),
+            active("S", early_start_date=dd, early_end_date="2026-03-13 17:00"),
+        ],
+        data_date=dd,
+    )
+    r = run(DECM, "06A506b", s)
+    assert (codes(r), r.denominator) == (["F", "N"], 3)
 
 
 # --- 2. calendars -----------------------------------------------------------------------------------

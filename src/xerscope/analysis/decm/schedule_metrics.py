@@ -408,19 +408,25 @@ def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
     Counts: with invalid dates / checked
     Excludes: completed tasks.
 
-    06A506b: X = 0, forecast on or before the status date (= before P6's status date); an incomplete
-    task is flagged when its start (not started) or its finish is before the status date. v8.0 block 6
-    counts "incomplete tasks/activities & milestones" and block 9 reads incomplete as "no actual finish
-    date in the IMS": a completed task has no forecast to check and is out of the population
+    06A506b: X = 0; an incomplete task is flagged when its forecast start (not started) or its forecast
+    finish is on or before the status date, which is P6's data date (IPMR DID §3.7.1.3.5.13: "The
+    progress line is the date on which the schedule is statused, also known as "time-now," "data
+    date," or "status date.""). v8.0 block 6: "X = Count of incomplete tasks/activities & milestones
+    with either forecast start or forecast finish on or before the status date"; history: "v8.0 Updated
+    to include on or before status date 5, 6, 10". A not-started task whose remaining start is the data
+    date is flagged. UNRESOLVED: block 10 step 3 still reads "forecast finish dates before the status
+    date", and 06A506c (v8.0, no change) treats invalid as "< Status Date"; block 6 is applied.
+    Block 9 reads incomplete as "no actual finish date in the IMS": a completed task has no forecast to
+    check and is out of the population
     """
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
     funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0")
     tasks = funnel.rows
-    flagged = tasks[forecast_before(tasks, data_date)]
+    flagged = tasks[forecast_before(tasks, data_date, include_data_date=True)]
     return RuleOutput(
-        flagged_activities(flagged, reason="forecast before status date"),
+        flagged_activities(flagged, reason="forecast on or before status date"),
         len(flagged),
         len(tasks),
         checked=tasks,

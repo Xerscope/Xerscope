@@ -139,17 +139,27 @@ answer; DECM's status date is P6's data date.
 | 06A505a | In progress without actual start | % complete > 0, no actual start / with progress | ≤ 5 % |
 | 06A505b | Complete without actual finish | 100 %, no actual finish / at 100 % | ≤ 5 % |
 | 06A506a | Actual dates after the status date | / with an actual start | ≤ 5 % |
-| 06A506b | Forecast before the status date | incomplete with a forecast before the data date | X = 0 |
+| 06A506b | Forecast on or before the status date | incomplete with a forecast start (not started) or finish on or before the data date | X = 0 |
 | 06A506c | Riding the status date | start within 3 wd of the data date in both of two monthly updates, or remaining duration within ± 2 wd / incomplete | ≤ 1 % |
 
 Not included: 06A301a (vertical traceability), 06I101b (schedule margin), 06I201a
 (schedule visibility tasks): they need a summary schedule or your coding convention.
 
-**Status date vs data date.** DECM 06A506b says "on or before the status date": the end
-of the reported period. P6's data date is the first instant of remaining work, so a
-forecast exactly on it is valid; the equivalent test is "before the data date"
-(DECM 06A506b has no switch; only the `invalid_dates` rule of your own standard exposes it, as
-`include_data_date`, to read it literally.)
+**Status date vs data date.** The DECM status date is P6's data date (IPMR DID
+DI-MGMT-81861 §3.7.1.3.5.13: "The progress line is the date on which the schedule is statused,
+also known as "time-now," "data date," or "status date.""; 06A506c assumption 2: "If the Status
+Date does not match the Period End Date, use the IMS Status Date"). Each sheet's comparator applies
+to it as written: 06A506a flags an actual "after status date" (> data date, an actual on the data
+date is valid); 06A506b flags a forecast "on or before the status date" (<= data date, block 6 and
+"v8.0 Updated to include on or before status date 5, 6, 10"), so a not-started activity whose
+remaining start is the data date, as P6 schedules it, is flagged. P6's own check keeps "earlier
+than the data date" (101248); the `invalid_dates` rule of your own standard exposes the choice as
+`include_data_date`.
+`UNRESOLVED`: in v8.0, 06A506b block 10 step 3 still reads "forecast finish dates before the status
+date" and 06A506c (no change in v8.0) treats invalid forecasts as "(i.e., < Status Date)", as do PAM
+200.1 §4.9 ("the forecast date should be on or after 8/1/09") and the IPMR DID ("shall not be earlier
+than the status date"). Block 6 is applied; a DCMA text (the DECM v8.0 workbook or the 08/21/2025
+change note) would settle it.
 
 ## DCMA 14-Point (legacy)
 

@@ -495,8 +495,8 @@ def invalid_dates(
     P6 Professional's reading). ``actual``: actual start or finish after it.
     ``denominator``: the population, or ``started`` (tasks with an actual start, as
     DECM 06A506a). ``include_data_date`` also flags a forecast exactly on the status date:
-    off by default, because P6's status date is the first instant of remaining work (DECM's
-    "on or before the status date", the end of the reported period, is "before" it).
+    off by default, P6's reading (101248: "start dates earlier than the data date"); DECM 06A506b
+    reads "on or before the status date", the status date being the data date.
     """
     data_date = context.snapshot.data_date
     population = activities(context, exclude)
