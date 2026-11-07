@@ -1286,30 +1286,17 @@ def test_actuals_changed_counts_a_removed_date_on_both_sides():
 
 
 @pytest.mark.parametrize(
-    ("std", "metric"), [(DCMA, "DCMA-11"), (DCMA, "DCMA-12"), (DCMA, "DCMA-13"), (DCMA, "DCMA-14")]
+    ("std", "metric"), [(P6, "P6-13"), (DCMA, "DCMA-11"), (DCMA, "DCMA-12"), (DCMA, "DCMA-13"), (DCMA, "DCMA-14")]
 )
 def test_data_date_checks_are_na_without_a_data_date(std, metric):
-    s = _without_data_date()
-    assert s.data_date is None
-    r = run(std, metric, s, Baseline.planned(s))
-    assert r.status == "n/a" and "status date" in r.note
-
-
-def _without_data_date():
-    return snap(
+    s = snap(
         [done("A"), active("B"), todo("C", early_end_date="2026-03-20 17:00")],
         [("A", "B", "FS", 0), ("B", "C", "FS", 0)],
         project={"last_recalc_date": "", "plan_start_date": ""},
     )
-
-
-def test_p6_13_bei_needs_no_data_date():
-    """P6-13 = completed / every baseline task (R1, 26.8 report): neither side reads the status date. Hand
-    count: baseline A, B, C; completed A: 1 / 3. Only the list of tasks due needs the date: empty, said."""
-    s = _without_data_date()
-    r = run(P6, "P6-13", s, Baseline.planned(s))
-    assert counts(r) == (1, 3) and r.value == pytest.approx(1 / 3) and r.status == "fail"
-    assert codes(r) == [] and "no status date" in r.note
+    assert s.data_date is None
+    r = run(std, metric, s, Baseline.planned(s))
+    assert r.status == "n/a" and "status date" in r.note
 
 
 def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
