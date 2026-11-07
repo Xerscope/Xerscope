@@ -120,6 +120,7 @@ def _ppc_frame(ppc, kept, committed):
             "starts_committed": committed,
             "kept": kept,
             "committed": committed,
+            "note": None,
         }
     )
 
@@ -158,6 +159,18 @@ def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
     assert fig.data[1].y[0] == pytest.approx(200 / 3) and fig.data[1].customdata[0] == "67% (2/3)"
     assert fig.data[2].y[0] == 60.0 and fig.data[2].customdata[0] == "60% (3/5)"
     assert fig.data[0].customdata[1] == "no commitment"
+
+
+def test_ppc_chart_marks_a_point_that_spans_more_than_a_week():
+    """The second point covers 14 days (an update missing): its bar is hatched and every
+    hover of that week carries the note, as the Commitments section does."""
+    frame = _ppc_frame([100.0, 50.0], [1, 1], [1, 2])
+    note = "14 days since the previous update: this point covers more than one week"
+    frame["note"] = [None, note]
+    fig = build_ppc(frame, 80)
+    assert list(fig.data[0].marker.pattern.shape) == ["", "/"]
+    for trace in fig.data:
+        assert note not in trace.customdata[0] and trace.customdata[1].endswith(note)
 
 
 def test_activity_dates_axis_keeps_days_when_dates_never_move():
