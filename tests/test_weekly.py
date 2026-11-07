@@ -844,3 +844,15 @@ def test_forecast_finish_shift_since_first_update_in_working_days(store):
 
     assert finish_shift_since_first(store) == 15.0
     assert finish_shift_since_first(SnapshotStore([store.first])) is None
+
+
+def test_inverted_ev_dates_are_one_step_at_the_finish_in_the_kpi_and_the_curve():
+    """A, 40 h, EV start Fri 03-06 17:00 after its EV finish Mon 03-02 08:00 (an invalid import): the
+    Schedule % convention (zero or negative span = 0 before the finish, 100 from it) applies to the
+    curve too, so both give 40 h at Wed 03-04 08:00 and 0 h before Mon 08:00."""
+    inverted = {"target_start_date": "2026-03-06 17:00", "target_end_date": "2026-03-02 08:00", "target_work_qty": "40"}
+    baseline = Baseline.from_snapshot(snap([todo("A", **inverted)]))
+    update = snap([todo("A")], data_date="2026-03-04 08:00")
+    curve = pv_curve(baseline, update).set_index("date")["pv_cum_hr"]
+    assert ev_point(update, baseline).pv_hr == pytest.approx(40) == curve[update.data_date]
+    assert curve[pd.Timestamp("2026-03-02")] == 0 and curve.iloc[-1] == pytest.approx(40)

@@ -162,16 +162,18 @@ class _Spread:
         spread = cls()
         if rows.empty:
             return spread
-        first_day, last_day = rows[start].min().date(), rows[finish].max().date()
+        dates = pd.concat([rows[start], rows[finish]])
+        first_day, last_day = dates.min().date(), dates.max().date()
         for calendar_id, group in rows.groupby(rows[calendar].fillna(""), sort=False):
             axis = TimeAxis(snapshot.calendar(calendar_id), first_day, last_day)
             work_starts, work_finishes = axis.work_many(group[start]), axis.work_many(group[finish])
-            work_starts, work_finishes = np.minimum(work_starts, work_finishes), np.maximum(work_starts, work_finishes)
             group_hours = group[hours].to_numpy(float)
-            instant = work_finishes == work_starts
+            # as _elapsed (Schedule %): a span of zero or negative working time (finish not after start)
+            # is all at once at its finish
+            instant = work_finishes <= work_starts
             if (~instant).any():
                 spread.groups.append((axis, work_starts[~instant], work_finishes[~instant], group_hours[~instant]))
-            if instant.any():  # all at once when its (single) instant is reached
+            if instant.any():
                 spread.steps.append((group[finish].to_numpy("datetime64[ns]")[instant], group_hours[instant]))
         return spread
 
@@ -204,7 +206,8 @@ def pv_curve(baseline: Baseline, snapshot: Snapshot | None = None) -> pd.DataFra
     frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
     if frame.empty:
         return pd.DataFrame(columns=["date", "pv_hr", "pv_cum_hr", "pv_pct"])
-    first, last = frame["ev_start"].min().normalize(), frame["ev_finish"].max().normalize() + pd.Timedelta(days=1)
+    dates = pd.concat([frame["ev_start"], frame["ev_finish"]])  # a finish before its start: _Spread
+    first, last = dates.min().normalize(), dates.max().normalize() + pd.Timedelta(days=1)
     instants = pd.date_range(first, last, freq="D")
     if snapshot is not None and snapshot.data_date is not None:
         instants = instants.union([snapshot.data_date])
