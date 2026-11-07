@@ -275,3 +275,33 @@ def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_p
         "--column", "pv_hr=PV", "--out", tmp_path / "cmp",
     )  # fmt: skip
     assert "activities in gap" in text
+
+
+def test_ask_bench(capsys, sample_dir):
+    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--cases", "tests/ask/heldout.toml")
+    assert "dev.toml: 32 sentences" in out and "keywords  exact 100%" in out
+    assert "heldout.toml: 20 sentences" in out and "missed:" not in out  # every held-out sentence right
+
+
+def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir):
+    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--anonymize")
+    assert "anonymised copy XP" in out and "set aside:" in out and "sentences scored" in out
+    assert "exact 100%" in out and "15 sentences scored" in out  # the sentences naming things by code or full name
+    for secret in ("Civil works", "CIV", "Site crew", "CREW", "PRJ-ALPHA", "Ingénierie", "earthworks"):
+        assert secret not in out, secret
+
+
+def test_lexicon_command(capsys, tmp_path):
+    out = run(capsys, "lexicon")
+    assert "meca, mecanique, mechanical" in out and "group(s)" in out
+    out = run(capsys, "lexicon", "--word", "Mécanique")
+    assert out.startswith("mecanique: ") and "mechanical" in out
+    (tmp_path / "bad.toml").write_text("[[group]\n", encoding="utf-8")
+    assert cli.main(["lexicon", str(tmp_path)]) == 1
+    assert "error: bad.toml" in capsys.readouterr().out
+
+
+def test_ask_bench_self_coverage(capsys, sample_dir):
+    out = run(capsys, "ask-bench", sample_dir, "--self")
+    assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
+    assert "not reached" not in out

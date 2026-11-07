@@ -54,6 +54,7 @@ STEP_SOURCES = {
     "PAM 200.1": "https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf",
     "DECM 8.0": "https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm",
     "xerscope": "docs/standards.md: INTEGRITY, xerscope's own checks (not a published standard)",
+    "ask": "analysis/query.py: a filter the Gantt Ask field understood from the sentence, as the page's widgets",
 }
 
 

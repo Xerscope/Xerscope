@@ -134,6 +134,11 @@ def _gantt_data(at) -> dict:
     return json.loads(at.get("bidi_component")[0].proto.json)
 
 
+def _group(at, key: str):
+    """The pills or segmented control with ``key``."""
+    return next(group for group in at.get("button_group") if group.key == key)
+
+
 def _toggle(at, label: str, value: bool) -> None:
     next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
     _ok(at)
@@ -157,11 +162,43 @@ def test_gantt_wbs_choice_filters_and_options(app):
     app.multiselect[0].set_value(["Not started", "In progress", "Complete"]).run()
     assert _gantt_data(app)["open"] == ["w:7003"]  # every status ticked: nothing filtered, nothing opened
     app.multiselect[0].set_value([]).run()
-    app.text_input[0].set_value("earthworks").run()  # a search opens every branch on the matches
+    app.text_input[1].set_value("earthworks").run()  # a search opens every branch on the matches
     data = _gantt_data(app)
     assert [r["code"] for r in data["rows"] if r["kind"] == "task"] == ["C3020"]
     assert set(data["open"]) == {r["id"] for r in data["rows"] if r["kind"] == "wbs"}
-    app.get("button_group")[0].set_value("Week").run()
+    app.text_input[1].set_value("").run()
+    # the Ask field, the page's first control: a sentence becomes filters, an answer and chips
+    app.text_input[0].set_value("critical not started in civil works").run()
+    _ok(app)
+    data = _gantt_data(app)
+    drawn = [r for r in data["rows"] if r["kind"] == "task"]
+    assert drawn and all(r["code"][0] in "CM" and r["category"] == "Critical" for r in drawn)
+    assert any(m.value.startswith(f"{len(drawn)} activities critical not started in CIV") for m in app.markdown)
+    # the page is on CIV already: the funnel starts from its 8 tasks and names each step
+    assert any(c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started ") for c in app.caption)
+    chips = _group(app, "ask_pills:critical not started in civil works")
+    assert chips.value == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
+    chips.set_value(["Status: Not started", "WBS: CIV · Civil works"]).run()  # a chip off: its filter goes
+    _ok(app)
+    rows = [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]
+    assert len(rows) > len(drawn) and any(r["category"] != "Critical" for r in rows)
+    line = next(c.value for c in app.caption if c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started "))
+    assert "float Critical" not in line  # the funnel lost that step
+    app.text_input[0].set_value("jalons xyzzy génie civil").run()  # a word the file does not hold is dropped
+    data = _gantt_data(app)
+    assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
+    assert any("« xyzzy » is in neither this file nor the lexicon" in m.value for m in app.markdown)
+    app.text_input[0].set_value("commiss").run()  # a word nothing holds, close to Commissioning
+    _ok(app)
+    app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
+    _ok(app)
+    assert _group(app, "ask_pills:commiss").value == ["WBS: COM · Commissioning"]
+    assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
+    assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
+    app.button(key="ask_clear").click().run()  # Show all empties the field
+    _ok(app)
+    assert app.text_input[0].value == "" and not app.get("button_group")[0].key.startswith("ask_pills")
+    _group(app, "gantt_timescale").set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
     first = app.selectbox(key="gantt_snap").options[0]
@@ -1556,7 +1593,7 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     history = next(d.value for d in app.dataframe if {"data_date", "original_d"} <= set(d.value.columns))
     assert len(history) == (store.history["task_code"] == "C3020").sum()  # one row per update holding it
     assert app.selectbox(key="gantt_task_pick").value == "C3020"
-    app.text_input[0].set_value("no task has this name").run()  # the Gantt search leaves C3020 out
+    app.text_input[1].set_value("no task has this name").run()  # the Gantt search leaves C3020 out
     _ok(app)
     assert not any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)

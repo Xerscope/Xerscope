@@ -16,11 +16,18 @@
 # Go checks every module against the public checksum database (sum.golang.org): a moved
 # tag or a rewritten commit fails the build instead of changing the binary.
 #
+# golang.org/x/net is replaced by 0.62.0: Caddy 2.11.8 and 2.11.9 pin v0.60.0, which carries
+# CVE-2026-78661 (denial of service on crafted HTML, fixed in 0.62.0). The build fails unless the
+# binary records the fixed version. Drop the replace once a Caddy release requires x/net >= 0.62.0:
+# a replace pins one version, so a newer one required by Caddy would be held back.
+#
 # The builder sets the binary's cap_net_bind_service file capability like the stock image
 # (XCADDY_SETCAP): deploy/compose.yaml keeps cap_add NET_BIND_SERVICE for either image.
 
 FROM caddy:2.11.8-builder@sha256:d4eb070c36154bd2d4c94b40359a03c6168346d5af5404963c74691ab77fb63f AS build
-RUN xcaddy build --with github.com/mholt/caddy-ratelimit@v0.1.1-0.20260612195517-5625512f24f6
+RUN xcaddy build --with github.com/mholt/caddy-ratelimit@v0.1.1-0.20260612195517-5625512f24f6 \
+    --replace golang.org/x/net=golang.org/x/net@v0.62.0 \
+  && go version -m /usr/bin/caddy | grep -Eq 'golang\.org/x/net[[:space:]]+v0\.62\.0'   # fields are tab-separated
 
 FROM caddy:2.11.8@sha256:4fcafa98afd1c2e642e353e3c5cf9ddbe892fcee14bc990e7ba2c5b78e51f9cf
 COPY --from=build /usr/bin/caddy /usr/bin/caddy

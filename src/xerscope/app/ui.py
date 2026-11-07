@@ -14,7 +14,6 @@ import base64
 import functools
 import re
 import sys
-import unicodedata
 import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -23,6 +22,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.query import fold as _fold
 from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
@@ -682,11 +682,8 @@ def code_label(names: pd.Series, task_code: str) -> str:
 
 
 def fold(text) -> str:
-    """Lower-case without accents, for searching: fold("Béton") == "beton"."""
-    text = "" if pd.isna(text) else str(text)
-    return "".join(
-        character for character in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(character)
-    )
+    """Lower-case without accents, for searching: fold("Béton") == "beton" (analysis.query.fold)."""
+    return _fold(text)
 
 
 def search_mask(frame: pd.DataFrame, columns: Sequence[str], text: str) -> pd.Series:

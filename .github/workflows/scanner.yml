@@ -1,0 +1,27 @@
+name: scanner
+
+# The Trivy the CI scans with (.github/trivy/Dockerfile), scanned with itself: every day, since new
+# CVEs land without a push, and on any change to its pin (a Dependabot bump is checked before it
+# is merged). A finding here allows a bump before Dependabot's cooldown ends.
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  pull_request:
+    paths: [".github/trivy/**"]
+  push:
+    branches: [main]
+    paths: [".github/trivy/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Known vulnerabilities in the pinned Trivy image, fixed ones only
+        run: .github/trivy/scan.sh "$(sed -n 's/^FROM //p' .github/trivy/Dockerfile)"

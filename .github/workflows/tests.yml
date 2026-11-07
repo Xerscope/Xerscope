@@ -158,12 +158,7 @@ jobs:
           docker logs app
           docker rm -f app
       - name: Known vulnerabilities in the image (OS packages and Python wheels), fixed ones only
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: xerscope:ci
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        run: .github/trivy/scan.sh xerscope:ci   # the Trivy pinned in .github/trivy/Dockerfile
 
   deploy:
     # deploy/ as the NAS runs it, without the app and without a tailnet login: the compose
@@ -246,21 +241,30 @@ jobs:
           grep '"status": 429,' caddy.log | tail -n 1 | grep -q '"Retry-After"'
       - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ steps.compose.outputs.caddy }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          trivyignores: deploy/caddy.trivyignore.yaml   # dated exceptions, each with its reason
+        working-directory: .
+        env:
+          IMAGE: ${{ steps.compose.outputs.caddy }}
+        run: .github/trivy/scan.sh "$IMAGE" deploy/caddy.trivyignore.yaml   # dated exceptions, each with its reason
+      - name: No golang.org/x/net/html code in the Tailscale binaries (evidence for its CVE-2026-78661 exception)
+        if: ${{ !cancelled() }}
+        env:
+          IMAGE: ${{ steps.compose.outputs.tailscale }}
+        run: |  # Go keeps every function name in a binary, even stripped (-s -w): names of the image's own
+          # code prove they are readable, and no name of the HTML parser may be there
+          work=$(mktemp -d); cid=$(docker create "$IMAGE")
+          for bin in containerboot tailscale tailscaled; do
+            docker cp -q "$cid:/usr/local/bin/$bin" "$work/$bin"
+            if ! grep -aq 'tailscale.com/' "$work/$bin"; then echo "$bin: function names unreadable"; exit 1; fi
+            if grep -aq 'golang.org/x/net/html\.' "$work/$bin"; then echo "$bin: holds golang.org/x/net/html code"; exit 1; fi
+            echo "$bin: no golang.org/x/net/html code"
+          done
+          docker rm -f "$cid" > /dev/null
       - name: Known vulnerabilities in the Tailscale image, fixed ones only (main, Monday, manual)
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ steps.compose.outputs.tailscale }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        working-directory: .
+        env:
+          IMAGE: ${{ steps.compose.outputs.tailscale }}
+        run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml   # dated exceptions, each with its reason
       - name: Container states and logs, when a step failed
         if: failure()
         run: |

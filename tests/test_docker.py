@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -72,7 +74,8 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
     assert "ruff check src tests" in wf and "ruff format --check src tests" in wf
-    assert "pull_request:" in wf and "load: true" in wf and "_stcore/health" in wf and "trivy-action" in wf
+    assert "pull_request:" in wf and "load: true" in wf and "_stcore/health" in wf
+    assert ".github/trivy/scan.sh xerscope:ci" in wf  # the app image is scanned
     for line in wf.splitlines():
         if "uses:" in line:
             assert re.search(r"@[0-9a-f]{40} # v", line), line  # pinned by commit, tag in the comment
@@ -151,6 +154,16 @@ def test_remote_debug_page_follows_the_env_file_and_is_off_by_default():
     assert re.search(r"^# XERSCOPE_DEBUG_PAGE=1\b", (ROOT / "deploy" / ".env.example").read_text(), re.M)
 
 
+def test_remote_load_workers_follow_the_env_file_and_default_to_one():
+    """Each worker process holds one export while it reads it (about 1 GB parsed for a 40 MB export,
+    docs/deploy.md §7), inside the app's memory cap: under the default 2 GB cap the remote app reads
+    one file at a time. XERSCOPE_LOAD_WORKERS in .env raises it, with XERSCOPE_MEM_LIMIT."""
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    app = c[c.index("\n  xerscope:") :]
+    assert re.search(r"^\s+XERSCOPE_LOAD_WORKERS: \$\{XERSCOPE_LOAD_WORKERS:-1\}", app, re.M)
+    assert re.search(r"^# XERSCOPE_LOAD_WORKERS=\d", (ROOT / "deploy" / ".env.example").read_text(), re.M)
+
+
 def test_remote_app_settings_reach_streamlit():
     """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
     import os
@@ -225,6 +238,7 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     assert "docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }}" in image  # the Docker Hub fallback
     dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
     assert "directory: /deploy/caddy" in dependabot
+
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     block = caddy[caddy.index("rate_limit {") : caddy.index("basic_auth {")]
     assert "key {client_ip}" in block  # the visitor; {remote_host} is tailscaled's 127.0.0.1 for everyone
@@ -233,24 +247,88 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     assert 'docker build -t "$XERSCOPE_CADDY_IMAGE" caddy' in wf and "HTTP/1.1 429" in wf
 
 
+def test_caddy_build_forces_the_fixed_x_net_and_proves_it():
+    """Caddy 2.11.8 and 2.11.9 pin golang.org/x/net v0.60.0 (CVE-2026-78661, fixed in 0.62.0). The
+    image is ours, so the build replaces the module rather than excepting the finding, and fails
+    unless the built binary records x/net v0.62.0 (go version -m reads the binary's build info)."""
+    df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
+    fixed = re.search(r"--replace golang\.org/x/net=golang\.org/x/net@(v\d+\.\d+\.\d+)", df)
+    assert fixed and tuple(map(int, fixed.group(1)[1:].split("."))) >= (0, 62, 0), fixed
+    pattern = "golang\\.org/x/net[[:space:]]+" + fixed.group(1).replace(".", "\\.")  # as the grep spells it
+    assert f"go version -m /usr/bin/caddy | grep -Eq '{pattern}'" in df
+    assert "CVE-2026-78661" not in (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()  # fixed, not excepted
+
+
 def test_base_images_pinned_by_digest():
     df = (ROOT / "Dockerfile").read_text()
     froms = re.findall(r"^FROM (\S+)", df, re.M)
     assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
 
 
-def test_caddy_scan_exceptions_are_dated_and_reasoned():
-    """Each Trivy exception for the Caddy image names its CVE, why it is not reachable here, and an expiry."""
+@pytest.mark.parametrize("image", ["caddy", "tailscale"])
+def test_sidecar_scan_exceptions_are_dated_and_reasoned(image):
+    """Each Trivy exception for a sidecar image of deploy/compose.yaml names its CVE, why it is not
+    reachable here, and an expiry; the scan of that image, and only that one, reads the file."""
     import datetime
 
-    text = (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()
+    text = (ROOT / "deploy" / f"{image}.trivyignore.yaml").read_text()
     entries = re.findall(r"- id: (\S+)\n\s+statement: (.+)\n\s+expired_at: (\d{4}-\d{2}-\d{2})", text)
     assert entries and len(entries) == text.count("- id:"), entries
     for cve, statement, expiry in entries:
         assert cve.startswith(("CVE-", "GHSA-")) and len(statement) > 20, cve
         datetime.date.fromisoformat(expiry)
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
-    assert wf.count("trivyignores:") == 1 and "trivyignores: deploy/caddy.trivyignore.yaml" in wf
+    step = wf[wf.index(f"Known vulnerabilities in the {image.capitalize()} image") :]
+    step = step[: step.index("- name:", 1)]
+    assert f"deploy/{image}.trivyignore.yaml" in step and ".github/trivy/scan.sh" in step, image
+    assert wf.count(".trivyignore.yaml") == 2
+
+
+def test_tailscale_exception_is_scoped_to_one_module_version_and_proven_absent():
+    """The CVE-2026-78661 exception covers golang.org/x/net v0.60.0 only (purls): another version
+    in a new Tailscale image is scanned again. A step before the scan proves the vulnerable package
+    absent from the image's binaries: Go keeps every function name in its binaries even when
+    stripped (-s -w), so tailscale.com/ names must be found (the names are readable) and no
+    golang.org/x/net/html. name may be."""
+    text = (ROOT / "deploy" / "tailscale.trivyignore.yaml").read_text()
+    assert "purls: [pkg:golang/golang.org/x/net@v0.60.0]" in text
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    step = wf[wf.index("No golang.org/x/net/html code in the Tailscale binaries") :]
+    step = step[: step.index("- name:", 1)]
+    assert all(b in step for b in ("containerboot", "tailscaled", "tailscale "))
+    assert "grep -aq 'tailscale.com/'" in step and "grep -aq 'golang.org/x/net/html\\.'" in step
+    assert not re.search(r"^\s*! ", step, re.M)  # bash -e does not stop on a negated command: checks use if
+    assert wf.index("No golang.org/x/net/html code") < wf.index("Known vulnerabilities in the Tailscale image")
+
+
+def test_trivy_is_pinned_by_digest_and_proposed_a_week_after_release():
+    """CI scans with one Trivy image, pinned by digest in .github/trivy/Dockerfile and bumped by
+    Dependabot after a 7-day cooldown (Trivy's compromised March 2026 releases were withdrawn
+    within hours, GHSA-69fq-xp46-6x23). No Trivy GitHub Action runs: they were part of that
+    compromise. The image goes to Trivy as a tar, never with the Docker socket."""
+    pin = (ROOT / ".github" / "trivy" / "Dockerfile").read_text()
+    (image,) = re.findall(r"^FROM (\S+)", pin, re.M)  # one image, and it is Trivy's, by digest
+    assert re.fullmatch(r"ghcr\.io/aquasecurity/trivy:[\d.]+@sha256:[0-9a-f]{64}", image), image
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    entry = dependabot[dependabot.index("directory: /.github/trivy") :]
+    entry = entry[: entry.find("- package-ecosystem") if "- package-ecosystem" in entry else len(entry)]
+    days = re.search(r"default-days: (\d+)", entry)
+    assert days and int(days.group(1)) >= 7, entry
+    workflows = {p.name: p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml")}
+    assert not any("aquasecurity/trivy-action" in w or "setup-trivy" in w for w in workflows.values())
+    assert workflows["tests.yml"].count(".github/trivy/scan.sh") == 3
+    script = (ROOT / ".github" / "trivy" / "scan.sh").read_text()
+    assert "docker save" in script and "--input" in script and "docker.sock" not in script
+    assert "--exit-code 1" in script and "--ignore-unfixed" in script and "HIGH,CRITICAL" in script
+
+
+def test_the_pinned_trivy_is_scanned_every_day():
+    """New CVEs land without a push: the Trivy CI uses is scanned with itself every day and on any
+    change to its pin. A finding there allows a bump before the cooldown ends."""
+    wf = (ROOT / ".github" / "workflows" / "scanner.yml").read_text()
+    assert re.search(r"cron: \"\d+ \d+ \* \* \*\"", wf)  # daily
+    assert "permissions:\n  contents: read" in wf and "persist-credentials: false" in wf
+    assert ".github/trivy/**" in wf and '.github/trivy/scan.sh "$(sed -n' in wf
 
 
 def test_schedules_stay_out_of_git():
@@ -350,3 +428,22 @@ def test_deployment_documents_immutable_image_refs_and_the_key_check():
     assert "keepachangelog.com" in changelog
     readme = (ROOT / "README.md").read_text()
     assert "git tag `v0.1.0`" in readme and "CHANGELOG.md" in readme
+
+
+def test_nothing_in_the_app_reaches_the_network():
+    """The only outbound code in src/ is query.llm_backend, the measurement client of
+    `ask-bench --url`, which nothing in the app calls; the deployed app reaches nothing."""
+    outbound = re.compile(r"^\s*(import|from)\s+(urllib|socket|http\.client|requests|httpx|aiohttp|websocket)")
+    offenders = {}
+    for path in (ROOT / "src" / "xerscope").rglob("*.py"):
+        lines = [n for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1) if outbound.match(line)]
+        if lines:
+            offenders[path.relative_to(ROOT).as_posix()] = lines
+    assert set(offenders) == {"src/xerscope/analysis/query.py"}, offenders
+    query = (ROOT / "src" / "xerscope" / "analysis" / "query.py").read_text(encoding="utf-8")
+    assert query.count("urllib.request.urlopen(") == 2  # post (ask, warm) and summarise: the one endpoint
+    assert query.count('+ "/v1/chat/completions"') == 1 and "urlopen(answer" not in query
+    c = (ROOT / "deploy" / "compose.yaml").read_text()
+    assert re.search(r"^  internal:\n\s+internal: true", c, re.M) and "llm" not in c and "XERSCOPE_QUERY" not in c
+    app_code = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "src" / "xerscope" / "app").rglob("*.py"))
+    assert "llm_backend" not in app_code and "XERSCOPE_QUERY" not in app_code  # the app never calls a model
