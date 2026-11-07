@@ -28,7 +28,7 @@ name = "Dangling logic"
 description = "Incomplete non-LOE tasks and milestones with an open start or finish"
 rule = "decm_06a204b_dangling_logic"
 target = "<= 0%"
-source = "06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no successor (milestone: none); earliest baseline start / latest baseline finish exempt, read among the Non-LOE activities (block 6: \"incomplete Non-LOE tasks/activities & milestones\")"
+source = "06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no successor (milestone: none); earliest baseline start / latest baseline finish exempt, read in the whole IMS, LOE and finished activities included, ties sharing it (block 9: \"earliest baseline start date in the IMS\")"
 
 [[metric]]
 id = "06A205a"

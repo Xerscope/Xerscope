@@ -1343,25 +1343,27 @@ def test_decm_06a204b_reads_a_link_to_another_project_as_successor_by_its_type()
         assert (codes(r), r.denominator) == (expected, 3)
 
 
-def test_decm_06a204b_first_and_last_are_read_among_non_loe_activities():
-    """06A204b v8.0, block 6: "X = Count of incomplete Non-LOE tasks/activities & milestones with open
-    starts or finishes"; block 9: "The first tasks/activities & milestones have the earliest baseline
-    start date in the IMS and" "should be excluded from the open start portion of this metric." (and
-    the last, latest baseline finish, from the open finish portion). The first and last are those of
-    the metric's Non-LOE population: an LOE spanning the project does not take the exemption away.
-
-    LOE 02/03-31/03; FIRST 03/03 -> LAST 04/03 (FS). FIRST has no predecessor but is the first start;
-    LAST has no successor but is the last finish: nothing flagged, with or without the LOE.
+def test_decm_06a204b_first_and_last_are_read_in_the_whole_ims():
+    """06A204b v8.0, block 9: "The first tasks/activities & milestones have the earliest baseline start
+    date in the IMS and should be excluded from the open start portion of this metric." and "The last
+    tasks/activities & milestones have the latest baseline finish date in the IMS..."; "Non-LOE" is in
+    X, Y and the steps only, not in these assumptions (rewritten in v3.4-v3.6 after "Non-LOE" came in
+    v3.3). FIRST 03/03 -> LAST 04/03 (FS); FIRST has no predecessor, LAST no successor.
+    - Without LOE: FIRST is first, LAST is last: nothing flagged, 0 / 2.
+    - LOE 02/03-31/03, strictly earlier and later: FIRST and LAST lose the exemption, 2 / 2.
+    - LOE 03/03 08:00-04/03 17:00, tied with both: "The first tasks/activities & milestones" (plural)
+      share the earliest start, so FIRST and LAST keep it, 0 / 2.
     """
     discrete = [
         planned("FIRST", "2026-03-03 08:00", "2026-03-03 17:00"),
         planned("LAST", "2026-03-04 08:00", "2026-03-04 17:00"),
     ]
-    loe = planned("LOE", "2026-03-02 08:00", "2026-03-31 17:00", task_type="TT_LOE")
-    for tasks in (discrete, [loe, *discrete]):
+    wider = planned("LOE", "2026-03-02 08:00", "2026-03-31 17:00", task_type="TT_LOE")
+    tied = planned("LOE", "2026-03-03 08:00", "2026-03-04 17:00", task_type="TT_LOE")
+    for tasks, expected in ((discrete, []), ([wider, *discrete], ["FIRST", "LAST"]), ([tied, *discrete], [])):
         s = snap(tasks, [("FIRST", "LAST", "FS", 0)])
         r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
-        assert (codes(r), r.denominator) == ([], 2)
+        assert (codes(r), r.denominator) == (expected, 2)
 
 
 def test_actuals_changed_counts_a_removed_date_on_both_sides():
