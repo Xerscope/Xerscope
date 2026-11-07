@@ -324,7 +324,7 @@ anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
     "Blocks 1 to 9, 11 and 13 as CSV, and block 10 without its activity list when an export is loaded. With "
-    "anonymous exports on, Task IDs, resource codes and WBS codes are renamed as in the anonymized XER "
+    "anonymous exports on, Task IDs, resource codes, WBS codes and project ids are renamed as in the anonymized XER "
     "extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
