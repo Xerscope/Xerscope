@@ -857,13 +857,15 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
 
 
 def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline) -> None:
-    """A separate baseline file in force, for every update or as the fallback of those without a
-    usable baseline in their file, whose project is not the Project Baseline those updates name."""
-    if choice == BL_FILE and isinstance(baseline, Baseline):
-        separate, updates = baseline, list(store)
-    elif choice == BL_EACH and st.session_state.get("fallback_choice") == BL_FILE:
+    """A separate baseline file or a loaded update in force, for every update or as the fallback of
+    those without a usable baseline in their file, whose project is not the Project Baseline those
+    updates name."""
+    if choice not in (BL_EACH, BL_PLANNED, BL_NONE):  # the separate file or a loaded update
+        separate, updates, kind = baseline, list(store), choice
+    elif choice == BL_EACH and st.session_state.get("fallback_choice") not in (None, BL_PLANNED, BL_NONE):
         separate = st.session_state.get("fallback")
         updates = [s for s in store if not s.file_baseline.usable]
+        kind = st.session_state.get("fallback_choice")
     else:
         return
     if not isinstance(separate, Baseline):
@@ -877,10 +879,13 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
         f"{codes.get(proj_id, 'a project no loaded file holds')} ({_count(len(snapshots), 'update')})"
         for proj_id, snapshots in sorted(others.items(), key=lambda item: -len(item[1]))
     )
+    what = "separate baseline file" if kind == BL_FILE else "baseline (a loaded update)"
     sidebar.warning(
-        f"The separate baseline file is {loaded.project_code}, but the updates name another P6 Project "
+        f"The {what} is {loaded.project_code}, data date {ui.fmt_date(loaded.data_date)}, but the updates "
+        "name another P6 Project "
         f"Baseline: {named}. Their planned value, BEI and late tasks will not match P6's. (Compared by P6's "
-        "internal project id, which holds within one P6 database only.)",
+        "internal project id, which holds within one P6 database only.) Ask for the export of the project they "
+        "name: Debug, block 5, lists the pointers.",
         icon=":material/warning:",
     )
 

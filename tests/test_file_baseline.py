@@ -397,7 +397,8 @@ def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
     assert len(boxes) == 1
     # counts and dates, no file name: a long series of long names made the line unreadable
     assert "P6 Project Baseline missing for 2 updates of 3" in boxes[0]
-    assert "a project no loaded file holds (its code is unknown), named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
+    unknown = "a project no loaded file holds (its code is unknown)"
+    assert f"{unknown}, named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
     assert "370" not in boxes[0]  # P6's internal project id: never shown
     assert "planned value, BEI, Late Activities and Missed tasks" in boxes[0]
     assert ".xer" not in boxes[0].replace("XER", "") and "Separate baseline file" in boxes[0]
@@ -659,5 +660,26 @@ def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointe
     at = _series(tmp_path, monkeypatch, {"c.xer": c}, keep_env=True)
     assert baseline_box(at).value == BL_FILE
     (warning,) = [w for w in _warnings(at) if "separate baseline file is" in w]
-    assert "is OLDBL, but" in warning and "a project no loaded file holds (1 update)" in warning
+    assert "is OLDBL, data date 02 Mar 2026, but" in warning
+    assert "a project no loaded file holds (1 update)" in warning
+    assert "370" not in warning
+
+
+def test_a_loaded_update_as_baseline_is_named_against_the_pointer(tmp_path, monkeypatch):
+    """Both updates name project 370 (flag Y), absent; the user takes the first update as baseline:
+    the same warning, since P6 measures against 370, not against that update."""
+    from xerscope.app.state import BL_EACH, BL_FILE, BL_NONE, BL_PLANNED
+
+    files = {
+        name: {"pointer": "370", "data_date": stamp, "with_baseline": False, "flag": "Y"}
+        for name, stamp in (("c.xer", "2026-03-09 08:00"), ("d.xer", "2026-03-16 08:00"))
+    }
+    at = _series(tmp_path, monkeypatch, files)
+    box = baseline_box(at)
+    first = next(o for o in box.options if o not in (BL_EACH, BL_FILE, BL_NONE, BL_PLANNED))
+    box.select(first)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    (warning,) = [w for w in _warnings(at) if "baseline (a loaded update) is" in w]
+    assert "is UPD, data date" in warning and "a project no loaded file holds (2 updates)" in warning
     assert "370" not in warning
