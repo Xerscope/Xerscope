@@ -403,6 +403,17 @@ def test_p6_16_and_17_leave_milestones_out():
     assert counts(run(P6, "P6-17", s)) == (0, 4)
 
 
+def test_p6_10a_says_when_an_in_progress_task_has_no_remaining_early_start():
+    """101248: 'in progress, remaining early start before the data date'. P6 writes restart_date for an
+    in-progress task (test_p6_checksched.py, CS1020). A blank one falls back on early_start_date; when an
+    exporter left that at the actual start, the task is flagged. Count pinned, the note says it."""
+    s = snap([active("A", early_start_date="2026-02-23 08:00"), active("B", restart_date=DD)])
+    r = run(P6, "P6-10a", s)
+    assert (counts(r), codes(r)) == ((1, 2), ["A"])
+    assert "1 in-progress task(s) without a remaining early start: early start read" in r.note
+    assert not run(P6, "P6-10a", snap([active("B", restart_date=DD)])).note
+
+
 def _with_params(metric_id, **params):
     return {metric_id: dataclasses.replace(P6[metric_id], params={**P6[metric_id].params, **params})}
 

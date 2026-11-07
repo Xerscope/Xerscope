@@ -276,10 +276,20 @@ def p6_10a_invalid_progress_before(context) -> RuleOutput:
     # a finish before the data date has its start before it too
     forecast = as_flag(~activities["is_complete"] & (early_start < data_date))
     flagged = activities[forecast]
+    # P6 writes the remaining early start (restart_date) of an in-progress task; a blank one falls back on
+    # the early start, which a non-P6 export may leave at the actual start: said, not changed.
+    in_progress = activities["is_started"] & ~activities["is_complete"]
+    without_restart = int((in_progress & activities["restart_date"].isna()).sum())
+    note = (
+        f"{without_restart} in-progress task(s) without a remaining early start: early start read"
+        if without_restart
+        else ""
+    )
     return RuleOutput(
         flagged_activities(flagged, reason="forecast before status date"),
         len(flagged),
         len(activities),
+        note=note,
         checked=activities,
         funnel=funnel,
     )
