@@ -339,7 +339,6 @@ def _apply_drafts() -> None:
     for key, draft in DRAFTS.items():
         if draft in st.session_state:
             st.session_state[key] = st.session_state[draft]
-    st.session_state["bl_defaulted"] = False
     for snapshot in st.session_state.get("store") or ():
         chosen = st.session_state.get(_project_draft(snapshot.source))
         if chosen is not None and chosen != snapshot.project_id:
@@ -993,7 +992,6 @@ def _baseline_picker(store: SnapshotStore) -> None:
     options, default = _baseline_options(store, env_path)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default
-        st.session_state["bl_defaulted"] = True  # not the viewer's choice: set again when the series is complete
     if st.session_state.get("ev_basis") not in EV_BASES:
         st.session_state["ev_basis"] = DEFAULT_EV_BASIS
     if st.session_state.get("bl_fallback") not in _fallback_options(store):

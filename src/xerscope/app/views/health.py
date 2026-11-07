@@ -80,7 +80,7 @@ def show_kpis(results, standard) -> None:
     )
 
 
-def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> None:
+def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     full = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
     full["note"] = [result.note_with_baseline for result in results]  # the export names the baseline
     full["target"] = full["target"].map(typeset)
@@ -112,7 +112,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
     )
     summary_column, trail_column, sets_column, _ = st.columns([1, 1.3, 1.6, 3])
     with sets_column:  # first, so that the Prepare click also readies the downloads beside it
-        prepare_sets(results, standard, snapshot, baseline, sources)
+        prepare_sets(results, standard, snapshot, sources)
     with summary_column:
         # the notes name activities and files: anonymised like the lists
         csv_download(
@@ -134,7 +134,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
             )
 
 
-def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> None:
+def prepare_sets(results, standard, snapshot, sources: list[str]) -> None:
     """All sets of the standard as one CSV (a row per item) and as one CSV per check in a zip,
     built when the button is pressed, anonymised or not as the sidebar switch says."""
     anonymous = anonymous_exports()
@@ -472,7 +472,7 @@ if baseline is None:
 results = standard_results(standard, snapshot, store)
 show_kpis(results, standard)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
-show_summary(results, standard, snapshot, baseline, sources)
+show_summary(results, standard, snapshot, sources)
 show_check_sets(results, standard, snapshot, sources)
 show_details(results, snapshot, only_failed, sources, standard)
 if len(store) > 1:
