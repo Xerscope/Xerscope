@@ -271,3 +271,39 @@ def test_weekly_finish_shifts_add_up_to_the_total_shift():
     shifts = SnapshotStore(updates).summary["finish_shift_wd"]
     assert shifts.iloc[1:].tolist() == [0.25, 0.25, 0.25, 0.25]
     assert shifts.sum() == 1.0
+
+
+# --- a missing date: the shift is missing, not zero ------------------------------------------
+
+NO_DATES = dict(early_start_date="", early_end_date="", target_start_date="", target_end_date="")
+
+
+def test_working_days_to_a_missing_date_is_nan():
+    """The scalar version agrees with the row-wise one (NaN where a date is missing): 0 would
+    read as "did not move"."""
+    s = snap([todo("A")], data_date=FIRST)
+    assert pd.isna(s.calendar().working_days(pd.NaT, pd.Timestamp(LAST)))
+    assert pd.isna(s.project_working_days(s.data_date, None))
+    assert pd.isna(s.activity_working_days("C10", None, pd.Timestamp(LAST)))
+    assert s.calendar().working_days(pd.Timestamp(FIRST), pd.Timestamp(LAST)) == pytest.approx(WD["C8"])
+
+
+def test_changelog_status_date_shift_is_blank_when_the_new_update_has_none():
+    old = snap([todo("A")], data_date=FIRST)
+    new = snap([todo("A")], data_date="", project={"plan_start_date": ""})
+    assert new.data_date is None
+    row = changelog(old, new).query("category == 'Project'").set_index("field").loc["status date"]
+    assert pd.isna(row["delta"])
+
+
+def test_milestone_slip_is_blank_when_the_latest_forecast_is_missing():
+    """M forecast Fri 10 April, then no date at all in the latest update: no slip is known,
+    and the earlier date is not carried over as the latest forecast."""
+    updates = [
+        snap([todo("M", early_end_date="2026-04-10 17:00", **FM)], data_date=FIRST),
+        snap([todo("M", **FM, **NO_DATES)], data_date=LAST),
+    ]
+    store = SnapshotStore(updates)
+    slip = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M"]
+    assert pd.isna(slip["latest_forecast"])
+    assert pd.isna(slip["slip_wd"]) and pd.isna(slip["last_week_wd"])

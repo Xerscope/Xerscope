@@ -76,7 +76,8 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
         {
             "task_name": by_milestone["task_name"].last(),
             "first_forecast": by_milestone["forecast"].first(),
-            "latest_forecast": by_milestone["forecast"].last(),
+            # the latest update's own forecast, missing included: not an earlier one carried over
+            "latest_forecast": by_milestone["forecast"].last(skipna=False),
             "complete": by_milestone["is_complete"].last(),
             "updates": by_milestone.size(),
         }
@@ -89,7 +90,7 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
     ]
     # the forecast one update before the latest (the first of each milestone's last two)
     last_two = trend.sort_values("snapshot_idx").groupby("task_code").tail(2).groupby("task_code")["forecast"]
-    previous_forecast = last_two.first()
+    previous_forecast = last_two.first(skipna=False)
     slips["last_week_wd"] = [
         round(
             latest.activity_working_days(
