@@ -191,16 +191,21 @@ def _pv_spread(baseline: Baseline) -> _Spread:
     return _Spread.build(baseline.snapshot, baseline.frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
 
 
-def pv_curve(baseline: Baseline) -> pd.DataFrame:
-    """Daily and cumulative planned labour hours of the baseline (cumulative = end of day), every
-    baseline activity: the plan itself. An update's PV (``ev_point``) leaves out the activities it
-    no longer holds."""
+def pv_curve(baseline: Baseline, snapshot: Snapshot | None = None) -> pd.DataFrame:
+    """Cumulative planned labour hours of the baseline at instants: every midnight from the first
+    EV start's day to the day after the last EV finish, and ``snapshot``'s data date when given, so
+    the curve there is the update's PV (``ev_point.pv_hr``). ``pv_cum_hr`` is the PV at ``date``;
+    ``pv_hr`` the hours planned since the previous row. Every baseline activity: the plan itself.
+    An update's PV (``ev_point``) leaves out the activities it no longer holds."""
     frame = baseline.frame
     frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
     if frame.empty:
         return pd.DataFrame(columns=["date", "pv_hr", "pv_cum_hr", "pv_pct"])
-    days = pd.date_range(frame["ev_start"].min().normalize(), frame["ev_finish"].max().normalize(), freq="D")
-    curve = pd.DataFrame({"date": days, "pv_cum_hr": _pv_spread(baseline).at(days + pd.Timedelta(days=1))})
+    first, last = frame["ev_start"].min().normalize(), frame["ev_finish"].max().normalize() + pd.Timedelta(days=1)
+    instants = pd.date_range(first, last, freq="D")
+    if snapshot is not None and snapshot.data_date is not None:
+        instants = instants.union([snapshot.data_date])
+    curve = pd.DataFrame({"date": instants, "pv_cum_hr": _pv_spread(baseline).at(instants)})
     curve["pv_hr"] = curve["pv_cum_hr"].diff().fillna(curve["pv_cum_hr"])
     bac = baseline.bac_hours
     curve["pv_pct"] = 100 * curve["pv_cum_hr"] / bac if bac else np.nan
@@ -680,9 +685,9 @@ def evm_series(store: SnapshotStore, baseline: Baseline, link_by_guid: bool = Fa
 
 
 def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
-    """Cumulative hours, one row per day from the data date's day to the last finish: AC
-    plus the remaining hours of open work spread over working time to each activity's
-    finish. As in ``pv_curve``, a row names a day and holds the cumulative at its end."""
+    """Cumulative hours at the data date (AC) then at every midnight to the day after the last
+    finish: AC plus the remaining hours of open work spread over working time to each activity's
+    finish. As in ``pv_curve``, a row holds the value at its instant."""
     activities = snapshot.activities
     open_work = activities[~activities["is_complete"]].copy()
     data_date = snapshot.data_date
@@ -696,10 +701,12 @@ def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
     )
     with_remaining = open_work[(open_work["labor_remaining_hr"] > 0) & open_work["fc_finish"].notna()]
     if with_remaining.empty:
-        return pd.DataFrame({"date": [data_date.normalize()], "fc_cum_hr": [actual_hr]})
-    days = pd.date_range(data_date.normalize(), with_remaining["fc_finish"].max().normalize(), freq="D")
+        return pd.DataFrame({"date": [data_date], "fc_cum_hr": [actual_hr]})
+    day = pd.Timedelta(days=1)
+    midnights = pd.date_range(data_date.normalize() + day, with_remaining["fc_finish"].max().normalize() + day)
+    instants = midnights.union([data_date])
     spread = _Spread.build(snapshot, with_remaining, "labor_remaining_hr", "fc_start", "fc_finish", "clndr_id")
-    return pd.DataFrame({"date": days, "fc_cum_hr": actual_hr + spread.at(days + pd.Timedelta(days=1))})
+    return pd.DataFrame({"date": instants, "fc_cum_hr": actual_hr + spread.at(instants)})
 
 
 def bei_series(

@@ -339,7 +339,7 @@ if baseline.bac_hours <= 0:
     st.stop()
 
 cache_key = ("evm", baseline.label, baseline.ev_basis)  # "planned dates" baselines differ per update
-curve = memo(cache_key + ("pv",), pv_curve, baseline)
+curve = memo(cache_key + ("pv", snapshot.source, str(snapshot.data_date)), pv_curve, baseline, snapshot)
 series = memo(
     cache_key + ("series",),
     evm_series,

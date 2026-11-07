@@ -130,7 +130,8 @@ def build_scurve(
 
     At ``data_date`` a vertical mark joins that update's PV and EV, labelled SV = EV − PV in
     the chart's unit: green when EV >= PV (ahead), red when behind. PV there is the update's
-    own (``series.pv_hr``, as in the KPIs), not the daily curve's end-of-day value.
+    own (``series.pv_hr``, as in the KPIs). ``curve`` and ``forecast`` hold the value at each
+    instant (``pv_curve``, ``forecast_curve``): the PV curve passes through that mark.
     """
     c = SERIES
     bac = float(series["bac_hr"].iloc[0]) if len(series) else 0.0
