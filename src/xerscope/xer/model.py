@@ -4,8 +4,10 @@ Key decisions
 - Activities are identified by ``task_code`` (the P6 Activity ID). ``task_id`` is an
   internal database key that can change when a project is re-imported, so it is only
   used to resolve relationships *inside* a single file.
-- The snapshot date is ``PROJECT.last_recalc_date``: that is where P6 stores the data
-  date in an XER. If it is blank, P6 schedules from the planned start, so we do too.
+- The snapshot date is ``PROJECT.last_recalc_date`` ("Last Recalc Date" in Oracle's XER
+  data map, which names no column "Data Date"). MPXJ reads it as the status date
+  (``TableProjectReader``) and writes the status date there; the reference files' stored
+  dates confirm it (docs/cpm.md). If it is blank, the planned start is used.
 - Durations and float are converted from hours to working days with the task's own
   calendar (``CALENDAR.day_hr_cnt``), which is what every standard threshold is
   expressed in (e.g. DCMA's 44 working days).
