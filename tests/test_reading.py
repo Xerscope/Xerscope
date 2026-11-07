@@ -49,3 +49,13 @@ def test_the_parse_cache_entries_name_the_file_and_its_content(items):
     name, snapshot, cache = read_update(*items[0], None)
     ((key, cached),) = cache.items()
     assert key[0] == name and len(key[1]) == 64 and key[2] is None and cached is snapshot
+
+
+def test_an_error_names_its_file_once():
+    from xerscope.app.reading import error_text
+    from xerscope.xer import XerError
+
+    assert error_text("a.xer", XerError("a.xer: PROJECT or TASK table missing")) == (
+        "a.xer: PROJECT or TASK table missing"
+    )
+    assert error_text("a.xer", KeyError("task_id")) == "a.xer: 'task_id'"

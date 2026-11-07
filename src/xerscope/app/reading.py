@@ -14,10 +14,11 @@ from __future__ import annotations
 import hashlib
 import multiprocessing
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 
+from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import Snapshot, load_snapshot
 
 MAX_WORKERS = 4  # the NAS this runs on has four cores; more processes only add memory
@@ -31,19 +32,49 @@ def worker_count(files: int) -> int:
     return max(1, min(wanted, files))
 
 
-def read_update(name: str, data: bytes, chosen_project: str | None) -> tuple[str, Snapshot | str, dict]:
-    """One file as the app reads it: the project picked for it, else the default one. Returns the
-    name, the Snapshot (or the error text) and the entries for the session's parse cache."""
+def error_text(name: str, exc: Exception) -> str:
+    """The sidebar line of a file that could not be read: the message, named by the file once (an
+    XerError names it already)."""
+    text = str(exc)
+    return text if text.startswith(f"{name}:") else f"{name}: {text}"
+
+
+def read_update(
+    name: str, data: bytes, chosen_project: str | None, parse: Callable[..., Snapshot] = load_snapshot
+) -> tuple[str, Snapshot | str, dict]:
+    """One file as the app reads it, on a worker process or in the script run: the project picked
+    for it, else the default one. Returns the name, the Snapshot (or the error text) and the entries
+    for the session's parse cache. ``parse``: called as ``load_snapshot(data, name=, project_id=)``;
+    the script run passes its session-cached parser."""
     digest = hashlib.sha256(data).hexdigest()
     try:
-        snapshot = load_snapshot(data, name=name)
+        snapshot = parse(data, name=name, project_id=None)
         cache = {(name, digest, None): snapshot}
         if chosen_project in set(snapshot.file_projects["proj_id"]) and chosen_project != snapshot.project_id:
-            snapshot = load_snapshot(data, name=name, project_id=chosen_project)
+            snapshot = parse(data, name=name, project_id=chosen_project)
             cache[(name, digest, chosen_project)] = snapshot
         return name, snapshot, cache
     except Exception as exc:  # noqa: BLE001 - the error is shown for that file, the others load
-        return name, f"{name}: {exc}", {}
+        return name, error_text(name, exc), {}
+
+
+def store_of(results: Iterable[tuple[str, Snapshot | str]]) -> tuple[SnapshotStore | None, list[str]]:
+    """The series of the files read (``read_update``'s name and result, in the order of the series)
+    and the errors met: a file's error text, a file without status date, several files on one."""
+    snapshots, errors = [], []
+    for name, result in results:
+        if isinstance(result, str):
+            errors.append(result)
+        elif result.data_date is None:
+            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
+        else:
+            snapshots.append(result)
+    if not snapshots:
+        return None, errors
+    try:
+        return SnapshotStore(snapshots), errors
+    except DuplicateDataDate as exc:
+        return None, [*errors, f"{exc}. Untick the others."]
 
 
 def read_updates(

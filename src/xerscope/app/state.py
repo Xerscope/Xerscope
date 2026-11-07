@@ -22,7 +22,7 @@ from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
 from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
-from xerscope.app.reading import read_updates
+from xerscope.app.reading import read_update, read_updates, store_of
 from xerscope.export import csv_bytes
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
@@ -65,6 +65,11 @@ def _file_choices() -> dict[str, str]:
     return st.session_state.setdefault("file_projects", {})
 
 
+def _parse_cached(data: bytes, name: str, project_id: str | None = None) -> Snapshot:
+    """``_parse`` with ``load_snapshot``'s signature, for ``reading.read_update``."""
+    return _parse(name, data, project_id)
+
+
 def _read(name: str, data: bytes) -> Snapshot:
     """The snapshot of one file: the project picked for it in the window, else the file's default
     project (``_default_project`` in the model)."""
@@ -80,26 +85,15 @@ def _build(
 ) -> tuple[SnapshotStore | None, list[str]]:
     """Each file read for the project picked for it, else its default project, so a project renamed
     between updates still loads. ``on_file(index, name)`` is called before each file is read (the
-    sidebar's progress line)."""
-    snapshots, errors = [], []
+    sidebar's progress line). The file is read and its error worded as on a worker process
+    (``reading.read_update``), the series built as there (``reading.store_of``)."""
+    choices, results = _file_choices(), []
     for index, (name, data) in enumerate(items):
         if on_file is not None:
             on_file(index, name)
-        try:
-            snapshot = _read(name, data)
-        except XerError as exc:
-            errors.append(str(exc))
-            continue
-        if snapshot.data_date is None:
-            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
-            continue
-        snapshots.append(snapshot)
-    if not snapshots:
-        return None, errors
-    try:
-        return SnapshotStore(snapshots), errors
-    except DuplicateDataDate as exc:
-        return None, [*errors, f"{exc}. Untick the others."]
+        _, result, _ = read_update(name, data, choices.get(name), parse=_parse_cached)
+        results.append((name, result))
+    return store_of(results)
 
 
 def _digest(data: bytes) -> str:
@@ -189,24 +183,8 @@ def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
 
 def _collect(job: LoadJob) -> tuple[SnapshotStore | None, list[str]]:
     """The store of the files read so far, in the order of the series, and the errors met."""
-    snapshots, errors = [], []
-    for name, _ in job.items:
-        result = job.results.get(name)
-        if result is None:
-            continue
-        if isinstance(result, str):
-            errors.append(result)
-        elif result.data_date is None:
-            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
-        else:
-            snapshots.append(result)
     st.session_state.setdefault("_parsed", {}).update(job.cache)
-    if not snapshots:
-        return None, errors
-    try:
-        return SnapshotStore(snapshots), errors
-    except DuplicateDataDate as exc:
-        return None, [*errors, f"{exc}. Untick the others."]
+    return store_of((name, job.results[name]) for name, _ in job.items if name in job.results)
 
 
 @st.fragment(run_every=1.0)
