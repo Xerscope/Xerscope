@@ -25,7 +25,7 @@ from .text import (
     with_synonyms,
 )
 from .text import index as word_index
-from .vocab import Vocabulary
+from .vocab import NAME_COLUMN, RESOURCE_COLUMNS, WBS_COLUMNS, Vocabulary
 
 Item = tuple[int, str, object]
 
@@ -159,17 +159,18 @@ def _node_phrases(vocab: Vocabulary) -> tuple[dict[str, tuple[list[str], set[str
     A partial name word said by a synonym ("électricité"), the full name or the code: the node only."""
     phrases: dict[str, tuple[list[str], set[str]]] = {}
     stands_for: dict[tuple[str, str], str] = {}
+    synonyms, own_synonyms = vocab.synonyms(*WBS_COLUMNS), vocab.synonyms(NAME_COLUMN)
     for wbs_id, label in vocab.wbs.items():
         code, _, name = label.partition(" · ")
         own = vocab.node_words.get(wbs_id, frozenset())
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in STOP] + sorted(own)
         for word in words:
             if word in own:
-                for said in with_synonyms([word], vocab.lexicon):
+                for said in with_synonyms([word], own_synonyms):
                     stands_for.setdefault((wbs_id, plain(said)), word)
             elif vocab.words and word in vocab.words and word not in (plain(name), plain(code)):
                 stands_for.setdefault((wbs_id, word), word)
-        candidates = [plain(c) for c in with_synonyms([fold(code), fold(name), *words], vocab.lexicon)]
+        candidates = [plain(c) for c in with_synonyms([fold(code), fold(name), *words], synonyms)]
         phrases[wbs_id] = (candidates, {plain(c) for c in (fold(code), fold(name), *words)})
     return phrases, stands_for
 
@@ -213,7 +214,7 @@ def _typo_node(rest: _Rest, vocab: Vocabulary, add) -> float:
         # (typo_word) and no own word (vocab._reserved), so "starting" never reads "setting"
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 5 and w not in STOP]
         words += sorted(vocab.node_words.get(wbs_id, ()))
-        close = closest(rest.unread(vocab), with_synonyms([fold(code), *words], vocab.lexicon))
+        close = closest(rest.unread(vocab), with_synonyms([fold(code), *words], vocab.synonyms(*WBS_COLUMNS)))
         if close:
             scores[wbs_id] = close[2]
             if best is None or close[2] > best[2]:
@@ -253,9 +254,10 @@ def _label(candidate: str, rest: _Rest) -> bool:
 def _resource_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
     """Resources by short name or name (or a synonym), whole word, longest first; none: a typo."""
     ranked = sorted(vocab.resources.items(), key=lambda kv: -max(len(kv[1][0]), len(kv[1][1])))
+    synonyms = vocab.synonyms(*RESOURCE_COLUMNS)
     named = False
     for rsrc_id, (short, name) in ranked:
-        candidates = sorted(with_synonyms([fold(short), fold(name)], vocab.lexicon), key=len, reverse=True)
+        candidates = sorted(with_synonyms([fold(short), fold(name)], synonyms), key=len, reverse=True)
         said = next((c for c in candidates if _label(c, rest)), None)
         if said is not None:
             found.append((rest.take(said), "x", Atom("resource", rsrc_id)))
@@ -263,7 +265,7 @@ def _resource_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
     if named:
         return 1.0
     for rsrc_id, (short, name) in ranked:
-        close = closest(rest.unread(vocab), with_synonyms([fold(short), fold(name)], vocab.lexicon))
+        close = closest(rest.unread(vocab), with_synonyms([fold(short), fold(name)], synonyms))
         if close:
             found.append((rest.take(close[0]), "x", Atom("resource", rsrc_id)))
             return close[2]
@@ -274,6 +276,7 @@ def _word_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
     """What is left: a word of the Activity IDs and names (or its synonym, or a typo on one) is
     a search word; a word nothing holds is a ``u`` item; stop words drop."""
     confidence, tries = 1.0, 0
+    synonyms = vocab.synonyms(NAME_COLUMN)
     for match in re.finditer(r"\S+", rest.text):
         word = match.group(0)
         if word in STOP or len(word) < 2:
@@ -282,7 +285,7 @@ def _word_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
         if vocab.words is None:  # the file's words unknown: every word searched
             found.append((index, "x", Atom("word", word)))
             continue
-        known = next((w for w in (word, *vocab.lexicon.get(word, ())) if w in vocab.words), None)
+        known = next((w for w in (word, *synonyms.get(word, ())) if w in vocab.words), None)
         if known is None and tries < MAX_FUZZY and typo_word(word):  # a typo on a name word, bounded
             tries += 1
             if close := closest([word], word_index(vocab.words)):

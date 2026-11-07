@@ -89,12 +89,13 @@ asked = st.text_input(
 )
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
-lexicon = memo(  # rebuilt when a word is taught
+lexicon = memo(  # the labels of every loaded file (memo's key names them all), rebuilt when a word is taught
     ("vocabulary", snapshot.source, len(taught)),
     query.vocabulary,
     snapshot,
     nodes,
     session_lexicon(),
+    [other for other in store if other is not snapshot],
     baseline=False,
     ev_basis=False,
 )

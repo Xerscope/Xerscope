@@ -43,9 +43,10 @@ def facet_steps(
 ) -> list[tuple[str, Expr]]:
     """(step label, expression) of each facet the filter holds, as the funnel names them."""
     steps: list[tuple[str, Expr]] = []
-    if filter.wbs_id and nodes is not None and filter.wbs_id in set(nodes["wbs_id"]):
-        node = nodes.loc[nodes["wbs_id"] == filter.wbs_id].iloc[0]
-        steps.append((f"WBS {node['wbs_code']} · {node['wbs_name']}", Atom("wbs", filter.wbs_id)))
+    if filter.wbs_id and nodes is not None:  # a node of another update only: no row here
+        node = nodes.loc[nodes["wbs_id"] == filter.wbs_id]
+        label = f"{node.iloc[0]['wbs_code']} · {node.iloc[0]['wbs_name']}" if len(node) else "not in this update"
+        steps.append((f"WBS {label}", Atom("wbs", filter.wbs_id)))
     if filter.status:
         steps.append((f"status {' / '.join(filter.status)}", _any("status", filter.status)))
     if filter.categories and "category" in tasks:

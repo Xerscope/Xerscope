@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -12,6 +12,12 @@ from ..wbs import ROOT
 from .grammar import CATEGORIES, GRAMMAR_WORDS, STATUSES
 from .lexicon import Lexicon
 from .text import COMMON, STOP, tokens, words_of
+
+# the source columns of the file's labels (XER table.field): a variant group never crosses one
+WBS_COLUMNS = ("PROJWBS.wbs_short_name", "PROJWBS.wbs_name")
+RESOURCE_COLUMNS = ("RSRC.rsrc_short_name", "RSRC.rsrc_name")
+CODE_COLUMNS = ("ACTVTYPE.actv_code_type", "ACTVCODE.short_name", "ACTVCODE.actv_code_name")
+NAME_COLUMN = "TASK.task_name"
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,18 @@ class Vocabulary:
     # is that activity exactly ("C3020", never "C30201")
     ids: Mapping[tuple[str, ...], str] = field(default_factory=dict)
     data_date: pd.Timestamp | None = None  # what "this week", "next month" count from
+    # the file's own variants, grouped within one source column ("PROJWBS.wbs_name", ...): a
+    # word of a column is read as the other words of its group in that column only
+    variants: Mapping[str, Lexicon] = field(default_factory=dict)
+
+    def synonyms(self, *columns: str) -> Lexicon:
+        """The company's lexicon and the file's variants of ``columns``: what a sentence may say
+        for a label of those columns."""
+        merged = {word: list(others) for word, others in self.lexicon.items()}
+        for column in columns:
+            for word, others in self.variants.get(column, {}).items():
+                merged.setdefault(word, []).extend(o for o in others if o not in merged[word])
+        return {word: tuple(others) for word, others in merged.items()}
 
     def to_prompt(self) -> dict:
         """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
@@ -52,24 +70,39 @@ class Vocabulary:
         }
 
 
-def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: Lexicon | None = None) -> Vocabulary:
+def vocabulary(
+    snapshot: Snapshot,
+    nodes: pd.DataFrame | None = None,
+    lexicon: Lexicon | None = None,
+    others: Iterable[Snapshot] = (),
+    variants: Mapping[str, Lexicon] | None = None,
+) -> Vocabulary:
     """``nodes`` is ``analysis.wbs.tree``/``rollup`` output (``wbs_id``, ``wbs_code``, ``wbs_name``);
     ``snapshot.wbs`` when not given. The project node and the synthetic root are left out.
-    ``lexicon``: the company's trade words (``load_lexicon``), none by default."""
-    wbs = wbs_labels(snapshot.wbs if nodes is None else nodes)
-    resources = resource_names(snapshot)
+    ``lexicon``: the company's trade words (``load_lexicon``), none by default. ``others``: the
+    other files loaded (every update of the folder): their WBS, codes, resources, Activity IDs
+    and name words are known too, so a word of another update is understood (and finds no row
+    here) instead of being unknown; the displayed update's labels win on a shared id. Built in
+    memory, never written. ``variants``: the generated groups of each source column
+    (``generated.variants``)."""
+    files = [*others, snapshot]  # the displayed update last: its labels win
+    wbs = {k: v for f in others for k, v in wbs_labels(f.wbs).items()} | wbs_labels(
+        snapshot.wbs if nodes is None else nodes
+    )
+    resources = {k: v for f in files for k, v in resource_names(f).items()}
     activities = snapshot.activities
     return Vocabulary(
         wbs=wbs,
-        codes=code_values(snapshot),
+        codes={k: v for f in files for k, v in code_values(f).items()},
         resources=resources,
-        words=name_words(activities),
+        words=frozenset().union(*(name_words(f.activities) for f in files)),
         has_milestones=bool(activities["is_milestone"].any()),
         has_loe=bool(activities["is_loe"].any()),
         lexicon={} if lexicon is None else lexicon,
         node_words=node_words(activities, wbs, nodes, resources),
-        ids=activity_ids(activities),
+        ids={k: v for f in files for k, v in activity_ids(f.activities).items()},
         data_date=snapshot.data_date,
+        variants=dict(variants or {}),
     )
 
 

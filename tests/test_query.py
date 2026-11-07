@@ -442,3 +442,20 @@ def test_unknown_words_cost_no_more_than_a_few_lookups():
     got = query.parse_keywords(sentence, vocab)
     assert time.perf_counter() - start < 0.5 and len(got.ignored) + len(got.search.split()) == 30
     assert len(query.parse_keywords("x" * 5000, vocab).ignored) <= 2  # read up to MAX_CHARS
+
+
+def test_a_word_of_another_loaded_file_is_understood_on_the_displayed_update():
+    """The vocabulary covers every loaded file: "pump" names an activity of an earlier update
+    only; on the displayed update it is understood (and finds no row), not unknown."""
+    from xerkit import snap, todo
+
+    earlier = snap([todo("A1", task_name="Pump alignment")], data_date="2026-03-02 08:00")
+    shown = snap([todo("A2", task_name="Valve test")], data_date="2026-03-09 08:00")
+    alone = query.parse_keywords("pump", query.vocabulary(shown))
+    assert alone.empty and alone.ignored == ("pump",)
+    vocab = query.vocabulary(shown, others=[earlier])
+    for text, expected in (("pump", "word:pump"), ("A1", "id:A1"), ("valve", "word:valve")):
+        got = query.parse_keywords(text, vocab)
+        assert (query.canonical(got, vocab), got.ignored) == (expected, ()), text
+    rows = query.apply(query.parse_keywords("pump", vocab), shown.activities, shown).rows
+    assert rows.empty  # understood, and no activity of this update holds it
