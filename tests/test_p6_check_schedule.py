@@ -414,6 +414,37 @@ def test_p6_10a_says_when_an_in_progress_task_has_no_remaining_early_start():
     assert not run(P6, "P6-10a", snap([active("B", restart_date=DD)])).note
 
 
+def _with_external_ss(in_file: bool):
+    """A -> B FS inside project T, and an SS link from X9 of project 2 into A; X9 is in the file or not."""
+    if not in_file:
+        return snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("X9", "A", "SS", 0, "2")])
+    text = with_second_project(xer_text([todo("A"), todo("B")], [("A", "B", "FS", 0)]), "P2", ["X9"], DD)
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="9", task_id="1", pred_task_id="100", proj_id="1", pred_proj_id="2", pred_type="PR_SS")
+    row.update(lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    return build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), "T")
+
+
+def test_relationship_checks_say_which_external_links_they_hold():
+    """UNRESOLVED (docs/standards.md): how P6 counts a link from another project is not documented. Pinned:
+    the link is counted when its project is in the file, dropped when not, and the note says which.
+    P6-07: FS share 1 / 1 without X9, 1 / 2 with it; P6-08: 0 / 1 and 0 / 2."""
+    out, inside = _with_external_ss(False), _with_external_ss(True)
+    assert out.external_links_dropped == 1 and inside.external_links_dropped == 0
+    for metric_id, expected_out, expected_in in (("P6-07", (1, 1), (1, 2)), ("P6-08", (0, 1), (0, 2))):
+        r_out, r_in = run(P6, metric_id, out), run(P6, metric_id, inside)
+        assert (counts(r_out), counts(r_in)) == (expected_out, expected_in), metric_id
+        assert "1 link(s) from a project not in the file: not counted" in r_out.note, metric_id
+        assert "1 link(s) from another project of the file: counted" in r_in.note, metric_id
+    for metric_id in ("P6-05", "P6-09"):
+        assert "not counted" in run(P6, metric_id, out).note
+    assert not run(P6, "P6-08", snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])).note
+
+
 def _with_params(metric_id, **params):
     return {metric_id: dataclasses.replace(P6[metric_id], params={**P6[metric_id].params, **params})}
 

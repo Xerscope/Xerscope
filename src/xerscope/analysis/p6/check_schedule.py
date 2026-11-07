@@ -72,6 +72,22 @@ def _links(context) -> Funnel:
     return link_funnel(context, "not_both_complete", source="101248")
 
 
+def _external_links_note(context, relationships) -> str:
+    """Which links from other projects the relationship checks hold. A link from another project of the
+    file is in ``relationships`` (its predecessor named ``[ext]<task_id>``) and is counted; one from a
+    project not in the file is dropped by the model. The same project can thus give two denominators
+    depending on the export; how P6 counts external links is not documented (UNRESOLVED,
+    docs/standards.md)."""
+    counted = int(relationships["is_external"].astype(bool).sum())
+    dropped = context.snapshot.external_links_dropped
+    parts = []
+    if counted:
+        parts.append(f"{counted} link(s) from another project of the file: counted")
+    if dropped:
+        parts.append(f"{dropped} link(s) from a project not in the file: not counted")
+    return "; ".join(parts)
+
+
 @rule("p6_01_logic", "%")
 def p6_01_logic(context) -> RuleOutput:
     """Missing a predecessor or a successor.
@@ -178,7 +194,12 @@ def p6_05_long_lags(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
 
     flagged = lag_flagged(relationships, operator.gt, limit_hours)
     return RuleOutput(
-        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+        flagged_relationships(flagged),
+        len(flagged),
+        len(relationships),
+        note=_external_links_note(context, relationships),
+        checked=relationships,
+        funnel=funnel,
     )
 
 
@@ -213,6 +234,7 @@ def p6_07_relationship_types(context) -> RuleOutput:
     46287: actual = share of FS links in the subset"""
     funnel = _links(context)
     out = share_of_type(funnel.rows, "FS")
+    out.note = "; ".join(part for part in (out.note, _external_links_note(context, funnel.rows)) if part)
     out.funnel = funnel
     return out
 
@@ -230,7 +252,12 @@ def p6_08_lags(context) -> RuleOutput:
 
     flagged = lag_flagged(relationships, operator.gt, 0)
     return RuleOutput(
-        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+        flagged_relationships(flagged),
+        len(flagged),
+        len(relationships),
+        note=_external_links_note(context, relationships),
+        checked=relationships,
+        funnel=funnel,
     )
 
 
@@ -247,7 +274,12 @@ def p6_09_negative_lags(context) -> RuleOutput:
 
     flagged = lag_flagged(relationships, operator.lt, 0)
     return RuleOutput(
-        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+        flagged_relationships(flagged),
+        len(flagged),
+        len(relationships),
+        note=_external_links_note(context, relationships),
+        checked=relationships,
+        funnel=funnel,
     )
 
 

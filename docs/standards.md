@@ -16,7 +16,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 |---|---|---|---|
 | Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
-| Relationships checked | all except links between two finished activities | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
+| Relationships checked | all except links between two finished activities; a link from another project counted only when that project is in the file (UNRESOLVED, below) | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
 | Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
@@ -76,6 +76,15 @@ milestones carried Start on or after constraints, which "Ignore activities with 
 reading until a report with the options unchecked shows it (`test_p6_16_and_17_leave_milestones_out`).
 P6-15 reads FS and SS links between activities of the project; FF, SF and links to other projects
 are not read (`test_p6_15_reads_fs_and_ss_links_inside_the_project_only`).
+The relationship checks (P6-05, P6-07, P6-08, P6-09) count the links into the project's activities.
+A link from an activity of another project is counted when that project's activities are in the
+file (the predecessor reads `[ext]<task_id>`), and dropped when they are not
+(`Snapshot.external_links_dropped`): the same project gives two denominators depending on what the
+export holds. Oracle's relationship sections (113174, 46287–46290) say nothing about external links,
+and the report lists "Projects Checked Have Links to the Following Closed Projects" without saying
+whether those links are counted. Until a P6 report settles it, each check's note gives both numbers
+(`test_relationship_checks_say_which_external_links_they_hold`). A link to a successor in another
+project belongs to that project's relationships, never to this one's.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.
