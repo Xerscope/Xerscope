@@ -262,7 +262,7 @@ if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
 ask_funnel = None
 if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
-    ask_funnel = query.apply(ask, tasks, snapshot, nodes)
+    ask_funnel = query.apply(ask, tasks, snapshot, nodes, baseline)  # "late" reads the page's baseline
     tasks = ask_funnel.rows
     with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
         # nothing understood but words left out: no row (query.apply); only stop words: no filter

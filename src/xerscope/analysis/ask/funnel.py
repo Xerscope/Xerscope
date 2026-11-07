@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from ...xer import Snapshot
+from ..baseline import Baseline
 from ..populations import Funnel
 from .filters import Filter
 from .grammar import And, Atom, Expr, Not, Or
@@ -16,23 +17,32 @@ from .text import fold
 
 @dataclass(frozen=True)
 class Context:
-    """What an atom may read besides the rows: the file (codes, assignments, links) and the WBS tree."""
+    """What an atom may read besides the rows: the file (codes, assignments, links, calendars),
+    the WBS tree and the page's baseline (for late)."""
 
     snapshot: Snapshot
     nodes: pd.DataFrame | None = None
+    baseline: Baseline | None = None
 
 
-def apply(filter: Filter, tasks: pd.DataFrame, snapshot: Snapshot, nodes: pd.DataFrame | None = None) -> Funnel:
+def apply(
+    filter: Filter,
+    tasks: pd.DataFrame,
+    snapshot: Snapshot,
+    nodes: pd.DataFrame | None = None,
+    baseline: Baseline | None = None,
+) -> Funnel:
     """The sentence's filters as the steps of a ``Funnel`` over ``tasks`` (the page's frame, with
     its ``category`` column), one named step per filter understood, source ``ask``: a reader
     sees what each removed and how many are left, as under every check. ``nodes`` is the WBS
-    tree (``analysis.wbs.tree``) for the branch step; without it a WBS filter is skipped. A
+    tree (``analysis.wbs.tree``) for the branch step; without it a WBS filter is skipped.
+    ``baseline``: the page's baseline, which "late" reads (P6-12); none: the planned finish. A
     sentence of which nothing was understood but words were left out keeps no row (the page
     then offers the closest labels), never every row."""
     funnel = Funnel(tasks, snapshot.data_date)
     if filter.empty and filter.ignored:
         return funnel.keep("nothing understood", "ask", lambda rows: pd.Series(False, index=rows.index))
-    context = Context(snapshot, nodes)
+    context = Context(snapshot, nodes, baseline)
     for label, expr in [*facet_steps(filter, tasks, snapshot, nodes), *filter.clauses]:
         funnel.keep(label, "ask", lambda rows, expr=expr: mask(expr, rows, context))
     return funnel
@@ -164,6 +174,19 @@ def _constrained(rows: pd.DataFrame, value, context: Context) -> pd.Series:
     return constrained_by(rows, kinds, ignore_started_starts=True)
 
 
+def _late(rows: pd.DataFrame, value, context: Context) -> pd.Series:
+    """P6 Check Schedule Late Activities (P6-12, 101248; finish variance in working time, 46278):
+    open activities forecast to finish later than their baseline finish, the planned finish
+    when the baseline has none (or no baseline is given). The set only: P6-12's population
+    (milestones and LOE out) is the check's, so "jalons en retard" keeps its milestones."""
+    finish = pd.Series(pd.NaT, index=rows.index, dtype="datetime64[ns]")
+    if context.baseline is not None:
+        finish = rows[["task_code"]].join(context.baseline.frame[["bl_finish"]], on="task_code")["bl_finish"]
+    finish = finish.combine_first(rows["target_end_date"])
+    variance = context.snapshot.work_hours(rows["clndr_id"], finish, rows["finish"])
+    return ~rows["is_complete"].astype(bool) & (variance > 0)
+
+
 def _linked(rows: pd.DataFrame, value, context: Context) -> pd.Series:
     """A predecessor (pred) or successor (succ) in the project, or in another project (as P6-01)."""
     from ..populations import has_predecessor_in_project, has_successor_in_project
@@ -190,8 +213,7 @@ ATOMS = {  # atom kind -> the rows it names
     "milestone": lambda rows, value, context: rows["is_milestone"],
     "loe": lambda rows, value, context: rows["is_loe"],
     "word": lambda rows, value, context: all_words(rows, [value]),
-    # total float below zero on open work (Oracle 47223, Total Float); complete work has none
-    "late": lambda rows, value, context: ~rows["is_complete"].astype(bool) & (rows["total_float_hr_cnt"] < 0),
+    "late": _late,  # finish later than the baseline finish (P6-12); "negative float" is a tf comparison
     "id": lambda rows, value, context: rows["task_code"] == value,
     "cmp": _compare,
     "date": _dated,

@@ -17,7 +17,7 @@ VOCAB = Vocabulary(
 )
 
 
-LATE = ("Late (total float < 0)", query.Atom("late"))
+LATE = ("Late (finish after baseline finish)", query.Atom("late"))
 
 
 def test_vocabulary_matches_the_page_widgets():
@@ -35,7 +35,7 @@ def test_vocabulary_matches_the_page_widgets():
         ("critiques non démarrées CIV", Filter(wbs_id="1", status=("Not started",), categories=("Critical",))),
         ("quasi critique en cours", Filter(status=("In progress",), categories=("Near critical",))),  # not "Critical"
         ("ingenierie terminée", Filter(wbs_id="2", status=("Complete",))),
-        ("en retard mechanical", Filter(wbs_id="3", clauses=(LATE,))),  # late = total float < 0, not Critical
+        ("en retard mechanical", Filter(wbs_id="3", clauses=(LATE,))),  # late = P6-12, not Critical
         ("zone B2 not started", Filter(status=("Not started",), code_type="Zone", code_ids=frozenset({"c1"}))),
         ("B2 et B3", Filter(code_type="Zone", code_ids=frozenset({"c1", "c2"}))),
         ("B2 P1", Filter(code_type="Zone", code_ids=frozenset({"c1"}))),  # one code type at a time
@@ -342,13 +342,35 @@ def test_a_clause_holding_an_unknown_word_is_not_applied_and_is_named():
     assert got.empty and got.ignored == ("xyzzy",)  # an OR with an unknown operand: nothing applied
 
 
-def test_late_is_negative_total_float_not_critical(store):
-    """Oracle P6 help 47223, Total Float: "a negative float indicates that the project is already
-    behind schedule". Critical follows the project's critical path definition, another set."""
-    _, _, tasks, _ = _demo(store)
+def test_late_is_p6_late_activities_and_negative_float_is_its_own_set(store):
+    """Late = P6 Check Schedule Late Activities (P6-12, 101248): open, forecast finish later than the
+    baseline finish in working time (46278), the planned finish without one. The set, not P6-12's
+    population: P6-12 leaves milestones and LOE out of its count, "jalons en retard" keeps them.
+    "Marge négative" is total float < 0 (P6-14). Critical is a third set."""
+    from rulekit import codes, run_on_store
+
+    from xerscope.analysis.baseline import Baseline
+
+    snapshot, nodes, tasks, vocab = _demo(store)
+    first = Baseline.from_snapshot(store.first)
+    late = set(query.apply(query.parse_keywords("en retard", vocab), tasks, snapshot, nodes, first).rows["task_code"])
+    flagged = set(codes(run_on_store(store, len(store) - 1, "P6-12")))
+    other = set(tasks.loc[tasks["is_milestone"] | tasks["is_loe"], "task_code"])
+    assert flagged and flagged <= late and late - flagged <= other
+    bl = tasks[["task_code"]].join(first.frame[["bl_finish"]], on="task_code")["bl_finish"]
+    by_hand = snapshot.work_hours(tasks["clndr_id"], bl.combine_first(tasks["target_end_date"]), tasks["finish"]) > 0
+    assert late == set(tasks.loc[by_hand & ~tasks["is_complete"], "task_code"])
     negative = set(tasks.loc[~tasks["is_complete"] & (tasks["total_float_hr_cnt"] < 0), "task_code"])
-    assert negative and _rows("en retard", store) == _rows("late", store) == _rows("marge négative", store) == negative
-    assert _rows("en retard", store) != _rows("critique", store)  # K5010 (TF 0) is critical, not late
+    assert _rows("marge négative", store) == _rows("negative float", store) == negative
+    assert _rows("late", store) != _rows("critique", store)
+    planned = query.apply(query.parse_keywords("late", vocab), tasks, snapshot, nodes)  # no baseline: planned finish
+    assert set(planned.rows["task_code"]) == set(
+        tasks.loc[
+            ~tasks["is_complete"]
+            & (snapshot.work_hours(tasks["clndr_id"], tasks["target_end_date"], tasks["finish"]) > 0),
+            "task_code",
+        ]
+    )
 
 
 @pytest.mark.parametrize(

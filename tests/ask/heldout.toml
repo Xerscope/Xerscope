@@ -14,7 +14,7 @@ wbs = "MEC"
 float = ["Critical"]
 
 [[case]]
-text = "what is late in procurement"   # expectation changed with the meaning of late (total float < 0)
+text = "what is late in procurement"   # expectation changed with the meaning of late (P6-12 Late Activities)
 wbs = "PRC"
 clauses = ["late"]
 

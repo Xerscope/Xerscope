@@ -30,7 +30,7 @@ status = ["Complete"]
 [[case]]
 text = "en retard mechanical"   # "mechanical" names the node and activities: the node, and a search in it
 wbs = "MEC"
-clauses = ["late"]   # late = total float < 0 (Oracle 47223), not Critical
+clauses = ["late"]   # late = P6-12 Late Activities (finish after baseline finish), not Critical
 search = "mechanical"
 
 [[case]]

@@ -92,9 +92,9 @@ CATEGORY_PHRASES = {
     "Critical": {"en": ["critical", "critical path"], "fr": ["critique", "critiques", "chemin critique"]},
     "Normal": {"en": ["normal", "with float"], "fr": ["normale", "normales", "normaux", "avec marge"]},
 }
-# late = total float below zero (Oracle P6 help, Total Float, 47223: "a negative float indicates
-# that the project is already behind schedule"); not Critical, which follows the project's
-# critical path definition (formulas.md §1.2)
+# late = forecast finish later than the baseline finish, as P6 Check Schedule's Late Activities
+# (P6-12, 101248), not Critical (the project's critical path definition, formulas.md §1.2) nor
+# negative float ("marge négative" is total float < 0, P6-14)
 LATE_PHRASES = {
     "en": ["late", "behind", "behind schedule", "delayed"],
     "fr": ["en retard", "retard", "retards", *_forms(("retarde",))],

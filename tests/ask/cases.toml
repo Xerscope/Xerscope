@@ -33,7 +33,7 @@ text = "jalons"  # battery
 expect = "milestone"
 
 [[case]]
-text = "jalons en retard"  # battery; H2: late = TF < 0, not Critical
+text = "jalons en retard"  # battery; H2: late = P6-12 (finish after baseline finish), not Critical
 expect = "late & milestone"
 
 [[case]]
