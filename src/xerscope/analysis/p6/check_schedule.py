@@ -364,20 +364,24 @@ def p6_13_bei(context) -> RuleOutput:
     101248 says baseline tasks finishing before the status date, but a P6 Professional report (R1,
     docs/standards.md) divides by a total equal to its Resources/Cost total: P6 counts every baseline
     task, whatever its finish date. The report wins. Milestones, WBS summary
-    and LOE not included on either side"""
+    and LOE not included on either side. Without a status date the index is still computed (neither side
+    reads it); only the list of tasks due is left empty"""
     data_date = context.snapshot.data_date
-    if data_date is None:
-        return RuleOutput(note="no status date")
     activities = with_baseline(context.baseline, without(context.snapshot.activities, data_date, ("milestones", "loe")))
     funnel = activity_funnel(context.baseline.snapshot).exclude("milestones", "101248").exclude("loe", "101248")
     baseline_activities = funnel.rows
     completed = int(activities["is_complete"].sum())
-    due = activities[as_flag(activities["bl_finish"] <= data_date) & ~activities["is_complete"]]
+    if data_date is None:
+        due = activities.iloc[0:0]
+    else:
+        due = activities[as_flag(activities["bl_finish"] <= data_date) & ~activities["is_complete"]]
     total = len(baseline_activities)
     gone = len(set(baseline_activities["task_code"]) - set(context.snapshot.activities["task_code"]))
     note = f"{completed} completed / {total} baseline tasks"
     if gone:
         note += f"; {gone} of them no longer in the schedule"
+    if data_date is None:
+        note += "; no status date: tasks due not listed"
     index = completed / total if total else None
     return RuleOutput(
         flagged_activities(due, bl_finish=due["bl_finish"]),
