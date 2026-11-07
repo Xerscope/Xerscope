@@ -39,15 +39,18 @@ ACTIVITY_COLUMNS = [
     "task_code",
     "bl_name",
     "wbs_code",
-    "bl_labor_hr",
+    "ev_labor_hr",
     "schedule_pct",
     "pv_hr",
     "ev_technique",
     "perf_pct",
     "ev_hr",
     "labor_actual_hr",
-    "bl_finish",
+    "ev_finish",
 ]
+
+
+EV_BASIS_COLUMNS = {"bl_labor_hr": "ev_labor_hr", "bl_start": "ev_start", "bl_finish": "ev_finish"}
 
 
 def format_points(change: float) -> str:
@@ -147,8 +150,8 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "PV",
-                    "Σ BL hours × Schedule % Complete (working time elapsed between BL start and BL finish, "
-                    "on the task's calendar, at the status date)",
+                    "Σ BL hours × Schedule % Complete (working time elapsed between the EV start and EV finish "
+                    "of the earned value basis, on the task's calendar, at the status date)",
                     f"{planned:,.1f} h  ({row['pv_pct']:.1f} % of BAC)",
                     "Planned Value Labor Units",
                 ),
@@ -290,10 +293,15 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
 
 def show_activity_detail(snapshot, baseline) -> None:
     with st.expander(f"Earned hours by task ({ui.stamp(snapshot.data_date)})"):
-        values = earned(snapshot, baseline).reset_index()
+        # earned() names the EV basis values bl_*: here they carry their own name, apart from the BL columns
+        values = earned(snapshot, baseline).reset_index().rename(columns=EV_BASIS_COLUMNS)
         # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
         activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
+        st.caption(
+            f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
+            f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."
+        )
         csv_download(
             activities[ACTIVITY_COLUMNS],
             f"earned_{ui.stamp(snapshot.data_date)}.csv",

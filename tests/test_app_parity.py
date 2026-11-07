@@ -393,7 +393,12 @@ def test_earned_value_table_csv_and_chart_total_the_kpi_population(tmp_path, mon
     files = [saved[b.proto.url.rsplit("/", 1)[-1].split(".")[0]] for b in at.get("download_button")]
     (csv,) = [table for table in map(pd.read_csv, map(io.BytesIO, files)) if "task_code" in table]
     assert "D" not in set(csv["task_code"])
-    assert csv[["bl_labor_hr", "pv_hr", "ev_hr"]].sum().tolist() == pytest.approx([40, 16, 0])
+    assert csv[["ev_labor_hr", "pv_hr", "ev_hr"]].sum().tolist() == pytest.approx([40, 16, 0])
+    # hours and finish of the EV basis, named as such: not the baseline's own (BL) columns
+    assert not {"bl_labor_hr", "bl_finish"} & set(csv.columns)
+    frame = Baseline.from_snapshot(store.first).frame
+    assert list(pd.to_datetime(csv["ev_finish"])) == [frame.loc["A", "ev_finish"]]
+    assert any("Budgeted values with planned dates" in caption.value for caption in at.caption)
     figure = plotly.io.from_json(at.get("plotly_chart")[0].proto.spec)
     pv = next(trace for trace in figure.data if trace.name == "PV (baseline)")
     pv_hours = np.frombuffer(base64.b64decode(pv.y["bdata"]), dtype=pv.y["dtype"])  # plotly's typed array
