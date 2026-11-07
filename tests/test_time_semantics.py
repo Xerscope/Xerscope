@@ -125,6 +125,34 @@ def test_dcma_11_due_by_day(dd):
 
 
 @pytest.mark.parametrize("dd", DD_HOURS)
+def test_dcma_14_reads_due_and_completed_at_the_same_grain(dd):
+    """DCMA-EA PAM 200.1 §3.1.2.4 (https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf):
+    step 2 "Filter the Baseline Finish data to include only dates up to the current reporting period of
+    the IMS." and step 5 "Filter the Actual Finish data to include only dates up to the current reporting
+    period of the IMS.": one filter, one bound, so due and completed share dcma.toml's date_grain = "day".
+
+    A: baseline finish Monday 17:00, finished Monday 12:00 -> due, completed.
+    B: baseline finish Monday 17:00, forecast Thursday -> due, not completed (listed).
+    C: baseline finish and actual finish Friday 27/02 17:00 -> due, completed.
+    BEI = 2 / 3 at any hour of the data date; the last funnel step keeps the 3 due tasks.
+    """
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            done("A", act_end_date=SAME_DAY, target_start_date=st, target_end_date=at("17:00")),
+            todo("B", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date=at("17:00")),
+            done("C", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+        ],
+        data_date=at(dd),
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (2, 3)
+    assert r.value == pytest.approx(2 / 3)
+    assert codes(r) == ["B"]
+    assert r.funnel.steps[-1].left == r.denominator
+
+
+@pytest.mark.parametrize("dd", DD_HOURS)
 def test_p6_13_lists_due_by_timestamp(dd):
     """101248, BEI: baseline activities "calculated to finish before the open project's data date", read
     on the stored timestamp (p6.toml default), so a baseline finish at 12:00 is due by a data date at

@@ -178,11 +178,12 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 11 | Missed tasks | due by the data date (baseline finish, by calendar day); missed when finished, or forecast to finish, on a later calendar date or with a Finish Variance > 0 in working time (PAM's two criteria, "or") | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
 | 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; with a Must Finish By, CPL to the last open task and TF its float; without one, CPL and TF both on the open finish milestone ending last, TF being its margin to its baseline finish (n/a without a baseline or without a float) | ≥ 0.95 |
-| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
+| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date), both by calendar day (PAM steps 2 and 5 use the same bound); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
 
 **Dates.** The pamphlet reasons in dates ("on or before 8/1/09, not after 8/1/09", §4.9): DCMA-09 and
-DCMA-11 compare the status date by calendar day (`date_grain = "day"` in `dcma.toml`). P6 keeps the
-timestamp (an actual at 12:00 is after a data date at 08:00), which is the rule default and what
+DCMA-11 compare the status date by calendar day, and DCMA-14 reads both its due and its completed
+tasks so (`date_grain = "day"` in `dcma.toml`). P6 keeps the timestamp (an actual at 12:00 is after a
+data date at 08:00), which is the rule default and what
 `p6.toml` uses. A missing total float (DCMA-06, 07, 13) is never read as 0: the task stays in the
 population with a note, and the CPLI is n/a.
 

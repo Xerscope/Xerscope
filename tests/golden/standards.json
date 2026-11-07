@@ -5416,12 +5416,14 @@
     "value": 0.99435
    },
    "DCMA/DCMA-14": {
-    "denominator": 1,
-    "flagged": [],
+    "denominator": 2,
+    "flagged": [
+     "E1010"
+    ],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.5
    },
    "DECM/06A204b": {
     "denominator": 26,
@@ -8235,9 +8237,10 @@
     "value": 0.903846
    },
    "DCMA/DCMA-14": {
-    "denominator": 9,
+    "denominator": 10,
     "flagged": [
      "C3010",
+     "C3020",
      "C3045",
      "E1030",
      "E1050"
@@ -8245,7 +8248,7 @@
     "note": null,
     "numerator": 5,
     "status": "fail",
-    "value": 0.555556
+    "value": 0.5
    },
    "DECM/06A204b": {
     "denominator": 22,
@@ -9873,12 +9876,14 @@
     "value": 1.0
    },
    "DCMA/DCMA-14": {
-    "denominator": 1,
-    "flagged": [],
+    "denominator": 2,
+    "flagged": [
+     "E1010"
+    ],
     "note": null,
     "numerator": 1,
-    "status": "pass",
-    "value": 1.0
+    "status": "fail",
+    "value": 0.5
    },
    "DECM/06A204b": {
     "denominator": 26,
@@ -12688,16 +12693,17 @@
     "value": 1.0
    },
    "DCMA/DCMA-14": {
-    "denominator": 8,
+    "denominator": 9,
     "flagged": [
      "C3010",
+     "C3020",
      "E1030",
      "E1050"
     ],
     "note": null,
     "numerator": 5,
     "status": "fail",
-    "value": 0.625
+    "value": 0.555556
    },
    "DECM/06A204b": {
     "denominator": 22,

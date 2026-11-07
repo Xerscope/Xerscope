@@ -465,13 +465,15 @@ def dcma_14_bei(context, date_grain: Literal["timestamp", "day"] = "timestamp") 
     """Due by the status date but not completed.
     Counts: completed / due by the status date
     Excludes: level of effort, milestones, tasks with no original duration.
-    Tasks without a baseline finish are counted as due. Completed = tasks with an actual finish on or
-        before the status date (``date_grain``: by calendar day for the pamphlet), early ones included.
+    Tasks without a baseline finish are counted as due. Due = baseline finish on or before the status
+        date; completed = actual finish on or before it, early ones included; both compared at
+        ``date_grain`` (by calendar day for the pamphlet).
 
     DCMA-EA PAM 200.1 §3.1.2.4: Baseline Execution Index = tasks completed / tasks due by the
     status date; step 1 filters out LOE, summary and zero duration tasks (milestones), so a task with
-    no original duration is out whatever its type; step 5 keeps the actual finishes "up to the current
-    reporting period"; tasks missing baseline finish dates are included in the denominator
+    no original duration is out whatever its type; steps 2 and 5 keep the baseline finishes and the
+    actual finishes "up to the current reporting period", the same bound for both; tasks missing
+    baseline finish dates are included in the denominator
     """
     data_date = context.snapshot.data_date
     if data_date is None:
@@ -482,7 +484,10 @@ def dcma_14_bei(context, date_grain: Literal["timestamp", "day"] = "timestamp") 
     funnel.keep(
         "due by the status date",
         "PAM 200.1",
-        lambda rows: as_flag(rows["bl_finish"] <= data_date) | rows["bl_finish"].isna(),
+        lambda rows: (
+            as_flag(at_grain(rows["bl_finish"], date_grain) <= at_grain(data_date, date_grain))
+            | rows["bl_finish"].isna()
+        ),
     )
     bei = bei_from_snapshot(
         tasks, data_date, missing_baseline_is_due=True, completed_by_data_date=True, date_grain=date_grain

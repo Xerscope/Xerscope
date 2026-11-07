@@ -657,9 +657,10 @@ def bei_from_snapshot(
 ) -> RuleOutput:
     """BEI whose due tasks are the snapshot's own, ``population`` carrying its ``bl_finish``.
 
+    Due: baseline finish on or before the status date, compared at ``date_grain``.
     ``completed_by_data_date``: only an actual finish on or before the status date counts as completed
-    (DCMA-EA PAM 200.1 §3.1.2.4 step 5), compared at ``date_grain``; P6's report counts every completed
-    activity.
+    (DCMA-EA PAM 200.1 §3.1.2.4 step 5), compared at the same ``date_grain`` as due (step 2 applies
+    the same filter to the baseline finish); P6's report counts every completed activity.
     """
     is_done = as_flag(population["is_complete"])
     finished_later = pd.Series(False, index=population.index)
@@ -670,7 +671,7 @@ def bei_from_snapshot(
         is_done &= ~finished_later
     done = int(is_done.sum())
     without_baseline = population["bl_finish"].isna()
-    is_due = population["bl_finish"] <= data_date
+    is_due = as_flag(at_grain(population["bl_finish"], date_grain) <= at_grain(data_date, date_grain))
     if missing_baseline_is_due:
         is_due |= without_baseline
     due = population[is_due]
