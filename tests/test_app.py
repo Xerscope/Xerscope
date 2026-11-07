@@ -491,6 +491,18 @@ def test_changelog_and_ppc_pick_weeks(app):
     _ok(app)
 
 
+def test_the_app_skips_a_file_without_a_status_date(tmp_path, monkeypatch):
+    """The app's boundary: such a file never reaches the weekly pages (ppc_series copes with it
+    for a SnapshotStore built in code)."""
+    task = todo("A", early_end_date="2026-03-05 17:00")
+    (tmp_path / "w1.xer").write_text(xer_text([task], data_date="2026-03-02 08:00"), encoding="utf-8")
+    (tmp_path / "w2.xer").write_text(xer_text([task], data_date="", project={"plan_start_date": ""}), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/ppc.py").run()
+    _ok(at)
+    assert [e.value for e in at.error] == ["w2.xer: no status date (PROJECT.last_recalc_date); the file is skipped"]
+
+
 def test_empty_state_explains_what_to_do(monkeypatch):
     monkeypatch.delenv("XERSCOPE_DATA", raising=False)
     at = AppTest.from_file(APP, default_timeout=60).run()

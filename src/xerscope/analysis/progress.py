@@ -113,12 +113,16 @@ def committed(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
 
     An activity due to start and finish within the week is two commitments. Milestones and
     level of effort are left out: a milestone repeats its predecessor's date, so it would
-    add a commitment the week the predecessor ends."""
+    add a commitment the week the predecessor ends. Without a W data date nothing is due:
+    no commitment (`ppc_series` notes it)."""
     work = previous.activities
     work = work[~work["is_milestone"] & ~work["is_loe"]]
     due, now = current.data_date, current.by_code
-    finishes = work[~work["is_complete"] & (work["finish"] < due)]
-    starts = work[~work["is_started"] & (work["start"] < due)]
+    if due is None:
+        finishes = starts = work.iloc[0:0]
+    else:
+        finishes = work[~work["is_complete"] & (work["finish"] < due)]
+        starts = work[~work["is_started"] & (work["start"] < due)]
     return pd.concat(
         [
             _outcome(finishes, now, "Finish", date="finish", actual="act_end_date", kept="is_complete"),
@@ -152,8 +156,10 @@ PPC_WEEK_DAYS = 7
 def _gap_note(previous: Snapshot, current: Snapshot) -> str | None:
     """Note for a pair more than a week apart: an update is missing, so the point holds the
     commitments of every week between the two data dates. Calendar days: Monday 08:00 to the
-    next Monday 17:00 is one week."""
-    if previous.data_date is None or current.data_date is None:
+    next Monday 17:00 is one week. A W without a data date has no commitment: noted too."""
+    if current.data_date is None:
+        return "no status date in this update: its commitments cannot be read"
+    if previous.data_date is None:
         return None
     days = (current.data_date.normalize() - previous.data_date.normalize()).days
     if days <= PPC_WEEK_DAYS:

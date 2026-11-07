@@ -470,6 +470,19 @@ def test_ppc_notes_a_point_that_spans_a_missing_update():
     assert (s["finishes_kept"].iloc[1], s["finishes_committed"].iloc[1]) == (1, 1)
 
 
+def test_ppc_point_without_a_status_date_commits_nothing_and_says_why():
+    """The newer file has no data date (no last_recalc_date, no plan_start_date): nothing can
+    be due before it, so the point has no commitment and a note instead of a TypeError."""
+    w1 = snap([todo("A", early_end_date="2026-03-05 17:00")], data_date="2026-03-02 08:00")
+    w2 = snap([todo("A", early_end_date="2026-03-05 17:00")], data_date="", project={"plan_start_date": ""})
+    assert w2.data_date is None
+    assert committed(w1, w2).empty
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["finishes_committed"], row["starts_committed"], row["committed"]) == (0, 0, 0)
+    assert row["ppc"] is None and row["ppc_start"] is None and row["ppc_all"] is None
+    assert row["note"] == "no status date in this update: its commitments cannot be read"
+
+
 def test_ppc_regular_weekly_series_has_no_note():
     dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-16 08:00"]
     s = ppc_series(SnapshotStore([snap([todo("A")], data_date=d) for d in dates]))
