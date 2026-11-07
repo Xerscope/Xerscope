@@ -2,7 +2,14 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis.explain import KPI_FORMULAS
-from xerscope.analysis.progress import committed, ppc_series, progress_delta, rollup_delta
+from xerscope.analysis.progress import (
+    VARIANCE_COLUMNS,
+    committed,
+    date_variances,
+    ppc_series,
+    progress_delta,
+    rollup_delta,
+)
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
 from xerscope.viz.charts import PPC_TARGET, build_ppc
@@ -32,6 +39,7 @@ PPC_COLUMNS = [
     "ppc_week",
     "note",
 ]
+VARIANCE_TABLE_COLUMNS = ["task_code", "task_name", "status", "start", "finish", *VARIANCE_COLUMNS, "wbs_code"]
 WBS_COLUMNS = ["wbs_code", "progress_pts", "earned_hr_week", "actual_hr_week", "budget_hr", "activities_progressed"]
 ACTIVITY_COLUMNS = [
     "task_code",
@@ -141,6 +149,24 @@ def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None
     csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
+def show_variances(variances: pd.DataFrame, sources: list[str], current) -> None:
+    ui.section(
+        "Start and finish variance",
+        "Per task, working days of its calendar between its date in an earlier update and now "
+        "(reference − current): negative = later than W−1 / W−2. Blank when either date is missing; "
+        "milestones have only their own end. Tasks that moved shown; the CSV has every task.",
+    )
+    moved = variances[(variances[VARIANCE_COLUMNS].fillna(0) != 0).any(axis=1)]
+    ui.table(moved.sort_values(VARIANCE_COLUMNS), max_height=640, columns=VARIANCE_TABLE_COLUMNS)
+    csv_download(
+        variances,
+        f"variances_{ui.stamp(current.data_date)}.csv",
+        "Download variances (CSV)",
+        key="variances_csv",
+        sources=sources,
+    )
+
+
 store = require_store()
 top = st.container()
 if len(store) < 2:
@@ -179,3 +205,6 @@ week_ppc = ppc.set_index("snapshot_idx").loc[week_index]
 show_kpis(week_ppc, project_progress)
 show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
 show_progress_by_activity(progress, previous, current)
+variances = memo(("date_variances", week), date_variances, store, week_index, baseline=False)
+before_previous = store[week_index - 2] if week_index >= 2 else None
+show_variances(variances, sources_of(before_previous, previous, current), current)
