@@ -311,7 +311,16 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
                 ui.md_text(name), value=True, key=f"keep:{digest[:12]}:{name}", help=f"{len(data) / 1e6:.1f} MB"
             ):
                 picked.append((name, data))
+    for name, count in _same_names(picked).items():
+        st.error(f"{count} files named {ui.md_text(name)}: untick all but one")
     return tuple(picked)
+
+
+def _same_names(files: Iterable[tuple[str, bytes]]) -> dict[str, int]:
+    """Names held by more than one file, with their count: the series is read by file name, so two
+    files of one name would overwrite each other's results."""
+    names = [name for name, _ in files]
+    return {name: names.count(name) for name in sorted(set(names)) if names.count(name) > 1}
 
 
 # The window's baseline selectors write to drafts, filled with the values in force when it opens;
@@ -463,7 +472,8 @@ def _window(store: SnapshotStore | None) -> None:
                 _baseline_fields(store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
             st.caption("Done applies · Esc cancels")
-            if st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter"):
+            clash = choice is not None and choice[0] == "upload" and bool(_same_names(choice[1]))
+            if st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter", disabled=clash):
                 _apply_drafts()
                 st.session_state.update(files_source=choice, files_open=False)
                 st.rerun()

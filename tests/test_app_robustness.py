@@ -133,3 +133,27 @@ def test_a_file_gone_between_the_listing_and_its_reading_does_not_crash_the_page
     ]
     open_files(at)  # the window lists the folder: the stale entry is described, not stat'ed blindly
     _ok(at)
+
+
+def test_two_uploads_of_the_same_name_are_refused_until_one_is_unticked(sample_dir, monkeypatch):
+    """The series is read by file name: two different files named a.xer would overwrite each other.
+    Done stays off and the window names the file until one of them is unticked."""
+    for name in ("XERSCOPE_DATA", "XERSCOPE_BASELINE", "XERSCOPE_DATA_LOCKED"):
+        monkeypatch.delenv(name, raising=False)
+    from xerscope.xer import load_snapshot
+
+    first, second = sorted(sample_dir.glob("*.xer"))[:2]
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    uploads = [("a.xer", first.read_bytes(), "text/plain"), ("a.xer", second.read_bytes(), "text/plain")]
+    at.file_uploader(key="files_upload").set_value(uploads).run()
+    _ok(at)
+    assert at.button(key="files_done").disabled
+    assert [e.value.replace("\\", "") for e in at.error] == ["2 files named a.xer: untick all but one"]
+    keep = [box for box in at.checkbox if box.key.startswith("keep:")]
+    keep[1].uncheck()
+    at.run()
+    assert not at.error and not at.button(key="files_done").disabled
+    files_done(at)
+    _ok(at)
+    (read,) = at.session_state["store"]
+    assert read.source == "a.xer" and read.data_date == load_snapshot(first.read_bytes(), name="a.xer").data_date
