@@ -1252,13 +1252,21 @@ def test_decm_riding_the_status_date_started_work():
 def test_decm_open_ends_on_a_progressed_schedule():
     # D finished; S started with an FS predecessor and no successor: open finish (started
     # tasks count); T not started, FF-only predecessor: open start. Z, the baseline's last
-    # finish, is exempt. The baseline here is the file's own current dates.
+    # finish, is exempt. The update is its own baseline: its planned dates (target_*) are read.
+    def plan(start, finish):
+        return dict(target_start_date=start, target_end_date=finish)
+
     s = snap(
         [
-            done("D"),
-            active("S", early_end_date="2026-03-13 17:00"),
-            todo("T", early_end_date="2026-03-13 17:00"),
-            todo("Z", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+            done("D", **plan("2026-02-02 08:00", "2026-02-13 17:00")),
+            active("S", early_end_date="2026-03-13 17:00", **plan("2026-02-23 08:00", "2026-03-13 17:00")),
+            todo("T", early_end_date="2026-03-13 17:00", **plan("2026-03-02 08:00", "2026-03-13 17:00")),
+            todo(
+                "Z",
+                early_start_date="2026-03-16 08:00",
+                early_end_date="2026-03-20 17:00",
+                **plan("2026-03-16 08:00", "2026-03-20 17:00"),
+            ),
         ],
         [("D", "S", "FS", 0), ("D", "T", "FF", 0), ("T", "Z", "FS", 0)],
     )
@@ -1364,6 +1372,27 @@ def test_decm_06a204b_first_and_last_are_read_in_the_whole_ims():
         s = snap(tasks, [("FIRST", "LAST", "FS", 0)])
         r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
         assert (codes(r), r.denominator) == (expected, 2)
+
+
+def test_decm_06a204b_own_baseline_reads_planned_starts():
+    """06A204b v8.0, block 9: "The first tasks/activities & milestones have the earliest baseline start
+    date in the IMS". When the update is its own baseline, P6's BL Project Start is the planned start
+    (docs/standards.md, R1; EPPM 47222: BL1 Start "is set to the planned start date"; Planned Start "is
+    not changed by the project scheduler after the activity has started"), not the actual start.
+    S (start milestone, planned 02/03 08:00, no predecessor) -> A -> F (finish milestone, 31/03).
+    T started 23/02, planned 09/03, no predecessor, T -> F: its baseline start is 09/03, so S stays the
+    first and T is an open start. D, finished, planned 09/03-20/03, actual start 02/02, no logic: out
+    of the population, and its planned start does not take S's exemption either. 1 / 4."""
+    tasks = [
+        todo("S", **SM, target_start_date="2026-03-02 08:00", target_end_date="2026-03-02 08:00"),
+        planned("A", "2026-03-03 08:00", "2026-03-13 17:00"),
+        todo("F", **FM, target_start_date="2026-03-31 17:00", target_end_date="2026-03-31 17:00"),
+        active("T", target_start_date="2026-03-09 08:00", target_end_date="2026-03-20 17:00"),
+        done("D", target_start_date="2026-03-09 08:00", target_end_date="2026-03-20 17:00"),
+    ]
+    s = snap(tasks, [("S", "A", "FS", 0), ("A", "F", "FS", 0), ("T", "F", "FS", 0)])
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    assert (codes(r), r.denominator) == (["T"], 4)
 
 
 def test_actuals_changed_counts_a_removed_date_on_both_sides():

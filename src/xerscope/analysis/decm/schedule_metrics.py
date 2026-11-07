@@ -62,7 +62,7 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
         Open finish: a task whose successors are only SS / SF, or none; a milestone with no successor.
     Exempt: the earliest baseline start (start test) and the latest baseline finish (finish test) of the
         whole IMS, LOE and finished activities included, every activity tied with it too; the planned
-        dates when no baseline is loaded.
+        dates when no baseline is loaded or when the update is its own baseline.
 
     06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no
     successor (milestone: none); earliest baseline start / latest baseline finish exempt
@@ -84,7 +84,13 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     # The project's first start and last finish are looked up over every activity of the baseline, LOE
     # and finished ones included (block 9: "earliest baseline start date in the IMS"): once the first
     # activity is done, the next one in line is not the project start. Ties share the exemption.
-    frame = (context.baseline or Baseline.planned(context.snapshot)).frame
+    # An update that is its own baseline gives its planned dates, as P6's BL Project Start / Finish do
+    # (docs/standards.md, R1; EPPM 47222, BL1 Start "is set to the planned start date"), not the actual
+    # start of its started activities.
+    baseline = context.baseline
+    if baseline is None or baseline.snapshot is context.snapshot:
+        baseline = Baseline.planned(context.snapshot)
+    frame = baseline.frame
     is_first = codes.map(frame["bl_start"]) == frame["bl_start"].min()
     is_last = codes.map(frame["bl_finish"]) == frame["bl_finish"].max()
     open_start &= ~as_flag(is_first)
