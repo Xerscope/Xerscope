@@ -529,8 +529,8 @@ def test_the_file_picker_tells_two_projects_of_the_same_code_apart(tmp_path, mon
     box = _file_box(at, "a.xer")
     assert box.value == "1"
     assert [o for o in box.options if o.startswith("UPD")] == [
-        "UPD · 02 Mar 2026 · 2 activities",
-        "UPD · 02 Mar 2026 · 2 activities · baseline of UPD",
+        "UPD · 02 Mar 2026 · 2 tasks",
+        "UPD · 02 Mar 2026 · 2 tasks · baseline of UPD",
     ]
     assert _selection(at).set_index("file").loc["a.xer", "selected_by"] == "most TASK rows, 1 baseline copy set aside"
 
