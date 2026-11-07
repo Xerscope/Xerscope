@@ -1537,6 +1537,21 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)
 
 
+def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app, store):
+    """A click stores the row's Activity ID (the chart's callback); the run it causes picks it when
+    the chart draws it, and ignores it otherwise, keeping the activity picked before."""
+    app.switch_page("views/gantt.py").run()
+    app.session_state["gantt_clicked"] = "C3020"  # what the callback stores for a click on its row
+    app.run()
+    _ok(app)
+    assert app.session_state["gantt_task"] == "C3020" and "gantt_clicked" not in app.session_state
+    assert app.selectbox(key="gantt_task_pick").value == "C3020"
+    app.session_state["gantt_clicked"] = "NOT-DRAWN"
+    app.run()
+    _ok(app)
+    assert app.session_state["gantt_task"] == "C3020"
+
+
 @pytest.mark.parametrize(
     ("delta", "colour", "expected"),
     [
