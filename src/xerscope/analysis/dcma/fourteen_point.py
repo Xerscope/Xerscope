@@ -13,7 +13,6 @@ import pandas as pd
 
 from ...xer.calendar import hours_to_days
 from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
-from ..cpm import schedule
 from ..populations import (
     Funnel,
     activity_funnel,
@@ -393,7 +392,7 @@ def _baseline_margin(context, last_task) -> Margin:
         note = "no Must Finish By date and no open finish milestone to measure the float on"
         return RuleOutput(note=note), "", 0, "", None
     end = ends.sort_values(["finish", "task_code"]).iloc[-1]
-    forecast = schedule(snapshot).frame["ef"].get(end["task_code"], end["finish"])
+    forecast = end["finish"]  # the stored finish it was chosen on, as the Must Finish By branch reads it
     if context.baseline.is_planned:
         # the planned finish of a not-started milestone is its early finish (Oracle 47222): margin 0
         return None, end["task_code"], 0.0, f"{forecast:%Y-%m-%d}", forecast
@@ -415,8 +414,9 @@ def dcma_13_cpli(context) -> RuleOutput:
     P6 writes that float against the Must Finish By date. Without one, the open finish milestone ending
     last is the measured milestone: CPL runs to its forecast finish and TF is its margin to its baseline
     finish (PAM: CPL "until the next program milestone that is being measured", TF "relative to the
-    baselined finish date, when constrained") (recalculated early finish, project calendar;
-    negative when late); n/a without a baseline or without a baseline finish for it. With the planned
+    baselined finish date, when constrained") (project calendar; negative when late). Both branches
+    read the stored finish, the date P6 shows (a stored finish that the CPM would move is INT-01's
+    finding); n/a without a baseline or without a baseline finish for it. With the planned
     dates baseline the value is reported for review, not judged: the planned finish of a not-started
     milestone follows its early finish (Oracle 47222), so the margin is 0 and the CPLI 1.00 by
     construction, whatever the schedule. No constraint is read

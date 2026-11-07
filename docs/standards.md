@@ -210,9 +210,10 @@ on the end keeps its float at 0 and fails both readings.
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
 naming a calendar). Without a Must Finish By, the open finish milestone ending last is the measured milestone
 (PAM §3.1.2.3, "until the next program milestone that is being measured"): CPL runs to its forecast finish and
-TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
+TF is its margin to its baseline finish (project calendar, negative when late); a task
 finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
-has no float (a missing float is not 0).
+has no float (a missing float is not 0). Both branches read the stored finish, the date P6 shows and the one
+the milestone is chosen on; a stored finish the CPM would move is INT-01's finding.
 Reported for review (status info, value 1.00, note "by construction") when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish

@@ -701,6 +701,17 @@ def test_cpli_takes_the_end_milestone_that_finishes_last():
     assert r.value == pytest.approx(23 / 21) and "margin of Z2" in r.note
 
 
+def test_cpli_without_must_finish_by_reads_the_stored_finish_as_the_must_finish_by_branch_does():
+    """PAM 200.1 §3.1.2.3: "The CPL is the length in work days from time now until the next program
+    milestone that is being measured": one finish date. Z is chosen on its stored finish, so CPL and the
+    margin run to that same stored finish (Wed 1 Apr 17:00), not to a recalculated one (A -> Z FS would
+    put it on Fri 27 Mar); stored against recalculated dates is INT-01's business. CPL: 20 wd in March
+    + Mon 30, Tue 31, Wed 1 = 23 wd; baseline finish Wed 1 Apr 17:00: margin 0 wd; (23 + 0) / 23."""
+    r = _cpli([A160, _end(finish="2026-04-01 17:00")], [("A", "Z", "FS", 0)], {"Z": "2026-04-01 17:00"})
+    assert r.value == pytest.approx(1.0)
+    assert "CPL 23 wd to Z" in r.note and "margin of Z to its BL finish 2026-04-01: 0 wd" in r.note
+
+
 def test_cpli_is_na_without_a_baseline():
     r = run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)]))
     assert r.status == "n/a" and "baseline" in r.note
