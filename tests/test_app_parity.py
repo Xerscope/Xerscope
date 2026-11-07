@@ -407,3 +407,27 @@ def test_earned_value_table_csv_and_chart_total_the_kpi_population(tmp_path, mon
     assert pv_hours[-1] == pytest.approx(row["bac_hr"])
     labels = [a.text for a in figure.layout.annotations if a.text.startswith("BAC")]
     assert labels == ["BAC 40 · baseline tasks of this update"]
+
+
+def test_earned_value_captions_list_what_ev_point_reports(tmp_path, monkeypatch):
+    """a: A and M (WBS on EV technique "WBS milestones"), D; b: A, M and N (D deleted, N new). The page's
+    "not modelled" and "not in the baseline" captions name ev_point's lists for b: M, and N."""
+    from xerscope.analysis.evm import ev_point
+
+    wbs = [{"wbs_id": "W1", "proj_id": "1", "wbs_short_name": "W1", "wbs_name": "W1", "proj_node_flag": "N",
+            "parent_wbs_id": "", "seq_num": "1", "ev_compute_type": "EC_WBS_Mile"}]  # fmt: skip
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    tasks = [todo("A", **week), todo("M", wbs_id="W1", **week)]
+    (tmp_path / "a.xer").write_text(xer_text([*tasks, todo("D", **week)], wbs=wbs, data_date="2026-03-02 08:00"))
+    (tmp_path / "b.xer").write_text(xer_text([*tasks, todo("N", **week)], wbs=wbs, data_date="2026-03-04 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=180).run())
+    at.switch_page("views/earned_value.py")
+    _run(at)
+    store = at.session_state["store"]
+    point = ev_point(store.latest, Baseline.from_snapshot(store.first))
+    assert (point.not_modelled, point.unbaselined) == (["M"], ["N"])
+    captions = [caption.value.replace("\\", "") for caption in at.caption]
+    assert any(text.startswith("EV technique not modelled") and text.endswith(": M") for text in captions)
+    assert any(text.startswith("Not in the baseline") and text.endswith(": N") for text in captions)
