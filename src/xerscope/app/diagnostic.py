@@ -65,10 +65,10 @@ P6_DIALOG_OPTIONS = {
     "ignore_soft_constraints": "Ignore activities with soft constraints",
     "ignore_hard_constraints": "Ignore activities with hard constraints",
 }
-# The dialog's three tabs, as the P6 Professional 26 help names them (client_help 101248):
-# Relationships and Assignments (113174 lists logic, lags, relationship types, out of sequence,
-# resource / cost, dangling), Dates and Durations, Constraints. Only the first tab's content is
-# given by that help; the other two are read from the checks' names.
+# The dialog's three tabs, as the P6 Professional 26 help names them (client_help 101248), each with
+# its own help page: Relationships and Assignments (113174: logic, lags, relationship types, out of
+# sequence, resource / cost, dangling), Dates and Durations (113175: large durations, large float,
+# negative float, invalid progress dates, late activities, BEI), Constraints (113176: hard, soft).
 RELATIONSHIPS, DATES, CONSTRAINTS = "Relationships and Assignments", "Dates and Durations", "Constraints"
 P6_TABS = {
     "P6-01": RELATIONSHIPS,

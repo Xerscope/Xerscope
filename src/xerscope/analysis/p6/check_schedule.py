@@ -122,7 +122,9 @@ def p6_03_soft_constraints(context) -> RuleOutput:
     Constraint types: Start on or before, Start on or after, Finish on or before,
         Finish on or after, As late as possible.
 
-    46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"""
+    101248 and 113176: Start on or before / on or after, Finish on or before / on or after, As late as
+    possible. 46285 (EPPM): WBS summary, actual-finish and LOE removed; start constraints ignored once
+    started (its own soft set, with Start on and Finish on, is EPPM's)"""
     funnel = _open_not_loe(context)
     activities = funnel.rows
     has_soft_constraint = constrained_by(activities, SOFT_CONSTRAINTS, ignore_started_starts=True)

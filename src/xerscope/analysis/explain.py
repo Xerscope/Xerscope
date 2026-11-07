@@ -276,8 +276,8 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
     "SPI": {P6: "Earned Value Cost / Planned Value Cost", EVMS: "SPI = BCWP / BCWS (cost)"},
     "SV": {P6: "Earned Value − Planned Value (labor units)", EVMS: "SV = BCWP − BCWS"},
     "BEI (P6 / DCMA)": {
-        P6: "Complete activities / activities with a baseline (P6-13)",
-        "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date (DCMA-14)",
+        P6: "Complete activities / activities with a baseline, milestones and LOE out (P6-13)",
+        "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date, no BL finish = due (DCMA-14)",
     },
     "EAC": {P6: "Actual Labor Units + Remaining Labor Units", EVMS: "EAC = ACWP + ETC; VAC = BAC − EAC"},
     "PPC this week": {LPS: "Finishes kept / finishes committed in the previous update (milestones and LOE left out)"},

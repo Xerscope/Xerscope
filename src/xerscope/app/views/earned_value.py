@@ -105,7 +105,10 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
                 "BEI (P6 / DCMA)",
                 " / ".join(format_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
                 None,
-                "P6 counts tasks without a baseline finish as due; DCMA leaves them out",
+                (
+                    "P6 (P6-13): completed / every baseline task, milestones and LOE out; "
+                    "DCMA (DCMA-14): completed / due by the status date, no baseline finish = due"
+                ),
             ),
             (
                 "EAC",

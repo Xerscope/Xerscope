@@ -300,6 +300,16 @@ def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second_w
     assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
 
 
+def test_earned_value_bei_help_states_the_two_populations(app):
+    """P6-13 divides by every baseline task (no 'due' step); DCMA-14 by the tasks due, a task without a
+    baseline finish counted as due (fourteen_point.dcma_14_bei)."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    bei = next(m for m in app.metric if m.label == "BEI (P6 / DCMA)")
+    assert "P6 (P6-13): completed / every baseline task" in bei.help
+    assert "no baseline finish = due" in bei.help.split("DCMA (DCMA-14)")[1]
+
+
 def _banner(at) -> str:
     return at.button(key="context_banner").label.replace("\\", "")
 

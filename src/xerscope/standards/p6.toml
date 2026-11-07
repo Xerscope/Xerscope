@@ -53,7 +53,7 @@ name = "Soft Constraints"
 description = "Constraints that do not prevent activities being moved"
 rule = "p6_03_soft_constraints"
 target = "< 5%"
-source = "101248 (P6 Professional help, Soft Constraints) and 46285: Start on or before / on or after, Finish on or before / on or after, As late as possible; completed, WBS summary and LOE removed; start constraints ignored once started"
+source = "101248 and 113176 (P6 Professional help, Soft Constraints): Start on or before / on or after, Finish on or before / on or after, As late as possible. 46285: completed, WBS summary and LOE removed; start constraints ignored once started"
 
 [[metric]]
 id = "P6-04"
