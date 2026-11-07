@@ -263,11 +263,16 @@
    },
    "DECM/06A506b": {
     "denominator": 29,
-    "flagged": [],
+    "flagged": [
+     "C3010",
+     "E1010",
+     "L0001",
+     "M1000"
+    ],
     "note": null,
-    "numerator": 0,
-    "status": "pass",
-    "value": 0.0
+    "numerator": 4,
+    "status": "fail",
+    "value": 4.0
    },
    "DECM/06A506c": {
     "denominator": null,
@@ -781,7 +786,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 27,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1298,7 +1303,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 27,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -1815,7 +1820,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 26,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2334,7 +2339,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 26,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -2857,7 +2862,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 25,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -3216,14 +3221,12 @@
     "value": null
    },
    "DCMA/DCMA-09": {
-    "denominator": 21,
-    "flagged": [
-     "C3010"
-    ],
+    "denominator": 20,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 20,
@@ -3397,7 +3400,7 @@
     "value": 10.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -3764,14 +3767,12 @@
     "value": null
    },
    "DCMA/DCMA-09": {
-    "denominator": 20,
-    "flagged": [
-     "C3010"
-    ],
+    "denominator": 19,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 19,
@@ -3945,7 +3946,7 @@
     "value": 9.090909
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -4359,12 +4360,13 @@
    "DECM/06A204b": {
     "denominator": 28,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 3.571429
+    "value": 7.142857
    },
    "DECM/06A205a": {
     "denominator": 29,
@@ -4484,11 +4486,16 @@
    },
    "DECM/06A506b": {
     "denominator": 29,
-    "flagged": [],
+    "flagged": [
+     "C3010",
+     "E1010",
+     "L0001",
+     "M1000"
+    ],
     "note": null,
-    "numerator": 0,
-    "status": "pass",
-    "value": 0.0
+    "numerator": 4,
+    "status": "fail",
+    "value": 4.0
    },
    "DECM/06A506c": {
     "denominator": null,
@@ -5005,7 +5012,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 27,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -5551,7 +5558,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 27,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6095,7 +6102,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 26,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -6648,7 +6655,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 26,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7209,7 +7216,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 25,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -7594,14 +7601,12 @@
     "value": 5.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 21,
-    "flagged": [
-     "C3010"
-    ],
+    "denominator": 20,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 20,
@@ -7789,7 +7794,7 @@
     "value": 10.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8182,14 +8187,12 @@
     "value": 5.263158
    },
    "DCMA/DCMA-09": {
-    "denominator": 20,
-    "flagged": [
-     "C3010"
-    ],
+    "denominator": 19,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 19,
@@ -8380,7 +8383,7 @@
     "value": 9.090909
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -8943,11 +8946,16 @@
    },
    "DECM/06A506b": {
     "denominator": 29,
-    "flagged": [],
+    "flagged": [
+     "C3010",
+     "E1010",
+     "L0001",
+     "M1000"
+    ],
     "note": null,
-    "numerator": 0,
-    "status": "pass",
-    "value": 0.0
+    "numerator": 4,
+    "status": "fail",
+    "value": 4.0
    },
    "DECM/06A506c": {
     "denominator": null,
@@ -9465,7 +9473,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 27,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10012,7 +10020,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 27,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -10557,7 +10565,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 29,
+    "denominator": 26,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11108,7 +11116,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 26,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -11667,7 +11675,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 25,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -12052,14 +12060,12 @@
     "value": 5.0
    },
    "DCMA/DCMA-09": {
-    "denominator": 21,
-    "flagged": [
-     "C3010"
-    ],
+    "denominator": 20,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 20,
@@ -12245,7 +12251,7 @@
     "value": 10.0
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 24,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -12638,14 +12644,12 @@
     "value": 5.263158
    },
    "DCMA/DCMA-09": {
-    "denominator": 20,
-    "flagged": [
-     "C3010"
-    ],
+    "denominator": 19,
+    "flagged": [],
     "note": null,
-    "numerator": 1,
-    "status": "fail",
-    "value": 1.0
+    "numerator": 0,
+    "status": "pass",
+    "value": 0.0
    },
    "DCMA/DCMA-10": {
     "denominator": 19,
@@ -12834,7 +12838,7 @@
     "value": 9.090909
    },
    "DECM/06A506b": {
-    "denominator": 30,
+    "denominator": 23,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -13358,7 +13362,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -13812,7 +13816,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -14266,7 +14270,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -14720,7 +14724,7 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 1,
+    "denominator": 0,
     "flagged": [],
     "note": null,
     "numerator": 0,
@@ -17911,12 +17915,14 @@
     "value": 0.0
    },
    "DECM/06A506b": {
-    "denominator": 24,
-    "flagged": [],
+    "denominator": 21,
+    "flagged": [
+     "MEP-020"
+    ],
     "note": null,
-    "numerator": 0,
-    "status": "pass",
-    "value": 0.0
+    "numerator": 1,
+    "status": "fail",
+    "value": 1.0
    },
    "DECM/06A506c": {
     "denominator": null,
