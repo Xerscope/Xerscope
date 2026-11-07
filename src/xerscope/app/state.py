@@ -113,13 +113,17 @@ def background_jobs() -> bool:
 
 
 @functools.cache
-def lexicon() -> query.Lexicon:
+def lexicon_and_errors() -> tuple[query.Lexicon, tuple[str, ...]]:
     """The Ask field's trade words: the packaged groups plus the *.toml of XERSCOPE_LEXICON (a
-    company's own words). Load errors are kept for the Debug page, never shown to a visitor."""
+    company's own words), and the files skipped with why. Read once for the process: it holds no
+    session's data. The errors show on the Debug page, never to a visitor of another page."""
     extra = os.environ.get("XERSCOPE_LEXICON", "")
     found, errors = query.load_lexicon(*([extra] if extra else []))
-    st.session_state["lexicon_errors"] = errors
-    return found
+    return found, tuple(errors)
+
+
+def lexicon() -> query.Lexicon:
+    return lexicon_and_errors()[0]
 
 
 def session_lexicon() -> query.Lexicon:

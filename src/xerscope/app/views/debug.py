@@ -13,6 +13,7 @@ from xerscope.app.state import (
     fetch,
     held,
     hold,
+    lexicon_and_errors,
     memo,
     page_header,
     require_store,
@@ -36,6 +37,8 @@ with top:
         "Columns keep the XER and analysis field names.",
     )
 
+for error in lexicon_and_errors()[1]:
+    st.warning(f"Lexicon file skipped (XERSCOPE_LEXICON): {ui.md_text(error)}", icon=":material/warning:")
 
 table = partial(ui.table, raw_labels=True)
 

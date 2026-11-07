@@ -181,3 +181,34 @@ def test_a_check_that_errors_is_counted_as_an_error_not_as_not_applicable(app, m
     assert shown["Not applicable"] == str((status == "N/A").sum())
     (header,) = [e.label for e in app.expander if "P6-01" in e.label]
     assert "— error" in header
+
+
+@pytest.fixture
+def bad_lexicon(tmp_path, monkeypatch):
+    """XERSCOPE_LEXICON names a folder with a malformed file; the lexicon is read once per process,
+    so it is read again for this test and after it."""
+    from xerscope.app import state
+
+    folder = tmp_path / "lexicon"
+    folder.mkdir()
+    (folder / "bad.toml").write_text("[[group]\nwords = [\n")
+    monkeypatch.setenv("XERSCOPE_LEXICON", str(folder))
+    state.lexicon_and_errors.cache_clear()
+    yield
+    state.lexicon_and_errors.cache_clear()
+
+
+def test_lexicon_load_errors_show_on_the_debug_page_of_every_session(bad_lexicon, sample_dir, monkeypatch):
+    """A malformed lexicon file is skipped, and said so on the Debug page, in each session (the
+    lexicon is loaded once for the process, not once per session)."""
+    from xerscope.app.state import lexicon
+
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
+    assert lexicon()  # the packaged words are still read
+    for _ in range(2):
+        at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+        at.switch_page("views/debug.py").run()
+        _ok(at)
+        assert any("bad.toml" in w.value.replace("\\", "") for w in at.warning)
