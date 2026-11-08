@@ -813,8 +813,10 @@ def _cmd_lexicon(args: argparse.Namespace) -> int:
 def _build_lexicon(source: str, out: str) -> int:
     """ROOT/generated/variants.toml: the variants of each source column of SOURCE's XER files,
     replaced whole (temporary file, rename, 0600); ROOT/generated/report.txt: the groups per
-    column and those new since the last run; ROOT/suggested/: the suggestions not copied into
-    ROOT/curated/ after the retention purged. Only generated/ and suggested/ are written."""
+    column, those new since the last run and the pairs one letter apart, to review, never read
+    by Ask; ROOT/suggested/: the suggestions not copied into ROOT/curated/ after the retention
+    purged. Only generated/ and suggested/ are written; a missing one is named (exit 1), never
+    created (owned by root under Docker, the app could not write it)."""
     from datetime import UTC, datetime
 
     from .analysis import query
@@ -827,9 +829,13 @@ def _build_lexicon(source: str, out: str) -> int:
         return 2
     root, now = Path(out), datetime.now(UTC)
     generated = root / query.GENERATED
-    generated.mkdir(exist_ok=True)
+    for folder in (generated, root / query.SUGGESTED):
+        if not folder.is_dir():
+            print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
+            return 1
     store = SnapshotStore.from_folder(source)
-    groups = query.variants(list(store))
+    files = list(store)
+    groups, near = query.variants(files), query.near_spellings(files)
     before = {c: {tuple(g) for g in gs} for c, gs in query.load_variants(generated).items()}
     new = {c: [g for g in gs if tuple(g) not in before.get(c, set())] for c, gs in groups.items()}
     write_private(generated / "variants.toml", query.variants_toml(groups))
@@ -837,6 +843,8 @@ def _build_lexicon(source: str, out: str) -> int:
     report += [f"{c}: {n} group(s), {len(new[c])} new" for c, n in query.variant_counts(groups).items()]
     report += ["", "new since the last run:"]
     report += [f"{c}: {', '.join(g)}" for c in sorted(new) for g in new[c]] or ["(none)"]
+    report += ["", "to review (one letter apart, not used):"]
+    report += [f"{c}: {a}, {b}" for c in sorted(near) for a, b in near[c]] or ["(none)"]
     write_private(generated / "report.txt", "\n".join(report) + "\n")
     for column, count in query.variant_counts(groups).items():
         print(f"{column}: {count} group(s), {len(new[column])} new")

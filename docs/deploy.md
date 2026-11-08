@@ -302,9 +302,15 @@ one owned by root, and the containers could not write it):
 
 | Folder | Written by | Read by the Ask field | Holds |
 |---|---|---|---|
-| `generated/` | `lexicon-init` only, at each start | yes, less the refusals | `variants.toml`: the exports' variants per source column (`ask/generated.py`); `report.txt`: groups per column and those new since the last start |
+| `generated/` | `lexicon-init` only, at each start | `variants.toml` only, less the refusals | `variants.toml`: the exports' variants per source column, plurals and abbreviations (`ask/generated.py`); `report.txt`: groups per column, those new since the last start, and the section "to review (one letter apart, not used)": one pair per line with its column, never read by the Ask field |
 | `curated/` | you, by hand; read-only in both containers | yes | `*.toml`: trade words (`[[group]] words = ["CVC", "HVAC"]`) and refusals of generated groups (`[[refuse]] column = "PROJWBS.wbs_name"`, `words = ["fondation", "fondations"]`: the generated group holding all those words is dropped; a refusal wins over `generated/`) |
 | `suggested/` | the app only, appending | no | `suggestions.toml`: one `[[suggestion]]` per click on a "Did you mean" label: the unknown word, the label, its source column, the filter (facet, value) and the date, never the sentence asked |
+
+Two words one letter apart are never read as one: on public XER files that rule joined
+different words ("screed" / "screen", "coarse" / "course", "lighting" / "lightning") and
+nothing in the files tells them from a typo ("gybsum" / "gypsum"). Read the "to review"
+section of `report.txt` after a start and copy each true typo into a `curated/` file
+(`[[group]] words = ["gybsum", "gypsum"]`).
 
 A word taught by a click holds for the visitor's session at once; for every session, copy
 it into a `curated/` file. `lexicon-init` purges a suggestion older than 90 days whose word
@@ -314,7 +320,9 @@ file is named, never fatal to the app; the Debug page lists the load errors).
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
 with the app's image and account, no network (`network_mode: none`), a read-only root
 filesystem, no capability, `no-new-privileges`, the exports read-only and the lexicon
-read-only but for `generated/` and `suggested/`. Files are replaced through a temporary file
+read-only but for `generated/` and `suggested/`. Both must exist: a missing one stops it
+with `error: create <folder> owned by the app account, see docs/deploy.md §10` and exit
+code 1 (it never creates one: Docker would make it root's). Files are replaced through a temporary file
 and a rename, created 0600 (`mkstemp`); its log holds counts only. The app waits for its
 success (`service_completed_successfully`): an exports folder with no `.xer` or an
 unreadable export stops it with exit code 1 and the app does not start; fix the folder and

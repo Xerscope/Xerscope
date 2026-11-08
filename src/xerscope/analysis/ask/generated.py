@@ -7,11 +7,15 @@ B. Written rules only, no clustering:
    - folding: case and accents ("Béton" / "beton" are one word);
    - plural, French or English: w / w+s, w / w+es, -al / -aux;
    - an abbreviation written with its dot ("Mec.", "Elec.", 3+ letters) and the one longer
-     word of the column it begins;
-   - one letter added, removed or changed between two words of 6+ letters with the same first
-     letter ("Instalation" / "Installation").
+     word of the column it begins.
+C. Two words of 6+ letters with the same first letter, one letter added, removed or changed
+   ("Instalation" / "Installation"), are never grouped: on public XER files the rule joined
+   different words ("screed" / "screen", "coarse" / "course", "lighting" / "lightning") and no
+   frequency told them from a typo ("gybsum" / "gypsum"). ``near_spellings`` lists them;
+   ``xerscope lexicon build`` writes them to generated/report.txt for review, and the maintainer
+   copies the true typos into curated/. Neither the app nor the Ask field reads that list.
 Pure and deterministic: the same files give the same groups, sorted. ``xerscope lexicon build``
-writes them to a file for review; the app derives them per session and never writes them."""
+writes them to generated/variants.toml; the app derives them per session and never writes them."""
 
 from __future__ import annotations
 
@@ -80,8 +84,22 @@ def variants(snapshots: Iterable[Snapshot]) -> dict[str, list[list[str]]]:
     return {column: g for column, g in groups.items() if g}
 
 
+def near_spellings(snapshots: Iterable[Snapshot]) -> dict[str, list[tuple[str, str]]]:
+    """Per grouped column, its pairs one letter apart (rule C) that its groups do not already
+    join (a plural is one letter apart too), sorted; a column with no pair is left out."""
+    found = terms(snapshots)
+    pairs: dict[str, list[tuple[str, str]]] = {}
+    for column in GROUPED:
+        if column in found:
+            groups = [set(g) for g in group_words(*found[column])]
+            near = [(a, b) for a, b in _near_spellings(found[column][0]) if not any({a, b} <= g for g in groups)]
+            if near:
+                pairs[column] = sorted(near)
+    return pairs
+
+
 def group_words(words: set[str], abbreviated: set[str] = frozenset()) -> list[list[str]]:
-    """The words of one column joined by the rules of the module docstring."""
+    """The words of one column joined by the rules B of the module docstring."""
     parent = {w: w for w in words}
 
     def root(w: str) -> str:
@@ -104,7 +122,7 @@ def _pairs(words: set[str], abbreviated: set[str]) -> list[tuple[str, str]]:
         longer = [w for w in words if w != short and w.startswith(short)]
         if len(longer) == 1:  # the one word of the column it can stand for
             pairs.append((short, longer[0]))
-    return pairs + _near_spellings(words)
+    return pairs
 
 
 def _near_spellings(words: set[str]) -> list[tuple[str, str]]:

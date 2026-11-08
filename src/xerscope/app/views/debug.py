@@ -326,8 +326,8 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
     # counts only: the groups hold the files' words, written by `xerscope lexicon build` only
     generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
     st.caption(
-        "Words of one XER column read as one by the Gantt Ask field (plural, an abbreviation with its dot, one "
-        "letter apart), generated in memory from every loaded file; `xerscope lexicon build` writes them as a file."
+        "Words of one XER column read as one by the Gantt Ask field (plural, an abbreviation with its dot), "
+        "generated in memory from every loaded file; `xerscope lexicon build` writes them as a file."
     )
     table(pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"]))
 

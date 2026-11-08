@@ -325,8 +325,8 @@ def test_lexicon_build_rewrites_generated_and_purges_suggested(capsys, sample_di
 
     from xerscope.analysis.ask import suggested
 
-    (tmp_path / "curated").mkdir()
-    (tmp_path / "suggested").mkdir()
+    for folder in ("generated", "curated", "suggested"):
+        (tmp_path / folder).mkdir()
     suggested.record(
         tmp_path / "suggested", "ancien", "COM · Commissioning", "wbs", datetime.now(UTC) - timedelta(days=91)
     )
