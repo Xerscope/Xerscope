@@ -11,6 +11,7 @@ license-files = ["LICENSE", "NOTICE"]
 # Floors = latest releases at the last audit (2026-10-28), so even an install that ignores
 # uv.lock cannot pull an older, vulnerable version. Bump them when you upgrade the lock.
 dependencies = [
+    "numpy>=2.4",
     "pandas>=3.1.0",
     "plotly>=7.1.0",
     "pyarrow>=26.0.0",
@@ -25,7 +26,16 @@ crosscheck = ["mpxj>=16.10.0", "jpype1>=1.7.1"]
 xerscope = "xerscope.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=9.2.0"]
+dev = [
+    "pytest>=9.2.0",
+    # code fitness (scripts/fitness.py): exact versions, the baseline it checks against holds
+    # their numbers and a new release can score the same code differently
+    "complexipy==8.3.0",
+    "deptry==0.25.1",
+    "import-linter==2.16",
+    "mypy==2.4.1",
+    "radon==6.0.1",
+]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
@@ -37,6 +47,9 @@ packages = ["src/xerscope"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "oracle(kind): where the expected values come from: p6, mpxj, standard, property or characterization (tests/conftest.py)",
+]
 filterwarnings = [
     "ignore::DeprecationWarning:streamlit.*",
     # a date read without a format is a guess: every date of the app is "YYYY-MM-DD HH:MM" (ISO 8601)
@@ -56,6 +69,18 @@ ignore = ["C408", "RET504", "RET505", "SIM108"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"  # the oldest supported: the same count whichever Python runs it
+# untyped third-party packages (pandas, plotly, streamlit) read as Any: the count is about our code
+ignore_missing_imports = true
+
+[tool.deptry.package_module_name_map]
+jpype1 = "jpype"
+
+[tool.deptry.per_rule_ignores]
+DEP001 = ["org"]  # Java packages, imported through JPype (verify/)
+DEP002 = ["pyarrow"]  # pandas' Parquet engine (export.py), never imported by name
 
 [project.urls]
 Repository = "https://github.com/Xerscope/xerscope"
