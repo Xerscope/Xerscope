@@ -310,6 +310,73 @@ def test_lexicon_command(capsys, tmp_path):
     assert "error: bad.toml" in capsys.readouterr().out
 
 
+def _without_table(text: str, name: str) -> str:
+    """An XER text less one table (its %T, %F and %R lines)."""
+    lines, kept, skipping = text.split("\n"), [], False
+    for line in lines:
+        if line.startswith("%T\t"):
+            skipping = line == f"%T\t{name}"
+        elif not line.startswith(("%F", "%R")):
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def test_lexicon_build_skips_each_refused_export_and_names_it_in_the_report_only(capsys, tmp_path, monkeypatch):
+    """Each export is checked before the generation: read without error, TASK and PROJWBS
+    present, a project to select, at most LEXICON_MAX_BYTES. A refused one is skipped, the others
+    are read; report.txt names it with a fixed reason, never its text nor an exception's
+    message; the output counts it, never names it (the file name is often the project's)."""
+    good = xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")])
+    source = tmp_path / "xer"
+    source.mkdir()
+    (source / "a.xer").write_text(good)
+    (source / "b-secretname.xer").write_text("qwfpsecret, not an export")
+    (source / "c.xer").write_text(_without_table(good, "TASK"))
+    (source / "d.xer").write_text(_without_table(good, "PROJWBS"))
+    (source / "e.xer").write_text(_without_table(good, "PROJECT"))
+    (source / "f.xer").write_text(good.removesuffix("%E"))
+    monkeypatch.setattr(cli, "LEXICON_MAX_BYTES", len(good.encode()) + 10, raising=False)
+    (source / "g.xer").write_text(good + " " * 20)
+    for folder in ("generated", "suggested"):
+        (tmp_path / folder).mkdir()
+    out = run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    assert "TASK.task_name: 1 group(s), 1 new" in out and "6 file(s) skipped" in out
+    assert "1 group(s) from 1 file(s) written" in out
+    assert not re.search(r"[a-g](-secretname)?\.xer|secret", out)
+    report = (tmp_path / "generated" / "report.txt").read_text(encoding="utf-8")
+    assert report.split("skipped (not read):\n", 1)[1].splitlines()[:6] == [
+        "b-secretname.xer: unreadable",
+        "c.xer: missing table TASK",
+        "d.xer: missing table PROJWBS",
+        "e.xer: no project",
+        "f.xer: incomplete",
+        "g.xer: too large",
+    ]
+    assert "qwfpsecret" not in report and "TASK.task_name: fondation, fondations" in report
+
+
+def test_lexicon_build_with_no_valid_export_leaves_generated_as_it_was(capsys, tmp_path):
+    """No export passes the check (or none at all): generated/ is left untouched, the exit code
+    is 1 and the output names no file."""
+    source = tmp_path / "xer"
+    source.mkdir()
+    for folder in ("generated", "suggested"):
+        (tmp_path / folder).mkdir()
+    before = {"variants.toml": "# kept\n", "report.txt": "kept\n"}
+    for name, text in before.items():
+        (tmp_path / "generated" / name).write_text(text, encoding="utf-8")
+    for files in ({}, {"b-secretname.xer": "qwfpsecret"}):
+        for name, text in files.items():
+            (source / name).write_text(text)
+        assert cli.main(["lexicon", "build", str(source), "--out", str(tmp_path)]) == 1
+        out = capsys.readouterr().out
+        assert "no valid XER file" in out and "generated/ left as it is" in out
+        assert "secret" not in out and ".xer" not in out
+        assert {p.name: p.read_text(encoding="utf-8") for p in (tmp_path / "generated").iterdir()} == before
+
+
 def test_ask_bench_self_coverage(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--self")
     assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
