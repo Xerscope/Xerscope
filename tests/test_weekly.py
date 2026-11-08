@@ -115,7 +115,7 @@ def test_pv_spreads_over_working_days():
     bl = _bl(early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")  # 10 working days
     curve = pv_curve(bl)
     assert curve["pv_cum_hr"].iloc[-1] == pytest.approx(80)
-    assert curve.set_index("date").loc["2026-03-07", "pv_hr"] == 0  # Saturday
+    assert curve.set_index("date").loc["2026-03-08", "pv_hr"] == 0  # Saturday (a row holds the day before it)
     assert _pv_at(bl, "2026-03-04 08:00") == pytest.approx(16)  # Mon + Tue
     assert _pv_at(bl, "2026-03-04 12:00") == pytest.approx(20)  # + half of Wed
     assert _pv_at(bl, "2026-03-04 12:30") == pytest.approx(20)  # lunch is not working time
@@ -127,7 +127,7 @@ def test_pv_is_schedule_pct_complete_in_working_time():
     bl = _bl(early_start_date="2026-03-02 13:00", early_end_date="2026-03-03 17:00", target_drtn_hr_cnt="12")
     assert _pv_at(bl, "2026-03-02 17:00") == pytest.approx(80 * 4 / 12)
     assert schedule_pct(bl, pd.Timestamp("2026-03-03 08:00")).loc["A"] == pytest.approx(100 / 3)
-    assert pv_curve(bl).set_index("date").loc["2026-03-02", "pv_hr"] == pytest.approx(80 / 3)
+    assert pv_curve(bl).set_index("date").loc["2026-03-03", "pv_hr"] == pytest.approx(80 / 3)  # 03-02 by midnight
 
 
 def test_per_activity_pv_sums_to_the_headline_pv():
@@ -140,8 +140,8 @@ def test_per_activity_pv_sums_to_the_headline_pv():
 def test_pv_skips_calendar_holiday():
     bl = _bl(early_start_date="2026-03-30 08:00", early_end_date="2026-04-03 17:00")  # Mon-Fri, Fri = Good Friday
     curve = pv_curve(bl).set_index("date")
-    assert curve.loc["2026-04-03", "pv_hr"] == 0
-    assert curve.loc["2026-03-30", "pv_hr"] == pytest.approx(20)  # 80 h over 4 working days
+    assert curve.loc["2026-04-04", "pv_hr"] == 0  # the hours of 04-03, at its midnight
+    assert curve.loc["2026-03-31", "pv_hr"] == pytest.approx(20)  # 80 h over 4 working days
 
 
 def test_ev_spi_and_unbaselined():
@@ -749,7 +749,7 @@ def test_evm_series_one_point_per_update_against_one_baseline():
 
 def test_forecast_curve_starts_at_ac_and_ends_at_eac():
     # 80 h remaining on A over 2026-03-02 08:00 -> 03-13 17:00 (10 working days), 20 h spent:
-    # one row per day from the data date's day, 8 h per working day on top of AC, ending at AC + 80
+    # AC at the data date, then one row per midnight, 8 h per working day on top of AC, ending at AC + 80
     s = snap(
         [
             active(
@@ -764,11 +764,12 @@ def test_forecast_curve_starts_at_ac_and_ends_at_eac():
         data_date="2026-03-02 08:00",
     )
     c = forecast_curve(s)
-    assert c["date"].is_monotonic_increasing and c["date"].iloc[0] == s.data_date.normalize()
+    assert c["date"].is_monotonic_increasing and c["date"].iloc[0] == s.data_date
+    assert c["fc_cum_hr"].iloc[0] == pytest.approx(20)
     assert c["fc_cum_hr"].iloc[-1] == pytest.approx(100)
-    by_day = c.set_index("date")["fc_cum_hr"]
-    assert by_day["2026-03-02"] == pytest.approx(28)  # end of the first working day
-    assert by_day["2026-03-07"] == by_day["2026-03-06"]  # Saturday: nothing spread
+    by_day = c.set_index("date")["fc_cum_hr"].rename(index=str)
+    assert by_day["2026-03-03 00:00:00"] == pytest.approx(28)  # end of the first working day
+    assert by_day["2026-03-08 00:00:00"] == by_day["2026-03-07 00:00:00"]  # Saturday: nothing spread
 
 
 def test_progress_delta_weighted_by_hours():
@@ -1026,7 +1027,7 @@ def test_ev_basis_follows_p6_admin_preference(basis, hours, first_day):
     bl = Baseline.from_snapshot(bl_snap, ev_basis=basis)
     assert bl.bac_hours == hours
     curve = pv_curve(bl)
-    assert curve.loc[curve["pv_hr"] > 0, "date"].min() == pd.Timestamp(first_day)
+    assert curve.loc[curve["pv_hr"] > 0, "date"].min() == pd.Timestamp(first_day) + pd.Timedelta(days=1)
     assert bl.frame.at["A", "bl_start"] == pd.Timestamp("2026-03-02 08:00")  # variances: current dates
 
 
@@ -1157,3 +1158,27 @@ def test_forecast_finish_shift_since_first_update_in_working_days(store):
 
     assert finish_shift_since_first(store) == 15.0
     assert finish_shift_since_first(SnapshotStore([store.first])) is None
+
+
+def test_inverted_ev_dates_are_one_step_at_the_finish_in_the_kpi_and_the_curve():
+    """A, 40 h, EV start Fri 03-06 17:00 after its EV finish Mon 03-02 08:00 (an invalid import): the
+    Schedule % convention (zero or negative span = 0 before the finish, 100 from it) applies to the
+    curve too, so both give 40 h at Wed 03-04 08:00 and 0 h before Mon 08:00."""
+    inverted = {"target_start_date": "2026-03-06 17:00", "target_end_date": "2026-03-02 08:00", "target_work_qty": "40"}
+    baseline = Baseline.from_snapshot(snap([todo("A", **inverted)]))
+    update = snap([todo("A")], data_date="2026-03-04 08:00")
+    curve = pv_curve(baseline, update).set_index("date")["pv_cum_hr"]
+    assert ev_point(update, baseline).pv_hr == pytest.approx(40) == curve[update.data_date]
+    assert curve[pd.Timestamp("2026-03-02")] == 0 and curve.iloc[-1] == pytest.approx(40)
+
+
+def test_a_negative_budget_counts_in_the_curve_as_in_the_kpi():
+    """A 40 h and B -8 h (an invalid import) over Mon-Fri; Wed 08:00 is 2 of 5 days: by hand,
+    PV = (40 - 8) x 0.4 = 12.8 h in the KPI and in the curve at the data date."""
+    hours = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00"}
+    baseline = Baseline.from_snapshot(
+        snap([todo("A", target_work_qty="40", **hours), todo("B", target_work_qty="-8", **hours)])
+    )
+    update = snap([todo("A"), todo("B")], data_date="2026-03-04 08:00")
+    curve = pv_curve(baseline, update).set_index("date")["pv_cum_hr"]
+    assert ev_point(update, baseline).pv_hr == pytest.approx(12.8) == curve[update.data_date]

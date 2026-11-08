@@ -1,0 +1,630 @@
+{
+  "modules": {
+    "__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/audit.py": {
+      "mi": 47.0,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 13,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/baseline.py": {
+      "mi": 56.6,
+      "mi_rank": "A",
+      "cc_max": 5,
+      "cc_over_15": 0,
+      "cognitive_max": 7,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 2
+    },
+    "analysis/changelog.py": {
+      "mi": 30.4,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 27,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/checks.py": {
+      "mi": 45.8,
+      "mi_rank": "A",
+      "cc_max": 17,
+      "cc_over_15": 1,
+      "cognitive_max": 19,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 1
+    },
+    "analysis/cpm.py": {
+      "mi": 0.0,
+      "mi_rank": "C",
+      "cc_max": 42,
+      "cc_over_15": 11,
+      "cognitive_max": 72,
+      "cognitive_over_15": 14,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/dcma/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/dcma/fourteen_point.py": {
+      "mi": 53.7,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 14,
+      "cognitive_over_15": 0,
+      "clones": 3,
+      "near_clones": 14
+    },
+    "analysis/decm/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/decm/schedule_metrics.py": {
+      "mi": 52.8,
+      "mi_rank": "A",
+      "cc_max": 7,
+      "cc_over_15": 0,
+      "cognitive_max": 6,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 6
+    },
+    "analysis/evm.py": {
+      "mi": 36.2,
+      "mi_rank": "A",
+      "cc_max": 13,
+      "cc_over_15": 0,
+      "cognitive_max": 10,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/explain.py": {
+      "mi": 39.2,
+      "mi_rank": "A",
+      "cc_max": 12,
+      "cc_over_15": 0,
+      "cognitive_max": 10,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/integrity.py": {
+      "mi": 52.1,
+      "mi_rank": "A",
+      "cc_max": 7,
+      "cc_over_15": 0,
+      "cognitive_max": 10,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 2
+    },
+    "analysis/p6/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/p6/check_schedule.py": {
+      "mi": 59.3,
+      "mi_rank": "A",
+      "cc_max": 4,
+      "cc_over_15": 0,
+      "cognitive_max": 3,
+      "cognitive_over_15": 0,
+      "clones": 7,
+      "near_clones": 24
+    },
+    "analysis/populations.py": {
+      "mi": 52.5,
+      "mi_rank": "A",
+      "cc_max": 4,
+      "cc_over_15": 0,
+      "cognitive_max": 3,
+      "cognitive_over_15": 0,
+      "clones": 4,
+      "near_clones": 2
+    },
+    "analysis/progress.py": {
+      "mi": 56.5,
+      "mi_rank": "A",
+      "cc_max": 4,
+      "cc_over_15": 0,
+      "cognitive_max": 4,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/query.py": {
+      "mi": 0.0,
+      "mi_rank": "C",
+      "cc_max": 84,
+      "cc_over_15": 9,
+      "cognitive_max": 142,
+      "cognitive_over_15": 10,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/rules.py": {
+      "mi": 38.0,
+      "mi_rank": "A",
+      "cc_max": 12,
+      "cc_over_15": 0,
+      "cognitive_max": 13,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/standards.py": {
+      "mi": 44.2,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 11,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "analysis/wbs.py": {
+      "mi": 59.2,
+      "mi_rank": "A",
+      "cc_max": 7,
+      "cc_over_15": 0,
+      "cognitive_max": 9,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "anonymize.py": {
+      "mi": 20.9,
+      "mi_rank": "A",
+      "cc_max": 24,
+      "cc_over_15": 3,
+      "cognitive_max": 62,
+      "cognitive_over_15": 6,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/diagnostic.py": {
+      "mi": 21.9,
+      "mi_rank": "A",
+      "cc_max": 17,
+      "cc_over_15": 1,
+      "cognitive_max": 25,
+      "cognitive_over_15": 2,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/glossary.py": {
+      "mi": 78.1,
+      "mi_rank": "A",
+      "cc_max": 3,
+      "cc_over_15": 0,
+      "cognitive_max": 2,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/reading.py": {
+      "mi": 72.7,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 17,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/sets.py": {
+      "mi": 53.1,
+      "mi_rank": "A",
+      "cc_max": 16,
+      "cc_over_15": 1,
+      "cognitive_max": 20,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/state.py": {
+      "mi": 0.0,
+      "mi_rank": "C",
+      "cc_max": 18,
+      "cc_over_15": 2,
+      "cognitive_max": 18,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 3
+    },
+    "app/streamlit_app.py": {
+      "mi": 85.2,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/task_panel.py": {
+      "mi": 46.5,
+      "mi_rank": "A",
+      "cc_max": 8,
+      "cc_over_15": 0,
+      "cognitive_max": 8,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/ui.py": {
+      "mi": 29.2,
+      "mi_rank": "A",
+      "cc_max": 17,
+      "cc_over_15": 2,
+      "cognitive_max": 19,
+      "cognitive_over_15": 3,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/activity.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/audit.py": {
+      "mi": 42.8,
+      "mi_rank": "A",
+      "cc_max": 13,
+      "cc_over_15": 0,
+      "cognitive_max": 16,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/changelog.py": {
+      "mi": 39.9,
+      "mi_rank": "A",
+      "cc_max": 6,
+      "cc_over_15": 0,
+      "cognitive_max": 5,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/debug.py": {
+      "mi": 40.2,
+      "mi_rank": "A",
+      "cc_max": 1,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/earned_value.py": {
+      "mi": 41.1,
+      "mi_rank": "A",
+      "cc_max": 7,
+      "cc_over_15": 0,
+      "cognitive_max": 5,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/export.py": {
+      "mi": 54.7,
+      "mi_rank": "A",
+      "cc_max": 6,
+      "cc_over_15": 0,
+      "cognitive_max": 3,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/gantt.py": {
+      "mi": 37.9,
+      "mi_rank": "A",
+      "cc_max": 1,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/health.py": {
+      "mi": 29.2,
+      "mi_rank": "A",
+      "cc_max": 15,
+      "cc_over_15": 0,
+      "cognitive_max": 17,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/milestones.py": {
+      "mi": 60.5,
+      "mi_rank": "A",
+      "cc_max": 2,
+      "cc_over_15": 0,
+      "cognitive_max": 1,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/overview.py": {
+      "mi": 52.3,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "app/views/ppc.py": {
+      "mi": 43.3,
+      "mi_rank": "A",
+      "cc_max": 3,
+      "cc_over_15": 0,
+      "cognitive_max": 3,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "cli.py": {
+      "mi": 6.8,
+      "mi_rank": "C",
+      "cc_max": 34,
+      "cc_over_15": 4,
+      "cognitive_max": 49,
+      "cognitive_over_15": 6,
+      "clones": 0,
+      "near_clones": 2
+    },
+    "config.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "crosscheck.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "export.py": {
+      "mi": 77.0,
+      "mi_rank": "A",
+      "cc_max": 3,
+      "cc_over_15": 0,
+      "cognitive_max": 3,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "sample.py": {
+      "mi": 16.4,
+      "mi_rank": "B",
+      "cc_max": 22,
+      "cc_over_15": 3,
+      "cognitive_max": 49,
+      "cognitive_over_15": 5,
+      "clones": 0,
+      "near_clones": 2
+    },
+    "store.py": {
+      "mi": 50.8,
+      "mi_rank": "A",
+      "cc_max": 11,
+      "cc_over_15": 0,
+      "cognitive_max": 10,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "verify/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "verify/mpxj_cpm.py": {
+      "mi": 38.5,
+      "mi_rank": "A",
+      "cc_max": 17,
+      "cc_over_15": 2,
+      "cognitive_max": 25,
+      "cognitive_over_15": 2,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "verify/mpxj_reader.py": {
+      "mi": 56.8,
+      "mi_rank": "A",
+      "cc_max": 15,
+      "cc_over_15": 0,
+      "cognitive_max": 17,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "verify/p6_corpus.py": {
+      "mi": 59.0,
+      "mi_rank": "A",
+      "cc_max": 17,
+      "cc_over_15": 1,
+      "cognitive_max": 28,
+      "cognitive_over_15": 2,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "verify/shapes.py": {
+      "mi": 70.7,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 19,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "viz/__init__.py": {
+      "mi": 100.0,
+      "mi_rank": "A",
+      "cc_max": 0,
+      "cc_over_15": 0,
+      "cognitive_max": 0,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "viz/charts.py": {
+      "mi": 42.4,
+      "mi_rank": "A",
+      "cc_max": 16,
+      "cc_over_15": 1,
+      "cognitive_max": 17,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "viz/gantt.py": {
+      "mi": 53.9,
+      "mi_rank": "A",
+      "cc_max": 10,
+      "cc_over_15": 0,
+      "cognitive_max": 10,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "xer/__init__.py": {
+      "mi": 77.1,
+      "mi_rank": "A",
+      "cc_max": 6,
+      "cc_over_15": 0,
+      "cognitive_max": 5,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "xer/calendar.py": {
+      "mi": 33.6,
+      "mi_rank": "A",
+      "cc_max": 16,
+      "cc_over_15": 1,
+      "cognitive_max": 17,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 2
+    },
+    "xer/model.py": {
+      "mi": 10.9,
+      "mi_rank": "B",
+      "cc_max": 17,
+      "cc_over_15": 1,
+      "cognitive_max": 21,
+      "cognitive_over_15": 2,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "xer/parser.py": {
+      "mi": 51.7,
+      "mi_rank": "A",
+      "cc_max": 46,
+      "cc_over_15": 1,
+      "cognitive_max": 98,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    },
+    "xer/pmxml.py": {
+      "mi": 40.1,
+      "mi_rank": "A",
+      "cc_max": 14,
+      "cc_over_15": 0,
+      "cognitive_max": 19,
+      "cognitive_over_15": 1,
+      "clones": 0,
+      "near_clones": 0
+    }
+  },
+  "global": {
+    "mypy_errors": 101,
+    "deptry_violations": 0,
+    "import_contracts": 11,
+    "import_contracts_broken": 0
+  }
+}

@@ -521,6 +521,13 @@ def test_actual_finish_after_the_data_date(sched, start):
     assert dates(s, "B")[0] == T(start)
 
 
+def test_a_link_between_two_level_of_effort_activities_is_named():
+    t = [todo("A", **hours(16)), todo("L1", task_type="TT_LOE"), todo("L2", task_type="TT_LOE"), todo("B")]
+    links = [("A", "L1", "SS", 0), ("L1", "B", "FF", 0), ("L1", "L2", "FS", 0)]
+    warnings = schedule(snap(t, links)).warnings
+    assert "1 relationship(s) between two level-of-effort activities, ignored: [('L1', 'L2')]" in warnings
+
+
 def test_level_of_effort_spans_its_drivers():
     s = snap(
         [todo("A", **hours(16)), todo("B", **hours(24)), todo("L", task_type="TT_LOE", **hours(8))],

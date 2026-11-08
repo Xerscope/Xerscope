@@ -462,7 +462,7 @@ def test_csv_exports_write_hours_to_four_decimals():
     """Floats are written with CSV_FLOAT_FORMAT: a BAC summed from P6's minute-based hours (12345.999999)
     reads 12346.0000 and a gap of 1e-13 reads 0.0000, in the plain download, the anonymised CSV and the
     diagnostic zip alike. Dates and text are untouched."""
-    from xerscope.anonymize import csv_bytes
+    from xerscope.export import csv_bytes
 
     frame = pd.DataFrame({"data_date": ["2026-03-02 17:00:00"], "bac_hr": [12345.999999], "gap_hr": [6.9e-13]})
     plain = csv_bytes(frame).decode("utf-8-sig")
@@ -493,3 +493,164 @@ def test_a_distinctive_file_name_is_still_found_inside_any_text():
     distinctive = Anonymizer.from_raws([parse_text(xer_text([todo("A1")]), source="ACME-TOWER-B2_week12.xer")])
     assert distinctive.leaks(["see ACME-TOWER-B2_week12 here"]) == {"file name": 1}
     assert distinctive.leaks(["acme-tower-b2_week12"]) != {}
+
+
+# --- project ids --------------------------------------------------------------------------------
+
+PROJECT_IDS = {"1": "48213", "2": "48217", "3": "48299"}  # distinctive: looked for as whole numbers
+ORIGINAL_PROJECT_ID = re.compile(r"(?<!\d)(?:48213|48217|48299)(?!\d)")
+
+
+def _with_project_ids(text):
+    """``text`` with the ids of PROJECT_IDS in every column whose name ends in proj_id."""
+    lines, columns = [], []
+    for line in text.splitlines():
+        fields = line.split("\t")
+        if fields[0] == "%F":
+            columns = fields[1:]
+        elif fields[0] == "%R":
+            values = zip(columns, fields[1:], strict=True)
+            fields = ["%R", *(PROJECT_IDS.get(v, v) if c.endswith("proj_id") else v for c, v in values)]
+        lines.append("\t".join(fields))
+    return "\n".join(lines) + "\n"
+
+
+def _two_weeks():
+    """Week 1: project 48213 and its Project Baseline 48217 in the file. Week 2: project 48213 again, its
+    pointer to 48217 (not in this file), and a link from activity Z9 of project 48299."""
+    from file_projects import two_projects
+
+    week1 = _with_project_ids(two_projects())
+    week2 = _with_project_ids(
+        xer_text(
+            [todo("A1"), todo("A2")],
+            [("A1", "A2", "FS", 0), ("Z9", "A2", "FS", 0, "3")],
+            project={"sum_base_proj_id": "2"},
+            data_date="2026-03-09 08:00",
+        )
+    )
+    return parse_text(week1, source="w1.xer"), parse_text(week2, source="w2.xer"), week1
+
+
+def _anonymous_outputs(anonymizer, raw, baseline=None):
+    """The anonymised XER, Debug zip, check summary (notes with the baseline) and flagged lists of ``raw``."""
+    from xerscope.analysis.checks import results_frame
+    from xerscope.app.diagnostic import diagnostic_frames
+
+    texts = [anonymizer.xer(raw).decode()]
+    snapshot = build_snapshot(raw)
+    frames = diagnostic_frames(snapshot, baseline, STANDARDS["P6"], anonymous=True)
+    with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames(frames))) as archive:
+        texts += [archive.read(name).decode("utf-8-sig") for name in archive.namelist()]
+    context = AnalysisContext(snapshot, None, baseline)
+    results = [result for standard in STANDARDS.values() for result in run_standard(standard, context)]
+    summary = results_frame(results).assign(note=[result.note_with_baseline for result in results])
+    texts.append(anonymizer.csv(summary).decode("utf-8-sig"))
+    texts += [anonymizer.csv(result.flagged).decode("utf-8-sig") for result in results if not result.flagged.empty]
+    return texts
+
+
+def test_no_original_project_id_is_left_in_any_anonymous_output():
+    from xerscope.analysis.baseline import baseline_in_file
+
+    week1, week2, text1 = _two_weeks()
+    anonymizer = Anonymizer.from_raws([week1, week2])
+    baseline = baseline_in_file(build_snapshot(week1), text1.encode())
+    texts = _anonymous_outputs(anonymizer, week1, baseline) + _anonymous_outputs(anonymizer, week2)
+    assert [match.group(0) for text in texts for match in ORIGINAL_PROJECT_ID.finditer(text)] == []
+    # the ids are still there, renumbered (block 01b lists the file's projects by proj_id)
+    assert any(anonymizer.project_ids["48217"] in text for text in texts)
+
+
+def test_project_ids_are_renamed_alike_in_every_file_and_keep_their_pointers():
+    week1, week2, _ = _two_weeks()
+    anonymizer = Anonymizer.from_raws([week1, week2])
+    new = anonymizer.project_ids
+    assert sorted(new) == ["48213", "48217", "48299"]
+    assert all(re.fullmatch(r"[1-9]\d{8}", value) for value in new.values()) and len(set(new.values())) == 3
+    copy1 = parse_text(anonymizer.xer(week1).decode(), source="a1.xer")
+    copy2 = parse_text(anonymizer.xer(week2).decode(), source="a2.xer")
+    projects = copy1.table("PROJECT").set_index("proj_id")
+    assert projects.loc[new["48213"], "sum_base_proj_id"] == new["48217"]
+    assert projects.loc[new["48217"], "orig_proj_id"] == new["48213"]
+    assert copy2.table("PROJECT")[["proj_id", "sum_base_proj_id"]].values.tolist() == [[new["48213"], new["48217"]]]
+    for raw in (copy1, copy2):  # every proj_id-valued column of every table
+        for frame in raw.tables.values():
+            for column in (c for c in frame.columns if c.endswith("proj_id")):
+                assert set(frame[column]) <= {"", *new.values()}, column
+    assert set(copy2.table("TASKPRED")["pred_proj_id"]) == {new["48213"], new["48299"]}
+    # the anonymised file still names its own baseline; one week read alone gets the same ids
+    pointer = build_snapshot(copy1).file_baseline
+    assert (pointer.usable, pointer.proj_id) == (True, new["48217"])
+    assert Anonymizer.from_raws([week2], key=anonymizer.key).project_ids == {
+        k: new[k] for k in ("48213", "48217", "48299")
+    }
+
+
+def test_a_new_project_id_equal_to_an_original_is_drawn_again():
+    key = (7).to_bytes(32, "big")
+    digest = hmac.new(key, b"proj_id:1", hashlib.sha256).digest()
+    first_draw = str(100_000_000 + int.from_bytes(digest[:8], "big") % 900_000_000)
+    raw = parse_text(xer_text([todo("A1")], project={"sum_base_proj_id": first_draw}), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw], key=key)
+    assert anonymizer.project_ids["1"] not in {"1", first_draw}
+
+
+# --- free text: names inside a sentence, column names, error messages ------------------------------
+
+CALENDAR_NAME = "Acme Client Night Shift"
+
+
+def _named_file():
+    """A file whose calendar and one activity carry names the outputs must not hold."""
+    raw = parse_text(_file([todo("PUMP-7", task_name="Pour slab level three")]), source="x.xer")
+    raw.tables["CALENDAR"]["clndr_name"] = CALENDAR_NAME
+    return raw
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        pd.DataFrame({"task_code": ["PUMP-7"], "reason": ["blocked by Pour slab level three (FS)"]}),
+        pd.DataFrame({"task_code": ["PUMP-7"], "Pour slab level three": [1]}),
+        pd.DataFrame({"task_code": ["PUMP-7"], "status": [f"calendar '{CALENDAR_NAME}' has no working time"]}),
+    ],
+    ids=["inside a kept text", "column name", "inside a status"],
+)
+def test_a_name_inside_a_cell_or_a_column_name_is_refused(table):
+    anonymizer = Anonymizer.from_raws([_named_file()])
+    with pytest.raises(LeakError):
+        anonymizer.frame(table)
+    with pytest.raises(LeakError):
+        anonymizer.zip_frames({"block": table})
+
+
+def test_a_word_inside_a_longer_word_is_not_a_name():
+    """Searched between a letter or digit and anything else: "Night" is not inside "Nightly"."""
+    raw = parse_text(_file([todo("A1", task_name="Night")]), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    assert anonymizer.leaks(["Nightly works", "overnight"]) == {}
+    assert anonymizer.leaks(["works at Night (2)"]) == {"TASK.task_name": 1}
+
+
+def test_an_error_message_naming_a_calendar_leaves_with_the_name_hidden(monkeypatch):
+    """A rule that raises: run_metric copies the message into the note (ValueError of
+    WorkCalendar, "calendar '<clndr_name>' has no working time"). The summary CSV keeps the error
+    and hides the name."""
+    from dataclasses import replace
+
+    from xerscope.analysis.checks import results_frame, run_metric
+    from xerscope.analysis.rules import RULES
+
+    raw = _named_file()
+    metric = STANDARDS["P6"].metrics[0]
+
+    def fails(context, **params):
+        raise ValueError(f"calendar {CALENDAR_NAME!r} has no working time")
+
+    monkeypatch.setitem(RULES, metric.rule, replace(RULES[metric.rule], fn=fails))
+    result = run_metric(metric, AnalysisContext(build_snapshot(raw)))
+    assert result.status == "error" and CALENDAR_NAME in result.note
+    text = Anonymizer.from_raws([raw]).csv(results_frame([result])).decode("utf-8-sig")
+    assert CALENDAR_NAME not in text and "Night Shift" not in text
+    assert "ValueError: calendar '[hidden]' has no working time" in text

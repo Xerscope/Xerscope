@@ -40,7 +40,7 @@ from xerscope.app.state import (
     standard_results,
     standards,
 )
-from xerscope.export import zip_frames
+from xerscope.export import csv_bytes, zip_frames
 from xerscope.viz.charts import build_metric_trend
 
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
@@ -70,17 +70,18 @@ def show_kpis(results, standard) -> None:
             ("Checks passed", f"{int(counts.get('pass', 0))} / {scored}", None, "Checks with a target that meet it"),
             ("Checks failed", int(counts.get("fail", 0)), None, "Checks with a target that miss it"),
             ("For review", int(counts.get("info", 0)), None, "Reported without a pass/fail target"),
-            (
-                "Not applicable",
-                int(counts.get("n/a", 0) + counts.get("error", 0)),
-                None,
-                "No population, or no baseline",
+            ("Not applicable", int(counts.get("n/a", 0)), None, "No population, or no baseline"),
+            # a rule that raised: a defect of the check, shown apart from n/a, only when there is one
+            *(
+                [("Errors", int(counts["error"]), None, "Checks that could not be computed: see their note")]
+                if counts.get("error", 0)
+                else []
             ),
         ]
     )
 
 
-def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> None:
+def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     full = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
     full["note"] = [result.note_with_baseline for result in results]  # the export names the baseline
     full["target"] = full["target"].map(typeset)
@@ -112,7 +113,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
     )
     summary_column, trail_column, sets_column, _ = st.columns([1, 1.3, 1.6, 3])
     with sets_column:  # first, so that the Prepare click also readies the downloads beside it
-        prepare_sets(results, standard, snapshot, baseline, sources)
+        prepare_sets(results, standard, snapshot, sources)
     with summary_column:
         # the notes name activities and files: anonymised like the lists
         csv_download(
@@ -134,7 +135,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
             )
 
 
-def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> None:
+def prepare_sets(results, standard, snapshot, sources: list[str]) -> None:
     """All sets of the standard as one CSV (a row per item) and as one CSV per check in a zip,
     built when the button is pressed, anonymised or not as the sidebar switch says."""
     anonymous = anonymous_exports()
@@ -150,7 +151,7 @@ def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> N
         per_check = by_check(table)
         csv_file = fetch(
             st.session_state,
-            lambda: table.to_csv(index=False).encode("utf-8-sig"),
+            lambda: csv_bytes(table),
             lambda anonymizer: anonymizer.csv(table),
             sources,
             prepare=True,
@@ -235,7 +236,7 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
     metric = result.metric
     row = results_frame([result]).iloc[0]
     counts = f" ({row['count']})" if result.numerator is not None and result.denominator else ""
-    value = "n/a" if result.status in ("n/a", "error") else row["result"]
+    value = result.status if result.status in ("n/a", "error") else row["result"]
     label = (
         f"{ui.STATUS_STYLE[result.status].mark}  {metric.id} · **{metric.name}** — {value}{counts}"
         f" · target {typeset(row['target'])}"
@@ -363,10 +364,10 @@ def show_report_comparison(results, standard) -> None:
                 typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
                 missing = {"id", "found", "total"} - set(typed.columns)
                 if missing:
-                    st.error(f"Columns missing: {', '.join(sorted(missing))}")
+                    st.error(f"Columns missing: {ui.md_text(', '.join(sorted(missing)))}")
                     return
             except (ValueError, UnicodeDecodeError) as exc:
-                st.error(f"Unreadable CSV: {exc}")
+                st.error(f"Unreadable CSV: {ui.md_text(exc)}")
                 return
             typed = got[["id", "check"]].merge(typed[["id", "found", "total"]], on="id", how="left")
         else:
@@ -422,11 +423,11 @@ def show_own_standard() -> None:
                 if custom.id in builtin_standards():
                     raise ValueError(f"{upload.name}: id {custom.id!r} is a built-in standard's; give yours another id")
                 st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
-                st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
+                st.success(f"Loaded {ui.md_text(custom.name)} ({len(custom.metrics)} checks): pick it above.")
             except (ValueError, UnicodeDecodeError) as exc:
-                st.error(str(exc))
+                st.error(ui.md_text(exc))
         for error in st.session_state.get("standard_errors", []):
-            st.error(error)
+            st.error(ui.md_text(error))
 
 
 store = require_store()
@@ -472,14 +473,14 @@ if baseline is None:
 results = standard_results(standard, snapshot, store)
 show_kpis(results, standard)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
-show_summary(results, standard, snapshot, baseline, sources)
+show_summary(results, standard, snapshot, sources)
 show_check_sets(results, standard, snapshot, sources)
 show_details(results, snapshot, only_failed, sources, standard)
 if len(store) > 1:
     show_trend(store, standard)
 
 if baseline is not None:
-    missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
+    missing = baseline.unbaselined(snapshot)
     if missing:
         st.caption(
             f"{len(missing)} tasks are not in the baseline: "

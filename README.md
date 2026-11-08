@@ -327,7 +327,7 @@ uv sync --locked
 uv run python tests/reference/fetch.py            # pinned third-party XERs (checksum-verified)
 uv run python tests/reference/fetch_p6_heldout.py # P6 23.12 held-out corpus (pinned commit)
 uv run pytest -rs                                 # corpus and MPXJ tests skip when their data is missing
-uvx ruff check src tests && uvx ruff format --check src tests
+uvx ruff check src tests scripts && uvx ruff format --check src tests scripts
 ```
 
 No real schedule enters the repository, its issues or its pull requests: tests build their

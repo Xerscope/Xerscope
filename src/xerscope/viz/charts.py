@@ -130,12 +130,21 @@ def build_scurve(
 
     At ``data_date`` a vertical mark joins that update's PV and EV, labelled SV = EV − PV in
     the chart's unit: green when EV >= PV (ahead), red when behind. PV there is the update's
-    own (``series.pv_hr``, as in the KPIs), not the daily curve's end-of-day value.
+    own (``series.pv_hr``, as in the KPIs). ``curve`` and ``forecast`` hold the value at each
+    instant (``pv_curve``, ``forecast_curve``): the PV curve passes through that mark.
+
+    ``percent``: each update's EV, AC and SV over its own BAC (``series.bac_hr``, as the KPIs'
+    ``ev_pct``); the PV and forecast curves over the BAC of the update at ``data_date`` (else the
+    last), the update they are drawn for.
     """
     c = SERIES
-    bac = float(series["bac_hr"].iloc[0]) if len(series) else 0.0
-    k = (100 / bac) if (percent and bac) else 1.0
-    unit = "% of BAC" if percent and bac else "labor hours"
+    s = series.dropna(subset=["data_date"])
+    now = s[s["data_date"] == data_date] if data_date is not None else s.iloc[0:0]
+    bac = float((now if len(now) else s)["bac_hr"].iloc[-1]) if len(s) else 0.0
+    percent = bool(percent and bac)
+    k = (100 / bac) if percent else 1.0
+    point_k = 100 / s["bac_hr"].where(s["bac_hr"] > 0) if percent else 1.0  # each update's own BAC
+    unit = "% of BAC" if percent else "labor hours"
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -146,23 +155,22 @@ def build_scurve(
             line=dict(color=c[0], width=LINE),
         )
     )
-    s = series.dropna(subset=["data_date"])
     fig.add_trace(
         go.Scatter(
             x=s["data_date"],
-            y=s["ev_hr"] * k,
+            y=s["ev_hr"] * point_k,
             mode="lines+markers",
             name="EV (earned)",
             line=dict(color=c[1], width=LINE),
             marker=dict(size=8),
-            customdata=s[["sv_hr"]].to_numpy() * k,
+            customdata=(s["sv_hr"] * point_k).to_frame().to_numpy(),
             hovertemplate="%{y:,.1f}  (SV %{customdata[0]:+,.1f})",
         )
     )
     fig.add_trace(
         go.Scatter(
             x=s["data_date"],
-            y=s["ac_hr"] * k,
+            y=s["ac_hr"] * point_k,
             mode="lines+markers",
             name="AC (actual)",
             line=dict(color=c[2], width=LINE),
@@ -190,10 +198,9 @@ def build_scurve(
             fig,
             curve["date"].iloc[-1],
             curve["pv_cum_hr"].iloc[-1] * k,
-            f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f}",
+            f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f} · baseline tasks of this update",
         )
-    # drawn last, over the AC marker and the data-date line it shares x with
-    now = s[s["data_date"] == data_date] if data_date is not None else s.iloc[0:0]
+    # drawn last, over the AC marker and the data-date line it shares x with; k: that update's BAC
     if len(now):
         planned, earned_now, variance = (float(now[col].iloc[-1]) * k for col in ("pv_hr", "ev_hr", "sv_hr"))
         colour = STATUS["good"] if variance >= 0 else STATUS["critical"]
@@ -209,7 +216,7 @@ def build_scurve(
                 hoverinfo="skip",
             )
         )
-        sv_text = f"SV {variance:+,.1f} % of BAC" if percent and bac else f"SV {variance:+,.0f} h"
+        sv_text = f"SV {variance:+,.1f} % of BAC" if percent else f"SV {variance:+,.0f} h"
         # above the mark's top end, left of the data date: clear of the curves, which rise to the right
         fig.add_annotation(
             x=data_date,

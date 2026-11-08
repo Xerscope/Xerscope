@@ -139,6 +139,8 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "finish": ("Finish", "datetime"),
     "bl_start": ("BL start", "datetime"),
     "bl_finish": ("BL finish", "datetime"),
+    "ev_start": ("EV start", "datetime"),  # the EV basis dates (analysis/baseline.py EV_BASES)
+    "ev_finish": ("EV finish", "datetime"),
     "act_start_date": ("Actual start", "datetime"),
     "act_end_date": ("Actual finish", "datetime"),
     "target_start_date": ("Planned start", "datetime"),
@@ -176,6 +178,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "labor_actual_hr": ("Actual (h)", "h0"),
     "labor_remaining_hr": ("Remaining (h)", "h0"),
     "bl_labor_hr": ("BL budget (h)", "h0"),
+    "ev_labor_hr": ("EV budget (h)", "h0"),
     "schedule_pct": ("Schedule %", "pct"),
     "perf_pct": ("Performance %", "pct"),
     "pv_hr": ("PV (h)", "h0"),

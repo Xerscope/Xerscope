@@ -391,3 +391,82 @@ def test_baseline_in_each_file_equals_check_baseline_in_file(tmp_path, monkeypat
     (built,) = at.session_state["_file_baselines"][1].values()
     assert built.label == "BL (P6 Project Baseline in two.xer)"
     assert f"baseline {built.label}" in printed
+
+
+def test_earned_value_table_csv_and_chart_total_the_kpi_population(tmp_path, monkeypatch):
+    """a (03-02): A and D, 40 h each over 03-02 → 03-06; b (03-04): A and N (D deleted, N new).
+    Against a, at b by hand: BAC = 40 h (A only), PV = 16 h, EV = 0. The CSV of "Earned hours by
+    task" sums to those KPI values (D and its 16 h of PV in a CSV of their own) and the PV curve ends at 40 h, its
+    label naming its population."""
+    import base64
+    import io
+
+    import numpy as np
+    import plotly.io
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+
+    from xerscope.store import SnapshotStore
+
+    saved: dict[str, bytes] = {}
+    real = MemoryMediaFileStorage.load_and_get_id
+
+    def keep(self, path_or_data, mimetype, kind, filename=None):
+        file_id = real(self, path_or_data, mimetype, kind, filename)
+        saved[file_id] = self._files_by_id[file_id].content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", keep)
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    (tmp_path / "a.xer").write_text(xer_text([todo("A", **week), todo("D", **week)], data_date="2026-03-02 08:00"))
+    (tmp_path / "b.xer").write_text(xer_text([todo("A", **week), todo("N", **week)], data_date="2026-03-04 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=180).run())
+    at.sidebar.toggle(key="anon_exports").set_value(False)
+    _run(at)
+    at.switch_page("views/earned_value.py")
+    _run(at)
+    store: SnapshotStore = at.session_state["store"]
+    row = evm_series(store, Baseline.from_snapshot(store.first)).iloc[-1]
+    assert (row["bac_hr"], row["pv_hr"], row["ev_hr"]) == pytest.approx((40, 16, 0))
+    files = {b.proto.label: saved[b.proto.url.rsplit("/", 1)[-1].split(".")[0]] for b in at.get("download_button")}
+    csv = pd.read_csv(io.BytesIO(files["Download CSV"]))
+    deleted = pd.read_csv(io.BytesIO(files["Download deleted tasks (CSV)"]))
+    assert list(csv["task_code"]) == ["A"] and list(deleted["task_code"]) == ["D"]
+    assert deleted["pv_hr"].sum() == pytest.approx(16)  # D's PV, apart from the KPI's
+    assert csv[["ev_labor_hr", "pv_hr", "ev_hr"]].sum().tolist() == pytest.approx([40, 16, 0])
+    # hours and finish of the EV basis, named as such: not the baseline's own (BL) columns
+    assert not {"bl_labor_hr", "bl_finish"} & set(csv.columns)
+    frame = Baseline.from_snapshot(store.first).frame
+    assert list(pd.to_datetime(csv["ev_finish"])) == [frame.loc["A", "ev_finish"]]
+    assert any("Budgeted values with planned dates" in caption.value for caption in at.caption)
+    figure = plotly.io.from_json(at.get("plotly_chart")[0].proto.spec)
+    pv = next(trace for trace in figure.data if trace.name == "PV (baseline)")
+    pv_hours = np.frombuffer(base64.b64decode(pv.y["bdata"]), dtype=pv.y["dtype"])  # plotly's typed array
+    assert pv_hours[-1] == pytest.approx(row["bac_hr"])
+    labels = [a.text for a in figure.layout.annotations if a.text.startswith("BAC")]
+    assert labels == ["BAC 40 · baseline tasks of this update"]
+
+
+def test_earned_value_captions_list_what_ev_point_reports(tmp_path, monkeypatch):
+    """a: A and M (WBS on EV technique "WBS milestones"), D; b: A, M and N (D deleted, N new). The page's
+    "not modelled" and "not in the baseline" captions name ev_point's lists for b: M, and N."""
+    from xerscope.analysis.evm import ev_point
+
+    wbs = [{"wbs_id": "W1", "proj_id": "1", "wbs_short_name": "W1", "wbs_name": "W1", "proj_node_flag": "N",
+            "parent_wbs_id": "", "seq_num": "1", "ev_compute_type": "EC_WBS_Mile"}]  # fmt: skip
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    tasks = [todo("A", **week), todo("M", wbs_id="W1", **week)]
+    (tmp_path / "a.xer").write_text(xer_text([*tasks, todo("D", **week)], wbs=wbs, data_date="2026-03-02 08:00"))
+    (tmp_path / "b.xer").write_text(xer_text([*tasks, todo("N", **week)], wbs=wbs, data_date="2026-03-04 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=180).run())
+    at.switch_page("views/earned_value.py")
+    _run(at)
+    store = at.session_state["store"]
+    point = ev_point(store.latest, Baseline.from_snapshot(store.first))
+    assert (point.not_modelled, point.unbaselined) == (["M"], ["N"])
+    captions = [caption.value.replace("\\", "") for caption in at.caption]
+    assert any(text.startswith("EV technique not modelled") and text.endswith(": M") for text in captions)
+    assert any(text.startswith("Not in the baseline") and text.endswith(": N") for text in captions)
