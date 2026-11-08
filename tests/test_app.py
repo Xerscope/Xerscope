@@ -1502,6 +1502,24 @@ def test_the_gantt_funnel_line_shows_a_wbs_name_literally(tmp_path, monkeypatch)
     assert funnel and all("\\[a\\]\\(http://x\\)" in line for line in funnel), funnel
 
 
+def test_debug_lists_the_curated_load_errors_to_every_session_without_their_words(app, lexicon_root):
+    """A curated/ file that cannot be read, or a refusal that cannot apply, is named in block 14
+    with where it fails, in every session (not only the first that loaded the lexicon); the text
+    an error quotes (a word, a key) is never shown."""
+    (lexicon_root / "curated" / "bad.toml").write_text('[[group]]\nwords = ["qwfpsecret" "CIV"]\n', encoding="utf-8")
+    (lexicon_root / "curated" / "refusals.toml").write_text(
+        '[[refuse]]\nwords = ["zxcvsecret", "fondations"]\n', encoding="utf-8"
+    )
+    app.switch_page("views/gantt.py").run()  # the first session loads the lexicon
+    for session in (app, read_folder(AppTest.from_file(APP, default_timeout=120).run())):
+        session.switch_page("views/debug.py").run()
+        _ok(session)
+        block = next(e for e in session.main.expander if e.key == "debug_ask_variants")
+        shown = " ".join(m.value for m in [*block.markdown, *block.caption, *block.warning])
+        assert "bad.toml: line 2, column 23" in shown and "refusals.toml: refuse #1" in shown, shown
+        assert "secret" not in shown
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 
