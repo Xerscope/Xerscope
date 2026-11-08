@@ -660,7 +660,7 @@ def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointe
     at = _series(tmp_path, monkeypatch, {"c.xer": c}, keep_env=True)
     assert baseline_box(at).value == BL_FILE
     (warning,) = [w for w in _warnings(at) if "separate baseline file is" in w]
-    assert "is OLDBL, data date 02 Mar 2026, but" in warning
+    assert "is OLDBL, status date 02 Mar 2026, but" in warning
     assert "a project no loaded file holds (1 update)" in warning
     assert "370" not in warning
 
@@ -681,5 +681,5 @@ def test_a_loaded_update_as_baseline_is_named_against_the_pointer(tmp_path, monk
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     (warning,) = [w for w in _warnings(at) if "baseline (a loaded update) is" in w]
-    assert "is UPD, data date" in warning and "a project no loaded file holds (2 updates)" in warning
+    assert "is UPD, status date" in warning and "a project no loaded file holds (2 updates)" in warning
     assert "370" not in warning

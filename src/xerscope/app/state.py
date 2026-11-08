@@ -859,7 +859,7 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
     )
     what = "separate baseline file" if kind == BL_FILE else "baseline (a loaded update)"
     sidebar.warning(
-        f"The {what} is {loaded.project_code}, data date {ui.fmt_date(loaded.data_date)}, but the updates "
+        f"The {what} is {loaded.project_code}, status date {ui.fmt_date(loaded.data_date)}, but the updates "
         "name another P6 Project "
         f"Baseline: {named}. Their planned value, BEI and late tasks will not match P6's. (Compared by P6's "
         "internal project id, which holds within one P6 database only.) Ask for the export of the project they "
