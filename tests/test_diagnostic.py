@@ -457,3 +457,44 @@ def test_calendar_detail_is_in_the_diagnostic_zip_without_names_when_anonymous()
     assert "clndr_name" not in calendar_summary_table(snapshot, anonymous=True).columns
     frames = diagnostic_frames(snapshot, None, builtin_standards()["P6"], anonymous=True)
     assert {"13_calendar_summary", "13_calendar_week", "13_calendar_exceptions"} <= set(frames)
+
+
+def test_guid_match_counts_ids_guids_and_what_the_option_links():
+    """Baseline A, B, C, X, F; update A, B2 (B's GUID), X (C's GUID, X already in the baseline), N, M (no
+    GUID). Linked: B -> B2. Gone and not linked: C (its GUID in the update under X, which the option
+    cannot take) and F (GUID absent from the update)."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis import Baseline
+    from xerscope.app.diagnostic import guid_match_table
+
+    baseline = Baseline.from_snapshot(
+        snap(
+            [
+                todo("A", guid="g1"),
+                todo("B", guid="g2"),
+                todo("C", guid="g3"),
+                todo("X", guid="gx"),
+                todo("F", guid="gf"),
+            ]
+        )
+    )
+    update = snap([todo("A", guid="g1"), todo("B2", guid="g2"), todo("X", guid="g3"), todo("N", guid="g9"), todo("M")])
+    (row,) = guid_match_table(update, baseline, None).to_dict("records")
+    assert row == {
+        "against": "baseline",
+        "tasks": 5,
+        "tasks_against": 5,
+        "guids_blank": 1,
+        "guids_repeated": 0,
+        "guids_shared": 3,
+        "ids_in_both": 2,
+        "ids_gone": 3,
+        "ids_new": 3,
+        "renumbered": 1,
+        "gone_guid_in_update": 1,
+        "gone_guid_absent": 1,
+    }
+    previous = snap([todo("A", guid="g1")])
+    assert guid_match_table(update, None, previous)["against"].tolist() == ["previous update"]
+    assert guid_match_table(update, None, None).empty
