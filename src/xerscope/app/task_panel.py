@@ -100,10 +100,10 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
                 ("Task ID", _text(task["task_code"])),
                 ("Task name", _text(task["task_name"])),
                 ("WBS", f"{_text(task['wbs_code'])} · {_text(wbs_names.get(task['wbs_id']))}"),
-                ("Activity type", TASK_TYPE.get(task["task_type"], _text(task["task_type"]))),
+                ("Task type", TASK_TYPE.get(task["task_type"], _text(task["task_type"]))),
                 ("% complete type", PCT_COMPLETE_TYPE.get(task["complete_pct_type"], _text(task["complete_pct_type"]))),
                 ("Calendar", calendar),
-                ("Activity codes", " · ".join(code_text) or "–"),
+                ("Task codes", " · ".join(code_text) or "–"),
             ],
         ),
         (
@@ -196,7 +196,7 @@ def show_card(snapshot, task_code: str) -> None:
     if len(rows) != 1:
         st.warning(
             f"Task ID {ui.md_text(task_code)} is on {len(rows)} rows of this update: no card is drawn, "
-            "an Activity ID names one activity of a project.",
+            "a Task ID names one task of a project.",
             icon=":material/warning:",
         )
         return

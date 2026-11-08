@@ -4,8 +4,10 @@ Key decisions
 - Activities are identified by ``task_code`` (the P6 Activity ID). ``task_id`` is an
   internal database key that can change when a project is re-imported, so it is only
   used to resolve relationships *inside* a single file.
-- The snapshot date is ``PROJECT.last_recalc_date``: that is where P6 stores the data
-  date in an XER. If it is blank, P6 schedules from the planned start, so we do too.
+- The snapshot date is ``PROJECT.last_recalc_date`` ("Last Recalc Date" in Oracle's XER
+  data map, which names no column "Data Date"). MPXJ reads it as the status date
+  (``TableProjectReader``) and writes the status date there; the reference files' stored
+  dates confirm it (docs/cpm.md). If it is blank, the planned start is used.
 - Durations and float are converted from hours to working days with the task's own
   calendar (``CALENDAR.day_hr_cnt``), which is what every standard threshold is
   expressed in (e.g. DCMA's 44 working days).
@@ -21,7 +23,7 @@ Key decisions
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from operator import attrgetter
 
@@ -925,7 +927,9 @@ def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFr
     return table[FILE_PROJECT_COLUMNS + extra + PCT_TYPE_COUNT_COLUMNS].reset_index(drop=True)
 
 
-def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
+def _calendars(
+    raw: RawXer, settings: Settings, warnings: list[str]
+) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
     """CALENDAR table, hours per working day by calendar id, and the parsed work calendars."""
     calendars = raw.table("CALENDAR")
     if calendars.empty:
@@ -938,11 +942,65 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
         str(row["clndr_id"]): WorkCalendar.from_row(row, settings.default_hours_per_day)
         for _, row in calendars.iterrows()
     }
+    for calendar in work_calendars.values():
+        if calendar.notes:
+            warnings.append(
+                f"{raw.source}: calendar {calendar.clndr_id} ({calendar.name}): {'; '.join(calendar.notes)}"
+            )
     # one reading of "hours per day": the calendar's own (a missing or zero count is the default)
     hours_per_day = pd.Series(
         {clndr_id: calendar.hours_per_day for clndr_id, calendar in work_calendars.items()}, dtype=float
     )
+    work_calendars = _inherit_base_exceptions(calendars, work_calendars, raw.source, warnings)
     return calendars.drop(columns=["clndr_data"]), hours_per_day, work_calendars  # parsed above; the blob is large
+
+
+def _inherit_base_exceptions(
+    calendars: pd.DataFrame, work_calendars: dict[str, WorkCalendar], source: str, warnings: list[str]
+) -> dict[str, WorkCalendar]:
+    """Each calendar with the holidays and exceptions of its base (``CALENDAR.base_clndr_id``),
+    and of the base's base; on a date both carry, the calendar's own exception wins. The work
+    week stays the calendar's own.
+
+    Oracle, "Assigning a Base Calendar to a Project Calendar": "Assign a base calendar to
+    determine holidays and exceptions for the selected project calendar." MPXJ reads a XER the
+    same way: ``TableContextReader.processCalendars`` sets the base as parent, and
+    ``ProjectCalendar.getException`` looks in the parent when the calendar has no exception of
+    its own on the date. Whether P6 already copies the base's exceptions into the derived blob
+    is not documented; the reference files that have a base (Hotel, Terminal) carry them, and
+    then nothing is added. Each calendar that does gain exceptions is named in ``warnings``.
+    """
+    if "base_clndr_id" not in calendars.columns:
+        return work_calendars
+    base_of = {
+        str(clndr_id): str(base)
+        for clndr_id, base in zip(calendars["clndr_id"], calendars["base_clndr_id"], strict=True)
+        if isinstance(base, str) and base.strip()
+    }
+    out = dict(work_calendars)
+    for clndr_id, calendar in work_calendars.items():
+        chain = [clndr_id]  # the calendar, its base, the base's base...
+        base = base_of.get(clndr_id)
+        while base is not None:
+            if base in chain:
+                warnings.append(f"{source}: calendar {clndr_id}: loop of base calendars {[*chain, base]}")
+                break
+            if base not in work_calendars:
+                warnings.append(f"{source}: calendar {chain[-1]}: base calendar {base} is not in the file")
+                break
+            chain.append(base)
+            base = base_of.get(base)
+        exceptions: dict = {}
+        for member in reversed(chain):  # the farthest base first, the calendar's own last
+            exceptions.update(work_calendars[member].exceptions)
+        inherited = len(exceptions) - len(calendar.exceptions)
+        if inherited:
+            out[clndr_id] = replace(calendar, exceptions=exceptions)
+            warnings.append(
+                f"{source}: calendar {clndr_id}: {inherited} holiday or exception{'s' if inherited > 1 else ''}"
+                f" inherited from base calendar {chain[1]}"
+            )
+    return out
 
 
 def _header_field(header: list[str], index: int) -> str:
@@ -958,6 +1016,11 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         if "proj_id" in schedule_options.columns:
             rows = schedule_options[schedule_options["proj_id"] == inputs.project_id]
         schedule_row = rows.iloc[0].to_dict() if not rows.empty else {}
+        if rows.empty:
+            inputs.warnings.append(
+                f"{inputs.source}: SCHEDOPTIONS has no row for project {inputs.project_row['proj_short_name']}: "
+                "P6's default scheduling options used"
+            )
     # Oracle (P6 Professional 24, Schedule Options > General): "If you do not select a
     # calendar, Successor Activity Calendar is used to calculate lag."
     chosen_lag_calendar = schedule_row.get("sched_calendar_on_relationship_lag")
@@ -978,7 +1041,6 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         "progressed": progressed,
         "critical_path_type": project_row["critical_path_type"] or "CT_TotFloat",
         "critical_float_hr": None if pd.isna(critical_hours) else float(critical_hours),
-        "has_schedoptions": not schedule_options.empty,
         "sched": schedule_row,  # the raw SCHEDOPTIONS row: read by analysis.cpm
         # ERMHDR: P6 version and product that wrote the file ("" when the header leaves them out)
         "export": {"version": _header_field(inputs.raw.header, 0), "product": _header_field(inputs.raw.header, 6)},
@@ -1031,6 +1093,13 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     tasks["is_milestone"] = tasks["is_start_milestone"] | (tasks["task_type"] == "TT_FinMile")
     _warn_unknown_codes(
         tasks["task_type"], TASK_TYPE, f"{source}: TASK.task_type", "read as Task Dependent", inputs.warnings
+    )
+    _warn_unknown_codes(
+        tasks["complete_pct_type"],
+        {**PCT_COMPLETE_TYPE, "": "blank"},  # a blank is counted per project (tasks_pct_blank), not warned
+        f"{source}: TASK.complete_pct_type",
+        "% complete read as Physical",
+        inputs.warnings,
     )
     if (tasks["task_type"] == "TT_StartMile").any():
         inputs.warnings.append(f"{source}: non-standard task_type TT_StartMile read as a start milestone")
@@ -1337,7 +1406,7 @@ def build_snapshot(
     data_date, data_date_source = _data_date(project_row)
     if data_date is None:
         warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
-    calendars, hours_per_day, work_calendars = _calendars(raw, settings)
+    calendars, hours_per_day, work_calendars = _calendars(raw, settings, warnings)
     inputs = _BuildInputs(raw, all_tasks, all_relationships, project_row, hours_per_day, settings, warnings)
     wbs, project_name = _wbs_frame(raw, inputs.project_id, warnings)
     options = _scheduling_options(inputs)

@@ -172,7 +172,8 @@ ui.kpis(
             "Forecast finish",
             ui.fmt_date(node["finish"]),
             None if pd.isna(node["finish_variance_wd"]) else f"{node['finish_variance_wd']:+.1f} wd vs BL",
-            None,
+            "Variance to BL: latest finish of the baselined tasks against their latest BL finish"
+            + (f"; {node['outside_bl']} task(s) not in the baseline left out" if node["outside_bl"] else ""),
             "inverse",
         ),
         ("Labor hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
@@ -331,7 +332,7 @@ st.selectbox(
     "Task",
     codes,
     format_func=lambda code: f"{code} · {names.get(code, '')}",
-    placeholder="Click an activity in the chart, or pick one here",
+    placeholder="Click a task in the chart, or pick one here",
     key=PICK_KEY,
     on_change=_pick_from_list,
 )

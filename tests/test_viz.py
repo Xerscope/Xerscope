@@ -111,15 +111,16 @@ def _ppc_frame(ppc, kept, committed):
     return pd.DataFrame(
         {
             "data_date": pd.date_range("2026-03-02", periods=weeks, freq="7D"),
-            "ppc": ppc,
             "ppc_start": ppc,
-            "ppc_all": ppc,
+            "ppc_finish": ppc,
+            "ppc_week": ppc,
             "finishes_kept": kept,
             "finishes_committed": committed,
             "starts_kept": kept,
             "starts_committed": committed,
             "kept": kept,
             "committed": committed,
+            "note": None,
         }
     )
 
@@ -150,14 +151,36 @@ def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
     Each trace carries its own ratio and counts, so a swap between the start and the all series fails."""
     frame = _ppc_frame([50.0, None], [1, 0], [2, 0])
     frame["ppc_start"], frame["starts_kept"], frame["starts_committed"] = [200 / 3, None], [2, 0], [3, 0]
-    frame["ppc_all"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
+    frame["ppc_week"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
     fig = build_ppc(frame, 80)
     assert [t.type for t in fig.data] == ["bar", "scatter", "scatter"]
-    assert [t.name for t in fig.data] == ["PPC (finishes)", "PPC Start", "PPC all commitments"]
-    assert list(fig.data[0].y) == [50.0, 0.0] and fig.data[0].customdata[0] == "50% (1/2)"
+    assert [t.name for t in fig.data] == ["PPC Finish", "PPC Start", "PPC W/W−1"]
+    assert list(fig.data[0].y) == [50.0, None] and fig.data[0].customdata[0] == "50% (1/2)"
     assert fig.data[1].y[0] == pytest.approx(200 / 3) and fig.data[1].customdata[0] == "67% (2/3)"
     assert fig.data[2].y[0] == 60.0 and fig.data[2].customdata[0] == "60% (3/5)"
     assert fig.data[0].customdata[1] == "no commitment"
+
+
+def test_ppc_chart_marks_a_point_that_spans_more_than_a_week():
+    """The second point covers 14 days (an update missing): its bar is hatched and every
+    hover of that week carries the note, as the Commitments section does."""
+    frame = _ppc_frame([100.0, 50.0], [1, 1], [1, 2])
+    note = "14 days since the previous update: this point covers more than one week"
+    frame["note"] = [None, note]
+    fig = build_ppc(frame, 80)
+    assert list(fig.data[0].marker.pattern.shape) == ["", "/"]
+    for trace in fig.data:
+        assert note not in trace.customdata[0] and trace.customdata[1].endswith(note)
+
+
+def test_ppc_week_without_commitment_is_not_a_zero_bar():
+    """Week 2 committed nothing: no PPC, so no bar (a 0 bar reads as 0 % kept) and an "n/a"
+    label on the axis at that week; week 3 kept 0 of 1: a real 0 bar."""
+    fig = build_ppc(_ppc_frame([50.0, None, 0.0], [1, 0, 0], [2, 0, 1]), 80)
+    assert list(fig.data[0].y) == [50.0, None, 0.0]
+    marks = [a for a in fig.layout.annotations if a.text == "n/a"]
+    assert [(a.x, a.y) for a in marks] == [("2026-03-09", 0)]
+    assert fig.layout.annotations[0].text == "target 80%"
 
 
 def test_activity_dates_axis_keeps_days_when_dates_never_move():
@@ -377,3 +400,53 @@ def test_scurve_marks_the_schedule_variance_at_the_data_date():
     mark = next(t for t in behind.data if t.name == "SV (EV − PV)")
     assert mark.line.color == STATUS["critical"] and list(mark.y) == [20.0, 15.0]  # % of BAC
     assert any(a.text == "SV -5.0 % of BAC" for a in behind.layout.annotations)
+
+
+def test_scurve_pv_and_forecast_at_the_data_date_are_the_kpis():
+    """A: 40 h Mon 03-02 08:00 → Fri 03-06 17:00 (8 h a day); update at Wed 08:00 with 8 h spent and
+    24 h remaining. By hand: PV at Wed 08:00 = Mon + Tue = 16 h (Wed 00:00 too), 24 h at Thu 00:00;
+    the forecast starts from AC = 8 h at the data date. Each trace point is the value at its instant."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import evm_series, forecast_curve, pv_curve
+    from xerscope.store import SnapshotStore
+
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    baseline = Baseline.from_snapshot(snap([todo("A", **week)], data_date="2026-03-02 08:00"))
+    spent = {"act_work_qty": "8", "remain_work_qty": "24", "act_start_date": "2026-03-02 08:00"}
+    update = snap([todo("A", **week, **spent, status_code="TK_Active")], data_date="2026-03-04 08:00")
+    series = evm_series(SnapshotStore([update]), baseline)
+    data_date = update.data_date
+    fig = build_scurve(pv_curve(baseline, update), series, forecast_curve(update), data_date)
+    pv = next(t for t in fig.data if t.name == "PV (baseline)")
+    at = {pd.Timestamp(x): y for x, y in zip(pv.x, pv.y, strict=True)}
+    assert at[data_date] == pytest.approx(series["pv_hr"].iloc[-1]) == pytest.approx(16)
+    assert at[pd.Timestamp("2026-03-04")] == pytest.approx(16) and at[pd.Timestamp("2026-03-05")] == pytest.approx(24)
+    forecast = next(t for t in fig.data if t.name == "Forecast (AC + remaining)")
+    assert pd.Timestamp(forecast.x[0]) == data_date and forecast.y[0] == pytest.approx(8)
+    assert pd.Timestamp(forecast.x[1]) == pd.Timestamp("2026-03-05") and forecast.y[1] == pytest.approx(16)
+
+
+def test_scurve_percent_of_bac_is_each_update_s_own_as_in_the_kpis():
+    """Baseline A and D, 40 h each; u1 holds both, u2 only A (D deleted), A half done. By hand: BAC
+    80 h then 40 h; EV at u2 = 20 h = 50 % of its BAC (the KPI), not 25 % of the first update's."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import evm_series, pv_curve
+    from xerscope.store import SnapshotStore
+
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    first = snap([todo("A", **week), todo("D", **week)], data_date="2026-03-02 08:00")
+    half = {
+        "complete_pct_type": "CP_Phys",
+        "phys_complete_pct": "50",
+        "act_start_date": "2026-03-02 08:00",
+        "status_code": "TK_Active",
+    }
+    second = snap([todo("A", **week, **half)], data_date="2026-03-04 08:00")
+    baseline = Baseline.from_snapshot(first)
+    series = evm_series(SnapshotStore([first, second]), baseline)
+    assert list(series["bac_hr"]) == [80, 40] and series["ev_pct"].iloc[-1] == pytest.approx(50)
+    fig = build_scurve(pv_curve(baseline, second), series, None, second.data_date, percent=True)
+    ev = next(t for t in fig.data if t.name == "EV (earned)")
+    assert list(ev.y) == pytest.approx(list(series["ev_pct"]))
+    mark = next(t for t in fig.data if t.name == "SV (EV − PV)")
+    assert list(mark.y) == pytest.approx([series["pv_pct"].iloc[-1], series["ev_pct"].iloc[-1]])

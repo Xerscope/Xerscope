@@ -120,3 +120,21 @@ def test_every_exemption_has_a_mask():
 
     pop = snap([todo("A")]).activities
     assert set(_exempt_masks(pop, set(), set())) == set(EXEMPT)
+
+
+@pytest.mark.parametrize(
+    "project, text",
+    [
+        ({"critical_path_type": "CT_DrivPath"}, "on the longest path (P6 Longest Path flag)"),
+        ({"critical_path_type": "CT_TotFloat", "critical_drtn_hr_cnt": "16"}, "total float ≤ 16 h"),
+        ({"critical_path_type": "CT_TotFloat", "critical_drtn_hr_cnt": ""}, "total float ≤ 0 d"),
+    ],
+)
+def test_critical_definition_says_the_critical_path_type_the_counts_use(project, text):
+    """The Overview's "Critical tasks" help: the rule model.py applies to is_critical."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis.explain import critical_definition
+
+    said = critical_definition(snap([todo("A")], project=project), default_days=0.0)
+    assert said == f"Open tasks (LOE and milestones included) {text}"
