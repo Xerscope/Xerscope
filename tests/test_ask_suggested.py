@@ -151,3 +151,16 @@ def test_a_record_keeps_an_expired_word_that_curated_holds(tmp_path):
     curated = {"valide": ("com",), "com": ("valide",)}
     assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW, curated)
     assert [e["word"] for e in _entries(tmp_path)] == ["valide", "nouveau"]
+
+
+def test_the_same_correction_is_recorded_once(tmp_path):
+    """Clicks on one (word, label, column) add nothing past the first: a visitor cannot fill the
+    file with one correction repeated. Another label or another column for the word is kept."""
+    for _ in range(100):
+        assert suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", NOW)
+    assert suggested.record(tmp_path, "commiss", "COMMISS", "resource", NOW)
+    assert suggested.record(tmp_path, "ｃｏｍｍｉｓｓ", "COM · Commissioning", "wbs", NOW)  # NFKC: the same word
+    assert [(e["word"], e["label"], e["column"]) for e in _entries(tmp_path)] == [
+        ("commiss", "COM · Commissioning", "PROJWBS.wbs_name"),
+        ("commiss", "COMMISS", "RSRC.rsrc_short_name"),
+    ]
