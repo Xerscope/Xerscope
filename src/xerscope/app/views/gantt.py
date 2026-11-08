@@ -289,7 +289,7 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             st.markdown(ui.md_text(said), width="stretch")
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
         how = " · unsure reading" if ask.confidence < query.SURE else ""
-        st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
+        st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]
