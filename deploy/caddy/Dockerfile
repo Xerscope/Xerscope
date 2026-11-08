@@ -17,6 +17,8 @@
 # CVE-2026-78661 (denial of service on crafted HTML, fixed in 0.62.0). The build fails unless the
 # binary records the fixed version. Drop the replace once a Caddy release requires x/net >= 0.62.0:
 # a replace pins one version, so a newer one required by Caddy would be held back.
+# github.com/go-jose/go-jose/v4 is replaced by v4.1.6 the same way: Caddy 2.11.8 pins v4.1.5, which
+# carries CVE-2026-116587 (cubic CPU time on crafted RSA JWKs, fixed in 4.1.6).
 #
 # The builder sets the binary's cap_net_bind_service file capability like the stock image
 # (XCADDY_SETCAP): deploy/compose.yaml keeps cap_add NET_BIND_SERVICE for either image.
@@ -24,7 +26,9 @@
 FROM caddy:2.11.8-builder AS build
 RUN xcaddy build --with github.com/mholt/caddy-ratelimit@v0.1.1-0.20260612195517-5625512f24f6 \
     --replace golang.org/x/net=golang.org/x/net@v0.62.0 \
-  && go version -m /usr/bin/caddy | grep -Eq 'golang\.org/x/net[[:space:]]+v0\.62\.0'   # fields are tab-separated
+    --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \
+  && go version -m /usr/bin/caddy | grep -Eq 'golang\.org/x/net[[:space:]]+v0\.62\.0' \
+  && go version -m /usr/bin/caddy | grep -Eq 'github\.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6'   # fields are tab-separated
 
 FROM caddy:2.11.8
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
