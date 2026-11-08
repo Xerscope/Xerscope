@@ -21,7 +21,7 @@ from xerscope.analysis.evm import bei_series, evm_series
 from xerscope.analysis.explain import fmt_value
 from xerscope.analysis.progress import ppc_series
 from xerscope.app.state import BL_NONE, BL_PLANNED
-from xerscope.app.ui import status_label
+from xerscope.app.ui import md_text, status_label
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 STANDARDS = builtin_standards()
@@ -154,6 +154,44 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     shown = _metrics(at)
     assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC Finish"]) == ("1 / 2", "1 / 2", "50 %")
     assert (shown["PPC Start"], shown["PPC W/W−1"]) == ("50 %", "50 %")
+
+
+def test_ppc_page_late_commitments_option_renumbering_and_unplanned_work(tmp_path, monkeypatch):
+    """W-1 (DD 03-09): A 03-10 -> 03-13, B start 03-04 (late at W-1), T 03-10 -> 03-13, none
+    started. W (DD 03-16): A renumbered A-NEW (same task_id) and complete, B not started, T
+    complete. A leaves the counts (deleted + new), with a warning naming both IDs, and A-NEW is
+    unplanned work. Late commitments included (default): starts B, T, kept 1 / 2; left out: T
+    only, 1 / 1. Finishes T, 1 / 1 either way."""
+    week_1 = [
+        todo("A", early_start_date="2026-03-10 08:00", early_end_date="2026-03-13 17:00"),
+        todo("B", early_start_date="2026-03-04 08:00", early_end_date="2026-03-20 17:00"),
+        todo("T", early_start_date="2026-03-10 08:00", early_end_date="2026-03-13 17:00"),
+    ]
+    week_2 = [
+        done("A-NEW", act_start_date="2026-03-10 08:00", act_end_date="2026-03-13 17:00"),
+        todo("B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00"),
+        done("T", act_start_date="2026-03-10 08:00", act_end_date="2026-03-13 17:00"),
+    ]
+    (tmp_path / "w1.xer").write_text(xer_text(week_1, data_date="2026-03-09 08:00"))
+    (tmp_path / "w2.xer").write_text(xer_text(week_2, data_date="2026-03-16 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    at.switch_page("views/ppc.py")
+    _run(at)
+    shown = _metrics(at)
+    assert (shown["Starts kept"], shown["Finishes kept"]) == ("1 / 2", "1 / 1")
+    assert any(f"A → {md_text('A-NEW')}" in w.value for w in at.warning), [w.value for w in at.warning]
+    headers = [h.value for h in at.subheader]
+    assert "Milestones committed" in headers and "Unplanned work" in headers
+    unplanned = next(
+        frame.value for frame in at.dataframe if "act_start_date" in frame.value.columns and len(frame.value) == 1
+    )
+    assert unplanned.iloc[0]["task_code"] == "A-NEW"
+    at.checkbox(key="ppc_overdue").uncheck()
+    _run(at)
+    shown = _metrics(at)
+    assert (shown["Starts kept"], shown["Finishes kept"]) == ("1 / 1", "1 / 1")
 
 
 def test_overview_kpis_equal_store_summary(app, store):

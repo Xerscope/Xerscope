@@ -5,10 +5,13 @@ from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.progress import (
     VARIANCE_COLUMNS,
     committed,
+    committed_milestones,
     date_variances,
     ppc_series,
     progress_delta,
+    renumbered,
     rollup_delta,
+    unplanned_work,
 )
 from xerscope.app import ui
 from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
@@ -26,6 +29,7 @@ COMMITMENT_COLUMNS = [
     "wbs_code",
     "in_update",
 ]
+UNPLANNED_COLUMNS = ["task_code", "task_name", "status", "act_start_date", "act_end_date", "wbs_code"]
 PPC_COLUMNS = [
     "data_date",
     "starts_kept",
@@ -141,6 +145,41 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
         ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS)
 
 
+def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFrame) -> None:
+    left, right = st.columns(2, gap="large")
+    with left:
+        ui.section(
+            "Milestones committed",
+            f"Read as the commitments above, out of the PPC counts: {int(milestones['kept'].sum())} kept "
+            f"of {len(milestones)}. A start milestone commits its start, a finish milestone its finish.",
+        )
+        if milestones.empty:
+            st.caption("No milestone was forecast this week.")
+        else:
+            ui.table(milestones.sort_values(["kept", "planned_date"]), columns=COMMITMENT_COLUMNS)
+    with right:
+        ui.section(
+            "Unplanned work",
+            "Tasks absent from W−1 with an actual start on or before this status date: done outside "
+            "W−1's plan, out of the PPC counts.",
+        )
+        if unplanned.empty:
+            st.caption("No new task started this week.")
+        else:
+            ui.table(unplanned.sort_values("act_start_date"), columns=UNPLANNED_COLUMNS)
+
+
+def show_renumbered(pairs: pd.DataFrame) -> None:
+    if pairs.empty:
+        return
+    listed = ", ".join(f"{ui.md_text(a)} → {ui.md_text(b)}" for a, b in pairs.itertuples(index=False))
+    st.warning(
+        f"{len(pairs)} Activity ID(s) changed since W−1 (same GUID or P6 task_id): each counts as deleted, its "
+        f"commitments out of the PPC, and new in W. {listed}",
+        icon=":material/warning:",
+    )
+
+
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
     moved_mask = (progress["pct_delta"] != 0) | (progress["earned_hr_week"] != 0) | (progress["actual_hr_week"] != 0)
@@ -175,8 +214,15 @@ if len(store) < 2:
     st.info("PPC compares consecutive updates: load at least two.")
     st.stop()
 
-target_column, week_column = st.columns([1, 3], vertical_alignment="bottom")
+target_column, overdue_column, week_column = st.columns([1, 1, 2], vertical_alignment="bottom")
 target = target_column.number_input("PPC target (%)", 0, 100, PPC_TARGET, step=5)
+include_overdue = overdue_column.checkbox(
+    "Include commitments late at W−1",
+    value=True,
+    key="ppc_overdue",
+    help="Checked: a start or finish forecast before W−1's status date and still not done is committed "
+    "for the week. Unchecked: only those forecast after W−1's status date commit.",
+)
 week_labels = store.labels[1:]
 week = week_column.selectbox("Week ending", week_labels, index=len(week_labels) - 1, key="ppc_week")
 week_index = store.labels.index(week)
@@ -188,22 +234,27 @@ with top:
         current,
         lead="PPC Start = of the starts update W−1 planned on or before W's status date, the share W shows "
         "actually started by then; PPC Finish the same for finishes (Last Planner: complete / planned); "
-        "PPC W/W−1 = both together. Milestones and LOE left out. Weekly progress = actual in W minus actual in W−1.",
+        "PPC W/W−1 = both together. Milestones and LOE left out of the counts; milestones and unplanned work "
+        "listed apart. Weekly progress = actual in W minus actual in W−1.",
     )
 
-ppc = memo(("ppc",), ppc_series, store, baseline=False)
+ppc = memo(("ppc", include_overdue), ppc_series, store, include_overdue, baseline=False)
 ui.section("Percent plan complete by week")
 st.plotly_chart(build_ppc(ppc, target), width="stretch")
 show_ppc_weeks(ppc)
 
-commitments = committed(previous, current)
+commitments = committed(previous, current, include_overdue)
 baseline = baseline_for(current)
 progress = progress_delta(previous, current, baseline if baseline is not None and baseline.bac_hours > 0 else None)
 wbs_progress = rollup_delta(progress)
 project_progress = wbs_progress[wbs_progress["wbs_l1"] == "Project"].iloc[0]
 week_ppc = ppc.set_index("snapshot_idx").loc[week_index]
 show_kpis(week_ppc, project_progress)
+show_renumbered(renumbered(previous, current))
 show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
+show_milestones_and_unplanned(
+    committed_milestones(previous, current, include_overdue), unplanned_work(previous, current)
+)
 show_progress_by_activity(progress, previous, current)
 variances = memo(("date_variances", week), date_variances, store, week_index, baseline=False)
 before_previous = store[week_index - 2] if week_index >= 2 else None
