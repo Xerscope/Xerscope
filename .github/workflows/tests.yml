@@ -125,11 +125,32 @@ jobs:
       - name: CPM against MPXJ (P6 exports, random networks, hand cases, demo)
         run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py
 
+  changes:
+    # Pull requests only: whether the change touches what the app image is built or scanned from.
+    # The checkout of a pull request is its merge commit; its first parent is the base branch tip.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: diff
+        run: |
+          git diff --name-only HEAD^1 HEAD | tee changed.txt
+          if grep -qE '^(Dockerfile$|uv\.lock$|pyproject\.toml$|src/|\.github/trivy/)' changed.txt; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          fi
+
   container:
     # The image builds, answers on its health endpoint with the demo data mounted, and
-    # Trivy scans it: on main, the Monday run and by hand (the image build is the most
-    # expensive job here; image.yml publishes from main only).
-    if: github.event_name != 'pull_request'
+    # Trivy scans it: on main, tags, the Monday run, by hand, and on a pull request that changes
+    # the Dockerfile, the lock, pyproject.toml, src/ or the Trivy pin (the image build is the
+    # most expensive job here). image.yml publishes a commit only once this job passed on it.
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.image == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

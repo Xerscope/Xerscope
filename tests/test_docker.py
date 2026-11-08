@@ -89,6 +89,24 @@ def test_only_a_tested_commit_is_published():
     assert 'tags: ["v*"]' in tests[: tests.index("pull_request:")]  # a release tag runs the tests
 
 
+def test_a_pull_request_changing_the_image_builds_and_scans_it():
+    """The container job runs on a pull request whose diff touches what the image is built or
+    scanned from; the filter is grep -E on `git diff --name-only`, applied here to sample paths
+    (the pattern uses only ^, $, |, groups and \\., which read the same in Python's re)."""
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    changes = wf[wf.index("\n  changes:") : wf.index("\n  container:")]
+    assert "if: github.event_name == 'pull_request'" in changes and "fetch-depth: 2" in changes
+    assert "git diff --name-only HEAD^1 HEAD" in changes
+    pattern = re.search(r"grep -qE '([^']+)' changed\.txt", changes).group(1)
+    built = ["Dockerfile", "uv.lock", "pyproject.toml", "src/xerscope/cli.py", ".github/trivy/Dockerfile"]
+    other = ["README.md", "docs/deploy.md", "tests/test_docker.py", "deploy/caddy/Dockerfile", "src.txt"]
+    assert [path for path in built + other if re.search(pattern, path)] == built
+    container = wf[wf.index("\n  container:") : wf.index("\n  deploy:")]
+    assert "needs: changes" in container
+    cond = "if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.image == 'true') }}"
+    assert cond in container
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
