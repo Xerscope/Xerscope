@@ -521,7 +521,10 @@ def test_the_app_skips_a_file_without_a_status_date(tmp_path, monkeypatch):
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/ppc.py").run()
     _ok(at)
-    assert [e.value for e in at.error] == ["w2.xer: no status date (PROJECT.last_recalc_date); the file is skipped"]
+    # messages go through ui.md_text (#156): the page shows the plain text, the element holds it escaped
+    assert [e.value for e in at.error] == [
+        ui.md_text("w2.xer: no status date (PROJECT.last_recalc_date); the file is skipped")
+    ]
 
 
 def test_empty_state_explains_what_to_do(monkeypatch):
