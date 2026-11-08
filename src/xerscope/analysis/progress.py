@@ -27,6 +27,8 @@ import pandas as pd
 
 from ..store import SnapshotStore
 from ..xer import Snapshot
+from .baseline import RENUMBERED_COLUMNS
+from .baseline import renumbered as renumbered_by_guid
 
 # --- milestone trend -----------------------------------------------------------------------
 
@@ -205,20 +207,23 @@ def unplanned_work(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
 
 
 def renumbered(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
-    """Activities whose Activity ID changed between W-1 and W: same P6 ``task_id``, old ID gone
-    from W, new ID absent from W-1. xerscope's identity is the Activity ID, so PPC reads such
-    an activity as deleted (its commitments leave the counts) and created (new in W); this list
-    lets the page warn about it. ``task_id`` is P6's internal key: only meaningful between
-    exports of the same database."""
+    """Activities whose Activity ID changed between W-1 and W (``old_code``, ``new_code``): the
+    old ID gone from W, the new one absent from W-1, and the two linked by their GUID
+    (`baseline.renumbered`, the link the baseline uses) or by P6's ``task_id``. xerscope's
+    identity is the Activity ID, so PPC reads such an activity as deleted (its commitments
+    leave the counts) and created (new in W); this list lets the page warn about it.
+    ``task_id`` is P6's internal key: it links exports of one database only."""
     before = previous.activities[["task_id", "task_code"]].drop_duplicates("task_id")
     after = current.activities[["task_id", "task_code"]].drop_duplicates("task_id")
     pairs = before.merge(after, on="task_id", suffixes=("_before", "_now"))
-    changed = (
+    by_task_id = pairs[
         (pairs["task_code_before"] != pairs["task_code_now"])
         & ~pairs["task_code_before"].isin(after["task_code"])
         & ~pairs["task_code_now"].isin(before["task_code"])
-    )
-    return pairs.loc[changed, ["task_code_before", "task_code_now"]].reset_index(drop=True)
+    ].rename(columns={"task_code_before": "old_code", "task_code_now": "new_code"})
+    by_guid = renumbered_by_guid(previous, current)
+    found = pd.concat([by_guid, by_task_id[RENUMBERED_COLUMNS]], ignore_index=True)
+    return found.drop_duplicates().sort_values("old_code").reset_index(drop=True)
 
 
 RENUMBERED_SHOWN = 5

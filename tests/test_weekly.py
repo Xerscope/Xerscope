@@ -30,6 +30,7 @@ from xerscope.analysis.progress import (
     plotted_trend,
     ppc_series,
     progress_delta,
+    renumbered,
     rollup_delta,
 )
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
@@ -499,6 +500,19 @@ def test_ppc_notes_a_previous_update_without_any_planned_date():
     w1_mixed = snap([todo("A", **undated), todo("C", early_end_date="2026-03-06 17:00")], data_date="2026-03-02 08:00")
     row = ppc_series(SnapshotStore([w1_mixed, w2])).iloc[0]
     assert row["committed"] == 2 and pd.isna(row["note"])
+
+
+def test_ppc_renumbering_found_by_guid_as_by_task_id():
+    """08/11 case 3: a renumbered Activity ID counts as deleted + new, with a warning. A (task_id
+    10) becomes A2 (task_id 20) with the same GUID: found by GUID, the link the baseline uses
+    (task_id alone would miss it). X is new with its own GUID and task_id: not a renumbering."""
+    w1 = snap([todo("A", task_id="10", guid="{G1}")], data_date="2026-03-02 08:00")
+    w2 = snap(
+        [todo("X", task_id="30", guid="{G3}"), todo("A2", task_id="20", guid="{G1}")], data_date="2026-03-09 08:00"
+    )
+    assert renumbered(w1, w2).values.tolist() == [["A", "A2"]]
+    note = ppc_series(SnapshotStore([w1, w2])).iloc[0]["note"]
+    assert note == "1 Activity ID(s) changed since W-1, counted as deleted + new: A → A2"
 
 
 def test_ppc_regular_weekly_series_has_no_note():
