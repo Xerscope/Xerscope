@@ -10,7 +10,7 @@ import pytest
 from xerkit import ROOT_WBS, todo, xer_text
 
 from xerscope import cli
-from xerscope.analysis import builtin_standards, compare_counts
+from xerscope.analysis import builtin_standards, compare_counts, query
 
 
 def stops(capsys, *argv) -> bool:
@@ -355,6 +355,59 @@ def test_lexicon_build_skips_each_refused_export_and_names_it_in_the_report_only
         "g.xer: too large",
     ]
     assert "qwfpsecret" not in report and "TASK.task_name: fondation, fondations" in report
+
+
+def _lexicon_source(tmp_path):
+    """Three exports whose groups and pairs to review each join words of two files."""
+    names = [
+        ["Fondation pile", "Instalation pompe", "Gybsum partition"],
+        ["Fondations radier", "Mec. support", "Screed floor"],
+        ["Installation pompe", "Mechanical test", "Screen wall", "Gypsum board", "Screeds L2"],
+    ]
+    source = tmp_path / "xer"
+    source.mkdir()
+    for number, file_names in enumerate(names):
+        tasks = [todo(f"A{number}{i}", task_name=name) for i, name in enumerate(file_names)]
+        (source / f"{number}.xer").write_text(xer_text(tasks, wbs=ROOT_WBS))
+    for folder in ("generated", "suggested"):
+        (tmp_path / folder).mkdir()
+    return source
+
+
+def test_lexicon_build_holds_one_export_in_memory_at_a_time(capsys, tmp_path, monkeypatch):
+    """A parsed 40 MB export holds about 0.75 GB (docs/deploy.md §7): the build keeps each
+    export's words only, so no snapshot outlives the next export read (lexicon-init's 2 GB cap)."""
+    import weakref
+
+    source, read, alive = _lexicon_source(tmp_path), cli._lexicon_export, []
+    refs: list[weakref.ref] = []
+
+    def tracked(path):
+        alive.append(sum(ref() is not None for ref in refs))  # snapshots still held, before this read
+        snapshot = read(path)
+        refs.append(weakref.ref(snapshot))
+        return snapshot
+
+    monkeypatch.setattr(cli, "_lexicon_export", tracked)
+    run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    assert alive == [0, 0, 0]
+
+
+def test_lexicon_build_writes_the_groups_and_pairs_of_every_export_together(capsys, tmp_path):
+    """Read one export at a time, the build writes what the files give read together: groups and
+    pairs to review that join words of two files."""
+    source = _lexicon_source(tmp_path)
+    snapshots = [cli._lexicon_export(path) for path in sorted(source.glob("*.xer"))]
+    groups, near = query.variants(snapshots), query.near_spellings(snapshots)
+    assert groups == {"TASK.task_name": [["fondation", "fondations"], ["mec", "mechanical"], ["screed", "screeds"]]}
+    assert near == {"TASK.task_name": [("gybsum", "gypsum"), ("instalation", "installation"), ("screed", "screen")]}
+    run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    generated = tmp_path / "generated"
+    assert (generated / "variants.toml").read_text(encoding="utf-8") == query.variants_toml(groups)
+    report = (generated / "report.txt").read_text(encoding="utf-8")
+    to_review = report.split("to review (one letter apart, not used):\n", 1)[1].splitlines()
+    assert to_review == [f"TASK.task_name: {a}, {b}" for a, b in near["TASK.task_name"]]
+    assert "3 file(s) read, 0 skipped" in report
 
 
 def test_lexicon_build_with_no_valid_export_leaves_generated_as_it_was(capsys, tmp_path):
