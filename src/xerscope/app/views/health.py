@@ -40,7 +40,7 @@ from xerscope.app.state import (
     standard_results,
     standards,
 )
-from xerscope.export import zip_frames
+from xerscope.export import csv_bytes, zip_frames
 from xerscope.viz.charts import build_metric_trend
 
 IDENTITY_COLUMNS = ("task_code", "task_name", "pred_code", "pred_name", "succ_code", "succ_name", "type")
@@ -81,7 +81,7 @@ def show_kpis(results, standard) -> None:
     )
 
 
-def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> None:
+def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     full = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
     full["note"] = [result.note_with_baseline for result in results]  # the export names the baseline
     full["target"] = full["target"].map(typeset)
@@ -113,7 +113,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
     )
     summary_column, trail_column, sets_column, _ = st.columns([1, 1.3, 1.6, 3])
     with sets_column:  # first, so that the Prepare click also readies the downloads beside it
-        prepare_sets(results, standard, snapshot, baseline, sources)
+        prepare_sets(results, standard, snapshot, sources)
     with summary_column:
         # the notes name activities and files: anonymised like the lists
         csv_download(
@@ -135,7 +135,7 @@ def show_summary(results, standard, snapshot, baseline, sources: list[str]) -> N
             )
 
 
-def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> None:
+def prepare_sets(results, standard, snapshot, sources: list[str]) -> None:
     """All sets of the standard as one CSV (a row per item) and as one CSV per check in a zip,
     built when the button is pressed, anonymised or not as the sidebar switch says."""
     anonymous = anonymous_exports()
@@ -151,7 +151,7 @@ def prepare_sets(results, standard, snapshot, baseline, sources: list[str]) -> N
         per_check = by_check(table)
         csv_file = fetch(
             st.session_state,
-            lambda: table.to_csv(index=False).encode("utf-8-sig"),
+            lambda: csv_bytes(table),
             lambda anonymizer: anonymizer.csv(table),
             sources,
             prepare=True,
@@ -473,14 +473,14 @@ if baseline is None:
 results = standard_results(standard, snapshot, store)
 show_kpis(results, standard)
 sources = sources_of(snapshot, baseline=baseline)  # the files the lists come from
-show_summary(results, standard, snapshot, baseline, sources)
+show_summary(results, standard, snapshot, sources)
 show_check_sets(results, standard, snapshot, sources)
 show_details(results, snapshot, only_failed, sources, standard)
 if len(store) > 1:
     show_trend(store, standard)
 
 if baseline is not None:
-    missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
+    missing = baseline.unbaselined(snapshot)
     if missing:
         st.caption(
             f"{len(missing)} tasks are not in the baseline: "

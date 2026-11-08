@@ -50,6 +50,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from .export import csv_bytes, zip_frames
 from .xer.parser import RawXer
 
 KEEP = {
@@ -175,14 +176,6 @@ def _project_ids_in(raw: RawXer) -> Iterator[str]:
 def _is_text(value: str) -> bool:
     """Worth looking for in an output: three characters or more, at least one letter."""
     return len(value) >= 3 and any(character.isalpha() for character in value)
-
-
-CSV_FLOAT_FORMAT = "%.4f"  # hours to the minute (0.0167 h): no float noise (12345.999999, a gap of 1e-13)
-
-
-def csv_bytes(frame: pd.DataFrame) -> bytes:
-    """A frame as the CSV the app offers: UTF-8 with BOM (Excel), floats to 4 decimals."""
-    return frame.to_csv(index=False, float_format=CSV_FLOAT_FORMAT).encode("utf-8-sig")
 
 
 @dataclass
@@ -488,7 +481,7 @@ class Anonymizer:
                 lines.append("\t".join(["%R", *row]))
                 fields.extend(row)
         lines.append("%E")
-        self._refuse_leaks(fields, "anonymised XER")
+        self._refuse_leaks(fields, "anonymized XER")
         encoding = "cp1252" if raw.encoding.startswith("cp1252") else "utf-8"
         return ("\r\n".join(lines) + "\r\n").encode(encoding, errors="strict")
 
@@ -655,9 +648,5 @@ class Anonymizer:
                 if column in out.columns:
                     out[column] = [self._zeroed(value) for value in out[column]]
             self._refuse_frame_leaks(out, f"table {name}")
-            outputs[f"{name}.csv"] = csv_bytes(out)
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-            for file_name, data in outputs.items():
-                archive.writestr(file_name, data)
-        return buffer.getvalue()
+            outputs[name] = out
+        return zip_frames(outputs, "csv")

@@ -7,10 +7,12 @@ the P6 standard. Nothing here computes a date or a count; the page shows these f
 
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import math
 import re
+import warnings
 from collections.abc import Iterable
 
 import pandas as pd
@@ -365,7 +367,7 @@ def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: boo
                 else "project baseline in the file"
                 if in_file
                 else "separate file",
-                "matched": int(codes.isin(baseline.frame.index).sum()),
+                "matched": len(codes) - len(baseline.unbaselined(snapshot)),
                 "activities": len(codes),
             }
         ]
@@ -701,7 +703,7 @@ SETTINGS_MEANING = [
      "DT_* codes"),
     ("PROJECT.next_data_date", NO_LABEL, "", "", "meaning unverified"),
     ("PROJECT.last_recalc_date", "Last Recalc Date", "", DATA_MAP,
-     "xerscope's data date (else plan_start_date)"),
+     "xerscope's status date (else plan_start_date)"),
     ("TASK.complete_pct_type", "% Complete Type", "Activity % Complete Type", "xer/model.py PCT_COMPLETE_TYPE",
      "tasks_* counts of the project"),
     ("PROJWBS: Use resource curves \\ future period buckets", "no column in data map v23 nor in the reference files",
@@ -789,13 +791,22 @@ def read_p6_export(name: str, content: bytes) -> pd.DataFrame:
     if not name.lower().endswith(".csv"):
         raise ValueError("Only .csv exports are read: save the P6 view as CSV.")
     try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text = content.decode("cp1252", errors="replace")
-    try:
-        raw = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str, keep_default_na=False)
-        return _table([list(raw.columns)] + raw.to_numpy().tolist())
-    except (ValueError, csv.Error, pd.errors.ParserError) as exc:
+        if content[:2] in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE):  # Excel's "Unicode Text"
+            text = content.decode("utf-16")
+        else:
+            try:
+                text = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = content.decode("cp1252", errors="replace")
+        with warnings.catch_warnings():
+            # a row longer than the header: refused, never read with its first fields as the index
+            warnings.simplefilter("error", pd.errors.ParserWarning)
+            raw = pd.read_csv(
+                io.StringIO(text), sep=None, engine="python", dtype=str, keep_default_na=False, index_col=False
+            )
+        # a row shorter than the header: its missing cells blank
+        return _table([list(raw.columns)] + raw.fillna("").to_numpy().tolist())
+    except (UnicodeDecodeError, ValueError, csv.Error, pd.errors.ParserError, pd.errors.ParserWarning) as exc:
         raise ValueError("The file cannot be read as a CSV table.") from exc
 
 

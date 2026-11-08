@@ -103,7 +103,7 @@ with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="de
 with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(frames["05_baseline"])
     st.caption(
-        "Every update of the series, by data date: the analysed project (proj_id, add_date 'Date Added') and "
+        "Every update of the series, by status date: the analysed project (proj_id, add_date 'Date Added') and "
         "the Project Baseline it names (sum_base_proj_id), held by the file or not. use_project_baseline_flag "
         "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
         "baseline earned value uses (project baseline or each user's primary baseline), unverified."
@@ -111,7 +111,7 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(diagnostic.baseline_pointers(store))
     st.caption(
         "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
-        "previous update under a new Activity ID. P6 links a task to its baseline by Activity ID."
+        "previous update under a new Task ID. P6 links a task to its baseline by Activity ID."
     )
     table(diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)))
     st.caption(
@@ -178,13 +178,13 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
         "Diagnostic, not used by any KPI. Upload the Activities view of P6 saved as CSV (labour units in hours; "
         "XLSX is not read) with Activity ID, Planned Value Labor Units, Earned Value Labor Units and Schedule % "
         "Complete; optional: BL Project Labor Units, Activity Status, BL Project Start / Finish, Planned Start / "
-        "Finish. Joined on Activity ID with PV and EV of every baseline activity, deleted from the update or not, "
-        "and the update activities the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
-        "counts as 0. The file stays in this session's memory; the activity list is not part of the zip."
+        "Finish. Joined on Activity ID with PV and EV of every baseline task, deleted from the update or not, "
+        "and the update's tasks the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
+        "counts as 0. The file stays in this session's memory; the task list is not part of the zip."
     )
     upload = st.file_uploader("P6 Activities export", type=diagnostic.P6_EXPORT_SUFFIXES, key="debug_p6_export")
     if upload is not None and (baseline is None or snapshot.data_date is None):
-        st.caption("No baseline or no data date: nothing to compare.")
+        st.caption("No baseline or no status date: nothing to compare.")
     elif upload is not None:
         content = upload.getvalue()
         try:
@@ -243,11 +243,11 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                 table(comparison.totals)
                 st.caption("PV gap by Schedule % band, xerscope against P6 (absent: no value on that side)")
                 table(comparison.cross)
-                st.caption("Activities in gap, by candidate cause (several can hold for one activity)")
+                st.caption("Tasks in gap, by candidate cause (several can hold for one task)")
                 table(comparison.causes)
-                st.caption("Matched activities by calendar (clndr_id)")
+                st.caption("Matched tasks by calendar (clndr_id)")
                 table(comparison.by_calendar)
-                st.caption("Activities in gap (PV or EV), largest gap first. On screen only: not in the zip.")
+                st.caption("Tasks in gap (PV or EV), largest gap first. On screen only: not in the zip.")
                 table(comparison.activities, max_height=480)
 
 with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):

@@ -9,7 +9,7 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
     "xer": {"config"},
     "store": {"xer", "config"},
     "export": {"store", "config"},
-    "anonymize": {"xer"},
+    "anonymize": {"xer", "export"},
     "analysis": {"xer", "store"},
     "viz": {"config", "analysis.wbs.ROOT"},
     "verify": {"xer", "analysis.cpm", "config"},

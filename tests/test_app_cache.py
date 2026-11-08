@@ -293,6 +293,7 @@ def test_health_trend_is_computed_on_request_once_and_keeps_numbers_only(app, st
 
 def test_another_ev_basis_reruns_no_check_and_the_sets_stay_those_of_a_fresh_calculation(app, store, runs, downloads):
     from xerscope.analysis.audit import sets_long
+    from xerscope.export import csv_bytes
 
     app.sidebar.toggle(key="anon_exports").set_value(False).run()
     app.switch_page("views/health.py").run()
@@ -306,7 +307,7 @@ def test_another_ev_basis_reruns_no_check_and_the_sets_stay_those_of_a_fresh_cal
     p6 = builtin_standards()["P6"]
     baseline = Baseline.from_snapshot(store.first, "at_completion_current")
     fresh = [run_metric(metric, AnalysisContext(store.latest, store, baseline)) for metric in p6.metrics]
-    expected = sets_long(fresh, store.latest).to_csv(index=False).encode("utf-8-sig")
+    expected = csv_bytes(sets_long(fresh, store.latest))
     assert _download(app, downloads, "All sets (CSV)") == expected
 
 

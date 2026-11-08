@@ -30,9 +30,10 @@ from xerscope.analysis.baseline import (
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
-from xerscope.anonymize import Anonymizer, LeakError, csv_bytes
+from xerscope.anonymize import Anonymizer, LeakError
 from xerscope.app import ui
-from xerscope.app.reading import read_updates
+from xerscope.app.reading import read_update, read_updates, store_of
+from xerscope.export import csv_bytes
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import (
     XER_SUFFIXES,
@@ -74,6 +75,11 @@ def _file_choices() -> dict[str, str]:
     return st.session_state.setdefault("file_projects", {})
 
 
+def _parse_cached(data: bytes, name: str, project_id: str | None = None) -> Snapshot:
+    """``_parse`` with ``load_snapshot``'s signature, for ``reading.read_update``."""
+    return _parse(name, data, project_id)
+
+
 def _read(name: str, data: bytes) -> Snapshot:
     """The snapshot of one file: the project picked for it in the window, else the file's default
     project (``_default_project`` in the model)."""
@@ -89,26 +95,15 @@ def _build(
 ) -> tuple[SnapshotStore | None, list[str]]:
     """Each file read for the project picked for it, else its default project, so a project renamed
     between updates still loads. ``on_file(index, name)`` is called before each file is read (the
-    sidebar's progress line)."""
-    snapshots, errors = [], []
+    sidebar's progress line). The file is read and its error worded as on a worker process
+    (``reading.read_update``), the series built as there (``reading.store_of``)."""
+    choices, results = _file_choices(), []
     for index, (name, data) in enumerate(items):
         if on_file is not None:
             on_file(index, name)
-        try:
-            snapshot = _read(name, data)
-        except XerError as exc:
-            errors.append(str(exc))
-            continue
-        if snapshot.data_date is None:
-            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
-            continue
-        snapshots.append(snapshot)
-    if not snapshots:
-        return None, errors
-    try:
-        return SnapshotStore(snapshots), errors
-    except DuplicateDataDate as exc:
-        return None, [*errors, f"{exc}. Untick the others."]
+        _, result, _ = read_update(name, data, choices.get(name), parse=_parse_cached)
+        results.append((name, result))
+    return store_of(results)
 
 
 def _digest(data: bytes) -> str:
@@ -202,24 +197,8 @@ def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
 
 def _collect(job: LoadJob) -> tuple[SnapshotStore | None, list[str]]:
     """The store of the files read so far, in the order of the series, and the errors met."""
-    snapshots, errors = [], []
-    for name, _ in job.items:
-        result = job.results.get(name)
-        if result is None:
-            continue
-        if isinstance(result, str):
-            errors.append(result)
-        elif result.data_date is None:
-            errors.append(f"{name}: no status date (PROJECT.last_recalc_date); the file is skipped")
-        else:
-            snapshots.append(result)
     st.session_state.setdefault("_parsed", {}).update(job.cache)
-    if not snapshots:
-        return None, errors
-    try:
-        return SnapshotStore(snapshots), errors
-    except DuplicateDataDate as exc:
-        return None, [*errors, f"{exc}. Untick the others."]
+    return store_of((name, job.results[name]) for name, _ in job.items if name in job.results)
 
 
 @st.fragment(run_every=1.0)
@@ -367,7 +346,6 @@ def _apply_drafts() -> None:
     for key, draft in DRAFTS.items():
         if draft in st.session_state:
             st.session_state[key] = st.session_state[draft]
-    st.session_state["bl_defaulted"] = False
     for snapshot in st.session_state.get("store") or ():
         chosen = st.session_state.get(_project_draft(snapshot.source))
         if chosen is not None and chosen != snapshot.project_id:
@@ -715,7 +693,7 @@ def _project_labels(snapshot: Snapshot) -> dict[str, str]:
     copies = baseline_copies(table)
     labels = {}
     for _, row in table[table["tasks"] > 0].iterrows():
-        label = f"{row['proj_short_name']} · {ui.fmt_date(row['data_date'])} · {row['tasks']} activities"
+        label = f"{row['proj_short_name']} · {ui.fmt_date(row['data_date'])} · {row['tasks']} tasks"
         if row["proj_id"] in copies:
             label += f" · baseline of {codes[copies[row['proj_id']]]}"
         labels[row["proj_id"]] = label
@@ -921,7 +899,7 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
     )
     what = "separate baseline file" if kind == BL_FILE else "baseline (a loaded update)"
     sidebar.warning(
-        f"The {what} is {loaded.project_code}, data date {ui.fmt_date(loaded.data_date)}, but the updates "
+        f"The {what} is {loaded.project_code}, status date {ui.fmt_date(loaded.data_date)}, but the updates "
         "name another P6 Project "
         f"Baseline: {named}. Their planned value, BEI and late tasks will not match P6's. (Compared by P6's "
         "internal project id, which holds within one P6 database only.) Ask for the export of the project they "
@@ -972,13 +950,13 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
     basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
     costs = "on" if costs_shown() else "off"
     label = (
-        f"{projects} · data date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
+        f"{projects} · status date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
         f"EV {basis.lower().replace(' · ', ', ')} · costs {costs} · {_files_count(store)}"
     )
     used = ui.md_text(baseline.source or baseline.label) if baseline is not None else ui.md_text(kind)
     details = [
         f"Project(s) read: {', '.join(ui.md_text(code) for code in codes)}",
-        f"Data date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
+        f"Status date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
         f"Baseline used for {ui.stamp(snapshot.data_date)}: {used}",
         f"Earned value basis: {basis}",
         f"Costs: {costs} (sidebar)",
@@ -1028,7 +1006,7 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
             icon=":material/warning:",
         )
     codes = set(snapshot.activities["task_code"])
-    matched = len(codes & set(baseline.frame.index))
+    matched = len(codes) - len(baseline.unbaselined(snapshot))
     if codes and matched / len(codes) < MATCH_WARN_BELOW:
         st.warning(
             f"{name}: the baseline finds {matched} of {len(codes)} tasks of the update "
@@ -1078,7 +1056,6 @@ def _baseline_picker(store: SnapshotStore) -> None:
     options, default = _baseline_options(store, env_path)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default
-        st.session_state["bl_defaulted"] = True  # not the viewer's choice: set again when the series is complete
     if st.session_state.get("ev_basis") not in EV_BASES:
         st.session_state["ev_basis"] = DEFAULT_EV_BASIS
     if st.session_state.get("bl_fallback") not in _fallback_options(store):
@@ -1125,7 +1102,7 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
         sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
         return
     sidebar.warning(
-        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Activity ID "
+        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Task ID "
         f"({files}): against the baseline {'it counts' if total == 1 else 'they count'} as deleted and new. "
         "Option in the Baseline window: Link renumbered tasks by GUID.",
         icon=":material/warning:",
@@ -1178,7 +1155,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
     st.checkbox(
         "Link renumbered tasks by GUID",
         key="draft_guid_link",
-        help="A task of an update that carries a baseline task's GUID (TASK.guid) under a new Activity ID is "
+        help="A task of an update that carries a baseline task's GUID (TASK.guid) under a new Task ID is "
         "measured against that baseline task, as P6 does when the renumbering was carried to the baseline "
         "(Renumber Activity IDs > Renumber Selected Activities in Baselines). Off: it counts as deleted and "
         "new, as P6 does otherwise.",

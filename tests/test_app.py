@@ -330,11 +330,11 @@ def test_the_context_banner_states_each_setting_and_follows_its_changes(app, sto
     first = store.labels[0].split(" · ")[0]
     code = store.latest.project_code
     assert _banner(app) == (
-        f"{code} · data date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
+        f"{code} · status date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
         "EV budgeted, planned dates · costs off · 8 files · 1 project"
     )
     app.selectbox(key="ev_snap").set_value(store.labels[2]).run()
-    assert f"data date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
+    assert f"status date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
     baseline_box(app).set_value(BL_PLANNED)
     assert " · BL planned dates · " in _banner(app)
     baseline_box(app, "ev_basis").set_value("at_completion_current")
@@ -342,7 +342,9 @@ def test_the_context_banner_states_each_setting_and_follows_its_changes(app, sto
     app.session_state["files_open"] = False  # baseline_box leaves the window open
     _costs(app.run(), True)
     assert " · costs on · " in _banner(app)
-    assert f"Data date of the update shown: {ui.fmt_date(store[2].data_date)}" in app.button(key="context_banner").help
+    assert (
+        f"Status date of the update shown: {ui.fmt_date(store[2].data_date)}" in app.button(key="context_banner").help
+    )
 
 
 def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_dir, monkeypatch):
@@ -929,7 +931,7 @@ def test_the_window_lists_the_projects_of_a_file_that_holds_several_and_why_each
     _ok(at)
     box = project_box(at, "w1.xer")
     assert box.value == "1"
-    assert box.options == ["NEW · 02 Mar 2026 · 3 activities", "OLD · 02 Mar 2026 · 2 activities"]
+    assert box.options == ["NEW · 02 Mar 2026 · 3 tasks", "OLD · 02 Mar 2026 · 2 tasks"]
     assert project_box(at, "w2.xer") is None  # one project: no list
     assert _project_rows(at) == {"w1.xer": "**NEW** · most TASK rows", "w2.xer": "**NEW** · only project"}
     assert not [box for box in at.sidebar.selectbox if box.label == "Project"]  # no project picker for all files
@@ -1600,7 +1602,7 @@ def test_debug_block_10_compares_a_p6_export_and_keeps_the_activity_list_out_of_
         ("p6.csv", export.to_csv(index=False).encode(), "text/csv")
     ).run()
     _ok(app)
-    assert any(c.value.startswith("Activities in gap (PV or EV)") for c in app.caption)
+    assert any(c.value.startswith("Tasks in gap (PV or EV)") for c in app.caption)
     next(b for b in app.button if b.label == "Build diagnostic").click().run()
     _ok(app)
     with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download diagnostic (.zip) · anonymized"))) as archive:

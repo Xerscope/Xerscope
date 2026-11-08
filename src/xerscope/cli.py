@@ -58,7 +58,9 @@ def _add_out(parser: argparse.ArgumentParser, help_text: str) -> None:
 
 
 def _write_csv(frame, path, *, index: bool = False) -> None:
-    frame.to_csv(path, index=index, encoding="utf-8-sig")  # the BOM makes Excel read UTF-8
+    from .export import csv_bytes
+
+    Path(path).write_bytes(csv_bytes(frame, index=index))
 
 
 def _cmd_app(args: argparse.Namespace) -> int:
