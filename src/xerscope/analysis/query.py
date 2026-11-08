@@ -568,7 +568,9 @@ def parse_keywords(text: str, vocab: Vocabulary, chosen: Mapping[str, str] | Non
     # The type's own name ("zone B2") is dropped too. P6 keeps a type name unique only within its
     # scope and a value unique only within its type: a word naming values of several types of one
     # name ("P1" of "Phase (global)" and of "Phase (project)"), or a name two types share
-    # ("Phase"), filters nothing and asks which one (``clarify``) until ``chosen`` answers.
+    # ("Phase"), filters nothing and asks which one (``clarify``) until ``chosen`` answers. The
+    # same holds for a value under types of different names ("A" of "Zone" and of "Room"), unless
+    # the sentence names one of them ("Zone A"). A one-letter word is read only as a value exactly.
     answers = {fold(word): value for word, value in (chosen or {}).items()}
     clarify: list[Choice] = []
     type_name = {t: vocab.type_names.get(t, t) for t, _, _ in vocab.codes.values()}
@@ -582,21 +584,33 @@ def parse_keywords(text: str, vocab: Vocabulary, chosen: Mapping[str, str] | Non
             record(position, f"{code_type}: {value}")
 
     by_length = sorted(vocab.codes.items(), key=lambda kv: -max(len(kv[1][1]), len(kv[1][2])))
-    for code_id, (_, value, name) in by_length:
+    for _, (_, value, name) in by_length:
         for candidate in sorted((fold(value), fold(name)), key=len, reverse=True):
-            if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
+            letter = len(candidate) == 1 and candidate == fold(value)
+            if (letter or (len(candidate) >= 2 and candidate not in _STOP)) and _phrase_pattern([candidate]).search(
+                folded
+            ):
                 folded, found = _take(folded, [candidate])
-                same = [c for c, (_, v, n) in vocab.codes.items() if candidate in (fold(v), fold(n))]
+                same = [
+                    c
+                    for c, (_, v, n) in vocab.codes.items()
+                    if candidate == fold(v) or (not letter and candidate == fold(n))
+                ]
                 types = {vocab.codes[c][0] for c in same}
+                named = {t: [_plain(n) for n in (t, type_name[t]) if len(_plain(n)) >= 2] for t in types}
+                said = {t for t, names in named.items() if names and _phrase_pattern(names).search(folded)}
+                if said:  # "Zone A": the type said keeps its values only
+                    same = [c for c in same if vocab.codes[c][0] in said]
+                    types = said
                 reached |= {type_name[t] for t in types}
                 word = value if fold(value) == candidate else name
-                if len(types) > 1 and len({type_name[t] for t in types}) == 1:
+                if len(types) > 1:
                     if answers.get(fold(word)) in same:
                         pick(answers[fold(word)], found[0])
                     else:
                         clarify += [Choice(word, c, f"{vocab.codes[c][1]} — {vocab.codes[c][0]}") for c in same]
                 else:
-                    pick(code_id, found[0])
+                    pick(same[0], found[0])
                 break
     shared: dict[str, list[str]] = {}  # P6 type name -> its labels, when several types have it
     for label, name in type_name.items():
