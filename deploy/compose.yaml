@@ -5,6 +5,7 @@
 # PC:   cp .env.example .env, fill it in, then from this folder:
 #         docker compose up -d
 #         docker compose exec tailscale tailscale funnel status
+#       docker compose run --rm lexicon-init   (on demand: the Ask variants, docs/deploy.md §10)
 # NAS:  Container Manager > Project > Create from a copy of this folder; the five variables
 #       go in a .env file next to this one (Container Manager's Environment fields do not
 #       feed the ${...} interpolation below; Compose reads .env by itself).
@@ -87,9 +88,11 @@ services:
     pids_limit: 128
     restart: unless-stopped
 
-  lexicon-init:                                     # at each start, before the app: `xerscope lexicon build`
-                                                    # rewrites generated/ (the exports' variants, a report) and
-                                                    # purges suggested/ (90 days, not copied into curated/)
+  lexicon-init:                                     # on demand only: docker compose run --rm lexicon-init
+                                                    # (`xerscope lexicon build`, docs/deploy.md §10) rewrites
+                                                    # generated/ (the exports' variants, a report) and purges
+                                                    # suggested/ (90 days, not copied into curated/)
+    profiles: [lexicon]                             # left out of `up`: the app starts with the last generated/
     image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # the app's image, the app's account
     user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"
     command: ["lexicon", "build", "/data", "--out", "/lexicon"]
@@ -106,7 +109,7 @@ services:
       disable: true                                 # the image's healthcheck polls the app's port
     mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # reads every export, one at a time
     pids_limit: 64
-    restart: "no"                                   # runs once per start; the app waits for its success
+    restart: "no"                                   # runs once per `run`
 
   xerscope:
     image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
@@ -130,9 +133,6 @@ services:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
       - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}:/lexicon:ro
       - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/suggested:/lexicon/suggested   # Ask corrections, appended
-    depends_on:
-      lexicon-init:
-        condition: service_completed_successfully
     networks:                                       # nothing published: reachable from Caddy only
       internal:
         aliases: [app]                              # Caddy's upstream: in the tailscale namespace Caddy shares,
