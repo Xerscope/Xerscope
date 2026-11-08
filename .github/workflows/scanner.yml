@@ -3,6 +3,8 @@ name: scanner
 # The Trivy the CI scans with (.github/trivy/Dockerfile), scanned with itself: every day, since new
 # CVEs land without a push, and on any change to its pin (a Dependabot bump is checked before it
 # is merged). A finding here allows a bump before Dependabot's cooldown ends.
+# The images the NAS pulls (image.yml, latest) are scanned every day too: a CVE published
+# between two pushes is seen the next morning, not at the next push or Monday run.
 on:
   schedule:
     - cron: "41 4 * * *"
@@ -25,3 +27,19 @@ jobs:
           persist-credentials: false
       - name: Known vulnerabilities in the pinned Trivy image, fixed ones only
         run: .github/trivy/scan.sh "$(sed -n 's/^FROM //p' .github/trivy/Dockerfile)"
+
+  published:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false                              # each image scanned even if the other fails
+      matrix:
+        image: [ghcr.io/xerscope/xerscope:latest, ghcr.io/xerscope/xerscope-caddy:latest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Known vulnerabilities in the published image, fixed ones only
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: .github/trivy/scan.sh "$IMAGE"   # pulled without login, as the NAS pulls it

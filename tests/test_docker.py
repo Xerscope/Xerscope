@@ -414,6 +414,18 @@ def test_the_pinned_trivy_is_scanned_every_day():
     assert ".github/trivy/**" in wf and '.github/trivy/scan.sh "$(sed -n' in wf
 
 
+def test_the_published_images_are_scanned_every_day():
+    """The images the NAS pulls are scanned by the daily scanner run with the same pinned Trivy, so a
+    CVE published after the last push is seen the next day."""
+    wf = (ROOT / ".github" / "workflows" / "scanner.yml").read_text()
+    job = wf[wf.index("\n  published:") :]
+    assert "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in job
+    assert "image: [ghcr.io/xerscope/xerscope:latest, ghcr.io/xerscope/xerscope-caddy:latest]" in job
+    assert 'run: .github/trivy/scan.sh "$IMAGE"' in job and "IMAGE: ${{ matrix.image }}" in job
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()  # the tags scanned are the ones pulled
+    assert "ghcr.io/xerscope/xerscope:latest}" in compose and "ghcr.io/xerscope/xerscope-caddy:latest}" in compose
+
+
 def test_schedules_stay_out_of_git():
     """Real exports never reach the public repository: the folders the compose files read and
     every .xer are ignored, CI fails on a tracked one, and the remote stack logs to the NAS default driver."""
