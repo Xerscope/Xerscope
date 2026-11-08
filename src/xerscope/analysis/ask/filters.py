@@ -7,6 +7,8 @@ from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
+from ...xer.pmxml import CONSTRAINT_TYPE
+from ..p6.check_schedule import P6_HARD_CONSTRAINTS
 from .grammar import CATEGORIES, STATUSES, And, Atom, Expr, Not, Or
 from .vocab import Vocabulary
 
@@ -210,6 +212,11 @@ def _iso(day) -> str:
     return "" if day is None else f"{day:%Y-%m-%d}"
 
 
+# P6 Professional's hard set (Check Schedule, 101248) in P6's constraint names: "hard" differs
+# between P6, P6 EPPM and DCMA (docs/standards.md), so the filter says which one it reads
+_P6_NAME = {code: name for name, code in CONSTRAINT_TYPE.items()}
+_P6_HARD = ", ".join(_P6_NAME[code] for code in P6_HARD_CONSTRAINTS)
+
 SAY = {
     "en": {
         "status": {"Not started": "not started", "In progress": "in progress", "Complete": "complete"},
@@ -226,7 +233,11 @@ SAY = {
         "loe": "level of effort",
         "late": "late (finish after baseline finish)",
         "id": "Activity ID {}",
-        "constraint": {"any": "with a constraint", "hard": "with a hard constraint", "soft": "with a soft constraint"},
+        "constraint": {
+            "any": "with a constraint",
+            "hard": f"with a hard constraint (P6: {_P6_HARD})",
+            "soft": "with a soft constraint",
+        },
         "pred": "with a predecessor",
         "succ": "with a successor",
         "longest": "on the longest path",
@@ -255,7 +266,11 @@ SAY = {
         "loe": "niveau d'effort",
         "late": "en retard (fin après la fin de référence)",
         "id": "activité {}",
-        "constraint": {"any": "avec contrainte", "hard": "avec contrainte dure", "soft": "avec contrainte souple"},
+        "constraint": {
+            "any": "avec contrainte",
+            "hard": f"avec contrainte dure (P6 : {_P6_HARD})",
+            "soft": "avec contrainte souple",
+        },
         "pred": "avec prédécesseur",
         "succ": "avec successeur",
         "longest": "sur le chemin le plus long",
