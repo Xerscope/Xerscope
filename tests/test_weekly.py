@@ -21,13 +21,16 @@ from xerscope.analysis.evm import (
     uses_pf,
 )
 from xerscope.analysis.progress import (
+    VARIANCE_COLUMNS,
     committed,
+    date_variances,
     milestone_codes,
     milestone_slips,
     milestone_trend,
     plotted_trend,
     ppc_series,
     progress_delta,
+    renumbered,
     rollup_delta,
 )
 from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
@@ -439,8 +442,8 @@ def test_ppc_counts_starts_and_finishes_and_leaves_milestones_out():
     row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
     assert (row["finishes_kept"], row["finishes_committed"]) == (1, 2)
     assert (row["starts_kept"], row["starts_committed"]) == (2, 3)
-    assert (row["kept"], row["committed"], row["ppc_all"]) == (3, 5, 60.0)
-    assert (row["ppc"], row["ppc_start"]) == (50.0, pytest.approx(200 / 3))
+    assert (row["kept"], row["committed"], row["ppc_week"]) == (3, 5, 60.0)
+    assert (row["ppc_finish"], row["ppc_start"]) == (50.0, pytest.approx(200 / 3))
 
 
 def test_ppc_series_one_row_per_week():
@@ -453,8 +456,8 @@ def test_ppc_series_one_row_per_week():
     assert (row["finishes_kept"], row["finishes_committed"], row["starts_kept"], row["starts_committed"]) == (
         1, 2, 2, 3,
     )  # fmt: skip
-    assert (row["committed"], row["kept"], row["ppc_all"]) == (5, 3, 60.0)
-    assert (row["ppc"], row["ppc_start"]) == (50.0, pytest.approx(200 / 3))
+    assert (row["committed"], row["kept"], row["ppc_week"]) == (5, 3, 60.0)
+    assert (row["ppc_finish"], row["ppc_start"]) == (50.0, pytest.approx(200 / 3))
     assert row["week_start"] == W1.data_date and row["data_date"] == W2.data_date
 
 
@@ -479,8 +482,37 @@ def test_ppc_point_without_a_status_date_commits_nothing_and_says_why():
     assert committed(w1, w2).empty
     row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
     assert (row["finishes_committed"], row["starts_committed"], row["committed"]) == (0, 0, 0)
-    assert row["ppc"] is None and row["ppc_start"] is None and row["ppc_all"] is None
+    assert row["ppc_finish"] is None and row["ppc_start"] is None and row["ppc_week"] is None
     assert row["note"] == "no status date in this update: its commitments cannot be read"
+
+
+def test_ppc_notes_a_previous_update_without_any_planned_date():
+    """xerscope definition (docs/formulas.md section 4, 08/11 case 8): an empty planned date falls
+    back as the model does (actual, forecast, planned); when no open task of W-1 has any date, the
+    point says so. A and B open in W-1 with no start nor finish: 0 committed and the note. With C
+    dated beside them, C commits its start and finish and there is no note."""
+    undated = dict(early_start_date="", early_end_date="")
+    w2 = snap([todo("A"), todo("B"), todo("C")], data_date="2026-03-09 08:00")
+    w1 = snap([todo("A", **undated), todo("B", **undated)], data_date="2026-03-02 08:00")
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert row["committed"] == 0
+    assert row["note"] == "no start or finish date on any open task of the previous update: nothing could be committed"
+    w1_mixed = snap([todo("A", **undated), todo("C", early_end_date="2026-03-06 17:00")], data_date="2026-03-02 08:00")
+    row = ppc_series(SnapshotStore([w1_mixed, w2])).iloc[0]
+    assert row["committed"] == 2 and pd.isna(row["note"])
+
+
+def test_ppc_renumbering_found_by_guid_as_by_task_id():
+    """08/11 case 3: a renumbered Activity ID counts as deleted + new, with a warning. A (task_id
+    10) becomes A2 (task_id 20) with the same GUID: found by GUID, the link the baseline uses
+    (task_id alone would miss it). X is new with its own GUID and task_id: not a renumbering."""
+    w1 = snap([todo("A", task_id="10", guid="{G1}")], data_date="2026-03-02 08:00")
+    w2 = snap(
+        [todo("X", task_id="30", guid="{G3}"), todo("A2", task_id="20", guid="{G1}")], data_date="2026-03-09 08:00"
+    )
+    assert renumbered(w1, w2).values.tolist() == [["A", "A2"]]
+    note = ppc_series(SnapshotStore([w1, w2])).iloc[0]["note"]
+    assert note == "1 Activity ID(s) changed since W-1, counted as deleted + new: A → A2"
 
 
 def test_ppc_regular_weekly_series_has_no_note():
@@ -494,6 +526,215 @@ def test_ppc_week_at_another_hour_has_no_note():
     dates = ["2026-03-02 08:00", "2026-03-09 17:00"]
     s = ppc_series(SnapshotStore([snap([todo("A")], data_date=d) for d in dates]))
     assert s["note"].isna().all()
+
+
+def _kept(c: pd.DataFrame) -> dict[tuple[str, str], bool]:
+    rows = zip(c["task_code"], c["commitment"], c["kept"], strict=True)
+    return {(code, kind): bool(kept) for code, kind, kept in rows}
+
+
+def test_ppc_start_on_the_status_date_is_committed_and_an_actual_a_minute_after_is_missed():
+    """xerscope definition (docs/formulas.md section 4): "committed_starts = activities whose start
+    update W-1 planned on or before the status date (data date) of W and not started in W-1;
+    kept = actually started at W's data date." W-1 (Mon 2 Mar 08:00) plans AT and MIN to start
+    Mon 9 Mar 08:00, W's data date: both committed. W: AT actual start 08:00, on the data date:
+    kept; MIN actual start 08:01, a minute after: missed. Their finishes (Fri 13) are after W:
+    not committed. PPC Start 1 / 2 = 50 %; PPC Finish n/a (none committed); PPC W/W-1
+    (1 + 0) / (2 + 0) = 50 %."""
+    plan = dict(early_start_date="2026-03-09 08:00", early_end_date="2026-03-13 17:00")
+    w1 = snap([todo("AT", **plan), todo("MIN", **plan)])
+    w2 = snap(
+        [active("AT", act_start_date="2026-03-09 08:00"), active("MIN", act_start_date="2026-03-09 08:01")],
+        data_date="2026-03-09 08:00",
+    )
+    assert _kept(committed(w1, w2)) == {("AT", "Start"): True, ("MIN", "Start"): False}
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["starts_kept"], row["starts_committed"], row["ppc_start"]) == (1, 2, 50.0)
+    assert (row["finishes_committed"], row["ppc_finish"]) == (0, None)
+    assert row["ppc_week"] == 50.0
+
+
+def test_ppc_finish_on_the_status_date_is_committed_and_an_actual_a_minute_after_is_missed():
+    """xerscope definition (docs/formulas.md section 4): "PPC Finish = same for finishes (planned
+    finish on or before W's data date in W-1, not finished in W-1; kept = finished at W's data
+    date)." Status dates Fri 27 Feb 17:00 and Fri 6 Mar 17:00. In progress at W-1: F0 and F1
+    planned to finish Fri 6 Mar 17:00, W's data date: committed; F2 Mon 9 Mar: not. W: F0
+    actual finish 17:00: kept; F1 17:01, a minute after: missed. No start is due (all three
+    started). PPC Finish 1 / 2 = 50 %; PPC Start n/a; PPC W/W-1 1 / 2 = 50 %."""
+    started = "2026-02-23 08:00"
+    w1 = snap(
+        [
+            active("F0", act_start_date=started, early_end_date="2026-03-06 17:00"),
+            active("F1", act_start_date=started, early_end_date="2026-03-06 17:00"),
+            active("F2", act_start_date=started, early_end_date="2026-03-09 17:00"),
+        ],
+        data_date="2026-02-27 17:00",
+    )
+    w2 = snap(
+        [
+            done("F0", act_start_date=started, act_end_date="2026-03-06 17:00"),
+            done("F1", act_start_date=started, act_end_date="2026-03-06 17:01"),
+            active("F2", act_start_date=started, early_end_date="2026-03-09 17:00"),
+        ],
+        data_date="2026-03-06 17:00",
+    )
+    assert _kept(committed(w1, w2)) == {("F0", "Finish"): True, ("F1", "Finish"): False}
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["finishes_kept"], row["finishes_committed"], row["ppc_finish"]) == (1, 2, 50.0)
+    assert (row["starts_committed"], row["ppc_start"]) == (0, None)
+    assert row["ppc_week"] == 50.0
+
+
+def test_ppc_commitment_deleted_in_w_is_a_scope_change_not_a_miss():
+    """xerscope definition (docs/formulas.md section 4): "An activity committed in W-1 and deleted
+    in W: report as scope change, not missed." W-1 commits GO and K to start and finish within the
+    week; W: K complete, GO deleted. GO is listed (status "deleted", not in the update) and left
+    out of every count: PPC Start 1 / 1, PPC Finish 1 / 1, PPC W/W-1 2 / 2 = 100 % (50 % if GO
+    counted as missed)."""
+    plan = dict(early_start_date="2026-03-03 08:00", early_end_date="2026-03-05 17:00")
+    w1 = snap([todo("GO", **plan), todo("K", **plan)])
+    w2 = snap(
+        [done("K", act_start_date="2026-03-03 08:00", act_end_date="2026-03-05 17:00")],
+        data_date="2026-03-09 08:00",
+    )
+    gone = committed(w1, w2).set_index(["task_code", "commitment"]).loc["GO"]
+    assert sorted(gone.index) == ["Finish", "Start"]
+    assert (gone["status_now"] == "deleted").all() and not gone["in_update"].any()
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["starts_kept"], row["starts_committed"], row["finishes_kept"], row["finishes_committed"]) == (
+        1, 1, 1, 1,
+    )  # fmt: skip
+    assert (row["ppc_start"], row["ppc_finish"], row["ppc_week"]) == (100.0, 100.0, 100.0)
+
+
+def test_ppc_week_without_commitment_is_none_not_zero():
+    """xerscope definition (docs/formulas.md section 4): "A week with no commitment: n/a, not 0."
+    W-1 plans LATER to start Mon 16 Mar, after W's data date (Mon 9 Mar): nothing is committed,
+    so the three PPC are none, not 0 %."""
+    later = dict(early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00")
+    w1 = snap([todo("LATER", **later)])
+    w2 = snap([todo("LATER", **later)], data_date="2026-03-09 08:00")
+    assert committed(w1, w2).empty
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["committed"], row["kept"]) == (0, 0)
+    assert row["ppc_start"] is None and row["ppc_finish"] is None and row["ppc_week"] is None
+
+
+def test_ppc_leaves_milestones_out_of_starts_and_finishes():
+    """xerscope definition (docs/formulas.md section 4): population as before the three-indicator
+    definition, milestones and LOE left out. W-1 plans T (task), SM (start milestone, Tue 08:00)
+    and FM (finish milestone, Thu 17:00) within the week; W: all three done. Only T commits: PPC
+    Start 1 / 1, PPC Finish 1 / 1 (3 / 3 for each if the milestones counted)."""
+    w1 = snap(
+        [
+            todo("T", early_start_date="2026-03-03 08:00", early_end_date="2026-03-05 17:00"),
+            todo("SM", **SM, early_start_date="2026-03-03 08:00", early_end_date="2026-03-03 08:00"),
+            todo("FM", **FM, early_start_date="2026-03-05 17:00", early_end_date="2026-03-05 17:00"),
+        ]
+    )
+    w2 = snap(
+        [
+            done("T", act_start_date="2026-03-03 08:00", act_end_date="2026-03-05 17:00"),
+            done("SM", **SM, act_start_date="2026-03-03 08:00", act_end_date="2026-03-03 08:00"),
+            done("FM", **FM, act_start_date="2026-03-05 17:00", act_end_date="2026-03-05 17:00"),
+        ],
+        data_date="2026-03-09 08:00",
+    )
+    assert _kept(committed(w1, w2)) == {("T", "Start"): True, ("T", "Finish"): True}
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["starts_committed"], row["finishes_committed"], row["committed"]) == (1, 1, 2)
+
+
+# --- start and finish variances vs W-1 and W-2 ---------------------------------------------------
+
+
+def _dates(start: str, finish: str, **kw) -> dict:
+    return dict(early_start_date=start, early_end_date=finish, **kw)
+
+
+# Three updates, a week apart. Fri 3 Apr 2026 is a holiday on C8 (Mon-Fri 8 h), not on C7D
+# (7 days, 08:00-16:00). H (C8) and S7 (C7D) slip the same way; E is new in W-1 and moves earlier
+# in W; SMS / FMS are start / finish milestones; N is new in W.
+VAR_W2 = snap(
+    [
+        todo("H", **_dates("2026-03-30 08:00", "2026-04-01 17:00")),
+        todo("S7", clndr_id="C7D", **_dates("2026-03-30 08:00", "2026-04-01 16:00")),
+        todo("SMS", **SM, **_dates("2026-03-31 08:00", "2026-03-31 08:00")),
+        todo("FMS", **FM, **_dates("2026-04-02 17:00", "2026-04-02 17:00")),
+    ],
+    data_date="2026-03-16 08:00",
+)
+VAR_W1 = snap(
+    [
+        todo("H", **_dates("2026-03-31 08:00", "2026-04-02 17:00")),
+        todo("S7", clndr_id="C7D", **_dates("2026-03-31 08:00", "2026-04-02 16:00")),
+        todo("E", **_dates("2026-04-06 08:00", "2026-04-08 17:00")),
+        todo("SMS", **SM, **_dates("2026-03-31 08:00", "2026-03-31 08:00")),
+        todo("FMS", **FM, **_dates("2026-04-02 17:00", "2026-04-02 17:00")),
+    ],
+    data_date="2026-03-23 08:00",
+)
+VAR_W = snap(
+    [
+        todo("H", **_dates("2026-04-02 08:00", "2026-04-06 17:00")),
+        todo("S7", clndr_id="C7D", **_dates("2026-04-02 08:00", "2026-04-06 16:00")),
+        todo("E", **_dates("2026-04-06 08:00", "2026-04-07 17:00")),
+        todo("SMS", **SM, **_dates("2026-04-02 08:00", "2026-04-02 08:00")),
+        todo("FMS", **FM, **_dates("2026-04-06 17:00", "2026-04-06 17:00")),
+        todo("N", **_dates("2026-04-06 08:00", "2026-04-10 17:00")),
+    ],
+    data_date="2026-03-30 08:00",
+)
+
+
+def _variances(index: int) -> pd.DataFrame:
+    return date_variances(SnapshotStore([VAR_W2, VAR_W1, VAR_W]), index).set_index("task_code")[VARIANCE_COLUMNS]
+
+
+def test_variances_count_working_days_of_the_activity_calendar_holiday_included():
+    """xerscope definition (docs/formulas.md section 4): "for each activity, four columns (start W-1,
+    finish W-1, start W-2, finish W-2) in working days of the activity's calendar, sign NEGATIVE = late
+    (reference − current)." H on C8: start Tue 31 Mar (W-1) / Mon 30 Mar (W-2) -> Thu 2 Apr: -2 / -3
+    wd. Finish Thu 2 Apr 17:00 (W-1) -> Mon 6 Apr 17:00: Fri 3 Apr is a holiday, so -1 wd (4
+    calendar days); from Wed 1 Apr (W-2): Thu + Mon = -2 wd. S7 has the same moves on C7D, which
+    works Fri to Sun: finish -4 wd vs W-1 and -5 wd vs W-2, starts -2 / -3 as on C8."""
+    v = _variances(2)
+    assert v.loc["H"].tolist() == [-2, -1, -3, -2]
+    assert v.loc["S7"].tolist() == [-2, -4, -3, -5]
+
+
+def test_variance_sign_is_reference_minus_current():
+    """xerscope definition (docs/formulas.md section 4): "sign NEGATIVE = late (reference − current)".
+    E finishes Wed 8 Apr in W-1 and Tue 7 Apr in W: one working day earlier, +1; its start does not
+    move: 0, not blank. H is later in W than in W-1: negative (test above)."""
+    e = _variances(2).loc["E"]
+    assert (e["start_var_w1"], e["finish_var_w1"]) == (0, 1)
+
+
+def test_variance_missing_reference_is_blank_not_zero():
+    """xerscope definition (docs/formulas.md section 4): "Missing date → blank, not 0." E is not in
+    W-2: its two W-2 columns are blank; N is only in W: all four blank. Read at W-1 (index 1) there
+    is no W-2: every W-2 column blank, and H moved Mon 30 -> Tue 31 Mar (start) and Wed 1 -> Thu 2
+    Apr (finish): -1 wd each. The first update has nothing to compare with: all blank."""
+    v = _variances(2)
+    assert v.loc["E", ["start_var_w2", "finish_var_w2"]].isna().all()
+    assert v.loc["N"].isna().all()
+    at_w1 = _variances(1)
+    assert at_w1[["start_var_w2", "finish_var_w2"]].isna().all().all()
+    assert (at_w1.loc["H", "start_var_w1"], at_w1.loc["H", "finish_var_w1"]) == (-1, -1)
+    assert _variances(0).isna().all().all()
+
+
+def test_variance_of_a_milestone_has_only_its_own_end():
+    """xerscope definition (docs/formulas.md section 4): "A milestone has only the relevant end."
+    SMS (start milestone) Tue 31 Mar -> Thu 2 Apr: start -2 wd vs W-1 and W-2, finish blank. FMS
+    (finish milestone) Thu 2 Apr 17:00 -> Mon 6 Apr 17:00 across the C8 holiday: finish -1 wd vs W-1
+    and W-2, start blank."""
+    v = _variances(2)
+    assert v.loc["SMS", ["start_var_w1", "start_var_w2"]].tolist() == [-2, -2]
+    assert v.loc["SMS", ["finish_var_w1", "finish_var_w2"]].isna().all()
+    assert v.loc["FMS", ["finish_var_w1", "finish_var_w2"]].tolist() == [-1, -1]
+    assert v.loc["FMS", ["start_var_w1", "start_var_w2"]].isna().all()
 
 
 def test_evm_series_one_point_per_update_against_one_baseline():

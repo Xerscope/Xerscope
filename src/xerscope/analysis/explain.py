@@ -297,7 +297,13 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
         "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date (DCMA-14)",
     },
     "EAC": {P6: "Actual Labor Units + Remaining Labor Units", EVMS: "EAC = ACWP + ETC; VAC = BAC − EAC"},
-    "PPC this week": {LPS: "Finishes kept / finishes committed in the previous update (milestones and LOE left out)"},
-    "PPC Start": {LPS: "Starts kept / starts committed"},
-    "PPC all commitments": {LPS: "(finishes + starts kept) / (finishes + starts committed)"},
+    "PPC Start": {
+        XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
+        "kept = actual start in W on or before that date (milestones and LOE left out)"
+    },
+    "PPC Finish": {
+        LPS: "Finishes kept / finishes committed: not complete at W−1 with a W−1 finish on or before W's status "
+        "date; kept = actual finish in W on or before that date (milestones and LOE left out)"
+    },
+    "PPC W/W−1": {XS: "(starts + finishes kept) / (starts + finishes committed)"},
 }

@@ -111,9 +111,9 @@ def _ppc_frame(ppc, kept, committed):
     return pd.DataFrame(
         {
             "data_date": pd.date_range("2026-03-02", periods=weeks, freq="7D"),
-            "ppc": ppc,
             "ppc_start": ppc,
-            "ppc_all": ppc,
+            "ppc_finish": ppc,
+            "ppc_week": ppc,
             "finishes_kept": kept,
             "finishes_committed": committed,
             "starts_kept": kept,
@@ -151,10 +151,10 @@ def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
     Each trace carries its own ratio and counts, so a swap between the start and the all series fails."""
     frame = _ppc_frame([50.0, None], [1, 0], [2, 0])
     frame["ppc_start"], frame["starts_kept"], frame["starts_committed"] = [200 / 3, None], [2, 0], [3, 0]
-    frame["ppc_all"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
+    frame["ppc_week"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
     fig = build_ppc(frame, 80)
     assert [t.type for t in fig.data] == ["bar", "scatter", "scatter"]
-    assert [t.name for t in fig.data] == ["PPC (finishes)", "PPC Start", "PPC all commitments"]
+    assert [t.name for t in fig.data] == ["PPC Finish", "PPC Start", "PPC W/W−1"]
     assert list(fig.data[0].y) == [50.0, None] and fig.data[0].customdata[0] == "50% (1/2)"
     assert fig.data[1].y[0] == pytest.approx(200 / 3) and fig.data[1].customdata[0] == "67% (2/3)"
     assert fig.data[2].y[0] == 60.0 and fig.data[2].customdata[0] == "60% (3/5)"
