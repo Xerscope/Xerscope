@@ -100,8 +100,13 @@ def _locked(path: Path, fcntl) -> int:
     names once locked (a purge replaces it: a writer that waited on the old one opens the new one)."""
     while True:
         fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        if os.fstat(fd).st_ino == os.stat(path, follow_symlinks=False).st_ino:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            same = os.fstat(fd).st_ino == os.stat(path, follow_symlinks=False).st_ino
+        except BaseException:  # the path removed by hand meanwhile: no descriptor left open
+            os.close(fd)
+            raise
+        if same:
             return fd
         os.close(fd)
 
