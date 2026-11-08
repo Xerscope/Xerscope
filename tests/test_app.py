@@ -1371,11 +1371,11 @@ def lexicon_root(tmp_path, monkeypatch):
     for folder in ("generated", "curated", "suggested"):
         (tmp_path / folder).mkdir()
     monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
-    state.lexicon.cache_clear()
-    state.file_variants.cache_clear()
+    for read in (state.lexicon, state.refusals, state.file_variants):
+        read.cache_clear()
     yield tmp_path
-    state.lexicon.cache_clear()
-    state.file_variants.cache_clear()
+    for read in (state.lexicon, state.refusals, state.file_variants):
+        read.cache_clear()
 
 
 def test_the_ask_field_reads_curated_words_only(app, lexicon_root):

@@ -1,7 +1,10 @@
 """A company's trade words, read as one: "mécanique" for "Mechanical", "CVC" for "HVAC".
 
 None ships with the package: the words live in the private folder XERSCOPE_LEXICON names,
-outside the repository, as ``[[group]] words = [...]`` tables."""
+outside the repository, as ``[[group]] words = [...]`` tables. That folder holds three:
+``generated/`` (the files' variants, written by ``xerscope lexicon build`` only), ``curated/``
+(edited by hand: trade words, refusals of generated groups) and ``suggested/`` (the words taught
+in the app, appended there and read by nothing until copied into ``curated/``)."""
 
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from pathlib import Path
 from .text import fold, plain
 
 Lexicon = dict[str, tuple[str, ...]]  # folded word -> the other words of its group
+GENERATED, CURATED, SUGGESTED = "generated", "curated", "suggested"  # the folders of XERSCOPE_LEXICON
 
 
 def lexicon_from_groups(groups: list[list[str]]) -> Lexicon:

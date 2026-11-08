@@ -162,6 +162,40 @@ def load_variants(*dirs: str | Path) -> dict[str, list[list[str]]]:
     return found
 
 
+def load_refusals(*dirs: str | Path) -> tuple[list[tuple[str, frozenset[str]]], list[str]]:
+    """The ``[[refuse]] column = ..., words = [...]`` tables of the ``*.toml`` of ``dirs`` (the
+    hand-edited curated/ folder): words of one column never to read as one. Returns the refusals
+    (folded words) and the tables that cannot apply (no column, fewer than two words), named."""
+    refusals: list[tuple[str, frozenset[str]]] = []
+    errors: list[str] = []
+    for file in [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]:
+        try:
+            tables = tomllib.loads(file.read_text(encoding="utf-8")).get("refuse", [])
+        except (OSError, tomllib.TOMLDecodeError):
+            continue  # load_lexicon names it
+        for number, table in enumerate(tables, start=1):
+            words = frozenset(fold(w) for w in table.get("words", []) if isinstance(w, str) and fold(w))
+            if not isinstance(table.get("column"), str) or len(words) < 2:
+                errors.append(f"{file.name}: refuse #{number} needs a column and two words or more")
+                continue
+            refusals.append((table["column"], words))
+    return refusals, errors
+
+
+def refuse(
+    groups: dict[str, list[list[str]]], refusals: list[tuple[str, frozenset[str]]]
+) -> dict[str, list[list[str]]]:
+    """The generated groups less those holding every word of a refusal of their column (dropped
+    whole); a column left with no group is left out."""
+    kept = {
+        column: [
+            g for g in column_groups if not any(c == column and words <= {fold(w) for w in g} for c, words in refusals)
+        ]
+        for column, column_groups in groups.items()
+    }
+    return {column: g for column, g in kept.items() if g}
+
+
 def counts(groups: dict[str, list[list[str]]]) -> dict[str, int]:
     """Groups per column: what the Debug page shows (counts, never the words)."""
     return {column: len(g) for column, g in sorted(groups.items())}

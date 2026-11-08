@@ -112,23 +112,36 @@ def background_jobs() -> bool:
     return os.environ.get("XERSCOPE_SYNC_LOAD", "").lower() not in ("1", "true", "yes")
 
 
+def _lexicon_dirs(name: str) -> list[Path]:
+    """The folder ``name`` (generated, curated, suggested) of XERSCOPE_LEXICON; none when unset."""
+    root = os.environ.get("XERSCOPE_LEXICON", "")
+    return [Path(root) / name] if root else []
+
+
 @functools.cache
 def lexicon() -> query.Lexicon:
-    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON (a company's own words, kept
-    outside the repository; none ships with the app). Load errors are kept for the Debug page,
-    never shown to a visitor."""
-    extra = os.environ.get("XERSCOPE_LEXICON", "")
-    found, errors = query.load_lexicon(*([extra] if extra else []))
-    st.session_state["lexicon_errors"] = errors
+    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON's curated/ folder (a company's
+    own words, kept outside the repository; none ships with the app). Load errors are kept for
+    the Debug page, never shown to a visitor."""
+    found, errors = query.load_lexicon(*_lexicon_dirs(query.CURATED))
+    st.session_state["lexicon_errors"] = errors + query.load_refusals(*_lexicon_dirs(query.CURATED))[1]
     return found
 
 
 @functools.cache
+def refusals() -> list[tuple[str, frozenset[str]]]:
+    """The generated groups curated/ refuses: they win over generated/ and over the variants
+    derived in memory."""
+    return query.load_refusals(*_lexicon_dirs(query.CURATED))[0]
+
+
+@functools.cache
 def file_variants() -> dict[str, list[list[str]]]:
-    """The variant groups of XERSCOPE_LEXICON that name their source column (a file ``xerscope
-    lexicon build`` wrote and the company reviewed), merged with those derived in memory."""
-    extra = os.environ.get("XERSCOPE_LEXICON", "")
-    return query.load_variants(extra) if extra else {}
+    """The variant groups that name their source column: generated/ (``xerscope lexicon build``)
+    less the curated refusals, and curated/'s own; merged with those derived in memory."""
+    generated = query.refuse(query.load_variants(*_lexicon_dirs(query.GENERATED)), refusals())
+    curated = query.load_variants(*_lexicon_dirs(query.CURATED))
+    return {c: generated.get(c, []) + curated.get(c, []) for c in sorted({*generated, *curated})}
 
 
 def session_lexicon() -> query.Lexicon:
