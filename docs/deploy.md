@@ -336,7 +336,8 @@ the password reaches the teach buttons. *What they control:* the unknown word (a
 in the Ask field) and the choice among the labels offered (the file's own labels). *What
 stops them:* the file name is fixed (`suggestions.toml`, no path from the input); word and
 label are NFKC-normalised, at most 64 and 160 characters, letters, digits and
-`` .-_'&/()·,:+#`` only (no control character, newline, bracket, quote, backslash or `=`),
+`` .-_'&/()·,:+#`` only (no control character, newline, bracket, quote, backslash, `=` or
+invisible Hangul filler),
 written through `json_quote`, so no TOML table can be injected; one exclusive `flock`
 serialises the size check and the append; the file stops at 256 KB (a refusal shows a
 neutral line that does not repeat the word); it is opened with `O_NOFOLLOW` (a symlink put

@@ -30,15 +30,16 @@ MAX_LABEL = 160  # characters of the label picked (a WBS "CODE · name", a resou
 MAX_BYTES = 256 * 1024  # about a thousand suggestions; past it a click records nothing
 RETENTION = timedelta(days=90)  # a suggestion not copied into curated/ is purged after this
 PUNCTUATION = frozenset(" .-_'&/()·,:+#")  # what a WBS or resource label may hold besides letters and digits
+INVISIBLE = frozenset("\u115f\u1160\u3164\uffa0")  # Hangul fillers: letters (Lo) drawn with no glyph
 # the kind of label suggestions() offers -> the column it comes from, the facet it filters
 SOURCES = {"wbs": ("PROJWBS.wbs_name", "wbs"), "resource": ("RSRC.rsrc_short_name", "resource")}
 
 
 def clean(text: str, limit: int) -> str | None:
     """``text`` NFKC-normalised and stripped, or None when empty, longer than ``limit`` or holding
-    a character outside letters, digits and PUNCTUATION."""
+    a character outside letters, digits and PUNCTUATION, or an INVISIBLE letter."""
     text = unicodedata.normalize("NFKC", text).strip()
-    allowed = all(unicodedata.category(c)[0] in "LN" or c in PUNCTUATION for c in text)
+    allowed = all((unicodedata.category(c)[0] in "LN" and c not in INVISIBLE) or c in PUNCTUATION for c in text)
     return text if 0 < len(text) <= limit and allowed else None
 
 
