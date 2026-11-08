@@ -62,16 +62,16 @@ INPUT_COLS = [
 ]
 ASSIGNMENT_INPUT_COLS = ["rsrc_id", "rsrc_clndr_id", "driving", "remain_qty", "remain_qty_per_hr", "relag_drtn_hr_cnt"]
 
-# Fixed readings of the P6 Check Schedule dialog options (analysis/p6/check_schedule.py docstrings).
-P6_DIALOG_OPTIONS = [
-    ("Dangling Start", "Ignore in-progress activities", "applied (started tasks excluded)"),
-    ("Dangling Finish", "Ignore activities with soft constraints", "not read (unchecked in P6 by default)"),
-    ("Dangling Finish", "Ignore activities with hard constraints", "not read (unchecked in P6 by default)"),
-]
-# The dialog's three tabs, as the P6 Professional 26 help names them (client_help 101248):
-# Relationships and Assignments (113174 lists logic, lags, relationship types, out of sequence,
-# resource / cost, dangling), Dates and Durations, Constraints. Only the first tab's content is
-# given by that help; the other two are read from the checks' names.
+# Check Schedule dialog options (113174) and the rule parameter that holds each (standards/p6.toml).
+P6_DIALOG_OPTIONS = {
+    "ignore_in_progress": "Ignore in-progress activities",
+    "ignore_soft_constraints": "Ignore activities with soft constraints",
+    "ignore_hard_constraints": "Ignore activities with hard constraints",
+}
+# The dialog's three tabs, as the P6 Professional 26 help names them (client_help 101248), each with
+# its own help page: Relationships and Assignments (113174: logic, lags, relationship types, out of
+# sequence, resource / cost, dangling), Dates and Durations (113175: large durations, large float,
+# negative float, invalid progress dates, late activities, BEI), Constraints (113176: hard, soft).
 RELATIONSHIPS, DATES, CONSTRAINTS = "Relationships and Assignments", "Dates and Durations", "Constraints"
 P6_TABS = {
     "P6-01": RELATIONSHIPS,
@@ -330,20 +330,30 @@ def assignments_table(snapshot: Snapshot) -> pd.DataFrame:
 
 
 def check_parameters(standard: Standard) -> pd.DataFrame:
-    """Targets and the x threshold of the P6 standard, each check on its dialog tab."""
-    rows = [
-        {
-            "tab": P6_TABS.get(metric.id, ""),
-            "check": f"{metric.id} · {metric.name}",
-            "target": metric.threshold_label,
-            "x_hours": {**RULES[metric.rule].params, **metric.params}.get("limit_hours"),
-        }
-        for metric in standard.metrics
-    ]
-    rows += [
-        {"tab": RELATIONSHIPS, "check": f"{check} · {option}", "target": reading, "x_hours": None}
-        for check, option, reading in P6_DIALOG_OPTIONS
-    ]
+    """Targets, the x threshold and the dialog options of the P6 standard, each check on its dialog tab;
+    an option reads "checked" or "unchecked" as the standard sets it."""
+    rows = []
+    for metric in standard.metrics:
+        params = {**RULES[metric.rule].params, **metric.params}
+        tab = P6_TABS.get(metric.id, "")
+        rows.append(
+            {
+                "tab": tab,
+                "check": f"{metric.id} · {metric.name}",
+                "target": metric.threshold_label,
+                "x_hours": params.get("limit_hours"),
+            }
+        )
+        rows += [
+            {
+                "tab": tab,
+                "check": f"{metric.id} · {option}",
+                "target": "checked" if params[key] else "unchecked",
+                "x_hours": None,
+            }
+            for key, option in P6_DIALOG_OPTIONS.items()
+            if key in params
+        ]
     return pd.DataFrame(rows)
 
 

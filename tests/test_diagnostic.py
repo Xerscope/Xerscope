@@ -1,5 +1,6 @@
 """Debug page block 6: the activities behind each load warning of the file."""
 
+import dataclasses
 from datetime import date
 
 import pandas as pd
@@ -7,7 +8,14 @@ import pytest
 from xerkit import active, clndr_data, done, snap, todo
 
 from xerscope.analysis import builtin_standards
-from xerscope.app.diagnostic import ABSENT, costs_table, diagnostic_frames, finish_table, leveling_table
+from xerscope.app.diagnostic import (
+    ABSENT,
+    check_parameters,
+    costs_table,
+    diagnostic_frames,
+    finish_table,
+    leveling_table,
+)
 
 
 def test_leveling_table_lists_the_activities_the_warning_counts():
@@ -457,6 +465,34 @@ def test_calendar_detail_is_in_the_diagnostic_zip_without_names_when_anonymous()
     assert "clndr_name" not in calendar_summary_table(snapshot, anonymous=True).columns
     frames = diagnostic_frames(snapshot, None, builtin_standards()["P6"], anonymous=True)
     assert {"13_calendar_summary", "13_calendar_week", "13_calendar_exceptions"} <= set(frames)
+
+
+def test_check_parameters_show_the_dangling_options_the_standard_sets():
+    """Block 04 reads the Dangling options (113174) from the standard in use, not fixed text."""
+    p6 = builtin_standards()["P6"]
+
+    def options(standard):
+        table = check_parameters(standard).set_index("check")
+        return {check: table.loc[check, "target"] for check in table.index if "Ignore" in check}
+
+    assert options(p6) == {
+        "P6-16 · Ignore in-progress activities": "checked",
+        "P6-17 · Ignore activities with soft constraints": "unchecked",
+        "P6-17 · Ignore activities with hard constraints": "unchecked",
+    }
+    metrics = [
+        dataclasses.replace(metric, params={**metric.params, "ignore_in_progress": False})
+        if metric.id == "P6-16"
+        else dataclasses.replace(metric, params={**metric.params, "ignore_hard_constraints": True})
+        if metric.id == "P6-17"
+        else metric
+        for metric in p6.metrics
+    ]
+    assert options(dataclasses.replace(p6, metrics=metrics)) == {
+        "P6-16 · Ignore in-progress activities": "unchecked",
+        "P6-17 · Ignore activities with soft constraints": "unchecked",
+        "P6-17 · Ignore activities with hard constraints": "checked",
+    }
 
 
 def test_baseline_block_names_the_kind_basis_and_link_of_the_baseline_in_use():

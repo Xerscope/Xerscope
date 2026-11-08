@@ -471,6 +471,8 @@ class Snapshot:
     expenses: pd.DataFrame = field(default_factory=pd.DataFrame)  # PROJCOST rows, may be empty
     external_tasks: pd.DataFrame = field(default_factory=pd.DataFrame)  # other projects' linked tasks
     external_links: pd.DataFrame = field(default_factory=pd.DataFrame)  # links to/from them
+    # links into this project from a project whose activities are not in the file: not in relationships
+    external_links_dropped: int = 0
     # P6 activity codes: the values of each code type the project's activities use, and which
     # value each activity is assigned (_activity_codes)
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
@@ -1158,12 +1160,13 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     return tasks
 
 
-def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
-    """The project's schedulable relationships, and the successors that also have an external predecessor."""
+def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set, int]:
+    """The project's schedulable relationships, the successors that also have an external predecessor, and
+    the number of links from a project whose activities are not in the file (dropped)."""
     all_relationships = inputs.all_relationships
     if all_relationships.empty:
         columns = ["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
-        return pd.DataFrame(columns=columns), set()
+        return pd.DataFrame(columns=columns), set(), 0
     project_id, default_hours = inputs.project_id, inputs.fallback_hours_per_day
     relationships = _ensure_cols(
         all_relationships[all_relationships["proj_id"] == project_id].copy(),
@@ -1220,7 +1223,7 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
             f"{inputs.source}: {int(corrupt.sum())} relationship(s) to a task "
             "not in the file; ignored by the schedule and the checks"
         )
-    return relationships[~lost].copy(), external_predecessors
+    return relationships[~lost].copy(), external_predecessors, int((lost & relationships["is_external"]).sum())
 
 
 def _external_links(
@@ -1410,7 +1413,7 @@ def build_snapshot(
 
     # Activities, the logic between them, and the links to other projects
     tasks = _task_frame(inputs, wbs, options)
-    relationships, external_predecessors = _relationships(inputs)
+    relationships, external_predecessors, external_links_dropped = _relationships(inputs)
     links_out = pd.DataFrame(columns=["task_id", "pred_task_id", "pred_type", "lag_hr_cnt"])
     if not all_relationships.empty and "proj_id" in all_relationships.columns:
         from_other_projects = all_relationships["proj_id"] != inputs.project_id
@@ -1470,6 +1473,7 @@ def build_snapshot(
         work_calendars=work_calendars,
         external_tasks=external_tasks.reset_index(drop=True),
         external_links=external_links.reset_index(drop=True),
+        external_links_dropped=external_links_dropped,
         project_clndr_id=str(project_row["clndr_id"] or ""),
         expenses=expenses.reset_index(drop=True),
         code_values=code_values,

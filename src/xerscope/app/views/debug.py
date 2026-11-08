@@ -101,7 +101,7 @@ with st.expander(
         table(int03, max_height=480)
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
-    st.caption("Targets and x of standards/p6.toml, on the tab of the P6 dialog each check sits on.")
+    st.caption("Targets, x and dialog options of standards/p6.toml, on the tab of the P6 dialog each check sits on.")
     table(frames["04_check_parameters"])
 
 with st.expander("5 · Baseline and calendars", key="debug_baseline"):
