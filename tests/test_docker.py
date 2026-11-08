@@ -315,6 +315,18 @@ def test_no_scan_exception_file():
     assert "trivyignore" not in workflows and "--ignorefile" not in workflows
 
 
+def test_deploy_images_are_scanned_on_pull_requests():
+    """A Dependabot bump of Caddy or Tailscale is scanned before it is merged: the deploy job runs on
+    pull requests and neither scan step is skipped there."""
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    deploy = wf[wf.index("\n  deploy:") :]
+    for image in ("Caddy", "Tailscale"):
+        step = deploy[deploy.index(f"- name: Known vulnerabilities in the {image} image") :]
+        step = step[: step.index("- name:", 1)]
+        assert ".github/trivy/scan.sh" in step and "pull_request" not in step, step
+    assert "if:" not in deploy[: deploy.index("steps:")]  # the job itself runs on every event
+
+
 def test_tailscale_x_net_html_absence_is_recorded_before_the_scan():
     """CVE-2026-78661 (golang.org/x/net v0.60.0 in the Tailscale image) is not excepted: the scan
     reports it. A step before the scan records that the vulnerable package is absent from the

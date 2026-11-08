@@ -261,8 +261,8 @@ jobs:
           grep -q "HTTP/1.1 429" codes.txt   # over it: refused before any bcrypt run
           docker compose logs --no-color caddy > caddy.log
           grep '"status": 429,' caddy.log | tail -n 1 | grep -q '"Retry-After"'
-      - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
+      - name: Known vulnerabilities in the Caddy image, fixed ones only
+        if: ${{ !cancelled() }}   # each image scanned even if the other fails
         working-directory: .
         env:
           IMAGE: ${{ steps.compose.outputs.caddy }}
@@ -281,8 +281,8 @@ jobs:
             echo "$bin: no golang.org/x/net/html code"
           done
           docker rm -f "$cid" > /dev/null
-      - name: Known vulnerabilities in the Tailscale image, fixed ones only (main, Monday, manual)
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
+      - name: Known vulnerabilities in the Tailscale image, fixed ones only
+        if: ${{ !cancelled() }}   # each image scanned even if the other fails
         working-directory: .
         env:
           IMAGE: ${{ steps.compose.outputs.tailscale }}
