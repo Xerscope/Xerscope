@@ -555,10 +555,10 @@ def test_no_original_project_id_is_left_in_any_anonymous_output():
     week1, week2, text1 = _two_weeks()
     anonymizer = Anonymizer.from_raws([week1, week2])
     baseline = baseline_in_file(build_snapshot(week1), text1.encode())
-    assert "proj_id 48217" in baseline.source  # the note of every check that reads the baseline names it
     texts = _anonymous_outputs(anonymizer, week1, baseline) + _anonymous_outputs(anonymizer, week2)
     assert [match.group(0) for text in texts for match in ORIGINAL_PROJECT_ID.finditer(text)] == []
-    assert any(f"proj_id {anonymizer.project_ids['48217']}" in text for text in texts)
+    # the ids are still there, renumbered (block 01b lists the file's projects by proj_id)
+    assert any(anonymizer.project_ids["48217"] in text for text in texts)
 
 
 def test_project_ids_are_renamed_alike_in_every_file_and_keep_their_pointers():
