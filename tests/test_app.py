@@ -1448,6 +1448,24 @@ def test_the_gantt_ask_field_keeps_max_chars_of_a_huge_sentence(app):
     assert app.text_input(key="gantt_ask").max_chars == MAX_CHARS  # the browser cuts first
 
 
+def test_the_gantt_offers_labels_for_a_few_unknown_words_once_per_sentence(app, monkeypatch):
+    """Labels are searched for the first MAX_FUZZY words left out only, once per sentence: a rerun
+    (any click on the page) reads them from the session's memo."""
+    from xerscope.analysis import query
+    from xerscope.analysis.ask.text import MAX_FUZZY
+
+    searched = []
+    real = query.suggestions
+    monkeypatch.setattr(query, "suggestions", lambda word, vocab: searched.append(word) or real(word, vocab))
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value(" ".join(f"qq{i}x" for i in range(20))).run()
+    _ok(app)
+    assert 0 < len(searched) <= MAX_FUZZY
+    searched.clear()
+    _toggle(app, "Logic links", True)
+    assert searched == []
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 
