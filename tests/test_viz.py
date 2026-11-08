@@ -377,3 +377,53 @@ def test_scurve_marks_the_schedule_variance_at_the_data_date():
     mark = next(t for t in behind.data if t.name == "SV (EV − PV)")
     assert mark.line.color == STATUS["critical"] and list(mark.y) == [20.0, 15.0]  # % of BAC
     assert any(a.text == "SV -5.0 % of BAC" for a in behind.layout.annotations)
+
+
+def test_scurve_pv_and_forecast_at_the_data_date_are_the_kpis():
+    """A: 40 h Mon 03-02 08:00 → Fri 03-06 17:00 (8 h a day); update at Wed 08:00 with 8 h spent and
+    24 h remaining. By hand: PV at Wed 08:00 = Mon + Tue = 16 h (Wed 00:00 too), 24 h at Thu 00:00;
+    the forecast starts from AC = 8 h at the data date. Each trace point is the value at its instant."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import evm_series, forecast_curve, pv_curve
+    from xerscope.store import SnapshotStore
+
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    baseline = Baseline.from_snapshot(snap([todo("A", **week)], data_date="2026-03-02 08:00"))
+    spent = {"act_work_qty": "8", "remain_work_qty": "24", "act_start_date": "2026-03-02 08:00"}
+    update = snap([todo("A", **week, **spent, status_code="TK_Active")], data_date="2026-03-04 08:00")
+    series = evm_series(SnapshotStore([update]), baseline)
+    data_date = update.data_date
+    fig = build_scurve(pv_curve(baseline, update), series, forecast_curve(update), data_date)
+    pv = next(t for t in fig.data if t.name == "PV (baseline)")
+    at = {pd.Timestamp(x): y for x, y in zip(pv.x, pv.y, strict=True)}
+    assert at[data_date] == pytest.approx(series["pv_hr"].iloc[-1]) == pytest.approx(16)
+    assert at[pd.Timestamp("2026-03-04")] == pytest.approx(16) and at[pd.Timestamp("2026-03-05")] == pytest.approx(24)
+    forecast = next(t for t in fig.data if t.name == "Forecast (AC + remaining)")
+    assert pd.Timestamp(forecast.x[0]) == data_date and forecast.y[0] == pytest.approx(8)
+    assert pd.Timestamp(forecast.x[1]) == pd.Timestamp("2026-03-05") and forecast.y[1] == pytest.approx(16)
+
+
+def test_scurve_percent_of_bac_is_each_update_s_own_as_in_the_kpis():
+    """Baseline A and D, 40 h each; u1 holds both, u2 only A (D deleted), A half done. By hand: BAC
+    80 h then 40 h; EV at u2 = 20 h = 50 % of its BAC (the KPI), not 25 % of the first update's."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import evm_series, pv_curve
+    from xerscope.store import SnapshotStore
+
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    first = snap([todo("A", **week), todo("D", **week)], data_date="2026-03-02 08:00")
+    half = {
+        "complete_pct_type": "CP_Phys",
+        "phys_complete_pct": "50",
+        "act_start_date": "2026-03-02 08:00",
+        "status_code": "TK_Active",
+    }
+    second = snap([todo("A", **week, **half)], data_date="2026-03-04 08:00")
+    baseline = Baseline.from_snapshot(first)
+    series = evm_series(SnapshotStore([first, second]), baseline)
+    assert list(series["bac_hr"]) == [80, 40] and series["ev_pct"].iloc[-1] == pytest.approx(50)
+    fig = build_scurve(pv_curve(baseline, second), series, None, second.data_date, percent=True)
+    ev = next(t for t in fig.data if t.name == "EV (earned)")
+    assert list(ev.y) == pytest.approx(list(series["ev_pct"]))
+    mark = next(t for t in fig.data if t.name == "SV (EV − PV)")
+    assert list(mark.y) == pytest.approx([series["pv_pct"].iloc[-1], series["ev_pct"].iloc[-1]])

@@ -754,8 +754,17 @@ def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | No
     name, data = source
     if not pointer or not is_pmxml(data):
         return None
-    baselines, _ = list_baselines(data, name)
-    return pointer if pointer in {b.object_id for b in baselines} else None
+    return pointer if pointer in _xml_baseline_ids(name, data) else None
+
+
+def _xml_baseline_ids(name: str, data: bytes) -> set[str]:
+    """The BaselineProject ids of a P6 XML file, listed once per content (the sidebar asks on every rerun)."""
+    cache = st.session_state.setdefault("_xml_baseline_ids", {})
+    key = (name, hashlib.sha256(data).hexdigest())
+    if key not in cache:
+        cache.clear()  # one baseline file at a time
+        cache[key] = {b.object_id for b in list_baselines(data, name)[0]}
+    return cache[key]
 
 
 def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> None:
@@ -1092,6 +1101,15 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
     """Tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``):
     a warning while they count as deleted and new, a caption once the option links them, nothing
     when there are none."""
+    if st.session_state.get("guid_link"):
+        blank = memo(("baselines_without_guid",), _baselines_without_guid, store, ev_basis=False)
+        if blank:
+            sidebar.warning(
+                f"Link renumbered tasks by GUID is on, but the baseline has no GUID to match "
+                f"({ui.md_text(', '.join(blank))}): no task is linked. A P6 XML baseline carries none "
+                "xerscope compares; export the baseline as XER to link renumbered tasks.",
+                icon=":material/warning:",
+            )
     found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
     if not found:
         return
@@ -1107,6 +1125,20 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
         "Option in the Baseline window: Link renumbered tasks by GUID.",
         icon=":material/warning:",
     )
+
+
+def _baselines_without_guid(store: SnapshotStore) -> list[str]:
+    """Labels of the baselines in use (other than an update itself) none of whose tasks has a
+    TASK.guid: the GUID link finds nothing against them (a P6 XML baseline: xer/pmxml.py)."""
+    labels = set()
+    for snapshot in store:
+        baseline = baseline_for(snapshot, link=False)
+        if baseline is None or baseline.snapshot is snapshot:
+            continue
+        tasks = baseline.snapshot.activities
+        if "guid" not in tasks or not (tasks["guid"].fillna("").astype(str).str.strip() != "").any():
+            labels.add(baseline.label)
+    return sorted(labels)
 
 
 def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
@@ -1208,8 +1240,15 @@ def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
     if source is None or _xml_baseline_id(source, pointer) is None:
         return None
     basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
-    built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
-    return replace(built, source=f"P6 Project Baseline {built.snapshot.project_code} from {source[0]}")
+    # built once per file content, baseline and EV basis: baseline_for asks for it on every page and rerun
+    cache = st.session_state.setdefault("_xml_baselines", {})
+    key = (source[0], hashlib.sha256(source[1]).hexdigest(), pointer, basis)
+    if key not in cache:
+        if len(cache) > 64:
+            cache.clear()
+        built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
+        cache[key] = replace(built, source=f"P6 Project Baseline {built.snapshot.project_code} from {source[0]}")
+    return cache[key]
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -1342,9 +1381,10 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
 
 def _baseline_identity(ev_basis: bool = True) -> tuple:
     """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
-    with the GUID link option, and, for an uploaded file, its bytes."""
+    with the GUID link option (always: ``baseline_for`` relinks the baseline whatever the analysis
+    reads), and, for an uploaded file, its bytes."""
     baseline = st.session_state.get("baseline")
-    basis = (st.session_state.get("ev_basis"), st.session_state.get("guid_link", False)) if ev_basis else None
+    basis = (st.session_state.get("ev_basis") if ev_basis else None, st.session_state.get("guid_link", False))
     if isinstance(baseline, Baseline):
         return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names

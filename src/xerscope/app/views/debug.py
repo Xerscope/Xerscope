@@ -48,7 +48,11 @@ guid_match = diagnostic.guid_match_table(snapshot, baseline_for(snapshot, link=F
 try:
     frames = memo(
         ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
-        diagnostic.diagnostic_frames,
+        partial(
+            diagnostic.diagnostic_frames,
+            updates=[s.source for s in store],
+            guid_link=st.session_state.get("guid_link", False),
+        ),
         snapshot,
         baseline,
         p6_standard,
@@ -323,7 +327,14 @@ def build_diagnostic(anonymous: bool) -> None:
         lambda: zip_frames({**frames, "05_guid_match": guid_match, **p6_frames}, "csv"),
         lambda anonymizer: anonymizer.zip_frames(
             {
-                **diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True),
+                **diagnostic.diagnostic_frames(
+                    snapshot,
+                    baseline,
+                    p6_standard,
+                    anonymous=True,
+                    updates=[s.source for s in store],
+                    guid_link=st.session_state.get("guid_link", False),
+                ),
                 "05_guid_match": guid_match,
                 **p6_frames,
             }

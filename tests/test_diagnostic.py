@@ -459,6 +459,47 @@ def test_calendar_detail_is_in_the_diagnostic_zip_without_names_when_anonymous()
     assert {"13_calendar_summary", "13_calendar_week", "13_calendar_exceptions"} <= set(frames)
 
 
+def test_baseline_block_names_the_kind_basis_and_link_of_the_baseline_in_use():
+    """Block 5: a loaded update used as baseline is not a "separate file"; a P6 XML baseline and a
+    fallback say so; the EV basis and the GUID link option are written, the source unless anonymous."""
+    import dataclasses
+
+    from xerscope.analysis import Baseline
+    from xerscope.app.diagnostic import baseline_table
+
+    first = dataclasses.replace(snap([todo("A")], data_date="2026-03-02 08:00"), source="a.xer")
+    update = dataclasses.replace(snap([todo("A")], data_date="2026-03-09 08:00"), source="b.xer")
+    loaded = Baseline.from_snapshot(first, "budgeted_current")
+    row = baseline_table(update, loaded, updates=["a.xer", "b.xer"], guid_link=True).iloc[0]
+    assert (row["kind"], row["ev_basis"], row["guid_link"]) == ("loaded update", "budgeted_current", True)
+    xml = dataclasses.replace(
+        Baseline.from_snapshot(dataclasses.replace(first, source="export.xml")),
+        source="P6 Project Baseline 370 from export.xml",
+    )
+    row = baseline_table(update, xml, updates=["b.xer"]).iloc[0]
+    assert (row["kind"], row["source"]) == ("P6 XML baseline file", "P6 Project Baseline 370 from export.xml")
+    assert baseline_table(update, xml, anonymous=True, updates=["b.xer"]).loc[0, "source"] == ""
+    fallback = dataclasses.replace(Baseline.planned(update), source="fallback (planned dates)")
+    assert baseline_table(update, fallback).loc[0, "kind"] == "fallback, planned dates (target_*)"
+
+
+def test_pv_labor_check_states_its_basis_and_population():
+    """Block 9: baseline B and D (40 h each), the update holds B only: PV over 1 of 2 baseline activities,
+    1 deleted, on the default EV basis."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import pv_labor_check
+
+    baseline = Baseline.from_snapshot(snap([todo("B", **WEEK, target_work_qty="40"), todo("D", **WEEK)]))
+    totals, _ = pv_labor_check(snap([todo("B", **WEEK)], data_date=WED), baseline)
+    row = totals.iloc[0]
+    assert (row["ev_basis"], row["baseline_activities"], row["activities"], row["deleted_activities"]) == (
+        "budgeted_planned",
+        2,
+        1,
+        1,
+    )
+
+
 def test_guid_match_counts_ids_guids_and_what_the_option_links():
     """Baseline A, B, C, X, F; update A, B2 (B's GUID), X (C's GUID, X already in the baseline), N, M (no
     GUID). Linked: B -> B2. Gone and not linked: C (its GUID in the update under X, which the option

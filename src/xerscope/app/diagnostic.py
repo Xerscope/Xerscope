@@ -14,6 +14,7 @@ import math
 import re
 import warnings
 from collections.abc import Iterable
+from pathlib import Path
 
 import pandas as pd
 
@@ -346,27 +347,43 @@ def check_parameters(standard: Standard) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: bool = False) -> pd.DataFrame:
-    """The baseline in use: label, kind, activities of the update it covers. ``anonymous``: the label
-    names no file (the file name carries the project code), only the kind of baseline."""
+def baseline_table(
+    snapshot: Snapshot,
+    baseline: Baseline | None,
+    anonymous: bool = False,
+    updates: Iterable[str] = (),
+    guid_link: bool = False,
+) -> pd.DataFrame:
+    """The baseline in use: label, kind, source, EV basis, GUID link option, activities of the update it
+    covers. ``updates``: the files of the loaded updates (a baseline read from one is a loaded update).
+    ``anonymous``: the label and source name no file (a file name carries the project code)."""
     if baseline is None:
-        return pd.DataFrame([{"baseline": "none", "kind": "", "matched": 0, "activities": len(snapshot.by_code)}])
+        return pd.DataFrame(
+            [{"baseline": "none", "kind": "", "source": "", "ev_basis": "", "guid_link": guid_link, "matched": 0,
+              "activities": len(snapshot.by_code)}]
+        )  # fmt: skip
     codes = snapshot.by_code.index
-    planned = baseline.snapshot is snapshot
-    in_file = not planned and baseline.snapshot.source == snapshot.source
-    label = baseline.label
-    if anonymous:
-        label = "planned dates of the update" if planned else "baseline file"
-        label = "project baseline in the file" if in_file else label
+    origin = baseline.snapshot.source
+    if baseline.is_planned or baseline.snapshot is snapshot:
+        kind = "planned dates (target_*)"
+    elif origin == snapshot.source:
+        kind = "project baseline in the file"
+    elif Path(origin).suffix.lower() == ".xml":
+        kind = "P6 XML baseline file"
+    elif origin in set(updates):
+        kind = "loaded update"
+    else:
+        kind = "separate file"
+    if baseline.source.startswith("fallback"):
+        kind = f"fallback, {kind}"
     return pd.DataFrame(
         [
             {
-                "baseline": label,
-                "kind": "planned dates (target_*)"
-                if planned
-                else "project baseline in the file"
-                if in_file
-                else "separate file",
+                "baseline": kind if anonymous else baseline.label,
+                "kind": kind,
+                "source": "" if anonymous else baseline.source,
+                "ev_basis": baseline.ev_basis,
+                "guid_link": guid_link,
                 "matched": len(codes) - len(baseline.unbaselined(snapshot)),
                 "activities": len(codes),
             }
@@ -718,10 +735,15 @@ def project_settings_meaning_table() -> pd.DataFrame:
 
 
 def diagnostic_frames(
-    snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
+    snapshot: Snapshot,
+    baseline: Baseline | None,
+    standard: Standard,
+    anonymous: bool = False,
+    updates: Iterable[str] = (),
+    guid_link: bool = False,
 ) -> dict[str, pd.DataFrame]:
     """Blocks 1 to 9, 11 and 13, named as the files of the diagnostic zip (block 10 is ``pv_p6_frames``).
-    ``anonymous``: no file name in them."""
+    ``anonymous``: no file name in them. ``updates``, ``guid_link``: block 5 (``baseline_table``)."""
     project_finish, latest_finishes = finish_table(snapshot)
     ev_settings = etc_settings(snapshot)
     pv_totals, pv_by_status = pv_labor_check(snapshot, baseline)
@@ -732,7 +754,7 @@ def diagnostic_frames(
         "03_int01_recalculation": recalculation_table(snapshot),
         "03_int03_assignments": assignments_table(snapshot),
         "04_check_parameters": check_parameters(standard),
-        "05_baseline": baseline_table(snapshot, baseline, anonymous),
+        "05_baseline": baseline_table(snapshot, baseline, anonymous, updates, guid_link),
         "05_calendars": calendars_table(snapshot),
         "06_leveling": leveling_table(snapshot),
         "06_project_finish": project_finish,
