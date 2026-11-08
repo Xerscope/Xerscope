@@ -174,7 +174,7 @@ def show_renumbered(pairs: pd.DataFrame) -> None:
         return
     listed = ", ".join(f"{ui.md_text(a)} → {ui.md_text(b)}" for a, b in pairs.itertuples(index=False))
     st.warning(
-        f"{len(pairs)} Activity ID(s) changed since W−1 (same GUID or P6 task_id): each counts as deleted, its "
+        f"{len(pairs)} Task ID(s) changed since W−1 (same GUID or P6 task_id): each counts as deleted, its "
         f"commitments out of the PPC, and new in W. {listed}",
         icon=":material/warning:",
     )
