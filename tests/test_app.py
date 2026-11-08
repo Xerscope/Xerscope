@@ -120,6 +120,11 @@ def _ok(at):
     assert not at.exception, [e.value for e in at.exception]
 
 
+def _shown(markdown: str) -> str:
+    """Text as the page shows it: file text reaches Markdown escaped (ui.md_text)."""
+    return markdown.replace("\\", "")
+
+
 def test_every_page_renders(app):
     _ok(app)
     for page in PAGES:
@@ -586,7 +591,7 @@ def test_baseline_file_from_env_and_its_date_check(sample_dir, tmp_path, monkeyp
     at = _run(tmp_path, monkeypatch, baseline=files[0])
     _ok(at)
     assert baseline_box(at).value == "Separate baseline file"
-    assert any(files[0].stem in c.value and "labor h" in c.value for c in at.sidebar.caption)
+    assert any(files[0].stem in _shown(c.value) and "labor h" in c.value for c in at.sidebar.caption)
     assert not at.sidebar.warning
     # the last export as the baseline: newer than every loaded update
     at = _run(tmp_path, monkeypatch, baseline=files[-1])
@@ -602,7 +607,7 @@ def test_same_data_date_twice_is_refused(sample_dir, tmp_path, monkeypatch):
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     at = _run(tmp_path, monkeypatch)
     _ok(at)
-    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
+    assert any(f"{files[0].name}, zz-copy.xer" in _shown(e.value) and "Untick" in e.value for e in at.sidebar.error)
     assert files_line(at) == "Files · none read"
 
 
@@ -620,7 +625,7 @@ def test_a_file_the_model_cannot_type_is_named_and_the_others_load(sample_dir, t
     (tmp_path / "zz-crafted.xer").write_bytes("\r\n".join(lines).encode("cp1252"))
     at = _run(tmp_path, monkeypatch)
     _ok(at)
-    assert any("zz-crafted.xer" in e.value and "duplicate task_id" in e.value for e in at.sidebar.error)
+    assert any("zz-crafted.xer" in _shown(e.value) and "duplicate task_id" in _shown(e.value) for e in at.sidebar.error)
     assert files_line(at).startswith("Files · 2 files")
 
 
@@ -786,14 +791,14 @@ def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(s
     at.file_uploader(key="files_upload").set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
     _ok(at)
     keep = [box for box in at.checkbox if box.key.startswith("keep:")]
-    assert [box.label for box in keep] == [f.name for f in files] and all(box.value for box in keep)
+    assert [_shown(box.label) for box in keep] == [f.name for f in files] and all(box.value for box in keep)
     assert at.session_state["store"] is None
     files_done(at)
     _ok(at)
     assert [s.source for s in at.session_state["store"]] == [f.name for f in files]
     open_files(at)
     keep = [box for box in at.checkbox if box.key.startswith("keep:")]
-    assert [box.label for box in keep] == [f.name for f in files]  # kept although the upload box is empty
+    assert [_shown(box.label) for box in keep] == [f.name for f in files]  # kept although the upload box is empty
     keep[1].uncheck()
     at.run()
     files_done(at)
@@ -843,7 +848,7 @@ def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path
     at.run()
     files_done(at)
     _ok(at)
-    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
+    assert any(f"{files[0].name}, zz-copy.xer" in _shown(e.value) and "Untick" in e.value for e in at.sidebar.error)
     assert files_line(at) == "Files · none read"
 
 
@@ -953,8 +958,8 @@ def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkey
     _ok(at)
     boxes = {box.key.rsplit(":", 1)[1]: box for box in file_boxes(at)}
     # the project's number of tasks on the label: the project info reads without opening the help
-    assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 3 tasks · 2 projects"
-    assert boxes["w2.xer"].label.startswith("w2.xer — NEW · 09 Mar 2026 · ") and boxes["w2.xer"].label.endswith(
+    assert _shown(boxes["w1.xer"].label) == "w1.xer — NEW · 02 Mar 2026 · 3 tasks · 2 projects"
+    assert _shown(boxes["w2.xer"].label).startswith("w2.xer — NEW · 09 Mar 2026 · ") and boxes["w2.xer"].label.endswith(
         " tasks"
     )
     assert "NEW (3) · OLD (2)" in boxes["w1.xer"].help and "most TASK rows" in boxes["w1.xer"].help
@@ -969,7 +974,7 @@ def test_unreadable_file_is_named_in_the_picker(tmp_path, monkeypatch):
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
     (box,) = file_boxes(at)
-    assert box.label == "broken.xer — unreadable" and "TASK table missing" in box.help
+    assert _shown(box.label) == "broken.xer — unreadable" and "TASK table missing" in box.help
 
 
 @pytest.fixture
@@ -1353,7 +1358,7 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     text = template_text().replace('id = "CUSTOM"', 'id = "P6"', 1)
     app.file_uploader(key="std_upload").set_value(("p6.toml", text.encode(), "application/toml")).run()
     _ok(app)
-    assert any("P6" in error.value and "built-in" in error.value for error in app.error)
+    assert any("P6" in error.value and "built-in" in _shown(error.value) for error in app.error)
     assert "P6" not in app.session_state["uploaded_standards"] if "uploaded_standards" in app.session_state else True
     assert not app.success
 

@@ -13,6 +13,7 @@ from xerscope.app.state import (
     fetch,
     held,
     hold,
+    lexicon_and_errors,
     memo,
     page_header,
     require_store,
@@ -36,6 +37,8 @@ with top:
         "Columns keep the XER and analysis field names.",
     )
 
+for error in lexicon_and_errors()[1]:
+    st.warning(f"Lexicon file skipped (XERSCOPE_LEXICON): {ui.md_text(error)}", icon=":material/warning:")
 
 table = partial(ui.table, raw_labels=True)
 
@@ -51,7 +54,7 @@ try:
         p6_standard,
     )
 except CycleError as exc:
-    st.error(f"Cannot schedule this file: {exc}", icon=":material/block:")
+    st.error(f"Cannot schedule this file: {ui.md_text(exc)}", icon=":material/block:")
     st.stop()
 
 with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=True, key="debug_options"):
@@ -187,7 +190,7 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
         try:
             raw = diagnostic.read_p6_export(upload.name, content)
         except ValueError as exc:
-            st.error(str(exc), icon=":material/block:")
+            st.error(ui.md_text(exc), icon=":material/block:")
             raw = None
         if raw is not None:
             columns = diagnostic.p6_export_columns(raw)
