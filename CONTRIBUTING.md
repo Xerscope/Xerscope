@@ -85,6 +85,13 @@ standard with `tests/golden/standards.json`: a refactor changes no number. After
 intended change, `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`
 rewrites the file and fails by design; review the diff, then rerun without the variable.
 
+**Code fitness.** `uv run python scripts/fitness.py --check tests/fitness_baseline.json`
+measures each module (maintainability index, cyclomatic and cognitive complexity,
+structural clones) and the whole (mypy errors, deptry violations, the import contracts
+generated from `LAYERS` in `tests/test_architecture.py`), and fails if a measure is worse
+than the baseline. When a change improves one, `--out tests/fitness_baseline.json`
+rewrites the baseline so the gain is kept; review the diff.
+
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and
 `uv run xerscope recalc FILE.xer --report`.
