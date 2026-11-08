@@ -85,6 +85,11 @@ standard with `tests/golden/standards.json`: a refactor changes no number. After
 intended change, `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`
 rewrites the file and fails by design; review the diff, then rerun without the variable.
 
+**Moved values.** A pull request that moves a value of the golden file, of `FLOORS` or of
+a standard TOML (prose fields aside) gives one line per value in its description,
+`ID: old -> new — source`; the `values` workflow (`scripts/check_value_justification.py`)
+prints the lines to complete, and fails on a missing one or on a lowered `FLOORS` value.
+
 **Oracle marker.** `@pytest.mark.oracle(kind)` names where a test's expected values come
 from: `p6`, `mpxj`, `standard` (the text of a standard), `property` (holds on any input)
 or `characterization` (xerscope's own frozen output). Another kind stops the collection.
