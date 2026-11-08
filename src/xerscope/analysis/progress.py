@@ -204,6 +204,35 @@ def unplanned_work(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
     return work.loc[work["act_start_date"] <= current.data_date, columns].reset_index(drop=True)
 
 
+def renumbered(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
+    """Activities whose Activity ID changed between W-1 and W: same P6 ``task_id``, old ID gone
+    from W, new ID absent from W-1. xerscope's identity is the Activity ID, so PPC reads such
+    an activity as deleted (its commitments leave the counts) and created (new in W); this list
+    lets the page warn about it. ``task_id`` is P6's internal key: only meaningful between
+    exports of the same database."""
+    before = previous.activities[["task_id", "task_code"]].drop_duplicates("task_id")
+    after = current.activities[["task_id", "task_code"]].drop_duplicates("task_id")
+    pairs = before.merge(after, on="task_id", suffixes=("_before", "_now"))
+    changed = (
+        (pairs["task_code_before"] != pairs["task_code_now"])
+        & ~pairs["task_code_before"].isin(after["task_code"])
+        & ~pairs["task_code_now"].isin(before["task_code"])
+    )
+    return pairs.loc[changed, ["task_code_before", "task_code_now"]].reset_index(drop=True)
+
+
+RENUMBERED_SHOWN = 5
+
+
+def _renumbered_note(previous: Snapshot, current: Snapshot) -> str | None:
+    pairs = renumbered(previous, current)
+    if pairs.empty:
+        return None
+    shown = ", ".join(f"{a} → {b}" for a, b in pairs.head(RENUMBERED_SHOWN).itertuples(index=False))
+    more = f" and {len(pairs) - RENUMBERED_SHOWN} more" if len(pairs) > RENUMBERED_SHOWN else ""
+    return f"{len(pairs)} Activity ID(s) changed since W-1, counted as deleted + new: {shown}{more}"
+
+
 PPC_WEEK_DAYS = 7
 
 
@@ -219,6 +248,11 @@ def _gap_note(previous: Snapshot, current: Snapshot) -> str | None:
     if days <= PPC_WEEK_DAYS:
         return None
     return f"{days} days since the previous update: this point covers more than one week"
+
+
+def _notes(previous: Snapshot, current: Snapshot) -> str | None:
+    notes = [n for n in (_gap_note(previous, current), _renumbered_note(previous, current)) if n]
+    return "; ".join(notes) or None
 
 
 def ppc_series(store: SnapshotStore, include_overdue: bool = True) -> pd.DataFrame:
@@ -245,7 +279,7 @@ def ppc_series(store: SnapshotStore, include_overdue: bool = True) -> pd.DataFra
                 "ppc_start": _share(starts_kept, len(starts)),
                 "ppc_finish": _share(finishes_kept, len(finishes)),
                 "ppc_week": _share(kept, planned),
-                "note": _gap_note(store[index - 1], store[index]),
+                "note": _notes(store[index - 1], store[index]),
             }
         )
     return pd.DataFrame(

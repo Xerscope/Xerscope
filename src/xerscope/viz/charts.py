@@ -442,9 +442,10 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     """Bars: PPC Finish (finishes kept / committed, Last Planner). Lines: PPC Start and PPC W/W-1
     (starts and finishes together).
 
-    A point with a ``note`` (`ppc_series`: more than a week since the previous update) has a
-    hatched bar and the note in every hover of that week. A week with no finish committed has
-    no bar and an "n/a" label (a 0 bar would read as 0 % kept)."""
+    A point with a ``note`` (`ppc_series`: more than a week since the previous update, or
+    Activity IDs changed since it) has a hatched bar and the note in every hover of that week.
+    A week with no finish committed has no bar and an "n/a" label (a 0 bar would read as 0 %
+    kept)."""
     c = SERIES
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
