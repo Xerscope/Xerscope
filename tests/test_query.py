@@ -520,11 +520,14 @@ NAMES = [  # written by hand: each group below, and the pairs that must stay apa
     "Beton armé", "Montage pompe", "Montages pompes", "Installation vanne", "Instalation câbles", "Pose câble",
     "Poste HT", "Pre-test", "Prefabrication", "Excavation", "Excavatoin", "Canal", "Canaux", "Piping", "Paving",
 ]  # fmt: skip
-GROUPS = [  # plural (FR/EN, -al/-aux), abbreviation with its dot, one letter apart at 6+ letters
-    ["cable", "cables"], ["canal", "canaux"], ["fondation", "fondations"], ["instalation", "installation"],
-    ["mec", "mechanical"], ["montage", "montages"], ["pompe", "pompes"],
+GROUPS = [  # plural (FR/EN, -al/-aux), abbreviation with its dot
+    ["cable", "cables"], ["canal", "canaux"], ["fondation", "fondations"], ["mec", "mechanical"],
+    ["montage", "montages"], ["pompe", "pompes"],
 ]  # fmt: skip
-APART = [("pose", "poste"), ("pre", "prefabrication"), ("excavation", "excavatoin"), ("piping", "paving")]
+APART = [  # one letter apart is listed for review, never grouped (tests/test_ask_variants.py)
+    ("pose", "poste"), ("pre", "prefabrication"), ("excavation", "excavatoin"), ("piping", "paving"),
+    ("instalation", "installation"),
+]  # fmt: skip
 
 
 def test_variants_are_grouped_by_written_rules_within_one_column():
@@ -541,7 +544,7 @@ def test_variants_are_grouped_by_written_rules_within_one_column():
     # "Pompes" (a WBS name) and "pompe" (an activity name) stay apart: a group never crosses a column
     assert "PROJWBS.wbs_name" not in groups
     assert query.variants([file]) == groups  # deterministic
-    assert query.variant_counts(groups) == {"TASK.task_name": 7}
+    assert query.variant_counts(groups) == {"TASK.task_name": 6}
 
 
 def test_the_demo_series_holds_no_variant(store):

@@ -352,6 +352,7 @@ def test_lexicon_build_reports_the_groups_new_since_the_last_run(capsys, tmp_pat
         xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")])
     )
     (tmp_path / "generated").mkdir()
+    (tmp_path / "suggested").mkdir()
     (tmp_path / "generated" / "variants.toml").write_text("", encoding="utf-8")
     out = run(capsys, "lexicon", "build", source, "--out", tmp_path)
     assert "TASK.task_name: 1 group(s), 1 new" in out and "fondation" not in out
