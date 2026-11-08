@@ -129,10 +129,12 @@ if ask is not None:
         if offers:
             with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
                 st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
-                for _kind, label, _ratio in offers:
+                for kind, label, _ratio in offers:
                     if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
-                        teach(word, label)
+                        st.session_state["teach_unrecorded"] = not teach(word, label, kind)
                         st.rerun()
+    if st.session_state.pop("teach_unrecorded", False):  # neutral: the visitor's word is never echoed
+        st.caption("Taught for this session; not kept as a suggestion.")
 
 
 # "CIV · Civil works › ZA · Zone A": each node and the nodes above it, built once (the list

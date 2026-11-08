@@ -10,12 +10,14 @@ import secrets
 import threading
 from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards, query
+from xerscope.analysis.ask import suggested
 from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
@@ -152,12 +154,17 @@ def session_lexicon() -> query.Lexicon:
     return found
 
 
-def teach(word: str, label: str) -> None:
-    """Read ``word`` as ``label`` from now on in this session only: the lexicon folder lives on
-    the server (XERSCOPE_LEXICON), the app neither writes nor offers a lexicon file."""
+def teach(word: str, label: str, kind: str) -> bool:
+    """Read ``word`` as ``label`` (a ``kind`` of query.suggestions) from now on in this session,
+    and append the correction to XERSCOPE_LEXICON's suggested/ for review (``ask.suggested``:
+    the word, the label, its column, the filter and the date, never the sentence). The Ask field
+    reads it from a file only once copied into curated/. False when a guard refused to record it."""
     taught = st.session_state.setdefault("taught", [])
-    if (word, label) not in taught:
-        taught.append((word, label))
+    if (word, label) in taught:
+        return True
+    taught.append((word, label))
+    folders = _lexicon_dirs(query.SUGGESTED)
+    return not folders or suggested.record(folders[0], word, label, kind, datetime.now(UTC))
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:

@@ -1415,6 +1415,21 @@ def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_ba
     assert _chips(fresh) == []  # not read until copied into curated/
 
 
+def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_root):
+    from xerscope.analysis.ask import suggested
+
+    full = lexicon_root / "suggested" / suggested.FILE
+    full.write_bytes(b"#" * suggested.MAX_BYTES)
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("commiss").run()
+    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    _ok(app)
+    assert _chips(app) == ["WBS: COM · Commissioning"]  # taught for the session all the same
+    note = [c.value for c in app.caption if "not kept as a suggestion" in c.value]
+    assert note == ["Taught for this session; not kept as a suggestion."]
+    assert full.read_bytes() == b"#" * suggested.MAX_BYTES
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 

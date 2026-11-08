@@ -9,6 +9,8 @@ in the app, appended there and read by nothing until copied into ``curated/``)."
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -55,6 +57,19 @@ def learn(lexicon: Lexicon, word: str, label: str) -> Lexicon:
     for member in group:
         merged.setdefault(member, []).extend(w for w in group if w != member and w not in merged.get(member, []))
     return {k: tuple(dict.fromkeys(v)) for k, v in merged.items()}
+
+
+def write_private(path: Path, text: str) -> None:
+    """Replace ``path`` whole: a temporary file of the same folder (0600, not *.toml, so no reader
+    takes it for a lexicon), then a rename; a reader sees the old file or the new one."""
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def json_quote(text: str) -> str:
