@@ -131,8 +131,8 @@ def test_each_update_is_measured_against_the_baseline_its_file_names_in_the_xml(
         at.run()
         help_lines = at.button(key="context_banner").help.replace("\\", "").split("  \n")
         used[stamp] = next(line for line in help_lines if line.startswith(f"Baseline used for {stamp}"))
-    assert used["2026-03-02"].endswith("P6 Project Baseline 370 from export.xml")
-    assert used["2026-03-09"].endswith("P6 Project Baseline 380 from export.xml")
+    assert used["2026-03-02"].endswith("P6 Project Baseline BL-1 from export.xml")
+    assert used["2026-03-09"].endswith("P6 Project Baseline BL-2 from export.xml")
 
 
 def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_download(tmp_path, monkeypatch):

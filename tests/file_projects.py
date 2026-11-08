@@ -18,13 +18,16 @@ def two_projects(
     with_baseline: bool = True,
     baseline_code: str = "BL",
     baseline_date: str = "2026-01-05 08:00",
+    flag: str = "",
+    code: str = "UPD",
 ) -> str:
     """Project 1 (analysed, A1 and A2, early finish 2026-03-13 17:00) with ``sum_base_proj_id = pointer``;
     project 2 (the baseline copy: ``baseline_ids``, all finishing ``baseline_finish``) with
     ``orig_proj_id = original``. ``with_baseline=False`` leaves project 2 out, the pointer stays."""
     analysed = {
-        "proj_short_name": "UPD",
+        "proj_short_name": code,
         "sum_base_proj_id": pointer,
+        "use_project_baseline_flag": flag,
         "orig_proj_id": "",
         "last_baseline_update_date": "",
     }
