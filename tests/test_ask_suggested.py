@@ -175,3 +175,19 @@ def test_a_file_edited_into_another_shape_is_left_as_it_is(tmp_path, held):
     path.write_bytes(held)
     assert not suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", NOW)
     assert path.read_bytes() == held
+
+
+def test_a_file_removed_between_open_and_check_leaks_no_descriptor(tmp_path, monkeypatch):
+    """The file deleted by hand after it is opened and locked: the check raises (record then
+    returns False, an OSError) and the descriptor is closed."""
+    import fcntl
+
+    def gone(path, follow_symlinks=True):
+        raise FileNotFoundError(path)
+
+    before = len(os.listdir("/proc/self/fd"))
+    monkeypatch.setattr(suggested.os, "stat", gone)
+    with pytest.raises(FileNotFoundError):
+        suggested._locked(tmp_path / suggested.FILE, fcntl)
+    monkeypatch.undo()
+    assert len(os.listdir("/proc/self/fd")) == before
