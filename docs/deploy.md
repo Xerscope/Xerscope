@@ -17,7 +17,8 @@ GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest, xerscope-ca
 Three containers from three images: Tailscale's official one, and two built here by
 `.github/workflows/image.yml`, the app and Caddy with the `rate_limit` module
 (`deploy/caddy/Dockerfile`; the stock caddy image has no such module and the NAS cannot
-build). Container Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
+build). A fourth, `lexicon-init`, runs the app's image once at each start, before the app,
+and exits (§10). Container Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
 
 ## 1. What DSM 7.4 changes
 
@@ -104,6 +105,7 @@ folder of the repository:
 | `Caddyfile` | nothing (login and hash come from the environment) |
 | `tailscale-serve.json` | nothing |
 | `caddy/` | not used on the NAS: the Caddy image is pulled (`xerscope-caddy`), never built there |
+| `lexicon/` | create it with `generated/`, `curated/` and `suggested/` in it, owned by the app's account (§10) |
 
 Add a `.env` from `.env.example` with the five values (§6). Container Manager's Environment
 fields at project creation do not feed the compose file's `${...}` interpolation: left empty,
@@ -133,7 +135,9 @@ The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes t
 window's field that takes a path and the XER uploads (exports and baseline: one parsed 40 MB export
 takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New weeks go in
 the shared folder. The only upload left is a standard (.toml) on the Schedule health page,
-capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`). An error shows no traceback on the page
+capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`); a lexicon file sent there is refused (no
+`[standard]` table) and never read by the Ask field, which reads the NAS folder only (§10).
+An error shows no traceback on the page
 (`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
 
 ## 6. Create the project
@@ -159,6 +163,7 @@ XERSCOPE_GID=<gid>
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
 # XERSCOPE_LOAD_WORKERS=1                  # files read at once (§7)
 # XERSCOPE_DEBUG_PAGE=1                    # the Debug page, for a diagnosis only (§9)
+# XERSCOPE_LEXICON_DIR=/volume1/docker/xerscope/lexicon   # the Ask lexicon folder (§10)
 ```
 
 Then Container Manager → **Project** → **Create**:
@@ -171,7 +176,10 @@ Then Container Manager → **Project** → **Create**:
 Container Manager pulls the three images (the ghcr pull needs no registry entry) and starts
 the stack. Expected after ~40 s, in Container → each container → Log:
 
-1. `xerscope`: `You can now view your Streamlit app`. The `/_stcore/health` check turns
+1. `xerscope-lexicon-init-1`: one line per column (`<column>: <n> group(s), <k> new`), then
+   `suggestions: <kept> kept, <purged> purged`; the container stays *Stopped*, exit code 0.
+   An exit code other than 0 keeps the app stopped: read that log (§10).
+   `xerscope`: `You can now view your Streamlit app`. The `/_stcore/health` check turns
    the container *Healthy*.
 2. `tailscale`: `Serve config loaded`, then `funnel` lines. No `funnel: not permitted` (ACL
    step missed) and no `permission denied` on `/var/lib/tailscale` (§4 folder permission).
@@ -261,7 +269,8 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env` (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume).
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
-- [ ] Memory and PID caps on the three containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
+- [ ] Memory and PID caps on the four containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
+- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (and purged by `lexicon-init`).
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
@@ -276,14 +285,56 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
 and turns it into its own filters, a one-sentence answer and a population funnel
 (`analysis/query.py`): a keyword grammar over the file's lexicon (WBS, activity codes,
-resources, activity-name words), the trade words of the folder `XERSCOPE_LEXICON` names
-(`*.toml` files, `[[group]] words = ["CVC", "HVAC"]`, kept outside the repository and mounted
-read-only like the exports; no lexicon ships with the image), typos read at a lower
-confidence. Nothing else runs: no model, no container, no network access. Measured on the
-demo with the tests' generic lexicon (`tests/asklex.py`): 100 % of `tests/ask/dev.toml`,
-100 % of the held-out sentences, 100 % of the demo's own lexicon (`ask-bench --self`); on a
-company's file, `xerscope ask-bench <folder> --self --lexicon <folder> --anonymize` lists
-what its lexicon file should add, without naming anything.
+resources, activity-name words), the company's trade words and the files' variants, typos
+read at a lower confidence. Nothing else runs: no model, no container, no network access.
+Measured on the demo with the tests' generic lexicon (`tests/asklex.py`): 100 % of
+`tests/ask/dev.toml`, 100 % of the held-out sentences, 100 % of the demo's own lexicon
+(`ask-bench --self`); on a company's file, `xerscope ask-bench <folder> --self --lexicon
+<folder>/curated --anonymize` lists what its lexicon should add, without naming anything.
+
+**The lexicon folder lives on the NAS only.** No lexicon file is in the repository or the
+image (`tests/test_docker.py` checks every `.toml` packaged), none can be uploaded (the
+standard upload refuses one, §5) and none can be downloaded from the app.
+`XERSCOPE_LEXICON_DIR` (default `/docker/xerscope/lexicon`; on DSM the full path,
+`/volume1/docker/xerscope/lexicon`) holds three folders, created by hand in File Station,
+owned by the `XERSCOPE_UID` account and readable by it only (Docker would create a missing
+one owned by root, and the containers could not write it):
+
+| Folder | Written by | Read by the Ask field | Holds |
+|---|---|---|---|
+| `generated/` | `lexicon-init` only, at each start | yes, less the refusals | `variants.toml`: the exports' variants per source column (`ask/generated.py`); `report.txt`: groups per column and those new since the last start |
+| `curated/` | you, by hand; read-only in both containers | yes | `*.toml`: trade words (`[[group]] words = ["CVC", "HVAC"]`) and refusals of generated groups (`[[refuse]] column = "PROJWBS.wbs_name"`, `words = ["fondation", "fondations"]`: the generated group holding all those words is dropped; a refusal wins over `generated/`) |
+| `suggested/` | the app only, appending | no | `suggestions.toml`: one `[[suggestion]]` per click on a "Did you mean" label: the unknown word, the label, its source column, the filter (facet, value) and the date, never the sentence asked |
+
+A word taught by a click holds for the visitor's session at once; for every session, copy
+it into a `curated/` file. `lexicon-init` purges a suggestion older than 90 days whose word
+`curated/` does not hold. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
+file is named, never fatal to the app; the Debug page lists the load errors).
+
+`lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
+with the app's image and account, no network (`network_mode: none`), a read-only root
+filesystem, no capability, `no-new-privileges`, the exports read-only and the lexicon
+read-only but for `generated/` and `suggested/`. Files are replaced through a temporary file
+and a rename, created 0600 (`mkstemp`); its log holds counts only. The app waits for its
+success (`service_completed_successfully`): an exports folder with no `.xer` or an
+unreadable export stops it with exit code 1 and the app does not start; fix the folder and
+Build again.
+
+Threat model of the folder, written from a web page. *Who writes:* anyone holding the URL and
+the password reaches the teach buttons. *What they control:* the unknown word (any text typed
+in the Ask field) and the choice among the labels offered (the file's own labels). *What
+stops them:* the file name is fixed (`suggestions.toml`, no path from the input); word and
+label are NFKC-normalised, at most 64 and 160 characters, letters, digits and
+`` .-_'&/()·,:+#`` only (no control character, newline, bracket, quote, backslash or `=`),
+written through `json_quote`, so no TOML table can be injected; one exclusive `flock`
+serialises the size check and the append; the file stops at 256 KB (a refusal shows a
+neutral line that does not repeat the word); it is opened with `O_NOFOLLOW` (a symlink put
+in its place is not followed) and created 0600; nothing is printed or logged. *What it cannot
+reach:* the Ask field of any session, since `suggested/` is read by nothing until you copy a
+word into `curated/`; `curated/` and `generated/`, read-only in the app. *What is left:* a
+visitor can fill `suggestions.toml` up to its cap (the corrections stop being recorded, the
+app keeps working), and the words typed land on the NAS for up to 90 days.
+`tests/test_ask_suggested.py` has one test per guard.
 
 A language model was measured against this and not kept (`analysis/query.py: llm_backend`
 stays as the measurement client of `ask-bench --url`): understanding the sentence,

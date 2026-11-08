@@ -620,7 +620,7 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
         help="score on the anonymised copy of the file: the model, the output and the sentences carry "
         "the new codes only; a sentence still holding an original value is refused (real schedules)",
     )
-    parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON/curated)")
     parser.add_argument(
         "--summary",
         action="store_true",
@@ -777,7 +777,7 @@ def _args_lexicon(parser: argparse.ArgumentParser) -> None:
         "folder",
         nargs="?",
         default="",
-        help="a folder of *.toml groups to check (XERSCOPE_LEXICON); or `build`, then a folder of XER files",
+        help="a folder of *.toml groups to check (XERSCOPE_LEXICON/curated); or `build`, then a folder of XER files",
     )
     parser.add_argument("source", nargs="?", default="", help="with build: the folder of XER files to read")
     parser.add_argument("--word", default="", help="print the words read as this one")

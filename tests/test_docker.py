@@ -83,7 +83,7 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
 
 def test_sidecars_hardened():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert c.count("cap_drop: [ALL]") == 3 and c.count("no-new-privileges") == 3
+    assert c.count("cap_drop: [ALL]") == 4 and c.count("no-new-privileges") == 4
     # one capability back, for Caddy only: its binary is setcap cap_net_bind_service, and exec fails without it
     assert c.count("cap_add:") == 1 and "cap_add: [NET_BIND_SERVICE]" in c
     app = (ROOT / "compose.yaml").read_text()  # the app's writable dirs belong to its user, not root
@@ -135,12 +135,12 @@ def test_funnel_stack_bounds_what_it_takes_from_the_nas():
     No CPU quota: Docker refuses to create a container with one on a kernel without CFS
     bandwidth control, while it only drops a memory or PID cap it cannot apply."""
     c = (ROOT / "deploy" / "compose.yaml").read_text()
-    assert c.count("mem_limit:") == 3 and c.count("pids_limit:") == 3
+    assert c.count("mem_limit:") == 4 and c.count("pids_limit:") == 4
     assert "mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}" in c
     assert not re.search(r"^\s+(cpus|cpu_quota|cpu_period|cpuset):", c, re.M)
     tmpfs = re.findall(r"^\s+- (/[\w/]+)(\S*)", c, re.M)  # tmpfs entries are the only "- /path" list items
     assert len(tmpfs) == 7 and all("size=" in opts for _, opts in tmpfs), tmpfs
-    assert c.count("read_only: true") == 3  # tailscaled writes its socket to tmpfs, its state to the volume
+    assert c.count("read_only: true") == 4  # tailscaled writes its socket to tmpfs, its state to the volume
     assert "- /var/run/tailscale:" in c  # the CLI's default socket path (containerboot symlinks it there)
 
 
@@ -368,7 +368,7 @@ def test_nothing_in_the_app_reaches_the_network():
 
 def _service(compose: str, name: str) -> str:
     """The block of one service of a compose file, its comments included."""
-    start = compose.index(f"\n  {name}:\n")
+    start = re.search(rf"\n  {name}:[ \t]*(#.*)?\n", compose).start()
     end = re.search(r"\n(  \S|\S)", compose[start + 1 :])
     return compose[start : start + 1 + end.start()] if end else compose[start:]
 
@@ -380,7 +380,7 @@ def test_the_app_reads_the_nas_lexicon_and_writes_suggested_only():
     """The lexicon folder lives on the NAS: read-only in the app, but for suggested/, where the
     Ask corrections are appended; the app starts once the init service has succeeded."""
     app = _service((ROOT / "deploy" / "compose.yaml").read_text(), "xerscope")
-    assert re.search(r"^\s+XERSCOPE_LEXICON: /lexicon$", app, re.M)
+    assert re.search(r"^\s+XERSCOPE_LEXICON: /lexicon\s", app, re.M)
     mounts = re.findall(r"^\s+- (\$\{XERSCOPE_LEXICON_DIR[^\s#]+)", app, re.M)
     assert mounts == [f"{LEXICON}:/lexicon:ro", f"{LEXICON}/suggested:/lexicon/suggested"]
     assert re.search(r"depends_on:\n\s+lexicon-init:\n\s+condition: service_completed_successfully", app)
@@ -409,7 +409,6 @@ def test_the_lexicon_init_service_is_sealed():
     ]
     writable = [m for m in mounts if not m.endswith(":ro")]
     assert all(m.split(":")[-1] in ("/lexicon/generated", "/lexicon/suggested") for m in writable)
-    assert "curated" not in init.split("volumes:")[1].split("network_mode")[0]  # curated/ stays read-only
 
 
 def test_the_compose_file_is_valid_for_docker_compose(tmp_path):

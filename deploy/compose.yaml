@@ -14,7 +14,9 @@
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
 #   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
 #   memory cap, default 2g), XERSCOPE_UID and XERSCOPE_GID (the account the app runs as,
-#   default 65532). Nothing in this folder is edited.
+#   default 65532), XERSCOPE_LEXICON_DIR (the Ask lexicon folder, default
+#   /docker/xerscope/lexicon, with generated/, curated/ and suggested/ in it, owned by that
+#   account, docs/deploy.md §10). Nothing in this folder is edited.
 # No logging: block: Container Manager's Log tab shows only the Docker daemon's default
 # driver (Synology sets its own), and an explicit driver, json-file or local, leaves the tab
 # empty for that container. The log stays on the NAS either way.
@@ -85,6 +87,27 @@ services:
     pids_limit: 128
     restart: unless-stopped
 
+  lexicon-init:                                     # at each start, before the app: `xerscope lexicon build`
+                                                    # rewrites generated/ (the exports' variants, a report) and
+                                                    # purges suggested/ (90 days, not copied into curated/)
+    image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # the app's image, the app's account
+    user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"
+    command: ["lexicon", "build", "/data", "--out", "/lexicon"]
+    volumes:                                        # Docker mounts the parent first, then the two writable folders
+      - ${XERSCOPE_EXPORTS:-../exports}:/data:ro
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}:/lexicon:ro      # curated/ stays read-only
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/generated:/lexicon/generated
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/suggested:/lexicon/suggested
+    network_mode: none                              # reads files, writes files: no network at all
+    read_only: true                                 # writes only the two folders above, files 0600 (mkstemp)
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true                                 # the image's healthcheck polls the app's port
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # reads every export, one at a time
+    pids_limit: 64
+    restart: "no"                                   # runs once per start; the app waits for its success
+
   xerscope:
     image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
                                                     # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
@@ -100,10 +123,14 @@ services:
       STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
-      # XERSCOPE_LEXICON: /lexicon                   # a folder of *.toml synonym groups for the Gantt Ask field
-                                                    # (the company's own words; `xerscope lexicon` prints the format)
+      XERSCOPE_LEXICON: /lexicon                    # the Ask field reads curated/ and generated/ (docs/deploy.md §10)
     volumes:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}:/lexicon:ro
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/suggested:/lexicon/suggested   # Ask corrections, appended
+    depends_on:
+      lexicon-init:
+        condition: service_completed_successfully
     networks:                                       # nothing published: reachable from Caddy only
       internal:
         aliases: [app]                              # Caddy's upstream: in the tailscale namespace Caddy shares,
