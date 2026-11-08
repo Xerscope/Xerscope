@@ -123,11 +123,16 @@ def _lexicon_dirs(name: str) -> list[Path]:
 @functools.cache
 def lexicon() -> query.Lexicon:
     """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON's curated/ folder (a company's
-    own words, kept outside the repository; none ships with the app). Load errors are kept for
-    the Debug page, never shown to a visitor."""
-    found, errors = query.load_lexicon(*_lexicon_dirs(query.CURATED))
-    st.session_state["lexicon_errors"] = errors + query.load_refusals(*_lexicon_dirs(query.CURATED))[1]
-    return found
+    own words, kept outside the repository; none ships with the app). Load errors: ``lexicon_errors``."""
+    return query.load_lexicon(*_lexicon_dirs(query.CURATED))[0]
+
+
+@functools.cache
+def lexicon_errors() -> list[str]:
+    """The curated/ files skipped and the refusals that cannot apply, as load_lexicon and
+    load_refusals name them, for the Debug page (once per process, as ``lexicon``)."""
+    folders = _lexicon_dirs(query.CURATED)
+    return query.load_lexicon(*folders)[1] + query.load_refusals(*folders)[1]
 
 
 @functools.cache

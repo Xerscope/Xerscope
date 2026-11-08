@@ -1,4 +1,5 @@
 import hashlib
+import re
 from functools import partial
 
 import pandas as pd
@@ -15,6 +16,7 @@ from xerscope.app.state import (
     fetch,
     held,
     hold,
+    lexicon_errors,
     memo,
     page_header,
     require_store,
@@ -322,6 +324,14 @@ def build_diagnostic(anonymous: bool) -> None:
     hold(st.session_state, "debug_zip", zip_tag(anonymous), fetched)
 
 
+def _where(error: str) -> str:
+    """ "bad.toml: line 2, column 23": the file and where it fails, never the text an error quotes
+    (tomllib names a key or a character; curated/ holds the company's words)."""
+    name, _, detail = error.partition(": ")
+    where = re.search(r"line \d+, column \d+|refuse #\d+", detail)
+    return f"{name}: {where.group(0) if where else 'unreadable'}"
+
+
 with st.expander("14 · Ask vocabulary (variants generated per source column)", key="debug_ask_variants"):
     # counts only: the groups hold the files' words, written by `xerscope lexicon build` only
     generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
@@ -330,6 +340,8 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
         "generated in memory from every loaded file; `xerscope lexicon build` writes them as a file."
     )
     table(pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"]))
+    for error in lexicon_errors():  # curated/ files skipped, refusals that cannot apply
+        st.warning(ui.md_text(_where(error)))
 
 
 anonymous = anonymous_exports()

@@ -317,7 +317,8 @@ A word taught by a click holds for the visitor's session at once; for every sess
 it into a `curated/` file. A suggestion older than 90 days whose word `curated/` does not
 hold is purged by `lexicon-init` and by the app at its next click, under the same lock: a
 stack Docker restarts without `lexicon-init` (a NAS reboot) still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
-file is named, never fatal to the app; the Debug page lists the load errors).
+file is named, never fatal to the app; Debug block 14 lists the load errors to every session,
+each as its file and line or refusal number, never the words it holds).
 
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
 with the app's image and account, no network (`network_mode: none`), a read-only root

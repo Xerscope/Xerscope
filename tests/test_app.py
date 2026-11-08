@@ -1371,10 +1371,10 @@ def lexicon_root(tmp_path, monkeypatch):
     for folder in ("generated", "curated", "suggested"):
         (tmp_path / folder).mkdir()
     monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
-    for read in (state.lexicon, state.refusals, state.file_variants):
+    for read in (state.lexicon, state.lexicon_errors, state.refusals, state.file_variants):
         read.cache_clear()
     yield tmp_path
-    for read in (state.lexicon, state.refusals, state.file_variants):
+    for read in (state.lexicon, state.lexicon_errors, state.refusals, state.file_variants):
         read.cache_clear()
 
 
@@ -1506,6 +1506,8 @@ def test_debug_lists_the_curated_load_errors_to_every_session_without_their_word
     """A curated/ file that cannot be read, or a refusal that cannot apply, is named in block 14
     with where it fails, in every session (not only the first that loaded the lexicon); the text
     an error quotes (a word, a key) is never shown."""
+    from xerscope.app import ui
+
     (lexicon_root / "curated" / "bad.toml").write_text('[[group]]\nwords = ["qwfpsecret" "CIV"]\n', encoding="utf-8")
     (lexicon_root / "curated" / "refusals.toml").write_text(
         '[[refuse]]\nwords = ["zxcvsecret", "fondations"]\n', encoding="utf-8"
@@ -1516,7 +1518,7 @@ def test_debug_lists_the_curated_load_errors_to_every_session_without_their_word
         _ok(session)
         block = next(e for e in session.main.expander if e.key == "debug_ask_variants")
         shown = " ".join(m.value for m in [*block.markdown, *block.caption, *block.warning])
-        assert "bad.toml: line 2, column 23" in shown and "refusals.toml: refuse #1" in shown, shown
+        assert all(ui.md_text(e) in shown for e in ("bad.toml: line 2, column 23", "refusals.toml: refuse #1")), shown
         assert "secret" not in shown
 
 
