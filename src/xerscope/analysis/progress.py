@@ -250,8 +250,21 @@ def _gap_note(previous: Snapshot, current: Snapshot) -> str | None:
     return f"{days} days since the previous update: this point covers more than one week"
 
 
+def _undated_note(previous: Snapshot) -> str | None:
+    """Note for a W-1 whose open tasks have no start nor finish at all (actual, forecast, then
+    planned: the model's fallback), so no commitment can be read. A few undated tasks among
+    dated ones only drop out, unnoted."""
+    work = previous.activities
+    open_work = work[~work["is_milestone"] & ~work["is_loe"] & ~work["is_complete"]]
+    if open_work.empty or open_work[["start", "finish"]].notna().any().any():
+        return None
+    return "no start or finish date on any open task of the previous update: nothing could be committed"
+
+
 def _notes(previous: Snapshot, current: Snapshot) -> str | None:
-    notes = [n for n in (_gap_note(previous, current), _renumbered_note(previous, current)) if n]
+    notes = [
+        n for n in (_gap_note(previous, current), _undated_note(previous), _renumbered_note(previous, current)) if n
+    ]
     return "; ".join(notes) or None
 
 

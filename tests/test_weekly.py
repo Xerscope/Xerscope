@@ -485,6 +485,22 @@ def test_ppc_point_without_a_status_date_commits_nothing_and_says_why():
     assert row["note"] == "no status date in this update: its commitments cannot be read"
 
 
+def test_ppc_notes_a_previous_update_without_any_planned_date():
+    """xerscope definition (docs/formulas.md section 4, 08/11 case 8): an empty planned date falls
+    back as the model does (actual, forecast, planned); when no open task of W-1 has any date, the
+    point says so. A and B open in W-1 with no start nor finish: 0 committed and the note. With C
+    dated beside them, C commits its start and finish and there is no note."""
+    undated = dict(early_start_date="", early_end_date="")
+    w2 = snap([todo("A"), todo("B"), todo("C")], data_date="2026-03-09 08:00")
+    w1 = snap([todo("A", **undated), todo("B", **undated)], data_date="2026-03-02 08:00")
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert row["committed"] == 0
+    assert row["note"] == "no start or finish date on any open task of the previous update: nothing could be committed"
+    w1_mixed = snap([todo("A", **undated), todo("C", early_end_date="2026-03-06 17:00")], data_date="2026-03-02 08:00")
+    row = ppc_series(SnapshotStore([w1_mixed, w2])).iloc[0]
+    assert row["committed"] == 2 and pd.isna(row["note"])
+
+
 def test_ppc_regular_weekly_series_has_no_note():
     dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-16 08:00"]
     s = ppc_series(SnapshotStore([snap([todo("A")], data_date=d) for d in dates]))
