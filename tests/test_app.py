@@ -1363,6 +1363,56 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     assert not app.success
 
 
+@pytest.fixture
+def lexicon_root(tmp_path, monkeypatch):
+    """XERSCOPE_LEXICON with its three folders; the app's cached reads start and end empty."""
+    from xerscope.app import state
+
+    for folder in ("generated", "curated", "suggested"):
+        (tmp_path / folder).mkdir()
+    monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
+    state.lexicon.cache_clear()
+    state.file_variants.cache_clear()
+    yield tmp_path
+    state.lexicon.cache_clear()
+    state.file_variants.cache_clear()
+
+
+def test_the_ask_field_reads_curated_words_only(app, lexicon_root):
+    """Trade words come from curated/ only: a group in suggested/ or at the root is not read."""
+    for where, word in (("curated", "qwfp"), ("suggested", "zxcv"), (".", "vbnm")):
+        group = f'[[group]]\nwords = ["{word}", "CIV", "Civil works"]\n'
+        (lexicon_root / where / "words.toml").write_text(group, encoding="utf-8")
+    app.switch_page("views/gantt.py").run()
+    for word, chips in (("qwfp", ["WBS: CIV · Civil works"]), ("zxcv", []), ("vbnm", [])):
+        app.text_input[0].set_value(word).run()
+        _ok(app)
+        assert _chips(app) == chips, word
+
+
+def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
+    from xerscope.app import state
+
+    (lexicon_root / "generated" / "variants.toml").write_text(
+        '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
+        '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["beton", "betons"]\n',
+        encoding="utf-8",
+    )
+    (lexicon_root / "curated" / "refusals.toml").write_text(
+        '[[refuse]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
+        '[[group]]\ncolumn = "TASK.task_name"\nwords = ["coffrage", "coffrages"]\n',
+        encoding="utf-8",
+    )
+    (lexicon_root / "suggested" / "suggestions.toml").write_text(
+        '[[group]]\ncolumn = "TASK.task_name"\nwords = ["pose", "poses"]\n', encoding="utf-8"
+    )
+    assert state.file_variants() == {
+        "PROJWBS.wbs_name": [["beton", "betons"]],
+        "TASK.task_name": [["coffrage", "coffrages"]],
+    }
+    assert state.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+
+
 def test_a_lexicon_uploaded_as_a_standard_never_reaches_the_ask_field(app):
     """The only upload of the locked app is a standard (.toml); the Ask field reads the folder
     XERSCOPE_LEXICON names and nothing else. A lexicon file is not a standard: refused. A standard

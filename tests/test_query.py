@@ -572,3 +572,25 @@ def test_a_generated_file_is_read_back_per_column(tmp_path):
         "vanne": ("vannes",),
         "vannes": ("vanne",),
     }
+
+
+def test_a_curated_refusal_drops_the_generated_group_that_holds_its_words(tmp_path):
+    """curated/ wins over generated/: a refusal names words of one column never to read as one;
+    the generated group holding them all is dropped whole, in that column only."""
+    (tmp_path / "refusals.toml").write_text(
+        '[[refuse]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["Fondation", "fondations"]\n'
+        '[[refuse]]\nwords = ["beton", "betons"]\n',  # no column: named, not applied
+        encoding="utf-8",
+    )
+    refusals, errors = query.load_refusals(tmp_path)
+    assert refusals == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+    assert errors == ["refusals.toml: refuse #2 needs a column and two words or more"]
+    generated = {
+        "PROJWBS.wbs_name": [["beton", "betons"], ["fondation", "fondations", "fondatoins"]],
+        "TASK.task_name": [["fondation", "fondations"]],
+    }
+    assert query.refuse(generated, refusals) == {
+        "PROJWBS.wbs_name": [["beton", "betons"]],
+        "TASK.task_name": [["fondation", "fondations"]],
+    }
+    assert query.refuse({"PROJWBS.wbs_name": [["fondation", "fondations"]]}, refusals) == {}
