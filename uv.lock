@@ -2053,6 +2053,8 @@ name = "xerscope"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
     { name = "plotly" },
     { name = "pyarrow" },
@@ -2079,6 +2081,7 @@ dev = [
 requires-dist = [
     { name = "jpype1", marker = "extra == 'crosscheck'", specifier = ">=1.7.1" },
     { name = "mpxj", marker = "extra == 'crosscheck'", specifier = ">=16.10.0" },
+    { name = "numpy", specifier = ">=2.4" },
     { name = "pandas", specifier = ">=3.1.0" },
     { name = "plotly", specifier = ">=7.1.0" },
     { name = "pyarrow", specifier = ">=26.0.0" },
