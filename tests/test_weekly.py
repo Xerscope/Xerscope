@@ -470,6 +470,19 @@ def test_ppc_notes_a_point_that_spans_a_missing_update():
     assert (s["finishes_kept"].iloc[1], s["finishes_committed"].iloc[1]) == (1, 1)
 
 
+def test_ppc_point_without_a_status_date_commits_nothing_and_says_why():
+    """The newer file has no data date (no last_recalc_date, no plan_start_date): nothing can
+    be due before it, so the point has no commitment and a note instead of a TypeError."""
+    w1 = snap([todo("A", early_end_date="2026-03-05 17:00")], data_date="2026-03-02 08:00")
+    w2 = snap([todo("A", early_end_date="2026-03-05 17:00")], data_date="", project={"plan_start_date": ""})
+    assert w2.data_date is None
+    assert committed(w1, w2).empty
+    row = ppc_series(SnapshotStore([w1, w2])).iloc[0]
+    assert (row["finishes_committed"], row["starts_committed"], row["committed"]) == (0, 0, 0)
+    assert row["ppc"] is None and row["ppc_start"] is None and row["ppc_all"] is None
+    assert row["note"] == "no status date in this update: its commitments cannot be read"
+
+
 def test_ppc_regular_weekly_series_has_no_note():
     dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-16 08:00"]
     s = ppc_series(SnapshotStore([snap([todo("A")], data_date=d) for d in dates]))
@@ -588,6 +601,44 @@ def test_wbs_rollup_hours_weighting_and_tree():
     assert subtree_ids(rollup(s), "W1") == {"W1", "W11"}
 
 
+CIVIL = [
+    {
+        "wbs_id": "10",
+        "proj_id": "1",
+        "parent_wbs_id": "",
+        "wbs_short_name": "T",
+        "wbs_name": "P",
+        "proj_node_flag": "Y",
+        "seq_num": "0",
+    },
+    {
+        "wbs_id": "11",
+        "proj_id": "1",
+        "parent_wbs_id": "10",
+        "wbs_short_name": "CIV",
+        "wbs_name": "Civil",
+        "seq_num": "1",
+    },
+]
+
+
+@pytest.mark.parametrize("a_now, variance", [("2026-03-13 17:00", 0.0), ("2026-03-16 17:00", 1.0)])
+def test_wbs_finish_variance_compares_the_baselined_activities_only(a_now, variance):
+    """A is in the baseline (finish Fri 13 March), NEW was added after it (finish Fri 10 April).
+    The node's finish against its baseline finish is read on A only: 0 wd while A holds, 1 wd
+    when A moves to Mon 16 March. Reading the node's finish over every activity gave
+    13 March -> 10 April = 20 weekdays less Good Friday (3 April, a C8 holiday) = 19 wd."""
+    baseline = snap([todo("A", wbs_id="11", early_end_date="2026-03-13 17:00")], wbs=CIVIL)
+    now = snap(
+        [todo("A", wbs_id="11", early_end_date=a_now), todo("NEW", wbs_id="11", early_end_date="2026-04-10 17:00")],
+        wbs=CIVIL,
+    )
+    node = rollup(now, Baseline.from_snapshot(baseline)).set_index("wbs_id").loc["11"]
+    assert node["finish"] == pd.Timestamp("2026-04-10 17:00")  # the bar still ends with NEW
+    assert node["finish_variance_wd"] == variance
+    assert node["outside_bl"] == 1
+
+
 # --- milestone trend -----------------------------------------------------------------------------
 
 
@@ -629,6 +680,28 @@ def test_mta_drops_a_milestone_complete_before_the_data_date(tmp_path):
     assert milestone_codes(store, open_only=True) == ["M1", "M2"]
     s = milestone_slips(milestone_trend(store), store).set_index("task_code")
     assert s.loc["M1", "updates"] == 3  # the table keeps every update
+
+
+def test_mta_marks_a_deleted_milestone_and_leaves_it_out_of_the_open_ones():
+    """M1 moves Fri 10 -> Fri 17 April in the second update and is deleted in the third. It
+    is not open: it is deleted, as the changelog says. Its last move (+5 wd) dates from two
+    updates back, not from the last one: the last update has no move for it. M2 holds."""
+    weeks = {
+        "2026-03-02 08:00": [todo("M1", early_end_date="2026-04-10 17:00", **FM)],
+        "2026-03-09 08:00": [todo("M1", early_end_date="2026-04-17 17:00", **FM)],
+        "2026-03-16 08:00": [],
+    }
+    updates = [
+        snap([*tasks, todo("M2", early_end_date="2026-04-10 17:00", **FM)], data_date=dd) for dd, tasks in weeks.items()
+    ]
+    store = SnapshotStore(updates)
+    s = milestone_slips(milestone_trend(store), store).set_index("task_code")
+    assert s["deleted"].to_dict() == {"M1": True, "M2": False}
+    assert s.loc["M1", "slip_wd"] == 5  # 10 -> 17 April while it existed
+    assert pd.isna(s.loc["M1", "last_week_wd"])
+    assert s.loc["M2", "last_week_wd"] == 0
+    assert milestone_codes(store, open_only=True) == ["M2"]
+    assert milestone_codes(store) == ["M2", "M1"]  # the trend still draws its history
 
 
 def test_changelog_lists_assignment_changes():

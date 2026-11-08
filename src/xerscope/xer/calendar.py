@@ -281,9 +281,9 @@ class WorkCalendar:
         return self.axis().between(pd.Timestamp(a), pd.Timestamp(b)) / 60
 
     def working_days(self, a: pd.Timestamp, b: pd.Timestamp) -> float:
-        """Working time from ``a`` to ``b`` in days of this calendar."""
+        """Working time from ``a`` to ``b`` in days of this calendar; NaN when a date is missing."""
         h = self.work_hours(a, b)
-        return 0.0 if pd.isna(h) else float(hours_to_days(h, self.hours_per_day))
+        return float("nan") if pd.isna(h) else float(hours_to_days(h, self.hours_per_day))
 
 
 class TimeAxis:

@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import builtin_standards, standard_score
-from xerscope.analysis.explain import KPI_FORMULAS
+from xerscope.analysis.explain import KPI_FORMULAS, critical_definition
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
 from xerscope.app.state import (
@@ -15,6 +15,7 @@ from xerscope.app.state import (
     standard_results_held,
     standards,
 )
+from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import build_finish_trend
 from xerscope.xer.calendar import LIMIT_MARK
 
@@ -58,7 +59,7 @@ ui.kpis(
             "Critical tasks",
             int(last["critical"]),
             None if before is None else f"{int(last['critical'] - before['critical']):+d} this week",
-            "Open tasks with total float ≤ 0",
+            critical_definition(latest, DEFAULT_SETTINGS.critical_float_days),
             "inverse",
         ),
     ],

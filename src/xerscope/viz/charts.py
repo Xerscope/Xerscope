@@ -441,12 +441,21 @@ def _ppc_text(values, kept, committed) -> list[str]:
     ]
 
 
+def _with_note(texts: list[str], notes: pd.Series) -> list[str]:
+    return [t if not isinstance(n, str) else f"{t}<br>{n}" for t, n in zip(texts, notes, strict=True)]
+
+
 def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
-    """Bars: PPC (finishes kept / committed, Last Planner). Lines: PPC Start and PPC all commitments."""
+    """Bars: PPC (finishes kept / committed, Last Planner). Lines: PPC Start and PPC all commitments.
+
+    A point with a ``note`` (`ppc_series`: more than a week since the previous update) has a
+    hatched bar and the note in every hover of that week. A week with no finish committed has
+    no bar and an "n/a" label (a 0 bar would read as 0 % kept)."""
     c = SERIES
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
     text = _ppc_text(p["ppc"], p["finishes_kept"], p["finishes_committed"])
+    noted = [isinstance(n, str) for n in p["note"]]
     # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
     # the hover keeps the counts)
     weeks = len(p)
@@ -454,12 +463,12 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     fig = go.Figure(
         go.Bar(
             x=p["label"],
-            y=p["ppc"].fillna(0),
+            y=p["ppc"].astype(object).where(p["ppc"].notna(), None),  # no commitment: no bar, not 0
             text=text if weeks <= LABEL_FULL_MAX else short,
-            customdata=text,
+            customdata=_with_note(text, p["note"]),
             textposition="outside",
             cliponaxis=False,
-            marker=dict(color=c[0], cornerradius=4),
+            marker=dict(color=c[0], cornerradius=4, pattern=dict(shape=["/" if n else "" for n in noted])),
             width=0.6,
             name="PPC (finishes)",
             hovertemplate="Week to %{x}: finishes %{customdata}<extra></extra>",
@@ -478,7 +487,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
                 line=dict(color=colour, width=2),
                 marker=dict(size=7),
                 connectgaps=False,
-                customdata=_ppc_text(p[column], p[kept], p[committed]),
+                customdata=_with_note(_ppc_text(p[column], p[kept], p[committed]), p["note"]),
                 hovertemplate="Week to %{x}: " + name.lower() + " %{customdata}<extra></extra>",
             )
         )
@@ -495,6 +504,8 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         xshift=6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
+    for label in p.loc[p["ppc"].isna(), "label"]:  # a week with nothing committed has no PPC
+        fig.add_annotation(x=label, y=0, text="n/a", showarrow=False, yanchor="bottom", hovertext="no commitment")
     fig = _layout(fig, 400, "PPC (%)", legend=True)
     fig.update_layout(hovermode="closest")
     fig.update_yaxes(range=[0, 115])

@@ -34,12 +34,14 @@ from ..xer import Snapshot
 def milestone_codes(store: SnapshotStore, open_only: bool = False) -> list[str]:
     """Milestones present in any update, ordered by their latest forecast.
 
-    `open_only` keeps those not complete in the last update that holds them.
+    `open_only` keeps those in the latest update and not complete there (a deleted milestone
+    is not open).
     """
     history = store.history
     milestones = history[history["is_milestone"]].sort_values("snapshot_idx").groupby("task_code").last()
     if open_only:
-        milestones = milestones[~milestones["is_complete"].astype(bool)]
+        in_latest = milestones.index.isin(store.latest.by_code.index)
+        milestones = milestones[in_latest & ~milestones["is_complete"].astype(bool)]
     return milestones.sort_values("finish").index.tolist()
 
 
@@ -68,7 +70,10 @@ def plotted_trend(trend: pd.DataFrame) -> pd.DataFrame:
 
 
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
-    """First vs latest forecast per milestone, in working days of its own calendar (latest update)."""
+    """First vs latest forecast per milestone, in working days of its own calendar (latest update).
+
+    ``deleted``: not in the latest update (the changelog's Scope / deleted); its last move is
+    blank, the latest update having none for it."""
     latest = store.latest
     calendar_ids = latest.by_code["clndr_id"]
     by_milestone = trend.groupby("task_code")
@@ -76,11 +81,13 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
         {
             "task_name": by_milestone["task_name"].last(),
             "first_forecast": by_milestone["forecast"].first(),
-            "latest_forecast": by_milestone["forecast"].last(),
+            # the latest update's own forecast, missing included: not an earlier one carried over
+            "latest_forecast": by_milestone["forecast"].last(skipna=False),
             "complete": by_milestone["is_complete"].last(),
             "updates": by_milestone.size(),
         }
     )
+    slips["deleted"] = ~slips.index.isin(latest.by_code.index)
     slips["slip_wd"] = [
         round(latest.activity_working_days(calendar_ids.get(code), first, latest_forecast), 1)
         for code, first, latest_forecast in zip(
@@ -89,7 +96,7 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
     ]
     # the forecast one update before the latest (the first of each milestone's last two)
     last_two = trend.sort_values("snapshot_idx").groupby("task_code").tail(2).groupby("task_code")["forecast"]
-    previous_forecast = last_two.first()
+    previous_forecast = last_two.first(skipna=False)
     slips["last_week_wd"] = [
         round(
             latest.activity_working_days(
@@ -101,6 +108,7 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
         else 0.0
         for code in slips.index
     ]
+    slips["last_week_wd"] = slips["last_week_wd"].mask(slips["deleted"])
     return slips.reset_index().sort_values("latest_forecast")
 
 
@@ -112,12 +120,16 @@ def committed(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
 
     An activity due to start and finish within the week is two commitments. Milestones and
     level of effort are left out: a milestone repeats its predecessor's date, so it would
-    add a commitment the week the predecessor ends."""
+    add a commitment the week the predecessor ends. Without a W data date nothing is due:
+    no commitment (`ppc_series` notes it)."""
     work = previous.activities
     work = work[~work["is_milestone"] & ~work["is_loe"]]
     due, now = current.data_date, current.by_code
-    finishes = work[~work["is_complete"] & (work["finish"] < due)]
-    starts = work[~work["is_started"] & (work["start"] < due)]
+    if due is None:
+        finishes = starts = work.iloc[0:0]
+    else:
+        finishes = work[~work["is_complete"] & (work["finish"] < due)]
+        starts = work[~work["is_started"] & (work["start"] < due)]
     return pd.concat(
         [
             _outcome(finishes, now, "Finish", date="finish", actual="act_end_date", kept="is_complete"),
@@ -151,8 +163,10 @@ PPC_WEEK_DAYS = 7
 def _gap_note(previous: Snapshot, current: Snapshot) -> str | None:
     """Note for a pair more than a week apart: an update is missing, so the point holds the
     commitments of every week between the two data dates. Calendar days: Monday 08:00 to the
-    next Monday 17:00 is one week."""
-    if previous.data_date is None or current.data_date is None:
+    next Monday 17:00 is one week. A W without a data date has no commitment: noted too."""
+    if current.data_date is None:
+        return "no status date in this update: its commitments cannot be read"
+    if previous.data_date is None:
         return None
     days = (current.data_date.normalize() - previous.data_date.normalize()).days
     if days <= PPC_WEEK_DAYS:
@@ -282,10 +296,13 @@ def finish_shift_since_first(store: SnapshotStore) -> float | None:
 
 def activity_finish_shift(store: SnapshotStore, history: pd.DataFrame) -> float | None:
     """Working days between an activity's first and last forecast finish, on its calendar in the
-    last row of ``history`` (as the latest update defines it); None with one update or a missing finish."""
+    last row of ``history``, as the update of that row defines it (the latest update for an
+    activity still in it; for one deleted since, the last update that holds it, where its
+    calendar exists); None with one update or a missing finish."""
     if len(history) < 2 or history["finish"].isna().any():
         return None
     clndr_id = history["clndr_id"].iloc[-1]
-    return store.latest.activity_working_days(
+    last_update = store[int(history["snapshot_idx"].iloc[-1])]
+    return last_update.activity_working_days(
         clndr_id if isinstance(clndr_id, str) else None, history["finish"].iloc[0], history["finish"].iloc[-1]
     )
