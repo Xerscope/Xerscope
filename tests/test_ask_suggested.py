@@ -191,3 +191,13 @@ def test_a_file_removed_between_open_and_check_leaks_no_descriptor(tmp_path, mon
         suggested._locked(tmp_path / suggested.FILE, fcntl)
     monkeypatch.undo()
     assert len(os.listdir("/proc/self/fd")) == before
+
+
+def test_a_date_written_without_time_zone_is_read_as_utc_and_purged(tmp_path):
+    """An `at` edited by hand without its "Z" (a local date in TOML) expires as the others do."""
+    (tmp_path / suggested.FILE).write_text(
+        '[[suggestion]]\nword = "ancien"\nlabel = "COM · Commissioning"\ncolumn = "PROJWBS.wbs_name"\n'
+        'facet = "wbs"\nvalue = "COM"\nat = 2026-01-01T00:00:00\n',
+        encoding="utf-8",
+    )
+    assert suggested.purge(tmp_path, {}, NOW) == (0, 1)
