@@ -59,12 +59,30 @@ def _code_snapshot(scopes: tuple[str, str] = ("AS_Global", "AS_Project")) -> Sna
         },
     ]
     values = [
-        {"actv_code_id": GLOBAL_P1, "parent_actv_code_id": "", "actv_code_type_id": "701",
-         "actv_code_name": "First P1", "short_name": "P1", "seq_num": "1"},
-        {"actv_code_id": PROJECT_P1, "parent_actv_code_id": "", "actv_code_type_id": "702",
-         "actv_code_name": "Second P1", "short_name": "P1", "seq_num": "1"},
-        {"actv_code_id": GLOBAL_P2, "parent_actv_code_id": "", "actv_code_type_id": "701",
-         "actv_code_name": "First P2", "short_name": "P2", "seq_num": "2"},
+        {
+            "actv_code_id": GLOBAL_P1,
+            "parent_actv_code_id": "",
+            "actv_code_type_id": "701",
+            "actv_code_name": "First P1",
+            "short_name": "P1",
+            "seq_num": "1",
+        },
+        {
+            "actv_code_id": PROJECT_P1,
+            "parent_actv_code_id": "",
+            "actv_code_type_id": "702",
+            "actv_code_name": "Second P1",
+            "short_name": "P1",
+            "seq_num": "1",
+        },
+        {
+            "actv_code_id": GLOBAL_P2,
+            "parent_actv_code_id": "",
+            "actv_code_type_id": "701",
+            "actv_code_name": "First P2",
+            "short_name": "P2",
+            "seq_num": "2",
+        },
     ]
     links = [
         {"task_id": "1", "actv_code_type_id": "701", "actv_code_id": GLOBAL_P1, "proj_id": "1"},
