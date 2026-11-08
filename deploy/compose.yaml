@@ -121,6 +121,8 @@ services:
       XERSCOPE_LOAD_WORKERS: ${XERSCOPE_LOAD_WORKERS:-1}  # files read at once, each held while read (~1 GB for a
                                                     # 40 MB export): raise it with XERSCOPE_MEM_LIMIT (docs/deploy.md §7)
       STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
+      STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE: "1"   # MB per message from the browser (default 25): a sentence, a click;
+                                                    # not maxMessageSize, which also caps what the app sends (the Gantt)
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
       XERSCOPE_LEXICON: /lexicon                    # the Ask field reads curated/ and generated/ (docs/deploy.md §10)

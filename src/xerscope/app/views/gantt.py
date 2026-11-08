@@ -82,13 +82,15 @@ def _drop(sentence: str, label: str) -> None:
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
-# known, below; a × button per filter understood takes it off.
+# known, below; a × button per filter understood takes it off. max_chars is the browser's; the
+# server cuts too (a message sent past it), keeping one character more so the parser names the cut.
 asked = st.text_input(
     "Ask the schedule",
     placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
     key=ASK_KEY,
     icon=":material/search:",
-)
+    max_chars=query.MAX_CHARS,
+)[: query.MAX_CHARS + 1]
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
 # the variants of each source column, generated from every loaded file, in memory (never written)

@@ -137,7 +137,8 @@ takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New
 the shared folder. The only upload left is a standard (.toml) on the Schedule health page,
 capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`); a lexicon file sent there is refused (no
 `[standard]` table) and never read by the Ask field, which reads the NAS folder only (§10).
-An error shows no traceback on the page
+A message from the browser is capped at 1 MB (`STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE`); the
+Ask sentence is cut at 300 characters by the page itself. An error shows no traceback on the page
 (`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
 
 ## 6. Create the project
