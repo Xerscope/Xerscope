@@ -292,7 +292,6 @@ def test_milestones_left_out_of_the_counts():
     assert {r.task_code for r in progress.committed(prev, cur).itertuples()} == {"T"}
 
 
-@pytest.mark.xfail(strict=True, reason="API à créer: liste à part des engagements de jalons (engagés / tenus)")
 def test_milestones_listed_apart():
     """Case 5. Milestones listed apart: M finish committed 03-04, kept (actual 03-04);
     S start committed 03-03, missed."""

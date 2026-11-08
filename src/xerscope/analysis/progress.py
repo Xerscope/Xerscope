@@ -123,7 +123,7 @@ def committed(previous: Snapshot, current: Snapshot, include_overdue: bool = Tru
     actual after it (P6 flags it as invalid progress) is a miss, and so is a started /
     complete status without the actual date. An actual entered late (before W-1's data date
     although W-1 showed the activity not started) still keeps it. An activity due to start
-    and finish within the week is two commitments. Milestones and
+    and finish within the week is two commitments. Milestones (`committed_milestones`) and
     level of effort are left out: a milestone repeats its predecessor's date, so it would add
     a commitment the week the predecessor ends. ``include_overdue=False`` keeps only the
     dates after W-1's data date: work already late at W-1 is not this week's commitment.
@@ -132,6 +132,15 @@ def committed(previous: Snapshot, current: Snapshot, include_overdue: bool = Tru
     work = work[~work["is_milestone"] & ~work["is_loe"]]
     finishes, starts = _due(work, previous, current, include_overdue)
     return _commitments(finishes, starts, current)
+
+
+def committed_milestones(previous: Snapshot, current: Snapshot, include_overdue: bool = True) -> pd.DataFrame:
+    """Milestone commitments, read as `committed` reads tasks, listed apart and out of the PPC
+    counts: a start milestone commits its start, a finish milestone its finish."""
+    work = previous.activities
+    work = work[work["is_milestone"]]
+    finishes, starts = _due(work, previous, current, include_overdue)
+    return _commitments(finishes[~finishes["is_start_milestone"]], starts[starts["is_start_milestone"]], current)
 
 
 def _due(
