@@ -44,21 +44,28 @@ def test_no_surface_recomputes_the_set():
     src = Path(xerscope.__file__).parent
     found = []
     for path in sorted([*src.joinpath("app").rglob("*.py"), src / "analysis" / "evm.py"]):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        owner = {
+            id(inner): function.name
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef)
+            for inner in ast.walk(function)
+        }
+        for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)
                 and ast.unparse(node).startswith("set(")
                 and "frame.index" in ast.unparse(node)
             ):
-                found.append(f"{path.name}:{node.lineno}")
+                found.append(f"{path.name}:{owner.get(id(node), '<module>')}")
             if (
                 isinstance(node, ast.Call)
                 and ast.unparse(node.func).endswith(".isin")
                 and any(ast.unparse(arg) == "baseline.frame.index" for arg in node.args)
             ):
-                found.append(f"{path.name}:{node.lineno}")
+                found.append(f"{path.name}:{owner.get(id(node), '<module>')}")
     # evm.compare_p6_export flags each row of the union of both sides: a per-row flag, not the count
-    assert found == ["evm.py:398"], found
+    assert found == ["evm.py:pv_p6_comparison"], found
 
 
 @pytest.fixture(scope="module")
