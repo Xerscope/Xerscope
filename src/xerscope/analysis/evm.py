@@ -64,22 +64,24 @@ from .standards import Metric
 PV_COST_WORKING_TIME = True
 
 
+# PROJWBS.ev_compute_type -> technique key. Only EC_Cmp_pct is read from P6 exports (the reference
+# corpus holds no other value); the four others are the codes the tests use, to confirm on an
+# export with one WBS per technique. A code outside the table is "unknown", never guessed.
+EV_TECHNIQUES = {
+    "EC_Cmp_pct": "activity",
+    "EC_0_100": "0/100",
+    "EC_50_50": "50/50",
+    "EC_User_pct": "custom",
+    "EC_WBS_pct": "wbs_milestones",
+}
+# techniques earned with the activity % complete in place of the WBS's, and listed as such
+NOT_MODELLED_TECHNIQUES = ("wbs_milestones", "unknown")
+
+
 def ev_technique(code: object) -> str:
-    """PROJWBS.ev_compute_type -> technique key (EC_Cmp_pct = activity % complete)."""
-    text = str(code or "").strip().lower()
-    if text in ("", "nan", "none") or "cmp" in text:
-        return "activity"
-    if "user" in text or "custom" in text:
-        return "custom"
-    if "50" in text:
-        return "50/50"
-    if "wbs" in text or "mile" in text:
-        return "wbs_milestones"
-    if "crv" in text or "curve" in text or "rsrc" in text:
-        return "resource_curves"
-    if "0" in text:
-        return "0/100"
-    return "activity"
+    """PROJWBS.ev_compute_type -> technique key; blank = activity % complete (P6 default)."""
+    text = "" if code is None or (isinstance(code, float) and np.isnan(code)) else str(code).strip()
+    return "activity" if text == "" else EV_TECHNIQUES.get(text, "unknown")
 
 
 # PROJWBS.ev_etc_compute_type values found in the reference files; any other value is shown as it is.
@@ -649,7 +651,7 @@ def ev_point(snapshot: Snapshot, baseline: Baseline) -> EvPoint:
     deleted = earned_values[~earned_values["in_snapshot"]]
     activities = snapshot.activities
     unbaselined = baseline.unbaselined(snapshot)
-    on_fallback = current["ev_technique"].isin(["wbs_milestones", "resource_curves"])
+    on_fallback = current["ev_technique"].isin(NOT_MODELLED_TECHNIQUES)
     curves = baseline.assignment_costs
     curve_codes = set(curves.loc[curves["curve"].astype(bool), "task_code"]) & set(current.index)
     return EvPoint(
