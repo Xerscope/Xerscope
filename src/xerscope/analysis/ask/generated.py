@@ -61,25 +61,36 @@ COLUMNS = (
     "RSRC.rsrc_name",
 )
 GROUPED = tuple(c for c in COLUMNS if c != "TASK.task_code")  # Activity IDs are never variants
+Terms = dict[str, tuple[set[str], set[str]]]  # column: (words, abbreviated)
 
 
-def terms(snapshots: Iterable[Snapshot]) -> dict[str, tuple[set[str], set[str]]]:
+def terms(snapshots: Iterable[Snapshot]) -> Terms:
     """Per column: its folded words (letters only, 3+), and those written as an abbreviation."""
-    found: dict[str, tuple[set[str], set[str]]] = {}
+    found: Terms = {}
     for snapshot in snapshots:
-        for column, values in _column_values(snapshot).items():
-            words, abbreviated = found.setdefault(column, (set(), set()))
-            for value in values:
-                text = fold(value)
-                words.update(w for w in re.findall(r"[a-z]+", text) if len(w) >= 3)
-                abbreviated.update(w for w in re.findall(r"([a-z]+)\.", text) if len(w) >= MIN_ABBREVIATION)
+        add_terms(found, snapshot)
     return found
+
+
+def add_terms(found: Terms, snapshot: Snapshot) -> None:
+    """Adds one file's terms to ``found``: ``xerscope lexicon build`` reads one export at a time
+    and keeps its words only, never the snapshot."""
+    for column, values in _column_values(snapshot).items():
+        words, abbreviated = found.setdefault(column, (set(), set()))
+        for value in values:
+            text = fold(value)
+            words.update(w for w in re.findall(r"[a-z]+", text) if len(w) >= 3)
+            abbreviated.update(w for w in re.findall(r"([a-z]+)\.", text) if len(w) >= MIN_ABBREVIATION)
 
 
 def variants(snapshots: Iterable[Snapshot]) -> dict[str, list[list[str]]]:
     """Per grouped column, its groups of variants (each sorted, the groups sorted); a column
     with no group is left out."""
-    found = terms(snapshots)
+    return variants_from(terms(snapshots))
+
+
+def variants_from(found: Terms) -> dict[str, list[list[str]]]:
+    """``variants`` of the files whose terms are ``found``."""
     groups = {column: group_words(*found[column]) for column in GROUPED if column in found}
     return {column: g for column, g in groups.items() if g}
 
@@ -87,7 +98,11 @@ def variants(snapshots: Iterable[Snapshot]) -> dict[str, list[list[str]]]:
 def near_spellings(snapshots: Iterable[Snapshot]) -> dict[str, list[tuple[str, str]]]:
     """Per grouped column, its pairs one letter apart (rule C) that its groups do not already
     join (a plural is one letter apart too), sorted; a column with no pair is left out."""
-    found = terms(snapshots)
+    return near_spellings_from(terms(snapshots))
+
+
+def near_spellings_from(found: Terms) -> dict[str, list[tuple[str, str]]]:
+    """``near_spellings`` of the files whose terms are ``found``."""
     pairs: dict[str, list[tuple[str, str]]] = {}
     for column in GROUPED:
         if column in found:

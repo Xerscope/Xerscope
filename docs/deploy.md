@@ -330,7 +330,8 @@ read without error (`unreadable`), its `%E` end line present (`incomplete`, a fi
 copied), the tables `TASK` and `PROJWBS` present (`missing table TASK`, `missing table
 PROJWBS`), a project to select (`no project`), at most 64 MB (`too large`: a 40 MB export
 peaks at about 1 GB parsed, §7, and the default memory cap is 2 GB; `LEXICON_MAX_BYTES` in
-`cli.py`). `report.txt` ends with a section `skipped (not read):`, one `<file>: <reason>` per
+`cli.py`). The exports are read one at a time and only their words kept, so the peak is the
+largest export's, whatever their number. `report.txt` ends with a section `skipped (not read):`, one `<file>: <reason>` per
 line; the log says `<n> file(s) skipped, named in generated/report.txt` and never names an
 export (their names are often the project's), nor quotes one. When no export passes (or the
 folder holds none), `generated/` is left as it is, the log says `error: no valid XER file in

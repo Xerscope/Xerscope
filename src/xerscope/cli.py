@@ -843,6 +843,18 @@ def _lexicon_export(path: Path):
         return "unreadable"
 
 
+def _lexicon_terms(path: Path, found) -> str | None:
+    """Adds the terms of one export to ``found``, or returns why it is skipped
+    (``_lexicon_export``). The snapshot is released on return: one export in memory at a time."""
+    from .analysis.ask.generated import add_terms
+
+    read = _lexicon_export(path)
+    if isinstance(read, str):
+        return read
+    add_terms(found, read)
+    return None
+
+
 def _build_lexicon(source: str, out: str) -> int:
     """ROOT/generated/variants.toml: the variants of each source column of SOURCE's XER files,
     replaced whole (temporary file, rename, 0600); ROOT/generated/report.txt: the groups per
@@ -856,6 +868,7 @@ def _build_lexicon(source: str, out: str) -> int:
 
     from .analysis import query
     from .analysis.ask import suggested
+    from .analysis.ask.generated import near_spellings_from, variants_from
     from .analysis.ask.lexicon import write_private
 
     if not source or not out:
@@ -867,21 +880,21 @@ def _build_lexicon(source: str, out: str) -> int:
         if not folder.is_dir():
             print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
             return 1
-    files, skipped = [], []
+    found, read, skipped = {}, 0, []
     for path in xer_files(source):
-        read = _lexicon_export(path)
-        if isinstance(read, str):
-            skipped.append(f"{path.name}: {read}")
+        reason = _lexicon_terms(path, found)
+        if reason is None:
+            read += 1
         else:
-            files.append(read)
-    if not files:
+            skipped.append(f"{path.name}: {reason}")
+    if not read:
         print(f"error: no valid XER file in the source folder ({len(skipped)} skipped), generated/ left as it is")
         return 1
-    groups, near = query.variants(files), query.near_spellings(files)
+    groups, near = variants_from(found), near_spellings_from(found)
     before = {c: {tuple(g) for g in gs} for c, gs in query.load_variants(generated).items()}
     new = {c: [g for g in gs if tuple(g) not in before.get(c, set())] for c, gs in groups.items()}
     write_private(generated / "variants.toml", query.variants_toml(groups))
-    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {len(files)} file(s) read, {len(skipped)} skipped"]
+    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {read} file(s) read, {len(skipped)} skipped"]
     report += ["", "column: groups, new"]
     report += [f"{c}: {n} group(s), {len(new[c])} new" for c, n in query.variant_counts(groups).items()]
     report += ["", "new since the last run:"]
@@ -893,7 +906,7 @@ def _build_lexicon(source: str, out: str) -> int:
     for column, count in query.variant_counts(groups).items():
         print(f"{column}: {count} group(s), {len(new[column])} new")
     total, added = sum(len(g) for g in groups.values()), sum(len(g) for g in new.values())
-    print(f"{total} group(s) from {len(files)} file(s) written, {added} new")
+    print(f"{total} group(s) from {read} file(s) written, {added} new")
     if skipped:
         print(f"{len(skipped)} file(s) skipped, named in generated/report.txt")
     curated, _ = query.load_lexicon(root / query.CURATED)
