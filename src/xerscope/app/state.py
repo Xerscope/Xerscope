@@ -512,23 +512,32 @@ def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None, list[str]]:
     previous = st.session_state.get("signature") or ()
     # the bytes of a file whose digest did not change are those already held: not read again
     held = dict(st.session_state.get("items") or []) if previous[:2] == ("folder", str(root)) else {}
-    digests, items, gone = [], [], []
-    for name in sorted(names):
-        try:
-            path = listed[name]
-            digest = _file_digest(path)
-            data = held[name] if name in held and (name, digest) in previous[2:] else path.read_bytes()
-        except (KeyError, OSError):
-            gone.append(f"{name}: no longer in the folder; the file is skipped")
-            continue
-        digests.append((name, digest))
-        items.append((name, data))
+    digests, items, gone = _read_ticked(names, listed, held, previous[2:])
     if not digests and not gone:
         return (), None, []
     signature = ("folder", str(root), *digests)
     if signature == previous:
         return signature, None, gone
     return signature, items, gone
+
+
+def _read_ticked(
+    names, listed: dict[str, Path], held: dict[str, bytes], previous: tuple
+) -> tuple[list[tuple[str, str]], list[tuple[str, bytes]], list[str]]:
+    """Digest and contents of each ticked file, in name order, and a message per file no longer in
+    the folder. A file whose digest is in ``previous`` keeps the bytes already held."""
+    digests, items, gone = [], [], []
+    for name in sorted(names):
+        try:
+            path = listed[name]
+            digest = _file_digest(path)
+            data = held[name] if name in held and (name, digest) in previous else path.read_bytes()
+        except (KeyError, OSError):
+            gone.append(f"{name}: no longer in the folder; the file is skipped")
+            continue
+        digests.append((name, digest))
+        items.append((name, data))
+    return digests, items, gone
 
 
 def _file_digest(path: Path) -> str:
