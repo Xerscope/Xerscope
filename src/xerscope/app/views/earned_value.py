@@ -6,6 +6,7 @@ import streamlit as st
 from xerscope.analysis import builtin_standards
 from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import (
+    NOT_MODELLED_TECHNIQUES,
     bei_series,
     earned,
     etc_settings,
@@ -304,7 +305,7 @@ def show_activity_detail(snapshot, baseline) -> None:
             f"earned_{ui.stamp(snapshot.data_date)}.csv",
             sources=sources_of(snapshot, baseline=baseline),
         )
-        fallback_mask = activities["ev_technique"].isin(["wbs_milestones", "resource_curves"])
+        fallback_mask = activities["ev_technique"].isin(NOT_MODELLED_TECHNIQUES)
         fallback = sorted(activities.loc[fallback_mask, "task_code"])
         if fallback:
             st.caption(
