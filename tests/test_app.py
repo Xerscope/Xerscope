@@ -1363,6 +1363,27 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     assert not app.success
 
 
+def test_a_lexicon_uploaded_as_a_standard_never_reaches_the_ask_field(app):
+    """The only upload of the locked app is a standard (.toml); the Ask field reads the folder
+    XERSCOPE_LEXICON names and nothing else. A lexicon file is not a standard: refused. A standard
+    carrying lexicon tables is a standard: its groups are not read as trade words."""
+    from xerscope.analysis.standards import template_text
+
+    group = '\n[[group]]\nwords = ["qwfp", "CIV", "Civil works"]\n'
+    app.switch_page("views/health.py").run()
+    app.file_uploader(key="std_upload").set_value(("lexicon.toml", group.encode(), "application/toml")).run()
+    _ok(app)
+    assert any("needs a [standard] table" in error.value for error in app.error) and not app.success
+    mixed = template_text().replace('id = "CUSTOM"', 'id = "MIXED"', 1) + group
+    app.file_uploader(key="std_upload").set_value(("mixed.toml", mixed.encode(), "application/toml")).run()
+    _ok(app)
+    assert "MIXED" in app.session_state["uploaded_standards"]
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("qwfp").run()
+    _ok(app)
+    assert _chips(app) == []  # "qwfp" names no node: the uploaded groups were not read
+
+
 # --- Schedule health: the sets of a check on demand, and all sets as a file ---------------------
 
 
