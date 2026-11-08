@@ -107,6 +107,16 @@ def test_a_pull_request_changing_the_image_builds_and_scans_it():
     assert cond in container
 
 
+def test_runs_on_main_are_never_cancelled_by_the_next_push():
+    """Only a pull request's previous run is cancelled by a new push: every commit merged to main is
+    tested to the end, and a publish under way is not cut."""
+    workflows = (ROOT / ".github" / "workflows").glob("*.yml")
+    cancels = {p.name: re.findall(r"cancel-in-progress: (\$\{\{[^}]*\}\}|\S+)", p.read_text()) for p in workflows}
+    assert cancels["tests.yml"] == ["${{ github.event_name == 'pull_request' }}"]
+    assert cancels["image.yml"] == ["false"]
+    assert not any(c for name, c in cancels.items() if name not in ("tests.yml", "image.yml")), cancels
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf

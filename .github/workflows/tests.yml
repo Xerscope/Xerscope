@@ -3,7 +3,8 @@ name: tests
 # Minutes are the scarce resource on a private repository (Windows counts double):
 #   pull requests and main  -> Linux only, two Pythons (oldest and newest supported)
 #   Monday run and manual   -> the full matrix, Windows included
-# A new push to the same branch cancels the run still going for the previous one.
+# A new push to a pull request cancels the run still going for its previous one; on main every
+# commit is tested to the end (image.yml publishes a commit only once its run passed).
 on:
   push:
     branches: [main]
@@ -15,7 +16,7 @@ on:
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: the jobs only read the repo.
 permissions:

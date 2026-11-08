@@ -30,7 +30,7 @@ on:
 
 concurrency:
   group: image-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  cancel-in-progress: false                      # a publish under way is never cut between registries
 
 permissions:
   contents: read
