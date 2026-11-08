@@ -137,7 +137,9 @@ class _Rest:
         return max(0, bisect.bisect_right(self.starts, position) - 1)
 
     def has(self, phrase: str) -> bool:
-        return bool(phrase) and phrase_pattern([phrase]).search(self.text) is not None
+        """The folded ``phrase`` in the text as whole words; a substring test first, so no regex
+        is compiled for a phrase the text does not hold."""
+        return bool(phrase) and phrase in self.text and phrase_pattern([phrase]).search(self.text) is not None
 
     def take(self, phrase: str) -> int:
         """Blank the phrase; the token index of its first occurrence."""
@@ -183,8 +185,9 @@ def _wbs_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
         node, word = Atom("wbs", wbs_id), stands_for.get((wbs_id, said))
         found.append((index, "x", And((node, Atom("word", word))) if word else node))
 
+    held = _held_phrases(rest, phrases)
     named = False
-    while best := _longest_node(rest, phrases):
+    while best := next(((phrase, wbs_id) for phrase, wbs_id in held if rest.has(phrase)), None):
         add(rest.take(best[0]), best[1], best[0])
         named = True
     if named:
@@ -192,16 +195,18 @@ def _wbs_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> float:
     return _typo_node(rest, vocab, add)
 
 
-def _longest_node(rest: _Rest, phrases: dict[str, tuple[list[str], set[str]]]) -> tuple[str, str] | None:
-    """(phrase, node) of the longest node phrase in the text; at equal length a word of the
-    file beats a synonym of another node."""
-    best, best_rank = None, None
-    for wbs_id, (candidates, direct) in phrases.items():
-        for candidate in candidates:
-            rank = (len(candidate), candidate in direct)
-            if (best_rank is None or rank > best_rank) and rest.has(candidate):
-                best, best_rank = (candidate, wbs_id), rank
-    return best
+def _held_phrases(rest: _Rest, phrases: dict[str, tuple[list[str], set[str]]]) -> list[tuple[str, str]]:
+    """(phrase, node) of the node phrases the text holds, longest first; at equal length a word
+    of the file before a synonym of another node, then in the file's order. Drawn once: taking a
+    phrase only blanks the text, so a phrase absent now never appears later."""
+    held = [
+        (len(candidate), candidate in direct, candidate, wbs_id)
+        for wbs_id, (candidates, direct) in phrases.items()
+        for candidate in candidates
+        if candidate and candidate in rest.text
+    ]
+    held.sort(key=lambda h: (-h[0], not h[1]))  # stable: the file's order at equal rank
+    return [(candidate, wbs_id) for _, _, candidate, wbs_id in held]
 
 
 def _typo_node(rest: _Rest, vocab: Vocabulary, add) -> float:
