@@ -332,7 +332,7 @@ st.selectbox(
     "Task",
     codes,
     format_func=lambda code: f"{code} · {names.get(code, '')}",
-    placeholder="Click an activity in the chart, or pick one here",
+    placeholder="Click a task in the chart, or pick one here",
     key=PICK_KEY,
     on_change=_pick_from_list,
 )

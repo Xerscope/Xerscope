@@ -94,6 +94,12 @@ class SnapshotStore:
             )
         self._snaps: list[Snapshot] = snaps
         self.warnings: list[str] = [w for s in snaps for w in s.warnings]
+        by_day: dict[pd.Timestamp, list[str]] = {}
+        for date, sources in by_date.items():
+            by_day.setdefault(date.normalize(), []).extend(sources)
+        for day, sources in by_day.items():
+            if len(sources) > 1:  # kept, in time order: two statuses of one day are two updates
+                self.warnings.append(f"several updates on {day:{DATE_FMT}} at other hours: {', '.join(sources)}")
         codes = {s.project_code for s in self._snaps}
         if len(codes) > 1:
             self.warnings.append(f"project code differs across snapshots (renamed or other project): {sorted(codes)}")

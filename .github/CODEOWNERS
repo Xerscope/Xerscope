@@ -1,0 +1,10 @@
+# Files whose values are evidence: a pull request touching one requests the maintainer's
+# review. A signal only: review is mandatory only if branch protection requires code owners,
+# which it does not. The value-justification workflow is the check.
+# Owner: the maintainer's GitHub login (from his noreply commit address).
+
+/tests/golden/                  @QuentinGouttaya
+# FLOORS (CODEOWNERS matches whole files)
+/tests/test_p6_heldout.py       @QuentinGouttaya
+/src/xerscope/standards/*.toml  @QuentinGouttaya
+/tests/ask/heldout.toml         @QuentinGouttaya
