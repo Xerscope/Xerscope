@@ -1208,6 +1208,17 @@ def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, do
     assert set(tables) >= {"01_options.csv", "04_check_parameters.csv"}
 
 
+def test_debug_ask_variants_block_shows_counts_only(app):
+    """Block 14 shows the number of generated groups per column; the groups themselves (the
+    files' words) leave the app through `xerscope lexicon build` only, whatever the switch."""
+    for anonymous in (True, False):
+        app.sidebar.toggle(key="anon_exports").set_value(anonymous).run()
+        app.switch_page("views/debug.py").run()
+        _ok(app)
+        block = next(e for e in app.main.expander if e.key == "debug_ask_variants")
+        assert not block.get("download_button") and not [c for c in block.caption if "download" in c.value]
+
+
 def _session_anonymizer(at):
     """The anonymizer the session built last (one per set of files read)."""
     return list(anonymizers_built(at.session_state).values())[-1]
