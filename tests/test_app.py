@@ -1522,6 +1522,25 @@ def test_debug_lists_the_curated_load_errors_to_every_session_without_their_word
         assert "secret" not in shown
 
 
+def test_debug_names_a_curated_file_not_utf8_or_misshaped_and_the_gantt_still_renders(app, lexicon_root):
+    """A curated/ file in another encoding, or a refusal that is not a table, does not stop the
+    Gantt page; block 14 names it with where it fails, never its words."""
+    from xerscope.app import ui
+
+    latin = '[[group]]\nwords = ["Mécaniquesecret", "MEC"]\n'
+    (lexicon_root / "curated" / "latin.toml").write_bytes(latin.encode("cp1252"))
+    (lexicon_root / "curated" / "refuse.toml").write_text('refuse = "zxcvsecret"\n', encoding="utf-8")
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    block = next(e for e in app.main.expander if e.key == "debug_ask_variants")
+    shown = " ".join(m.value for m in [*block.markdown, *block.caption, *block.warning])
+    expected = (f"latin.toml: byte {latin.index('é')}", "refuse.toml: refuse #1")
+    assert all(ui.md_text(e) in shown for e in expected), shown
+    assert "secret" not in shown
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 

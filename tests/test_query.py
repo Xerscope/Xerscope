@@ -577,6 +577,28 @@ def test_a_generated_file_is_read_back_per_column(tmp_path):
     }
 
 
+def test_a_curated_file_not_utf8_or_misshaped_is_skipped_and_named_without_its_words(tmp_path):
+    """curated/ is edited by hand: a file in another encoding, or a key that is not a list of
+    tables, is skipped and named with where it fails (file and byte, or table number), never
+    read in part nor quoted, and never raises."""
+    latin = '[[group]]\nwords = ["Mécanique", "MEC"]\n'
+    (tmp_path / "latin.toml").write_bytes(latin.encode("cp1252"))
+    (tmp_path / "refuse.toml").write_text('refuse = "x"\n', encoding="utf-8")
+    (tmp_path / "words.toml").write_text('[[group]]\nwords = "abc"\n', encoding="utf-8")
+    (tmp_path / "column.toml").write_text('[[group]]\ncolumn = "TASK.task_name"\nwords = 3\n', encoding="utf-8")
+    (tmp_path / "top.toml").write_text("group = 3\n", encoding="utf-8")
+    lexicon, errors = query.load_lexicon(tmp_path)
+    assert lexicon == {}
+    assert errors == [
+        "column.toml: group #1 needs a list of words",
+        f"latin.toml: not UTF-8 at byte {latin.index('é')}",
+        "top.toml: group #1 needs a list of words",
+        "words.toml: group #1 needs a list of words",
+    ]
+    assert query.load_refusals(tmp_path) == ([], ["refuse.toml: refuse #1 needs a column and two words or more"])
+    assert query.load_variants(tmp_path) == {}
+
+
 def test_a_curated_refusal_drops_the_generated_group_that_holds_its_words(tmp_path):
     """curated/ wins over generated/: a refusal names words of one column never to read as one;
     the generated group holding them all is dropped whole, in that column only."""
