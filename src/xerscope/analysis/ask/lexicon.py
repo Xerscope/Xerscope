@@ -53,16 +53,5 @@ def learn(lexicon: Lexicon, word: str, label: str) -> Lexicon:
     return {k: tuple(dict.fromkeys(v)) for k, v in merged.items()}
 
 
-def learned_toml(pairs: list[tuple[str, str]]) -> str:
-    """The words taught this session as a lexicon file (``[[group]] words = [...]``), to put in the
-    folder XERSCOPE_LEXICON names so every session reads them."""
-    lines = ["# Words taught in the Gantt Ask field: each read as the label it was matched to.", ""]
-    for word, label in pairs:
-        code, _, name = label.partition(" · ")
-        words = list(dict.fromkeys(t for t in (word, code, name) if t))
-        lines += ["[[group]]", "words = [" + ", ".join(json_quote(w) for w in words) + "]", ""]
-    return "\n".join(lines)
-
-
 def json_quote(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)

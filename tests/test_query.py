@@ -231,11 +231,6 @@ def test_an_unknown_word_gets_the_closest_labels_and_can_be_taught():
     taught = query.learn(vocab.lexicon, "commiss", "COM · Commissioning")
     assert "commissioning" in taught["commiss"] and "commiss" in taught["com"]
     assert query.parse_keywords("commiss", Vocabulary(wbs=vocab.wbs, lexicon=taught)).wbs_id == "5"
-    text = query.learned_toml([("commiss", "COM · Commissioning"), ("bétonnage", "CIV · Civil works")])
-    assert '[[group]]\nwords = ["commiss", "COM", "Commissioning"]' in text and '"bétonnage"' in text
-    import tomllib
-
-    assert len(tomllib.loads(text)["group"]) == 2  # a file load_lexicon reads back
 
 
 def test_a_chip_taken_off_drops_its_filter():

@@ -140,9 +140,8 @@ def session_lexicon() -> query.Lexicon:
 
 
 def teach(word: str, label: str) -> None:
-    """Read ``word`` as ``label`` from now on in this session; the Gantt page offers the taught
-    words as a lexicon file to download (``query.learned_toml``), the app container being
-    read-only."""
+    """Read ``word`` as ``label`` from now on in this session only: the lexicon folder lives on
+    the server (XERSCOPE_LEXICON), the app neither writes nor offers a lexicon file."""
     taught = st.session_state.setdefault("taught", [])
     if (word, label) not in taught:
         taught.append((word, label))

@@ -38,7 +38,7 @@ from .ask.generated import counts as variant_counts
 from .ask.generated import lexicons, load_variants, variants
 from .ask.generated import to_toml as variants_toml
 from .ask.grammar import CATEGORIES, STATUSES, And, Atom, Expr, Not, Or
-from .ask.lexicon import Lexicon, json_quote, learn, learned_toml, lexicon_from_groups, load_lexicon
+from .ask.lexicon import Lexicon, json_quote, learn, lexicon_from_groups, load_lexicon
 from .ask.parser import MAX_CHARS, Backend, parse, parse_keywords, warm
 from .ask.text import FUZZY, MARGIN, SURE, fold
 from .ask.vocab import Vocabulary, vocabulary
@@ -48,7 +48,7 @@ __all__ = [
     "CATEGORIES", "FIELDS", "FUZZY", "MARGIN", "MAX_CHARS", "STATUSES", "SUGGEST", "SURE", "WORDS", "And", "Atom",
     "Backend", "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "answer", "apply", "by_confidence",
     "canonical", "conjuncts", "coverage", "expected_filter", "facts", "fold", "from_answer", "funnel_line",
-    "grounded", "json_quote", "language", "learn", "learned_toml", "lexicon_from_groups", "llm_backend",
+    "grounded", "json_quote", "language", "learn", "lexicon_from_groups", "llm_backend",
     "load_cases", "load_lexicon", "mask", "parse", "parse_keywords", "ratios", "said", "score", "self_cases",
     "suggestions", "summary", "understood", "vocabulary", "warm", "without", "written", "variants", "lexicons",
     "load_variants", "variant_counts", "variants_toml",

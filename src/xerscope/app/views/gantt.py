@@ -132,15 +132,6 @@ if ask is not None:
                     if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
                         teach(word, label)
                         st.rerun()
-    if taught:
-        st.download_button(
-            f"Download the {len(taught)} word(s) taught (.toml, for XERSCOPE_LEXICON)",
-            data=query.learned_toml(taught).encode(),
-            file_name="lexicon-taught.toml",
-            mime="application/toml",
-            key="gantt_taught_download",
-            type="tertiary",
-        )
 
 
 # "CIV · Civil works › ZA · Zone A": each node and the nodes above it, built once (the list
