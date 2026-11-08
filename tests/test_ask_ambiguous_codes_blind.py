@@ -64,7 +64,6 @@ def test_ambiguous_value_applies_no_code_filter():
     assert kept == {"A", "B", "C"}
 
 
-@pytest.mark.xfail(strict=True, raises=AttributeError, reason=CLARIFY_API)
 def test_ambiguous_value_lists_each_candidate_with_type_and_scope():
     s = _code_snapshot()
     f, _ = _ask("P1", s)
@@ -80,7 +79,6 @@ def test_ambiguous_value_lists_each_candidate_with_type_and_scope():
 # (2) the choice, passed by value id, keeps that value only
 
 
-@pytest.mark.xfail(strict=True, raises=TypeError, reason=CHOICE_API)
 @pytest.mark.parametrize(("code_id", "expected"), [(GLOBAL_P1, {"A"}), (PROJECT_P1, {"B"})])
 def test_chosen_value_filters_on_it_alone(code_id, expected):
     s = _code_snapshot()
@@ -94,7 +92,6 @@ def test_chosen_value_filters_on_it_alone(code_id, expected):
 # (3) a type name shared by two types asks between the type labels
 
 
-@pytest.mark.xfail(strict=True, raises=AttributeError, reason=CLARIFY_API)
 def test_ambiguous_type_name_asks_between_type_labels():
     s = _code_snapshot()
     f, kept = _ask("Phase", s)

@@ -3,7 +3,10 @@ words taken out and the exclusive facets united; ``parse_keywords`` returns the 
 
 from __future__ import annotations
 
-from .filters import Filter, to_filter
+from collections.abc import Mapping
+from dataclasses import replace
+
+from .filters import Choice, Filter, to_filter
 from .grammar import FACETS, UNKNOWN, And, Atom, Expr, Not, Or
 from .lexer import Item, items
 from .text import fold, tokens
@@ -12,20 +15,24 @@ from .vocab import Vocabulary
 MAX_CHARS = 300  # a sentence is read up to here; the rest is named as left out ("…")
 
 
-def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
+def parse_keywords(text: str, vocab: Vocabulary, chosen: Mapping[str, str] | None = None) -> Filter:
     """The grammar over the file's lexicon: the sentence's conjuncts become the page's facets
     where one facet says them (status, float, WBS, codes, resources, milestones, LOE, search
-    words) and ``clauses`` otherwise (NOT, OR across facets...)."""
+    words) and ``clauses`` otherwise (NOT, OR across facets...). ``chosen``: the user's answers
+    to a previous ``Filter.clarify``, {word: value}."""
     if not fold(text).strip():
         return Filter()
-    conjuncts, ignored, confidence = sentence(text, vocab)
-    return to_filter(conjuncts, ignored, confidence, vocab)
+    conjuncts, ignored, confidence, clarify = sentence(text, vocab, chosen)
+    return replace(to_filter(conjuncts, ignored, confidence, vocab), clarify=tuple(clarify))
 
 
-def sentence(text: str, vocab: Vocabulary) -> tuple[list[tuple[int, Expr]], list[str], float]:
+def sentence(
+    text: str, vocab: Vocabulary, chosen: Mapping[str, str] | None = None
+) -> tuple[list[tuple[int, Expr]], list[str], float, list[Choice]]:
     """The sentence's conjuncts (position, expression) once simplified, the words nothing read
-    (unknown, dangling operators, "…" for the part past MAX_CHARS), and the reading's confidence."""
-    found, confidence = items(tokens(text[:MAX_CHARS]), vocab)
+    (unknown, dangling operators, "…" for the part past MAX_CHARS), the reading's confidence and
+    the questions asked back (``Filter.clarify``)."""
+    found, confidence, clarify = items(tokens(text[:MAX_CHARS]), vocab, chosen)
     parsed = _Parser(found)
     conjuncts, ignored = parsed.top(), list(parsed.dangling)
     kept: list[tuple[int, Expr]] = []
@@ -37,7 +44,7 @@ def sentence(text: str, vocab: Vocabulary) -> tuple[list[tuple[int, Expr]], list
             kept += [(position, part) for part in (simple.items if isinstance(simple, And) else (simple,))]
     if len(text) > MAX_CHARS:
         ignored.append("…")
-    return unite(kept, vocab), list(dict.fromkeys(ignored)), confidence
+    return unite(kept, vocab), list(dict.fromkeys(ignored)), confidence, clarify
 
 
 class _Parser:

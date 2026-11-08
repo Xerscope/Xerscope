@@ -24,7 +24,7 @@ from .ask.bench import (
     self_cases,
     understood,
 )
-from .ask.filters import Filter, canonical, conjuncts, said, without, written
+from .ask.filters import Choice, Filter, canonical, conjuncts, said, without, written
 from .ask.funnel import apply, funnel_line, mask
 from .ask.generated import counts as variant_counts
 from .ask.generated import lexicons, load_refusals, load_variants, near_spellings, refuse, variants
@@ -38,7 +38,7 @@ from .ask.vocab import Vocabulary, vocabulary
 __all__ = [
     "CATEGORIES", "CURATED", "GENERATED", "SUGGESTED",
     "FIELDS", "FUZZY", "MARGIN", "MAX_CHARS", "MAX_FUZZY", "STATUSES", "SUGGEST", "SURE", "WORDS", "And", "Atom",
-    "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "answer", "apply", "by_confidence",
+    "Choice", "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "answer", "apply", "by_confidence",
     "canonical", "conjuncts", "coverage", "expected_filter", "fold", "funnel_line",
     "json_quote", "language", "learn", "lexicon_from_groups", "load_cases", "load_lexicon", "mask", "parse_keywords",
     "ratios", "said", "score", "self_cases",

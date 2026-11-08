@@ -28,6 +28,9 @@ class Vocabulary:
 
     wbs: Mapping[str, str]  # wbs_id -> "CIV · Civil works" (code and name)
     codes: Mapping[str, tuple[str, str, str]] = field(default_factory=dict)  # code_id -> (type, value, name)
+    # code type label -> its P6 name: "Phase (global)" and "Phase (project)" -> "Phase"; a label
+    # missing here is its own name
+    type_names: Mapping[str, str] = field(default_factory=dict)
     resources: Mapping[str, tuple[str, str]] = field(default_factory=dict)  # rsrc_id -> (short name, name)
     # every folded word of the Activity IDs and names: a search word the file does not hold is
     # dropped (``Filter.ignored``) instead of emptying the chart; None = unknown, keep every word
@@ -81,6 +84,7 @@ def vocabulary(
     return Vocabulary(
         wbs=wbs,
         codes={k: v for f in files for k, v in code_values(f).items()},
+        type_names={k: v for f in files for k, v in code_type_names(f).items()},
         resources=resources,
         words=frozenset().union(*(name_words(f.activities) for f in files)),
         has_milestones=bool(activities["is_milestone"].any()),
@@ -117,6 +121,15 @@ def code_values(snapshot: Snapshot) -> dict[str, tuple[str, str, str]]:
         return {}
     rows = zip(values["code_id"], values["code_type"], values["value"], values["name"], strict=True)
     return {code_id: (str(kind), str(value), "" if pd.isna(name) else str(name)) for code_id, kind, value, name in rows}
+
+
+def code_type_names(snapshot: Snapshot) -> dict[str, str]:
+    """code type label -> its P6 name (ACTVTYPE ``actv_code_type``), which two types may share."""
+    values = snapshot.code_values
+    if values.empty or "type_name" not in values:
+        return {}
+    rows = zip(values["code_type"], values["type_name"], strict=True)
+    return {str(label): str(label) if pd.isna(name) else str(name) for label, name in rows}
 
 
 def resource_names(snapshot: Snapshot) -> dict[str, tuple[str, str]]:
