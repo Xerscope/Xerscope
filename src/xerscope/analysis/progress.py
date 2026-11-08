@@ -115,24 +115,42 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
 # --- PPC --------------------------------------------------------------------------------------
 
 
-def committed(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
+def committed(previous: Snapshot, current: Snapshot, include_overdue: bool = True) -> pd.DataFrame:
     """W-1's commitments for the week to W's data date, one row each, with their outcome in W.
 
     Committed: W-1's start (finish) on or before W's data date, the activity not started
     (not complete) in W-1. Kept: W's actual start (finish) on or before W's data date; an
-    actual after it (P6 flags it as invalid progress) is a miss. An activity due to start
-    and finish within the week is two commitments. Milestones and level of effort are left
-    out: a milestone repeats its predecessor's date, so it would add a commitment the week
-    the predecessor ends. Without a W data date nothing is due: no commitment (`ppc_series`
-    notes it)."""
+    actual after it (P6 flags it as invalid progress) is a miss, and so is a started /
+    complete status without the actual date. An actual entered late (before W-1's data date
+    although W-1 showed the activity not started) still keeps it. An activity due to start
+    and finish within the week is two commitments. Milestones and
+    level of effort are left out: a milestone repeats its predecessor's date, so it would add
+    a commitment the week the predecessor ends. ``include_overdue=False`` keeps only the
+    dates after W-1's data date: work already late at W-1 is not this week's commitment.
+    Without a W data date nothing is due: no commitment (`ppc_series` notes it)."""
     work = previous.activities
     work = work[~work["is_milestone"] & ~work["is_loe"]]
-    due, now = current.data_date, current.by_code
+    finishes, starts = _due(work, previous, current, include_overdue)
+    return _commitments(finishes, starts, current)
+
+
+def _due(
+    work: pd.DataFrame, previous: Snapshot, current: Snapshot, include_overdue: bool
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Rows of ``work`` due to finish, and due to start, by W's data date."""
+    due = current.data_date
     if due is None:
-        finishes = starts = work.iloc[0:0]
-    else:
-        finishes = work[~work["is_complete"] & (work["finish"] <= due)]
-        starts = work[~work["is_started"] & (work["start"] <= due)]
+        return work.iloc[0:0], work.iloc[0:0]
+    finishes = work[~work["is_complete"] & (work["finish"] <= due)]
+    starts = work[~work["is_started"] & (work["start"] <= due)]
+    if not include_overdue and previous.data_date is not None:
+        finishes = finishes[finishes["finish"] > previous.data_date]
+        starts = starts[starts["start"] > previous.data_date]
+    return finishes, starts
+
+
+def _commitments(finishes: pd.DataFrame, starts: pd.DataFrame, current: Snapshot) -> pd.DataFrame:
+    due, now = current.data_date, current.by_code
     return pd.concat(
         [
             _outcome(finishes, now, due, "Finish", date="finish", actual="act_end_date", done="is_complete"),
@@ -181,10 +199,11 @@ def _gap_note(previous: Snapshot, current: Snapshot) -> str | None:
     return f"{days} days since the previous update: this point covers more than one week"
 
 
-def ppc_series(store: SnapshotStore) -> pd.DataFrame:
+def ppc_series(store: SnapshotStore, include_overdue: bool = True) -> pd.DataFrame:
+    """One row per week W (update 1 onward): the counts and the three PPC of `committed`."""
     rows = []
     for index in range(1, len(store)):
-        commitments = committed(store[index - 1], store[index])
+        commitments = committed(store[index - 1], store[index], include_overdue)
         commitments = commitments[commitments["in_update"]]  # deleted activities are scope changes, not misses
         finishes = commitments[commitments["commitment"] == "Finish"]
         starts = commitments[commitments["commitment"] == "Start"]

@@ -194,7 +194,6 @@ def test_late_commitments_stay_committed_by_default():
     assert row["ppc_week"] == pytest.approx(75.0)
 
 
-@pytest.mark.xfail(strict=True, reason="API à créer: option de ppc_series limitant aux dates prévues > DD W-1")
 def test_late_commitments_left_out_with_the_option():
     """With the option, only planned dates > DD W-1 (03-09 08:00) commit: T start 03-10,
     T finish 03-13; B start 03-04 and C finish 03-05 are out.
