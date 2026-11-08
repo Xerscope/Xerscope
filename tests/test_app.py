@@ -1066,8 +1066,12 @@ def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
     from xerscope.app.diagnostic import diagnostic_frames
 
     tables = _debug_zip(app, downloads)
-    assert set(tables) == {f"{name}.csv" for name in diagnostic_frames(store.latest, None, _p6())}
+    assert set(tables) == {f"{name}.csv" for name in diagnostic_frames(store.latest, None, _p6())} | {
+        "05_guid_match.csv"
+    }
     assert tables["01_options.csv"]["option"].tolist()[0] == "use_expected_finish"
+    # counts only: the latest update against the baseline and the previous update, no code or GUID
+    assert tables["05_guid_match.csv"]["against"].tolist() == ["baseline", "previous update"]
     _assert_anonymised(tables, store, _session_anonymizer(app))
 
 

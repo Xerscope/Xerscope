@@ -41,6 +41,7 @@ table = partial(ui.table, raw_labels=True)
 
 
 p6_standard = standards()["P6"]
+guid_match = diagnostic.guid_match_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot))
 try:
     frames = memo(
         ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
@@ -110,6 +111,12 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         "previous update under a new Activity ID. P6 links a task to its baseline by Activity ID."
     )
     table(diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)))
+    st.caption(
+        "How this update's tasks match the baseline file and the previous update, by Activity ID and by GUID: "
+        "counts only. renumbered = what 'Link renumbered tasks by GUID' links; gone_guid_absent = tasks gone "
+        "whose GUID this update does not carry (deleted, or a copy of the project with new GUIDs)."
+    )
+    table(guid_match)
     table(frames["05_calendars"])
 
 with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled tasks)", key="debug_load_warnings"):
@@ -310,9 +317,13 @@ def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
     fetched = fetch(
         st.session_state,
-        lambda: zip_frames({**frames, **p6_frames}, "csv"),
+        lambda: zip_frames({**frames, "05_guid_match": guid_match, **p6_frames}, "csv"),
         lambda anonymizer: anonymizer.zip_frames(
-            {**diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True), **p6_frames}
+            {
+                **diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True),
+                "05_guid_match": guid_match,
+                **p6_frames,
+            }
         ),
         sources,
         prepare=True,
