@@ -47,6 +47,9 @@ packages = ["src/xerscope"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "oracle(kind): where the expected values come from: p6, mpxj, standard, property or characterization (tests/conftest.py)",
+]
 filterwarnings = [
     "ignore::DeprecationWarning:streamlit.*",
     # a date read without a format is a guess: every date of the app is "YYYY-MM-DD HH:MM" (ISO 8601)
