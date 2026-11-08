@@ -375,8 +375,8 @@ label and column, is kept once; past the cap the corrections stop being recorded
 keeps working), and the words typed land on the NAS for up to 90 days.
 `tests/test_ask_suggested.py` has one test per guard.
 
-A language model was measured against this and not kept (`analysis/query.py: llm_backend`
-stays as the measurement client of `ask-bench --url`): understanding the sentence,
+A language model was measured against this and not kept (its measurement client has since
+been removed): understanding the sentence,
 Qwen3.5-2B Q4 reached 55 % of the held-out sentences against the grammar's 100 %, in
 about 19 s a sentence on a 4-core x86 faster than the NAS; summarising an answer from
 computed values, 17 of 20 summaries passed a value check and about a third of those

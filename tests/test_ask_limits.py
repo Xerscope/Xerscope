@@ -42,7 +42,7 @@ def _timed(function, *arguments):
 def test_a_sentence_naming_many_nodes_parses_under_a_second(large):
     """50 WBS codes in MAX_CHARS characters: each node is read, in bounded time."""
     sentence = " ".join(f"z{i:04d}" for i in range(NODES))[:MAX_CHARS]
-    got, seconds = _timed(query.parse, sentence, large)
+    got, seconds = _timed(query.parse_keywords, sentence, large)
     assert seconds < BOUND, f"{seconds:.2f} s"
     ((_, named),) = got.clauses
     assert {atom.value for atom in named.items} == {f"w{i}" for i in range(50)} and not got.ignored
@@ -53,7 +53,7 @@ def test_the_labels_offered_for_unknown_words_cost_under_a_second(large):
     over every WBS label and resource of the file."""
     rng = random.Random(2)
     sentence = " ".join("".join(rng.choice(string.ascii_lowercase) for _ in range(9)) for _ in range(30))
-    ignored = query.parse(sentence[:MAX_CHARS], large).ignored
+    ignored = query.parse_keywords(sentence[:MAX_CHARS], large).ignored
     assert len(ignored) > MAX_FUZZY
     _, seconds = _timed(lambda: [query.suggestions(word, large) for word in ignored[:MAX_FUZZY]])
     assert seconds < BOUND, f"{seconds:.2f} s"

@@ -32,7 +32,6 @@ class Filter:
     clauses: tuple[tuple[str, Expr], ...] = ()  # (label, expression), intersected with the facets
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's chips
     ignored: tuple[str, ...] = ()  # words nothing reads (the file, the lexicon, the grammar)
-    source: str = "keywords"  # "keywords" (the grammar) or "model" (a Backend), for the page's caption
     # 1.0 when every phrase matched exactly; else the weakest fuzzy match, lowered under SURE when
     # two WBS nodes scored as close (MARGIN): how well the sentence separates one cluster of the
     # file's labels from the others

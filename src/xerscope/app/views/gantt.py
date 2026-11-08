@@ -110,7 +110,12 @@ ask = None
 if asked:
     try:
         ask = memo(  # once per sentence and update, baseline-independent
-            ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
+            ("ask", snapshot.source, asked, len(taught)),
+            query.parse_keywords,
+            asked,
+            lexicon,
+            baseline=False,
+            ev_basis=False,
         )
     except RecursionError:  # parentheses nested past the recursive parser: said, never echoed
         st.warning("This sentence nests too many parentheses to be read.")

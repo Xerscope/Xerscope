@@ -10,7 +10,7 @@ import pandas as pd
 
 from .filters import Filter, canonical, written
 from .grammar import CATEGORIES, STATUSES
-from .parser import Backend, parse
+from .parser import parse_keywords
 from .text import STOP, SURE, fold, words_of
 from .vocab import Vocabulary
 
@@ -64,11 +64,11 @@ def _node_cases(wbs_id: str, label: str, vocab: Vocabulary) -> list[dict]:
     return cases
 
 
-def coverage(vocab: Vocabulary, backend: Backend | None = None) -> tuple[pd.DataFrame, list[str]]:
+def coverage(vocab: Vocabulary) -> tuple[pd.DataFrame, list[str]]:
     """``score`` on ``self_cases``: the scored frame with each case's label, and the labels of
     the file no phrase reached (every one of a label's phrases right = covered)."""
     cases = self_cases(vocab)
-    scored = score(cases, vocab, backend)
+    scored = score(cases, vocab)
     scored["label"] = [case["label"] for case in cases]
     missed = sorted(set(scored.loc[~scored["exact"], "label"]))
     return scored, missed
@@ -127,14 +127,14 @@ def _expected_resources(case: Mapping, vocab: Vocabulary) -> frozenset[str]:
     return frozenset(by_short[n] for n in case.get("resources", []))
 
 
-def score(cases: list[Mapping], vocab: Vocabulary, backend: Backend | None = None) -> pd.DataFrame:
+def score(cases: list[Mapping], vocab: Vocabulary) -> pd.DataFrame:
     """One row per case: the sentence, whether every field matched (``exact``), one column per
-    field (True when it matched) and the parser that answered. A ratio of a column is the share
+    field (True when it matched) and the reading's confidence. A ratio of a column is the share
     of cases it got right; ``exact`` is the share of sentences whose every filter was right."""
     rows = []
     for case in cases:
         expected = expected_filter(case, vocab)
-        got = parse(case["text"], vocab, backend)
+        got = parse_keywords(case["text"], vocab)
         fields = {name: getattr(got, name) == getattr(expected, name) for name in FIELDS[:-1]}
         fields["clauses"] = sorted(written(e, vocab) for _, e in got.clauses) == sorted(case.get("clauses", []))
         rows.append(
@@ -142,20 +142,19 @@ def score(cases: list[Mapping], vocab: Vocabulary, backend: Backend | None = Non
                 "text": case["text"],
                 "exact": all(fields.values()),
                 **fields,
-                "source": got.source,
                 "confidence": got.confidence,
             }
         )
-    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "source", "confidence"])
+    return pd.DataFrame(rows, columns=["text", "exact", *FIELDS, "confidence"])
 
 
-def understood(cases: list[Mapping], vocab: Vocabulary, backend: Backend | None = None) -> pd.DataFrame:
+def understood(cases: list[Mapping], vocab: Vocabulary) -> pd.DataFrame:
     """One row per case of a ``[[case]] text, expect[, ignored]`` file: the filter read
     (``canonical``), the one expected, and whether they match (and the words left out, when the
     case names them). The share of ``exact`` is the share of sentences understood."""
     rows = []
     for case in cases:
-        got = parse(case["text"], vocab, backend)
+        got = parse_keywords(case["text"], vocab)
         read = canonical(got, vocab)
         exact = read == case.get("expect", "") and sorted(got.ignored) == sorted(case.get("ignored", got.ignored))
         rows.append(
