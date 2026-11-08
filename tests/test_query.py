@@ -456,6 +456,14 @@ def test_without_predecessor_is_literal():
         assert set(rows["task_code"]) == {"A1", "M1"}, text
 
 
+def test_blocking_names_no_set():
+    """ "Bloque" / "blocks" / "blocking" have no P6 meaning: unknown words, never the critical path."""
+    vocab = Vocabulary(wbs={}, words=frozenset())
+    for word in ("bloque", "blocks", "blocking", "bloquant", "bloquantes"):
+        got = query.parse_keywords(word, vocab)
+        assert (got.empty, got.ignored, got.categories) == (True, (word,), ()), word
+
+
 def test_an_activity_id_is_that_activity_exactly(store):
     assert _rows("C3020", store) == {"C3020"}
     assert _rows("c3020 ou c3030", store) == _rows("c3020 c3030", store) == {"C3020", "C3030"}
