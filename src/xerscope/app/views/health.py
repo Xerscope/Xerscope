@@ -425,6 +425,8 @@ def show_own_standard() -> None:
                 st.success(f"Loaded {custom.name} ({len(custom.metrics)} checks): pick it above.")
             except (ValueError, UnicodeDecodeError) as exc:
                 st.error(str(exc))
+            except RecursionError:  # tomllib on arrays or tables nested thousands deep
+                st.error(f"{upload.name}: nested too deeply to be read")
         for error in st.session_state.get("standard_errors", []):
             st.error(error)
 

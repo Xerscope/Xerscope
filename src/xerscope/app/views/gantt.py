@@ -108,9 +108,12 @@ lexicon = memo(  # the labels of every loaded file (memo's key names them all), 
 )
 ask = None
 if asked:
-    ask = memo(  # once per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
-    )
+    try:
+        ask = memo(  # once per sentence and update, baseline-independent
+            ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
+        )
+    except RecursionError:  # parentheses nested past the recursive parser: said, never echoed
+        st.warning("This sentence nests too many parentheses to be read.")
 if ask is not None:  # the filters taken off this sentence (× buttons), from query.without
     held, dropped = st.session_state.get(DROPPED_KEY, ("", []))
     for label in dropped if held == asked else []:
