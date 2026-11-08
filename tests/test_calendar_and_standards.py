@@ -267,3 +267,19 @@ def test_threshold_defaults_of_the_rules_equal_the_standard_files():
                 assert metric.params[name] == default, (metric.id, name, metric.params[name], default)
                 checked += 1
     assert checked == 13  # P6-04/05/06, DCMA-06/08/12, 06A211a, 06A401a, 06A504a, 06A504b, 06A506c (3 parameters)
+
+
+def test_a_night_shift_split_at_midnight_as_p6_writes_it_runs_through_midnight():
+    """P6 enters a night shift day by day: 22:00-24:00 on the evening, 00:00-06:00 on the next
+    day ("we highlight 12 am to 6 am" on the following day, Ten Six, How to Create a Night Shift
+    Calendar in P6). Read that way, the work runs on across midnight with no gap."""
+    evening, morning = "(0||0(s|22:00|f|00:00)())", "(0||0(s|00:00|f|06:00)())"
+    days = {1: evening, 2: morning + evening[:-1].replace("(0||0", "(0||1") + ")", 3: morning}
+    week = "".join(f"(0||{d}()({days.get(d, '')}))" for d in range(1, 8))
+    blob = f"(0||CalendarData()((0||DaysOfWeek()({week}))(0||Exceptions()())))"
+    cal = WorkCalendar.from_row(pd.Series({"clndr_id": "N", "day_hr_cnt": "8", "clndr_data": blob}))
+    sunday_22, monday_06 = pd.Timestamp("2026-03-01 22:00"), pd.Timestamp("2026-03-02 06:00")
+    assert cal.work_hours(sunday_22, monday_06) == 8  # 2 h before midnight, 6 h after
+    assert cal.axis().add(sunday_22, 8 * 60) == monday_06  # an 8 h task ends at 06:00
+    assert cal.work_hours(monday_06, pd.Timestamp("2026-03-02 22:00")) == 0  # the day off-shift
+    assert cal.notes == ()
