@@ -25,7 +25,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ...xer import Snapshot
-from .lexicon import Lexicon, json_quote, lexicon_from_groups
+from .lexicon import Lexicon, json_quote, lexicon_from_groups, tables, words_of
 from .text import fold
 
 MIN_ABBREVIATION = 3  # letters of an abbreviation ("Mec.")
@@ -171,12 +171,12 @@ def load_variants(*dirs: str | Path) -> dict[str, list[list[str]]]:
     found: dict[str, list[list[str]]] = {}
     for file in [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]:
         try:
-            tables = tomllib.loads(file.read_text(encoding="utf-8")).get("group", [])
-        except (OSError, tomllib.TOMLDecodeError):
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):  # TOMLDecodeError, UnicodeDecodeError
             continue
-        for table in tables:
-            if isinstance(table, dict) and isinstance(table.get("column"), str):
-                found.setdefault(table["column"], []).append([w for w in table.get("words", []) if isinstance(w, str)])
+        for table in tables(data, "group"):
+            if words_of(table) is not None and isinstance(table.get("column"), str):
+                found.setdefault(table["column"], []).append([w for w in words_of(table) if isinstance(w, str)])
     return found
 
 
@@ -188,12 +188,12 @@ def load_refusals(*dirs: str | Path) -> tuple[list[tuple[str, frozenset[str]]], 
     errors: list[str] = []
     for file in [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]:
         try:
-            tables = tomllib.loads(file.read_text(encoding="utf-8")).get("refuse", [])
-        except (OSError, tomllib.TOMLDecodeError):
-            continue  # load_lexicon names it
-        for number, table in enumerate(tables, start=1):
-            words = frozenset(fold(w) for w in table.get("words", []) if isinstance(w, str) and fold(w))
-            if not isinstance(table.get("column"), str) or len(words) < 2:
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):  # TOMLDecodeError, UnicodeDecodeError: load_lexicon names it
+            continue
+        for number, table in enumerate(tables(data, "refuse"), start=1):
+            words = frozenset(fold(w) for w in words_of(table) or [] if isinstance(w, str) and fold(w))
+            if len(words) < 2 or not isinstance(table.get("column"), str):
                 errors.append(f"{file.name}: refuse #{number} needs a column and two words or more")
                 continue
             refusals.append((table["column"], words))

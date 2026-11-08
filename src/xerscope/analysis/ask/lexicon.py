@@ -32,19 +32,43 @@ def lexicon_from_groups(groups: list[list[str]]) -> Lexicon:
     return {word: tuple(dict.fromkeys(others)) for word, others in lexicon.items()}
 
 
+def tables(data: dict, key: str) -> list:
+    """The ``[[key]]`` tables of a TOML file edited by hand; a single value written in their place
+    (``key = "x"``) is one entry, for the caller to refuse by its number."""
+    value = data.get(key, [])
+    return value if isinstance(value, list) else [value]
+
+
+def words_of(table: object) -> list | None:
+    """The ``words`` list of a table, None when the table is not one or has no such list."""
+    words = table.get("words") if isinstance(table, dict) else None
+    return words if isinstance(words, list) else None
+
+
 def load_lexicon(*dirs: str | Path) -> tuple[Lexicon, list[str]]:
     """Every ``*.toml`` of ``dirs`` (the folder XERSCOPE_LEXICON names). Returns the lexicon and
-    the load errors (a bad file is skipped and named, never fatal)."""
+    the load errors (a bad file is skipped whole and named with where it fails, never fatal):
+    not UTF-8 (its byte), not TOML (tomllib's line and column), a group that is not a table with
+    a list of words (its number)."""
     groups: list[list[str]] = []
     errors: list[str] = []
     files = [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]
     for file in files:
         try:
             data = tomllib.loads(file.read_text(encoding="utf-8"))
-            # a group naming its source column (generated.load_variants) holds within that column only
-            groups += [list(table.get("words", [])) for table in data.get("group", []) if "column" not in table]
-        except (OSError, tomllib.TOMLDecodeError, AttributeError, TypeError) as exc:
+        except UnicodeDecodeError as exc:  # its message quotes the byte
+            errors.append(f"{file.name}: not UTF-8 at byte {exc.start}")
+            continue
+        except (OSError, tomllib.TOMLDecodeError) as exc:
             errors.append(f"{file.name}: {exc}")
+            continue
+        found = tables(data, "group")
+        bad = [number for number, table in enumerate(found, start=1) if words_of(table) is None]
+        if bad:
+            errors.append(f"{file.name}: group #{bad[0]} needs a list of words")
+            continue
+        # a group naming its source column (generated.load_variants) holds within that column only
+        groups += [table["words"] for table in found if "column" not in table]
     return lexicon_from_groups(groups), errors
 
 

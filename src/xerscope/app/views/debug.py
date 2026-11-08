@@ -328,7 +328,7 @@ def _where(error: str) -> str:
     """ "bad.toml: line 2, column 23": the file and where it fails, never the text an error quotes
     (tomllib names a key or a character; curated/ holds the company's words)."""
     name, _, detail = error.partition(": ")
-    where = re.search(r"line \d+, column \d+|refuse #\d+", detail)
+    where = re.search(r"line \d+, column \d+|byte \d+|(?:group|refuse) #\d+", detail)
     return f"{name}: {where.group(0) if where else 'unreadable'}"
 
 

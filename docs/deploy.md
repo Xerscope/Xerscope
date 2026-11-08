@@ -315,7 +315,7 @@ it into a `curated/` file. A suggestion older than 90 days whose word `curated/`
 hold is purged by `lexicon-init` and by the app at its next click, under the same lock: a
 stack where `lexicon-init` is not run for months still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
 file is named, never fatal to the app; Debug block 14 lists the load errors to every session,
-each as its file and line or refusal number, never the words it holds).
+each as its file and where it fails: line and column, byte (a file not saved as UTF-8), group or refusal number; never the words it holds).
 
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
 with the app's image and account, no network (`network_mode: none`), a read-only root
