@@ -441,6 +441,21 @@ def test_the_hard_constraint_filter_names_the_p6_set():
     assert query.said(query.Atom("constraint", "soft"), vocab) == "with a soft constraint"
 
 
+def test_without_predecessor_is_literal():
+    """ "No predecessor" is every activity with no incoming relationship, with no exemption: a
+    started activity and a start milestone are kept (P6-01's exemptions are the check's)."""
+    from xerkit import SM, active, snap, todo
+
+    file = snap(
+        [active("A1"), todo("M1", **SM), todo("B1"), todo("B2")],
+        [("A1", "B1", "PR_FS", 0), ("M1", "B2", "PR_FS", 0)],
+    )
+    vocab = query.vocabulary(file)
+    for text in ("no predecessor", "without predecessor", "sans prédécesseur", "aucun prédécesseur"):
+        rows = query.apply(query.parse_keywords(text, vocab), file.activities, file).rows
+        assert set(rows["task_code"]) == {"A1", "M1"}, text
+
+
 def test_an_activity_id_is_that_activity_exactly(store):
     assert _rows("C3020", store) == {"C3020"}
     assert _rows("c3020 ou c3030", store) == _rows("c3020 c3030", store) == {"C3020", "C3030"}
