@@ -191,6 +191,19 @@ def _outcome(
     )
 
 
+def unplanned_work(previous: Snapshot, current: Snapshot) -> pd.DataFrame:
+    """Tasks new in W (Activity ID absent from W-1) with an actual start on or before W's data
+    date: work done that W-1 did not plan, out of the PPC counts. Milestones and level of effort
+    left out, as in `committed`; a started status without the actual date is not evidence of
+    work, as for a commitment."""
+    work = current.activities
+    work = work[~work["is_milestone"] & ~work["is_loe"] & ~work["task_code"].isin(previous.by_code.index)]
+    columns = ["task_code", "task_name", "wbs_code", "status", "act_start_date", "act_end_date"]
+    if current.data_date is None:
+        return work.loc[[], columns]
+    return work.loc[work["act_start_date"] <= current.data_date, columns].reset_index(drop=True)
+
+
 PPC_WEEK_DAYS = 7
 
 

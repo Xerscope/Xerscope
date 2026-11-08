@@ -353,7 +353,6 @@ def test_unplanned_work_left_out_of_the_counts():
     assert counts(row) == (1, 1, 1, 1)
 
 
-@pytest.mark.xfail(strict=True, reason="API à créer: liste du travail non planifié (absent de W-1, fait dans W)")
 def test_unplanned_work_listed():
     """Case 10. N, absent from W-1 and complete in W (03-03 / 03-05), is listed as unplanned
     work; T, planned in W-1, is not."""
