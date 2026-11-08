@@ -202,6 +202,58 @@ def renumbered_table(snapshot: Snapshot, baseline: Baseline | None, previous: Sn
     return pd.concat(frames)[columns].reset_index(drop=True) if frames else pd.DataFrame(columns=columns)
 
 
+GUID_MATCH_COLUMNS = [
+    "against", "tasks", "tasks_against", "guids_blank", "guids_repeated", "guids_shared",
+    "ids_in_both", "ids_gone", "ids_new", "renumbered", "gone_guid_in_update", "gone_guid_absent",
+]  # fmt: skip
+
+
+def _usable_guids(snapshot: Snapshot) -> pd.Series:
+    """task_code -> GUID of ``snapshot``, blank and repeated GUIDs left out (as ``renumbered`` reads them)."""
+    tasks = snapshot.activities
+    if "guid" not in tasks:
+        return pd.Series(dtype=str)
+    guids = pd.Series(tasks["guid"].fillna("").astype(str).str.strip().to_numpy(), index=tasks["task_code"])
+    guids = guids[guids != ""]
+    return guids[~guids.duplicated(keep=False)]
+
+
+def guid_match_table(snapshot: Snapshot, baseline: Baseline | None, previous: Snapshot | None) -> pd.DataFrame:
+    """Counts only (no code, no GUID): how the tasks of ``snapshot`` match those of the baseline file and
+    of the previous update, by Activity ID and by GUID (TASK.guid). ``renumbered`` is what the option
+    "Link renumbered tasks by GUID" links. Of the other tasks gone, ``gone_guid_absent`` counts those
+    whose GUID the update does not carry at all (deleted, or a copy of the project with new GUIDs) and
+    ``gone_guid_in_update`` those whose GUID it carries under an ID the option cannot take (an ID the
+    other file holds too); gone tasks without a usable GUID are in neither."""
+    rows = []
+    for against, other in (("baseline", baseline.snapshot if baseline else None), ("previous update", previous)):
+        if other is None or other is snapshot:
+            continue
+        mine, theirs = _usable_guids(snapshot), _usable_guids(other)
+        codes, other_codes = set(snapshot.activities["task_code"]), set(other.activities["task_code"])
+        raw = snapshot.activities.get("guid", pd.Series(dtype=str)).fillna("").astype(str).str.strip()
+        pairs = renumbered(other, snapshot)
+        gone = other_codes - codes - set(pairs["old_code"])
+        gone_guids = theirs[theirs.index.isin(gone)]
+        rows.append(
+            {
+                "against": against,
+                "tasks": len(codes),
+                "tasks_against": len(other_codes),
+                "guids_blank": int((raw == "").sum()),
+                "guids_repeated": int(raw[raw != ""].duplicated(keep=False).sum()),
+                "guids_shared": len(set(mine) & set(theirs)),
+                "ids_in_both": len(codes & other_codes),
+                "ids_gone": len(other_codes - codes),
+                "ids_new": len(codes - other_codes),
+                "renumbered": len(pairs),
+                "gone_guid_in_update": int(gone_guids.isin(set(mine)).sum()),
+                "gone_guid_absent": int((~gone_guids.isin(set(mine))).sum()),
+            }
+        )
+    return pd.DataFrame(rows, columns=GUID_MATCH_COLUMNS)
+
+
 def expected_finish_table(snapshot: Snapshot) -> pd.DataFrame:
     """Activities with an expected finish: stored dates and remaining, recalculated early dates,
     and whether the expected finish set the remaining duration (``rem_override_hr``, 0 = brought to 0)."""
