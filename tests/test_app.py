@@ -204,7 +204,8 @@ def test_gantt_wbs_choice_filters_and_options(app):
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
-    assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
+    # the words taught stay in the session: no lexicon file leaves the app (the lexicon lives on the NAS)
+    assert not [b for b in app.get("download_button") if "taught" in b.label]
     app.button(key="ask_clear").click().run()  # Show all empties the field
     _ok(app)
     assert app.text_input[0].value == "" and _chips(app) == []
