@@ -31,11 +31,11 @@
       "near_clones": 0
     },
     "analysis/baseline.py": {
-      "mi": 62.4,
+      "mi": 56.6,
       "mi_rank": "A",
       "cc_max": 5,
       "cc_over_15": 0,
-      "cognitive_max": 5,
+      "cognitive_max": 7,
       "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 2
@@ -241,7 +241,7 @@
       "near_clones": 0
     },
     "app/diagnostic.py": {
-      "mi": 23.4,
+      "mi": 21.9,
       "mi_rank": "A",
       "cc_max": 17,
       "cc_over_15": 1,
@@ -261,7 +261,7 @@
       "near_clones": 0
     },
     "app/reading.py": {
-      "mi": 73.9,
+      "mi": 72.7,
       "mi_rank": "A",
       "cc_max": 10,
       "cc_over_15": 0,
@@ -351,7 +351,7 @@
       "near_clones": 0
     },
     "app/views/debug.py": {
-      "mi": 40.5,
+      "mi": 40.2,
       "mi_rank": "A",
       "cc_max": 1,
       "cc_over_15": 0,
@@ -591,7 +591,7 @@
       "near_clones": 2
     },
     "xer/model.py": {
-      "mi": 11.0,
+      "mi": 10.9,
       "mi_rank": "B",
       "cc_max": 17,
       "cc_over_15": 1,
@@ -622,7 +622,7 @@
     }
   },
   "global": {
-    "mypy_errors": 100,
+    "mypy_errors": 101,
     "deptry_violations": 0,
     "import_contracts": 11,
     "import_contracts_broken": 0
