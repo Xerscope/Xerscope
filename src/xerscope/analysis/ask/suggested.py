@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import tomllib
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .lexicon import Lexicon, json_quote, write_private
@@ -132,8 +132,12 @@ def purge(folder: str | Path, curated: Lexicon, now: datetime) -> tuple[int, int
 
 
 def _expired(suggestion: dict, curated: Lexicon, now: datetime) -> bool:
+    """Older than RETENTION at ``now`` (a date without time zone, edited by hand, read as UTC, as
+    ``entry`` writes it) and its word not in ``curated``."""
     at, word = suggestion.get("at"), suggestion.get("word")
-    old = isinstance(at, datetime) and at.tzinfo is not None and now - at >= RETENTION
+    if isinstance(at, datetime) and at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    old = isinstance(at, datetime) and now - at >= RETENTION
     return old and not (isinstance(word, str) and fold(word) in curated)
 
 
