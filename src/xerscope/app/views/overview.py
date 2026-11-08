@@ -16,6 +16,7 @@ from xerscope.app.state import (
     standards,
 )
 from xerscope.viz import build_finish_trend
+from xerscope.xer.calendar import LIMIT_MARK
 
 store = require_store()
 latest = store.latest
@@ -100,5 +101,11 @@ st.plotly_chart(build_finish_trend(summary), width="stretch")
 ui.section("Updates loaded")
 ui.table(summary.drop(columns=["snapshot_idx", "project"]))
 
+limits = [w for w in store.warnings if LIMIT_MARK in w]
 for w in store.warnings:
-    st.warning(w, icon=":material/warning:")
+    if w not in limits:
+        st.warning(w, icon=":material/warning:")
+if limits:
+    ui.section("Limits", "What these files hold that xerscope reads differently from P6, and where.")
+    for w in limits:
+        st.warning(w, icon=":material/rule:")
