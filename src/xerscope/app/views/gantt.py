@@ -126,8 +126,17 @@ if ask is not None and ask.matched:  # what was understood, one button each: "Cr
                 args=(asked, label),
             )
 if ask is not None:
-    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
-        offers = query.suggestions(word, lexicon)
+    # a word nothing holds: the closest labels, a click teaches it for the session; the first
+    # MAX_FUZZY words only, each searched once per update and lexicon
+    for word in ask.ignored[: query.MAX_FUZZY]:
+        offers = memo(
+            ("suggest", snapshot.source, word, len(taught)),
+            query.suggestions,
+            word,
+            lexicon,
+            baseline=False,
+            ev_basis=False,
+        )
         if offers:
             with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
                 st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")

@@ -165,11 +165,21 @@ def suggestions(word: str, vocab: Vocabulary, limit: int = 3) -> list[tuple[str,
     labels = [("wbs", label) for label in vocab.wbs.values()]
     labels += [("resource", short or name) for short, name in vocab.resources.values()]
     for kind, label in labels:
-        ratio = max((difflib.SequenceMatcher(None, word, c).ratio() for c in _said_for(kind, label, vocab)), default=0)
+        ratio = max((_ratio(word, c) for c in _said_for(kind, label, vocab)), default=0)
         if ratio >= SUGGEST:
             best[(kind, label)] = max(best.get((kind, label), 0.0), ratio)
     ranked = sorted(best.items(), key=lambda item: (-item[1], item[0][1]))
     return [(kind, label, round(ratio, 2)) for (kind, label), ratio in ranked[:limit]]
+
+
+def _ratio(word: str, said: str) -> float:
+    """difflib's ratio of the two, or 0 when an upper bound of it is already below SUGGEST (the
+    label could not be offered): first real_quick_ratio, 2 * shorter / total length, computed
+    without building the matcher, then quick_ratio."""
+    if 2 * min(len(word), len(said)) < SUGGEST * (len(word) + len(said)):
+        return 0.0
+    matcher = difflib.SequenceMatcher(None, word, said)
+    return matcher.ratio() if matcher.quick_ratio() >= SUGGEST else 0.0
 
 
 def _said_for(kind: str, label: str, vocab: Vocabulary) -> list[str]:
