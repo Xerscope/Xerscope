@@ -28,11 +28,6 @@ PAGES = [
 ]
 # planned dates apart from the current ones (EV basis), labour hours, a GUID per task
 PLAN = {"target_start_date": "2026-03-02 08:00", "target_end_date": "2026-03-20 17:00", "target_work_qty": "80"}
-GUID_LINK_REASON = (
-    "the baseline identity drops the GUID link when ev_basis=False (audit A1): checks, BEI and scores keep the "
-    "unlinked values; fixed on branch fix/ev-chart-cache, commit 'Checks, BEI and Overview scores follow the "
-    "GUID link option'"
-)
 
 
 @pytest.fixture(scope="module")
@@ -110,15 +105,7 @@ def _shown(at) -> dict[str, list]:
     return seen
 
 
-@pytest.mark.parametrize(
-    "option",
-    [
-        pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=GUID_LINK_REASON))
-        if name == "GUID link"
-        else name
-        for name in OPTIONS
-    ],
-)
+@pytest.mark.parametrize("option", OPTIONS)
 def test_a_toggled_option_shows_what_a_fresh_session_shows(folder, monkeypatch, option):
     """Read on a second round of the pages in both sessions: a page that shows a result only once
     another page computed it (the Overview scores, after Health) shows it in both."""
