@@ -67,6 +67,7 @@ def unexplained(xc, snap, cmp) -> pd.DataFrame:
 # --- 1. P6 ------------------------------------------------------------------------------------
 
 
+@pytest.mark.oracle("p6")  # P6's stored dates decide; MPXJ is measured against them
 @pytest.mark.parametrize("name", ["p6viewer/Hotel Project.xer", "p6viewer/TERMINAL BUILDING-AIRPORT.xer"])
 def test_p6_xerscope_and_mpxj(xc, require_reference, name):
     cmp = xc.cpm_crosscheck(require_reference(name))
@@ -150,6 +151,7 @@ KINDS = {
 }
 
 
+@pytest.mark.oracle("mpxj")
 @pytest.mark.parametrize("kind", KINDS)
 def test_random_networks_agree_with_mpxj(xc, tmp_path, kind):
     n, floor = KINDS[kind]
@@ -277,6 +279,7 @@ HAND = {
 }
 
 
+@pytest.mark.oracle("mpxj")
 @pytest.mark.parametrize("name", HAND)
 def test_hand_cases_agree_with_mpxj(xc, tmp_path, name):
     tasks, links, *kw = HAND[name]
@@ -296,6 +299,7 @@ def test_hand_cases_agree_with_mpxj(xc, tmp_path, name):
 # --- 4. the demo: its stored dates are xerscope's own, so MPXJ checks them --------------------
 
 
+@pytest.mark.oracle("mpxj")
 def test_demo_dates_are_confirmed_by_mpxj(xc, sample_dir):
     """The demo's early / late dates and floats are written by xerscope's CPM (sample.py):
     every one must be MPXJ's too, except where MPXJ contradicts its own logic (a Start On

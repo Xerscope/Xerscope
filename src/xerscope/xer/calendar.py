@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import DEFAULT_SETTINGS
+from .parser import XerError
 
 EXCEL_EPOCH = date(1899, 12, 30)
 DAY_START_MINUTE = 8 * 60  # a calendar without a blob works from 08:00
@@ -92,6 +93,8 @@ def _parse_tree(text: str) -> list[_Node]:
     out = []
     while pos < len(s) and s[pos] == "(":
         out.append(node())
+    if pos != len(s):
+        raise ValueError(f"unexpected text at {pos}: {s[pos : pos + 20]!r}")
     return out
 
 
@@ -103,32 +106,35 @@ def _attrs(text: str) -> dict[str, str]:
 Intervals = tuple[tuple[int, int], ...]  # working periods of one day, minutes from midnight
 
 
-def _interval(n: _Node, notes: list[str] | None = None) -> tuple[int, int] | None:
-    """One working period, minutes from midnight; None for no work.
+def _minute(text: str) -> int:
+    """'HH:MM' -> minutes from midnight; anything else is a malformed period."""
+    hours, sep, minutes = text.partition(":")
+    if not (sep and hours.isdigit() and minutes.isdigit() and int(hours) <= 24 and int(minutes) < 60):
+        raise ValueError(f"malformed working period time {text!r}")
+    return int(hours) * 60 + int(minutes)
+
+
+def _interval(n: _Node) -> tuple[int, int] | None:
+    """One working period, minutes from midnight; None for an empty one.
 
     Only "f|00:00" ends at midnight, as MPXJ reads it (``LocalTimeHelper.getMillisecondsInRange``:
     an end at MIDNIGHT runs to the end of the day, any other end gives end - start). A period
-    ending at its start is empty. One ending before its start has no P6 reading (P6 writes no
-    period across midnight: none in the reference files): it is ignored and noted.
+    ending at its start is empty. One ending before its start (22:00-06:00) is not written by
+    P6 (no period across midnight in the reference files): it is malformed.
     """
     a = _attrs(n.attrs)
     if "s" not in a or "f" not in a:
-        return None
-    h0, m0 = map(int, a["s"].split(":"))
-    h1, m1 = map(int, a["f"].split(":"))
-    start, end = h0 * 60 + m0, h1 * 60 + m1
+        raise ValueError(f"working period without start and finish {n.attrs!r}")
+    start, end = _minute(a["s"]), _minute(a["f"])
     if end == 0:  # "f|00:00" = midnight at the end of the day
         end = MINUTES_PER_DAY
     if end < start:
-        note = f"work period {a['s']}-{a['f']} ends before it starts; ignored"
-        if notes is not None and note not in notes:
-            notes.append(note)
-        return None
+        raise ValueError(f"working period {a['s']}-{a['f']} ends before it starts")
     return (start, min(end, MINUTES_PER_DAY)) if end > start else None
 
 
-def _day(n: _Node, notes: list[str] | None = None) -> Intervals:
-    return _merge(i for i in (_interval(c, notes) for c in n.children) if i)
+def _day(n: _Node) -> Intervals:
+    return _merge(i for i in (_interval(c) for c in n.children) if i)
 
 
 def _merge(periods) -> Intervals:
@@ -142,31 +148,37 @@ def _merge(periods) -> Intervals:
     return tuple((a, b) for a, b in out)
 
 
-def parse_clndr_data(
-    text: str, notes: list[str] | None = None
-) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
-    """Return (working periods Monday..Sunday, {date: periods} exceptions), or None.
-
-    A period the reading had to leave out adds one line to ``notes`` when given."""
+def parse_clndr_data(text: str) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
+    """Return (working periods Monday..Sunday, {date: periods} exceptions), or None when the
+    blob holds no week. P6 never writes a malformed blob: one raises ValueError naming the fault."""
     if not isinstance(text, str) or "DaysOfWeek" not in text:
         return None
     try:
-        roots = _parse_tree(text)
-    except (ValueError, IndexError):
-        return None
+        return _read_blob(text)
+    except (IndexError, RecursionError) as err:
+        raise ValueError(f"malformed calendar data ({type(err).__name__})") from err
+
+
+def _read_blob(text: str) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
+    roots = _parse_tree(text)
     dow = next((r.find("DaysOfWeek") for r in roots if r.find("DaysOfWeek")), None)
     if dow is None:
         return None
     week: list[Intervals] = [()] * 7
     for d in dow.children:
         if d.name.isdigit() and 1 <= int(d.name) <= 7:
-            week[(int(d.name) + 5) % 7] = _day(d, notes)  # P6 1=Sunday -> Python weekday 6
+            week[(int(d.name) + 5) % 7] = _day(d)  # P6 1=Sunday -> Python weekday 6
     exceptions: dict[date, Intervals] = {}
     exc = next((r.find("Exceptions") for r in roots if r.find("Exceptions")), None)
     for e in exc.children if exc is not None else []:
-        serial = _attrs(e.attrs).get("d")
-        if serial and serial.lstrip("-").isdigit():
-            exceptions[EXCEL_EPOCH + timedelta(days=int(serial))] = _day(e, notes)
+        serial = _attrs(e.attrs).get("d", "")
+        if not serial.isdigit():
+            raise ValueError(f"malformed exception date {serial!r}")
+        try:
+            day = EXCEL_EPOCH + timedelta(days=int(serial))
+        except OverflowError as err:
+            raise ValueError(f"exception date out of range {serial!r}") from err
+        exceptions[day] = _day(e)
     return tuple(week), exceptions
 
 
@@ -193,7 +205,12 @@ class WorkCalendar:
         notes: list[str] = []
         hpd = pd.to_numeric(row.get("day_hr_cnt"), errors="coerce")
         hpd = float(hpd) if pd.notna(hpd) and hpd > 0 else default_hpd
-        parsed = parse_clndr_data(row.get("clndr_data", ""), notes)
+        try:
+            parsed = parse_clndr_data(row.get("clndr_data", ""))
+        except ValueError as err:
+            raise XerError(
+                f"CALENDAR {row['clndr_id']} {str(row.get('clndr_name', ''))!r}: {err}; P6 does not write this"
+            ) from err
         if parsed is not None and any(parsed[0]):
             week, exc = parsed
             return cls(str(row["clndr_id"]), str(row.get("clndr_name", "")), hpd, week, exc, notes=tuple(notes))

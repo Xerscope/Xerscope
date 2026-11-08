@@ -8,6 +8,7 @@ from xerkit import hours as duration
 
 from xerscope.analysis import builtin_standards, loads_standard, template_text
 from xerscope.xer.calendar import WorkCalendar, parse_clndr_data
+from xerscope.xer.parser import XerError
 
 # --- calendars ------------------------------------------------------------------------------
 
@@ -34,20 +35,21 @@ def test_working_exception_and_midnight_end():
     assert hours(cal.periods(date(2026, 4, 7))) == 0
 
 
-def test_a_period_ending_at_or_before_its_start_is_no_work():
+def test_a_period_ending_at_its_start_is_no_work_and_one_ending_before_is_refused():
     """Only "f|00:00" ends at midnight (MPXJ, LocalTimeHelper.getMillisecondsInRange: an end at
-    MIDNIGHT runs to the end of the day, any other end is end - start). 13:00-13:00 is empty;
+    MIDNIGHT runs to the end of the day, any other end is end - start). 13:00-13:00 is empty.
     22:00-06:00 has no P6 meaning (P6 writes no period across midnight: none in 394 reference
-    files): ignored and noted, not read as 22:00-24:00."""
-    periods = "(0||0(s|08:00|f|12:00)())(0||1(s|13:00|f|13:00)())(0||2(s|22:00|f|06:00)())"
+    files): like any blob P6 does not write, it stops the load with the calendar named (M3)."""
+    periods = "(0||0(s|08:00|f|12:00)())(0||1(s|13:00|f|13:00)())"
     late = "(0||0(s|22:00|f|00:00)())"
     blob = f"(0||CalendarData()((0||DaysOfWeek()((0||2()({periods}))(0||3()({late}))))))"
     cal = WorkCalendar.from_row(pd.Series({"clndr_id": "X", "day_hr_cnt": "4", "clndr_data": blob}))
     assert cal.week[0] == ((480, 720),)  # Monday: 08:00-12:00 only
     assert cal.week[1] == ((1320, 1440),)  # Tuesday: 22:00 to midnight
-    assert cal.notes == ("work period 22:00-06:00 ends before it starts; ignored",)
-    snapshot = snap([{"task_code": "A"}], calendars=[{"clndr_id": "40", "day_hr_cnt": "4", "clndr_data": blob}])
-    assert "test.xer: calendar 40 (): work period 22:00-06:00 ends before it starts; ignored" in snapshot.warnings
+    assert cal.notes == ()
+    overnight = blob.replace("(0||1(s|13:00|f|13:00)())", "(0||1(s|22:00|f|06:00)())")
+    with pytest.raises(XerError, match=r"CALENDAR 40 .*22:00-06:00 ends before it starts"):
+        WorkCalendar.from_row(pd.Series({"clndr_id": "40", "day_hr_cnt": "4", "clndr_data": overnight}))
 
 
 def test_work_hours_are_exact_within_days():

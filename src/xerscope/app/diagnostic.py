@@ -7,11 +7,14 @@ the P6 standard. Nothing here computes a date or a count; the page shows these f
 
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import math
 import re
+import warnings
 from collections.abc import Iterable
+from pathlib import Path
 
 import pandas as pd
 
@@ -200,6 +203,58 @@ def renumbered_table(snapshot: Snapshot, baseline: Baseline | None, previous: Sn
     return pd.concat(frames)[columns].reset_index(drop=True) if frames else pd.DataFrame(columns=columns)
 
 
+GUID_MATCH_COLUMNS = [
+    "against", "tasks", "tasks_against", "guids_blank", "guids_repeated", "guids_shared",
+    "ids_in_both", "ids_gone", "ids_new", "renumbered", "gone_guid_in_update", "gone_guid_absent",
+]  # fmt: skip
+
+
+def _usable_guids(snapshot: Snapshot) -> pd.Series:
+    """task_code -> GUID of ``snapshot``, blank and repeated GUIDs left out (as ``renumbered`` reads them)."""
+    tasks = snapshot.activities
+    if "guid" not in tasks:
+        return pd.Series(dtype=str)
+    guids = pd.Series(tasks["guid"].fillna("").astype(str).str.strip().to_numpy(), index=tasks["task_code"])
+    guids = guids[guids != ""]
+    return guids[~guids.duplicated(keep=False)]
+
+
+def guid_match_table(snapshot: Snapshot, baseline: Baseline | None, previous: Snapshot | None) -> pd.DataFrame:
+    """Counts only (no code, no GUID): how the tasks of ``snapshot`` match those of the baseline file and
+    of the previous update, by Activity ID and by GUID (TASK.guid). ``renumbered`` is what the option
+    "Link renumbered tasks by GUID" links. Of the other tasks gone, ``gone_guid_absent`` counts those
+    whose GUID the update does not carry at all (deleted, or a copy of the project with new GUIDs) and
+    ``gone_guid_in_update`` those whose GUID it carries under an ID the option cannot take (an ID the
+    other file holds too); gone tasks without a usable GUID are in neither."""
+    rows = []
+    for against, other in (("baseline", baseline.snapshot if baseline else None), ("previous update", previous)):
+        if other is None or other is snapshot:
+            continue
+        mine, theirs = _usable_guids(snapshot), _usable_guids(other)
+        codes, other_codes = set(snapshot.activities["task_code"]), set(other.activities["task_code"])
+        raw = snapshot.activities.get("guid", pd.Series(dtype=str)).fillna("").astype(str).str.strip()
+        pairs = renumbered(other, snapshot)
+        gone = other_codes - codes - set(pairs["old_code"])
+        gone_guids = theirs[theirs.index.isin(gone)]
+        rows.append(
+            {
+                "against": against,
+                "tasks": len(codes),
+                "tasks_against": len(other_codes),
+                "guids_blank": int((raw == "").sum()),
+                "guids_repeated": int(raw[raw != ""].duplicated(keep=False).sum()),
+                "guids_shared": len(set(mine) & set(theirs)),
+                "ids_in_both": len(codes & other_codes),
+                "ids_gone": len(other_codes - codes),
+                "ids_new": len(codes - other_codes),
+                "renumbered": len(pairs),
+                "gone_guid_in_update": int(gone_guids.isin(set(mine)).sum()),
+                "gone_guid_absent": int((~gone_guids.isin(set(mine))).sum()),
+            }
+        )
+    return pd.DataFrame(rows, columns=GUID_MATCH_COLUMNS)
+
+
 def expected_finish_table(snapshot: Snapshot) -> pd.DataFrame:
     """Activities with an expected finish: stored dates and remaining, recalculated early dates,
     and whether the expected finish set the remaining duration (``rem_override_hr``, 0 = brought to 0)."""
@@ -292,28 +347,44 @@ def check_parameters(standard: Standard) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def baseline_table(snapshot: Snapshot, baseline: Baseline | None, anonymous: bool = False) -> pd.DataFrame:
-    """The baseline in use: label, kind, activities of the update it covers. ``anonymous``: the label
-    names no file (the file name carries the project code), only the kind of baseline."""
+def baseline_table(
+    snapshot: Snapshot,
+    baseline: Baseline | None,
+    anonymous: bool = False,
+    updates: Iterable[str] = (),
+    guid_link: bool = False,
+) -> pd.DataFrame:
+    """The baseline in use: label, kind, source, EV basis, GUID link option, activities of the update it
+    covers. ``updates``: the files of the loaded updates (a baseline read from one is a loaded update).
+    ``anonymous``: the label and source name no file (a file name carries the project code)."""
     if baseline is None:
-        return pd.DataFrame([{"baseline": "none", "kind": "", "matched": 0, "activities": len(snapshot.by_code)}])
+        return pd.DataFrame(
+            [{"baseline": "none", "kind": "", "source": "", "ev_basis": "", "guid_link": guid_link, "matched": 0,
+              "activities": len(snapshot.by_code)}]
+        )  # fmt: skip
     codes = snapshot.by_code.index
-    planned = baseline.snapshot is snapshot
-    in_file = not planned and baseline.snapshot.source == snapshot.source
-    label = baseline.label
-    if anonymous:
-        label = "planned dates of the update" if planned else "baseline file"
-        label = "project baseline in the file" if in_file else label
+    origin = baseline.snapshot.source
+    if baseline.is_planned or baseline.snapshot is snapshot:
+        kind = "planned dates (target_*)"
+    elif origin == snapshot.source:
+        kind = "project baseline in the file"
+    elif Path(origin).suffix.lower() == ".xml":
+        kind = "P6 XML baseline file"
+    elif origin in set(updates):
+        kind = "loaded update"
+    else:
+        kind = "separate file"
+    if baseline.source.startswith("fallback"):
+        kind = f"fallback, {kind}"
     return pd.DataFrame(
         [
             {
-                "baseline": label,
-                "kind": "planned dates (target_*)"
-                if planned
-                else "project baseline in the file"
-                if in_file
-                else "separate file",
-                "matched": int(codes.isin(baseline.frame.index).sum()),
+                "baseline": kind if anonymous else baseline.label,
+                "kind": kind,
+                "source": "" if anonymous else baseline.source,
+                "ev_basis": baseline.ev_basis,
+                "guid_link": guid_link,
+                "matched": len(codes) - len(baseline.unbaselined(snapshot)),
                 "activities": len(codes),
             }
         ]
@@ -649,7 +720,7 @@ SETTINGS_MEANING = [
      "DT_* codes"),
     ("PROJECT.next_data_date", NO_LABEL, "", "", "meaning unverified"),
     ("PROJECT.last_recalc_date", "Last Recalc Date", "", DATA_MAP,
-     "xerscope's data date (else plan_start_date)"),
+     "xerscope's status date (else plan_start_date)"),
     ("TASK.complete_pct_type", "% Complete Type", "Activity % Complete Type", "xer/model.py PCT_COMPLETE_TYPE",
      "tasks_* counts of the project"),
     ("PROJWBS: Use resource curves \\ future period buckets", "no column in data map v23 nor in the reference files",
@@ -664,10 +735,15 @@ def project_settings_meaning_table() -> pd.DataFrame:
 
 
 def diagnostic_frames(
-    snapshot: Snapshot, baseline: Baseline | None, standard: Standard, anonymous: bool = False
+    snapshot: Snapshot,
+    baseline: Baseline | None,
+    standard: Standard,
+    anonymous: bool = False,
+    updates: Iterable[str] = (),
+    guid_link: bool = False,
 ) -> dict[str, pd.DataFrame]:
     """Blocks 1 to 9, 11 and 13, named as the files of the diagnostic zip (block 10 is ``pv_p6_frames``).
-    ``anonymous``: no file name in them."""
+    ``anonymous``: no file name in them. ``updates``, ``guid_link``: block 5 (``baseline_table``)."""
     project_finish, latest_finishes = finish_table(snapshot)
     ev_settings = etc_settings(snapshot)
     pv_totals, pv_by_status = pv_labor_check(snapshot, baseline)
@@ -678,7 +754,7 @@ def diagnostic_frames(
         "03_int01_recalculation": recalculation_table(snapshot),
         "03_int03_assignments": assignments_table(snapshot),
         "04_check_parameters": check_parameters(standard),
-        "05_baseline": baseline_table(snapshot, baseline, anonymous),
+        "05_baseline": baseline_table(snapshot, baseline, anonymous, updates, guid_link),
         "05_calendars": calendars_table(snapshot),
         "06_leveling": leveling_table(snapshot),
         "06_project_finish": project_finish,
@@ -737,13 +813,22 @@ def read_p6_export(name: str, content: bytes) -> pd.DataFrame:
     if not name.lower().endswith(".csv"):
         raise ValueError("Only .csv exports are read: save the P6 view as CSV.")
     try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text = content.decode("cp1252", errors="replace")
-    try:
-        raw = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str, keep_default_na=False)
-        return _table([list(raw.columns)] + raw.to_numpy().tolist())
-    except (ValueError, csv.Error, pd.errors.ParserError) as exc:
+        if content[:2] in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE):  # Excel's "Unicode Text"
+            text = content.decode("utf-16")
+        else:
+            try:
+                text = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = content.decode("cp1252", errors="replace")
+        with warnings.catch_warnings():
+            # a row longer than the header: refused, never read with its first fields as the index
+            warnings.simplefilter("error", pd.errors.ParserWarning)
+            raw = pd.read_csv(
+                io.StringIO(text), sep=None, engine="python", dtype=str, keep_default_na=False, index_col=False
+            )
+        # a row shorter than the header: its missing cells blank
+        return _table([list(raw.columns)] + raw.fillna("").to_numpy().tolist())
+    except (UnicodeDecodeError, ValueError, csv.Error, pd.errors.ParserError, pd.errors.ParserWarning) as exc:
         raise ValueError("The file cannot be read as a CSV table.") from exc
 
 

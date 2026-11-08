@@ -159,8 +159,8 @@ def test_each_update_is_measured_against_the_baseline_its_file_names_in_the_xml(
         at.run()
         help_lines = at.button(key="context_banner").help.replace("\\", "").split("  \n")
         used[stamp] = next(line for line in help_lines if line.startswith(f"Baseline used for {stamp}"))
-    assert used["2026-03-02"].endswith("P6 Project Baseline 370 from export.xml")
-    assert used["2026-03-09"].endswith("P6 Project Baseline 380 from export.xml")
+    assert used["2026-03-02"].endswith("P6 Project Baseline BL-1 from export.xml")
+    assert used["2026-03-09"].endswith("P6 Project Baseline BL-2 from export.xml")
 
 
 def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_download(tmp_path, monkeypatch):
@@ -209,15 +209,16 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
     app = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
     at = read_folder(AppTest.from_file(app, default_timeout=300).run()).switch_page("views/earned_value.py").run()
 
-    def ev_csv(at) -> bytes:
+    def ev_csv(at, label: str = "Download deleted tasks (CSV)") -> bytes:
         next(b for b in at.button if b.label == "Prepare anonymized downloads").click().run() if any(
             b.label == "Prepare anonymized downloads" for b in at.button
         ) else None
-        button = next(b for b in at.get("download_button") if b.proto.label.startswith("Download CSV"))
+        button = next(b for b in at.get("download_button") if b.proto.label.startswith(label))
         return saved[button.proto.url.rsplit("/", 1)[-1].split(".")[0]]
 
     anonymized = ev_csv(at)
     assert b"Secret gone activity" not in anonymized and b"ZZGONE" not in anonymized
+    assert b"ZZGONE" not in ev_csv(at, "Download CSV")  # the tasks the update holds only
     # the anonymized XER extract carries the baseline too, as an XER xerscope reads back, without its names
     import io
     import zipfile
@@ -236,3 +237,78 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
     at.session_state["anon_exports"] = False
     plain = ev_csv(at.switch_page("views/earned_value.py").run())
     assert b"ZZGONE" in plain  # the test exercises the case: the plain download does list it
+
+
+def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(tmp_path, monkeypatch):
+    """a.xer names Project Baseline 370 (A1, 40 h), b.xer 380 (A1 and A2, 80 h); both baselines of the
+    XML export have the same data date, so the same label. The Earned value page of b, opened after
+    a's, measures b against 380: BAC 80 h, not a's cached 40 h."""
+    from pathlib import Path
+
+    from conftest import baseline_box, read_folder
+    from file_projects import two_projects
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app.state import BL_EACH, BL_FILE
+
+    data = tmp_path / "updates"
+    data.mkdir()
+    (data / "a.xer").write_text(two_projects(pointer="370", with_baseline=False, data_date="2026-03-02 08:00"))
+    (data / "b.xer").write_text(two_projects(pointer="380", with_baseline=False, data_date="2026-03-09 08:00"))
+    (tmp_path / "export.xml").write_bytes(TWO)
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(tmp_path / "export.xml"))
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_fallback").select(BL_FILE)
+    at.switch_page("views/earned_value.py").run()
+    bac = {}
+    for stamp in ("2026-03-02", "2026-03-09"):
+        picker = at.selectbox(key="ev_snap")
+        picker.select(next(option for option in picker.options if option.startswith(stamp)))
+        at.run()
+        assert not at.exception, [e.value for e in at.exception]
+        (table,) = [frame.value for frame in at.dataframe if "measure" in frame.value]
+        bac[stamp] = table.loc[table["measure"] == "BAC", "this update"].iloc[0]
+    assert bac == {"2026-03-02": "40.0 h", "2026-03-09": "80.0 h"}
+
+
+def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch):
+    """The P6 XML baseline of each update ("in each file", XML file as fallback) is listed and built once
+    per file content, EV basis and pointer: a rerun lists no baseline and builds none of them."""
+    from pathlib import Path
+
+    from conftest import baseline_box, read_folder
+    from file_projects import two_projects
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app import state
+    from xerscope.app.state import BL_EACH, BL_FILE
+
+    data = tmp_path / "updates"
+    data.mkdir()
+    (data / "a.xer").write_text(two_projects(pointer="370", with_baseline=False, data_date="2026-03-02 08:00"))
+    (data / "b.xer").write_text(two_projects(pointer="380", with_baseline=False, data_date="2026-03-09 08:00"))
+    (tmp_path / "export.xml").write_bytes(TWO)
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(tmp_path / "export.xml"))
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_fallback").select(BL_FILE)
+    at.switch_page("views/earned_value.py").run()
+    calls = []
+    listed, built = state.list_baselines, Baseline.from_snapshot.__func__
+    monkeypatch.setattr(state, "list_baselines", lambda *a, **k: calls.append("list") or listed(*a, **k))
+    monkeypatch.setattr(
+        Baseline, "from_snapshot", classmethod(lambda c, *a, **k: calls.append("build") or built(c, *a, **k))
+    )
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    # left: the sidebar's own separate-file baseline (the fallback), built on each rerun as before
+    assert calls == ["build"]

@@ -1285,12 +1285,43 @@ class _Run:
             self.free_float_hr[code] = 0.0
 
     # --- longest path ------------------------------------------------------------------------
+    def _ends_project(self, code) -> bool:
+        """``code`` finishes at the project finish. Equal to the minute; or, when only milestones
+        set the project finish, no working minute of ``code``'s calendar between its finish and
+        the project finish (Fri 17:00 before a finish milestone written Mon 08:00).
+        To test in P6 (plan, P6 measurement 6.5): Oracle states "equal" without saying whether
+        working time counts; this reading is the maintainer's until then. When the milestone is
+        on another calendar, the gap is still read as 0 on ``code``'s calendar, with a warning."""
+        finish = self.early_finish[code]
+        if finish == self.finish:
+            return True
+        if pd.isna(finish) or pd.isna(self.finish):
+            return False
+        enders = [c for c in self.nodes if self.early_finish[c] == self.finish]
+        if not enders or any(self.kind(c) == "task" for c in enders):
+            return False
+        if self.cal_ax[code].between(finish, self.finish) != 0:
+            return False
+        own = self.inputs[code]["clndr_id"]
+        for ender in enders:
+            other = self.inputs[ender]["clndr_id"]
+            if other != own:
+                gap = self.cal_ax[ender].between(finish, self.finish)
+                warning = (
+                    f"{code}: on the longest path, finishing {finish} before the finish milestone {ender} at "
+                    f"{self.finish}; 0 working minutes on its calendar {own}, {gap} on {ender}'s calendar {other} "
+                    "(read as 0, to test in P6)"
+                )
+                if warning not in self.warnings:
+                    self.warnings.append(warning)
+        return True
+
     def longest_path(self) -> set[str]:
         """From the activities that finish last, back through driving links (Oracle:
         "activities that have an early finish equal to the latest calculated early finish
         for the project", then "all driving relationships for those activities")."""
         longest: set[str] = set()
-        pending = [code for code in self.open_ if self.early_finish[code] == self.finish]
+        pending = [code for code in self.open_ if self._ends_project(code)]
         while pending:
             code = pending.pop()
             if code in longest:
