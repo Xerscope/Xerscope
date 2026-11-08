@@ -117,10 +117,22 @@ def test_runs_on_main_are_never_cancelled_by_the_next_push():
     assert not any(c for name, c in cancels.items() if name not in ("tests.yml", "image.yml")), cancels
 
 
+def test_ci_tools_are_pinned_to_one_release():
+    """A new ruff rule or a compromised release does not reach CI unannounced: every uvx tool is
+    pinned to a release, and setup-uv installs the uv release the Dockerfile builds with."""
+    workflows = "".join(p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml"))
+    tools = re.findall(r"run: uvx (\S+)", workflows)
+    assert tools and all(re.fullmatch(r"[\w-]+@\d+\.\d+\.\d+", t) for t in tools), tools
+    uv = re.search(r"^FROM ghcr\.io/astral-sh/uv:(\d+\.\d+\.\d+)-", (ROOT / "Dockerfile").read_text(), re.M).group(1)
+    setups = re.findall(r"uses: astral-sh/setup-uv@\S+ # v\S+\n\s+with:\n((?:\s{10}\S.*\n)+)", workflows)
+    assert len(setups) == workflows.count("astral-sh/setup-uv@"), setups
+    assert all(f'version: "{uv}"' in block for block in setups), setups
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
-    assert "ruff check src tests" in wf and "ruff format --check src tests" in wf
+    assert re.search(r"uvx ruff@\S+ check src tests", wf) and re.search(r"uvx ruff@\S+ format --check src tests", wf)
     assert "pull_request:" in wf and "load: true" in wf and "_stcore/health" in wf
     assert ".github/trivy/scan.sh xerscope:ci" in wf  # the app image is scanned
     for line in wf.splitlines():
