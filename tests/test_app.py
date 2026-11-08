@@ -1430,6 +1430,24 @@ def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_r
     assert full.read_bytes() == b"#" * suggested.MAX_BYTES
 
 
+def test_the_gantt_ask_field_keeps_max_chars_of_a_huge_sentence(app):
+    """A sentence sent past the browser's max_chars (a crafted websocket message) is cut on the
+    server before anything reads it: the session's memo keys and the × state hold MAX_CHARS + 1
+    characters at most (the extra one names the cut, "…")."""
+    from xerscope.analysis.query import MAX_CHARS
+
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("critical " + "x" * 1_000_000).run()
+    _ok(app)
+    assert _chips(app) == ["Float: Critical"]
+    app.button(key="ask_drop:Float: Critical").click().run()
+    _ok(app)
+    held = [s for key in app.session_state["_memo"] for s in key if isinstance(s, str)]
+    held.append(app.session_state["gantt_ask_dropped"][0])
+    assert max(map(len, held)) <= MAX_CHARS + 1
+    assert app.text_input(key="gantt_ask").max_chars == MAX_CHARS  # the browser cuts first
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 
