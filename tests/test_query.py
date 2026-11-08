@@ -233,3 +233,37 @@ def test_the_files_own_words_name_their_node(store):
     got = query.parse_keywords("installation", vocab)  # an own word of MEC, also a synonym of CIV's "erection"
     assert got.wbs_id == "7004" and got.search == "installation"
     assert query.vocabulary(snapshot).node_words["7003"] >= {"foundations"}  # without the tree: own node
+
+
+def test_type_name_and_value_said_together_ask_one_question():
+    """ "Phase P1", both "Phase" types holding a "P1": one question, value and type in each choice
+    (maintainer decision, 2026-11-08); the answer filters on that value alone."""
+    from test_code_types_blind import GLOBAL_P1, PROJECT_P1, _code_snapshot
+
+    s = _code_snapshot()
+    vocab = query.vocabulary(s)
+    got = query.parse_keywords("Phase P1", vocab)
+    assert got.code_ids == frozenset() and {c.word for c in got.clarify} == {"P1"}
+    assert {c.value: c.label for c in got.clarify} == {
+        GLOBAL_P1: "P1 — Phase (global)",
+        PROJECT_P1: "P1 — Phase (project)",
+    }
+    got = query.parse_keywords("Phase P1", vocab, {"P1": PROJECT_P1})
+    assert got.code_ids == frozenset({PROJECT_P1}) and got.clarify == () and got.search == ""
+
+
+def test_a_chosen_type_offers_its_values_then_the_value_filters():
+    """ "Phase", two "Phase" types: the type is asked first, then its values; nothing is filtered
+    before a value is picked."""
+    from test_code_types_blind import GLOBAL_P1, GLOBAL_P2, _code_snapshot
+
+    s = _code_snapshot()
+    vocab = query.vocabulary(s)
+    got = query.parse_keywords("Phase", vocab, {"Phase": "Phase (global)"})
+    assert got.code_ids == frozenset()
+    assert [(c.word, c.value, c.label) for c in got.clarify] == [
+        ("Phase", GLOBAL_P1, "P1 — Phase (global)"),
+        ("Phase", GLOBAL_P2, "P2 — Phase (global)"),
+    ]
+    got = query.parse_keywords("Phase", vocab, {"Phase": GLOBAL_P1})
+    assert got.code_type == "Phase (global)" and got.code_ids == frozenset({GLOBAL_P1}) and got.clarify == ()

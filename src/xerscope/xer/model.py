@@ -434,7 +434,7 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     return FileBaseline(pointer, target["proj_short_name"], True, "", str(target["last_baseline_update_date"]))
 
 
-CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]
+CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq", "type_name"]
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
 
 
@@ -561,8 +561,9 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
 
     ``task_codes``: one row per activity and value (TASKACTV rows of the project's TASK
     rows; the type is the value's own). ``code_values``: every value of the types those rows
-    use, parents included, ordered as in P6 (type, then ``seq_num``). Rows naming an unknown
-    task, value or type are left out.
+    use, parents included, ordered as in P6 (type, then ``seq_num``); ``code_type`` is the
+    type's label unique in the file (``_code_type_labels``), ``type_name`` its P6 name, which
+    two types may share. Rows naming an unknown task, value or type are left out.
     """
     types, values, links = raw.table("ACTVTYPE"), raw.table("ACTVCODE"), raw.table("TASKACTV")
     empty = (pd.DataFrame(columns=CODE_VALUE_COLUMNS), pd.DataFrame(columns=TASK_CODE_COLUMNS))
@@ -573,8 +574,10 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
     }
     if any(frame.empty or not set(columns) <= set(frame.columns) for frame, columns in needed.values()):
         return empty
-    label = _code_type_labels(types.drop_duplicates("actv_code_type_id"))
+    types = types.drop_duplicates("actv_code_type_id")
+    label = _code_type_labels(types)
     values = values.assign(code_type=values["actv_code_type_id"].map(label)).dropna(subset=["code_type"])
+    type_name = types.set_index("actv_code_type_id")["actv_code_type"]
     code_of_task = tasks.drop_duplicates("task_id").set_index("task_id")["task_code"]
     type_of_value = values.drop_duplicates("actv_code_id").set_index("actv_code_id")["actv_code_type_id"]
     task_codes = pd.DataFrame(
@@ -594,6 +597,7 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
             "value": used["short_name"],
             "name": used.get("actv_code_name", used["short_name"]),
             "seq": to_number(used.get("seq_num", pd.Series(0, index=used.index))).fillna(0),
+            "type_name": used["actv_code_type_id"].map(type_name),
         }
     )
     code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])

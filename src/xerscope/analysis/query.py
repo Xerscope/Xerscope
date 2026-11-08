@@ -40,6 +40,17 @@ def fold(text) -> str:
 
 
 @dataclass(frozen=True)
+class Choice:
+    """One answer to a question Ask asks back: ``word`` as the file spells it (a value, a type
+    name), ``value`` what ``parse(..., chosen={word: value})`` takes back (a value's ``code_id``,
+    or a type's label), ``label`` the text shown ("P1 — Phase (global)")."""
+
+    word: str
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
 class Filter:
     """What a sentence asked for; every field empty means "no filter", as the page's widgets."""
 
@@ -54,6 +65,9 @@ class Filter:
     search: str = ""
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's caption
     ignored: tuple[str, ...] = ()  # words the file's own lexicon does not hold, left out of the search
+    # a word naming several activity-code values or types of one P6 name: filtered on none of
+    # them, the candidates offered instead (``parse(..., chosen=...)`` takes the answer back)
+    clarify: tuple[Choice, ...] = ()
     source: str = "keywords"  # "keywords" (the grammar) or "model" (a Backend), for the page's caption
     # 1.0 when every phrase matched exactly; else the weakest fuzzy match, lowered under SURE when
     # two WBS nodes scored as close (MARGIN): how well the sentence separates one cluster of the
@@ -83,6 +97,9 @@ class Vocabulary:
 
     wbs: Mapping[str, str]  # wbs_id -> "CIV · Civil works" (code and name)
     codes: Mapping[str, tuple[str, str, str]] = field(default_factory=dict)  # code_id -> (type, value, name)
+    # code type label -> its P6 name: "Phase (global)" and "Phase (project)" -> "Phase"; a label
+    # missing here is its own name
+    type_names: Mapping[str, str] = field(default_factory=dict)
     resources: Mapping[str, tuple[str, str]] = field(default_factory=dict)  # rsrc_id -> (short name, name)
     # every folded word of the Activity IDs and names: a search word the file does not hold is
     # dropped (``Filter.ignored``) instead of emptying the chart; None = unknown, keep every word
@@ -130,13 +147,19 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: L
     for wbs_id, code, name, flag in zip(frame["wbs_id"], frame[codes_column], frame["wbs_name"], flags, strict=True):
         if isinstance(wbs_id, str) and wbs_id and wbs_id != ROOT and flag != "Y":
             wbs[wbs_id] = " · ".join(s for s in (code, name) if isinstance(s, str) and s)
-    codes = {}
+    codes, type_names = {}, {}
     values = snapshot.code_values
     if not values.empty:
-        for code_id, code_type, value, name in zip(
-            values["code_id"], values["code_type"], values["value"], values["name"], strict=True
+        for code_id, code_type, value, name, type_name in zip(
+            values["code_id"],
+            values["code_type"],
+            values["value"],
+            values["name"],
+            values.get("type_name", values["code_type"]),
+            strict=True,
         ):
             codes[code_id] = (str(code_type), str(value), "" if pd.isna(name) else str(name))
+            type_names[str(code_type)] = str(code_type) if pd.isna(type_name) else str(type_name)
     resources = {}
     assigned = snapshot.assignments
     if not assigned.empty and "rsrc_id" in assigned:
@@ -150,6 +173,7 @@ def vocabulary(snapshot: Snapshot, nodes: pd.DataFrame | None = None, lexicon: L
     return Vocabulary(
         wbs=wbs,
         codes=codes,
+        type_names=type_names,
         resources=resources,
         words=words,
         has_milestones=bool(activities["is_milestone"].any()),
@@ -420,10 +444,11 @@ def _take(text: str, phrases: list[str]) -> tuple[str, list[int]]:
     return pattern.sub(blank, text), found
 
 
-def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
+def parse_keywords(text: str, vocab: Vocabulary, chosen: Mapping[str, str] | None = None) -> Filter:
     """Phrase grammar: status and float words, then a WBS node (code or name), then activity-code
     values, then what is left (minus stop words) as a text search. Negation is carried by the
-    phrases themselves ("non démarré", "not critical"), longest match first."""
+    phrases themselves ("non démarré", "not critical"), longest match first. ``chosen``: the
+    user's answers to a previous ``Filter.clarify``, {word: value}."""
     folded = " " + re.sub(r"[^a-z0-9]+", " ", fold(text)) + " "
     if not folded.strip():
         return Filter()
@@ -540,17 +565,56 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
 
     # activity codes: a value or a value name, whole word, longest first. One code type, as the
     # page's widget: a value of another type is understood and dropped, never searched as text.
-    # The type's own name ("zone B2") is dropped too.
+    # The type's own name ("zone B2") is dropped too. P6 keeps a type name unique only within its
+    # scope and a value unique only within its type: a word naming values of several types of one
+    # name ("P1" of "Phase (global)" and of "Phase (project)"), or a name two types share
+    # ("Phase"), filters nothing and asks which one (``clarify``) until ``chosen`` answers.
+    answers = {fold(word): value for word, value in (chosen or {}).items()}
+    clarify: list[Choice] = []
+    type_name = {t: vocab.type_names.get(t, t) for t, _, _ in vocab.codes.values()}
+    reached: set[str] = set()  # the P6 type names a value word named, filtered or asked
+
+    def pick(code_id: str, position: int) -> None:
+        nonlocal result
+        code_type, value, _ = vocab.codes[code_id]
+        if result.code_type in (None, code_type):
+            result = replace(result, code_type=code_type, code_ids=result.code_ids | {code_id})
+            record(position, f"{code_type}: {value}")
+
     by_length = sorted(vocab.codes.items(), key=lambda kv: -max(len(kv[1][1]), len(kv[1][2])))
-    for code_id, (code_type, value, name) in by_length:
+    for code_id, (_, value, name) in by_length:
         for candidate in sorted((fold(value), fold(name)), key=len, reverse=True):
             if len(candidate) >= 2 and candidate not in _STOP and _phrase_pattern([candidate]).search(folded):
                 folded, found = _take(folded, [candidate])
-                if result.code_type in (None, code_type):
-                    result = replace(result, code_type=code_type, code_ids=result.code_ids | {code_id})
-                    record(found[0], f"{code_type}: {value}")
+                same = [c for c, (_, v, n) in vocab.codes.items() if candidate in (fold(v), fold(n))]
+                types = {vocab.codes[c][0] for c in same}
+                reached |= {type_name[t] for t in types}
+                word = value if fold(value) == candidate else name
+                if len(types) > 1 and len({type_name[t] for t in types}) == 1:
+                    if answers.get(fold(word)) in same:
+                        pick(answers[fold(word)], found[0])
+                    else:
+                        clarify += [Choice(word, c, f"{vocab.codes[c][1]} — {vocab.codes[c][0]}") for c in same]
+                else:
+                    pick(code_id, found[0])
                 break
-    for code_type in {t for t, _, _ in vocab.codes.values()}:
+    shared: dict[str, list[str]] = {}  # P6 type name -> its labels, when several types have it
+    for label, name in type_name.items():
+        shared.setdefault(name, []).append(label)
+    for name, labels in shared.items():
+        if len(labels) < 2 or name in reached or len(fold(name)) < 2:
+            continue
+        said = _phrase_pattern([fold(name)]).search(folded)
+        if said is None:
+            continue
+        answer = answers.get(fold(name))
+        if answer in labels:  # the type picked: its values are asked next
+            clarify += [Choice(name, c, f"{v} — {t}") for c, (t, v, _) in vocab.codes.items() if t == answer]
+        elif answer in vocab.codes and vocab.codes[answer][0] in labels:
+            pick(answer, said.start())
+        else:
+            clarify += [Choice(name, label, label) for label in labels]
+    for code_type in {*type_name, *type_name.values()}:
         if len(fold(code_type)) >= 2:
             folded, _ = _take(folded, [fold(code_type)])
 
@@ -594,20 +658,27 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         result = replace(result, search=search)
         record(folded.find(known[0]), f"Search: {search}")
     return replace(
-        result, matched=tuple(label for _, label in sorted(matched)), ignored=ignored, confidence=round(confidence, 2)
+        result,
+        matched=tuple(label for _, label in sorted(matched)),
+        ignored=ignored,
+        clarify=tuple(clarify),
+        confidence=round(confidence, 2),
     )
 
 
-def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filter:
-    """The backend's answer when it gives one, the keyword grammar otherwise (or when it fails)."""
-    if backend is not None and text.strip():
+def parse(
+    text: str, vocab: Vocabulary, backend: Backend | None = None, chosen: Mapping[str, str] | None = None
+) -> Filter:
+    """The backend's answer when it gives one, the keyword grammar otherwise (or when it fails).
+    ``chosen`` (answers to ``Filter.clarify``) goes to the grammar, which asked the question."""
+    if backend is not None and text.strip() and not chosen:
         try:
             answer = backend(text, vocab)
         except Exception:  # a model down or slow must never break the page
             answer = None
         if answer is not None:
             return answer
-    return parse_keywords(text, vocab)
+    return parse_keywords(text, vocab, chosen)
 
 
 # --- coverage of a file's own lexicon ------------------------------------------------------
