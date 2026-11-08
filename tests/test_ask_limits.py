@@ -55,5 +55,5 @@ def test_the_labels_offered_for_unknown_words_cost_under_a_second(large):
     sentence = " ".join("".join(rng.choice(string.ascii_lowercase) for _ in range(9)) for _ in range(30))
     ignored = query.parse(sentence[:MAX_CHARS], large).ignored
     assert len(ignored) > MAX_FUZZY
-    _, seconds = _timed(lambda: [query.suggestions(word, large) for word in ignored[: MAX_FUZZY]])
+    _, seconds = _timed(lambda: [query.suggestions(word, large) for word in ignored[:MAX_FUZZY]])
     assert seconds < BOUND, f"{seconds:.2f} s"
