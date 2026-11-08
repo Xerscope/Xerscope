@@ -131,3 +131,23 @@ def test_a_write_after_a_purge_lands_in_the_new_file(tmp_path):
     suggested.purge(tmp_path, {}, NOW)
     assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW)
     assert [e["word"] for e in _entries(tmp_path)] == ["nouveau"]
+
+
+def test_a_record_purges_what_expired_without_the_init_service(tmp_path):
+    """The app purges as it writes, under the same lock: a stack restarted by Docker (no
+    lexicon-init run) or running for months still keeps a suggestion RETENTION at most."""
+    old = NOW - suggested.RETENTION - timedelta(days=1)
+    assert suggested.record(tmp_path, "ancien", "COM · Commissioning", "wbs", old)
+    assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW)
+    assert [e["word"] for e in _entries(tmp_path)] == ["nouveau"]
+    assert os.listdir(tmp_path) == [suggested.FILE]
+    assert stat.S_IMODE((tmp_path / suggested.FILE).stat().st_mode) == 0o600
+
+
+def test_a_record_keeps_an_expired_word_that_curated_holds(tmp_path):
+    old = NOW - suggested.RETENTION - timedelta(days=1)
+    for word in ("ancien", "valide"):
+        assert suggested.record(tmp_path, word, "COM · Commissioning", "wbs", old)
+    curated = {"valide": ("com",), "com": ("valide",)}
+    assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW, curated)
+    assert [e["word"] for e in _entries(tmp_path)] == ["valide", "nouveau"]
