@@ -165,6 +165,13 @@ def is_project_id_column(column: object) -> bool:
     return isinstance(column, str) and PROJECT_ID_COLUMN.fullmatch(column) is not None
 
 
+def _project_ids_in(raw: RawXer) -> Iterator[str]:
+    """Every non-blank value of a project id column, in every table of ``raw``."""
+    for frame in raw.tables.values():
+        for column in filter(is_project_id_column, frame.columns):
+            yield from (value for value in frame[column] if value)
+
+
 def _is_text(value: str) -> bool:
     """Worth looking for in an output: three characters or more, at least one letter."""
     return len(value) >= 3 and any(character.isalpha() for character in value)
@@ -221,10 +228,7 @@ class Anonymizer:
         project_nodes: list[tuple[pd.DataFrame, pd.DataFrame]] = []
         for raw in raws:
             anonymizer._collect_secrets(raw)
-            for frame in raw.tables.values():
-                for column in frame.columns:
-                    if is_project_id_column(column):
-                        anonymizer.original_project_ids.update(value for value in frame[column] if value)
+            anonymizer.original_project_ids.update(_project_ids_in(raw))
             for (table, column), kind in CODES.items():
                 frame = raw.table(table)
                 if column in frame.columns:
@@ -440,10 +444,7 @@ class Anonymizer:
                 codes = new_codes.get(source, frame[source] if source in frame.columns else None)
                 out[column] = [f"{prefix} {code}" if code else "" for code in codes] if codes is not None else ""
             elif column in KEEP[name]:
-                if column == "clndr_data":
-                    self._check_calendar(frame[column])
-                elif is_project_id_column(column):
-                    out[column] = [self.project_id(value) for value in frame[column]]
+                out[column] = self._kept(column, frame[column])
             elif column in MONEY.get(name, ()):
                 out[column] = ["0" if value.strip() else "" for value in frame[column]]
             elif column in GUIDS:
@@ -453,6 +454,14 @@ class Anonymizer:
                     self.report.emptied_columns.add(f"{name}.{column}")
                 out[column] = ""
         return out
+
+    def _kept(self, column: str, values: pd.Series) -> pd.Series | list[str]:
+        """A kept column as written: the calendar data checked, the project ids renewed."""
+        if column == "clndr_data":
+            self._check_calendar(values)
+        elif is_project_id_column(column):
+            return [self.project_id(value) for value in values]
+        return values
 
     @staticmethod
     def _check_calendar(values: pd.Series) -> None:
@@ -547,6 +556,14 @@ class Anonymizer:
             items.append(f"{new}{bracket}{rest}" if new else "")
         return ", ".join(items)
 
+    def _renamed(self, column: str, values: pd.Series) -> list | None:
+        """The notes or the project ids of ``frame`` renamed; None for any other column."""
+        if column == "note":
+            return self._notes(values)
+        if is_project_id_column(column):
+            return [self._project_ids(value) for value in values]
+        return None
+
     def frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         """A table of activities or relationships with new codes and names; other text emptied."""
         out = frame.copy()
@@ -558,10 +575,8 @@ class Anonymizer:
                 ]
             elif column in self.NAME_COLUMNS:
                 continue
-            elif column == "note":
-                out[column] = self._notes(values)
-            elif is_project_id_column(column):
-                out[column] = [self._project_ids(value) for value in values]
+            elif (renamed := self._renamed(column, values)) is not None:
+                out[column] = renamed
             elif column in ("wbs_code", "pred_wbs_code", "succ_wbs_code"):
                 out[column] = [self.wbs_paths.get(value, "") if isinstance(value, str) else "" for value in values]
             elif column in self.CODE_LIST_COLUMNS:
@@ -577,8 +592,7 @@ class Anonymizer:
             if column in frame.columns:
                 codes = out[source] if source in out.columns else pd.Series("", index=out.index)
                 out[column] = [f"Activity {code}" if code else "" for code in codes]
-        cells = (str(value) for value in out.astype(str).to_numpy().ravel())
-        self._refuse_leaks([*map(str, out.columns), *cells], "table")
+        self._refuse_frame_leaks(out, "table")
         return out
 
     def csv(self, frame: pd.DataFrame) -> bytes:
@@ -608,6 +622,17 @@ class Anonymizer:
     def _zeroed(value: object) -> object:
         return value if isinstance(value, str) or pd.isna(value) else value * 0
 
+    def _renew_project_ids(self, out: pd.DataFrame) -> None:
+        """The project id columns of ``out``, and those listing ids (``PROJECT_ID_LIST_COLUMNS``), renewed."""
+        for column in out.columns:
+            if is_project_id_column(column) or column in PROJECT_ID_LIST_COLUMNS:
+                out[column] = [self._project_ids(value) for value in out[column]]
+
+    def _refuse_frame_leaks(self, out: pd.DataFrame, where: str) -> None:
+        """``_refuse_leaks`` on the column names and every cell of ``out``."""
+        cells = (str(value) for value in out.astype(str).to_numpy().ravel())
+        self._refuse_leaks([*map(str, out.columns), *cells], where)
+
     def zip_frames(self, frames: dict[str, pd.DataFrame]) -> bytes:
         """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES``, the WBS codes and the project ids
         renamed as in the XER extract and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
@@ -625,14 +650,11 @@ class Anonymizer:
                     out[column] = [mapping.get(value, "") if isinstance(value, str) else "" for value in out[column]]
             if "wbs_code" in out.columns:
                 out["wbs_code"] = [self.wbs_paths.get(v, "") if isinstance(v, str) else "" for v in out["wbs_code"]]
-            for column in out.columns:
-                if is_project_id_column(column) or column in PROJECT_ID_LIST_COLUMNS:
-                    out[column] = [self._project_ids(value) for value in out[column]]
+            self._renew_project_ids(out)
             for column in self.DIAGNOSTIC_MONEY:
                 if column in out.columns:
                     out[column] = [self._zeroed(value) for value in out[column]]
-            cells = (str(value) for value in out.astype(str).to_numpy().ravel())
-            self._refuse_leaks([*map(str, out.columns), *cells], f"table {name}")
+            self._refuse_frame_leaks(out, f"table {name}")
             outputs[f"{name}.csv"] = csv_bytes(out)
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
