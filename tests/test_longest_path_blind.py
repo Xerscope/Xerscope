@@ -11,7 +11,6 @@ Fri 17:00 and the next Mon 08:00 are the same working instant: no working minute
 """
 
 import pandas as pd
-import pytest
 from xerkit import FM, hours, snap, todo
 
 from xerscope.analysis.cpm import schedule
@@ -122,13 +121,7 @@ def test_two_open_ends_at_same_working_instant_both_drive():
     assert f.loc[["A", "B", "M"], "longest_path"].tolist() == [True, True, True]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "UNRESOLVED: P6 behaviour unknown; P6 26.8 measurement pending "
-        "(Longest Path, open end at Fri 17:00 vs finish milestone at Mon 08:00)"
-    ),
-)
+# Maintainer reading (08/11), to test in P6 (plan, P6 measurement 6.5).
 def test_open_end_at_friday_evening_drives_milestone_written_monday_morning():
     """Same two chains, M held by Finish On or After Mon 2026-03-09 08:00 (CS_MEOA), so its
     finish may be written Mon 08:00. A EF Fri 03-06 17:00, B EF Fri 17:00.
@@ -147,3 +140,41 @@ def test_open_end_at_friday_evening_drives_milestone_written_monday_morning():
     assert f.loc["B", "ef"] == T("2026-03-06 17:00")
     assert f.loc["M", "ef"] in (T("2026-03-06 17:00"), T("2026-03-09 08:00"))
     assert f.loc[["A", "B", "M"], "longest_path"].tolist() == [True, True, True]
+
+
+# Maintainer reading (08/11), to test in P6 (plan, P6 measurement 6.5).
+def test_open_end_before_a_finish_milestone_on_another_calendar_is_read_as_driving_with_a_warning():
+    """A on C8 finishes Fri 2026-03-06 17:00 (open end). M, the finish milestone, is on C7D and
+    held to Mon 03-09 08:00: no working minute between on A's calendar, Sat-Sun on M's. The gap
+    is read as 0 on A's calendar, A is on the longest path, and a warning names both calendars."""
+    result = schedule(
+        snap(
+            [
+                todo("A", **hours(40)),
+                todo("B", **hours(40)),
+                todo("M", clndr_id="C7D", cstr_type="CS_MEOA", cstr_date="2026-03-09 08:00", **FM),
+            ],
+            [("B", "M", "FS", 0)],
+        )
+    )
+    f = result.frame
+    assert f.loc["A", "ef"] == T("2026-03-06 17:00")
+    assert f.loc["M", "ef"] == T("2026-03-09 08:00")
+    assert f.loc["A", "longest_path"]
+    warned = [w for w in result.warnings if w.startswith("A: on the longest path")]
+    assert len(warned) == 1 and "to test in P6" in warned[0] and "M" in warned[0]
+
+
+def test_open_end_before_a_finishing_task_needs_the_same_minute():
+    """The project finish set by a task: equality to the minute only. A ends Fri 17:00; C ends
+    Mon 03-09 09:00 (1 h after Mon 08:00): A is off the longest path, no warning."""
+    result = schedule(
+        snap(
+            [todo("A", **hours(40)), todo("C", **hours(41))],
+            [],
+        )
+    )
+    f = result.frame
+    assert f.loc["C", "ef"] == T("2026-03-09 09:00")
+    assert not f.loc["A", "longest_path"] and f.loc["C", "longest_path"]
+    assert not any(w.startswith("A: on the longest path") for w in result.warnings)
