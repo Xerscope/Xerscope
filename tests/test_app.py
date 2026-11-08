@@ -1486,6 +1486,22 @@ def test_a_standard_nested_too_deep_is_refused_without_failing(app):
     assert any("deep.toml: nested too deeply to be read" in error.value for error in app.error)
 
 
+def test_the_gantt_funnel_line_shows_a_wbs_name_literally(tmp_path, monkeypatch):
+    """A WBS name written as Markdown in the export (a link, an image) is shown as typed in the
+    Ask funnel line: the browser fetches nothing."""
+    wbs = [
+        {"wbs_id": "W1", "proj_id": "1", "wbs_short_name": "LNK", "wbs_name": "[a](http://x)",
+         "proj_node_flag": "N", "parent_wbs_id": "", "seq_num": "1"},
+    ]  # fmt: skip
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A", wbs_id="W1")], wbs=wbs))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    at.text_input(key="gantt_ask").set_value("LNK").run()
+    _ok(at)
+    funnel = [c.value for c in at.caption if "LNK" in c.value]
+    assert funnel and all("\\[a\\]\\(http://x\\)" in line for line in funnel), funnel
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 
