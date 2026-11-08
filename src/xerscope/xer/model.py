@@ -415,7 +415,8 @@ class FileBaseline:
 
 
 def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
-    """Resolve ``sum_base_proj_id`` of ``project_id`` among the PROJECT rows of the file."""
+    """Resolve ``sum_base_proj_id`` of ``project_id`` among the PROJECT rows of the file. The notes
+    name projects by their code (P6's Project ID), never by proj_id: they are shown on the pages."""
     rows = file_projects.set_index("proj_id")
     pointer = str(rows.loc[project_id, "sum_base_proj_id"]) if project_id in rows.index else ""
     if not pointer:
@@ -423,13 +424,16 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     if pointer == project_id:
         return FileBaseline(pointer, "", False, "the pointer names the analysed project itself")
     if pointer not in rows.index:
-        return FileBaseline(pointer, "", False, f"project {pointer} absent")
+        return FileBaseline(pointer, "", False, "the project it names is not in the file")
     target = rows.loc[pointer]
     if target["tasks"] == 0:
-        return FileBaseline(pointer, target["proj_short_name"], False, f"project {pointer} has no tasks")
+        return FileBaseline(
+            pointer, target["proj_short_name"], False, f"project {target['proj_short_name']} has no tasks"
+        )
     origin = str(target["orig_proj_id"])
     if origin and origin != project_id:
-        note = f"project {pointer} was copied from project {origin}, not from the analysed project {project_id}"
+        source = rows.loc[origin, "proj_short_name"] if origin in rows.index else "a project not in the file"
+        note = f"project {target['proj_short_name']} was copied from {source}, not from the analysed project"
         return FileBaseline(pointer, target["proj_short_name"], False, note)
     return FileBaseline(pointer, target["proj_short_name"], True, "", str(target["last_baseline_update_date"]))
 

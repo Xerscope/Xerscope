@@ -16,7 +16,17 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards, query
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, EV_BASES, baseline_in_file, relinked, renumbered
+from xerscope.analysis.baseline import (
+    DEFAULT_EV_BASIS,
+    EV_BASES,
+    absent_project_baselines,
+    baseline_in_file,
+    other_project_baselines,
+    project_codes,
+    relinked,
+    renumbered,
+    uses_project_baseline,
+)
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
 from xerscope.analysis.wbs import ROOT
@@ -707,7 +717,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         sidebar.error(f"Baseline not read: {exc}")
         return None
     if is_pmxml(source[1]):
-        sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)} (project {snapshot.project_id})")
+        sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)}")
     return Baseline.from_snapshot(snapshot, basis)
 
 
@@ -823,33 +833,69 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
-    """Updates whose P6 Project Baseline (sum_base_proj_id) names a project their file does not hold:
-    one short line, counts and dates only (file names make it unreadable on a long series), asking for
-    that baseline's XER. No P6 steps: restoring or converting a baseline changes the project. Which file
-    names which baseline: Debug, block 5."""
-    absent: dict[str, list[Snapshot]] = {}
-    for snapshot in store:
-        pointer = snapshot.file_baseline.proj_id
-        if pointer and pointer not in set(snapshot.file_projects["proj_id"]):
-            absent.setdefault(pointer, []).append(snapshot)
+    """Updates whose P6 Project Baseline (sum_base_proj_id) names a project their file does not hold,
+    the updates whose earned value uses it (use_project_baseline_flag not N): the baseline named by
+    its code when any loaded file holds that project, why it is needed, and what to load. Counts and
+    dates only, no file name (a long series of long names made the line unreadable). No P6 steps:
+    restoring or converting a baseline changes the project. Which file names which: Debug, block 5."""
+    absent = absent_project_baselines(store)
     if not absent:
         return
+    codes = project_codes(store)
     updates = sum(len(snapshots) for snapshots in absent.values())
 
     def one(proj_id: str, snapshots: list[Snapshot]) -> str:
         dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
         when = ui.fmt_date(dates[0]) if len(dates) == 1 else f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}"
-        return f"project {proj_id} ({_count(len(snapshots), 'update')}, {when})"
+        name = codes.get(proj_id, "a project no loaded file holds (its code is unknown)")
+        unknown = sum(uses_project_baseline(s) is None for s in snapshots)
+        flag = f", {_count(unknown, 'update')} without use_project_baseline_flag" if unknown else ""
+        return f"{name}, named by {_count(len(snapshots), 'update')} ({when}{flag})"
 
     shown = sorted(absent.items(), key=lambda item: -len(item[1]))[:ABSENT_BASELINES_SHOWN]
     named = "; ".join(one(proj_id, snapshots) for proj_id, snapshots in shown)
     if len(absent) > ABSENT_BASELINES_SHOWN:
         named += f"; {len(absent) - ABSENT_BASELINES_SHOWN} more"
-    sidebar.info(
-        f"{_count(updates, 'update')} of {len(store)} name a P6 Project Baseline not exported with the file: "
-        f"{named}. To measure against one, load its XER under Baseline (BL) > {BL_FILE}. "
-        "Which file names which: Debug, block 5.",
-        icon=":material/info:",
+    sidebar.error(
+        f"P6 Project Baseline missing for {_count(updates, 'update')} of {len(store)}: {named}. "
+        "P6 measures planned value, BEI, Late Activities and Missed tasks against it "
+        "(Project Details > Settings, use project baseline). Export that project from P6 and load its XER "
+        f"under Baseline (BL) > {BL_FILE}. Which file names which: Debug, block 5.",
+        icon=":material/error:",
+    )
+
+
+def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline) -> None:
+    """A separate baseline file or a loaded update in force, for every update or as the fallback of
+    those without a usable baseline in their file, whose project is not the Project Baseline those
+    updates name."""
+    if choice not in (BL_EACH, BL_PLANNED, BL_NONE):  # the separate file or a loaded update
+        separate, updates, kind = baseline, list(store), choice
+    elif choice == BL_EACH and st.session_state.get("fallback_choice") not in (None, BL_PLANNED, BL_NONE):
+        separate = st.session_state.get("fallback")
+        updates = [s for s in store if not s.file_baseline.usable]
+        kind = st.session_state.get("fallback_choice")
+    else:
+        return
+    if not isinstance(separate, Baseline):
+        return
+    others = other_project_baselines(separate.snapshot, updates)
+    if not others:
+        return
+    codes = project_codes([*store, separate.snapshot])
+    loaded = separate.snapshot
+    named = "; ".join(
+        f"{codes.get(proj_id, 'a project no loaded file holds')} ({_count(len(snapshots), 'update')})"
+        for proj_id, snapshots in sorted(others.items(), key=lambda item: -len(item[1]))
+    )
+    what = "separate baseline file" if kind == BL_FILE else "baseline (a loaded update)"
+    sidebar.warning(
+        f"The {what} is {loaded.project_code}, data date {ui.fmt_date(loaded.data_date)}, but the updates "
+        "name another P6 Project "
+        f"Baseline: {named}. Their planned value, BEI and late tasks will not match P6's. (Compared by P6's "
+        "internal project id, which holds within one P6 database only.) Ask for the export of the project they "
+        "name: Debug, block 5, lists the pointers.",
+        icon=":material/warning:",
     )
 
 
@@ -1030,6 +1076,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if baseline == BL_EACH:
         _file_baseline_warnings(sidebar, store)
     _absent_baseline_help(sidebar, store)
+    _other_baseline_warning(sidebar, store, choice, baseline)
     _renumbered_notice(sidebar, store)
 
 
@@ -1183,7 +1230,7 @@ def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
         if len(cache) > 64:
             cache.clear()
         built = Baseline.from_snapshot(_parse(*source, project_id=pointer), basis)
-        cache[key] = replace(built, source=f"P6 Project Baseline {pointer} from {source[0]}")
+        cache[key] = replace(built, source=f"P6 Project Baseline {built.snapshot.project_code} from {source[0]}")
     return cache[key]
 
 

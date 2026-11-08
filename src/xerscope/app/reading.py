@@ -3,7 +3,7 @@
 Parsing and building a Snapshot is pure Python and pandas work: threads share one core (the GIL), so
 a series of ten 4 000-activity exports read one file after the other. Here each file goes to a worker
 process; the Snapshot comes back pickled. Measured on ten 3.8 MB updates: 3.3 s one after the other,
-1.6 s on four processes, process start included.
+1.6 s on four processes, process start included; MAX_WORKERS caps them at two.
 
 This module imports no Streamlit: a worker process imports it (``spawn``: a fresh interpreter, never
 a fork of the server and its threads) and only needs the XER reader.
@@ -20,15 +20,18 @@ from concurrent.futures.process import BrokenProcessPool
 
 from xerscope.xer import Snapshot, load_snapshot
 
-MAX_WORKERS = 4  # the NAS this runs on has four cores; more processes only add memory
+MAX_WORKERS = 2  # the most the NAS deployment stays stable with; each process holds a file being read
 WORKERS_VARIABLE = "XERSCOPE_LOAD_WORKERS"  # set to 1 to read in the calling thread
 
 
 def worker_count(files: int) -> int:
-    """Processes for ``files`` files: XERSCOPE_LOAD_WORKERS, else one per core up to MAX_WORKERS."""
+    """Processes for ``files`` files: XERSCOPE_LOAD_WORKERS, else one per core, never above
+    MAX_WORKERS. A value that is not a whole number of at least 1 is ignored (the default applies)."""
     configured = os.environ.get(WORKERS_VARIABLE, "").strip()
-    wanted = int(configured) if configured.isdigit() else min(MAX_WORKERS, os.cpu_count() or 1)
-    return max(1, min(wanted, files))
+    wanted = int(configured) if configured.isascii() and configured.isdigit() else 0
+    if wanted < 1:
+        wanted = os.cpu_count() or 1
+    return max(1, min(wanted, MAX_WORKERS, files))
 
 
 def read_update(name: str, data: bytes, chosen_project: str | None) -> tuple[str, Snapshot | str, dict]:
