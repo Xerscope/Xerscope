@@ -28,6 +28,7 @@ NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker 
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
+CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
@@ -69,6 +70,13 @@ def _clear_ask() -> None:
     st.session_state[ASK_KEY] = ""
 
 
+def _choose(text: str, word: str, value: str) -> None:
+    """Keep the user's answer to one of the sentence's questions; another sentence drops it."""
+    held = st.session_state.get(CHOSEN_KEY) or {}
+    chosen = held.get("chosen", {}) if held.get("text") == text else {}
+    st.session_state[CHOSEN_KEY] = {"text": text, "chosen": {**chosen, word: value}}
+
+
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
@@ -91,9 +99,18 @@ lexicon = memo(  # rebuilt when a word is taught
     ev_basis=False,
 )
 ask = None
+held = st.session_state.get(CHOSEN_KEY) or {}
+chosen = held.get("chosen", {}) if held.get("text") == asked else {}
 if asked:
-    ask = memo(  # once per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
+    ask = memo(  # once per sentence, answers and update, baseline-independent
+        ("ask", snapshot.source, asked, len(taught), tuple(sorted(chosen.items()))),
+        query.parse,
+        asked,
+        lexicon,
+        None,
+        chosen,
+        baseline=False,
+        ev_basis=False,
     )
 if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
     kept = st.pills(
@@ -108,6 +125,15 @@ if ask is not None and ask.matched:  # what was understood, one chip each; a chi
         if label not in (kept or []):
             ask = query.without(ask, label, lexicon)
 if ask is not None:
+    # a word naming several code values or types of one name: nothing filtered on it until a
+    # click picks one (query.Filter.clarify); the choice is kept for this sentence
+    for word in dict.fromkeys(choice.word for choice in ask.clarify):
+        with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"clarify_{word}"):
+            st.markdown(f"Which **{ui.md_text(word)}**:")
+            for choice in (c for c in ask.clarify if c.word == word):
+                if st.button(ui.md_text(choice.label), key=f"clarify_{word}_{choice.value}", type="tertiary"):
+                    _choose(asked, word, choice.value)
+                    st.rerun()
     for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
         offers = query.suggestions(word, lexicon)
         if offers:
@@ -259,7 +285,12 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             if ask.ignored
             else ""
         )
-        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "Nothing understood: showing all."
+        if ask_funnel.steps:
+            said = query.answer(ask, ask_funnel, lexicon)
+        elif ask.clarify:
+            said = "Pick one of the choices below: nothing is filtered on that word until then."
+        else:
+            said = "Nothing understood: showing all."
         banner = st.container(
             border=True,
             horizontal=True,
