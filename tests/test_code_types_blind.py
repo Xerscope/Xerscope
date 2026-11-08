@@ -41,6 +41,11 @@ GLOBAL_P1, PROJECT_P1, GLOBAL_P2 = "7001", "7002", "7003"
 def _code_snapshot(scopes: tuple[str, str] = ("AS_Global", "AS_Project")) -> Snapshot:
     """A, B, C: A gets "P1" of the first "Phase" type, B "P1" of the second, C nothing.
     The first type also has a value "P2" assigned to nobody."""
+    return build_snapshot(parse_text(_code_text(scopes), source="test.xer"))
+
+
+def _code_text(scopes: tuple[str, str] = ("AS_Global", "AS_Project")) -> str:
+    """The .xer text of ``_code_snapshot``."""
     first, second = scopes
     types = [
         {
@@ -91,8 +96,7 @@ def _code_snapshot(scopes: tuple[str, str] = ("AS_Global", "AS_Project")) -> Sna
     tables = _table("ACTVTYPE", types) + _table("ACTVCODE", values) + _table("TASKACTV", links)
     text = xer_text([todo("A"), todo("B"), todo("C")])
     assert text.endswith("%E\n")
-    text = text[: -len("%E\n")] + "\n".join(tables) + "\n%E\n"
-    return build_snapshot(parse_text(text, source="test.xer"))
+    return text[: -len("%E\n")] + "\n".join(tables) + "\n%E\n"
 
 
 def _label(s: Snapshot, code_id: str) -> str:

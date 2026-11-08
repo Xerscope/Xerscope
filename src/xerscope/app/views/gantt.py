@@ -31,6 +31,7 @@ TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list un
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
+CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px; the chart scrolls inside
 
@@ -79,6 +80,13 @@ def _drop(sentence: str, label: str) -> None:
     st.session_state[DROPPED_KEY] = (sentence, [*(labels if held == sentence else []), label])
 
 
+def _choose(text: str, word: str, value: str) -> None:
+    """Keep the user's answer to one of the sentence's questions; another sentence drops it."""
+    held = st.session_state.get(CHOSEN_KEY) or {}
+    chosen = held.get("chosen", {}) if held.get("text") == text else {}
+    st.session_state[CHOSEN_KEY] = {"text": text, "chosen": {**chosen, word: value}}
+
+
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
@@ -107,13 +115,16 @@ lexicon = memo(  # the labels of every loaded file (memo's key names them all), 
     ev_basis=False,
 )
 ask = None
+chosen_held = st.session_state.get(CHOSEN_KEY) or {}
+chosen = chosen_held.get("chosen", {}) if chosen_held.get("text") == asked else {}
 if asked:
     try:
-        ask = memo(  # once per sentence and update, baseline-independent
-            ("ask", snapshot.source, asked, len(taught)),
+        ask = memo(  # once per sentence, answers and update, baseline-independent
+            ("ask", snapshot.source, asked, len(taught), tuple(sorted(chosen.items()))),
             query.parse_keywords,
             asked,
             lexicon,
+            chosen,
             baseline=False,
             ev_basis=False,
         )
@@ -134,6 +145,15 @@ if ask is not None and ask.matched:  # what was understood, one button each: "Cr
                 args=(asked, label),
             )
 if ask is not None:
+    # a word naming several code values or types of one name: nothing filtered on it until a
+    # click picks one (query.Filter.clarify); the choice is kept for this sentence
+    for word in dict.fromkeys(choice.word for choice in ask.clarify):
+        with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"clarify_{word}"):
+            st.markdown(f"Which **{ui.md_text(word)}**:")
+            for choice in (c for c in ask.clarify if c.word == word):
+                if st.button(ui.md_text(choice.label), key=f"clarify_{word}_{choice.value}", type="tertiary"):
+                    _choose(asked, word, choice.value)
+                    st.rerun()
     # a word nothing holds: the closest labels, a click teaches it for the session; the first
     # MAX_FUZZY words only, each searched once per update and lexicon
     for word in ask.ignored[: query.MAX_FUZZY]:
@@ -279,11 +299,12 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
     tasks = ask_funnel.rows
     with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
         # nothing understood but words left out: no row (query.apply); only stop words: no filter
-        said = (  # in the question's language
-            query.answer(ask, ask_funnel, lexicon, query.language(asked))
-            if ask_funnel.steps
-            else "No filter: showing all."
-        )
+        if ask_funnel.steps:  # in the question's language
+            said = query.answer(ask, ask_funnel, lexicon, query.language(asked))
+        elif ask.clarify:
+            said = "Pick one of the choices below: nothing is filtered on that word until then."
+        else:
+            said = "No filter: showing all."
         banner = st.container(
             border=True,
             horizontal=True,

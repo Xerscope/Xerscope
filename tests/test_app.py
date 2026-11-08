@@ -547,6 +547,26 @@ def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeyp
     assert shown(["l"]) == {"A", "B"}  # typed text: values L1, L2 (case ignored)
 
 
+def test_gantt_ask_asks_which_code_value_then_filters_on_the_one_clicked(tmp_path, monkeypatch):
+    """ "P1" under two "Phase" types: buttons ask which one, nothing is filtered before the
+    click; the click keeps the choice for the sentence and filters on that value alone."""
+    from test_code_types_blind import GLOBAL_P1, PROJECT_P1, _code_text
+
+    (tmp_path / "phases.xer").write_text(_code_text(), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    at.text_input[0].set_value("P1").run()
+    _ok(at)
+    shown = {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"}
+    assert shown == {"A", "B", "C"}
+    assert at.button(key=f"clarify_P1_{GLOBAL_P1}").label == ui.md_text("P1 — Phase (global)")  # escaped markdown
+    at.button(key=f"clarify_P1_{PROJECT_P1}").click().run()
+    _ok(at)
+    assert {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"} == {"B"}
+    assert _chips(at) == ["Phase (project): P1"]
+    assert at.session_state["gantt_ask_chosen"] == {"text": "P1", "chosen": {"P1": PROJECT_P1}}
+
+
 def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
     """1,000 values of one code: all offered as suggestions, and one typed text keeps every
     value containing it without ticking them one by one."""
