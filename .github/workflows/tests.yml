@@ -7,6 +7,7 @@ name: tests
 on:
   push:
     branches: [main]
+    tags: ["v*"]          # a release tag is tested before image.yml publishes it
   pull_request:
   workflow_dispatch:
   schedule:

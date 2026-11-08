@@ -68,6 +68,27 @@ def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_e
     assert "packages: write" in wf and "ghcr.io" in wf and "push: true" in wf
 
 
+def test_only_a_tested_commit_is_published():
+    """image.yml runs after a `tests` run, publishes only when that run succeeded on a push (main or
+    a v* tag, both tested), and builds that run's commit. A workflow_run sees main as github.ref and
+    github.sha: tags and revision come from the triggering run, never from {{is_default_branch}} or type=sha."""
+    image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    on = image[image.index("\non:") : image.index("\nconcurrency:")]
+    assert "workflow_run:" in on and "workflows: [tests]" in on and "types: [completed]" in on
+    assert 'branches: [main, "v*"]' in on
+    assert "push:" not in on and "workflow_dispatch" not in on  # no path around the tests
+    assert "github.event.workflow_run.conclusion == 'success'" in image
+    assert "github.event.workflow_run.event == 'push'" in image
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in image
+    assert "{{is_default_branch}}" not in image and "type=sha" not in image
+    assert "type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}" in image
+    assert "value=${{ github.event.workflow_run.head_branch }}" in image  # the semver tag
+    assert "org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}" in image
+    tests = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert re.search(r"^name: tests$", tests, re.M)
+    assert 'tags: ["v*"]' in tests[: tests.index("pull_request:")]  # a release tag runs the tests
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
