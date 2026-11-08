@@ -129,6 +129,17 @@ def test_ci_tools_are_pinned_to_one_release():
     assert all(f'version: "{uv}"' in block for block in setups), setups
 
 
+def test_every_dependabot_version_update_waits_a_week():
+    """Each ecosystem's version updates wait 7 days after a release; security updates do not wait
+    (GitHub docs: cooldown applies to version updates, not security updates)."""
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    entries = dependabot.split("  - package-ecosystem:")[1:]
+    assert len(entries) == 6
+    for entry in entries:
+        days = re.search(r"^    cooldown:\n      default-days: (\d+)", entry, re.M)
+        assert days and int(days.group(1)) >= 7, entry
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
