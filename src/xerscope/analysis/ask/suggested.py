@@ -2,15 +2,16 @@
 XERSCOPE_LEXICON: one ``[[suggestion]]`` per click on a suggested label, holding the unknown word,
 the label picked, the label's source column, the filter it gives (facet, value) and the date,
 never the sentence asked. The app appends; nothing reads them for the Ask field until the
-maintainer copies a word into ``curated/``; ``xerscope lexicon build`` (the init service) purges
-a suggestion not copied after RETENTION.
+maintainer copies a word into ``curated/``; a suggestion not copied is purged after RETENTION, by
+``xerscope lexicon build`` (the init service) and by the next record.
 
 The folder is written from a web page, hence the guards: the file name is fixed; word and label
 are NFKC-normalised, bounded (MAX_WORD, MAX_LABEL) and made of letters, digits and PUNCTUATION
 only, refused otherwise (no control character, newline, bracket, quote, backslash or '='); each
 value goes through ``json_quote``; an exclusive ``flock`` serialises the size check and the
 append; the file stops at MAX_BYTES; it is created 0600 and never opened through a symlink;
-nothing is printed or logged. ``flock`` is POSIX: on Windows nothing is recorded."""
+nothing is printed or logged. ``flock`` is POSIX: on Windows nothing is recorded. Each record
+also purges, under its lock, what ``purge`` would: the retention holds without the init service."""
 
 from __future__ import annotations
 
@@ -50,8 +51,10 @@ def entry(word: str, label: str, kind: str, at: datetime) -> str:
     return "\n".join([*lines, f"at = {at:%Y-%m-%dT%H:%M:%SZ}", "", ""])
 
 
-def record(folder: str | Path, word: str, label: str, kind: str, at: datetime) -> bool:
-    """Append one correction to ``folder``/FILE; False, and nothing written, when a guard refuses."""
+def record(folder: str | Path, word: str, label: str, kind: str, at: datetime, curated: Lexicon | None = None) -> bool:
+    """Append one correction to ``folder``/FILE; False, and nothing written, when a guard refuses
+    or the file is not TOML. Under the same lock, the suggestions expired at ``at`` (``purge``,
+    with ``curated``) go: the file is then replaced whole, holding the new entry."""
     try:
         import fcntl
     except ImportError:
@@ -59,23 +62,36 @@ def record(folder: str | Path, word: str, label: str, kind: str, at: datetime) -
     word, label = clean(word, MAX_WORD), clean(label, MAX_LABEL)
     if word is None or label is None or kind not in SOURCES or not Path(folder).is_dir():
         return False
-    text = entry(word, label, kind, at).encode()
+    path = Path(folder) / FILE
+    text = entry(word, label, kind, at)
     try:
-        fd = _locked(Path(folder) / FILE, fcntl)
+        fd = _locked(path, fcntl)
     except OSError:  # a symlink in place of the file (ELOOP), a folder not writable
         return False
-    with os.fdopen(fd, "ab") as file:
-        if os.fstat(fd).st_size + len(text) > MAX_BYTES:
+    with os.fdopen(fd, "a+b") as file:
+        file.seek(0)
+        try:
+            entries = tomllib.loads(file.read().decode("utf-8")).get("suggestion", [])
+        except ValueError:  # not UTF-8, not TOML (edited by hand): left as it is
             return False
-        file.write(text)
+        kept = [t for t in (_rewritten(e) for e in entries if not _expired(e, curated or {}, at)) if t]
+        if len(kept) < len(entries):
+            written = "".join([*kept, text])
+            if len(written.encode()) > MAX_BYTES:
+                return False
+            write_private(path, written)
+            return True
+        if os.fstat(fd).st_size + len(text.encode()) > MAX_BYTES:
+            return False
+        file.write(text.encode())
     return True
 
 
 def _locked(path: Path, fcntl) -> int:
-    """``path`` opened for appending under an exclusive lock, on the file the path names once
-    locked (a purge replaces it: a writer that waited on the old one opens the new one)."""
+    """``path`` opened for reading and appending under an exclusive lock, on the file the path
+    names once locked (a purge replaces it: a writer that waited on the old one opens the new one)."""
     while True:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)
         if os.fstat(fd).st_ino == os.stat(path, follow_symlinks=False).st_ino:
             return fd

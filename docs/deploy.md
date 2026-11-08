@@ -271,7 +271,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
 - [ ] Memory and PID caps on the four containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
-- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (and purged by `lexicon-init`).
+- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (purged by `lexicon-init` and by the app).
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
@@ -314,8 +314,9 @@ section of `report.txt` after a start and copy each true typo into a `curated/` 
 (`[[group]] words = ["gybsum", "gypsum"]`).
 
 A word taught by a click holds for the visitor's session at once; for every session, copy
-it into a `curated/` file. `lexicon-init` purges a suggestion older than 90 days whose word
-`curated/` does not hold. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
+it into a `curated/` file. A suggestion older than 90 days whose word `curated/` does not
+hold is purged by `lexicon-init` and by the app at its next click, under the same lock: a
+stack Docker restarts without `lexicon-init` (a NAS reboot) still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
 file is named, never fatal to the app; the Debug page lists the load errors).
 
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
