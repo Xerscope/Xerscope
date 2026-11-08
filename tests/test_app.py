@@ -1466,6 +1466,26 @@ def test_the_gantt_offers_labels_for_a_few_unknown_words_once_per_sentence(app, 
     assert searched == []
 
 
+def test_the_gantt_ask_field_says_a_sentence_nests_too_deep_without_failing(app):
+    """Parentheses nested past the parser's recursion: a neutral line, the page draws, the
+    sentence is not repeated."""
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("(" * 299 + "x").run()
+    _ok(app)
+    assert [w.value for w in app.warning] == ["This sentence nests too many parentheses to be read."]
+    assert not _chips(app)
+
+
+def test_a_standard_nested_too_deep_is_refused_without_failing(app):
+    """A TOML nested past the recursion limit (well under the 1 MB upload cap): an error naming
+    the file, no exception on the page."""
+    app.switch_page("views/health.py").run()
+    nested = b"x = " + b"[" * 5000 + b"]" * 5000 + b"\n"
+    app.file_uploader(key="std_upload").set_value(("deep.toml", nested, "application/toml")).run()
+    _ok(app)
+    assert any("deep.toml: nested too deeply to be read" in error.value for error in app.error)
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 
