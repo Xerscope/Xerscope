@@ -429,6 +429,18 @@ def test_constraints_open_ends_and_longest_path(store):
     assert _rows("longest path", store) == set(tasks.loc[tasks["on_longest_path"], "task_code"])
 
 
+def test_the_hard_constraint_filter_names_the_p6_set():
+    """P6 Professional's hard set (Check Schedule, 101248) differs from DCMA's and EPPM's: the
+    chip and the answer name it, in P6's own constraint names."""
+    vocab = Vocabulary(wbs={}, words=frozenset())
+    names = "Mandatory Start, Start On, Mandatory Finish, Finish On"
+    for text in ("hard constraints", "contraintes dures", "mandatory constraint"):
+        assert query.parse_keywords(text, vocab).matched == (f"With a hard constraint (P6: {names})",), text
+    hard = query.Atom("constraint", "hard")
+    assert query.said(hard, vocab, "fr") == f"avec contrainte dure (P6 : {names})"
+    assert query.said(query.Atom("constraint", "soft"), vocab) == "with a soft constraint"
+
+
 def test_an_activity_id_is_that_activity_exactly(store):
     assert _rows("C3020", store) == {"C3020"}
     assert _rows("c3020 ou c3030", store) == _rows("c3020 c3030", store) == {"C3020", "C3030"}
