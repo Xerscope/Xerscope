@@ -16,7 +16,7 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 |---|---|---|---|
 | Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
-| Relationships checked | all except links between two finished activities | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
+| Relationships checked | all except links between two finished activities; a link from another project counted only when that project is in the file (UNRESOLVED, below) | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
 | Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish of the whole IMS (LOE included, ties share it) exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
@@ -52,11 +52,45 @@ A P6 Professional 26.8 report on the synthetic project of `tests/test_p6_checksc
 anyone can rebuild, shows the same three populations. P6-04: 1 / 11, its 14 activities less 2
 milestones and 1 completed. P6-12: 2 / 11, the completed activity out. P6-13: BEI 1 / 12, every
 non-milestone activity, where 3 were due by the data date.
+Unresolved: both reports measure a project that is its own baseline. Ten Six reads an r22.12 report
+with a separate baseline at 6 / 6 where 11 were due (https://tensix.com/using-the-p6-check-schedule-tool/),
+which fits neither the help text nor these reports. The P6 26.8 report of a project with a separate
+baseline assigned, holding a baseline activity that finishes after the data date and one finished early,
+settles whether every baseline activity is counted there too. Without a data date P6-13 stays n/a: the
+help defines it against the data date and no report exists for that case.
 Invalid Progress Dates is one check of the dialog but two lines of the report (before / after the data
 date, each with its own target, P6 Professional 26.8): P6-10a and P6-10b.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
 are written from R1 alone, and their open points are marked `UNRESOLVED` in the
-rule docstrings (`analysis/p6/check_schedule.py`).
+rule docstrings (`analysis/p6/check_schedule.py`). Among them: P6-16 and P6-17 read only the
+relationships between activities of the project, so a link to an activity of another project
+neither makes a task dangling nor drives it, whereas P6-01 lets such a link pass (46291). The
+Dangling help (113174, 101496, 101497) does not say how P6 treats it; the current reading is pinned by
+`test_p6_16_and_17_do_not_read_links_to_other_projects` until a P6 report on a schedule with external
+FS / FF links settles it. Both checks also leave completed tasks out of the numerator: no Oracle
+text says so (113174 names in-progress tasks only, for Dangling Start), and the 26.8 report's one
+completed task has FS logic on both sides, so it does not tell. Pinned by
+`test_p6_16_and_17_never_count_a_completed_task`; settled by a P6 report on a completed task with
+FF-only predecessors and one with SS-only successors.
+P6-01 reads 46291 ("Activities with external predecessors or successors pass the check") link by
+link: an external predecessor satisfies the predecessor test only, an external successor the successor
+test only. The sentence could also mean that any external link passes the whole check; no report in
+hand shows it. Pinned by `test_p6_01_external_link_passes_only_its_own_end`.
+P6-16 / P6-17 leave milestones out because R1 shows 0 for milestones with FF / SS logic only; those
+milestones carried Start on or after constraints, which "Ignore activities with soft constraints"
+(113174) would also leave out of P6-17, and R1 does not record the options. The exclusion is a
+reading until a report with the options unchecked shows it (`test_p6_16_and_17_leave_milestones_out`).
+P6-15 reads FS and SS links between activities of the project; FF, SF and links to other projects
+are not read (`test_p6_15_reads_fs_and_ss_links_inside_the_project_only`).
+The relationship checks (P6-05, P6-07, P6-08, P6-09) count the links into the project's activities.
+A link from an activity of another project is counted when that project's activities are in the
+file (the predecessor reads `[ext]<task_id>`), and dropped when they are not
+(`Snapshot.external_links_dropped`): the same project gives two denominators depending on what the
+export holds. Oracle's relationship sections (113174, 46287–46290) say nothing about external links,
+and the report lists "Projects Checked Have Links to the Following Closed Projects" without saying
+whether those links are counted. Until a P6 report settles it, each check's note gives both numbers
+(`test_relationship_checks_say_which_external_links_they_hold`). A link to a successor in another
+project belongs to that project's relationships, never to this one's.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.
@@ -79,8 +113,8 @@ checked subset.
 | P6-13 | | BEI: completed / every baseline activity (R1; 26.8 report); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
 | P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
 | P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | `p6.toml` |
-| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | `p6.toml` |
-| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted | `p6.toml` |
+| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; completed and milestones not counted, in progress not counted while `ignore_in_progress` is on (R1) | `p6.toml` |
+| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted, nor the constrained tasks `ignore_soft_constraints` / `ignore_hard_constraints` leave out | `p6.toml` |
 
 **Targets** are those of the Check Schedule dialog as the P6 EPPM 25 help prints them
 ([91574](https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm): "should be less than 5 %",
@@ -89,6 +123,37 @@ print them. BEI follows report R1 instead (`> 0.95`), so exactly 0.95 fails as i
 report. P6-15 to P6-17 have no documented default, and the duration limit `x` of
 P6-04 to P6-06 is a setting of the dialog: their values are in `p6.toml` only. Edit
 `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
+
+**Dangling options.** The Relationships and Assignments tab of the dialog
+([113174](https://docs.oracle.com/cd/G48902_01/client_help/en_US/113174.htm), P6 Professional 26)
+has three options, read from `p6.toml` as rule parameters:
+
+> **Ignore in-progress activities for dangling start activities**: Mark to disregard activities that
+> are in progress when checking for activities with start dates not driven by their predecessors.
+
+> **Ignore activities with soft constraints**: Mark to disregard activities with soft constraints when
+> checking for activities with finish dates that do not drive successors. Soft constraints are Start On,
+> Start On or After, Start On or Before, Finish On, Finish On or After, Finish On or Before, and As Late
+> As Possible
+
+> **Ignore activities with hard constraints**: Mark to disregard activities with hard constraints when
+> checking for activities with finish dates that do not drive successors. Hard constraints are:
+> Mandatory Start and Mandatory Finish.
+
+| Option | Check | Parameter | `p6.toml` |
+|---|---|---|---|
+| Ignore in-progress activities | P6-16 | `ignore_in_progress` | `true` (checked in R1) |
+| Ignore activities with soft constraints | P6-17 | `ignore_soft_constraints` | `false` |
+| Ignore activities with hard constraints | P6-17 | `ignore_hard_constraints` | `false` |
+
+These constraint sets are the options' own, not those of P6-02 / P6-03: Start On and Finish On
+are soft here and hard on the Constraints tab
+([113176](https://docs.oracle.com/cd/G48902_01/client_help/en_US/113176.htm)). Oracle documents no
+default for the three options, nor whether "disregard" also removes the task from the
+denominator: xerscope keeps it in the denominator and out of the numerator, as for every other
+task P6-16 / P6-17 do not count. A constraint counts whether it is primary or secondary, as in
+P6-02 / P6-03. The Debug page (block 04) shows the values in use. The XER data map lists no
+column for Check Schedule settings, so they are not read from the file.
 
 ### Comparing with a P6 Check Schedule report
 

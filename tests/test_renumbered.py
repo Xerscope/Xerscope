@@ -126,3 +126,36 @@ def test_the_debug_table_names_the_pairs_against_the_baseline_and_the_previous_u
     table = renumbered_table(week3, Baseline.from_snapshot(week1), week2)
     assert table.values.tolist() == [["baseline", "A", "A3"], ["baseline", "B", "B2"], ["previous update", "A", "A3"]]
     assert renumbered_table(week1, None, None).empty
+
+
+def test_the_option_warns_when_the_baseline_has_no_guid(tmp_path, monkeypatch):
+    """A P6 XML baseline carries no GUID xerscope can compare (xer/pmxml.py writes it blank): with the
+    option ticked nothing is linked, which the sidebar says instead of staying silent."""
+    from pathlib import Path
+
+    from conftest import read_folder
+    from pmxmlkit import activity, baseline, pmxml_bytes
+    from streamlit.testing.v1 import AppTest
+    from xerkit import xer_text
+
+    import xerscope
+
+    data = tmp_path / "updates"
+    data.mkdir()
+    (data / "a.xer").write_text(xer_text([todo("A", guid="g1", **WEEK)], data_date="2026-03-09 08:00"))
+    a = activity("A", "1001", "2026-03-02T08:00:00", "2026-03-13T17:00:00", 80)
+    (tmp_path / "export.xml").write_bytes(pmxml_bytes([baseline("370", "BL-1", [a])], current_baseline="370"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(tmp_path / "export.xml"))
+    at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
+    at = read_folder(at.run())
+    assert not at.exception and not _guid_warnings(at)  # option off: nothing to say
+    at.button(key="baseline_button").click()
+    at.run()
+    at.checkbox(key="draft_guid_link").check()
+    at.run()
+    at.button(key="files_done").click()
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    (warning,) = _guid_warnings(at)
+    assert "no GUID" in warning and "export.xml" in warning

@@ -83,3 +83,18 @@ def test_a_repeated_activity_id_draws_no_card(store):
     doubled = pd.concat([snapshot.tasks, snapshot.tasks[snapshot.tasks["task_code"] == code]])
     copy = dataclasses.replace(snapshot, tasks=doubled)
     assert len(task_panel.task_rows(copy, code)) == 2  # show_card warns instead of picking one
+
+
+def test_hard_constraint_row_names_the_dcma_set_it_reads():
+    """model.HARD_CONSTRAINTS (DCMA-05) holds Start on or before; P6-02 (113176: Mandatory Start, Start On,
+    Mandatory Finish, Finish On) does not. A task constrained Start on or before reads Yes, under a label
+    that names the DCMA set, and P6-02 does not count it."""
+    from rulekit import STANDARDS, counts, run
+    from xerkit import snap, todo
+
+    s = snap([todo("A", cstr_type="CS_MSOB", cstr_date="2026-03-10 08:00")])
+    task = task_panel.task_rows(s, "A").iloc[0]
+    values = dict(item for _, items in task_panel.card_sections(s, task) for item in items)
+    assert values["Hard constraint (DCMA-05 set)"] == "Yes"
+    assert "Hard constraint" not in values
+    assert counts(run(STANDARDS["P6"], "P6-02", s)) == (0, 1)

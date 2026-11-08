@@ -124,6 +124,14 @@ def test_external_successor_passes_p6_logic():
     assert codes(r) == ["B"]  # A passes thanks to the external link; B has no successor
 
 
+def test_p6_01_external_link_passes_only_its_own_end():
+    """UNRESOLVED (docs/standards.md): 46291 'Activities with external predecessors or successors pass the
+    check'. Pinned reading: A's external predecessor answers the predecessor test only; A, with no
+    successor, is still listed."""
+    r = run(P6, "P6-01", snap([todo("A")], [("X9", "A", "FS", 0, "2")]))
+    assert (counts(r), codes(r)) == ((1, 1), ["A"])
+
+
 def test_external_link_counts_only_when_the_option_says_so():
     from xerscope.analysis.rules import RULES
 
@@ -266,6 +274,30 @@ def test_float_threshold_in_hours_vs_working_days():
     assert codes(run(P6, "P6-06", s)) == ["A", "B"]
     assert codes(run(DCMA, "DCMA-06", s)) == ["B"]  # 353 / 8 = 44.1 d
     assert codes(run(P6, "P6-14", s)) == ["N"]
+
+
+def test_p6_06_and_14_say_how_many_tasks_have_no_total_float():
+    """113175: 'activities calculated by the scheduler to have a float'; P6's handling of a task with no
+    float is not documented. Count unchanged (U stays in the denominator), the note gives it."""
+    s = snap(
+        [todo("A", total_float_hr_cnt="400"), todo("N", total_float_hr_cnt="-8"), todo("U", total_float_hr_cnt="")]
+    )
+    for metric_id, flagged in (("P6-06", ["A"]), ("P6-14", ["N"])):
+        r = run(P6, metric_id, s)
+        assert (counts(r), codes(r)) == ((1, 3), flagged), metric_id
+        assert "1 task(s) without total float: not judged, still counted" in r.note, metric_id
+    assert not run(P6, "P6-14", snap([todo("A", total_float_hr_cnt="0")])).note
+
+
+def test_the_x_threshold_is_the_same_in_p6_toml_and_in_the_rules():
+    """352 h is written in p6.toml (the value used) and as the rules' default (check_schedule.LARGE_HOURS,
+    used when a standard sets no x): one cannot move without the other."""
+    from xerscope.analysis.p6.check_schedule import LARGE_HOURS
+    from xerscope.analysis.rules import RULES
+
+    for metric_id in ("P6-04", "P6-05", "P6-06"):
+        metric = P6[metric_id]
+        assert metric.params["limit_hours"] == RULES[metric.rule].params["limit_hours"] == LARGE_HOURS, metric_id
 
 
 def test_the_x_threshold_of_the_built_in_checks_is_a_parameter():
