@@ -201,3 +201,10 @@ def test_a_date_written_without_time_zone_is_read_as_utc_and_purged(tmp_path):
         encoding="utf-8",
     )
     assert suggested.purge(tmp_path, {}, NOW) == (0, 1)
+
+
+@pytest.mark.parametrize("filler", ["ᅟ", "ᅠ", "ㅤ", "ﾠ"])
+def test_an_invisible_hangul_filler_is_refused(tmp_path, filler):
+    """Letters (category Lo) with no glyph: a label holding one would read as another."""
+    assert suggested.clean(f"com{filler}miss", suggested.MAX_WORD) is None
+    assert not suggested.record(tmp_path, "commiss", f"COM · Commis{filler}sioning", "wbs", NOW)
