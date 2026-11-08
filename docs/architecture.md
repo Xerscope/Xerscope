@@ -261,7 +261,7 @@ Outside `analysis/`:
   from it; `go_to` / `open_in_gantt` write the session then switch page (a check's tasks to the
   Gantt, a table row to the Gantt, a check to the Audit). Two threads (`background_jobs`, off
   with `XERSCOPE_SYNC_LOAD=1`, which the tests set): on Done `LoadJob` hands every file to
-  `app/reading.py`, which reads them on up to four worker processes (`spawn`, no Streamlit imported;
+  `app/reading.py`, which reads them on up to two worker processes (`spawn`, no Streamlit imported;
   `XERSCOPE_LOAD_WORKERS`, 1 reads in the thread; a pool that fails falls back to that). The pages
   wait and draw once on the complete series: `_poll_load`, a fragment, redraws only the progress bar
   each second and reruns the app once when the reading is done. Once the series is complete the

@@ -95,6 +95,13 @@ from: `p6`, `mpxj`, `standard` (the text of a standard), `property` (holds on an
 or `characterization` (xerscope's own frozen output). Another kind stops the collection.
 `uv run python scripts/oracle_report.py` counts the tests by kind.
 
+**Code fitness.** `uv run python scripts/fitness.py --check tests/fitness_baseline.json`
+measures each module (maintainability index, cyclomatic and cognitive complexity,
+structural clones) and the whole (mypy errors, deptry violations, the import contracts
+generated from `LAYERS` in `tests/test_architecture.py`), and fails if a measure is worse
+than the baseline. When a change improves one, `--out tests/fitness_baseline.json`
+rewrites the baseline so the gain is kept; review the diff.
+
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and
 `uv run xerscope recalc FILE.xer --report`.
