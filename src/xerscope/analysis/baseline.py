@@ -165,8 +165,57 @@ def baseline_in_file(
     return replace(
         Baseline.from_snapshot(held, ev_basis),
         label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-        source=f"P6 Project Baseline in the file (proj_id {pointer.proj_id}, last update {updated})",
+        source=f"P6 Project Baseline in the file ({pointer.code}, last update {updated})",
     )
+
+
+def uses_project_baseline(snapshot: Snapshot) -> bool | None:
+    """PROJECT.use_project_baseline_flag of the analysed project: True (Y), False (N), None when
+    blank or absent. Read as the Project Details > Settings choice of the baseline earned value uses:
+    the project baseline (Y) or each user's primary baseline (N); this reading is unverified."""
+    projects = snapshot.file_projects.set_index("proj_id")
+    if snapshot.project_id not in projects.index:
+        return None
+    flag = str(projects.loc[snapshot.project_id, "use_project_baseline_flag"]).strip().upper()
+    return {"Y": True, "N": False}.get(flag)
+
+
+def project_codes(snapshots) -> dict[str, str]:
+    """proj_id -> proj_short_name over the PROJECT rows of every file given: a baseline one file
+    names but does not hold may be held, with its code, by another file of the series."""
+    codes: dict[str, str] = {}
+    for snapshot in snapshots:
+        for proj_id, code in zip(
+            snapshot.file_projects["proj_id"], snapshot.file_projects["proj_short_name"], strict=True
+        ):
+            if code and str(code).strip():
+                codes.setdefault(str(proj_id), str(code))
+    return codes
+
+
+def absent_project_baselines(snapshots) -> dict[str, list[Snapshot]]:
+    """Project Baseline proj_id -> the updates that name it (sum_base_proj_id) without holding it in
+    their own file, leaving out the updates whose earned value does not use it (flag N)."""
+    absent: dict[str, list[Snapshot]] = {}
+    for snapshot in snapshots:
+        pointer = snapshot.file_baseline.proj_id
+        if not pointer or uses_project_baseline(snapshot) is False:
+            continue
+        if pointer not in set(snapshot.file_projects["proj_id"]):
+            absent.setdefault(pointer, []).append(snapshot)
+    return absent
+
+
+def other_project_baselines(baseline: Snapshot, snapshots) -> dict[str, list[Snapshot]]:
+    """Project Baseline proj_id -> the updates that name a project other than ``baseline``'s, the
+    project read from a separate baseline file; updates whose earned value does not use the project
+    baseline (flag N), or that name none, are left out. proj_ids compare within one P6 database only."""
+    others: dict[str, list[Snapshot]] = {}
+    for snapshot in snapshots:
+        pointer = snapshot.file_baseline.proj_id
+        if pointer and pointer != baseline.project_id and uses_project_baseline(snapshot) is not False:
+            others.setdefault(pointer, []).append(snapshot)
+    return others
 
 
 RENUMBERED_COLUMNS = ["old_code", "new_code"]

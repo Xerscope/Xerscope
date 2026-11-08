@@ -18,6 +18,23 @@ if _MPXJ_CPM:
 os.environ.setdefault("XERSCOPE_SYNC_LOAD", "1")
 
 
+# What a test's expected values come from (marker declared in pyproject.toml; counted by
+# scripts/oracle_report.py): P6's own output, MPXJ, the text of a standard, a property that
+# holds on any input, or the frozen output of xerscope itself (golden file).
+ORACLE_KINDS = ("p6", "mpxj", "standard", "property", "characterization")
+
+
+def pytest_collection_modifyitems(config, items):
+    """An ``oracle`` marker with a kind outside ORACLE_KINDS stops the run before any test."""
+    bad = []
+    for item in items:
+        for mark in item.iter_markers("oracle"):
+            if mark.args not in [(kind,) for kind in ORACLE_KINDS] or mark.kwargs:
+                bad.append(f"{item.nodeid}: oracle{mark.args}")
+    if bad:
+        raise pytest.UsageError(f"oracle kind must be one of {ORACLE_KINDS}:\n" + "\n".join(bad))
+
+
 @pytest.fixture(scope="session")
 def sample_dir(tmp_path_factory):
     out = tmp_path_factory.mktemp("sample")
