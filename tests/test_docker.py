@@ -364,3 +364,91 @@ def test_nothing_in_the_app_reaches_the_network():
     assert re.search(r"^  internal:\n\s+internal: true", c, re.M) and "llm" not in c and "XERSCOPE_QUERY" not in c
     app_code = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "src" / "xerscope" / "app").rglob("*.py"))
     assert "llm_backend" not in app_code and "XERSCOPE_QUERY" not in app_code  # the app never calls a model
+
+
+def _service(compose: str, name: str) -> str:
+    """The block of one service of a compose file, its comments included."""
+    start = compose.index(f"\n  {name}:\n")
+    end = re.search(r"\n(  \S|\S)", compose[start + 1 :])
+    return compose[start : start + 1 + end.start()] if end else compose[start:]
+
+
+LEXICON = "${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}"
+
+
+def test_the_app_reads_the_nas_lexicon_and_writes_suggested_only():
+    """The lexicon folder lives on the NAS: read-only in the app, but for suggested/, where the
+    Ask corrections are appended; the app starts once the init service has succeeded."""
+    app = _service((ROOT / "deploy" / "compose.yaml").read_text(), "xerscope")
+    assert re.search(r"^\s+XERSCOPE_LEXICON: /lexicon$", app, re.M)
+    mounts = re.findall(r"^\s+- (\$\{XERSCOPE_LEXICON_DIR[^\s#]+)", app, re.M)
+    assert mounts == [f"{LEXICON}:/lexicon:ro", f"{LEXICON}/suggested:/lexicon/suggested"]
+    assert re.search(r"depends_on:\n\s+lexicon-init:\n\s+condition: service_completed_successfully", app)
+
+
+def test_the_lexicon_init_service_is_sealed():
+    """lexicon-init runs `xerscope lexicon build` once per start: the exports read-only, the
+    lexicon read-only but for generated/ (rewritten) and suggested/ (purged), no network, no
+    capability, read-only root, the app's user, no restart."""
+    nas = (ROOT / "deploy" / "compose.yaml").read_text()
+    init = _service(nas, "lexicon-init")
+    assert "image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}" in init  # the app's own image
+    assert 'command: ["lexicon", "build", "/data", "--out", "/lexicon"]' in init
+    assert 'user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"' in init
+    assert "network_mode: none" in init and "networks:" not in init and "ports:" not in init
+    assert "read_only: true" in init and "cap_drop: [ALL]" in init and "cap_add" not in init
+    assert 'security_opt: ["no-new-privileges:true"]' in init
+    assert 'restart: "no"' in init and "disable: true" in init  # the image's healthcheck polls the app's port
+    assert re.search(r"^\s+mem_limit: \$\{XERSCOPE_MEM_LIMIT:-2g\}", init, re.M) and "pids_limit:" in init
+    mounts = re.findall(r"^\s+- (\S+:/(?:data|lexicon)\S*)", init, re.M)
+    assert mounts == [
+        "${XERSCOPE_EXPORTS:-../exports}:/data:ro",
+        f"{LEXICON}:/lexicon:ro",
+        f"{LEXICON}/generated:/lexicon/generated",
+        f"{LEXICON}/suggested:/lexicon/suggested",
+    ]
+    writable = [m for m in mounts if not m.endswith(":ro")]
+    assert all(m.split(":")[-1] in ("/lexicon/generated", "/lexicon/suggested") for m in writable)
+    assert "curated" not in init.split("volumes:")[1].split("network_mode")[0]  # curated/ stays read-only
+
+
+def test_the_compose_file_is_valid_for_docker_compose(tmp_path):
+    import shutil
+    import subprocess
+
+    if not shutil.which("docker"):
+        pytest.skip("docker CLI not installed")
+    env = {"PATH": "/usr/bin:/bin", "XERSCOPE_USER": "u", "XERSCOPE_PASSWORD_HASH": "h", "XERSCOPE_PATH": "p"}
+    done = subprocess.run(
+        ["docker", "compose", "-f", str(ROOT / "deploy" / "compose.yaml"), "config", "--format", "json"],
+        capture_output=True,
+        text=True,
+        env={**env, "HOME": str(tmp_path)},
+        check=False,
+    )
+    if "unknown command" in done.stderr or "is not a docker command" in done.stderr:
+        pytest.skip("docker compose plugin not installed")
+    assert done.returncode == 0, done.stderr
+    import json
+
+    services = json.loads(done.stdout)["services"]
+    init, app = services["lexicon-init"], services["xerscope"]
+    assert init["network_mode"] == "none" and init["read_only"] and init["cap_drop"] == ["ALL"]
+    writable = sorted(v["target"] for v in init["volumes"] if not v.get("read_only"))
+    assert writable == ["/lexicon/generated", "/lexicon/suggested"]
+    assert sorted(v["target"] for v in app["volumes"] if not v.get("read_only")) == ["/lexicon/suggested"]
+    assert app["depends_on"]["lexicon-init"]["condition"] == "service_completed_successfully"
+
+
+def test_no_lexicon_file_goes_into_the_image():
+    """The build context is src/ (.dockerignore); no file under src/xerscope holds lexicon
+    tables, whatever its name: every *.toml there is a standard or Streamlit's config."""
+    import tomllib
+
+    package = ROOT / "src" / "xerscope"
+    for path in package.rglob("*.toml"):
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        assert not {"group", "refuse", "suggestion"} & set(data), path
+        assert "standard" in data or path.name == "config.toml", path
+    ignore = (ROOT / ".dockerignore").read_text().splitlines()
+    assert [x for x in ignore if x.startswith("!")] == ["!pyproject.toml", "!uv.lock", "!README.md", "!src/"]
