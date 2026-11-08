@@ -319,10 +319,12 @@ def date_variances(store: SnapshotStore, index: int) -> pd.DataFrame:
     activity's calendar in W: negative = later than the reference (late), positive = earlier.
     Dates are P6's Start / Finish (actual, else forecast). Blank, not 0, when either date is
     missing: no such update, the activity not in it, or no date. A start milestone has only
-    the start columns, a finish milestone only the finish ones.
+    the start columns, a finish milestone only the finish ones. Level of effort has no row: its
+    dates follow the activities it spans, so its variance repeats theirs.
     """
     current = store[index]
     now = current.by_code
+    now = now[~now["is_loe"]]
     out = now[["task_name", "wbs_code", "status", "start", "finish"]].copy()
     for back in (1, 2):
         reference = store[index - back].by_code if index >= back else None
