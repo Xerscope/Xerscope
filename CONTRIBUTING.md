@@ -63,8 +63,8 @@ Run before opening a pull request, and report what was run and what it printed:
 
 ```bash
 uv run pytest -rs                     # the whole suite; MPXJ tests skip without Java: say so
-uvx ruff check src tests              # no new finding
-uvx ruff format --check src tests
+uvx ruff check src tests scripts      # no new finding
+uvx ruff format --check src tests scripts
 uvx bandit -r src -ll
 ```
 
@@ -84,6 +84,11 @@ Then, depending on what changed:
 standard with `tests/golden/standards.json`: a refactor changes no number. After an
 intended change, `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`
 rewrites the file and fails by design; review the diff, then rerun without the variable.
+
+**Oracle marker.** `@pytest.mark.oracle(kind)` names where a test's expected values come
+from: `p6`, `mpxj`, `standard` (the text of a standard), `property` (holds on any input)
+or `characterization` (xerscope's own frozen output). Another kind stops the collection.
+`uv run python scripts/oracle_report.py` counts the tests by kind.
 
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and
