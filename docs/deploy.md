@@ -342,8 +342,9 @@ neutral line that does not repeat the word); it is opened with `O_NOFOLLOW` (a s
 in its place is not followed) and created 0600; nothing is printed or logged. *What it cannot
 reach:* the Ask field of any session, since `suggested/` is read by nothing until you copy a
 word into `curated/`; `curated/` and `generated/`, read-only in the app. *What is left:* a
-visitor can fill `suggestions.toml` up to its cap (the corrections stop being recorded, the
-app keeps working), and the words typed land on the NAS for up to 90 days.
+visitor can fill `suggestions.toml` up to its cap with distinct words (one correction, word,
+label and column, is kept once; past the cap the corrections stop being recorded, the app
+keeps working), and the words typed land on the NAS for up to 90 days.
 `tests/test_ask_suggested.py` has one test per guard.
 
 A language model was measured against this and not kept (`analysis/query.py: llm_backend`

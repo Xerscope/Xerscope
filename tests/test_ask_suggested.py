@@ -164,3 +164,14 @@ def test_the_same_correction_is_recorded_once(tmp_path):
         ("commiss", "COM · Commissioning", "PROJWBS.wbs_name"),
         ("commiss", "COMMISS", "RSRC.rsrc_short_name"),
     ]
+    later = NOW + suggested.RETENTION + timedelta(days=1)  # the first one expired: recorded again
+    assert suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", later)
+    assert [(e["word"], e["at"]) for e in _entries(tmp_path)] == [("commiss", later)]
+
+
+@pytest.mark.parametrize("held", [b"[[suggestion]\n", b"\xff\xfe", b'suggestion = "x"\n', b"suggestion = [1]\n"])
+def test_a_file_edited_into_another_shape_is_left_as_it_is(tmp_path, held):
+    path = tmp_path / suggested.FILE
+    path.write_bytes(held)
+    assert not suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", NOW)
+    assert path.read_bytes() == held

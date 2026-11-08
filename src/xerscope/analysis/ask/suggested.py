@@ -53,8 +53,9 @@ def entry(word: str, label: str, kind: str, at: datetime) -> str:
 
 def record(folder: str | Path, word: str, label: str, kind: str, at: datetime, curated: Lexicon | None = None) -> bool:
     """Append one correction to ``folder``/FILE; False, and nothing written, when a guard refuses
-    or the file is not TOML. Under the same lock, the suggestions expired at ``at`` (``purge``,
-    with ``curated``) go: the file is then replaced whole, holding the new entry."""
+    or the file is not TOML; True, and nothing added, when the file holds the same word, label
+    and column. Under the same lock, the suggestions expired at ``at`` (``purge``, with
+    ``curated``) go: the file is then replaced whole, holding the new entry."""
     try:
         import fcntl
     except ImportError:
@@ -74,12 +75,19 @@ def record(folder: str | Path, word: str, label: str, kind: str, at: datetime, c
             entries = tomllib.loads(file.read().decode("utf-8")).get("suggestion", [])
         except ValueError:  # not UTF-8, not TOML (edited by hand): left as it is
             return False
-        kept = [t for t in (_rewritten(e) for e in entries if not _expired(e, curated or {}, at)) if t]
+        if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+            return False  # TOML of another shape (edited by hand): left as it is
+        live = [(e, t) for e in entries if not _expired(e, curated or {}, at) and (t := _rewritten(e))]
+        kept = [t for _, t in live]
+        same = (word, label, SOURCES[kind][0])
+        held = any((e.get("word"), e.get("label"), e.get("column")) == same for e, _ in live)
         if len(kept) < len(entries):
-            written = "".join([*kept, text])
+            written = "".join([*kept, "" if held else text])
             if len(written.encode()) > MAX_BYTES:
                 return False
             write_private(path, written)
+            return True
+        if held:
             return True
         if os.fstat(fd).st_size + len(text.encode()) > MAX_BYTES:
             return False
