@@ -385,6 +385,17 @@ class _Run:
                 self.loe_preds[successor].append((predecessor, link_type, lag_minutes))
             elif predecessor in activities.index and self.is_loe.get(predecessor, False) and successor in node_set:
                 self.loe_succs[predecessor].append((successor, link_type, lag_minutes))
+        # An LOE takes its dates from the work it spans; a link between two LOEs gives neither a
+        # date here. Whether P6 schedules one LOE from another is not documented: counted, not lost.
+        loe_to_loe = [
+            (p, s)
+            for p, s in zip(links["pred_code"], links["succ_code"], strict=True)
+            if self.is_loe.get(p, False) and self.is_loe.get(s, False)
+        ]
+        if loe_to_loe:
+            self.warnings.append(
+                f"{len(loe_to_loe)} relationship(s) between two level-of-effort activities, ignored: {loe_to_loe[:5]}"
+            )
         # The network is a directed graph: activities are nodes, relationships are edges
         # (predecessor -> successor). We need an order in which every activity comes after all
         # its predecessors (a topological sort, Kahn's algorithm): the forward pass can then

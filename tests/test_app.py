@@ -1703,3 +1703,18 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     assert not any("12 · App runtime" in e.label for e in at.expander)
     assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 12
     assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance
+
+
+def test_overview_lists_a_period_across_midnight_under_limits(tmp_path, monkeypatch):
+    """A calendar period 22:00-06:00 loads (no work counted, as MPXJ) and is named under "Limits"."""
+    periods = "(0||0(s|22:00|f|06:00)())(0||1(s|08:00|f|12:00)())"
+    night = f"(0||CalendarData()((0||DaysOfWeek()((0||2()({periods}))))))"
+    calendar = {"clndr_id": "40", "clndr_name": "", "day_hr_cnt": "4", "clndr_data": night}
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A")], calendars=[calendar]))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/overview.py").run()
+    _ok(at)
+    assert any("crosses midnight" in w.value and "may differ from P6" in w.value for w in at.warning), [
+        w.value for w in at.warning
+    ]
+    assert "Limits" in [s.value for s in at.subheader]

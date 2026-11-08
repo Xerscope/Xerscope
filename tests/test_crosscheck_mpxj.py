@@ -26,7 +26,7 @@ import pandas as pd
 import pytest
 from conftest import missing, mpxj_or_skip
 from test_cpm_properties import random_network
-from xerkit import CONSTRAINT_TYPES, FM, SECONDARY_CONSTRAINTS, SM, active, done, hours, todo, xer_text
+from xerkit import CONSTRAINT_TYPES, FM, SECONDARY_CONSTRAINTS, SM, active, clndr_data, done, hours, todo, xer_text
 
 REF = Path(__file__).parent / "reference" / "data"
 LAG_PRED = {"sched_calendar_on_relationship_lag": "rcal_Predecessor"}
@@ -180,6 +180,25 @@ HAND = {
         [("A", "B", "SS", 8), ("A", "C", "FF", 0), ("A", "D", "SF", 16)],
     ),
     "holiday": ([todo("A", cstr_type="CS_MSOA", cstr_date="2026-04-02 08:00", **hours(16))], []),
+    # a project calendar without exceptions of its own, built on C8 (Good Friday off): MPXJ
+    # reads the base's holiday into it (ProjectCalendar.getException), A finishes Mon 17:00
+    "holiday of the base calendar": (
+        [todo("A", clndr_id="20", cstr_type="CS_MSOA", cstr_date="2026-04-02 08:00", **hours(16))],
+        [],
+        {
+            "calendars": [
+                {
+                    "clndr_id": "20",
+                    "clndr_name": "Derived",
+                    "clndr_type": "CA_Project",
+                    "base_clndr_id": "8",
+                    "day_hr_cnt": "8",
+                    "week_hr_cnt": "40",
+                    "clndr_data": clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")]),
+                }
+            ]
+        },
+    ),
     "milestones": (
         [todo("A", **hours(8)), todo("FM", **FM), todo("SM", **SM)],
         [("A", "FM", "FS", 0), ("A", "SM", "FS", 0)],
@@ -273,6 +292,8 @@ def test_hand_cases_agree_with_mpxj(xc, tmp_path, name):
     if name == "sf from started work held back":
         assert xc.settled_patterns(snap) == {"sf_from_started"}
         assert not cmp.loc[cmp["task_code"] == "C", "xs_mpxj_work"].all()  # P6's reading, not MPXJ's
+    if name == "holiday of the base calendar":  # read alone, MPXJ's dates look inconsistent and are dropped
+        assert cmp["xs_mpxj_work"].all() and not xc.mpxj_inconsistent(snap, cmp)
 
 
 # --- 4. the demo: its stored dates are xerscope's own, so MPXJ checks them --------------------
