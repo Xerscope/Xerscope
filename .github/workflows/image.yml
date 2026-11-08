@@ -88,6 +88,11 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
+          # attached to the image index on both registries: how and from which commit it was built
+          # (SLSA provenance, every build step) and the packages it holds (SPDX SBOM);
+          # `docker buildx imagetools inspect <image> --format '{{ json .Provenance }}'` reads them
+          provenance: mode=max
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}

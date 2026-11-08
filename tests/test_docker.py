@@ -140,6 +140,16 @@ def test_every_dependabot_version_update_waits_a_week():
         assert days and int(days.group(1)) >= 7, entry
 
 
+def test_published_images_carry_provenance_and_sbom():
+    """Each pushed image carries a full SLSA provenance and an SBOM, on ghcr.io and Docker Hub alike
+    (one build-push step pushes every tag of both registries)."""
+    image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    assert image.count("docker/build-push-action@") == 1
+    step = image[image.index("docker/build-push-action@") :]
+    assert "provenance: mode=max" in step and "sbom: true" in step
+    assert "push: true" in step and "tags: ${{ steps.meta.outputs.tags }}" in step
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
