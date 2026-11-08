@@ -425,7 +425,7 @@ def test_deployment_documents_immutable_image_refs_and_the_key_check():
     assert not re.search(r"tskey-auth-[A-Za-z0-9]{4}", guide)  # placeholders only
     changelog = (ROOT / "CHANGELOG.md").read_text()
     assert changelog.startswith("# Changelog") and "## [Unreleased]" in changelog and "## [0.1.0]" in changelog
-    assert "keepachangelog.com" in changelog
+    assert re.search(r"https://keepachangelog\.com/", changelog)  # the format it follows, linked
     readme = (ROOT / "README.md").read_text()
     assert "git tag `v0.1.0`" in readme and "CHANGELOG.md" in readme
 
