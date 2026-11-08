@@ -304,6 +304,20 @@ def _banner(at) -> str:
     return at.button(key="context_banner").label.replace("\\", "")
 
 
+def test_earned_value_says_the_planned_dates_history_follows_the_update_shown(app, store):
+    """With the planned dates as baseline, every update is measured against the planned dates of
+    the update shown: the page says so, and names that update."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    assert not any("planned dates (`target_*`) of the update shown" in text for text in _caption_texts(app))
+    baseline_box(app).set_value(BL_PLANNED)
+    app.session_state["files_open"] = False
+    app.run()
+    _ok(app)
+    legend = [text for text in _caption_texts(app) if "planned dates (`target_*`) of the update shown" in text]
+    assert len(legend) == 1 and ui.md_text(store.latest.label) in legend[0]
+
+
 def test_the_context_banner_states_each_setting_and_follows_its_changes(app, store):
     """Projects, data date of the update shown, baseline, EV basis, costs, files: each change shows."""
     app.switch_page("views/earned_value.py").run()
