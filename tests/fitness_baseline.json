@@ -221,8 +221,8 @@
       "near_clones": 0
     },
     "anonymize.py": {
-      "mi": 20.9,
-      "mi_rank": "A",
+      "mi": 11.6,
+      "mi_rank": "B",
       "cc_max": 24,
       "cc_over_15": 3,
       "cognitive_max": 62,
