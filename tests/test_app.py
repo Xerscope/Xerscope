@@ -1390,6 +1390,31 @@ def test_the_ask_field_reads_curated_words_only(app, lexicon_root):
         assert _chips(app) == chips, word
 
 
+def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_back(app, lexicon_root):
+    """A click on a suggestion records the unknown word, the label, its column, the filter and
+    the date in suggested/, never the sentence asked; the word holds for the session only."""
+    import tomllib
+
+    sentence = "jalons commiss en retard"
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value(sentence).run()
+    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    _ok(app)
+    assert "WBS: COM · Commissioning" in _chips(app)
+    written = (lexicon_root / "suggested" / "suggestions.toml").read_text(encoding="utf-8")
+    assert sentence not in written and "jalons" not in written and "retard" not in written
+    (entry,) = tomllib.loads(written)["suggestion"]
+    assert {k: v for k, v in entry.items() if k != "at"} == {
+        "word": "commiss", "label": "COM · Commissioning", "column": "PROJWBS.wbs_name", "facet": "wbs",
+        "value": "COM",
+    }  # fmt: skip
+    assert [p.name for p in lexicon_root.rglob("*") if p.is_file()] == ["suggestions.toml"]
+    fresh = read_folder(AppTest.from_file(APP, default_timeout=120).run())  # a new session
+    fresh.switch_page("views/gantt.py").run()
+    fresh.text_input[0].set_value("commiss").run()
+    assert _chips(fresh) == []  # not read until copied into curated/
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 

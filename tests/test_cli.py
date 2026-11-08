@@ -316,11 +316,46 @@ def test_ask_bench_self_coverage(capsys, sample_dir):
     assert "not reached" not in out
 
 
-def test_lexicon_build_writes_the_variants_to_the_file_named_only(capsys, sample_dir, tmp_path):
-    out = run(capsys, "lexicon", "build", sample_dir, "--out", tmp_path / "generated.toml")
-    assert out.strip().endswith("group(s) from 8 file(s) written")  # counts, never a word
-    text = (tmp_path / "generated.toml").read_text(encoding="utf-8")
-    assert text.startswith("# Variants generated from the files") and list(tmp_path.iterdir()) == [
-        tmp_path / "generated.toml"
-    ]
+def test_lexicon_build_rewrites_generated_and_purges_suggested(capsys, sample_dir, tmp_path):
+    """`lexicon build SOURCE --out ROOT`: ROOT/generated/variants.toml and report.txt, each
+    replaced whole (temporary file, then rename) and 0600; the suggestions not copied into
+    curated/ after 90 days are purged; the output prints counts, never a word."""
+    import stat
+    from datetime import UTC, datetime, timedelta
+
+    from xerscope.analysis.ask import suggested
+
+    (tmp_path / "curated").mkdir()
+    (tmp_path / "suggested").mkdir()
+    suggested.record(
+        tmp_path / "suggested", "ancien", "COM · Commissioning", "wbs", datetime.now(UTC) - timedelta(days=91)
+    )
+    suggested.record(tmp_path / "suggested", "recent", "COM · Commissioning", "wbs", datetime.now(UTC))
+    out = run(capsys, "lexicon", "build", sample_dir, "--out", tmp_path)
+    assert "group(s) from 8 file(s) written, 0 new" in out and "suggestions: 1 kept, 1 purged" in out
+    assert "ancien" not in out and "recent" not in out
+    generated = tmp_path / "generated"
+    assert sorted(p.name for p in generated.iterdir()) == ["report.txt", "variants.toml"]
+    assert all(stat.S_IMODE(p.stat().st_mode) == 0o600 for p in generated.iterdir())
+    assert (generated / "variants.toml").read_text(encoding="utf-8").startswith("# Variants generated from the files")
+    assert "new since the last run" in (generated / "report.txt").read_text(encoding="utf-8")
+    assert [p.name for p in (tmp_path / "suggested").iterdir()] == ["suggestions.toml"]
     assert cli.main(["lexicon", "build", str(sample_dir)]) == 2  # --out required
+
+
+def test_lexicon_build_reports_the_groups_new_since_the_last_run(capsys, tmp_path):
+    from xerkit import todo, xer_text
+
+    source = tmp_path / "xer"
+    source.mkdir()
+    (source / "a.xer").write_text(
+        xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")])
+    )
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "generated" / "variants.toml").write_text("", encoding="utf-8")
+    out = run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    assert "TASK.task_name: 1 group(s), 1 new" in out and "fondation" not in out
+    report = (tmp_path / "generated" / "report.txt").read_text(encoding="utf-8")
+    assert "TASK.task_name: fondation, fondations" in report
+    out = run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    assert "TASK.task_name: 1 group(s), 0 new" in out
