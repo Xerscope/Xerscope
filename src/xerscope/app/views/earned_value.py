@@ -260,7 +260,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
         )
 
 
-def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool) -> None:
+def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, costs: bool) -> None:
     ui.section(
         "S-curve",
         "Planned value from the baseline, earned value and actual hours per update, "
@@ -287,6 +287,12 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
     if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
     st.plotly_chart(build_index_trend(series, indices), width="stretch")
+    if baseline.is_planned:
+        st.caption(
+            f"Baseline = the planned dates (`target_*`) of the update shown, {ui.md_text(snapshot.label)}: every "
+            "update's PV and SPI above is measured against them. Showing another update measures the whole "
+            "history against that update's planned dates."
+        )
     hidden = ["bac_hr"] + ([] if costs else COST_COLUMNS)
     ui.table(series.drop(columns=hidden))
 
@@ -351,7 +357,7 @@ if baseline is None:
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(
-        f"The baseline ({baseline.label}) has no budgeted labor hours, so there is nothing to earn. "
+        f"The baseline ({ui.md_text(baseline.label)}) has no budgeted labor hours, so there is nothing to earn. "
         "Export the BL with resource assignments (TASK.target_work_qty / TASKRSRC)."
     )
     st.stop()
@@ -391,5 +397,5 @@ show_kpis(row, previous, costs)
 if not costs:
     show_costs_ignored(snapshot)
 show_calculation(row, baseline, snapshot, point, costs)
-show_charts(series, curve, snapshot, costs)
+show_charts(series, curve, snapshot, baseline, costs)
 show_activity_detail(snapshot, baseline, point)

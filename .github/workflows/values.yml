@@ -1,0 +1,27 @@
+name: values
+
+# A pull request that moves a value of tests/golden/standards.json, of FLOORS
+# (tests/test_p6_heldout.py) or of a standard TOML justifies each one in its description,
+# one line per value: `ID: old -> new — source`; and no FLOORS value goes down.
+# scripts/check_value_justification.py prints the lines to copy. A separate workflow, like
+# attribution.yml: re-run when the description is edited, without re-running the tests.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  value-justification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2  # the merge commit GitHub builds for the pull request, and its base parent
+          persist-credentials: false
+      - name: Moved values against the base of the pull request
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        # HEAD is the pull request merged into its base; HEAD^1 is the base it was merged into.
+        run: python3 scripts/check_value_justification.py HEAD^1   # standard library only

@@ -49,7 +49,9 @@ def test_projects_block_of_a_file_without_pointer_columns():
     assert table[["proj_id", "tasks", "sum_base_proj_id", "role"]].values.tolist() == [["1", 1, "", ANALYSED]]
 
 
-def test_projects_block_of_an_anonymous_download_renames_the_codes_and_keeps_the_ids():
+def test_projects_block_of_an_anonymous_download_renames_the_codes_and_the_ids():
+    """proj_id 1 points to its baseline 2 (sum_base_proj_id), 2 was copied from 1 (orig_proj_id): the new
+    ids keep both pointers, and are those of the anonymised XER."""
     raw = parse_text(two_projects(), source="two.xer")
     anonymizer = Anonymizer.from_raws([raw])
     frames = {"01b_projects": diagnostic_frames(build_snapshot(raw), None, builtin_standards()["P6"])["01b_projects"]}
@@ -58,7 +60,14 @@ def test_projects_block_of_an_anonymous_download_renames_the_codes_and_keeps_the
     shown = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
     assert "UPD" not in text and "BL," not in text
     assert shown["proj_short_name"].str.startswith("XP").all()
-    assert shown[["proj_id", "sum_base_proj_id", "orig_proj_id"]].values.tolist() == [["1", "2", ""], ["2", "", "1"]]
+    new = anonymizer.project_ids
+    assert shown[["proj_id", "sum_base_proj_id", "orig_proj_id"]].values.tolist() == [
+        [new["1"], new["2"], ""],
+        [new["2"], "", new["1"]],
+    ]
+    assert not {"1", "2"} & set(shown["proj_id"])
+    extract = build_snapshot(parse_text(anonymizer.xer(raw).decode(), source="anon.xer"))
+    assert extract.file_projects["proj_id"].tolist() == [new["1"], new["2"]]
 
 
 def _update(source, proj_id, data_date, pointer, added, flag):
@@ -548,8 +557,8 @@ def test_the_file_picker_tells_two_projects_of_the_same_code_apart(tmp_path, mon
     box = _file_box(at, "a.xer")
     assert box.value == "1"
     assert [o for o in box.options if o.startswith("UPD")] == [
-        "UPD · 02 Mar 2026 · 2 activities",
-        "UPD · 02 Mar 2026 · 2 activities · baseline of UPD",
+        "UPD · 02 Mar 2026 · 2 tasks",
+        "UPD · 02 Mar 2026 · 2 tasks · baseline of UPD",
     ]
     assert _selection(at).set_index("file").loc["a.xer", "selected_by"] == "most TASK rows, 1 baseline copy set aside"
 
@@ -660,7 +669,7 @@ def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointe
     at = _series(tmp_path, monkeypatch, {"c.xer": c}, keep_env=True)
     assert baseline_box(at).value == BL_FILE
     (warning,) = [w for w in _warnings(at) if "separate baseline file is" in w]
-    assert "is OLDBL, data date 02 Mar 2026, but" in warning
+    assert "is OLDBL, status date 02 Mar 2026, but" in warning
     assert "a project no loaded file holds (1 update)" in warning
     assert "370" not in warning
 
@@ -681,5 +690,5 @@ def test_a_loaded_update_as_baseline_is_named_against_the_pointer(tmp_path, monk
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     (warning,) = [w for w in _warnings(at) if "baseline (a loaded update) is" in w]
-    assert "is UPD, data date" in warning and "a project no loaded file holds (2 updates)" in warning
+    assert "is UPD, status date" in warning and "a project no loaded file holds (2 updates)" in warning
     assert "370" not in warning

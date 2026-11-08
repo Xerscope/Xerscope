@@ -146,6 +146,13 @@ class Baseline:
         """Budget at completion, cost: Σ bl_cost."""
         return float(self.frame["bl_cost"].sum())
 
+    def unbaselined(self, snapshot: Snapshot) -> list[str]:
+        """Activity IDs of ``snapshot`` this baseline does not hold, sorted: matched by Activity ID as
+        P6 matches an activity to its baseline (``relinked`` first when renumbered tasks are linked by
+        GUID). They earn nothing (``ev_point``) and have no baseline date. DECM 06A501a counts more:
+        also the tasks the baseline holds without a start or finish."""
+        return sorted(set(snapshot.activities["task_code"]).difference(self.frame.index))
+
 
 def baseline_in_file(
     snapshot: Snapshot, data: bytes, ev_basis: str = DEFAULT_EV_BASIS, parse: Callable[..., Snapshot] = load_snapshot

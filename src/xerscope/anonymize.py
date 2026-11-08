@@ -14,6 +14,10 @@ Allowlist, table by table (column meanings: Oracle "XER Import/Export Data Map G
   ("XA69C30507" holds the Activity ID "C3050"): such a code is drawn again (HMAC of
   "<kind>:<original>:<n>"), so it then depends on the files read.
 - ``LABELS``: names rebuilt from the row's new code ("Activity XA1F09C3B2").
+- Project ids: ``proj_id`` and every column naming a project by its id (``sum_base_proj_id``,
+  ``orig_proj_id``, ``pred_proj_id``…, ``PROJECT_ID_COLUMN``) get a new 9-digit id drawn as the
+  codes are (HMAC under the session key, drawn again when it equals an original id), in the XER
+  extract and in the tables: a pointer still names the same project, the database's own id is gone.
 - ``MONEY``: costs and prices set to 0 (P6 counts an assignment or an expense, not its cost).
 - ``GUIDS``: replaced by new random GUIDs, the same original GUID getting the same new one,
   none holding an original value.
@@ -21,9 +25,12 @@ Allowlist, table by table (column meanings: Oracle "XER Import/Export Data Map G
 Any other column is emptied and any other table left out; both are reported by name. The
 ERMHDR line loses the exporting user, his full name and the database name.
 
-Before a file or a table is handed out, every one of its fields is compared with every text
-value of the originals that was not kept, and searched for every original code
-(``Anonymizer.leaks``): one match and it is refused.
+Before a file or a table is handed out, every one of its fields and column names is compared
+with every text value of the originals that was not kept, searched for those values inside it
+(between a letter or digit and anything else: "calendar 'Night Shift' has no working time")
+and for every original code anywhere (``Anonymizer.leaks``): one match and it is refused. The
+notes of the rules are the one free text copied out: a value of the originals found inside one
+(an error message naming a calendar) is replaced by ``HIDDEN``.
 The names of the source files (``PROJ-01.xer``) and their stems (``PROJ-01``) are refused the same
 way, but anywhere in a field: they carry the project code and are written into labels
 ("planned dates of <date> · <file>").
@@ -38,11 +45,12 @@ import io
 import re
 import secrets
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
 import pandas as pd
 
+from .export import csv_bytes, zip_frames
 from .xer.parser import RawXer
 
 KEEP = {
@@ -125,6 +133,13 @@ MONEY = {
 # it anonymises, as MONEY sets them in the XER. The ratio spi_cost reveals no amount and stays.
 MONEY_COLUMNS = frozenset({"bl_cost", "bac_cost", "pv_cost", "ev_cost"})
 GUIDS = {"guid"}
+# Columns holding a P6 project id (PROJECT.proj_id, sum_base_proj_id, orig_proj_id, source_proj_id,
+# base_proj_id1, TASKPRED.pred_proj_id…), and the Debug column that lists them comma-separated.
+PROJECT_ID_COLUMN = re.compile(r"(?:\w+_)?proj_id\d*")
+PROJECT_ID_LIST_COLUMNS = frozenset({"baselines_to_export"})
+NOT_AN_ID = frozenset({"absent"})  # app/diagnostic.ABSENT: the file has no such column
+# New project ids: 9 digits, an integer key as P6's own (int32 holds it)
+PROJECT_ID_LOW, PROJECT_ID_SPAN = 100_000_000, 900_000_000
 # Hex digits of each kind of new code. 8 for activities: ~4e9 values, so ~0.03 % chance of two
 # IDs sharing one among 50,000; a clash is refused (CodeClash), never written.
 WIDTH = {"A": 8, "W": 6, "P": 6, "R": 6, "L": 6, "O": 6}
@@ -138,19 +153,29 @@ GENERIC_FILE_STEMS = frozenset(
      "file", "files", "planned", "current", "target", "programme", "program", "planning", "xer", "p6"}
 )  # fmt: skip
 GENERIC_HEADER = frozenset({"Project", "Project Management", "dbxDatabaseNoName"})
+# Words the anonymiser writes itself (label prefixes, header): a file value equal to one (a financial
+# period template named "Calendar") is still refused whole, not searched inside "Calendar 638".
+OWN_WORDS = frozenset({prefix for prefix, _ in LABELS.values()} | {"Project", "ANON", "file"})
+HIDDEN = "[hidden]"  # what replaces a value of the originals found inside a note
+
+
+PROJECT_ID_IN_NOTE = re.compile(r"(?<!\w)proj_id (\d+)")  # Baseline.source: "(proj_id 370, last update …)"
+
+
+def is_project_id_column(column: object) -> bool:
+    return isinstance(column, str) and PROJECT_ID_COLUMN.fullmatch(column) is not None
+
+
+def _project_ids_in(raw: RawXer) -> Iterator[str]:
+    """Every non-blank value of a project id column, in every table of ``raw``."""
+    for frame in raw.tables.values():
+        for column in filter(is_project_id_column, frame.columns):
+            yield from (value for value in frame[column] if value)
 
 
 def _is_text(value: str) -> bool:
     """Worth looking for in an output: three characters or more, at least one letter."""
     return len(value) >= 3 and any(character.isalpha() for character in value)
-
-
-CSV_FLOAT_FORMAT = "%.4f"  # hours to the minute (0.0167 h): no float noise (12345.999999, a gap of 1e-13)
-
-
-def csv_bytes(frame: pd.DataFrame) -> bytes:
-    """A frame as the CSV the app offers: UTF-8 with BOM (Excel), floats to 4 decimals."""
-    return frame.to_csv(index=False, float_format=CSV_FLOAT_FORMAT).encode("utf-8-sig")
 
 
 @dataclass
@@ -179,6 +204,8 @@ class Anonymizer:
     secrets_: dict[str, str] = field(default_factory=dict)  # text value -> "TABLE.column" it came from
     file_names: set[str] = field(default_factory=set)  # source file names and their stems, found anywhere in a field
     original_codes: set[str] = field(default_factory=set)  # values of the CODES columns, found anywhere in a field
+    project_ids: dict[str, str] = field(default_factory=dict)  # original proj_id -> new
+    original_project_ids: set[str] = field(default_factory=set)  # never given as a new id
     kept: set[str] = field(default_factory=set)  # values of the kept columns: written as they are
     report: Report = field(default_factory=Report)
     key: bytes = field(default_factory=lambda: secrets.token_bytes(32), repr=False)  # HMAC key of the codes
@@ -194,6 +221,7 @@ class Anonymizer:
         project_nodes: list[tuple[pd.DataFrame, pd.DataFrame]] = []
         for raw in raws:
             anonymizer._collect_secrets(raw)
+            anonymizer.original_project_ids.update(_project_ids_in(raw))
             for (table, column), kind in CODES.items():
                 frame = raw.table(table)
                 if column in frame.columns:
@@ -204,6 +232,8 @@ class Anonymizer:
         for kind, values in found.items():
             for value in sorted(values):
                 anonymizer.code(kind, value)
+        for value in sorted(anonymizer.original_project_ids):
+            anonymizer.project_id(value)
         for wbs, _project in project_nodes:
             anonymizer._map_wbs_paths(wbs)
         return anonymizer
@@ -249,11 +279,13 @@ class Anonymizer:
         found: dict[str, int] = {}
         values = list(fields)
         inside: dict[str, str | None] = {}
+        longest = max(map(len, self.secrets_), default=0)
         for value in values:
             origin = self.secrets_.get(value.strip())
             if origin is None and value not in self.kept and _is_text(value):
                 if value not in inside:
-                    inside[value] = self._code_inside(value)
+                    secret = next(self._secrets_inside(value, longest), None)
+                    inside[value] = self._code_inside(value) or (self.secrets_[secret] if secret else None)
                 origin = inside[value]
             if origin is not None:
                 found[origin] = found.get(origin, 0) + 1
@@ -265,6 +297,19 @@ class Anonymizer:
             if hits:
                 found["file name"] = max(found.get("file name", 0), hits)
         return found
+
+    def _secrets_inside(self, value: str, longest: int) -> Iterator[str]:
+        """Text values of the originals inside ``value`` (not ``value`` itself), each starting and
+        ending where a run of letters and digits does: "Night Shift" in "calendar 'Night Shift' has
+        no working time", not "Shift" in "Shifts"."""
+        bounds = [p for p in range(len(value) + 1) if p in (0, len(value)) or not value[p - 1 : p + 1].isalnum()]
+        for i, start in enumerate(bounds):
+            for end in bounds[i + 1 :]:
+                if end - start > longest:
+                    break
+                part = value[start:end]
+                if end - start >= 3 and part != value and part in self.secrets_ and part not in OWN_WORDS:
+                    yield part
 
     def _code_inside(self, value: str) -> str | None:
         """Where the original code found inside ``value`` came from ("Activity C3050", "XA69C30507")."""
@@ -303,6 +348,34 @@ class Anonymizer:
             taken.add(new)
             mapping[original] = new
         return mapping[original]
+
+    def project_id(self, original: str) -> str:
+        """The new proj_id: 9 digits from HMAC-SHA256(key, "proj_id:<original>"), or of
+        "proj_id:<original>:<n>" for the first n whose id is no original proj_id of the files read."""
+        if not original:
+            return ""
+        if original not in self.project_ids:
+            for draw in range(DRAWS):
+                message = f"proj_id:{original}" if draw == 0 else f"proj_id:{original}:{draw}"
+                digest = hmac.new(self.key, message.encode(), hashlib.sha256).digest()
+                new = str(PROJECT_ID_LOW + int.from_bytes(digest[:8], "big") % PROJECT_ID_SPAN)
+                if new not in self.original_project_ids:
+                    break
+            else:
+                raise CodeClash(f"no project id other than the originals in {DRAWS} draws")
+            if new in self.project_ids.values():
+                raise CodeClash(f"two project ids would both become {new}: reload the page for a new key")
+            self.project_ids[original] = new
+        return self.project_ids[original]
+
+    def _project_ids(self, value: object) -> object:
+        """A table cell of project ids (one, or comma-separated) with the new ids; blanks and
+        ``NOT_AN_ID`` kept."""
+        if not isinstance(value, str):
+            return value if value is None or pd.isna(value) else self.project_id(str(value))
+        if value.strip() in NOT_AN_ID:
+            return value
+        return ",".join(self.project_id(item.strip()) for item in value.split(","))
 
     def guid(self, original: str) -> str:
         if not original:
@@ -364,8 +437,7 @@ class Anonymizer:
                 codes = new_codes.get(source, frame[source] if source in frame.columns else None)
                 out[column] = [f"{prefix} {code}" if code else "" for code in codes] if codes is not None else ""
             elif column in KEEP[name]:
-                if column == "clndr_data":
-                    self._check_calendar(frame[column])
+                out[column] = self._kept(column, frame[column])
             elif column in MONEY.get(name, ()):
                 out[column] = ["0" if value.strip() else "" for value in frame[column]]
             elif column in GUIDS:
@@ -375,6 +447,14 @@ class Anonymizer:
                     self.report.emptied_columns.add(f"{name}.{column}")
                 out[column] = ""
         return out
+
+    def _kept(self, column: str, values: pd.Series) -> pd.Series | list[str]:
+        """A kept column as written: the calendar data checked, the project ids renewed."""
+        if column == "clndr_data":
+            self._check_calendar(values)
+        elif is_project_id_column(column):
+            return [self.project_id(value) for value in values]
+        return values
 
     @staticmethod
     def _check_calendar(values: pd.Series) -> None:
@@ -396,11 +476,12 @@ class Anonymizer:
             if out is None:
                 continue
             lines += [f"%T\t{name}", "\t".join(["%F", *out.columns])]
+            fields.extend(out.columns)
             for row in out.itertuples(index=False):
                 lines.append("\t".join(["%R", *row]))
                 fields.extend(row)
         lines.append("%E")
-        self._refuse_leaks(fields, "anonymised XER")
+        self._refuse_leaks(fields, "anonymized XER")
         encoding = "cp1252" if raw.encoding.startswith("cp1252") else "utf-8"
         return ("\r\n".join(lines) + "\r\n").encode(encoding, errors="strict")
 
@@ -428,17 +509,35 @@ class Anonymizer:
     )  # fmt: skip
 
     def _notes(self, notes: pd.Series) -> list[str]:
-        """The notes of the rules: they name an activity by its Activity ID and a file by its name
-        (``Baseline.label``), nothing else; both are renamed."""
+        """The notes of the rules: they name an activity by its Activity ID, a file by its name
+        (``Baseline.label``) and a project by its id ("proj_id 370", ``Baseline.source``); all three
+        are renamed. A note can also copy an error message (``checks.run_metric``): any other value
+        of the originals in it is hidden."""
         names = dict(self.codes.get("A", {}))
         names.update({stem: "file" for stem, origin in self.secrets_.items() if origin == "file name"})
-        if not names:
-            return [note if isinstance(note, str) else "" for note in notes]
-        found = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
-        pattern = re.compile(rf"(?<![\w.-])(?:{found})(?![\w-])")
-        return [
-            pattern.sub(lambda match: names[match.group(0)], note) if isinstance(note, str) else "" for note in notes
+        texts = [
+            PROJECT_ID_IN_NOTE.sub(lambda match: f"proj_id {self.project_id(match.group(1))}", note)
+            if isinstance(note, str)
+            else ""
+            for note in notes
         ]
+        if names:
+            found = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+            pattern = re.compile(rf"(?<![\w.-])(?:{found})(?![\w-])")
+            texts = [pattern.sub(lambda match: names[match.group(0)], note) for note in texts]
+        longest = max(map(len, self.secrets_), default=0)
+        return [self._hide(note, longest) for note in texts]
+
+    def _hide(self, note: str, longest: int) -> str:
+        """``note`` with every text value of the originals found in it replaced by ``HIDDEN``, longest
+        first: an error message copied into a note names what it failed on."""
+        if not _is_text(note):
+            return note
+        if note in self.secrets_ and note not in OWN_WORDS:
+            return HIDDEN
+        for secret in sorted(set(self._secrets_inside(note, longest)), key=len, reverse=True):
+            note = note.replace(secret, HIDDEN)
+        return note
 
     def _code_list(self, text: object) -> str:
         if not isinstance(text, str) or not text:
@@ -449,6 +548,14 @@ class Anonymizer:
             new = self.codes.get("A", {}).get(code, "")
             items.append(f"{new}{bracket}{rest}" if new else "")
         return ", ".join(items)
+
+    def _renamed(self, column: str, values: pd.Series) -> list | None:
+        """The notes or the project ids of ``frame`` renamed; None for any other column."""
+        if column == "note":
+            return self._notes(values)
+        if is_project_id_column(column):
+            return [self._project_ids(value) for value in values]
+        return None
 
     def frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         """A table of activities or relationships with new codes and names; other text emptied."""
@@ -461,8 +568,8 @@ class Anonymizer:
                 ]
             elif column in self.NAME_COLUMNS:
                 continue
-            elif column == "note":
-                out[column] = self._notes(values)
+            elif (renamed := self._renamed(column, values)) is not None:
+                out[column] = renamed
             elif column in ("wbs_code", "pred_wbs_code", "succ_wbs_code"):
                 out[column] = [self.wbs_paths.get(value, "") if isinstance(value, str) else "" for value in values]
             elif column in self.CODE_LIST_COLUMNS:
@@ -478,7 +585,7 @@ class Anonymizer:
             if column in frame.columns:
                 codes = out[source] if source in out.columns else pd.Series("", index=out.index)
                 out[column] = [f"Activity {code}" if code else "" for code in codes]
-        self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), "table")
+        self._refuse_frame_leaks(out, "table")
         return out
 
     def csv(self, frame: pd.DataFrame) -> bytes:
@@ -508,9 +615,20 @@ class Anonymizer:
     def _zeroed(value: object) -> object:
         return value if isinstance(value, str) or pd.isna(value) else value * 0
 
+    def _renew_project_ids(self, out: pd.DataFrame) -> None:
+        """The project id columns of ``out``, and those listing ids (``PROJECT_ID_LIST_COLUMNS``), renewed."""
+        for column in out.columns:
+            if is_project_id_column(column) or column in PROJECT_ID_LIST_COLUMNS:
+                out[column] = [self._project_ids(value) for value in out[column]]
+
+    def _refuse_frame_leaks(self, out: pd.DataFrame, where: str) -> None:
+        """``_refuse_leaks`` on the column names and every cell of ``out``."""
+        cells = (str(value) for value in out.astype(str).to_numpy().ravel())
+        self._refuse_leaks([*map(str, out.columns), *cells], where)
+
     def zip_frames(self, frames: dict[str, pd.DataFrame]) -> bytes:
-        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES`` and the WBS codes renamed as in
-        the XER extract and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
+        """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES``, the WBS codes and the project ids
+        renamed as in the XER extract and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
 
         No other column changes: the caller selects ids, dates, durations, flags and P6
         enumerations only. Every cell of every table is still checked against the originals'
@@ -525,13 +643,10 @@ class Anonymizer:
                     out[column] = [mapping.get(value, "") if isinstance(value, str) else "" for value in out[column]]
             if "wbs_code" in out.columns:
                 out["wbs_code"] = [self.wbs_paths.get(v, "") if isinstance(v, str) else "" for v in out["wbs_code"]]
+            self._renew_project_ids(out)
             for column in self.DIAGNOSTIC_MONEY:
                 if column in out.columns:
                     out[column] = [self._zeroed(value) for value in out[column]]
-            self._refuse_leaks((str(value) for value in out.astype(str).to_numpy().ravel()), f"table {name}")
-            outputs[f"{name}.csv"] = csv_bytes(out)
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-            for file_name, data in outputs.items():
-                archive.writestr(file_name, data)
-        return buffer.getvalue()
+            self._refuse_frame_leaks(out, f"table {name}")
+            outputs[name] = out
+        return zip_frames(outputs, "csv")
