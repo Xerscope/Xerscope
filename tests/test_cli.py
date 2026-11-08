@@ -7,7 +7,7 @@ import re
 import asklex
 import pandas as pd
 import pytest
-from xerkit import todo, xer_text
+from xerkit import ROOT_WBS, todo, xer_text
 
 from xerscope import cli
 from xerscope.analysis import builtin_standards, compare_counts
@@ -328,7 +328,7 @@ def test_lexicon_build_skips_each_refused_export_and_names_it_in_the_report_only
     present, a project to select, at most LEXICON_MAX_BYTES. A refused one is skipped, the others
     are read; report.txt names it with a fixed reason, never its text nor an exception's
     message; the output counts it, never names it (the file name is often the project's)."""
-    good = xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")])
+    good = xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")], wbs=ROOT_WBS)
     source = tmp_path / "xer"
     source.mkdir()
     (source / "a.xer").write_text(good)
@@ -336,7 +336,7 @@ def test_lexicon_build_skips_each_refused_export_and_names_it_in_the_report_only
     (source / "c.xer").write_text(_without_table(good, "TASK"))
     (source / "d.xer").write_text(_without_table(good, "PROJWBS"))
     (source / "e.xer").write_text(_without_table(good, "PROJECT"))
-    (source / "f.xer").write_text(good.removesuffix("%E"))
+    (source / "f.xer").write_text(good.removesuffix("%E\n"))
     monkeypatch.setattr(cli, "LEXICON_MAX_BYTES", len(good.encode()) + 10, raising=False)
     (source / "g.xer").write_text(good + " " * 20)
     for folder in ("generated", "suggested"):
@@ -412,12 +412,10 @@ def test_lexicon_build_rewrites_generated_and_purges_suggested(capsys, sample_di
 
 
 def test_lexicon_build_reports_the_groups_new_since_the_last_run(capsys, tmp_path):
-    from xerkit import todo, xer_text
-
     source = tmp_path / "xer"
     source.mkdir()
     (source / "a.xer").write_text(
-        xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")])
+        xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")], wbs=ROOT_WBS)
     )
     (tmp_path / "generated").mkdir()
     (tmp_path / "suggested").mkdir()

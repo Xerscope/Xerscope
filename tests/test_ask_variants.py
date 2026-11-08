@@ -7,7 +7,7 @@ Measured on public XER files, the one-letter rule joined different words ("scree
 
 from __future__ import annotations
 
-from xerkit import snap, todo, xer_text
+from xerkit import ROOT_WBS, snap, todo, xer_text
 
 from xerscope import cli
 from xerscope.analysis import query
@@ -55,7 +55,9 @@ def test_ask_reads_screen_without_screed():
 def _build(tmp_path, capsys, folders=("generated", "curated", "suggested")) -> tuple[int, str]:
     source = tmp_path / "xer"
     source.mkdir()
-    (source / "a.xer").write_text(xer_text([todo(f"A{i}", task_name=name) for i, name in enumerate(NAMES)]))
+    (source / "a.xer").write_text(
+        xer_text([todo(f"A{i}", task_name=name) for i, name in enumerate(NAMES)], wbs=ROOT_WBS)
+    )
     out = tmp_path / "lexicon"
     for folder in folders:
         (out / folder).mkdir(parents=True)

@@ -325,6 +325,18 @@ with `error: create <folder> owned by the app account, see docs/deploy.md §10` 
 code 1 (it never creates one: Docker would make it root's). Files are replaced through a temporary file
 and a rename, created 0600 (`mkstemp`); its log holds counts only.
 
+Each export is checked before the generation and skipped if it fails, the others still read:
+read without error (`unreadable`), its `%E` end line present (`incomplete`, a file still being
+copied), the tables `TASK` and `PROJWBS` present (`missing table TASK`, `missing table
+PROJWBS`), a project to select (`no project`), at most 64 MB (`too large`: a 40 MB export
+peaks at about 1 GB parsed, §7, and the default memory cap is 2 GB; `LEXICON_MAX_BYTES` in
+`cli.py`). `report.txt` ends with a section `skipped (not read):`, one `<file>: <reason>` per
+line; the log says `<n> file(s) skipped, named in generated/report.txt` and never names an
+export (their names are often the project's), nor quotes one. When no export passes (or the
+folder holds none), `generated/` is left as it is, the log says `error: no valid XER file in
+the source folder (<n> skipped), generated/ left as it is` and the exit code is 1; the
+suggestions are then not purged either (the app still purges them at its next click).
+
 **When to run it.** `lexicon-init` is in the compose profile `lexicon`: `docker compose up`
 and Container Manager's Build leave it out, and the app never waits for it. The app starts
 with the `generated/` the last run left (none before the first run: the Ask field then reads

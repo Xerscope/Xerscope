@@ -20,6 +20,8 @@ MON_FRI_8H = clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], (
 MON_FRI_10H = clndr_data(range(2, 7), [("08:00", "18:00")])
 SEVEN_DAYS_8H = clndr_data(range(1, 8), [("08:00", "16:00")])
 
+# the project node P6 writes in every export's PROJWBS; `lexicon build` refuses a file without PROJWBS
+ROOT_WBS = ({"wbs_id": "10", "proj_id": "1", "wbs_short_name": "T", "wbs_name": "T", "proj_node_flag": "Y"},)
 TASK_DEFAULTS = {
     "proj_id": "1",
     "task_type": "TT_Task",
