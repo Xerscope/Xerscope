@@ -96,6 +96,24 @@ from: `p6`, `mpxj`, `standard` (the text of a standard), `property` (holds on an
 or `characterization` (xerscope's own frozen output). Another kind stops the collection.
 `uv run python scripts/oracle_report.py` counts the tests by kind.
 
+**Docstrings.** Form: PEP 257 (a one-line summary written as a command and ending in a
+period, a blank line before any detail), checked by ruff in the job `lint`. Public modules,
+classes, functions and methods have one; a private function whose name says it all needs
+none (PEP 8, Documentation Strings). Content: what the code does not already say, and
+nothing else:
+
+- the unit (hours, working days, minutes) and the calendar a number is counted on;
+- the population a check counts;
+- the source of a business rule: the Oracle page, the DECM or DCMA item, the corpus
+  activity, or "observed, not explained";
+- a side effect (a frame edited in place, a cache written) and the errors raised.
+
+Argument and return types are in the annotations, not repeated. A comment in a body says
+why, never what the line does. At most 12 lines for a function or a class
+(`tests/test_docstrings.py`). An example gives values a named test proves; a longer worked
+example goes to `docs/`. The files not yet at the standard are listed in `pyproject.toml`
+(`per-file-ignores`): a file leaves the list when it is brought to it, no rule is added.
+
 **Code fitness.** `uv run python scripts/fitness.py --check tests/fitness_baseline.json`
 measures each module (maintainability index, cyclomatic and cognitive complexity,
 structural clones) and the whole (mypy errors, deptry violations, the import contracts
