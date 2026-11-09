@@ -18,9 +18,26 @@ def items(sample_dir):
 
 
 def test_worker_count_follows_the_variable_and_never_exceeds_the_files(monkeypatch):
-    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "3")
-    assert worker_count(10) == 3 and worker_count(2) == 2
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "2")
+    assert worker_count(10) == 2 and worker_count(1) == 1
     monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    assert worker_count(10) == 1
+
+
+@pytest.mark.parametrize("asked", ["3", "4", "16"])
+def test_worker_count_never_exceeds_two(monkeypatch, asked):
+    # two processes is the most the NAS deployment stays stable with (docs/deploy.md section 7)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", asked)
+    assert worker_count(10) == 2
+
+
+@pytest.mark.parametrize("asked", ["", "0", "-1", "two", "\u00b2", "1.5"])
+def test_an_unusable_variable_falls_back_to_the_default(monkeypatch, asked):
+    # "\u00b2".isdigit() is True but int() refuses it: the reading thread died on it, the series half read
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", asked)
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    assert worker_count(10) == 2
+    monkeypatch.setattr("os.cpu_count", lambda: 1)
     assert worker_count(10) == 1
 
 
@@ -68,3 +85,13 @@ def test_a_worker_does_not_run_the_app_script(items, monkeypatch, capfd):
     results = {name: snapshot for name, snapshot, _ in read_updates(items, {})}
     assert all(not isinstance(snapshot, str) for snapshot in results.values()) and len(results) == len(items)
     assert "ScriptRunContext" not in capfd.readouterr().err
+
+
+def test_an_error_names_its_file_once():
+    from xerscope.app.reading import error_text
+    from xerscope.xer import XerError
+
+    assert error_text("a.xer", XerError("a.xer: PROJECT or TASK table missing")) == (
+        "a.xer: PROJECT or TASK table missing"
+    )
+    assert error_text("a.xer", KeyError("task_id")) == "a.xer: 'task_id'"

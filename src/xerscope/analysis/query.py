@@ -887,14 +887,24 @@ def answer(filter: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") 
         parts.append(words["named"].format(text=filter.search))
     sentence = " ".join(parts)
     details = []
-    floats = rows["total_float_d"].dropna() if "total_float_d" in rows else pd.Series(dtype=float)
-    if len(floats):
-        worst = floats.idxmin()
-        details.append(words["worst"].format(f=f"{floats[worst]:+.0f}", code=rows.loc[worst, "task_code"]))
+    ranked = worst_float_first(rows)
+    if len(ranked) and pd.notna(ranked["total_float_d"].iloc[0]):
+        worst = ranked.iloc[0]
+        details.append(words["worst"].format(f=f"{worst['total_float_d']:+.0f}", code=worst["task_code"]))
     finishes = rows["finish"].dropna() if "finish" in rows else pd.Series(dtype="datetime64[ns]")
     if len(finishes):
         details.append(words["finish"].format(date=f"{finishes.max():%d/%m/%Y}"))
     return sentence + (", " + ", ".join(details) if details else "") + "."
+
+
+def worst_float_first(rows: pd.DataFrame) -> pd.DataFrame:
+    """Rows by total float in hours, as P6 stores it (days of different calendars do not
+    compare: -5 d of 10 h is -50 h, worse than -6 d of 8 h), then by Activity ID; no float
+    (``total_float_d`` blank, as for complete work) last."""
+    if "total_float_hr_cnt" not in rows or rows.empty:
+        return rows
+    hours = rows["total_float_hr_cnt"].where(rows["total_float_d"].notna())
+    return rows.assign(_hours=hours).sort_values(["_hours", "task_code"], na_position="last").drop(columns="_hours")
 
 
 # --- a summary of what came out, by a model, from computed values only ---------------------
@@ -907,7 +917,7 @@ def facts(funnel: Funnel, snapshot: Snapshot, limit: int = FACT_ROWS) -> dict:
     with the worst total float (Activity ID, float in working days, finish date), and the
     successors of the worst one. Values computed by xerscope, never a name, never the file."""
     rows = funnel.rows
-    ordered = rows.sort_values("total_float_d", na_position="last").head(limit) if len(rows) else rows
+    ordered = worst_float_first(rows).head(limit)
     listed = [
         [str(code), None if pd.isna(tf) else float(tf), None if pd.isna(finish) else f"{finish:%Y-%m-%d}"]
         for code, tf, finish in zip(ordered["task_code"], ordered["total_float_d"], ordered["finish"], strict=True)

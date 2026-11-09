@@ -6,11 +6,14 @@ the P6 EPPM 25 dialog help (G18294_01 / 91574) for the default targets.
 Overlaps tests/test_rules.py on purpose: here each test is one sentence of the source.
 """
 
+import dataclasses
+
 import pytest
 from rulekit import STANDARDS, codes, counts, links, run
-from xerkit import DD, FM, SM, active, done, snap, todo
+from xerkit import DD, FM, SM, active, done, snap, todo, with_second_project, xer_text
 
 from xerscope.analysis import Baseline
+from xerscope.xer import build_snapshot, parse_text
 
 P6 = STANDARDS["P6"]
 DCMA = STANDARDS["DCMA"]
@@ -353,6 +356,18 @@ def test_p6_15_out_of_sequence_is_progress_while_a_predecessor_is_still_open():
     assert codes(r) == ["C", "C", "D"]  # one row per activity and predecessor, as the report lists them
 
 
+def test_p6_15_reads_fs_and_ss_links_inside_the_project_only():
+    """'Activities which are completed or in-progress before their predecessors' (R1). Pinned readings:
+    D's SS predecessor P has started: not listed. E's FF predecessor Q is open: not listed (UNRESOLVED, FF
+    and SF). F's FS predecessor X9 is in another project, not in the file: not read, not listed."""
+    s = snap(
+        [active("P"), todo("Q"), active("D"), active("E"), active("F")],
+        [("P", "D", "SS", 0), ("Q", "E", "FF", 0), ("X9", "F", "FS", 0, "2")],
+    )
+    r = run(P6, "P6-15", s)
+    assert (counts(r), codes(r)) == ((0, 5), [])
+
+
 def test_p6_16_dangling_start_ignores_in_progress_and_activities_without_predecessor():
     """'Activities with start dates that are not driven by predecessors', 'Ignore In Progress Activities'
     checked. The report's Logic check lists the activity with no predecessor; the dangling check does not."""
@@ -376,13 +391,149 @@ def test_p6_17_dangling_finish_needs_a_successor_that_is_not_driven():
 
 def test_p6_16_and_17_leave_milestones_out():
     """A milestone has a single date. On report R1, start and finish milestones with only FF or SS logic
-    (Start on or after constraints) are not dangling: none found by either check."""
+    are not dangling: none found by either check. Those milestones had Start on or after constraints, soft
+    for 'Ignore activities with soft constraints' (113174); the options' state in R1 is not recorded, so
+    for P6-17 the constraint alone could explain the 0. Rebuilt here without constraint: this pins the
+    milestone exclusion as a reading (UNRESOLVED, docs/standards.md)."""
     s = snap(
         [todo("P"), todo("FM", **FM), todo("SM", **SM), todo("S")],
         [("P", "FM", "FF", 0), ("SM", "S", "SS", 0)],
     )
     assert counts(run(P6, "P6-16", s)) == (0, 4)
     assert counts(run(P6, "P6-17", s)) == (0, 4)
+
+
+def test_p6_10a_says_when_an_in_progress_task_has_no_remaining_early_start():
+    """101248: 'in progress, remaining early start before the data date'. P6 writes restart_date for an
+    in-progress task (test_p6_checksched.py, CS1020). A blank one falls back on early_start_date; when an
+    exporter left that at the actual start, the task is flagged. Count pinned, the note says it."""
+    s = snap([active("A", early_start_date="2026-02-23 08:00"), active("B", restart_date=DD)])
+    r = run(P6, "P6-10a", s)
+    assert (counts(r), codes(r)) == ((1, 2), ["A"])
+    assert "1 in-progress task(s) without a remaining early start: early start read" in r.note
+    assert not run(P6, "P6-10a", snap([active("B", restart_date=DD)])).note
+
+
+def _with_external_ss(in_file: bool):
+    """A -> B FS inside project T, and an SS link from X9 of project 2 into A; X9 is in the file or not."""
+    if not in_file:
+        return snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("X9", "A", "SS", 0, "2")])
+    text = with_second_project(xer_text([todo("A"), todo("B")], [("A", "B", "FS", 0)]), "P2", ["X9"], DD)
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="9", task_id="1", pred_task_id="100", proj_id="1", pred_proj_id="2", pred_type="PR_SS")
+    row.update(lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    return build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), "T")
+
+
+def test_relationship_checks_say_which_external_links_they_hold():
+    """UNRESOLVED (docs/standards.md): how P6 counts a link from another project is not documented. Pinned:
+    the link is counted when its project is in the file, dropped when not, and the note says which.
+    P6-07: FS share 1 / 1 without X9, 1 / 2 with it; P6-08: 0 / 1 and 0 / 2."""
+    out, inside = _with_external_ss(False), _with_external_ss(True)
+    assert out.external_links_dropped == 1 and inside.external_links_dropped == 0
+    for metric_id, expected_out, expected_in in (("P6-07", (1, 1), (1, 2)), ("P6-08", (0, 1), (0, 2))):
+        r_out, r_in = run(P6, metric_id, out), run(P6, metric_id, inside)
+        assert (counts(r_out), counts(r_in)) == (expected_out, expected_in), metric_id
+        assert "1 link(s) from a project not in the file: not counted" in r_out.note, metric_id
+        assert "1 link(s) from another project of the file: counted" in r_in.note, metric_id
+    for metric_id in ("P6-05", "P6-09"):
+        assert "not counted" in run(P6, metric_id, out).note
+    assert not run(P6, "P6-08", snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])).note
+
+
+def _with_params(metric_id, **params):
+    return {metric_id: dataclasses.replace(P6[metric_id], params={**P6[metric_id].params, **params})}
+
+
+def test_p6_16_ignore_in_progress_option():
+    """113174: 'Ignore in-progress activities for dangling start activities: Mark to disregard activities that
+    are in progress'. Checked (p6.toml, as in R1): Y, in progress with an FF predecessor only, is not counted;
+    unchecked it is. D, completed, is counted in neither case; every task stays in the denominator."""
+    s = snap(
+        [todo("P"), todo("X"), active("Y"), done("D"), todo("Z")],
+        [("P", "X", "FF", 0), ("P", "Y", "FF", 0), ("P", "D", "FF", 0), ("X", "Z", "FS", 0)],
+    )
+    assert P6["P6-16"].params == {"ignore_in_progress": True}
+    checked = run(P6, "P6-16", s)
+    assert (counts(checked), codes(checked)) == ((1, 5), ["X"])
+    unchecked = run(_with_params("P6-16", ignore_in_progress=False), "P6-16", s)
+    assert (counts(unchecked), codes(unchecked)) == ((2, 5), ["X", "Y"])
+
+
+def test_p6_17_constraint_options():
+    """113174: 'Ignore activities with soft constraints' (Start On, Start On or After, Start On or Before,
+    Finish On, Finish On or After, Finish On or Before, As Late As Possible) and 'Ignore activities with
+    hard constraints' (Mandatory Start, Mandatory Finish), for Dangling Finish. Each of U, SO, MF, SEC has a
+    single SS successor K. SO is Start On, soft here (hard in P6-02); MF Mandatory Finish; SEC Mandatory
+    Start with a Finish On or Before secondary, so either option leaves it out. Denominator: the 5 tasks."""
+    on = "2026-03-10 08:00"
+    s = snap(
+        [
+            todo("U"),
+            todo("SO", cstr_type="CS_MSO", cstr_date=on),
+            todo("MF", cstr_type="CS_MANDFIN", cstr_date=on),
+            todo("SEC", cstr_type="CS_MANDSTART", cstr_date=on, cstr_type2="CS_MEOB", cstr_date2=on),
+            todo("K"),
+        ],
+        [("U", "K", "SS", 0), ("SO", "K", "SS", 0), ("MF", "K", "SS", 0), ("SEC", "K", "SS", 0)],
+    )
+    assert P6["P6-17"].params == {"ignore_soft_constraints": False, "ignore_hard_constraints": False}
+    cases = {
+        (False, False): ["MF", "SEC", "SO", "U"],
+        (True, False): ["MF", "U"],
+        (False, True): ["SO", "U"],
+        (True, True): ["U"],
+    }
+    for (soft, hard), expected in cases.items():
+        standard = _with_params("P6-17", ignore_soft_constraints=soft, ignore_hard_constraints=hard)
+        r = run(standard, "P6-17", s)
+        assert (counts(r), codes(r)) == ((len(expected), 5), expected), (soft, hard)
+
+
+def test_p6_16_and_17_never_count_a_completed_task():
+    """UNRESOLVED (docs/standards.md): no Oracle text takes completed tasks out of Dangling. Pinned reading:
+    C (completed, FF predecessor only, SS successor only) is counted by neither check, whatever the
+    in-progress option; it stays in the denominator."""
+    s = snap([todo("P"), done("C"), todo("S")], [("P", "C", "FF", 0), ("C", "S", "SS", 0), ("P", "S", "FS", 0)])
+    for standard in (P6, _with_params("P6-16", ignore_in_progress=False)):
+        assert counts(run(standard, "P6-16", s)) == (0, 3)
+    assert counts(run(P6, "P6-17", s)) == (0, 3)
+
+
+def _with_link_to_second_project(text: str, pred_task_id: str, succ_task_id: str, link_type: str) -> str:
+    """``text`` plus a TASKPRED row of project 2 whose predecessor is ``pred_task_id`` of project 1."""
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="99", task_id=succ_task_id, pred_task_id=pred_task_id, proj_id="2", pred_proj_id="1")
+    row.update(pred_type=f"PR_{link_type}", lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    return "\n".join(lines) + "\n"
+
+
+def test_p6_16_and_17_do_not_read_links_to_other_projects():
+    """UNRESOLVED (docs/standards.md): the Dangling help (113174) does not say how P6 treats a link to an
+    activity of another project. Pinned reading: P6-16 / P6-17 see only the links inside the project,
+    where P6-01 lets an external link pass (46291)."""
+    # B: FF from A and FS from X9 of project 2 (not in the file). Only the FF is read: B is listed.
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FF", 0), ("X9", "B", "FS", 0, "2"), ("B", "C", "FS", 0)])
+    r = run(P6, "P6-16", s)
+    assert (counts(r), codes(r)) == ((1, 3), ["B"])
+    # A: its only predecessor is an FF from project 2. No predecessor read: not listed, P6-01 passes it.
+    s = snap([todo("A"), todo("B")], [("X9", "A", "FF", 0, "2"), ("A", "B", "FS", 0)])
+    assert counts(run(P6, "P6-16", s)) == (0, 2)
+    assert codes(run(P6, "P6-01", s)) == ["B"]
+    # A: SS to B, FS to Z of project 2 (in the file). Only the SS is read: A is listed.
+    text = with_second_project(xer_text([todo("A"), todo("B")], [("A", "B", "SS", 0)]), "P2", ["Z"], DD)
+    s = build_snapshot(parse_text(_with_link_to_second_project(text, "1", "100", "FS"), source="t.xer"), "T")
+    assert s.activities.set_index("task_code").loc["A", "has_external_succ"]
+    r = run(P6, "P6-17", s)
+    assert (counts(r), codes(r)) == ((1, 2), ["A"])
 
 
 def test_p6_12_and_13_with_the_planned_dates_baseline_reproduce_p6():

@@ -213,10 +213,13 @@ Configuration (environment variables, also set by the `app` flags):
 - **EV:** baseline labour units × Performance % Complete, by the WBS's EV technique
   (activity % complete, 0/100, 50/50, custom %). Activities not in the baseline earn
   nothing and are listed. AC is the actual hours; EAC = AC + remaining.
-- **PPC commitments:** the finishes and the starts that update W-1 forecasts before W's
-  data date (in a recalculated file, those forecast during the week); PPC = kept / committed
-  over both, the finishes alone being Last Planner's PPC. Milestones are left out. An
-  activity deleted in W counts as scope change, not as a miss.
+- **PPC commitments:** the starts and the finishes that update W-1 plans on or before W's
+  data date (in a recalculated file, those planned during the week), kept when W's actual
+  date is on or before that data date. PPC Start and PPC Finish (Last Planner's PPC) =
+  kept / committed of each kind, PPC W/W-1 over both; n/a, not 0, when nothing was due.
+  Milestones are left out. An activity deleted in W counts as scope change, not as a miss.
+- **Start and finish variance:** per activity, its date in W-1 and W-2 minus its date in W,
+  in working days of its calendar: negative = late; blank when a date is missing.
 
 ## Validation
 
@@ -324,7 +327,7 @@ uv sync --locked
 uv run python tests/reference/fetch.py            # pinned third-party XERs (checksum-verified)
 uv run python tests/reference/fetch_p6_heldout.py # P6 23.12 held-out corpus (pinned commit)
 uv run pytest -rs                                 # corpus and MPXJ tests skip when their data is missing
-uvx ruff check src tests && uvx ruff format --check src tests
+uvx ruff check src tests scripts && uvx ruff format --check src tests scripts
 ```
 
 No real schedule enters the repository, its issues or its pull requests: tests build their

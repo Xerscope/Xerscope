@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import streamlit as st
 from conftest import file_boxes, files_done, open_files, read_folder
 from streamlit.testing.v1 import AppTest
@@ -145,3 +146,29 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
     assert reruns == []
     assert filled == [0, 1, 2, 3, 4]
     assert _cards(at) == expected
+
+
+@pytest.mark.parametrize("sync", ["1", "0"])
+def test_both_load_paths_give_the_same_errors_for_the_same_bad_files(sample_dir, tmp_path, monkeypatch, sync):
+    """One file read in the script run (one ticked, or XERSCOPE_SYNC_LOAD) or several in a thread:
+    one reader (reading.read_update) and one series builder (reading.store_of), so the same bad
+    files give the same sidebar errors, each naming its file once. The order may differ: the thread
+    reads the latest file first."""
+    for path in sorted(sample_dir.glob("*.xer"))[:2]:
+        (tmp_path / path.name).write_bytes(path.read_bytes())
+    data = sorted(sample_dir.glob("*.xer"))[0].read_bytes()
+    (tmp_path / "cut.xer").write_bytes(data[: len(data) // 2])
+    (tmp_path / "junk.xer").write_bytes(b"not an xer")
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.setenv("XERSCOPE_SYNC_LOAD", sync)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    if sync == "0":
+        _joined(at, "_load_job")
+        at.run()
+    _ok(at)
+    assert sorted(at.session_state["errors"]) == [
+        "cut.xer: incomplete file, no %E end line (still being copied, or cut short)",
+        "junk.xer: not an XER file (no ERMHDR header, no tables)",
+    ]
+    assert len(at.session_state["store"]) == 2
