@@ -215,6 +215,7 @@ def _mpxj_calendars(path: Path) -> dict[str, tuple]:
     return out
 
 
+@pytest.mark.oracle("mpxj")
 @pytest.mark.parametrize("name", [n for n in FILES if n.endswith(".xer")])
 def test_mpxj_reads_every_calendar_like_xerscope(name):
     """Each calendar of each real P6 export: working periods of every weekday and every exception
@@ -230,6 +231,7 @@ def test_mpxj_reads_every_calendar_like_xerscope(name):
         assert {d: tuple(sorted(p)) for d, p in cal.exceptions.items()} == exceptions, clndr_id
 
 
+@pytest.mark.oracle("mpxj")
 def test_mpxj_reads_every_reference_file_like_xerscope():
     mpxj_or_skip()
     from xerscope.crosscheck import compare_paths

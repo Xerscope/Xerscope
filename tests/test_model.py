@@ -214,6 +214,26 @@ def test_options_keep_the_raw_project_fields_they_derive_from():
     assert s.options["project"]["critical_path_type"] == "" and s.options["critical_path_type"] == "CT_TotFloat"
 
 
+def test_scheduling_options_of_another_project_only_warn_that_p6_defaults_are_used():
+    """SCHEDOPTIONS holds a row for project 1 (Actual Dates) and none for project 2: project 2
+    is scheduled under P6's defaults (Retained Logic), and the file says so."""
+    from xerkit import with_second_project
+
+    text = with_second_project(
+        xer_text([todo("A")], sched={"sched_retained_logic": "N", "sched_progress_override": "N"}),
+        "B",
+        ["X"],
+        "2026-03-02 08:00",
+    )
+    first = build_snapshot(parse_text(text, source="t.xer"), project_code="T")
+    assert first.options["progressed"] == "actual_dates"
+    assert not any("SCHEDOPTIONS" in w for w in first.warnings)
+    second = build_snapshot(parse_text(text, source="t.xer"), project_code="B")
+    assert second.options["progressed"] == "retained_logic" and second.options["sched"] == {}
+    assert "t.xer: SCHEDOPTIONS has no row for project B: P6's default scheduling options used" in second.warnings
+    assert "has_schedoptions" not in second.options
+
+
 def test_critical_defaults_to_zero_float_when_project_is_silent():
     s = build_snapshot(parse_text(_xer({}, tasks=TASKS)))
     assert s.activities.set_index("task_code")["is_critical"].to_dict() == {"A": True, "B": False, "C": False}
@@ -399,7 +419,8 @@ def test_header_takes_what_build_snapshot_takes(case):
     text = HEADER_CASES[case]
     header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, keep=HEADER_TABLES))
     if case == "two projects":
-        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
+        assert header.project_task_counts == {"1": 3, "2": 2} and header.selected_by == "most TASK rows"
+        assert header.project_codes == {"1": "UPD", "2": "BL"}
     if case == "no recalc date":
         assert header.data_date_source == "plan_start_date"
 
@@ -541,6 +562,18 @@ def test_p6_status_codes_do_not_warn():
     assert not [w for w in s.warnings if "not a P6 code" in w]
 
 
+def test_unknown_percent_complete_type_warns_and_reads_as_physical():
+    """Oracle names a fourth type, Scope (from Oracle Primavera Cloud; its XER code is not
+    documented): any code but CP_Phys / CP_Drtn / CP_Units reads the physical %, and says so."""
+    s = snap(
+        [todo("A", complete_pct_type="CP_Scope", phys_complete_pct="30"), todo("B"), todo("C", complete_pct_type="")]
+    )
+    assert [w for w in s.warnings if "complete_pct_type" in w] == [
+        "test.xer: TASK.complete_pct_type 'CP_Scope' is not a P6 code (1 row): % complete read as Physical"
+    ]
+    assert s.tasks.set_index("task_code").at["A", "pct_complete"] == 30.0
+
+
 def test_unknown_task_type_warns_once_per_code():
     s = snap([todo("A", task_type="TT_TASK"), todo("B", task_type="TT_TASK"), todo("C", task_type="TT_X"), todo("D")])
     assert [w for w in s.warnings if "task_type" in w] == [
@@ -554,7 +587,7 @@ def test_unknown_pred_type_warns_and_keeps_its_code():
     s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FS", 0), ("B", "C", "XX", 0)])
     assert [w for w in s.warnings if "pred_type" in w] == [
         "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
-        "scheduled as SF in the forward pass, ignored in the backward pass"
+        "kept with its code, ignored by the recalculation"
     ]
     assert sorted(s.relationships["type"]) == ["FS", "PR_XX"]
 

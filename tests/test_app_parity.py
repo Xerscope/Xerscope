@@ -21,7 +21,7 @@ from xerscope.analysis.evm import bei_series, evm_series
 from xerscope.analysis.explain import fmt_value
 from xerscope.analysis.progress import ppc_series
 from xerscope.app.state import BL_NONE, BL_PLANNED
-from xerscope.app.ui import status_label
+from xerscope.app.ui import md_text, status_label
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 STANDARDS = builtin_standards()
@@ -111,9 +111,9 @@ def test_earned_value_kpis_equal_evm_series(app, store):
         shown = _metrics(app)
         assert shown["Percent complete"] == f"{row['ev_pct']:.1f} %", snapshot.label
         assert shown["Percent scheduled"] == f"{row['pv_pct']:.1f} %", snapshot.label
-        expected_cost_spi = "n/a — no cost in the baseline" if pd.isna(row["spi_cost"]) else f"{row['spi_cost']:.3f}"
+        expected_cost_spi = "n/a — no cost in the baseline" if pd.isna(row["spi_cost"]) else f"{row['spi_cost']:.2f}"
         assert shown["SPI"] == expected_cost_spi, snapshot.label
-        assert shown["SPI (labor units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.3f}"), snapshot.label
+        assert shown["SPI (labor units)"] == ("–" if pd.isna(row["spi"]) else f"{row['spi']:.2f}"), snapshot.label
         assert shown["SV"] == f"{row['sv_hr']:+,.0f} h", snapshot.label
         assert shown["BEI (P6 / DCMA)"] == " / ".join(
             "–" if pd.isna(value) else f"{value:.2f}" for value in health_bei
@@ -132,8 +132,9 @@ def test_ppc_kpis_equal_ppc_series(app, store):
         row, shown = series.loc[index], _metrics(app)
         assert shown["Finishes kept"] == f"{row['finishes_kept']} / {row['finishes_committed']}", label
         assert shown["Starts kept"] == f"{row['starts_kept']} / {row['starts_committed']}", label
-        for tile, column in (("PPC this week", "ppc"), ("PPC Start", "ppc_start"), ("PPC all commitments", "ppc_all")):
-            assert shown[tile] == ("–" if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
+        tiles = (("PPC Start", "ppc_start"), ("PPC Finish", "ppc_finish"), ("PPC W/W−1", "ppc_week"))
+        for tile, column in tiles:
+            assert shown[tile] == ("n/a" if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
 
 
 def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
@@ -151,8 +152,46 @@ def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
     at.switch_page("views/ppc.py")
     _run(at)
     shown = _metrics(at)
-    assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC this week"]) == ("1 / 2", "1 / 2", "50 %")
-    assert (shown["PPC Start"], shown["PPC all commitments"]) == ("50 %", "50 %")
+    assert (shown["Finishes kept"], shown["Starts kept"], shown["PPC Finish"]) == ("1 / 2", "1 / 2", "50 %")
+    assert (shown["PPC Start"], shown["PPC W/W−1"]) == ("50 %", "50 %")
+
+
+def test_ppc_page_late_commitments_option_renumbering_and_unplanned_work(tmp_path, monkeypatch):
+    """W-1 (DD 03-09): A 03-10 -> 03-13, B start 03-04 (late at W-1), T 03-10 -> 03-13, none
+    started. W (DD 03-16): A renumbered A-NEW (same task_id) and complete, B not started, T
+    complete. A leaves the counts (deleted + new), with a warning naming both IDs, and A-NEW is
+    unplanned work. Late commitments included (default): starts B, T, kept 1 / 2; left out: T
+    only, 1 / 1. Finishes T, 1 / 1 either way."""
+    week_1 = [
+        todo("A", early_start_date="2026-03-10 08:00", early_end_date="2026-03-13 17:00"),
+        todo("B", early_start_date="2026-03-04 08:00", early_end_date="2026-03-20 17:00"),
+        todo("T", early_start_date="2026-03-10 08:00", early_end_date="2026-03-13 17:00"),
+    ]
+    week_2 = [
+        done("A-NEW", act_start_date="2026-03-10 08:00", act_end_date="2026-03-13 17:00"),
+        todo("B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00"),
+        done("T", act_start_date="2026-03-10 08:00", act_end_date="2026-03-13 17:00"),
+    ]
+    (tmp_path / "w1.xer").write_text(xer_text(week_1, data_date="2026-03-09 08:00"))
+    (tmp_path / "w2.xer").write_text(xer_text(week_2, data_date="2026-03-16 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    at.switch_page("views/ppc.py")
+    _run(at)
+    shown = _metrics(at)
+    assert (shown["Starts kept"], shown["Finishes kept"]) == ("1 / 2", "1 / 1")
+    assert any(f"A → {md_text('A-NEW')}" in w.value for w in at.warning), [w.value for w in at.warning]
+    headers = [h.value for h in at.subheader]
+    assert "Milestones committed" in headers and "Unplanned work" in headers
+    unplanned = next(
+        frame.value for frame in at.dataframe if "act_start_date" in frame.value.columns and len(frame.value) == 1
+    )
+    assert unplanned.iloc[0]["task_code"] == "A-NEW"
+    at.checkbox(key="ppc_overdue").uncheck()
+    _run(at)
+    shown = _metrics(at)
+    assert (shown["Starts kept"], shown["Finishes kept"]) == ("1 / 1", "1 / 1")
 
 
 def test_overview_kpis_equal_store_summary(app, store):
@@ -299,7 +338,7 @@ def test_audit_funnel_equals_the_rule_steps(app, store, metric_id):
     expected += [(s.label, s.source, len(s.removed), s.left) for s in result.funnel.steps]
     expected += [("counted", "", None, result.numerator)]
     got = [
-        (row.step, row.source, None if pd.isna(row.removed) else int(row.removed), int(row.left))
+        (row.step, row.source, None if row.removed == "–" or pd.isna(row.removed) else int(row.removed), int(row.left))
         for row in shown.itertuples()
     ]
     assert got == expected
@@ -352,3 +391,82 @@ def test_baseline_in_each_file_equals_check_baseline_in_file(tmp_path, monkeypat
     (built,) = at.session_state["_file_baselines"][1].values()
     assert built.label == "BL (P6 Project Baseline in two.xer)"
     assert f"baseline {built.label}" in printed
+
+
+def test_earned_value_table_csv_and_chart_total_the_kpi_population(tmp_path, monkeypatch):
+    """a (03-02): A and D, 40 h each over 03-02 → 03-06; b (03-04): A and N (D deleted, N new).
+    Against a, at b by hand: BAC = 40 h (A only), PV = 16 h, EV = 0. The CSV of "Earned hours by
+    task" sums to those KPI values (D and its 16 h of PV in a CSV of their own) and the PV curve ends at 40 h, its
+    label naming its population."""
+    import base64
+    import io
+
+    import numpy as np
+    import plotly.io
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+
+    from xerscope.store import SnapshotStore
+
+    saved: dict[str, bytes] = {}
+    real = MemoryMediaFileStorage.load_and_get_id
+
+    def keep(self, path_or_data, mimetype, kind, filename=None):
+        file_id = real(self, path_or_data, mimetype, kind, filename)
+        saved[file_id] = self._files_by_id[file_id].content
+        return file_id
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", keep)
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    (tmp_path / "a.xer").write_text(xer_text([todo("A", **week), todo("D", **week)], data_date="2026-03-02 08:00"))
+    (tmp_path / "b.xer").write_text(xer_text([todo("A", **week), todo("N", **week)], data_date="2026-03-04 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=180).run())
+    at.sidebar.toggle(key="anon_exports").set_value(False)
+    _run(at)
+    at.switch_page("views/earned_value.py")
+    _run(at)
+    store: SnapshotStore = at.session_state["store"]
+    row = evm_series(store, Baseline.from_snapshot(store.first)).iloc[-1]
+    assert (row["bac_hr"], row["pv_hr"], row["ev_hr"]) == pytest.approx((40, 16, 0))
+    files = {b.proto.label: saved[b.proto.url.rsplit("/", 1)[-1].split(".")[0]] for b in at.get("download_button")}
+    csv = pd.read_csv(io.BytesIO(files["Download CSV"]))
+    deleted = pd.read_csv(io.BytesIO(files["Download deleted tasks (CSV)"]))
+    assert list(csv["task_code"]) == ["A"] and list(deleted["task_code"]) == ["D"]
+    assert deleted["pv_hr"].sum() == pytest.approx(16)  # D's PV, apart from the KPI's
+    assert csv[["ev_labor_hr", "pv_hr", "ev_hr"]].sum().tolist() == pytest.approx([40, 16, 0])
+    # hours and finish of the EV basis, named as such: not the baseline's own (BL) columns
+    assert not {"bl_labor_hr", "bl_finish"} & set(csv.columns)
+    frame = Baseline.from_snapshot(store.first).frame
+    assert list(pd.to_datetime(csv["ev_finish"])) == [frame.loc["A", "ev_finish"]]
+    assert any("Budgeted values with planned dates" in caption.value for caption in at.caption)
+    figure = plotly.io.from_json(at.get("plotly_chart")[0].proto.spec)
+    pv = next(trace for trace in figure.data if trace.name == "PV (baseline)")
+    pv_hours = np.frombuffer(base64.b64decode(pv.y["bdata"]), dtype=pv.y["dtype"])  # plotly's typed array
+    assert pv_hours[-1] == pytest.approx(row["bac_hr"])
+    labels = [a.text for a in figure.layout.annotations if a.text.startswith("BAC")]
+    assert labels == ["BAC 40 · baseline tasks of this update"]
+
+
+def test_earned_value_captions_list_what_ev_point_reports(tmp_path, monkeypatch):
+    """a: A and M (WBS on EV technique "WBS milestones"), D; b: A, M and N (D deleted, N new). The page's
+    "not modelled" and "not in the baseline" captions name ev_point's lists for b: M, and N."""
+    from xerscope.analysis.evm import ev_point
+
+    wbs = [{"wbs_id": "W1", "proj_id": "1", "wbs_short_name": "W1", "wbs_name": "W1", "proj_node_flag": "N",
+            "parent_wbs_id": "", "seq_num": "1", "ev_compute_type": "EC_WBS_Mile"}]  # fmt: skip
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    tasks = [todo("A", **week), todo("M", wbs_id="W1", **week)]
+    (tmp_path / "a.xer").write_text(xer_text([*tasks, todo("D", **week)], wbs=wbs, data_date="2026-03-02 08:00"))
+    (tmp_path / "b.xer").write_text(xer_text([*tasks, todo("N", **week)], wbs=wbs, data_date="2026-03-04 08:00"))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=180).run())
+    at.switch_page("views/earned_value.py")
+    _run(at)
+    store = at.session_state["store"]
+    point = ev_point(store.latest, Baseline.from_snapshot(store.first))
+    assert (point.not_modelled, point.unbaselined) == (["M"], ["N"])
+    captions = [caption.value.replace("\\", "") for caption in at.caption]
+    assert any(text.startswith("EV technique not modelled") and text.endswith(": M") for text in captions)
+    assert any(text.startswith("Not in the baseline") and text.endswith(": N") for text in captions)

@@ -6,7 +6,10 @@
 # (<docker-hub-login>/xerscope-caddy) when that leg is configured.
 #
 # Versions, bumped together:
-#   - the two caddy tags: one Caddy release (Dependabot proposes them, .github/dependabot.yml);
+#   - the two caddy tags, each pinned by digest: one Caddy release (Dependabot proposes tag and
+#     digest together, .github/dependabot.yml). The digest is the multi-arch index of the tag:
+#       docker buildx imagetools inspect caddy:2.11.8          (first line, "Digest:")
+#     or, without Docker, hub.docker.com/v2/repositories/library/caddy/tags/2.11.8 ("digest");
 #   - the module: a pseudo-version, i.e. one commit of caddy-ratelimit, bumped by hand
 #     (Dependabot does not read a RUN line). Its only tag, v0.1.0 (2024), predates the
 #     rejection of unknown subdirectives (a typo was silently ignored) and ipv6_prefix.
@@ -21,12 +24,12 @@
 # The builder sets the binary's cap_net_bind_service file capability like the stock image
 # (XCADDY_SETCAP): deploy/compose.yaml keeps cap_add NET_BIND_SERVICE for either image.
 
-FROM caddy:2.11.8-builder AS build
+FROM caddy:2.11.8-builder@sha256:d4eb070c36154bd2d4c94b40359a03c6168346d5af5404963c74691ab77fb63f AS build
 RUN xcaddy build --with github.com/mholt/caddy-ratelimit@v0.1.1-0.20260612195517-5625512f24f6 \
     --replace golang.org/x/net=golang.org/x/net@v0.62.0 \
   && go version -m /usr/bin/caddy | grep -Eq 'golang\.org/x/net[[:space:]]+v0\.62\.0'   # fields are tab-separated
 
-FROM caddy:2.11.8
+FROM caddy:2.11.8@sha256:4fcafa98afd1c2e642e353e3c5cf9ddbe892fcee14bc990e7ba2c5b78e51f9cf
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
 # the build fails here, not on the NAS, if the module is missing
 RUN caddy list-modules | grep -qx http.handlers.rate_limit && caddy version

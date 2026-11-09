@@ -2,20 +2,21 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import builtin_standards, standard_score
-from xerscope.analysis.explain import KPI_FORMULAS
+from xerscope.analysis.explain import KPI_FORMULAS, critical_definition
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
 from xerscope.app.state import (
     background_jobs,
     page_header,
-    poll_scores,
     require_store,
     score_job,
     standard_results,
     standard_results_held,
     standards,
 )
+from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import build_finish_trend
+from xerscope.xer.calendar import LIMIT_MARK
 
 store = require_store()
 latest = store.latest
@@ -57,7 +58,7 @@ ui.kpis(
             "Critical tasks",
             int(last["critical"]),
             None if before is None else f"{int(last['critical'] - before['critical']):+d} this week",
-            "Open tasks with total float ≤ 0",
+            critical_definition(latest, DEFAULT_SETTINGS.critical_float_days),
             "inverse",
         ),
     ],
@@ -71,34 +72,55 @@ ui.section(
     "on a large file.",
 )
 built_in = {key: standard for key, standard in standards().items() if key in builtin_standards()}
-held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
-missing = [key for key, results in held.items() if results is None]
 loading = st.session_state.get("_load_job") is not None  # the series is still being read
-if missing and background_jobs() and not loading:
-    # computed in a thread once the series is read; the cards fill as each standard finishes
-    job = score_job(latest, store, built_in)
+
+
+def score_section(polling: bool) -> None:
+    """The score cards. ``polling``: the scores are computed in a thread (``score_job``); this runs
+    as a fragment every second and fills each card as its standard finishes, the rest of the page
+    not drawn again. The timer goes with the next full run of the page, which no longer polls."""
     held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
-    failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
-    for message in failed:
-        st.error(message, icon=":material/error:")
-    if not job.done:
-        st.caption(f"Computing the scores · {len(job.held)}/{len(built_in)} standards")
-        poll_scores()
-elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
-    held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
-ui.score_cards(
-    {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}
+    missing = [key for key, results in held.items() if results is None]
+    if missing and polling:
+        job = score_job(latest, store, built_in)
+        held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
+        failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
+        for message in failed:
+            st.error(message, icon=":material/error:")
+        if not job.done:
+            st.caption(f"Computing the scores · {len(job.held)}/{len(built_in)} standards")
+    elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
+        held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
+    ui.score_cards(
+        {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}
+    )
+
+
+polling = (
+    background_jobs()
+    and not loading
+    and any(standard_results_held(standard, latest) is None for standard in built_in.values())
 )
+if polling:
+    st.fragment(score_section, run_every=1.0)(polling=True)
+else:
+    score_section(polling=False)
 
 ui.section(
     "Forecast finish by update",
     "Each point is one weekly XER: where its schedule puts the project finish. "
     "A rising line means the end date is slipping.",
 )
-st.plotly_chart(build_finish_trend(summary), width="stretch")
+ui.chart(build_finish_trend(summary))
 
 ui.section("Updates loaded")
 ui.table(summary.drop(columns=["snapshot_idx", "project"]))
 
+limits = [w for w in store.warnings if LIMIT_MARK in w]
 for w in store.warnings:
-    st.warning(w, icon=":material/warning:")
+    if w not in limits:
+        st.warning(w, icon=":material/warning:")
+if limits:
+    ui.section("Limits", "What these files hold that xerscope reads differently from P6, and where.")
+    for w in limits:
+        st.warning(w, icon=":material/rule:")
