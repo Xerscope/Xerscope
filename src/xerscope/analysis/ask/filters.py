@@ -14,6 +14,17 @@ from .vocab import Vocabulary
 
 
 @dataclass(frozen=True)
+class Choice:
+    """One answer to a question Ask asks back: ``word`` as the file spells it (a value, a type
+    name), ``value`` what ``parse_keywords(..., chosen={word: value})`` takes back (a value's
+    ``code_id``, or a type's label), ``label`` the text shown ("P1 — Phase (global)")."""
+
+    word: str
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
 class Filter:
     """What a sentence asked for; every field empty means "no filter", as the page's widgets.
 
@@ -32,6 +43,9 @@ class Filter:
     clauses: tuple[tuple[str, Expr], ...] = ()  # (label, expression), intersected with the facets
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's chips
     ignored: tuple[str, ...] = ()  # words nothing reads (the file, the lexicon, the grammar)
+    # a word naming several activity-code values or types of one P6 name: filtered on none of
+    # them, the candidates offered instead (``parse_keywords(..., chosen=...)`` takes the answer back)
+    clarify: tuple[Choice, ...] = ()
     # 1.0 when every phrase matched exactly; else the weakest fuzzy match, lowered under SURE when
     # two WBS nodes scored as close (MARGIN): how well the sentence separates one cluster of the
     # file's labels from the others

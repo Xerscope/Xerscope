@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import bisect
 import re
+from collections.abc import Mapping
 
 from .clauses import Composer, raw
+from .filters import Choice
 from .grammar import LONGEST, PHRASES_OF_SIZE, TABLE, And, Atom
 from .text import (
     MARGIN,
@@ -30,16 +32,19 @@ from .vocab import NAME_COLUMN, RESOURCE_COLUMNS, WBS_COLUMNS, Vocabulary
 Item = tuple[int, str, object]
 
 
-def items(tokens: list[str], vocab: Vocabulary) -> tuple[list[Item], float]:
-    """Every token the grammar or the file reads, in sentence order, and the weakest typo ratio."""
+def items(
+    tokens: list[str], vocab: Vocabulary, chosen: Mapping[str, str] | None = None
+) -> tuple[list[Item], float, list[Choice]]:
+    """Every token the grammar or the file reads, in sentence order, the weakest typo ratio, and
+    the questions asked back on activity codes (``_code_items``)."""
     found, used = _clause_items(tokens, vocab)
     _id_items(tokens, used, vocab, found)
     confidence = _typo_items(tokens, used, found, vocab)
     rest = _Rest(tokens, used)
     confidence = min(confidence, _wbs_items(rest, vocab, found))
-    _code_items(rest, vocab, found)
+    clarify = _code_items(rest, vocab, found, chosen or {})
     confidence = min(confidence, _resource_items(rest, vocab, found), _word_items(rest, vocab, found))
-    return sorted(found, key=lambda item: item[0]), confidence
+    return sorted(found, key=lambda item: item[0]), confidence, clarify
 
 
 def _grammar_items(tokens: list[str]) -> tuple[list[tuple[int, int, str, object]], set[int]]:
@@ -234,22 +239,75 @@ def _typo_node(rest: _Rest, vocab: Vocabulary, add) -> float:
 # --- activity codes, resources, words -------------------------------------------------------
 
 
-def _code_items(rest: _Rest, vocab: Vocabulary, found: list[Item]) -> None:
+def _code_items(rest: _Rest, vocab: Vocabulary, found: list[Item], chosen: Mapping[str, str]) -> list[Choice]:
     """A code value or its description, whole word, longest first. One code type, as the page's
     widget: a value of another type is understood and dropped, never searched as text; the
-    type's own name ("zone B2") is dropped too."""
+    type's own name ("zone B2") is dropped too. P6 keeps a type name unique only within its
+    scope and a value unique only within its type: a word naming values of several types of one
+    name ("P1" of "Phase (global)" and of "Phase (project)"), or a name two types share
+    ("Phase"), filters nothing and is asked back (the list returned) until ``chosen`` answers.
+    The same holds for a value under types of different names ("A" of "Zone" and of "Room"),
+    unless the sentence names one of them ("Zone A"). A one-letter word is read only as a value
+    exactly."""
+    answers = {fold(word): value for word, value in chosen.items()}
+    clarify: list[Choice] = []
+    type_name = {t: vocab.type_names.get(t, t) for t, _, _ in vocab.codes.values()}
+    reached: set[str] = set()  # the P6 type names a value word named, filtered or asked
     code_type = None
-    for code_id, (kind, value, name) in sorted(vocab.codes.items(), key=lambda kv: -max(len(kv[1][1]), len(kv[1][2]))):
-        said = next((c for c in sorted((fold(value), fold(name)), key=len, reverse=True) if _label(c, rest)), None)
+
+    def pick(code_id: str, index: int) -> None:
+        nonlocal code_type
+        if code_type in (None, vocab.codes[code_id][0]):
+            code_type = vocab.codes[code_id][0]
+            found.append((index, "x", Atom("code", code_id)))
+
+    for _, (_, value, name) in sorted(vocab.codes.items(), key=lambda kv: -max(len(kv[1][1]), len(kv[1][2]))):
+        said = next(
+            (
+                c
+                for c in sorted((fold(value), fold(name)), key=len, reverse=True)
+                if _label(c, rest) or (len(c) == 1 and c == fold(value) and rest.has(c))
+            ),
+            None,
+        )
         if said is None:
             continue
+        letter = len(said) == 1
         index = rest.take(said)
-        if code_type in (None, kind):
-            code_type = kind
-            found.append((index, "x", Atom("code", code_id)))
-    for kind in {t for t, _, _ in vocab.codes.values()}:
+        same = [c for c, (_, v, n) in vocab.codes.items() if said == fold(v) or (not letter and said == fold(n))]
+        types = {vocab.codes[c][0] for c in same}
+        named = {t: [plain(n) for n in (t, type_name[t]) if len(plain(n)) >= 2] for t in types}
+        typed = {t for t, names in named.items() if any(rest.has(n) for n in names)}
+        if typed:  # "Zone A": the type said keeps its values only
+            same = [c for c in same if vocab.codes[c][0] in typed]
+            types = typed
+        reached |= {type_name[t] for t in types}
+        word = value if fold(value) == said else name
+        if len(types) > 1:
+            if answers.get(fold(word)) in same:
+                pick(answers[fold(word)], index)
+            else:
+                clarify += [Choice(word, c, f"{vocab.codes[c][1]} — {vocab.codes[c][0]}") for c in same]
+        else:
+            pick(same[0], index)
+    shared: dict[str, list[str]] = {}  # P6 type name -> its labels, when several types have it
+    for label, name in type_name.items():
+        shared.setdefault(name, []).append(label)
+    for name, labels in shared.items():
+        if len(labels) < 2 or name in reached or len(fold(name)) < 2 or not rest.has(fold(name)):
+            continue
+        index = rest.take(fold(name))
+        answer = answers.get(fold(name))
+        if answer in labels:  # the type picked: its values are asked next
+            clarify += [Choice(name, c, f"{v} — {t}") for c, (t, v, _) in vocab.codes.items() if t == answer]
+        elif answer in vocab.codes and vocab.codes[answer][0] in labels:
+            pick(answer, index)
+        else:
+            clarify += [Choice(name, label, label) for label in labels]
+    for kind in {*type_name, *type_name.values()}:
         if len(fold(kind)) >= 2 and rest.has(fold(kind)):
             rest.take(fold(kind))
+    return clarify
 
 
 def _label(candidate: str, rest: _Rest) -> bool:

@@ -53,6 +53,7 @@ P6_NAMES = {
         "repeated Activity IDs",
         "its activity list",  # Debug zip caption, changed on export/obfuscate-proj-id
     ],
+    "task_panel.py": ["Activity codes"],  # P6 Activity Codes (ACTVCODE), not task_code
     "views/gantt.py": ["P6 activity code"],
 }
 

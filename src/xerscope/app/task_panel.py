@@ -103,7 +103,7 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
                 ("Task type", TASK_TYPE.get(task["task_type"], _text(task["task_type"]))),
                 ("% complete type", PCT_COMPLETE_TYPE.get(task["complete_pct_type"], _text(task["complete_pct_type"]))),
                 ("Calendar", calendar),
-                ("Task codes", " · ".join(code_text) or "–"),
+                ("Activity codes", " · ".join(code_text) or "–"),
             ],
         ),
         (

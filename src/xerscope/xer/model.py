@@ -470,7 +470,7 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     return FileBaseline(pointer, target["proj_short_name"], True, "", str(target["last_baseline_update_date"]))
 
 
-CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]
+CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq", "type_name"]
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
 
 
@@ -604,8 +604,9 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
 
     ``task_codes``: one row per activity and value (TASKACTV rows of the project's TASK
     rows; the type is the value's own). ``code_values``: every value of the types those rows
-    use, parents included, ordered as in P6 (type, then ``seq_num``). Rows naming an unknown
-    task, value or type are left out.
+    use, parents included, ordered as in P6 (type, then ``seq_num``); ``code_type`` is the
+    type's label unique in the file (``_code_type_labels``), ``type_name`` its P6 name, which
+    two types may share. Rows naming an unknown task, value or type are left out.
     """
     types, values, links = raw.table("ACTVTYPE"), raw.table("ACTVCODE"), raw.table("TASKACTV")
     empty = (pd.DataFrame(columns=CODE_VALUE_COLUMNS), pd.DataFrame(columns=TASK_CODE_COLUMNS))
@@ -616,19 +617,21 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
     }
     if any(frame.empty or not set(columns) <= set(frame.columns) for frame, columns in needed.values()):
         return empty
-    type_name = types.drop_duplicates("actv_code_type_id").set_index("actv_code_type_id")["actv_code_type"]
-    values = values.assign(code_type=values["actv_code_type_id"].map(type_name)).dropna(subset=["code_type"])
+    types = types.drop_duplicates("actv_code_type_id")
+    label = _code_type_labels(types)
+    values = values.assign(code_type=values["actv_code_type_id"].map(label)).dropna(subset=["code_type"])
+    type_name = types.set_index("actv_code_type_id")["actv_code_type"]
     code_of_task = tasks.drop_duplicates("task_id").set_index("task_id")["task_code"]
-    type_of_value = values.drop_duplicates("actv_code_id").set_index("actv_code_id")["code_type"]
+    type_of_value = values.drop_duplicates("actv_code_id").set_index("actv_code_id")["actv_code_type_id"]
     task_codes = pd.DataFrame(
         {
             "task_code": links["task_id"].map(code_of_task),
-            "code_type": links["actv_code_id"].map(type_of_value),
+            "code_type": links["actv_code_id"].map(type_of_value).map(label),
             "code_id": links["actv_code_id"],
         }
     ).dropna()
     task_codes = task_codes.drop_duplicates().reset_index(drop=True)
-    used = values[values["code_type"].isin(set(task_codes["code_type"]))]
+    used = values[values["actv_code_type_id"].isin(set(task_codes["code_id"].map(type_of_value)))]
     code_values = pd.DataFrame(
         {
             "code_type": used["code_type"],
@@ -637,10 +640,35 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
             "value": used["short_name"],
             "name": used.get("actv_code_name", used["short_name"]),
             "seq": to_number(used.get("seq_num", pd.Series(0, index=used.index))).fillna(0),
+            "type_name": used["actv_code_type_id"].map(type_name),
         }
     )
     code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])
     return code_values.reset_index(drop=True), task_codes
+
+
+CODE_TYPE_SCOPES = {"AS_Global": "global", "AS_EPS": "EPS", "AS_Project": "project"}
+
+
+def _code_type_labels(types: pd.DataFrame) -> pd.Series:
+    """Label of each code type, by ``actv_code_type_id``. A type is identified by its id: P6
+    does not make ``actv_code_type`` unique across scopes (``actv_code_type_scope``), so a
+    global "Phase" and a project "Phase" are two types. The label is the name when no other
+    type of the file has it, else the name and its scope ("Phase (global)"), plus the id when
+    two types share name and scope ("Phase (project, 702)")."""
+    names = types.set_index("actv_code_type_id")["actv_code_type"]
+    raw_scope = types.get("actv_code_type_scope", pd.Series("", index=types.index)).fillna("")
+    scopes = pd.Series(raw_scope.map(lambda s: CODE_TYPE_SCOPES.get(s, s)).to_numpy(), index=names.index)
+    labels = {}
+    for type_id, name in names.items():
+        same_name = names == name
+        if same_name.sum() == 1:
+            labels[type_id] = name
+        elif scopes[type_id] and (same_name & (scopes == scopes[type_id])).sum() == 1:
+            labels[type_id] = f"{name} ({scopes[type_id]})"
+        else:
+            labels[type_id] = f"{name} ({', '.join(filter(None, [scopes[type_id], type_id]))})"
+    return pd.Series(labels, dtype=object)
 
 
 def _chain(code_id: str, parent: dict[str, str]) -> list[str]:
