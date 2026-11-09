@@ -505,7 +505,7 @@ def test_published_images_carry_provenance_sbom_and_an_attestation():
 
 def test_codeql_and_scorecard_run_pinned_with_minimal_permissions():
     """SAST and the Scorecard measure (AUDIT-DEP-04): on main, weekly, every action pinned by commit,
-    the job writing security events (and the Scorecard's OIDC token) only."""
+    the job writing security events only; the Scorecard result is not published."""
     codeql = (ROOT / ".github" / "workflows" / "codeql.yml").read_text()
     scorecard = (ROOT / ".github" / "workflows" / "scorecard.yml").read_text()
     for wf in (codeql, scorecard):
@@ -518,9 +518,9 @@ def test_codeql_and_scorecard_run_pinned_with_minimal_permissions():
     assert "pull_request:" in codeql and "languages: python" in codeql
     assert "github/codeql-action/init@" in codeql and "github/codeql-action/analyze@" in codeql
     assert "id-token: write" not in codeql
-    assert "ossf/scorecard-action@" in scorecard and "publish_results: true" in scorecard
-    assert "id-token: write" in scorecard and "github/codeql-action/upload-sarif@" in scorecard
-    assert "if: github.repository == 'Xerscope/xerscope'" in scorecard  # publish_results refuses a fork
+    assert "ossf/scorecard-action@" in scorecard and "publish_results: false" in scorecard
+    assert "id-token: write" not in scorecard and "github/codeql-action/upload-sarif@" in scorecard
+    assert "if: github.repository == 'Xerscope/xerscope'" in scorecard  # no run on a fork
     dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
     assert "package-ecosystem: github-actions" in dependabot  # the pins move with Dependabot, not by hand
 
