@@ -935,7 +935,7 @@ def test_select_all_skips_unreadable_files_and_the_error_names_the_file_once(sam
     next(box for box in file_boxes(at) if box.key.endswith("garbage.xer")).check()
     files_done(at)
     _ok(at)
-    (error,) = [e.value for e in at.sidebar.error]
+    (error,) = [_shown(e.value) for e in at.sidebar.error]  # escaped for Markdown (#156)
     assert error.startswith("garbage.xer: ") and error.count("garbage.xer") == 1
     assert files_line(at) == "Files · 1 file · 1 project"
 

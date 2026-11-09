@@ -20,8 +20,7 @@ from xerkit import MON_FRI_8H, clndr_data, snap, todo, with_second_project, xer_
 
 from xerscope.xer import XerError, build_snapshot, parse_bytes, parse_text
 from xerscope.xer.calendar import (
-    EXCEPTION_FIRST_DATE,
-    EXCEPTION_LAST_DATE,
+    LIMIT_MARK,
     TimeAxis,
     WorkCalendar,
     hours_to_days,
@@ -526,40 +525,38 @@ def test_axis_on_a_calendar_without_working_time_fails_fast_with_a_value_error()
         TimeAxis(cal, date(2026, 1, 1), date(2026, 12, 31))
 
 
-def test_malformed_period_time_in_blob_falls_back_to_the_inferred_week_with_a_warning():
-    """AUDIT-XER-14: a period time that is not HH:MM makes the blob unreadable; the workweek is inferred."""
+def test_malformed_period_time_in_blob_stops_the_load_naming_the_calendar():
+    """AUDIT-XER-14, read with the maintainer's rule of 08/11 (M3): P6 never writes a period time
+    that is not HH:MM, so the load stops with a XerError naming the calendar and the value."""
     blob = clndr_data(range(2, 7), [("ab:cd", "09:00"), ("09:00", "17:00")])
     cal = [{"clndr_id": "G", "clndr_name": "g", "day_hr_cnt": "8", "week_hr_cnt": "40", "clndr_data": blob}]
-    s = snap([todo("A", clndr_id="G")], calendars=cal)
-    assert s.calendar("G").hours_per_day == 8.0 and s.calendar("G").from_data is False
-    assert any("calendar G (g): clndr_data unreadable (ValueError:" in w for w in s.warnings)
+    with pytest.raises(XerError, match=r"CALENDAR G 'g': malformed working period time 'ab:cd'"):
+        snap([todo("A", clndr_id="G")], calendars=cal)
 
 
-def test_out_of_range_exception_serial_is_dropped_with_a_warning():
-    """AUDIT-XER-14: an exception the axis cannot hold (serial 99999999 = year 275 760) is left out."""
+def test_out_of_range_exception_serial_stops_the_load_naming_the_calendar():
+    """AUDIT-XER-14 (M3): an exception the axis cannot hold (serial 99999999 = year 275 760) is a
+    blob P6 does not write: the load stops with the calendar and the serial named."""
     blob = (
         "(0||CalendarData()((0||DaysOfWeek()((0||2()((0||0(s|08:00|f|12:00)())))))"
         "(0||Exceptions()((0||0(d|99999999)())))))"
     )
     cal = [{"clndr_id": "G", "clndr_name": "g", "day_hr_cnt": "8", "week_hr_cnt": "40", "clndr_data": blob}]
-    s = snap([todo("A", clndr_id="G")], calendars=cal)
-    assert s.calendar("G").exceptions == {} and s.calendar("G").from_data is True
-    outside = f"{EXCEPTION_FIRST_DATE}..{EXCEPTION_LAST_DATE}"
-    dropped = f"calendar G (g): 1 calendar exception(s) dated outside {outside}; dropped"
-    assert any(dropped in w for w in s.warnings)
+    with pytest.raises(XerError, match=r"CALENDAR G 'g': exception date out of range '99999999'"):
+        snap([todo("A", clndr_id="G")], calendars=cal)
 
 
-def test_deeply_nested_blob_is_rejected_not_a_recursion_error():
-    """AUDIT-XER-15: the tree parser stops past MAX_TREE_DEPTH levels; the blob reads as unreadable."""
+def test_deeply_nested_blob_is_refused_not_a_recursion_error():
+    """AUDIT-XER-15: the tree parser stops past MAX_TREE_DEPTH levels, fast, with a ValueError
+    (a XerError naming the calendar once loaded, M3), never a RecursionError."""
     blob = "(0||CalendarData()((0||DaysOfWeek()(" + "(0||2()(" * 3000 + "))" * 3000 + "))))"
-    notes: list[str] = []
-    with time_limit(20):
-        assert parse_clndr_data(blob, notes) is None
-    assert len(notes) == 1 and notes[0].startswith("clndr_data unreadable (ValueError: nested deeper than 32 levels")
+    with time_limit(20), pytest.raises(ValueError, match="nested deeper than 32 levels"):
+        parse_clndr_data(blob)
 
 
-def test_unbalanced_and_truncated_blobs_return_none():
-    assert parse_clndr_data("(0||CalendarData()((0||DaysOfWeek()((0||2()((0||0(s|08:00|f|12:00)())))") is None
+def test_unbalanced_and_truncated_blobs_are_refused_and_no_blob_is_none():
+    with pytest.raises(ValueError, match=r"malformed calendar data \(IndexError\)"):
+        parse_clndr_data("(0||CalendarData()((0||DaysOfWeek()((0||2()((0||0(s|08:00|f|12:00)())))")
     assert parse_clndr_data("") is None and parse_clndr_data(float("nan")) is None  # type: ignore[arg-type]
 
 
@@ -589,22 +586,27 @@ def test_an_exception_replaces_the_weekday_periods_instead_of_merging():
 @pytest.mark.parametrize(
     ("period", "expected"),
     [
-        (("00:00", "00:00"), (0, 1440)),  # whole day
-        (("12:00", "12:00"), (720, 1440)),  # zero-length reads as "until midnight"
-        (("22:00", "02:00"), (1320, 1440)),  # a night shift is cut at midnight: 2 h, not 4 (question for the business)
-        (("08:60", "09:00"), (540, 1440)),  # 08:60 = 09:00 = f, so "until midnight"
-        (("25:00", "26:00"), (1500, 1440)),  # start after midnight: a negative-length period, dropped later by the axis
-        (("-1:00", "09:00"), (-60, 540)),  # a start on the previous day is accepted
+        (("00:00", "00:00"), ((0, 1440),)),  # whole day
+        (("12:00", "12:00"), ()),  # zero-length: no work (#159)
+        (("22:00", "02:00"), ()),  # across midnight: no work counted, noted under Limits (#159)
     ],
 )
 def test_period_boundaries(period, expected):
-    assert parse_clndr_data(clndr_data(range(2, 3), [period]))[0][0] == (expected,)
+    notes: list[str] = []
+    assert parse_clndr_data(clndr_data(range(2, 3), [period]), notes)[0][0] == expected
+    assert (LIMIT_MARK in "".join(notes)) == (period == ("22:00", "02:00"))
 
 
-def test_negative_period_start_counts_minutes_of_the_previous_day():
-    cal = calendar(clndr_data(range(2, 7), [("-1:00", "09:00")]))
-    assert cal.work_hours(T("2026-03-02 00:00"), T("2026-03-03 00:00")) == 10  # Monday: 23:00 Sunday -> 09:00
-    assert cal.work_hours(T("2026-03-02 08:00"), T("2026-03-02 09:00")) == 1
+@pytest.mark.parametrize("start", ["08:60", "25:00", "-1:00"])
+def test_a_period_time_out_of_hh_mm_is_refused(start):
+    """M3: minutes past 59, hours past 24, a negative hour: not HH:MM, a blob P6 does not write."""
+    with pytest.raises(ValueError, match=f"malformed working period time '{start}'"):
+        parse_clndr_data(clndr_data(range(2, 3), [(start, "09:00")]))
+
+
+def test_a_negative_period_start_stops_the_load():
+    with pytest.raises(XerError, match=r"CALENDAR X 'X': malformed working period time '-1:00'"):
+        calendar(clndr_data(range(2, 7), [("-1:00", "09:00")]))
 
 
 # --- TimeAxis ---------------------------------------------------------------------------------
