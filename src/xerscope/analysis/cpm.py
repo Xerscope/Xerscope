@@ -1402,7 +1402,7 @@ class _Run:
             self.free_float_hr[code] = 0.0
 
     # --- longest path ------------------------------------------------------------------------
-    def _ends_project(self, code) -> bool:
+    def _ends_project(self, code, enders: list[str]) -> bool:
         """``code`` finishes at the project finish. Equal to the minute; or, when only milestones
         set the project finish, no working minute of ``code``'s calendar between its finish and
         the project finish (Fri 17:00 before a finish milestone written Mon 08:00).
@@ -1414,7 +1414,6 @@ class _Run:
             return True
         if pd.isna(finish) or pd.isna(self.finish):
             return False
-        enders = [c for c in self.nodes if self.early_finish[c] == self.finish]
         if not enders or any(self.kind(c) == "task" for c in enders):
             return False
         if self.cal_ax[code].between(finish, self.finish) != 0:
@@ -1438,7 +1437,9 @@ class _Run:
         "activities that have an early finish equal to the latest calculated early finish
         for the project", then "all driving relationships for those activities")."""
         longest: set[str] = set()
-        pending = [code for code in self.open_ if self._ends_project(code)]
+        # the activities whose early finish is the project finish, found once per trace
+        enders = [c for c in self.nodes if self.early_finish[c] == self.finish]
+        pending = [code for code in self.open_ if self._ends_project(code, enders)]
         while pending:
             code = pending.pop()
             if code in longest:
