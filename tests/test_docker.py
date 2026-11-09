@@ -378,15 +378,52 @@ def test_base_images_pinned_by_digest():
     assert len(froms) == 3 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
 
 
-def test_no_scan_exception_file():
-    """Findings are fixed or recorded, never excepted: no Trivy ignore file in the repository, and
-    the scan script takes none. Every HIGH and CRITICAL finding is listed, unfixed ones included."""
-    assert not list(ROOT.glob("**/*.trivyignore*")) and not list(ROOT.glob("**/.trivyignore*"))
+def test_the_only_scan_exception_is_the_dated_tailscale_one():
+    """One Trivy exception in the repository: CVE-2026-78661 in the Tailscale image, for
+    golang.org/x/net v0.60.0 only (purls), with its reason and an expiry no later than 2026-12-09.
+    Only the Tailscale scan of the deploy job reads it; every other scan takes no exception."""
+    import datetime
+
+    files = sorted({*ROOT.glob("**/*.trivyignore*"), *ROOT.glob("**/.trivyignore*")})
+    assert files == [ROOT / "deploy" / "tailscale.trivyignore.yaml"], files
+    entries = [x for x in files[0].read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
+    assert entries[:2] == ["vulnerabilities:", "  - id: CVE-2026-78661"] and len(entries) == 5, entries
+    fields = dict(x.strip().split(": ", 1) for x in entries[2:])
+    assert set(fields) == {"statement", "expired_at", "purls"}, fields
+    assert len(fields["statement"]) > 20
+    assert datetime.date.fromisoformat(fields["expired_at"]) <= datetime.date(2026, 12, 9)
+    assert fields["purls"].split("#")[0].strip() == "[pkg:golang/golang.org/x/net@v0.60.0]"
+    workflows = {p.name: p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml")}
+    uses = [(name, line.strip()) for name, w in workflows.items() for line in w.splitlines() if "trivyignore" in line]
+    assert len(uses) == 1 and uses[0][0] == "tests.yml", uses
+    assert uses[0][1].startswith('run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml'), uses
+    wf = workflows["tests.yml"]
+    step = wf[wf.index("- name: Known vulnerabilities in the Tailscale image") :]
+    assert uses[0][1] in step[: step.index("- name:", 1)]
+    assert "--ignorefile" not in "".join(workflows.values())  # scan.sh alone hands a file to Trivy
     script = (ROOT / ".github" / "trivy" / "scan.sh").read_text()
-    assert "--ignorefile" not in script and "ignorefile" not in script
     assert "--exit-code 0" in script and script.index("--exit-code 0") < script.index("--exit-code 1")
-    workflows = "".join(p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml"))
-    assert "trivyignore" not in workflows and "--ignorefile" not in workflows
+    (listing,) = [x for x in script.splitlines() if "--exit-code 0" in x]
+    assert "ignore" not in listing and script.count("--ignorefile") == 1  # the listing takes no exception
+
+
+@pytest.mark.parametrize(("listed", "code"), [("CVE-2026-78661 HIGH", 0), ("no finding", 1)])
+def test_scan_refuses_an_exception_whose_finding_is_gone(tmp_path, listed, code):
+    """scan.sh with an exception file exits 1 when the listing of the image no longer holds the
+    excepted finding: the exception goes with the image bump that fixes it. docker is replaced by
+    a script that prints the listing; Trivy itself is not run here."""
+    import os
+    import subprocess
+
+    fake = tmp_path / "bin" / "docker"
+    fake.parent.mkdir()
+    fake.write_text(f'#!/bin/sh\ncase "$*" in *"--exit-code 0"*) echo "{listed}";; esac\n')
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake.parent}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path)}
+    cmd = ["bash", ".github/trivy/scan.sh", "image:tag", "deploy/tailscale.trivyignore.yaml"]
+    out = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, check=False)
+    assert out.returncode == code, out.stdout + out.stderr
+    assert ("is no longer found in image:tag: delete the entry" in out.stdout) == bool(code)
 
 
 def test_deploy_images_are_scanned_on_pull_requests():
@@ -402,8 +439,8 @@ def test_deploy_images_are_scanned_on_pull_requests():
 
 
 def test_tailscale_x_net_html_absence_is_recorded_before_the_scan():
-    """CVE-2026-78661 (golang.org/x/net v0.60.0 in the Tailscale image) is not excepted: the scan
-    reports it. A step before the scan records that the vulnerable package is absent from the
+    """CVE-2026-78661 (golang.org/x/net v0.60.0 in the Tailscale image) is excepted until a Tailscale
+    release fixes it. A step before the scan proves that the vulnerable package is absent from the
     image's binaries: Go keeps every function name in its binaries even when stripped (-s -w), so
     tailscale.com/ names must be found (the names are readable) and no golang.org/x/net/html. name may be."""
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()

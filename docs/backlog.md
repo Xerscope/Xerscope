@@ -175,9 +175,11 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       Caddy 2.11.8 and 2.11.9 pin v0.60.0). Drop the replace once a Caddy release requires
       x/net >= 0.62.0: a replace pins one version and would hold back a newer one.
 - [ ] Tailscale image: CVE-2026-78661 (golang.org/x/net/html, fixed in x/net 0.62.0, in no
-      Tailscale release yet) accepted until 2026-11-10 (`deploy/tailscale.trivyignore.yaml`).
-      The CI job `deploy` proves the parser absent from the image's binaries on every run; at
-      expiry move to a Tailscale release with x/net >= 0.62.0, or renew the entry with its reason.
+      Tailscale release yet) accepted until 2026-12-09 (`deploy/tailscale.trivyignore.yaml`, the
+      only scan exception). The CI job `deploy` proves the parser absent from the image's
+      binaries on every run. Move to the first Tailscale release with x/net >= 0.62.0 as soon as
+      it is out and delete the file with that bump: the job turns red at expiry, and as soon as
+      the finding is gone from the image.
 - [ ] Trivy runs from `.github/trivy/Dockerfile` (pinned by digest, Dependabot after a 7-day
       cooldown) and is scanned with itself daily (`scanner.yml`): a red run there means the
       pinned Trivy has a fixed HIGH/CRITICAL finding; bump it then, without waiting for the cooldown.
