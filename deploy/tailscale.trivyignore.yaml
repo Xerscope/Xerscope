@@ -1,0 +1,17 @@
+# The only scan exception of the repository (tests/test_docker.py allows this file, this entry and
+# no other), read by the Tailscale scan of the CI job deploy.
+# CVE-2026-78661 is fixed in golang.org/x/net 0.62.0, which no Tailscale release embarks yet:
+# v1.104.4 and v1.104.5 pin v0.60.0, the fix is on Tailscale's main only (commit d064d75,
+# "We don't use the affected functions anywhere in oss"). The vulnerable package is the HTML
+# parser, and the job proves it absent from the image's three binaries before each scan (step
+# "No golang.org/x/net/html code in the Tailscale binaries").
+# The entry ends by itself, and the job turns red, in three cases:
+#   - the date below is reached: move to a fixed Tailscale release, or renew with a new accord;
+#   - the image holds another x/net version (purls): that version is scanned again;
+#   - the finding is gone from the image: .github/trivy/scan.sh refuses an entry that matches
+#     nothing, so this file is deleted with the Tailscale bump that fixes it.
+vulnerabilities:
+  - id: CVE-2026-78661
+    statement: golang.org/x/net/html DoS on crafted HTML; the parser is absent from the image's binaries (CI job deploy), tailscaled parses no HTML here
+    expired_at: 2026-12-09
+    purls: [pkg:golang/golang.org/x/net@v0.60.0]   # this version only: another one is scanned again

@@ -326,7 +326,7 @@ jobs:
         env:
           IMAGE: ${{ steps.compose.outputs.caddy }}
         run: .github/trivy/scan.sh "$IMAGE"   # no exception file
-      - name: No golang.org/x/net/html code in the Tailscale binaries (CVE-2026-78661 not reachable, recorded)
+      - name: No golang.org/x/net/html code in the Tailscale binaries (evidence for the CVE-2026-78661 exception)
         if: ${{ !cancelled() }}
         env:
           IMAGE: ${{ steps.compose.outputs.tailscale }}
@@ -345,7 +345,7 @@ jobs:
         working-directory: .
         env:
           IMAGE: ${{ steps.compose.outputs.tailscale }}
-        run: .github/trivy/scan.sh "$IMAGE"   # no exception file
+        run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml   # one dated exception, CVE-2026-78661
       - name: Container states and logs, when a step failed
         if: failure()
         run: |
