@@ -279,7 +279,8 @@ plus about 0.13 GB for its own Python, inside the same cap, while the app keeps 
 read (0.75 GB each). At the end of a load the peak is about `weeks × 0.75 + workers × 1.1` GB for
 exports of that size: 6 weeks on 2 workers, 6.7 GB, needs `XERSCOPE_MEM_LIMIT=8g`; the default
 `2g` holds one file at a time and a couple of weeks. Two workers read about 1.8 times faster than
-one; raise both values together, then read the peak in Container Manager as above.
+one. The app never starts more than two (`MAX_WORKERS`, `app/reading.py`): a higher value reads as 2.
+Raise both values together, then read the peak in Container Manager as above.
 
 ## 8. Image on Docker Hub
 

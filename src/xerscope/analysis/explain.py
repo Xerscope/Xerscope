@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from ..xer import Snapshot
 from ..xer.model import CONSTRAINT
 from .checks import CheckResult, fmt_value
 from .populations import EXCLUSIONS
@@ -249,6 +250,20 @@ def explain(result: CheckResult) -> Explanation:
     )
 
 
+def critical_definition(snapshot: Snapshot, default_days: float) -> str:
+    """What ``is_critical`` counts in this update (xer/model.py): the project's critical path
+    type (PROJECT.critical_path_type), longest path or total float <= threshold
+    (PROJECT.critical_drtn_hr_cnt, else ``default_days``, the Settings the file was read with)."""
+    options = snapshot.options
+    if options.get("critical_path_type") == "CT_DrivPath":
+        rule = "on the longest path (P6 Longest Path flag)"
+    elif options.get("critical_float_hr") is not None:
+        rule = f"total float ≤ {options['critical_float_hr']:g} h"
+    else:
+        rule = f"total float ≤ {default_days:g} d"
+    return f"Open tasks (LOE and milestones included) {rule}"
+
+
 # Page figures (ui.kpis ``formulas``): label -> standard -> how it is computed. The page's own
 # calculation (docs/formulas.md) first, under the name of the standard it follows; a second line
 # where another standard words the same figure otherwise. Sources are in docs/formulas.md.
@@ -256,6 +271,8 @@ P6 = "P6 Professional"
 EVMS = "DCMA EVMS (EIA-748)"
 LPS = "Last Planner (PPC)"
 XS = "xerscope"
+
+
 KPI_FORMULAS: dict[str, dict[str, str]] = {
     "Forecast finish": {P6: "Latest Finish of the project's activities (actual, else remaining, else early finish)"},
     "Shift since first update": {
@@ -276,11 +293,17 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
     "SPI": {P6: "Earned Value Cost / Planned Value Cost", EVMS: "SPI = BCWP / BCWS (cost)"},
     "SV": {P6: "Earned Value − Planned Value (labor units)", EVMS: "SV = BCWP − BCWS"},
     "BEI (P6 / DCMA)": {
-        P6: "Complete activities / activities with a baseline (P6-13)",
-        "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date (DCMA-14)",
+        P6: "Complete activities / activities with a baseline, milestones and LOE out (P6-13)",
+        "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date, no BL finish = due (DCMA-14)",
     },
     "EAC": {P6: "Actual Labor Units + Remaining Labor Units", EVMS: "EAC = ACWP + ETC; VAC = BAC − EAC"},
-    "PPC this week": {LPS: "Finishes kept / finishes committed in the previous update (milestones and LOE left out)"},
-    "PPC Start": {LPS: "Starts kept / starts committed"},
-    "PPC all commitments": {LPS: "(finishes + starts kept) / (finishes + starts committed)"},
+    "PPC Start": {
+        XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
+        "kept = actual start in W on or before that date (milestones and LOE left out)"
+    },
+    "PPC Finish": {
+        LPS: "Finishes kept / finishes committed: not complete at W−1 with a W−1 finish on or before W's status "
+        "date; kept = actual finish in W on or before that date (milestones and LOE left out)"
+    },
+    "PPC W/W−1": {XS: "(starts + finishes kept) / (starts + finishes committed)"},
 }

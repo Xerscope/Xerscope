@@ -35,7 +35,8 @@ def test_sheet_matches_the_standard_and_the_code(standard_id, metric):
     assert text.startswith(f"# {metric.id} · {metric.name}\n"), "title = id · name of the TOML"
     assert f"`{metric.threshold_label}`" in text, "the target written in the TOML"
     for name, value in metric.params.items():
-        assert f"{name} = {value:g}" in text, f"parameter {name} with the TOML value"
+        written = str(value).lower() if isinstance(value, bool) else f"{value:g}"  # as TOML writes it
+        assert f"{name} = {written}" in text, f"parameter {name} with the TOML value"
     for table, column in re.findall(r"`(TASK|TASKPRED|TASKRSRC|PROJECT|PROJCOST)\.(\w+)`", text):
         assert f'"{column}"' in MODEL, f"{table}.{column} is not a field the model reads"
     for code in re.findall(r"`((?:TK|TT|PR|CS)_\w+)`", text):

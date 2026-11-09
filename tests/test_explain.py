@@ -46,12 +46,17 @@ def test_parameters_show_standard_and_defaults(results, store):
     late = next(r for r in results if r.metric.id == "P6-12")
     assert explain(late).parameters == []  # the P6 checks are explicit functions: nothing to set
     assert any("milestones" in line for line in explain(late).population)
-    # a built-in check takes no parameter but its x threshold, shown with its default and its sentence
+    # a built-in check takes no parameter but its x threshold or its dialog options, shown with their values
     with_parameters = {r.metric.id: explain(r) for r in results if explain(r).parameters}
     assert set(with_parameters) == {
-        "P6-04", "P6-05", "P6-06", "DCMA-06", "DCMA-08", "DCMA-09", "DCMA-11", "DCMA-12", "DCMA-14",
-        "06A211a", "06A401a", "06A504a", "06A504b", "06A506c",
+        "P6-04", "P6-05", "P6-06", "P6-16", "P6-17", "DCMA-06", "DCMA-08", "DCMA-09", "DCMA-11", "DCMA-12",
+        "DCMA-14", "06A211a", "06A401a", "06A504a", "06A504b", "06A506c",
     }  # fmt: skip
+    assert with_parameters["P6-16"].parameters == [("ignore_in_progress", "yes", "standard")]
+    assert with_parameters["P6-17"].parameters == [
+        ("ignore_soft_constraints", "no", "standard"),
+        ("ignore_hard_constraints", "no", "standard"),
+    ]
     assert with_parameters["DCMA-09"].parameters == [("date_grain", "day", "standard")]
     assert any("by calendar day" in line for line in with_parameters["DCMA-09"].population)
     assert with_parameters["P6-04"].parameters == [("limit_hours", "352", "standard")]
@@ -115,3 +120,21 @@ def test_every_exemption_has_a_mask():
 
     pop = snap([todo("A")]).activities
     assert set(_exempt_masks(pop, set(), set())) == set(EXEMPT)
+
+
+@pytest.mark.parametrize(
+    "project, text",
+    [
+        ({"critical_path_type": "CT_DrivPath"}, "on the longest path (P6 Longest Path flag)"),
+        ({"critical_path_type": "CT_TotFloat", "critical_drtn_hr_cnt": "16"}, "total float ≤ 16 h"),
+        ({"critical_path_type": "CT_TotFloat", "critical_drtn_hr_cnt": ""}, "total float ≤ 0 d"),
+    ],
+)
+def test_critical_definition_says_the_critical_path_type_the_counts_use(project, text):
+    """The Overview's "Critical tasks" help: the rule model.py applies to is_critical."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis.explain import critical_definition
+
+    said = critical_definition(snap([todo("A")], project=project), default_days=0.0)
+    assert said == f"Open tasks (LOE and milestones included) {text}"

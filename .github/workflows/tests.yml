@@ -35,10 +35,23 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: uv sync --locked
-      - run: uvx ruff check src tests
-      - run: uvx ruff format --check src tests
+      - run: uvx ruff check src tests scripts
+      - run: uvx ruff format --check src tests scripts
       - name: No schedule or data export is tracked (the repository is public)
         run: "! git ls-files | grep -iE '\\.(xer|parquet|xlsx?|csv)$'"
+
+  oracle-report:
+    # Witness, never a gate: how many tests compare with P6, MPXJ, a standard's text, a
+    # property or the golden file (marker `oracle`, tests/conftest.py), and how many say nothing.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked
+      - run: uv run python scripts/oracle_report.py | tee -a "$GITHUB_STEP_SUMMARY"
 
   test:
     strategy:
@@ -74,6 +87,22 @@ jobs:
           uv run xerscope sample --out data/sample
           uv run xerscope info data/sample
           uv run xerscope export data/sample --out export --format csv
+
+  fitness:
+    # Code fitness against tests/fitness_baseline.json (scripts/fitness.py), table in the job summary.
+    # Measure only for now: continue-on-error goes once the baseline is validated, and the job
+    # then fails on any measure worse than the baseline.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.13"  # the baseline's; radon 6.0.1 cannot tokenise xer/parser.py on 3.11
+      - run: uv sync --locked
+      - run: uv run python scripts/fitness.py --markdown "$GITHUB_STEP_SUMMARY" --check tests/fitness_baseline.json
 
   audit:
     # Known vulnerabilities in every locked dependency, extras and dev tools included.

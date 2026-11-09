@@ -39,8 +39,13 @@ from ..rules import (
 
 P6_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MSO", "CS_MANDFIN", "CS_MEO"]
 SOFT_CONSTRAINTS = ["CS_MSOB", "CS_MSOA", "CS_MEOB", "CS_MEOA", "CS_ALAP"]
+# The constraints the Dangling Finish options name (113174), not those of P6-02 / P6-03: Start On and
+# Finish On are soft there.
+DANGLING_SOFT_CONSTRAINTS = ["CS_MSO", "CS_MSOA", "CS_MSOB", "CS_MEO", "CS_MEOA", "CS_MEOB", "CS_ALAP"]
+DANGLING_HARD_CONSTRAINTS = ["CS_MANDSTART", "CS_MANDFIN"]
 # The "x" of P6-04, P6-05 and P6-06 in hours: 352 h, the value report R1 prints for the Check Schedule
-# dialog (docs/standards.md, Sources). It is P6's own setting, not DCMA's 44 working days; p6.toml repeats it.
+# dialog (docs/standards.md, Sources). It is P6's own setting, not DCMA's 44 working days. p6.toml sets the
+# value used; this is the default when a standard sets none (tests/test_rules.py ties the two).
 LARGE_HOURS = 352
 
 
@@ -56,8 +61,31 @@ def _open_not_loe(context) -> Funnel:
     return _open(context).exclude("loe", "101248")
 
 
+def _without_float_note(activities) -> str:
+    """A task with no total float (never scheduled, or blank in the export) is neither above nor below a
+    limit: it is not judged, and stays in the denominator. Said, so the reader sees the count."""
+    missing = int(activities["total_float_hr_cnt"].isna().sum())
+    return f"{missing} task(s) without total float: not judged, still counted" if missing else ""
+
+
 def _links(context) -> Funnel:
     return link_funnel(context, "not_both_complete", source="101248")
+
+
+def _external_links_note(context, relationships) -> str:
+    """Which links from other projects the relationship checks hold. A link from another project of the
+    file is in ``relationships`` (its predecessor named ``[ext]<task_id>``) and is counted; one from a
+    project not in the file is dropped by the model. The same project can thus give two denominators
+    depending on the export; how P6 counts external links is not documented (UNRESOLVED,
+    docs/standards.md)."""
+    counted = int(relationships["is_external"].astype(bool).sum())
+    dropped = context.snapshot.external_links_dropped
+    parts = []
+    if counted:
+        parts.append(f"{counted} link(s) from another project of the file: counted")
+    if dropped:
+        parts.append(f"{dropped} link(s) from a project not in the file: not counted")
+    return "; ".join(parts)
 
 
 @rule("p6_01_logic", "%")
@@ -71,7 +99,9 @@ def p6_01_logic(context) -> RuleOutput:
     101248 also exempts start milestones, but a P6 Professional 26.8 report lists a not-started start
     milestone without predecessor (tests/test_p6_checksched.py), as the r22.12 report analysed by Ten Six
     lists its Notice to Proceed milestone: the reports win. A finish milestone without successor is
-    counted (same reports); external links pass (46291)
+    counted (same reports); external links pass (46291). UNRESOLVED: 46291 says "Activities with external
+    predecessors or successors pass the check"; read as: an external link stands for the predecessor or
+    the successor it is, so a task with an external predecessor and no successor still misses a successor
     """
     funnel = _open(context)
     activities = funnel.rows
@@ -118,7 +148,9 @@ def p6_03_soft_constraints(context) -> RuleOutput:
     Constraint types: Start on or before, Start on or after, Finish on or before,
         Finish on or after, As late as possible.
 
-    46285: Start on or before / on or after, Finish on or before / on or after, As late as possible"""
+    101248 and 113176: Start on or before / on or after, Finish on or before / on or after, As late as
+    possible. 46285 (EPPM): WBS summary, actual-finish and LOE removed; start constraints ignored once
+    started (its own soft set, with Start on and Finish on, is EPPM's)"""
     funnel = _open_not_loe(context)
     activities = funnel.rows
     has_soft_constraint = constrained_by(activities, SOFT_CONSTRAINTS, ignore_started_starts=True)
@@ -162,7 +194,12 @@ def p6_05_long_lags(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
 
     flagged = lag_flagged(relationships, operator.gt, limit_hours)
     return RuleOutput(
-        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+        flagged_relationships(flagged),
+        len(flagged),
+        len(relationships),
+        note=_external_links_note(context, relationships),
+        checked=relationships,
+        funnel=funnel,
     )
 
 
@@ -177,7 +214,14 @@ def p6_06_large_float(context, limit_hours: float = LARGE_HOURS) -> RuleOutput:
     activities = funnel.rows
 
     flagged = activities[activities["total_float_hr_cnt"] > limit_hours]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(flagged),
+        len(flagged),
+        len(activities),
+        note=_without_float_note(activities),
+        checked=activities,
+        funnel=funnel,
+    )
 
 
 @rule("p6_07_relationship_types", "%", links=True)
@@ -190,6 +234,7 @@ def p6_07_relationship_types(context) -> RuleOutput:
     46287: actual = share of FS links in the subset"""
     funnel = _links(context)
     out = share_of_type(funnel.rows, "FS")
+    out.note = "; ".join(part for part in (out.note, _external_links_note(context, funnel.rows)) if part)
     out.funnel = funnel
     return out
 
@@ -207,7 +252,12 @@ def p6_08_lags(context) -> RuleOutput:
 
     flagged = lag_flagged(relationships, operator.gt, 0)
     return RuleOutput(
-        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+        flagged_relationships(flagged),
+        len(flagged),
+        len(relationships),
+        note=_external_links_note(context, relationships),
+        checked=relationships,
+        funnel=funnel,
     )
 
 
@@ -224,7 +274,12 @@ def p6_09_negative_lags(context) -> RuleOutput:
 
     flagged = lag_flagged(relationships, operator.lt, 0)
     return RuleOutput(
-        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+        flagged_relationships(flagged),
+        len(flagged),
+        len(relationships),
+        note=_external_links_note(context, relationships),
+        checked=relationships,
+        funnel=funnel,
     )
 
 
@@ -253,10 +308,20 @@ def p6_10a_invalid_progress_before(context) -> RuleOutput:
     # a finish before the data date has its start before it too
     forecast = as_flag(~activities["is_complete"] & (early_start < data_date))
     flagged = activities[forecast]
+    # P6 writes the remaining early start (restart_date) of an in-progress task; a blank one falls back on
+    # the early start, which a non-P6 export may leave at the actual start: said, not changed.
+    in_progress = activities["is_started"] & ~activities["is_complete"]
+    without_restart = int((in_progress & activities["restart_date"].isna()).sum())
+    note = (
+        f"{without_restart} in-progress task(s) without a remaining early start: early start read"
+        if without_restart
+        else ""
+    )
     return RuleOutput(
         flagged_activities(flagged, reason="forecast before status date"),
         len(flagged),
         len(activities),
+        note=note,
         checked=activities,
         funnel=funnel,
     )
@@ -383,22 +448,27 @@ def p6_15_out_of_sequence(context) -> RuleOutput:
 
 
 @rule("p6_16_dangling_start", "%")
-def p6_16_dangling_start(context) -> RuleOutput:
+def p6_16_dangling_start(context, ignore_in_progress: bool = True) -> RuleOutput:
     """Start not driven by any predecessor.
     Counts: dangling / tasks
-    Counted among: not started tasks that are not milestones (P6's 'Ignore In Progress
-        Tasks', checked); the others stay in the denominator.
+    Counted among: not started tasks that are not milestones, in-progress tasks too when
+        'Ignore in-progress activities' is off; the others stay in the denominator.
     A task with no predecessor at all is the Logic check's, not this one's.
 
     P6 Professional report: 'Tasks with start dates that are not driven by predecessors', against the
     total of tasks; the report lists a task without any predecessor under Logic only. Read as:
-    predecessors exist, none of them FS or SS. UNRESOLVED: 'Ignore tasks with soft/hard constraints'
-    (unchecked by default) is not read. Milestones are out: the report shows 0 for milestones with FF / SS
-    logic only"""
+    predecessors exist, none of them FS or SS. ``ignore_in_progress``: 113174 'Ignore in-progress
+    activities for dangling start activities', checked in R1; Oracle documents no default. Read as: the
+    task leaves the numerator, not the denominator. Milestones are out: the report shows 0 for milestones
+    with FF / SS logic only. UNRESOLVED: completed tasks are never counted, a reading no Oracle text
+    states. UNRESOLVED: a predecessor in another project is not read here (P6-01 lets it pass, 46291);
+    Oracle (113174, 101496) does not say how Dangling Start treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships
-    candidates = activities[~activities["is_started"] & ~activities["is_milestone"]]
+    candidates = activities[~activities["is_complete"] & ~activities["is_milestone"]]
+    if ignore_in_progress:
+        candidates = candidates[~candidates["is_started"]]
     has_logic = candidates["task_code"].isin(relationships["succ_code"])
     driven = has_driving_predecessor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driven]
@@ -406,20 +476,33 @@ def p6_16_dangling_start(context) -> RuleOutput:
 
 
 @rule("p6_17_dangling_finish", "%")
-def p6_17_dangling_finish(context) -> RuleOutput:
+def p6_17_dangling_finish(
+    context, ignore_soft_constraints: bool = False, ignore_hard_constraints: bool = False
+) -> RuleOutput:
     """Finish that drives no successor.
     Counts: dangling / tasks
-    Counted among: not complete tasks that are not milestones; the others stay in the
-        denominator.
+    Counted among: not complete tasks that are not milestones, less the constrained tasks the
+        dialog options leave out; the others stay in the denominator.
     A task with no successor at all is the Logic check's, not this one's.
 
     P6 Professional report: 'Tasks with finish dates that do not drive successors', against the total
     of tasks; a task without any successor is listed under Logic only. Read as: successors
-    exist, none of them FS or FF"""
+    exist, none of them FS or FF. ``ignore_soft_constraints`` / ``ignore_hard_constraints``: 113174
+    'Ignore activities with soft constraints' (Start On, Start On or After, Start On or Before, Finish On,
+    Finish On or After, Finish On or Before, As Late As Possible) and 'Ignore activities with hard
+    constraints' (Mandatory Start, Mandatory Finish); Oracle documents no default. Read as: the primary or
+    the secondary constraint is one of them, and the task leaves the numerator, not the denominator.
+    UNRESOLVED: completed tasks are never counted, a reading no Oracle text states. UNRESOLVED: a
+    successor in another project is not read here (P6-01 lets it pass, 46291); Oracle (113174, 101497)
+    does not say how Dangling Finish treats it"""
     funnel = _activities(context)
     activities = funnel.rows
     relationships = context.snapshot.relationships
     candidates = activities[~activities["is_complete"] & ~activities["is_milestone"]]
+    ignored = (DANGLING_SOFT_CONSTRAINTS if ignore_soft_constraints else []) + (
+        DANGLING_HARD_CONSTRAINTS if ignore_hard_constraints else []
+    )
+    candidates = candidates[~constrained_by(candidates, ignored, ignore_started_starts=False)]
     has_logic = candidates["task_code"].isin(relationships["pred_code"])
     driving = has_driving_successor(candidates["task_code"], relationships)
     flagged = candidates[has_logic & ~driving]
@@ -438,4 +521,11 @@ def p6_14_negative_float(context) -> RuleOutput:
     activities = funnel.rows
 
     flagged = activities[activities["total_float_hr_cnt"] < 0]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(activities), checked=activities, funnel=funnel)
+    return RuleOutput(
+        flagged_activities(flagged),
+        len(flagged),
+        len(activities),
+        note=_without_float_note(activities),
+        checked=activities,
+        funnel=funnel,
+    )

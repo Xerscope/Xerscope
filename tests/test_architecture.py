@@ -9,13 +9,13 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
     "xer": {"config"},
     "store": {"xer", "config"},
     "export": {"store", "config", "csv_safe"},
-    "anonymize": {"xer", "csv_safe"},
+    "anonymize": {"xer", "export"},
     "analysis": {"xer", "store"},
     "viz": {"config", "analysis.wbs.ROOT"},
     "verify": {"xer", "analysis.cpm", "config"},
     "crosscheck": {"verify"},
     "sample": {"xer", "analysis.cpm", "config"},
-    "app": {"xer", "store", "analysis", "viz", "export", "anonymize", "config", "csv_safe"},
+    "app": {"xer", "store", "analysis", "viz", "export", "anonymize", "config"},
     "cli": {
         "xer",
         "store",
@@ -28,7 +28,6 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
         "anonymize",
         "app.diagnostic",
         "config",
-        "csv_safe",
     },
 }
 

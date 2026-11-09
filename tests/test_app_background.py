@@ -2,13 +2,19 @@
 conftest sets XERSCOPE_SYNC_LOAD for every other test; here it is lifted and the thread joined before
 the next run, which is what the sidebar's polling fragment does in a browser."""
 
+import threading
+import time
 from pathlib import Path
 
 import pandas as pd
+import pytest
+import streamlit as st
 from conftest import file_boxes, files_done, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
+from xerscope.analysis.checks import run_standard
+from xerscope.app import state
 from xerscope.app.state import most_recent_first
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
@@ -82,3 +88,87 @@ def test_most_recent_first_orders_by_status_date_unreadable_last(sample_dir):
     dates = sorted((p.name for p in sample_dir.glob("*.xer")), reverse=True)
     assert ordered == [*dates, "broken.xer"]
     assert pd.Timestamp(dates[0][-14:-4]) > pd.Timestamp(dates[-1][-14:-4])
+
+
+def _cards(at):
+    return {m.label: (m.value, m.delta) for m in at.metric if m.label.endswith(" score")}
+
+
+def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_an_app_rerun(sample_dir, monkeypatch):
+    """The score cards are a fragment that polls the job: a standard finishing between two polls
+    fills its card, and the app is never asked to rerun (it was once per standard, each run drawing
+    the whole page again). The cards then hold the values the "Compute scores" button gives."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    synchronous = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    expected = _cards(synchronous.button(key="overview_scores").click().run())
+    assert len(expected) == 4 and all(value.endswith("%") for value, _ in expected.values())
+
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    gate = threading.Semaphore(0)  # one permit per standard allowed to finish
+
+    def gated(standard, context):
+        gate.acquire()
+        return run_standard(standard, context)
+
+    monkeypatch.setattr(state, "run_standard", gated)
+    real_score_job = state.score_job
+
+    def score_job(*args):
+        # the page has collected what was in; one more standard finishes before the next poll
+        job = real_score_job(*args)
+        if len(job.results) < len(job.standards):
+            before = len(job.results)
+            gate.release()
+            deadline = time.monotonic() + 300
+            while len(job.results) == before and time.monotonic() < deadline:
+                time.sleep(0.01)
+        return job
+
+    monkeypatch.setattr(state, "score_job", score_job)
+    at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    _joined(at, "_load_job")
+    reruns = []
+    real_rerun = st.rerun
+
+    def rerun(*args, **kwargs):
+        reruns.append(kwargs.get("scope", args[0] if args else "app"))
+        real_rerun(*args, **kwargs)
+
+    monkeypatch.setattr(st, "rerun", rerun)
+    filled = []
+    for _ in range(6):
+        at.run()
+        _ok(at)
+        filled.append(sum(value.endswith("%") for value, _ in _cards(at).values()))
+        if filled[-1] == 4:
+            break
+    assert reruns == []
+    assert filled == [0, 1, 2, 3, 4]
+    assert _cards(at) == expected
+
+
+@pytest.mark.parametrize("sync", ["1", "0"])
+def test_both_load_paths_give_the_same_errors_for_the_same_bad_files(sample_dir, tmp_path, monkeypatch, sync):
+    """One file read in the script run (one ticked, or XERSCOPE_SYNC_LOAD) or several in a thread:
+    one reader (reading.read_update) and one series builder (reading.store_of), so the same bad
+    files give the same sidebar errors, each naming its file once. The order may differ: the thread
+    reads the latest file first."""
+    for path in sorted(sample_dir.glob("*.xer"))[:2]:
+        (tmp_path / path.name).write_bytes(path.read_bytes())
+    data = sorted(sample_dir.glob("*.xer"))[0].read_bytes()
+    (tmp_path / "cut.xer").write_bytes(data[: len(data) // 2])
+    (tmp_path / "junk.xer").write_bytes(b"not an xer")
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.setenv("XERSCOPE_SYNC_LOAD", sync)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    if sync == "0":
+        _joined(at, "_load_job")
+        at.run()
+    _ok(at)
+    assert sorted(at.session_state["errors"]) == [
+        "cut.xer: incomplete file, no %E end line (still being copied, or cut short)",
+        "junk.xer: not an XER file (no ERMHDR header, no tables)",
+    ]
+    assert len(at.session_state["store"]) == 2

@@ -64,8 +64,8 @@ Run before opening a pull request, and report what was run and what it printed:
 
 ```bash
 uv run pytest -rs                     # the whole suite; MPXJ tests skip without Java: say so
-uvx ruff check src tests              # no new finding
-uvx ruff format --check src tests
+uvx ruff check src tests scripts      # no new finding
+uvx ruff format --check src tests scripts
 uvx bandit -r src -ll
 ```
 
@@ -85,6 +85,23 @@ Then, depending on what changed:
 standard with `tests/golden/standards.json`: a refactor changes no number. After an
 intended change, `XERSCOPE_UPDATE_GOLDEN=1 uv run pytest tests/test_characterization.py`
 rewrites the file and fails by design; review the diff, then rerun without the variable.
+
+**Moved values.** A pull request that moves a value of the golden file, of `FLOORS` or of
+a standard TOML (prose fields aside) gives one line per value in its description,
+`ID: old -> new — source`; the `values` workflow (`scripts/check_value_justification.py`)
+prints the lines to complete, and fails on a missing one or on a lowered `FLOORS` value.
+
+**Oracle marker.** `@pytest.mark.oracle(kind)` names where a test's expected values come
+from: `p6`, `mpxj`, `standard` (the text of a standard), `property` (holds on any input)
+or `characterization` (xerscope's own frozen output). Another kind stops the collection.
+`uv run python scripts/oracle_report.py` counts the tests by kind.
+
+**Code fitness.** `uv run python scripts/fitness.py --check tests/fitness_baseline.json`
+measures each module (maintainability index, cyclomatic and cognitive complexity,
+structural clones) and the whole (mypy errors, deptry violations, the import contracts
+generated from `LAYERS` in `tests/test_architecture.py`), and fails if a measure is worse
+than the baseline. When a change improves one, `--out tests/fitness_baseline.json`
+rewrites the baseline so the gain is kept; review the diff.
 
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and

@@ -40,16 +40,18 @@ ACTIVITY_COLUMNS = [
     "task_code",
     "bl_name",
     "wbs_code",
-    "bl_labor_hr",
+    "ev_labor_hr",
     "schedule_pct",
     "pv_hr",
     "ev_technique",
     "perf_pct",
     "ev_hr",
     "labor_actual_hr",
-    "bl_finish",
-    "in_snapshot",
+    "ev_finish",
 ]
+
+
+EV_BASIS_COLUMNS = {"bl_labor_hr": "ev_labor_hr", "bl_start": "ev_start", "bl_finish": "ev_finish"}
 
 
 def format_points(change: float) -> str:
@@ -106,7 +108,10 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
                 "BEI (P6 / DCMA)",
                 " / ".join(format_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
                 None,
-                "P6 counts tasks without a baseline finish as due; DCMA leaves them out",
+                (
+                    "P6 (P6-13): completed / every baseline task, milestones and LOE out; "
+                    "DCMA (DCMA-14): completed / due by the status date, no baseline finish = due"
+                ),
             ),
             (
                 "EAC",
@@ -131,7 +136,7 @@ def show_costs_ignored(snapshot) -> None:
         )
 
 
-def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
+def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> None:
     with st.expander("How it is calculated", icon=":material/calculate:"):
         bac, planned, earned_hours, actual = row["bac_hr"], row["pv_hr"], row["ev_hr"], row["ac_hr"]
         baselined_actual = actual - row["ac_unbaselined_hr"]
@@ -150,8 +155,8 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 ),
                 (
                     "PV",
-                    "Σ BL hours × Schedule % Complete (working time elapsed between BL start and BL finish, "
-                    "on the task's calendar, at the status date)",
+                    "Σ BL hours × Schedule % Complete (working time elapsed between the EV start and EV finish "
+                    "of the earned value basis, on the task's calendar, at the status date)",
                     f"{planned:,.1f} h  ({row['pv_pct']:.1f} % of BAC)",
                     "Planned Value Labor Units",
                 ),
@@ -249,7 +254,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
                 + ", ".join(f"{ui.md_text(item.wbs_code)} ({item.etc_technique})" for item in with_pf.itertuples()),
                 icon=":material/warning:",
             )
-        curves = ev_point(snapshot, baseline).not_modelled_cost if costs else []
+        curves = point.not_modelled_cost if costs else []
         if curves:
             st.caption(
                 "PV cost: resource curves not modelled (linear spread used) for " + ui.md_text(", ".join(curves[:20]))
@@ -260,7 +265,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, costs: bool) -> None:
         )
 
 
-def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool) -> None:
+def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, costs: bool) -> None:
     ui.section(
         "S-curve",
         "Planned value from the baseline, earned value and actual hours per update, "
@@ -286,35 +291,57 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, costs: bool
     if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
     ui.chart(build_index_trend(series, indices))
+    if baseline.is_planned:
+        st.caption(
+            f"Baseline = the planned dates (`target_*`) of the update shown, {ui.md_text(snapshot.label)}: every "
+            "update's PV and SPI above is measured against them. Showing another update measures the whole "
+            "history against that update's planned dates."
+        )
     hidden = ["bac_hr"] + ([] if costs else COST_COLUMNS)
     # the first update has no PV yet: its indices are missing, written as a dash
     shown, overrides = ui.numbers_as_text(series.drop(columns=hidden), INDEX_COLUMNS)
     ui.table(shown, overrides=overrides)
 
 
-def show_activity_detail(snapshot, baseline) -> None:
+def show_activity_detail(snapshot, baseline, point) -> None:
     with st.expander(f"Earned hours by task ({ui.stamp(snapshot.data_date)})"):
-        activities = earned(snapshot, baseline).reset_index()
+        # earned() names the EV basis values bl_*: here they carry their own name, apart from the BL columns
+        values = earned(snapshot, baseline).reset_index().rename(columns=EV_BASIS_COLUMNS)
+        # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
+        activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
         ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
+        st.caption(
+            f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
+            f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."
+        )
         csv_download(
             activities[ACTIVITY_COLUMNS],
             f"earned_{ui.stamp(snapshot.data_date)}.csv",
             sources=sources_of(snapshot, baseline=baseline),
         )
-        fallback_mask = activities["ev_technique"].isin(["wbs_milestones", "resource_curves"])
-        fallback = sorted(activities.loc[fallback_mask, "task_code"])
+        fallback = point.not_modelled
         if fallback:
             st.caption(
                 f"EV technique not modelled (task % complete used instead): {ui.md_text(', '.join(fallback[:20]))}"
             )
-        missing = sorted(set(snapshot.activities["task_code"]) - set(baseline.frame.index))
+        missing = point.unbaselined
         if missing:
-            st.caption(f"Not in the baseline (earn nothing): {ui.md_text(', '.join(missing))}")
-        gone = activities[~activities["in_snapshot"]]
+            st.caption(
+                f"Not in the baseline (earn nothing; their actual hours count in AC, not in this table): "
+                f"{ui.md_text(', '.join(missing))}"
+            )
         if not gone.empty:
             st.caption(
-                f"In the baseline, no longer in the update ({gone['pv_hr'].sum():,.1f} h of PV): left out of BAC, "
-                f"PV and EV, as P6 totals the tasks of the current project: {ui.md_text(', '.join(gone['task_code']))}"
+                f"In the baseline, no longer in the update ({gone['pv_hr'].sum():,.1f} h of PV): left out of "
+                "this table, BAC, PV and EV, as P6 totals the tasks of the current project: "
+                f"{ui.md_text(', '.join(gone['task_code']))}"
+            )
+            csv_download(
+                gone[ACTIVITY_COLUMNS],
+                f"earned_deleted_{ui.stamp(snapshot.data_date)}.csv",
+                label="Download deleted tasks (CSV)",
+                key="ev_deleted_csv",
+                sources=sources_of(snapshot, baseline=baseline),
             )
 
 
@@ -336,13 +363,18 @@ if baseline is None:
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(
-        f"The baseline ({baseline.label}) has no budgeted labor hours, so there is nothing to earn. "
+        f"The baseline ({ui.md_text(baseline.label)}) has no budgeted labor hours, so there is nothing to earn. "
         "Export the BL with resource assignments (TASK.target_work_qty / TASKRSRC)."
     )
     st.stop()
 
-cache_key = ("evm", baseline.label, baseline.ev_basis)  # "planned dates" baselines differ per update
-curve = memo(cache_key + ("pv",), pv_curve, baseline)
+# which baseline: its label alone is not unique (two baselines of one P6 XML export with the same data
+# date); its source and the project it was read from are ("planned dates" baselines differ per update)
+identity = (baseline.label, baseline.source, baseline.snapshot.source, baseline.snapshot.project_id)
+cache_key = ("evm", *identity, baseline.ev_basis)
+# the update's lists (techniques not modelled, tasks not in the baseline, curves) as its KPIs computed them
+point = memo(cache_key + ("point", snapshot.source, str(snapshot.data_date)), ev_point, snapshot, baseline)
+curve = memo(cache_key + ("pv", snapshot.source, str(snapshot.data_date)), pv_curve, baseline, snapshot)
 series = memo(
     cache_key + ("series",),
     evm_series,
@@ -370,6 +402,6 @@ costs = costs_shown()
 show_kpis(row, previous, costs)
 if not costs:
     show_costs_ignored(snapshot)
-show_calculation(row, baseline, snapshot, costs)
-show_charts(series, curve, snapshot, costs)
-show_activity_detail(snapshot, baseline)
+show_calculation(row, baseline, snapshot, point, costs)
+show_charts(series, curve, snapshot, baseline, costs)
+show_activity_detail(snapshot, baseline, point)
