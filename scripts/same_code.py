@@ -14,7 +14,8 @@ Inside a function, an import counts by the names it brings in, not by the module
 from. ``--ignore-docstrings`` also leaves out the docstrings of functions and classes, for a
 pull request that rewrites only those. Exit status 1 when a definition differs: each one is
 printed with its file on each side and, when it changed, the lines that differ, before and
-after, with their line numbers.
+after, with their line numbers and the method they are in. A definition that only changed its
+name is reported as renamed.
 
 What it does not see: the order modules are imported in, and what a name now resolves to.
 The test suite and the comparison of outputs cover those.
@@ -56,44 +57,75 @@ class _Normalise(ast.NodeTransformer):
         return ast.Expr(ast.Constant(sorted(alias.asname or alias.name for alias in node.names)))
 
 
-def definitions(
-    sources: dict[str, str], ignore_docstrings: bool = False
-) -> dict[tuple[str, str], list[tuple[str, str, int]]]:
+KINDS = ("changed", "renamed", "removed", "added")
+
+
+def _label(node: ast.stmt) -> str:
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        return f"def {node.name}"
+    if isinstance(node, ast.ClassDef):
+        return f"class {node.name}"
+    if isinstance(node, ast.Assign | ast.AnnAssign):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return ", ".join(ast.unparse(target) for target in targets) + " ="
+    return "statement"
+
+
+def definitions(sources: dict[str, str], ignore_docstrings: bool = False) -> dict[tuple[str, str], list[dict]]:
     """Return the top-level definitions of ``sources`` (path -> text), each with where it lives.
 
     Key: the label and the syntax tree. The label is the kind and the name ("def schedule",
-    "class Snapshot", "FLOAT_TYPE ="), or "statement" for anything else. Value: one (path,
-    source text, first line in the file) per file holding that definition, so the same one in
-    two files counts twice.
+    "class Snapshot", "FLOAT_TYPE ="), or "statement" for anything else. Value: one entry per
+    file holding that definition (the same one in two files counts twice): ``path``, ``text``
+    (decorators included), ``line`` (its first line in the file) and ``unnamed``, the syntax
+    tree of a function or class with its name blanked, by which a rename is recognised.
     """
-    found: dict[tuple[str, str], list[tuple[str, str, int]]] = {}
+    found: dict[tuple[str, str], list[dict]] = {}
     for path, text in sources.items():
+        lines = text.splitlines()
         body = ast.parse(text).body
         if body and _is_docstring(body[0]):
             body = body[1:]
         for node in body:
             if isinstance(node, ast.Import | ast.ImportFrom):
                 continue
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                label = f"def {node.name}"
-            elif isinstance(node, ast.ClassDef):
-                label = f"class {node.name}"
-            elif isinstance(node, ast.Assign | ast.AnnAssign):
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                label = ", ".join(ast.unparse(target) for target in targets) + " ="
-            else:
-                label = "statement"
-            source = ast.get_source_segment(text, node) or ""
+            label = _label(node)
+            first = min([node.lineno, *(d.lineno for d in getattr(node, "decorator_list", []))])
+            entry = {"path": path, "text": "\n".join(lines[first - 1 : node.end_lineno]), "line": first, "unnamed": ""}
             tree = ast.dump(_Normalise(ignore_docstrings).visit(node))
-            found.setdefault((label, tree), []).append((path, source, node.lineno))
+            if hasattr(node, "name"):
+                name, node.name = node.name, "_"
+                entry["unnamed"] = ast.dump(node)
+                node.name = name
+            found.setdefault((label, tree), []).append(entry)
     return found
+
+
+def _renames(before: dict[str, list], after: dict[str, list]) -> dict[str, str]:
+    """Return {removed label: added label} where a definition only changed its name.
+
+    A removed and an added definition of the same kind, alone to share one unnamed syntax tree.
+    """
+    removed = {label: entries for label, entries in before.items() if label not in after and len(entries) == 1}
+    added = {label: entries for label, entries in after.items() if label not in before and len(entries) == 1}
+    by_tree: dict[str, list[str]] = {}
+    for label, (entry,) in added.items():
+        if entry["unnamed"]:
+            by_tree.setdefault(label.split()[0] + entry["unnamed"], []).append(label)
+    pairs = {}
+    for label, (entry,) in removed.items():
+        same = by_tree.get(label.split()[0] + entry["unnamed"], []) if entry["unnamed"] else []
+        if len(same) == 1:
+            pairs.setdefault(same[0], []).append(label)
+    return {olds[0]: new for new, olds in pairs.items() if len(olds) == 1}
 
 
 def differences(base: dict[str, str], head: dict[str, str], ignore_docstrings: bool = False) -> list[dict]:
     """Return the definitions that differ between ``base`` and ``head``, sorted by label.
 
-    One entry per label: ``kind`` ("changed", "removed" or "added"), ``label``, and the
-    (path, source text, first line) of what is only in ``base`` (``before``) or ``head`` (``after``).
+    One entry each: ``kind`` (one of KINDS), ``label`` ("def a", or "def a -> def b" for a
+    rename), and the ``definitions`` entries found only in ``base`` (``before``) and only in
+    ``head`` (``after``).
     """
     old, new = definitions(base, ignore_docstrings), definitions(head, ignore_docstrings)
     before: dict[str, list] = {}
@@ -104,10 +136,17 @@ def differences(base: dict[str, str], head: dict[str, str], ignore_docstrings: b
             before.setdefault(key[0], []).extend(old[key][:surplus])
         elif surplus < 0:
             after.setdefault(key[0], []).extend(new[key][:-surplus])
+    renamed = _renames(before, after)
     out = []
     for label in sorted(before.keys() | after.keys()):
-        kind = "changed" if label in before and label in after else "removed" if label in before else "added"
-        out.append({"kind": kind, "label": label, "before": before.get(label, []), "after": after.get(label, [])})
+        if label in renamed.values():
+            continue  # listed with its former name
+        if label in renamed:
+            item = {"kind": "renamed", "label": f"{label} -> {renamed[label]}", "after": after[renamed[label]]}
+        else:
+            kind = "changed" if label in before and label in after else "removed" if label in before else "added"
+            item = {"kind": kind, "label": label, "after": after.get(label, [])}
+        out.append(item | {"before": before.get(label, [])})
     return out
 
 
@@ -135,16 +174,46 @@ def _same_imported_names(old: list[str], new: list[str]) -> bool:
     return bool(old and new) and before is not None and before == after
 
 
-def _changed_lines(before: tuple[str, str, int], after: tuple[str, str, int]) -> list[str]:
-    """Return the lines that differ between two versions of a definition, with their line in each file."""
-    (_, old_text, old_start), (_, new_text, new_start) = before, after
-    old, new = old_text.splitlines(), new_text.splitlines()
-    out = []
+def _owners(text: str) -> list[str]:
+    """Return, for each line of a definition's ``text``, the method or nested function it is in.
+
+    "" for a line of the definition itself: only a line deeper than that needs naming.
+    """
+    owners = [""] * len(text.splitlines())
+
+    def walk(node: ast.AST, prefix: str, depth: int) -> None:
+        for child in ast.iter_child_nodes(node):
+            name = prefix
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                name = f"{prefix}.{child.name}" if prefix else child.name
+                if depth:
+                    first = min([child.lineno, *(d.lineno for d in child.decorator_list)])
+                    owners[first - 1 : child.end_lineno] = [name] * (child.end_lineno - first + 1)
+                walk(child, name, depth + 1)
+            else:
+                walk(child, name, depth)
+
+    walk(ast.parse(text), "", 0)
+    return owners
+
+
+def _changed_lines(before: dict, after: dict) -> list[str]:
+    """Return the lines that differ between two versions of a definition, with their line in each file.
+
+    Each group of lines is headed by the method it is in, when it is in one.
+    """
+    old, new = before["text"].splitlines(), after["text"].splitlines()
+    old_owner, new_owner = _owners(before["text"]), _owners(after["text"])
+    out, last = [], None
     for kind, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         if kind == "equal" or _same_imported_names(old[i1:i2], new[j1:j2]):
             continue  # an import inside a function counts by its names, not by the module they come from
-        out += [f"    before, line {old_start + i}:  {old[i].strip()}" for i in range(i1, i2)]
-        out += [f"    after,  line {new_start + j}:  {new[j].strip()}" for j in range(j1, j2)]
+        owner = old_owner[i1] if i1 < i2 else new_owner[j1]
+        if owner and owner != last:
+            out.append(f"  in {owner}")
+        last = owner
+        out += [f"    before, line {before['line'] + i}:  {old[i].strip()}" for i in range(i1, i2)]
+        out += [f"    after,  line {after['line'] + j}:  {new[j].strip()}" for j in range(j1, j2)]
         out.append("")
     return out[:-1]
 
@@ -154,12 +223,12 @@ def report(items: list[dict]) -> str:
 
     First what differs in all, then one block per definition: its name, the file it is in (or
     was in, and is in now), and for a changed one each differing line, before and after, with
-    its line number in its file.
+    its line number in its file and the method it belongs to.
     """
-    count = {kind: sum(item["kind"] == kind for item in items) for kind in ("changed", "removed", "added")}
+    count = {kind: sum(item["kind"] == kind for item in items) for kind in KINDS}
     lines = [f"{len(items)} definition(s) differ: " + ", ".join(f"{n} {kind}" for kind, n in count.items() if n), ""]
     for item in items:
-        before, after = (sorted({path for path, _, _ in item[side]}) for side in ("before", "after"))
+        before, after = (sorted({entry["path"] for entry in item[side]}) for side in ("before", "after"))
         if item["kind"] == "removed":
             where = f"was in {', '.join(before)}"
         elif item["kind"] == "added":

@@ -147,3 +147,44 @@ def test_the_report_shows_a_deferred_import_only_when_its_names_change():
         "    before, line 10:  from .units import to_days  # deferred",
         "    after,  line 7:  from ..units import to_hours  # deferred",
     ]
+
+
+def test_a_definition_that_only_changed_its_name_is_a_rename():
+    head = dict(BASE, **{"pkg/units.py": "def as_days(hours):\n    return hours / 8\n"})
+    assert compare(BASE, head) == ["renamed: def to_days -> def as_days"]
+    assert report(differences(BASE, head)).splitlines() == [
+        "1 definition(s) differ: 1 renamed",
+        "",
+        "RENAMED  def to_days -> def as_days  (in pkg/units.py)",
+    ]
+
+
+def test_a_rename_with_another_body_is_a_removal_and_an_addition():
+    head = dict(BASE, **{"pkg/units.py": "def as_days(hours):\n    return hours / 7\n"})
+    assert compare(BASE, head) == ["added: def as_days", "removed: def to_days"]
+
+
+def test_two_candidates_for_one_rename_are_not_guessed():
+    base = dict(BASE, **{"pkg/other.py": "def in_days(hours):\n    return hours / 8\n"})
+    head = dict(BASE, **{"pkg/units.py": "def as_days(hours):\n    return hours / 8\n"})
+    assert compare(base, head) == ["added: def as_days", "removed: def in_days", "removed: def to_days"]
+
+
+def test_the_report_names_the_method_a_changed_line_is_in():
+    text = BASE["pkg/model.py"].replace('return "x"', 'return "y"')
+    assert report(differences(BASE, dict(BASE, **{"pkg/model.py": text}))).splitlines()[2:] == [
+        "CHANGED  class Snapshot  (in pkg/model.py)",
+        "  in Snapshot.label",
+        '    before, line 19:  return "x"',
+        '    after,  line 19:  return "y"',
+    ]
+
+
+def test_the_report_shows_a_decorator_that_changed():
+    base = dict(BASE, **{"pkg/units.py": "@cache\ndef to_days(hours):\n    return hours / 8\n"})
+    head = dict(BASE, **{"pkg/units.py": "@lru_cache\ndef to_days(hours):\n    return hours / 8\n"})
+    assert report(differences(base, head)).splitlines()[2:] == [
+        "CHANGED  def to_days  (in pkg/units.py)",
+        "    before, line 1:  @cache",
+        "    after,  line 1:  @lru_cache",
+    ]
