@@ -13,7 +13,8 @@ Not compared: import statements at module level (a move rewrites them) and modul
 Inside a function, an import counts by the names it brings in, not by the module they come
 from. ``--ignore-docstrings`` also leaves out the docstrings of functions and classes, for a
 pull request that rewrites only those. Exit status 1 when a definition differs: each one is
-printed with the file it lives in on each side and, when it changed, the diff of its text.
+printed with its file on each side and, when it changed, the lines that differ, before and
+after, with their line numbers.
 
 What it does not see: the order modules are imported in, and what a name now resolves to.
 The test suite and the comparison of outputs cover those.
@@ -57,14 +58,15 @@ class _Normalise(ast.NodeTransformer):
 
 def definitions(
     sources: dict[str, str], ignore_docstrings: bool = False
-) -> dict[tuple[str, str], list[tuple[str, str]]]:
+) -> dict[tuple[str, str], list[tuple[str, str, int]]]:
     """Return the top-level definitions of ``sources`` (path -> text), each with where it lives.
 
     Key: the label and the syntax tree. The label is the kind and the name ("def schedule",
     "class Snapshot", "FLOAT_TYPE ="), or "statement" for anything else. Value: one (path,
-    source text) per file holding that definition, so the same one in two files counts twice.
+    source text, first line in the file) per file holding that definition, so the same one in
+    two files counts twice.
     """
-    found: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    found: dict[tuple[str, str], list[tuple[str, str, int]]] = {}
     for path, text in sources.items():
         body = ast.parse(text).body
         if body and _is_docstring(body[0]):
@@ -83,7 +85,7 @@ def definitions(
                 label = "statement"
             source = ast.get_source_segment(text, node) or ""
             tree = ast.dump(_Normalise(ignore_docstrings).visit(node))
-            found.setdefault((label, tree), []).append((path, source))
+            found.setdefault((label, tree), []).append((path, source, node.lineno))
     return found
 
 
@@ -91,7 +93,7 @@ def differences(base: dict[str, str], head: dict[str, str], ignore_docstrings: b
     """Return the definitions that differ between ``base`` and ``head``, sorted by label.
 
     One entry per label: ``kind`` ("changed", "removed" or "added"), ``label``, and the
-    (path, source text) pairs found only in ``base`` (``before``) and only in ``head`` (``after``).
+    (path, source text, first line) of what is only in ``base`` (``before``) or ``head`` (``after``).
     """
     old, new = definitions(base, ignore_docstrings), definitions(head, ignore_docstrings)
     before: dict[str, list] = {}
@@ -114,19 +116,63 @@ def compare(base: dict[str, str], head: dict[str, str], ignore_docstrings: bool 
     return [f"{item['kind']}: {item['label']}" for item in differences(base, head, ignore_docstrings)]
 
 
+def _imported_names(lines: list[str]) -> set[str] | None:
+    """Return the names ``lines`` import, or None when one of them is not a one-line import."""
+    names: set[str] = set()
+    for line in lines:
+        try:
+            (node,) = ast.parse(line.strip()).body
+        except (SyntaxError, ValueError):
+            return None
+        if not isinstance(node, ast.Import | ast.ImportFrom):
+            return None
+        names.update(alias.asname or alias.name for alias in node.names)
+    return names
+
+
+def _same_imported_names(old: list[str], new: list[str]) -> bool:
+    before, after = _imported_names(old), _imported_names(new)
+    return bool(old and new) and before is not None and before == after
+
+
+def _changed_lines(before: tuple[str, str, int], after: tuple[str, str, int]) -> list[str]:
+    """Return the lines that differ between two versions of a definition, with their line in each file."""
+    (_, old_text, old_start), (_, new_text, new_start) = before, after
+    old, new = old_text.splitlines(), new_text.splitlines()
+    out = []
+    for kind, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if kind == "equal" or _same_imported_names(old[i1:i2], new[j1:j2]):
+            continue  # an import inside a function counts by its names, not by the module they come from
+        out += [f"    before, line {old_start + i}:  {old[i].strip()}" for i in range(i1, i2)]
+        out += [f"    after,  line {new_start + j}:  {new[j].strip()}" for j in range(j1, j2)]
+        out.append("")
+    return out[:-1]
+
+
 def report(items: list[dict]) -> str:
-    """Return the differences as text: each definition, where it lives on each side, and its diff."""
-    lines = []
+    """Return the differences as text a reader can follow without opening either version.
+
+    First what differs in all, then one block per definition: its name, the file it is in (or
+    was in, and is in now), and for a changed one each differing line, before and after, with
+    its line number in its file.
+    """
+    count = {kind: sum(item["kind"] == kind for item in items) for kind in ("changed", "removed", "added")}
+    lines = [f"{len(items)} definition(s) differ: " + ", ".join(f"{n} {kind}" for kind, n in count.items() if n), ""]
     for item in items:
-        before, after = (", ".join(sorted(path for path, _ in item[side])) or "-" for side in ("before", "after"))
-        lines.append(f"{item['kind']}: {item['label']}    {before} -> {after}")
+        before, after = (sorted({path for path, _, _ in item[side]}) for side in ("before", "after"))
+        if item["kind"] == "removed":
+            where = f"was in {', '.join(before)}"
+        elif item["kind"] == "added":
+            where = f"now in {', '.join(after)}"
+        elif before == after:
+            where = f"in {', '.join(after)}"
+        else:
+            where = f"was in {', '.join(before)}, now in {', '.join(after)}"
+        lines.append(f"{item['kind'].upper()}  {item['label']}  ({where})")
         if item["kind"] == "changed" and len(item["before"]) == len(item["after"]) == 1:
-            (old_path, old_text), (new_path, new_text) = item["before"][0], item["after"][0]
-            diff = difflib.unified_diff(
-                old_text.splitlines(), new_text.splitlines(), old_path, new_path, lineterm="", n=2
-            )
-            lines += [f"    {line}" for line in diff]
-    return "\n".join(lines)
+            lines += _changed_lines(item["before"][0], item["after"][0])
+        lines.append("")
+    return "\n".join(lines).rstrip()
 
 
 def _git(*args: str) -> str:
@@ -151,9 +197,7 @@ def main(argv=None) -> int:
     parser.add_argument("--ignore-docstrings", action="store_true", help="leave function and class docstrings out")
     args = parser.parse_args(argv)
     items = differences(read_version(args.base), read_version(args.head), args.ignore_docstrings)
-    if items:
-        print(report(items))
-    print(f"{len(items)} definition(s) differ" if items else "same code")
+    print(report(items) if items else "same code")
     return 1 if items else 0
 
 

@@ -110,16 +110,40 @@ def test_the_same_definition_in_two_files_is_counted_twice():
     assert compare(twice, BASE) == ["removed: def to_days"]
 
 
-def test_the_report_says_where_a_definition_lives_and_what_changed_in_it():
+def test_the_report_says_where_a_definition_lives_and_which_lines_changed():
     text = report(differences(BASE, moved(**{"sum(values)": "max(values)"})))
-    assert text.splitlines()[0] == "changed: def total    pkg/model.py -> pkg/sub/values.py"
-    assert "-    return to_days(sum(values)) * scale" in text
-    assert "+    return to_days(max(values)) * scale" in text
+    assert text.splitlines() == [
+        "1 definition(s) differ: 1 changed",
+        "",
+        "CHANGED  def total  (was in pkg/model.py, now in pkg/sub/values.py)",
+        "    before, line 12:  return to_days(sum(values)) * scale",
+        "    after,  line 9:  return to_days(max(values)) * scale",
+    ]
 
 
 def test_the_report_names_the_file_of_a_removed_or_added_definition():
     head = dict(BASE, **{"pkg/units.py": "def to_weeks(hours):\n    return hours / 40\n"})
     assert report(differences(BASE, head)).splitlines() == [
-        "removed: def to_days    pkg/units.py -> -",
-        "added: def to_weeks    - -> pkg/units.py",
+        "2 definition(s) differ: 1 removed, 1 added",
+        "",
+        "REMOVED  def to_days  (was in pkg/units.py)",
+        "",
+        "ADDED  def to_weeks  (now in pkg/units.py)",
+    ]
+
+
+def test_a_change_in_place_names_the_file_once():
+    text = BASE["pkg/model.py"].replace("LIMIT = 15", "LIMIT = 16")
+    assert report(differences(BASE, dict(BASE, **{"pkg/model.py": text}))).splitlines()[2:] == [
+        "CHANGED  LIMIT =  (in pkg/model.py)",
+        "    before, line 5:  LIMIT = 15",
+        "    after,  line 5:  LIMIT = 16",
+    ]
+
+
+def test_the_report_shows_a_deferred_import_only_when_its_names_change():
+    lines = report(differences(BASE, moved(**{"import to_days": "import to_hours"}))).splitlines()
+    assert lines[3:5] == [
+        "    before, line 10:  from .units import to_days  # deferred",
+        "    after,  line 7:  from ..units import to_hours  # deferred",
     ]
