@@ -1,17 +1,23 @@
 """A company's trade words, read as one: "mécanique" for "Mechanical", "CVC" for "HVAC".
 
 None ships with the package: the words live in the private folder XERSCOPE_LEXICON names,
-outside the repository, as ``[[group]] words = [...]`` tables."""
+outside the repository, as ``[[group]] words = [...]`` tables. That folder holds three:
+``generated/`` (the files' variants, written by ``xerscope lexicon build`` only), ``curated/``
+(edited by hand: trade words, refusals of generated groups) and ``suggested/`` (the words taught
+in the app, appended there and read by nothing until copied into ``curated/``)."""
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import tomllib
 from pathlib import Path
 
 from .text import fold, plain
 
 Lexicon = dict[str, tuple[str, ...]]  # folded word -> the other words of its group
+GENERATED, CURATED, SUGGESTED = "generated", "curated", "suggested"  # the folders of XERSCOPE_LEXICON
 
 
 def lexicon_from_groups(groups: list[list[str]]) -> Lexicon:
@@ -53,15 +59,17 @@ def learn(lexicon: Lexicon, word: str, label: str) -> Lexicon:
     return {k: tuple(dict.fromkeys(v)) for k, v in merged.items()}
 
 
-def learned_toml(pairs: list[tuple[str, str]]) -> str:
-    """The words taught this session as a lexicon file (``[[group]] words = [...]``), to put in the
-    folder XERSCOPE_LEXICON names so every session reads them."""
-    lines = ["# Words taught in the Gantt Ask field: each read as the label it was matched to.", ""]
-    for word, label in pairs:
-        code, _, name = label.partition(" · ")
-        words = list(dict.fromkeys(t for t in (word, code, name) if t))
-        lines += ["[[group]]", "words = [" + ", ".join(json_quote(w) for w in words) + "]", ""]
-    return "\n".join(lines)
+def write_private(path: Path, text: str) -> None:
+    """Replace ``path`` whole: a temporary file of the same folder (0600, not *.toml, so no reader
+    takes it for a lexicon), then a rename; a reader sees the old file or the new one."""
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def json_quote(text: str) -> str:

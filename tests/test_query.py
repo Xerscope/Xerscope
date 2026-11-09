@@ -231,11 +231,6 @@ def test_an_unknown_word_gets_the_closest_labels_and_can_be_taught():
     taught = query.learn(vocab.lexicon, "commiss", "COM · Commissioning")
     assert "commissioning" in taught["commiss"] and "commiss" in taught["com"]
     assert query.parse_keywords("commiss", Vocabulary(wbs=vocab.wbs, lexicon=taught)).wbs_id == "5"
-    text = query.learned_toml([("commiss", "COM · Commissioning"), ("bétonnage", "CIV · Civil works")])
-    assert '[[group]]\nwords = ["commiss", "COM", "Commissioning"]' in text and '"bétonnage"' in text
-    import tomllib
-
-    assert len(tomllib.loads(text)["group"]) == 2  # a file load_lexicon reads back
 
 
 def test_a_chip_taken_off_drops_its_filter():
@@ -525,11 +520,14 @@ NAMES = [  # written by hand: each group below, and the pairs that must stay apa
     "Beton armé", "Montage pompe", "Montages pompes", "Installation vanne", "Instalation câbles", "Pose câble",
     "Poste HT", "Pre-test", "Prefabrication", "Excavation", "Excavatoin", "Canal", "Canaux", "Piping", "Paving",
 ]  # fmt: skip
-GROUPS = [  # plural (FR/EN, -al/-aux), abbreviation with its dot, one letter apart at 6+ letters
-    ["cable", "cables"], ["canal", "canaux"], ["fondation", "fondations"], ["instalation", "installation"],
-    ["mec", "mechanical"], ["montage", "montages"], ["pompe", "pompes"],
+GROUPS = [  # plural (FR/EN, -al/-aux), abbreviation with its dot
+    ["cable", "cables"], ["canal", "canaux"], ["fondation", "fondations"], ["mec", "mechanical"],
+    ["montage", "montages"], ["pompe", "pompes"],
 ]  # fmt: skip
-APART = [("pose", "poste"), ("pre", "prefabrication"), ("excavation", "excavatoin"), ("piping", "paving")]
+APART = [  # one letter apart is listed for review, never grouped (tests/test_ask_variants.py)
+    ("pose", "poste"), ("pre", "prefabrication"), ("excavation", "excavatoin"), ("piping", "paving"),
+    ("instalation", "installation"),
+]  # fmt: skip
 
 
 def test_variants_are_grouped_by_written_rules_within_one_column():
@@ -546,7 +544,7 @@ def test_variants_are_grouped_by_written_rules_within_one_column():
     # "Pompes" (a WBS name) and "pompe" (an activity name) stay apart: a group never crosses a column
     assert "PROJWBS.wbs_name" not in groups
     assert query.variants([file]) == groups  # deterministic
-    assert query.variant_counts(groups) == {"TASK.task_name": 7}
+    assert query.variant_counts(groups) == {"TASK.task_name": 6}
 
 
 def test_the_demo_series_holds_no_variant(store):
@@ -600,3 +598,25 @@ def test_worst_float_is_compared_in_hours_and_ties_go_to_the_lowest_activity_id(
     tie = snap([todo("Y", total_float_hr_cnt="-40"), todo("X", total_float_hr_cnt="-40")]).activities
     for ordered in (tie, tie.iloc[::-1]):
         assert "worst float -5 wd (X)" in query.answer(Filter(), Funnel(ordered), Vocabulary(wbs={}))
+
+
+def test_a_curated_refusal_drops_the_generated_group_that_holds_its_words(tmp_path):
+    """curated/ wins over generated/: a refusal names words of one column never to read as one;
+    the generated group holding them all is dropped whole, in that column only."""
+    (tmp_path / "refusals.toml").write_text(
+        '[[refuse]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["Fondation", "fondations"]\n'
+        '[[refuse]]\nwords = ["beton", "betons"]\n',  # no column: named, not applied
+        encoding="utf-8",
+    )
+    refusals, errors = query.load_refusals(tmp_path)
+    assert refusals == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+    assert errors == ["refusals.toml: refuse #2 needs a column and two words or more"]
+    generated = {
+        "PROJWBS.wbs_name": [["beton", "betons"], ["fondation", "fondations", "fondatoins"]],
+        "TASK.task_name": [["fondation", "fondations"]],
+    }
+    assert query.refuse(generated, refusals) == {
+        "PROJWBS.wbs_name": [["beton", "betons"]],
+        "TASK.task_name": [["fondation", "fondations"]],
+    }
+    assert query.refuse({"PROJWBS.wbs_name": [["fondation", "fondations"]]}, refusals) == {}

@@ -210,7 +210,8 @@ def test_gantt_wbs_choice_filters_and_options(app):
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
-    assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
+    # the words taught stay in the session: no lexicon file leaves the app (the lexicon lives on the NAS)
+    assert not [b for b in app.get("download_button") if "taught" in b.label]
     app.button(key="ask_clear").click().run()  # Show all empties the field
     _ok(app)
     assert app.text_input[0].value == "" and _chips(app) == []
@@ -1319,6 +1320,17 @@ def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, do
     assert set(tables) >= {"01_options.csv", "04_check_parameters.csv"}
 
 
+def test_debug_ask_variants_block_shows_counts_only(app):
+    """Block 14 shows the number of generated groups per column; the groups themselves (the
+    files' words) leave the app through `xerscope lexicon build` only, whatever the switch."""
+    for anonymous in (True, False):
+        app.sidebar.toggle(key="anon_exports").set_value(anonymous).run()
+        app.switch_page("views/debug.py").run()
+        _ok(app)
+        block = next(e for e in app.main.expander if e.key == "debug_ask_variants")
+        assert not block.get("download_button") and not [c for c in block.caption if "download" in c.value]
+
+
 def _session_anonymizer(at):
     """The anonymizer the session built last (one per set of files read)."""
     return list(anonymizers_built(at.session_state).values())[-1]
@@ -1460,6 +1472,117 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     assert any("P6" in error.value and "built-in" in _shown(error.value) for error in app.error)
     assert "P6" not in app.session_state["uploaded_standards"] if "uploaded_standards" in app.session_state else True
     assert not app.success
+
+
+@pytest.fixture
+def lexicon_root(tmp_path, monkeypatch):
+    """XERSCOPE_LEXICON with its three folders; the app's cached reads start and end empty."""
+    from xerscope.app import state
+
+    for folder in ("generated", "curated", "suggested"):
+        (tmp_path / folder).mkdir()
+    monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
+    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+        read.cache_clear()
+    yield tmp_path
+    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+        read.cache_clear()
+
+
+def test_the_ask_field_reads_curated_words_only(app, lexicon_root):
+    """Trade words come from curated/ only: a group in suggested/ or at the root is not read."""
+    for where, word in (("curated", "qwfp"), ("suggested", "zxcv"), (".", "vbnm")):
+        group = f'[[group]]\nwords = ["{word}", "CIV", "Civil works"]\n'
+        (lexicon_root / where / "words.toml").write_text(group, encoding="utf-8")
+    app.switch_page("views/gantt.py").run()
+    for word, chips in (("qwfp", ["WBS: CIV · Civil works"]), ("zxcv", []), ("vbnm", [])):
+        app.text_input[0].set_value(word).run()
+        _ok(app)
+        assert _chips(app) == chips, word
+
+
+def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_back(app, lexicon_root):
+    """A click on a suggestion records the unknown word, the label, its column, the filter and
+    the date in suggested/, never the sentence asked; the word holds for the session only."""
+    import tomllib
+
+    sentence = "jalons commiss en retard"
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value(sentence).run()
+    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    _ok(app)
+    assert "WBS: COM · Commissioning" in _chips(app)
+    written = (lexicon_root / "suggested" / "suggestions.toml").read_text(encoding="utf-8")
+    assert sentence not in written and "jalons" not in written and "retard" not in written
+    (entry,) = tomllib.loads(written)["suggestion"]
+    assert {k: v for k, v in entry.items() if k != "at"} == {
+        "word": "commiss", "label": "COM · Commissioning", "column": "PROJWBS.wbs_name", "facet": "wbs",
+        "value": "COM",
+    }  # fmt: skip
+    assert [p.name for p in lexicon_root.rglob("*") if p.is_file()] == ["suggestions.toml"]
+    fresh = read_folder(AppTest.from_file(APP, default_timeout=120).run())  # a new session
+    fresh.switch_page("views/gantt.py").run()
+    fresh.text_input[0].set_value("commiss").run()
+    assert _chips(fresh) == []  # not read until copied into curated/
+
+
+def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_root):
+    from xerscope.analysis.ask import suggested
+
+    full = lexicon_root / "suggested" / suggested.FILE
+    full.write_bytes(b"#" * suggested.MAX_BYTES)
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("commiss").run()
+    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    _ok(app)
+    assert _chips(app) == ["WBS: COM · Commissioning"]  # taught for the session all the same
+    note = [c.value for c in app.caption if "not kept as a suggestion" in c.value]
+    assert note == ["Taught for this session; not kept as a suggestion."]
+    assert full.read_bytes() == b"#" * suggested.MAX_BYTES
+
+
+def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
+    from xerscope.app import state
+
+    (lexicon_root / "generated" / "variants.toml").write_text(
+        '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
+        '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["beton", "betons"]\n',
+        encoding="utf-8",
+    )
+    (lexicon_root / "curated" / "refusals.toml").write_text(
+        '[[refuse]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
+        '[[group]]\ncolumn = "TASK.task_name"\nwords = ["coffrage", "coffrages"]\n',
+        encoding="utf-8",
+    )
+    (lexicon_root / "suggested" / "suggestions.toml").write_text(
+        '[[group]]\ncolumn = "TASK.task_name"\nwords = ["pose", "poses"]\n', encoding="utf-8"
+    )
+    assert state.file_variants() == {
+        "PROJWBS.wbs_name": [["beton", "betons"]],
+        "TASK.task_name": [["coffrage", "coffrages"]],
+    }
+    assert state.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+
+
+def test_a_lexicon_uploaded_as_a_standard_never_reaches_the_ask_field(app):
+    """The only upload of the locked app is a standard (.toml); the Ask field reads the folder
+    XERSCOPE_LEXICON names and nothing else. A lexicon file is not a standard: refused. A standard
+    carrying lexicon tables is a standard: its groups are not read as trade words."""
+    from xerscope.analysis.standards import template_text
+
+    group = '\n[[group]]\nwords = ["qwfp", "CIV", "Civil works"]\n'
+    app.switch_page("views/health.py").run()
+    app.file_uploader(key="std_upload").set_value(("lexicon.toml", group.encode(), "application/toml")).run()
+    _ok(app)
+    assert any("needs a [standard] table" in error.value.replace("\\", "") for error in app.error) and not app.success
+    mixed = template_text().replace('id = "CUSTOM"', 'id = "MIXED"', 1) + group
+    app.file_uploader(key="std_upload").set_value(("mixed.toml", mixed.encode(), "application/toml")).run()
+    _ok(app)
+    assert "MIXED" in app.session_state["uploaded_standards"]
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("qwfp").run()
+    _ok(app)
+    assert _chips(app) == []  # "qwfp" names no node: the uploaded groups were not read
 
 
 # --- Schedule health: the sets of a check on demand, and all sets as a file ---------------------

@@ -7,11 +7,15 @@ B. Written rules only, no clustering:
    - folding: case and accents ("Béton" / "beton" are one word);
    - plural, French or English: w / w+s, w / w+es, -al / -aux;
    - an abbreviation written with its dot ("Mec.", "Elec.", 3+ letters) and the one longer
-     word of the column it begins;
-   - one letter added, removed or changed between two words of 6+ letters with the same first
-     letter ("Instalation" / "Installation").
+     word of the column it begins.
+C. Two words of 6+ letters with the same first letter, one letter added, removed or changed
+   ("Instalation" / "Installation"), are never grouped: on public XER files the rule joined
+   different words ("screed" / "screen", "coarse" / "course", "lighting" / "lightning") and no
+   frequency told them from a typo ("gybsum" / "gypsum"). ``near_spellings`` lists them;
+   ``xerscope lexicon build`` writes them to generated/report.txt for review, and the maintainer
+   copies the true typos into curated/. Neither the app nor the Ask field reads that list.
 Pure and deterministic: the same files give the same groups, sorted. ``xerscope lexicon build``
-writes them to a file for review; the app derives them per session and never writes them."""
+writes them to generated/variants.toml; the app derives them per session and never writes them."""
 
 from __future__ import annotations
 
@@ -80,8 +84,22 @@ def variants(snapshots: Iterable[Snapshot]) -> dict[str, list[list[str]]]:
     return {column: g for column, g in groups.items() if g}
 
 
+def near_spellings(snapshots: Iterable[Snapshot]) -> dict[str, list[tuple[str, str]]]:
+    """Per grouped column, its pairs one letter apart (rule C) that its groups do not already
+    join (a plural is one letter apart too), sorted; a column with no pair is left out."""
+    found = terms(snapshots)
+    pairs: dict[str, list[tuple[str, str]]] = {}
+    for column in GROUPED:
+        if column in found:
+            groups = [set(g) for g in group_words(*found[column])]
+            near = [(a, b) for a, b in _near_spellings(found[column][0]) if not any({a, b} <= g for g in groups)]
+            if near:
+                pairs[column] = sorted(near)
+    return pairs
+
+
 def group_words(words: set[str], abbreviated: set[str] = frozenset()) -> list[list[str]]:
-    """The words of one column joined by the rules of the module docstring."""
+    """The words of one column joined by the rules B of the module docstring."""
     parent = {w: w for w in words}
 
     def root(w: str) -> str:
@@ -104,7 +122,7 @@ def _pairs(words: set[str], abbreviated: set[str]) -> list[tuple[str, str]]:
         longer = [w for w in words if w != short and w.startswith(short)]
         if len(longer) == 1:  # the one word of the column it can stand for
             pairs.append((short, longer[0]))
-    return pairs + _near_spellings(words)
+    return pairs
 
 
 def _near_spellings(words: set[str]) -> list[tuple[str, str]]:
@@ -160,6 +178,40 @@ def load_variants(*dirs: str | Path) -> dict[str, list[list[str]]]:
             if isinstance(table, dict) and isinstance(table.get("column"), str):
                 found.setdefault(table["column"], []).append([w for w in table.get("words", []) if isinstance(w, str)])
     return found
+
+
+def load_refusals(*dirs: str | Path) -> tuple[list[tuple[str, frozenset[str]]], list[str]]:
+    """The ``[[refuse]] column = ..., words = [...]`` tables of the ``*.toml`` of ``dirs`` (the
+    hand-edited curated/ folder): words of one column never to read as one. Returns the refusals
+    (folded words) and the tables that cannot apply (no column, fewer than two words), named."""
+    refusals: list[tuple[str, frozenset[str]]] = []
+    errors: list[str] = []
+    for file in [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]:
+        try:
+            tables = tomllib.loads(file.read_text(encoding="utf-8")).get("refuse", [])
+        except (OSError, tomllib.TOMLDecodeError):
+            continue  # load_lexicon names it
+        for number, table in enumerate(tables, start=1):
+            words = frozenset(fold(w) for w in table.get("words", []) if isinstance(w, str) and fold(w))
+            if not isinstance(table.get("column"), str) or len(words) < 2:
+                errors.append(f"{file.name}: refuse #{number} needs a column and two words or more")
+                continue
+            refusals.append((table["column"], words))
+    return refusals, errors
+
+
+def refuse(
+    groups: dict[str, list[list[str]]], refusals: list[tuple[str, frozenset[str]]]
+) -> dict[str, list[list[str]]]:
+    """The generated groups less those holding every word of a refusal of their column (dropped
+    whole); a column left with no group is left out."""
+    kept = {
+        column: [
+            g for g in column_groups if not any(c == column and words <= {fold(w) for w in g} for c, words in refusals)
+        ]
+        for column, column_groups in groups.items()
+    }
+    return {column: g for column, g in kept.items() if g}
 
 
 def counts(groups: dict[str, list[list[str]]]) -> dict[str, int]:

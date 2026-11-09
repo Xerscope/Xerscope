@@ -10,12 +10,14 @@ import secrets
 import threading
 from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard, discover_standards, query
+from xerscope.analysis.ask import suggested
 from xerscope.analysis.baseline import (
     DEFAULT_EV_BASIS,
     EV_BASES,
@@ -117,15 +119,20 @@ def background_jobs() -> bool:
     return os.environ.get("XERSCOPE_SYNC_LOAD", "").lower() not in ("1", "true", "yes")
 
 
+def _lexicon_dirs(name: str) -> list[Path]:
+    """The folder ``name`` (generated, curated, suggested) of XERSCOPE_LEXICON; none when unset."""
+    root = os.environ.get("XERSCOPE_LEXICON", "")
+    return [Path(root) / name] if root else []
+
+
 @functools.cache
 def lexicon_and_errors() -> tuple[query.Lexicon, tuple[str, ...]]:
-    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON (a company's own words, kept
-    outside the repository; none ships with the app), and the files skipped with why. Read once
-    for the process: it holds no session's data. The errors show on the Debug page, never to a
-    visitor of another page."""
-    extra = os.environ.get("XERSCOPE_LEXICON", "")
-    found, errors = query.load_lexicon(*([extra] if extra else []))
-    return found, tuple(errors)
+    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON's curated/ folder (a company's
+    own words, kept outside the repository; none ships with the app), and the files and refusals
+    skipped with why. Read once for the process: it holds no session's data. The errors show on
+    the Debug page, never to a visitor of another page."""
+    found, errors = query.load_lexicon(*_lexicon_dirs(query.CURATED))
+    return found, tuple(errors + query.load_refusals(*_lexicon_dirs(query.CURATED))[1])
 
 
 def lexicon() -> query.Lexicon:
@@ -133,11 +140,19 @@ def lexicon() -> query.Lexicon:
 
 
 @functools.cache
+def refusals() -> list[tuple[str, frozenset[str]]]:
+    """The generated groups curated/ refuses: they win over generated/ and over the variants
+    derived in memory."""
+    return query.load_refusals(*_lexicon_dirs(query.CURATED))[0]
+
+
+@functools.cache
 def file_variants() -> dict[str, list[list[str]]]:
-    """The variant groups of XERSCOPE_LEXICON that name their source column (a file ``xerscope
-    lexicon build`` wrote and the company reviewed), merged with those derived in memory."""
-    extra = os.environ.get("XERSCOPE_LEXICON", "")
-    return query.load_variants(extra) if extra else {}
+    """The variant groups that name their source column: generated/ (``xerscope lexicon build``)
+    less the curated refusals, and curated/'s own; merged with those derived in memory."""
+    generated = query.refuse(query.load_variants(*_lexicon_dirs(query.GENERATED)), refusals())
+    curated = query.load_variants(*_lexicon_dirs(query.CURATED))
+    return {c: generated.get(c, []) + curated.get(c, []) for c in sorted({*generated, *curated})}
 
 
 def session_lexicon() -> query.Lexicon:
@@ -148,13 +163,17 @@ def session_lexicon() -> query.Lexicon:
     return found
 
 
-def teach(word: str, label: str) -> None:
-    """Read ``word`` as ``label`` from now on in this session; the Gantt page offers the taught
-    words as a lexicon file to download (``query.learned_toml``), the app container being
-    read-only."""
+def teach(word: str, label: str, kind: str) -> bool:
+    """Read ``word`` as ``label`` (a ``kind`` of query.suggestions) from now on in this session,
+    and append the correction to XERSCOPE_LEXICON's suggested/ for review (``ask.suggested``:
+    the word, the label, its column, the filter and the date, never the sentence). The Ask field
+    reads it from a file only once copied into curated/. False when a guard refused to record it."""
     taught = st.session_state.setdefault("taught", [])
-    if (word, label) not in taught:
-        taught.append((word, label))
+    if (word, label) in taught:
+        return True
+    taught.append((word, label))
+    folders = _lexicon_dirs(query.SUGGESTED)
+    return not folders or suggested.record(folders[0], word, label, kind, datetime.now(UTC))
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:

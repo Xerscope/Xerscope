@@ -190,9 +190,9 @@ def bad_lexicon(tmp_path, monkeypatch):
     from xerscope.app import state
 
     folder = tmp_path / "lexicon"
-    folder.mkdir()
-    (folder / "bad.toml").write_text("[[group]\nwords = [\n")
-    (folder / "good.toml").write_text('[[group]]\nwords = ["béton", "concrete"]\n', encoding="utf-8")
+    (folder / "curated").mkdir(parents=True)
+    (folder / "curated" / "bad.toml").write_text("[[group]\nwords = [\n")
+    (folder / "curated" / "good.toml").write_text('[[group]]\nwords = ["béton", "concrete"]\n', encoding="utf-8")
     monkeypatch.setenv("XERSCOPE_LEXICON", str(folder))
     state.lexicon_and_errors.cache_clear()
     yield

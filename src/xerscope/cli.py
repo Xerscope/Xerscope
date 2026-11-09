@@ -627,7 +627,9 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
         help="score on the anonymised copy of the file: the model, the output and the sentences carry "
         "the new codes only; a sentence still holding an original value is refused (real schedules)",
     )
-    parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument(
+        "--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON/curated)"
+    )
     parser.add_argument(
         "--summary",
         action="store_true",
@@ -784,18 +786,22 @@ def _args_lexicon(parser: argparse.ArgumentParser) -> None:
         "folder",
         nargs="?",
         default="",
-        help="a folder of *.toml groups to check (XERSCOPE_LEXICON); or `build`, then a folder of XER files",
+        help="a folder of *.toml groups to check (XERSCOPE_LEXICON/curated); or `build`, then a folder of XER files",
     )
     parser.add_argument("source", nargs="?", default="", help="with build: the folder of XER files to read")
     parser.add_argument("--word", default="", help="print the words read as this one")
-    parser.add_argument("--out", default="", help="with build: the .toml file to write (nothing else is written)")
+    parser.add_argument(
+        "--out",
+        default="",
+        help="with build: the lexicon folder (XERSCOPE_LEXICON): rewrites generated/, purges suggested/",
+    )
 
 
 def _cmd_lexicon(args: argparse.Namespace) -> int:
-    """The trade words the Ask field reads as one: a folder's groups (XERSCOPE_LEXICON; none ships
-    with the package); a bad file is named (exit 1). ``lexicon build FOLDER --out FILE``: the
-    variants of each source column of the folder's XER files, written to FILE only; the output
-    prints counts, never a word."""
+    """The trade words the Ask field reads as one: a folder's groups (XERSCOPE_LEXICON's curated/;
+    none ships with the package); a bad file is named (exit 1). ``lexicon build FOLDER --out
+    ROOT``: the init service of the lexicon folder (``_build_lexicon``); the output prints
+    counts, never a word."""
     from .analysis import query
 
     if args.folder == "build":
@@ -814,18 +820,52 @@ def _cmd_lexicon(args: argparse.Namespace) -> int:
 
 
 def _build_lexicon(source: str, out: str) -> int:
+    """ROOT/generated/variants.toml: the variants of each source column of SOURCE's XER files,
+    replaced whole (temporary file, rename, 0600); ROOT/generated/report.txt: the groups per
+    column, those new since the last run and the pairs one letter apart, to review, never read
+    by Ask; ROOT/suggested/: the suggestions not copied into ROOT/curated/ after the retention
+    purged. Only generated/ and suggested/ are written; a missing one is named (exit 1), never
+    created (owned by root under Docker, the app could not write it)."""
+    from datetime import UTC, datetime
+
     from .analysis import query
+    from .analysis.ask import suggested
+    from .analysis.ask.lexicon import write_private
     from .store import SnapshotStore
 
     if not source or not out:
-        print("usage: xerscope lexicon build FOLDER --out FILE.toml")
+        print("usage: xerscope lexicon build FOLDER --out LEXICON_FOLDER")
         return 2
+    root, now = Path(out), datetime.now(UTC)
+    generated = root / query.GENERATED
+    for folder in (generated, root / query.SUGGESTED):
+        if not folder.is_dir():
+            print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
+            return 1
     store = SnapshotStore.from_folder(source)
-    groups = query.variants(list(store))
-    Path(out).write_text(query.variants_toml(groups), encoding="utf-8")
+    files = list(store)
+    groups, near = query.variants(files), query.near_spellings(files)
+    before = {c: {tuple(g) for g in gs} for c, gs in query.load_variants(generated).items()}
+    new = {c: [g for g in gs if tuple(g) not in before.get(c, set())] for c, gs in groups.items()}
+    write_private(generated / "variants.toml", query.variants_toml(groups))
+    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {len(store)} file(s)", "", "column: groups, new"]
+    report += [f"{c}: {n} group(s), {len(new[c])} new" for c, n in query.variant_counts(groups).items()]
+    report += ["", "new since the last run:"]
+    report += [f"{c}: {', '.join(g)}" for c in sorted(new) for g in new[c]] or ["(none)"]
+    report += ["", "to review (one letter apart, not used):"]
+    report += [f"{c}: {a}, {b}" for c in sorted(near) for a, b in near[c]] or ["(none)"]
+    write_private(generated / "report.txt", "\n".join(report) + "\n")
     for column, count in query.variant_counts(groups).items():
-        print(f"{column}: {count} group(s)")
-    print(f"{sum(len(g) for g in groups.values())} group(s) from {len(store)} file(s) written")
+        print(f"{column}: {count} group(s), {len(new[column])} new")
+    total, added = sum(len(g) for g in groups.values()), sum(len(g) for g in new.values())
+    print(f"{total} group(s) from {len(store)} file(s) written, {added} new")
+    curated, _ = query.load_lexicon(root / query.CURATED)
+    try:
+        kept, purged = suggested.purge(root / query.SUGGESTED, curated, now)
+    except ValueError:  # tomllib.TOMLDecodeError: the file was edited by hand
+        print(f"suggestions: {suggested.FILE} is not TOML, left as it is")
+        return 1
+    print(f"suggestions: {kept} kept, {purged} purged")
     return 0
 
 
