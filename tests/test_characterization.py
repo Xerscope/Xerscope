@@ -20,6 +20,8 @@ from reference.sources import FILES
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
 from xerscope.xer import load_snapshot
 
+pytestmark = pytest.mark.oracle("characterization")
+
 GOLDEN = Path(__file__).parent / "golden" / "standards.json"
 REFERENCE_DATA = Path(__file__).parent / "reference" / "data"
 # 4,217 activities: would dominate the runtime, and the CPM tests already cover it.

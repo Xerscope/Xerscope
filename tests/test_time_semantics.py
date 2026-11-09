@@ -96,11 +96,31 @@ def test_dcma_09_reads_actual_dates_by_day(dd):
 
 
 @pytest.mark.parametrize("dd", DD_HOURS)
+def test_dcma_09_leaves_out_completed_tasks_whatever_their_actual_finish(dd):
+    """PAM 200.1 §4.0: "This analysis should exclude Completed tasks, LOE tasks, Subprojects (called
+    Summary tasks in MS Project), and Milestones."; §4.9: "Incomplete tasks that have a forecast
+    start/finish date prior to the IMS status date, or has an actual start/finish date beyond the IMS
+    status date are included in this metric." F finished Monday 12:00 (the status date's day) and L
+    finished Tuesday 09:00 (after it): both out, neither flagged. O, not started, forecast from Monday:
+    in, not flagged. 0 / 1 at any hour of the data date."""
+    s = snap(
+        [
+            done("F", act_end_date=SAME_DAY),
+            done("L", act_end_date="2026-03-03 09:00"),
+            todo("O", early_start_date=at("17:00")),
+        ],
+        data_date=at(dd),
+    )
+    r = run(DCMA, "DCMA-09", s)
+    assert (codes(r), r.denominator) == ([], 1)
+
+
+@pytest.mark.parametrize("dd", DD_HOURS)
 @pytest.mark.parametrize(("std", "metric_id"), [(P6, "P6-10a"), (DECM, "06A506b")], ids=["P6-10a 101248", "06A506b"])
 def test_forecast_start_same_day_is_compared_by_timestamp(std, metric_id, dd):
     """101248: "Invalid dates for not started activities are start dates earlier than the data date";
-    06A506b "on or before the status date" = before P6's data date (decm.toml). A forecast start at 12:00
-    is before a data date at 17:00 only."""
+    06A506b "on or before the status date", the status date being the data date (decm.toml). A forecast
+    start at 12:00 is before a data date at 17:00 only."""
     s = snap([todo("A", early_start_date=SAME_DAY, early_end_date="2026-03-13 17:00")], data_date=at(dd))
     assert codes(run(std, metric_id, s)) == (["A"] if dd == "17:00" else [])
 
@@ -122,6 +142,34 @@ def test_dcma_11_due_by_day(dd):
     )
     r = run(DCMA, "DCMA-11", s, Baseline.planned(s))
     assert (codes(r), r.denominator) == (["A"], 1)
+
+
+@pytest.mark.parametrize("dd", DD_HOURS)
+def test_dcma_14_reads_due_and_completed_at_the_same_grain(dd):
+    """DCMA-EA PAM 200.1 §3.1.2.4 (https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf):
+    step 2 "Filter the Baseline Finish data to include only dates up to the current reporting period of
+    the IMS." and step 5 "Filter the Actual Finish data to include only dates up to the current reporting
+    period of the IMS.": one filter, one bound, so due and completed share dcma.toml's date_grain = "day".
+
+    A: baseline finish Monday 17:00, finished Monday 12:00 -> due, completed.
+    B: baseline finish Monday 17:00, forecast Thursday -> due, not completed (listed).
+    C: baseline finish and actual finish Friday 27/02 17:00 -> due, completed.
+    BEI = 2 / 3 at any hour of the data date; the last funnel step keeps the 3 due tasks.
+    """
+    st = "2026-02-02 08:00"
+    s = snap(
+        [
+            done("A", act_end_date=SAME_DAY, target_start_date=st, target_end_date=at("17:00")),
+            todo("B", early_end_date="2026-03-05 17:00", target_start_date=st, target_end_date=at("17:00")),
+            done("C", act_end_date="2026-02-27 17:00", target_start_date=st, target_end_date="2026-02-27 17:00"),
+        ],
+        data_date=at(dd),
+    )
+    r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
+    assert (r.numerator, r.denominator) == (2, 3)
+    assert r.value == pytest.approx(2 / 3)
+    assert codes(r) == ["B"]
+    assert r.funnel.steps[-1].left == r.denominator
 
 
 @pytest.mark.parametrize("dd", DD_HOURS)
@@ -150,7 +198,7 @@ def test_p6_12_late_does_not_depend_on_the_data_date_hour(dd):
 
 @pytest.mark.parametrize(
     ("std", "metric_id"),
-    [(P6, "P6-10a"), (P6, "P6-10b"), (INTEGRITY, "INT-06"), (DECM, "06A506a"), (DECM, "06A506b"), (DCMA, "DCMA-09")],
+    [(P6, "P6-10a"), (P6, "P6-10b"), (INTEGRITY, "INT-06"), (DECM, "06A506a"), (DCMA, "DCMA-09")],
 )
 def test_dates_exactly_on_the_data_date_are_valid(std, metric_id):
     """Help l.15836: the data date starts the work period. An actual start, a remaining early start or a
@@ -164,6 +212,26 @@ def test_dates_exactly_on_the_data_date_are_valid(std, metric_id):
         data_date=dd,
     )
     assert codes(run(std, metric_id, s)) == []
+
+
+def test_06a506b_flags_a_forecast_on_the_data_date():
+    """06A506b v8.0 block 6: "X = Count of incomplete tasks/activities & milestones with either forecast
+    start or forecast finish on or before the status date"; the status date is the data date (IPMR DID
+    §3.7.1.3.5.13). N, not started, remaining start exactly at the data date: flagged. F, under way, 0 h
+    left, forecast finish exactly at the data date: flagged (block 6; step 3 reads "before",
+    UNRESOLVED). S, under way since 23/02, remaining start at the data date, finish 13/03: the start is
+    checked for not-started work only (step 2), not flagged. 2 / 3."""
+    dd = at("08:00")
+    s = snap(
+        [
+            todo("N", early_start_date=dd, early_end_date="2026-03-13 17:00"),
+            active("F", remain_drtn_hr_cnt="0", early_start_date=dd, early_end_date=dd),
+            active("S", early_start_date=dd, early_end_date="2026-03-13 17:00"),
+        ],
+        data_date=dd,
+    )
+    r = run(DECM, "06A506b", s)
+    assert (codes(r), r.denominator) == (["F", "N"], 3)
 
 
 # --- 2. calendars -----------------------------------------------------------------------------------
@@ -275,7 +343,6 @@ def test_data_date_at_the_end_of_the_day_starts_the_next_working_day():
     assert s.project_working_days(s.data_date, T("2026-03-03 08:00")) == 0
 
 
-@pytest.mark.xfail(strict=False, reason="warning not yet emitted")
 def test_two_files_of_the_same_day_at_other_hours_warn():
     """Two files dated 08:00 and 17:00 the same day are both kept, in time order, and the store warns,
     naming the day (store.warnings: shown on the overview and by the CLI). The same timestamp twice
@@ -298,10 +365,11 @@ def _week(previous_tasks, current_tasks):
 
 
 def test_ppc_commitments_are_the_dates_between_the_two_data_dates():
-    """progress.py (Last Planner, W-1 commitments vs W outcome): committed = forecast before W's data
-    date, so the week is [Thu 17:00, Fri 08:00), not an ISO week nor 7 days. C (Fri 6 Mar, ISO week 10 like
-    W-1) is committed; B starting Fri 08:00 and finishing Fri 12:00, at or after W's data date, is not
-    (strict "before": consistent with the engine, no P6 source)."""
+    """xerscope definition (docs/formulas.md section 4): "committed_starts = activities whose start
+    update W-1 planned on or before the status date (data date) of W and not started in W-1", the same
+    for finishes. The week is [Thu 17:00, Fri 08:00], not an ISO week nor 7 days. C (Fri 6 Mar, ISO
+    week 10 like W-1) is committed; B's start, Fri 08:00, is on W's data date: committed, and missed;
+    its finish, Fri 12:00, is after it: not committed. Starts 2 / 3 (A, C), finishes 1 / 2 (A)."""
     store = _week(
         [
             todo("A", early_start_date="2026-03-09 08:00", early_end_date="2026-03-12 17:00", **hours(32)),
@@ -318,12 +386,13 @@ def test_ppc_commitments_are_the_dates_between_the_two_data_dates():
     assert sorted(zip(plan["task_code"], plan["commitment"], plan["kept"], strict=True)) == [
         ("A", "Finish", True),
         ("A", "Start", True),
+        ("B", "Start", False),
         ("C", "Finish", False),
         ("C", "Start", True),
     ]
     week = ppc_series(store).iloc[0]
     assert (week["week_start"], week["data_date"]) == (T(THU_PM), T(FRI_AM))
-    assert (week["ppc"], week["ppc_start"]) == (50, 100)
+    assert (week["ppc_finish"], week["ppc_start"]) == (50, pytest.approx(200 / 3))
 
 
 # --- 5. MTA: slips in working days of the milestone's calendar ---------------------------------------
@@ -503,12 +572,9 @@ def test_export_unreadable_is_a_clean_value_error(content):
         read_p6_export("export.csv", content)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="read_p6_export docstring: 'Raises ValueError for any file that is not a CSV table'. A UTF-16 "
-    "text export decodes as cp1252 with NUL bytes and returns a frame of garbled headers",
-)
 def test_export_in_utf16_is_read_or_refused():
+    """Excel's "Unicode Text" (UTF-16 with BOM, tab-separated): it decoded as cp1252 with NUL bytes and
+    gave a frame of garbled headers. Now read by its BOM."""
     content = "\n".join("\t".join(r) for r in [EXPORT_HEADERS, ["A1", "8", "0", "50", "", ""]]).encode("utf-16")
     try:
         raw = read_p6_export("export.csv", content)
@@ -517,17 +583,20 @@ def test_export_in_utf16_is_read_or_refused():
     assert p6_export_columns(raw)["task_code"] == "Activity ID"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="read_p6_export docstring: ValueError for a file that is not a CSV table. A row longer than the "
-    "header shifts the columns silently (pandas takes the extra leading fields as the index: Activity ID "
-    "becomes the 3rd field); with a short row as well, AttributeError ('float' has no 'strip') escapes",
-)
 @pytest.mark.parametrize("body", [["A1;1;2;3;4;5;6;7"], ["A1;1;2;3;4;5;6;7", "B1;1"]], ids=["long", "long+short"])
 def test_export_row_longer_than_header_is_refused(body):
+    """A row longer than the header shifted the columns silently (pandas took the extra leading fields as
+    the index: Activity ID became the 3rd field); with a short row as well, AttributeError ('float' has no
+    'strip') escaped. read_p6_export's docstring: ValueError for a file that is not a CSV table."""
     content = (";".join(EXPORT_HEADERS) + "\n" + "\n".join(body)).encode()
     with pytest.raises(ValueError):
         read_p6_export("export.csv", content)
+
+
+def test_export_row_shorter_than_header_reads_blank_cells():
+    """B1 stops after its PV: the cells it lacks are blank, as P6 leaves an empty field."""
+    frame = _frame(_export([["A1", "8", "4", "50", "", ""], ["B1", "6"]]))
+    assert frame.loc["B1", "pv_hr"] == 6 and pd.isna(frame.loc["B1", "ev_hr"])
 
 
 # --- 8. XER date fields ------------------------------------------------------------------------------

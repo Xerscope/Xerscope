@@ -122,7 +122,7 @@ def _from(back: int | None) -> None:
 
 with old_column, st.container(horizontal=True, gap="small"):
     for text, back in (("Previous", 1), ("4 back", 4), ("First", None)):
-        st.button(text, key=f"cl_from_{text}", type="tertiary", on_click=_from, args=(back,))
+        st.button(text, key=f"cl_from_{text}", type="secondary", on_click=_from, args=(back,))
 old, new = store.by_label(old_label), store.by_label(new_label)
 with top:
     page_header(

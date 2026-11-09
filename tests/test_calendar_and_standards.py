@@ -3,10 +3,11 @@ from datetime import date
 
 import pandas as pd
 import pytest
-from xerkit import CALENDAR_IDS, MON_FRI_8H, snap
+from xerkit import CALENDAR_IDS, MON_FRI_8H, clndr_data, snap, todo
+from xerkit import hours as duration
 
 from xerscope.analysis import builtin_standards, loads_standard, template_text
-from xerscope.xer.calendar import WorkCalendar, parse_clndr_data
+from xerscope.xer.calendar import LIMIT_MARK, WorkCalendar, parse_clndr_data
 
 # --- calendars ------------------------------------------------------------------------------
 
@@ -33,6 +34,24 @@ def test_working_exception_and_midnight_end():
     assert hours(cal.periods(date(2026, 4, 7))) == 0
 
 
+def test_a_period_ending_at_or_before_its_start_is_no_work_and_one_across_midnight_is_named():
+    """Only "f|00:00" ends at midnight (MPXJ, LocalTimeHelper.getMillisecondsInRange: an end at
+    MIDNIGHT runs to the end of the day, any other end is end - start). 13:00-13:00 is empty.
+    22:00-06:00 crosses midnight: P6's dialog enters a night shift day by day and no reference
+    file holds one. It counts no work, as MPXJ reads it (0 h), the file still loads, and the
+    period is named with the limit mark (overview, "Limits")."""
+    periods = "(0||0(s|08:00|f|12:00)())(0||1(s|13:00|f|13:00)())(0||2(s|22:00|f|06:00)())"
+    late = "(0||0(s|22:00|f|00:00)())"
+    blob = f"(0||CalendarData()((0||DaysOfWeek()((0||2()({periods}))(0||3()({late}))))))"
+    cal = WorkCalendar.from_row(pd.Series({"clndr_id": "X", "day_hr_cnt": "4", "clndr_data": blob}))
+    assert cal.week[0] == ((480, 720),)  # Monday: 08:00-12:00 only
+    assert cal.week[1] == ((1320, 1440),)  # Tuesday: 22:00 to midnight
+    note = f"working period 22:00-06:00 crosses midnight: no work counted; {LIMIT_MARK}"
+    assert cal.notes == (note,)
+    snapshot = snap([{"task_code": "A"}], calendars=[{"clndr_id": "40", "day_hr_cnt": "4", "clndr_data": blob}])
+    assert f"test.xer: calendar 40 (): {note}" in snapshot.warnings
+
+
 def test_work_hours_are_exact_within_days():
     cal = WorkCalendar.from_row(pd.Series({"clndr_id": "C", "day_hr_cnt": "8", "clndr_data": MON_FRI_8H}))
     mon8, fri17 = pd.Timestamp("2026-03-02 08:00"), pd.Timestamp("2026-03-06 17:00")
@@ -49,6 +68,21 @@ def test_missing_blob_infers_workweek_from_hour_counts():
     assert [hours(day) for day in five.week] == [10] * 5 + [0, 0]
 
 
+def test_a_blob_without_a_working_weekday_keeps_its_exceptions():
+    """The work week is inferred from the hour counts, as when the blob is missing; the blob's
+    holiday and working exception still apply (MPXJ, ProjectCalendarHelper.ensureWorkingTime)."""
+    blob = clndr_data(range(0), [("08:00", "12:00")], (46115,)).replace(
+        "Exceptions()((0||0(d|46115)()))", "Exceptions()((0||0(d|46115)())(0||1(d|46117)((0||0(s|08:00|f|12:00)()))))"
+    )
+    cal = WorkCalendar.from_row(
+        pd.Series({"clndr_id": "X", "day_hr_cnt": "8", "week_hr_cnt": "40", "clndr_data": blob})
+    )
+    assert [hours(day) for day in cal.week] == [8] * 5 + [0, 0]
+    assert hours(cal.periods(date(2026, 4, 3))) == 0  # Friday holiday
+    assert hours(cal.periods(date(2026, 4, 5))) == 4  # Sunday worked by exception
+    assert cal.notes == ("no working weekday in clndr_data; workweek inferred from the hour counts",)
+
+
 def test_unknown_task_calendar_falls_back_to_the_project_calendar():
     """A clndr_id absent from CALENDAR: hours per day from the project's calendar, as
     Snapshot.calendar resolves it, and the file is flagged."""
@@ -61,6 +95,71 @@ def test_unknown_task_calendar_falls_back_to_the_project_calendar():
     assert tasks.at["A", "hours_per_day"] == 10.0
     assert tasks.at["A", "original_d"] == tasks.at["B", "original_d"]  # same stored duration
     assert any("999" in warning for warning in snapshot.warnings)
+
+
+# A global calendar with two holidays, Fri 3 and Mon 6 April 2026 (Excel serials 46115, 46118),
+# and project calendars built on it: P6's "Inherit Holidays and Exceptions from Global Calendar".
+GLOBAL = {
+    "clndr_id": "30",
+    "clndr_name": "Global",
+    "clndr_type": "CA_Base",
+    "day_hr_cnt": "8",
+    "week_hr_cnt": "40",
+    "clndr_data": clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], (46115, 46118)),
+}
+# its own exception on 6 April: a working morning, which wins over the base's holiday
+OWN_MORNING = "(0||0(d|46118)((0||0(s|08:00|f|12:00)())))"
+DERIVED = {
+    **GLOBAL,
+    "clndr_id": "31",
+    "clndr_name": "Project",
+    "clndr_type": "CA_Project",
+    "base_clndr_id": "30",
+    "clndr_data": clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")]).replace(
+        "Exceptions()()", f"Exceptions()({OWN_MORNING})"
+    ),
+}
+DERIVED_TWICE = {**DERIVED, "clndr_id": "32", "base_clndr_id": "31", "clndr_data": DERIVED["clndr_data"]}
+
+
+def test_a_derived_calendar_inherits_the_holidays_of_its_base():
+    """Oracle: "Assign a base calendar to determine holidays and exceptions for the selected
+    project calendar." MPXJ (ProjectCalendar.getException) looks in the base when the calendar
+    has no exception of its own on the date, up the chain of bases."""
+    snapshot = snap([{"task_code": "A", "clndr_id": "31"}], calendars=[GLOBAL, DERIVED, DERIVED_TWICE])
+    derived, twice = snapshot.calendar("31"), snapshot.calendar("32")
+    for calendar in (derived, twice):
+        assert hours(calendar.periods(date(2026, 4, 3))) == 0  # the base's holiday
+        assert hours(calendar.periods(date(2026, 4, 6))) == 4  # its own exception wins
+        assert hours(calendar.periods(date(2026, 4, 7))) == 8  # its own work week
+    assert hours(snapshot.calendar("30").periods(date(2026, 4, 6))) == 0  # the base is unchanged
+    assert [w for w in snapshot.warnings if "inherited" in w] == [
+        "test.xer: calendar 31: 1 holiday or exception inherited from base calendar 30",
+        "test.xer: calendar 32: 1 holiday or exception inherited from base calendar 31",
+    ]
+
+
+def test_a_derived_calendar_moves_the_cpm_dates():
+    """16 h from Thu 2 April 08:00 on a calendar whose base has Good Friday off: P6's holiday,
+    so the finish is Mon 6 April 17:00 (MPXJ gives the same, tests/test_crosscheck_mpxj.py)."""
+    from xerscope.analysis.cpm import schedule
+
+    week = clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")])  # no exception of its own
+    derived = {**DERIVED, "base_clndr_id": CALENDAR_IDS["C8"], "clndr_data": week}
+    a = todo("A", clndr_id="31", cstr_type="CS_MSOA", cstr_date="2026-04-02 08:00", **duration(16))
+    frame = schedule(snap([a], calendars=[derived])).frame
+    assert frame.at["A", "ef"] == pd.Timestamp("2026-04-06 17:00")
+
+
+def test_a_missing_base_or_a_loop_of_bases_is_flagged_and_reads_the_calendar_alone():
+    missing = {**DERIVED, "base_clndr_id": "99"}
+    snapshot = snap([{"task_code": "A", "clndr_id": "31"}], calendars=[missing])
+    assert hours(snapshot.calendar("31").periods(date(2026, 4, 3))) == 8
+    assert "test.xer: calendar 31: base calendar 99 is not in the file" in snapshot.warnings
+    loop = [{**GLOBAL, "base_clndr_id": "31"}, DERIVED]
+    snapshot = snap([{"task_code": "A", "clndr_id": "31"}], calendars=loop)
+    assert hours(snapshot.calendar("31").periods(date(2026, 4, 3))) == 0  # 30's holiday, read once
+    assert any("loop" in w and "31" in w for w in snapshot.warnings)
 
 
 # --- standards as data ---------------------------------------------------------------------
@@ -168,3 +267,19 @@ def test_threshold_defaults_of_the_rules_equal_the_standard_files():
                 assert metric.params[name] == default, (metric.id, name, metric.params[name], default)
                 checked += 1
     assert checked == 13  # P6-04/05/06, DCMA-06/08/12, 06A211a, 06A401a, 06A504a, 06A504b, 06A506c (3 parameters)
+
+
+def test_a_night_shift_split_at_midnight_as_p6_writes_it_runs_through_midnight():
+    """P6 enters a night shift day by day: 22:00-24:00 on the evening, 00:00-06:00 on the next
+    day ("we highlight 12 am to 6 am" on the following day, Ten Six, How to Create a Night Shift
+    Calendar in P6). Read that way, the work runs on across midnight with no gap."""
+    evening, morning = "(0||0(s|22:00|f|00:00)())", "(0||0(s|00:00|f|06:00)())"
+    days = {1: evening, 2: morning + evening[:-1].replace("(0||0", "(0||1") + ")", 3: morning}
+    week = "".join(f"(0||{d}()({days.get(d, '')}))" for d in range(1, 8))
+    blob = f"(0||CalendarData()((0||DaysOfWeek()({week}))(0||Exceptions()())))"
+    cal = WorkCalendar.from_row(pd.Series({"clndr_id": "N", "day_hr_cnt": "8", "clndr_data": blob}))
+    sunday_22, monday_06 = pd.Timestamp("2026-03-01 22:00"), pd.Timestamp("2026-03-02 06:00")
+    assert cal.work_hours(sunday_22, monday_06) == 8  # 2 h before midnight, 6 h after
+    assert cal.axis().add(sunday_22, 8 * 60) == monday_06  # an 8 h task ends at 06:00
+    assert cal.work_hours(monday_06, pd.Timestamp("2026-03-02 22:00")) == 0  # the day off-shift
+    assert cal.notes == ()

@@ -14,7 +14,9 @@
 #   secret URL prefix, openssl rand -hex 12, no slashes), XERSCOPE_EXPORTS (the folder of
 #   the .xer files, e.g. /volume1/<shared-folder>); optional XERSCOPE_MEM_LIMIT (the app's
 #   memory cap, default 2g), XERSCOPE_UID and XERSCOPE_GID (the account the app runs as,
-#   default 65532). Nothing in this folder is edited.
+#   default 65532), XERSCOPE_IMAGE and XERSCOPE_CADDY_IMAGE (the builds to run: a release tag
+#   or a digest, docs/deploy.md §7; the :latest defaults move with main). Nothing in this
+#   folder is edited.
 # No logging: block: Container Manager's Log tab shows only the Docker daemon's default
 # driver (Synology sets its own), and an explicit driver, json-file or local, leaves the tab
 # empty for that container. The log stays on the NAS either way.
@@ -61,8 +63,11 @@ services:
 
   caddy:
     image: ${XERSCOPE_CADDY_IMAGE:-ghcr.io/xerscope/xerscope-caddy:latest}   # caddy + rate_limit, built by
-                                                    # .github/workflows/image.yml from caddy/Dockerfile; a
-                                                    # Docker Hub copy: XERSCOPE_CADDY_IMAGE=<docker-hub-login>/xerscope-caddy:latest
+                                                    # .github/workflows/image.yml from caddy/Dockerfile. :latest is
+                                                    # the default for a first start only: pin a release or a digest in
+                                                    # .env (XERSCOPE_CADDY_IMAGE=ghcr.io/xerscope/xerscope-caddy:0.1.0,
+                                                    # or ...@sha256:<digest>; docs/deploy.md §7). Docker Hub copy:
+                                                    # XERSCOPE_CADDY_IMAGE=<docker-hub-login>/xerscope-caddy:<tag>
     network_mode: service:tailscale                 # listens on 127.0.0.1:8080 of that namespace only
     environment:
       XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}
@@ -86,8 +91,11 @@ services:
     restart: unless-stopped
 
   xerscope:
-    image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml; a private
-                                                    # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest
+    image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}   # built by .github/workflows/image.yml. :latest is the
+                                                    # default for a first start only: pin a release or a digest in .env
+                                                    # (XERSCOPE_IMAGE=ghcr.io/xerscope/xerscope:0.1.0, or ...@sha256:<digest>,
+                                                    # read from the image run or ghcr; docs/deploy.md §7). A private
+                                                    # copy on Docker Hub: XERSCOPE_IMAGE=<docker-hub-login>/xerscope:<tag>
     user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # NAS: a dedicated DSM account, the only one allowed to
                                                     # read the exports folder; default: the image's nonroot user
     environment:

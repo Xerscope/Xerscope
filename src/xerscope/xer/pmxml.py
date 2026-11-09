@@ -278,7 +278,11 @@ def read_pmxml_baseline(data: bytes, source: str, baseline_id: str | None = None
     proj_id = chosen.object_id
     project_rows, wbs_rows = _project_rows(project, ns, proj_id)
     node_id = wbs_rows[0]["wbs_id"]
-    tasks = [_task_row(a, ns, proj_id, node_id) for a in project.findall(ns + "Activity")]
+    try:  # a percentage or a date P6 would not write: the load contract lets only XerError out
+        tasks = [_task_row(a, ns, proj_id, node_id) for a in project.findall(ns + "Activity")]
+        calendars = _calendar_rows(root, ns)
+    except ValueError as exc:
+        raise XerError(f"{source}: unreadable value in P6 XML ({exc})") from exc
     links = [
         {
             "task_pred_id": _text(r, ns, "ObjectId"),
@@ -291,6 +295,16 @@ def read_pmxml_baseline(data: bytes, source: str, baseline_id: str | None = None
         }
         for r in project.findall(ns + "Relationship")
     ]
+    # build_snapshot keeps the links whose successor project is the one read; which id P6 writes
+    # in SuccessorProjectObjectId inside a BaselineProject is not documented, so a link naming
+    # another project is counted, not silently lost.
+    other_project = sum(link["proj_id"] != proj_id for link in links)
+    notes = [f"{source}: baseline {chosen.object_id} ({chosen.code}) read from P6 XML"]
+    if other_project:
+        notes.append(
+            f"{source}: {other_project} relationship(s) of baseline {chosen.object_id} name another project "
+            "as successor project; left out of its logic"
+        )
     assignments = []
     for a in project.findall(ns + "ResourceAssignment"):
         t = lambda field, a=a: _text(a, ns, field)  # noqa: E731
@@ -349,9 +363,8 @@ def read_pmxml_baseline(data: bytes, source: str, baseline_id: str | None = None
         "TASKPRED": links,
         "TASKRSRC": assignments,
         "PROJCOST": expenses,
-        "CALENDAR": _calendar_rows(root, ns),
+        "CALENDAR": calendars,
         "RSRC": resources,
     }
     frames = {name: pd.DataFrame(rows).astype(str) for name, rows in tables.items() if rows}
-    note = f"{source}: baseline {chosen.object_id} ({chosen.code}) read from P6 XML"
-    return RawXer(tables=frames, source=source, warnings=[note])
+    return RawXer(tables=frames, source=source, warnings=notes)

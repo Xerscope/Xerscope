@@ -188,7 +188,7 @@ export default function (component) {
     } else {
       lines.push(["% complete", r.pct === null ? "–" : r.pct + " %"], ["Activities", r.activities]);
       const shift = signed(r.shift_wd, "wd");
-      if (shift) lines.push(["Finish vs BL", shift]);
+      if (shift) lines.push(["Finish vs BL (baselined tasks)", shift]);
     }
     return lines;
   };

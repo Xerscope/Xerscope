@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .cpm import CycleError, compare_assignments, compare_with_stored, schedule
+from .cpm import CycleError, ScheduleError, compare_assignments, compare_with_stored, schedule
 from .populations import (
     Funnel,
     activity_funnel,
@@ -39,7 +39,7 @@ def int_01_recalculated(context) -> RuleOutput:
     """
     try:
         comparison = compare_with_stored(context.snapshot)
-    except CycleError as exc:
+    except ScheduleError as exc:  # a loop, or a duration / lag the engine cannot place
         return RuleOutput(note=f"cannot schedule: {exc}")
     comparison = comparison[comparison["field"].isin(STORED_FIELDS) & comparison["stored"].notna()]
     funnel = Funnel(context.snapshot.by_code.reset_index().sort_values("task_code"))
@@ -130,6 +130,8 @@ def int_04_relationship_loops(context) -> RuleOutput:
         schedule(context.snapshot)
     except CycleError as exc:
         members = list(exc.members)
+    except ScheduleError:  # unschedulable for another reason (a duration or lag out of range): no loop found
+        members = []
     else:
         members = []
     funnel = activity_funnel(context.snapshot)
@@ -210,7 +212,7 @@ def int_07_unsatisfied_constraints(context) -> RuleOutput:
     """
     try:
         dates = schedule(context.snapshot).frame
-    except CycleError as exc:
+    except ScheduleError as exc:  # a loop, or a duration / lag the engine cannot place
         return RuleOutput(note=f"cannot schedule: {exc}")
     funnel = activity_funnel(context.snapshot).exclude("complete", "xerscope").exclude("loe", "xerscope")
     funnel.keep("first row of the Task ID", "xerscope", lambda rows: ~rows.duplicated("task_code"))
@@ -263,7 +265,7 @@ def int_08_unsatisfied_relationships(context) -> RuleOutput:
     """
     try:
         dates = schedule(context.snapshot).frame
-    except CycleError as exc:
+    except ScheduleError as exc:  # a loop, or a duration / lag the engine cannot place
         return RuleOutput(note=f"cannot schedule: {exc}")
     tasks = context.snapshot.by_code
     start = tasks["act_start_date"].combine_first(dates["es"])
@@ -325,7 +327,7 @@ def int_03_assignments_recalculated(context) -> RuleOutput:
     """
     try:
         comparison = compare_assignments(context.snapshot)
-    except CycleError as exc:
+    except ScheduleError as exc:  # a loop, or a duration / lag the engine cannot place
         return RuleOutput(note=f"cannot schedule: {exc}")
     comparison = comparison[comparison["stored"].notna()]
     if comparison.empty:
