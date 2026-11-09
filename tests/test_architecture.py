@@ -20,7 +20,6 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
         "xer",
         "store",
         "analysis",
-        "viz",
         "export",
         "sample",
         "verify",

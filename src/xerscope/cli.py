@@ -7,7 +7,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import NoReturn
 
@@ -618,23 +617,14 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
         help="score the file's own lexicon: every WBS node, resource, status and float, said every way the "
         "grammar should read; prints the labels it cannot name (what a lexicon file should add)",
     )
-    parser.add_argument("--url", default="", help="a llama.cpp server to score as well (XERSCOPE_QUERY_URL)")
-    parser.add_argument("--key", default="", help="the key that server requires (XERSCOPE_QUERY_KEY)")
-    parser.add_argument("--ca", default="", help="that server's certificate, trusted alone (XERSCOPE_QUERY_CA)")
     parser.add_argument(
         "--anonymize",
         action="store_true",
-        help="score on the anonymised copy of the file: the model, the output and the sentences carry "
+        help="score on the anonymised copy of the file: the output and the sentences carry "
         "the new codes only; a sentence still holding an original value is refused (real schedules)",
     )
     parser.add_argument(
         "--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON/curated)"
-    )
-    parser.add_argument(
-        "--summary",
-        action="store_true",
-        help="with --url: print the model's summary of each sentence's answer, for a human to read, "
-        "and whether it is grounded in the values given",
     )
     parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
 
@@ -696,7 +686,7 @@ def _anonymised_bench(path: Path, cases: list[dict]):
 
 def _cmd_ask_bench(args: argparse.Namespace) -> int:
     """Share of sentences the Gantt Ask field turns into the right filters, per set and per field:
-    the keyword grammar always, a model when --url is given. The exit code is 0 whatever the
+    the keyword grammar. The exit code is 0 whatever the
     ratios: tests/test_ask_bench.py holds the floors."""
     from .analysis import query
     from .store import SnapshotStore
@@ -704,9 +694,6 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
     files = _expand([args.path])
     real = SnapshotStore.from_paths(files).latest
     latest = next(f for f in files if f.name == real.source or str(f).endswith(real.source))
-    parsers = {"keywords": None}
-    if args.url:
-        parsers["model"] = query.llm_backend(args.url, key=args.key, cafile=args.ca)
     if not args.cases and not args.self:
         raise SystemExit("xerscope ask-bench: give --cases FILE and/or --self")
     if args.self:
@@ -714,14 +701,13 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
         for error in lexicon_errors:
             print(f"  lexicon error: {error}")
         vocab = query.vocabulary(real, lexicon=lexicon)
-        for name, backend in parsers.items():
-            scored, missed = query.coverage(vocab, backend)
-            labels = scored["label"].nunique()
-            print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file ({name})")
-            print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
-            for label in missed:
-                phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
-                print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
+        scored, missed = query.coverage(vocab)
+        labels = scored["label"].nunique()
+        print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file")
+        print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
+        for label in missed:
+            phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
+            print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
     for cases_path in args.cases:
         cases = query.load_cases(cases_path)
         snapshot = real
@@ -738,46 +724,22 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
         for error in lexicon_errors:
             print(f"  lexicon error: {error}")
         vocab = query.vocabulary(snapshot, lexicon=lexicon)
-        for name, backend in parsers.items():
-            scored = query.score(cases, vocab, backend)
-            answered = (scored["source"] == name).mean() if name == "model" else 1.0
-            shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
-            print(f"  {name:<9} {shares}" + (f"  (answered {answered:.0%}, the rest by keywords)" if args.url else ""))
-            buckets = query.by_confidence(scored)
-            print(
-                "            "
-                + "  ".join(
-                    f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
-                    for name, row in buckets.iterrows()
-                    if row["sentences"]
-                )
+        scored = query.score(cases, vocab)
+        shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
+        print(f"  keywords  {shares}")
+        buckets = query.by_confidence(scored)
+        print(
+            "            "
+            + "  ".join(
+                f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
+                for name, row in buckets.iterrows()
+                if row["sentences"]
             )
-            missed = scored[~scored["exact"]]
-            for _, row in missed.head(args.show).iterrows():
-                wrong = ", ".join(field for field in query.FIELDS if not row[field])
-                print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
-        if args.summary and args.url:
-            from .analysis import wbs as wbs_tree
-            from .viz import categorise
-
-            nodes = wbs_tree.tree(snapshot)
-            tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
-            backend = parsers["model"]
-            grounded_count = 0
-            print("  summaries (model), for a human to read:")
-            for case in cases:
-                asked = query.parse(case["text"], vocab)
-                funnel = query.apply(asked, tasks, snapshot, nodes)
-                given = query.facts(funnel, snapshot)
-                started = time.perf_counter()
-                text = "".join(query.summary(backend, case["text"], given)).strip()
-                seconds = time.perf_counter() - started
-                ok = bool(text) and query.grounded(text, given)
-                grounded_count += ok
-                print(
-                    f"    {case['text']!r} ({seconds:.1f}s, {'grounded' if ok else 'DROPPED'}): {text or '(no answer)'}"
-                )
-            print(f"  grounded: {grounded_count}/{len(cases)}")
+        )
+        missed = scored[~scored["exact"]]
+        for _, row in missed.head(args.show).iterrows():
+            wrong = ", ".join(field for field in query.FIELDS if not row[field])
+            print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
     return 0
 
 

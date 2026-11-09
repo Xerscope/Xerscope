@@ -3,8 +3,6 @@ words taken out and the exclusive facets united; ``parse_keywords`` returns the 
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from .filters import Filter, to_filter
 from .grammar import FACETS, UNKNOWN, And, Atom, Expr, Not, Or
 from .lexer import Item, items
@@ -12,10 +10,6 @@ from .text import fold, tokens
 from .vocab import Vocabulary
 
 MAX_CHARS = 300  # a sentence is read up to here; the rest is named as left out ("…")
-
-Backend = Callable[[str, Vocabulary], Filter | None]
-"""A parser that may decline (None): a model, step two; the keyword grammar is the fallback. A
-model backend also carries ``warm(vocab)``: the vocabulary handed over once, at the file's load."""
 
 
 def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
@@ -26,24 +20,6 @@ def parse_keywords(text: str, vocab: Vocabulary) -> Filter:
         return Filter()
     conjuncts, ignored, confidence = sentence(text, vocab)
     return to_filter(conjuncts, ignored, confidence, vocab)
-
-
-def parse(text: str, vocab: Vocabulary, backend: Backend | None = None) -> Filter:
-    """The backend's answer when it gives one, the keyword grammar otherwise (or when it fails)."""
-    if backend is not None and text.strip():
-        try:
-            answer = backend(text, vocab)
-        except Exception:  # a model down or slow must never break the page
-            answer = None
-        if answer is not None:
-            return answer
-    return parse_keywords(text, vocab)
-
-
-def warm(backend: Backend | None, vocab: Vocabulary) -> bool:
-    """``backend.warm(vocab)`` when the backend has one (a model), else False."""
-    warmer = getattr(backend, "warm", None)
-    return bool(warmer(vocab)) if callable(warmer) else False
 
 
 def sentence(text: str, vocab: Vocabulary) -> tuple[list[tuple[int, Expr]], list[str], float]:

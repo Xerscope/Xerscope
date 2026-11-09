@@ -23,7 +23,6 @@ LATE = ("Late (finish after baseline finish)", query.Atom("late"))
 def test_vocabulary_matches_the_page_widgets():
     assert list(STATUS.values()) == query.STATUSES
     assert query.CATEGORIES == CATEGORY_ORDER
-    assert {"status", "float", "wbs", "codes"} <= set(VOCAB.to_prompt())
 
 
 @pytest.mark.parametrize(
@@ -72,18 +71,6 @@ def test_matched_phrases_read_in_sentence_order():
     assert query.parse_keywords("nothing here", VOCAB).matched == ("Search: nothing here",)
 
 
-def test_backend_answers_first_and_its_failures_fall_back():
-    answer = Filter(wbs_id="3")
-    assert query.parse("anything", VOCAB, backend=lambda text, vocab: answer) == answer
-    assert query.parse("critical", VOCAB, backend=lambda text, vocab: None).categories == ("Critical",)
-
-    def broken(text, vocab):
-        raise ConnectionError("model down")
-
-    assert query.parse("critical", VOCAB, backend=broken).categories == ("Critical",)
-    assert query.parse("", VOCAB, backend=broken) == Filter()  # an empty sentence never calls the backend
-
-
 def test_vocabulary_from_the_demo(store):
     snapshot = store.latest
     vocab = query.vocabulary(snapshot, wbs.tree(snapshot), LEXICON)
@@ -92,9 +79,6 @@ def test_vocabulary_from_the_demo(store):
     assert query.parse_keywords("CIV critique", vocab).wbs_id == "7003"
     assert vocab.resources["5001"] == ("CREW", "Site crew") and vocab.has_milestones and vocab.has_loe
     assert {"earthworks", "design", "c3020"} <= vocab.words
-    prompt = vocab.to_prompt()
-    assert set(prompt) == {"status", "float", "wbs", "codes", "resources", "milestones", "loe"}
-    assert not any("earthworks" in str(v) for v in prompt.values())  # labels only, no activity
     assert query.fold(float("nan")) == "" and query.fold("Béton Armé") == "beton arme"
 
 

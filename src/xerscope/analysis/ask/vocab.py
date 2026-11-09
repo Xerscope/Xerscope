@@ -9,7 +9,7 @@ import pandas as pd
 
 from ...xer import Snapshot
 from ..wbs import ROOT
-from .grammar import CATEGORIES, GRAMMAR_WORDS, STATUSES
+from .grammar import GRAMMAR_WORDS
 from .lexicon import Lexicon
 from .text import COMMON, STOP, tokens, words_of
 
@@ -24,8 +24,7 @@ NAME_COLUMN = "TASK.task_name"
 class Vocabulary:
     """WBS nodes, activity-code values, resources, the words of the activity names.
 
-    Built once per update by ``vocabulary``; it is also the whole of what a model backend
-    receives (no activity, no date, no number)."""
+    Built once per update by ``vocabulary``."""
 
     wbs: Mapping[str, str]  # wbs_id -> "CIV · Civil works" (code and name)
     codes: Mapping[str, tuple[str, str, str]] = field(default_factory=dict)  # code_id -> (type, value, name)
@@ -56,18 +55,6 @@ class Vocabulary:
             for word, others in self.variants.get(column, {}).items():
                 merged.setdefault(word, []).extend(o for o in others if o not in merged[word])
         return {word: tuple(others) for word, others in merged.items()}
-
-    def to_prompt(self) -> dict:
-        """The vocabulary as plain data, for a model prompt: the file's labels, not its activities."""
-        return {
-            "status": STATUSES,
-            "float": CATEGORIES,
-            "wbs": [{"id": k, "label": v} for k, v in self.wbs.items()],
-            "codes": [{"id": k, "type": t, "value": v, "name": n} for k, (t, v, n) in self.codes.items()],
-            "resources": [{"id": k, "short": short, "name": name} for k, (short, name) in self.resources.items()],
-            "milestones": self.has_milestones,
-            "loe": self.has_loe,
-        }
 
 
 def vocabulary(
