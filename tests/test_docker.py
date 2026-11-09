@@ -89,6 +89,10 @@ def test_only_a_tested_commit_is_published():
     assert needs == jobs - {"changes", "publish"}  # every job gates the publish; changes is PR-only
     assert "    if: github.event_name == 'push'\n" in publish  # needs' success() kept: no always()
     assert "uses: ./.github/workflows/image.yml" in publish and "secrets: inherit" not in publish
+    callers = [p.name for p in (ROOT / ".github" / "workflows").glob("*.yml") if "workflows/image.yml" in p.read_text()]
+    assert callers == ["tests.yml"] and tests.count("uses: ./.github/workflows/image.yml") == 1  # no other path
+    # the image's revision label is the pushed commit: metadata-action's labels reach the build
+    assert "labels: ${{ steps.meta.outputs.labels }}" in image and "org.opencontainers.image.revision" not in image
 
 
 def test_a_pull_request_changing_the_image_builds_and_scans_it():
