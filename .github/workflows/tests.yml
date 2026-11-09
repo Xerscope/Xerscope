@@ -4,11 +4,11 @@ name: tests
 #   pull requests and main  -> Linux only, two Pythons (oldest and newest supported)
 #   Monday run and manual   -> the full matrix, Windows included
 # A new push to a pull request cancels the run still going for its previous one; on main every
-# commit is tested to the end (image.yml publishes a commit only once its run passed).
+# commit is tested to the end, then the publish job (image.yml) runs once every other job passed.
 on:
   push:
     branches: [main]
-    tags: ["v*"]          # a release tag is tested before image.yml publishes it
+    tags: ["v*"]          # a release tag is tested before the publish job publishes it
   pull_request:
   workflow_dispatch:
   schedule:
@@ -353,3 +353,18 @@ jobs:
           docker compose logs --no-color
       - if: always()
         run: docker compose down -v
+
+  publish:
+    # the images of this commit (image.yml), on a push of main or of a v* tag only, once every
+    # job above passed: a red job, a skipped one or a pull request publishes nothing
+    needs: [lint, oracle-report, test, fitness, audit, crosscheck, container, deploy]
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write                             # push the images and the attestation to ghcr.io
+      id-token: write                             # OIDC token behind the provenance attestation (Sigstore)
+      attestations: write                         # store it with the repository's attestations
+    uses: ./.github/workflows/image.yml
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
