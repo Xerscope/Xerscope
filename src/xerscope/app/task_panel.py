@@ -18,6 +18,10 @@ from xerscope.config import DATETIME_FMT
 from xerscope.viz.charts import build_activity_dates, build_activity_float
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
+# The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
+# on, Finish on or before, Mandatory start / finish); P6-02 counts a narrower set. The label says which.
+HARD_CONSTRAINT_LABEL = "Hard constraint (DCMA-05 set)"
+
 ROW_PREFIX = "a:"  # Gantt row id of an activity (viz/gantt.py); "w:" is a WBS row
 MAX_ID = 200  # characters: longer than any Activity ID P6 stores, shorter than a forged payload
 
@@ -96,10 +100,10 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
                 ("Task ID", _text(task["task_code"])),
                 ("Task name", _text(task["task_name"])),
                 ("WBS", f"{_text(task['wbs_code'])} · {_text(wbs_names.get(task['wbs_id']))}"),
-                ("Activity type", TASK_TYPE.get(task["task_type"], _text(task["task_type"]))),
+                ("Task type", TASK_TYPE.get(task["task_type"], _text(task["task_type"]))),
                 ("% complete type", PCT_COMPLETE_TYPE.get(task["complete_pct_type"], _text(task["complete_pct_type"]))),
                 ("Calendar", calendar),
-                ("Activity codes", " · ".join(code_text) or "–"),
+                ("Task codes", " · ".join(code_text) or "–"),
             ],
         ),
         (
@@ -135,7 +139,7 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
             [
                 ("Primary constraint", _constraint(task["cstr_type"], task["cstr_date"])),
                 ("Secondary constraint", _constraint(task["cstr_type2"], task["cstr_date2"])),
-                ("Hard constraint", _yes(task["has_hard_constraint"])),
+                (HARD_CONSTRAINT_LABEL, _yes(task["has_hard_constraint"])),
             ],
         ),
     ]
@@ -192,7 +196,7 @@ def show_card(snapshot, task_code: str) -> None:
     if len(rows) != 1:
         st.warning(
             f"Task ID {ui.md_text(task_code)} is on {len(rows)} rows of this update: no card is drawn, "
-            "an Activity ID names one activity of a project.",
+            "a Task ID names one task of a project.",
             icon=":material/warning:",
         )
         return
@@ -244,9 +248,9 @@ def show_history(store, task_code: str) -> None:
     dates_column, float_column = st.columns(2, gap="large")
     with dates_column:
         ui.section("Forecast start and finish")
-        st.plotly_chart(build_activity_dates(history), width="stretch")
+        ui.chart(build_activity_dates(history))
     with float_column:
         ui.section("Total float (working days)")
-        st.plotly_chart(build_activity_float(history), width="stretch")
+        ui.chart(build_activity_float(history))
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history")

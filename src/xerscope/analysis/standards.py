@@ -32,6 +32,8 @@ from pathlib import Path
 from .rules import COMPARE, RULES, Unit
 
 _TARGET = re.compile(r"^\s*(<=|>=|==|<|>)\s*(-?\d+(?:\.\d+)?)\s*(%?)\s*$")
+# A metric id names memo keys, CSV columns and the `--flagged` files (<file>_<id>.csv): no separator
+_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 UNITS = {"%", "ratio", "count", "days", "pass/fail"}
 
 
@@ -86,16 +88,25 @@ class Standard:
 
 
 def parse_target(text: str | None, unit: str) -> tuple[str | None, float | None]:
+    """``target`` as (comparator, threshold): None for an informational metric. 'pass' is the only
+    target of a pass/fail rule (the rule's 1 or 0 against 1), and a number never is."""
     if text is None or str(text).strip().lower() in ("", "info"):
         return None, None
     if str(text).strip().lower() == "pass":
+        if unit != "pass/fail":
+            raise ValueError(f"target 'pass' needs unit 'pass/fail', the metric unit is {unit!r}")
         return "==", 1.0
     m = _TARGET.match(str(text))
     if not m:
         raise ValueError(f"target {text!r}: write e.g. '<= 5%', '>= 0.95', '== 0' or 'pass'")
+    if unit == "pass/fail":
+        raise ValueError(f"target {text!r}: a pass/fail metric takes 'pass' or 'info'")
     if m.group(3) and unit != "%":
         raise ValueError(f"target {text!r} is a percentage but the metric unit is {unit!r}")
     return m.group(1), float(m.group(2))
+
+
+_TEXT_KEYS = ("id", "name", "rule", "description", "unit", "target", "source", "group")
 
 
 def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric:
@@ -103,12 +114,19 @@ def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric
     for key in ("id", "name", "rule"):
         if key not in entry:
             raise ValueError(f"missing {key!r}")
+    for key in _TEXT_KEYS:
+        if key in entry and not isinstance(entry[key], str):
+            raise ValueError(f"{key} must be a string, got {entry[key]!r}")
+    if not _ID.match(entry["id"]):
+        raise ValueError(f"id {entry['id']!r}: letters, digits, '.', '_' and '-' only")
     if entry["id"] in seen_ids:
         raise ValueError("duplicate id")
     seen_ids.add(entry["id"])
     if entry["rule"] not in RULES:
         raise ValueError(f"unknown rule {entry['rule']!r}; available: {sorted(RULES)}")
     rule = RULES[entry["rule"]]
+    if not isinstance(entry.get("params", {}), dict):
+        raise ValueError(f'params must be a table, e.g. params = {{ exclude = ["complete"] }}, got {entry["params"]!r}')
     params = dict(entry.get("params", {}))
     rule.validate(params)
     unit = entry.get("unit", rule.unit)
@@ -139,13 +157,23 @@ def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric
 
 
 def parse_standard(data: dict, path: str = "") -> Standard:
+    """The TOML document checked, shape first (every error is a ValueError naming the file and
+    the key, so a wrong file is reported by the app and the CLI instead of crashing them)."""
     where = path or "standard"
     head = data.get("standard")
     if not isinstance(head, dict) or "id" not in head or "name" not in head:
         raise ValueError(f"{where}: needs a [standard] table with id and name")
+    for key in ("id", "name", "description", "source"):
+        if key in head and not isinstance(head[key], str):
+            raise ValueError(f"{where}: [standard] {key} must be a string, got {head[key]!r}")
+    entries = data.get("metric", [])
+    if not isinstance(entries, list):
+        raise ValueError(f"{where}: 'metric' must be an array of tables ([[metric]]), got {entries!r}")
     metrics = []
     seen_ids: set[str] = set()
-    for number, entry in enumerate(data.get("metric", []), start=1):
+    for number, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{where}: metric #{number}: expected a [[metric]] table, got {entry!r}")
         try:
             metrics.append(_parse_metric(entry, head["name"], seen_ids))
         except ValueError as exc:
@@ -174,6 +202,8 @@ def loads_standard(text: str | bytes, name: str = "uploaded.toml") -> Standard:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ValueError(f"{name}: invalid TOML: {exc}") from None
+    except RecursionError:  # thousands of nested inline tables: tomllib recurses once per level
+        raise ValueError(f"{name}: TOML too deeply nested") from None
     return parse_standard(data, name)
 
 

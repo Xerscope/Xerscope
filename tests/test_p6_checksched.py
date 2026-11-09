@@ -209,33 +209,39 @@ def _listed(result) -> set:
     return set(flagged["task_code"]) if "task_code" in flagged else set()
 
 
+@pytest.mark.oracle("p6")
 def test_the_p6_standard_has_the_lines_of_the_report():
     assert [metric.id for metric in STANDARDS["P6"].metrics] == list(REPORT_COUNTS)
 
 
+@pytest.mark.oracle("p6")
 @pytest.mark.parametrize("metric_id", list(REPORT_COUNTS))
 def test_check_schedule_counts_match_the_p6_26_report(checksched, metric_id):
     result = run_metric(STANDARDS["P6"][metric_id], checksched)
     assert (result.numerator, result.denominator) == REPORT_COUNTS[metric_id]
 
 
+@pytest.mark.oracle("p6")
 @pytest.mark.parametrize("metric_id", list(REPORT_LISTS))
 def test_check_schedule_lists_match_the_p6_26_report(checksched, metric_id):
     result = run_metric(STANDARDS["P6"][metric_id], checksched)
     assert _listed(result) == REPORT_LISTS[metric_id]
 
 
+@pytest.mark.oracle("p6")
 def test_late_activities_variance_matches_the_report(checksched):
     result = run_metric(STANDARDS["P6"]["P6-12"], checksched)
     variance_wd = dict(zip(result.flagged["task_code"], result.flagged["finish_variance_wd"], strict=True))
     assert {code: -8 * days for code, days in variance_wd.items()} == REPORT_FINISH_VARIANCE_HOURS
 
 
+@pytest.mark.oracle("p6")
 def test_the_recalculation_reproduces_p6s_f9(checksched):
     result = run_metric(STANDARDS["INTEGRITY"]["INT-01"], checksched)
     assert result.numerator == 0 and result.denominator == 13
 
 
+@pytest.mark.oracle("p6")
 @pytest.mark.parametrize("metric_id", list(LOG_LISTS))
 def test_integrity_lists_match_the_p6_26_scheduling_log(checksched, metric_id):
     result = run_metric(STANDARDS["INTEGRITY"][metric_id], checksched)

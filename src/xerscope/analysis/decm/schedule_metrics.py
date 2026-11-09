@@ -60,8 +60,9 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     Excludes: completed tasks, level of effort.
     Open start: a task whose predecessors are only FF / SF, or none; a milestone with no predecessor.
         Open finish: a task whose successors are only SS / SF, or none; a milestone with no successor.
-    Exempt: the earliest baseline start (start test) and the latest baseline finish (finish test); the
-        planned dates when no baseline is loaded.
+    Exempt: the earliest baseline start (start test) and the latest baseline finish (finish test) of the
+        whole IMS, LOE and finished activities included, every activity tied with it too; the planned
+        dates when no baseline is loaded or when the update is its own baseline.
 
     06A204b: open start = only FF/SF or no predecessor (milestone: none); open finish = only SS/SF or no
     successor (milestone: none); earliest baseline start / latest baseline finish exempt
@@ -73,15 +74,23 @@ def decm_06a204b_dangling_logic(context) -> RuleOutput:
     external_predecessor, external_successor = tasks["has_external_pred"], tasks["has_external_succ"]
     has_predecessor = codes.isin(relationships["succ_code"]) | external_predecessor
     has_successor = codes.isin(relationships["pred_code"]) | external_successor
-    driven_start = has_driving_predecessor(codes, relationships) | external_predecessor
-    drives_finish = has_driving_successor(codes, relationships) | external_successor
+    # a link to another project counts by its type, as a link within the project does (block 9)
+    driven_start = has_driving_predecessor(codes, relationships) | tasks["has_external_driving_pred"]
+    drives_finish = has_driving_successor(codes, relationships) | tasks["has_external_driving_succ"]
     milestone = tasks["is_milestone"]
     open_start = (~has_predecessor).where(milestone, ~driven_start)
     open_finish = (~has_successor).where(milestone, ~drives_finish)
 
-    # The project's first start and last finish are looked up over every activity, finished ones
-    # included: once the first activity is done, the next one in line is not the project start.
-    frame = (context.baseline or Baseline.planned(context.snapshot)).frame
+    # The project's first start and last finish are looked up over every activity of the baseline, LOE
+    # and finished ones included (block 9: "earliest baseline start date in the IMS"): once the first
+    # activity is done, the next one in line is not the project start. Ties share the exemption.
+    # An update that is its own baseline gives its planned dates, as P6's BL Project Start / Finish do
+    # (docs/standards.md, R1; EPPM 47222, BL1 Start "is set to the planned start date"), not the actual
+    # start of its started activities.
+    baseline = context.baseline
+    if baseline is None or baseline.snapshot is context.snapshot:
+        baseline = Baseline.planned(context.snapshot)
+    frame = baseline.frame
     is_first = codes.map(frame["bl_start"]) == frame["bl_start"].min()
     is_last = codes.map(frame["bl_finish"]) == frame["bl_finish"].max()
     open_start &= ~as_flag(is_first)
@@ -221,7 +230,12 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
         once the predecessor has finished, a successor that started before it is no longer out of
         sequence, as in P6's own check).
     Actual dates first, else forecast; lags are not added, so a lead that lets work overlap is also an
-        out-of-sequence condition.
+        out-of-sequence condition. A level of effort predecessor counts like any other.
+
+    UNRESOLVED: v8.0 block 10 takes "all the finish-to-start relationships in the IMS containing an
+    incomplete predecessor task/activity or milestone" and says nothing of LOE, so an LOE predecessor
+    is kept; an LOE -> discrete link is also what 06A210a counts, and an LOE finishing with the work it
+    spans puts its started successors out of sequence.
 
     06A212a: X = 0; FS (S.AS|S.FS) < P.FF, SS (S.AS|S.FS) < P.FS, FF (S.AF|S.FF) < P.FF, SF (S.AF|S.FF) <
     P.FS
@@ -397,18 +411,27 @@ def decm_06a506a_actual_dates_after_status_date(context) -> RuleOutput:
 def decm_06a506b_forecast_dates_before_status_date(context) -> RuleOutput:
     """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
+    Excludes: completed tasks.
 
-    06A506b: X = 0, forecast on or before the status date (= before P6's status date); an incomplete
-    task is flagged when its start (not started) or its finish is before the status date
+    06A506b: X = 0; an incomplete task is flagged when its forecast start (not started) or its forecast
+    finish is on or before the status date, which is P6's data date (IPMR DID §3.7.1.3.5.13: "The
+    progress line is the date on which the schedule is statused, also known as "time-now," "data
+    date," or "status date.""). v8.0 block 6: "X = Count of incomplete tasks/activities & milestones
+    with either forecast start or forecast finish on or before the status date"; history: "v8.0 Updated
+    to include on or before status date 5, 6, 10". A not-started task whose remaining start is the data
+    date is flagged. UNRESOLVED: block 10 step 3 still reads "forecast finish dates before the status
+    date", and 06A506c (v8.0, no change) treats invalid as "< Status Date"; block 6 is applied.
+    Block 9 reads incomplete as "no actual finish date in the IMS": a completed task has no forecast to
+    check and is out of the population
     """
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
-    funnel = activity_funnel(context.snapshot)
+    funnel = activity_funnel(context.snapshot).exclude("complete", "DECM 8.0")
     tasks = funnel.rows
-    flagged = tasks[forecast_before(tasks, data_date)]
+    flagged = tasks[forecast_before(tasks, data_date, include_data_date=True)]
     return RuleOutput(
-        flagged_activities(flagged, reason="forecast before status date"),
+        flagged_activities(flagged, reason="forecast on or before status date"),
         len(flagged),
         len(tasks),
         checked=tasks,
@@ -439,6 +462,12 @@ def decm_06a506c_riding_status_date(
     not-started task rides when its forecast start is within the riding window of the status date in
     both; a started one when its remaining duration moved by no more than the tolerance (its finish
     slides with the status date)
+
+    v8.0 block 10, step 3: forecast starts "within 3 working days" "(5 calendar days) of the status
+    date", the calendar days restating the working days, not a second criterion; step 4: started work
+    whose "remaining duration value has remained consistent within +/- 2 working days".
+    UNRESOLVED: block 6 counts Y as "Total count of incomplete tasks/activities & milestones" of the
+    current update; here Y leaves out level of effort and the tasks absent from the earlier update
     """
     previous = _update_a_period_ago(context, status_period_days)
     if previous is None:

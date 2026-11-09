@@ -64,22 +64,24 @@ from .standards import Metric
 PV_COST_WORKING_TIME = True
 
 
+# PROJWBS.ev_compute_type -> technique key. Only EC_Cmp_pct is read from P6 exports (the reference
+# corpus holds no other value); the four others are the codes the tests use, to confirm on an
+# export with one WBS per technique. A code outside the table is "unknown", never guessed.
+EV_TECHNIQUES = {
+    "EC_Cmp_pct": "activity",
+    "EC_0_100": "0/100",
+    "EC_50_50": "50/50",
+    "EC_User_pct": "custom",
+    "EC_WBS_pct": "wbs_milestones",
+}
+# techniques earned with the activity % complete in place of the WBS's, and listed as such
+NOT_MODELLED_TECHNIQUES = ("wbs_milestones", "unknown")
+
+
 def ev_technique(code: object) -> str:
-    """PROJWBS.ev_compute_type -> technique key (EC_Cmp_pct = activity % complete)."""
-    text = str(code or "").strip().lower()
-    if text in ("", "nan", "none") or "cmp" in text:
-        return "activity"
-    if "user" in text or "custom" in text:
-        return "custom"
-    if "50" in text:
-        return "50/50"
-    if "wbs" in text or "mile" in text:
-        return "wbs_milestones"
-    if "crv" in text or "curve" in text or "rsrc" in text:
-        return "resource_curves"
-    if "0" in text:
-        return "0/100"
-    return "activity"
+    """PROJWBS.ev_compute_type -> technique key; blank = activity % complete (P6 default)."""
+    text = "" if code is None or (isinstance(code, float) and np.isnan(code)) else str(code).strip()
+    return "activity" if text == "" else EV_TECHNIQUES.get(text, "unknown")
 
 
 # PROJWBS.ev_etc_compute_type values found in the reference files; any other value is shown as it is.
@@ -158,20 +160,22 @@ class _Spread:
     def build(
         cls, snapshot: Snapshot, frame: pd.DataFrame, hours: str, start: str, finish: str, calendar: str
     ) -> _Spread:
-        rows = frame[(frame[hours] > 0) & frame[start].notna() & frame[finish].notna()]
+        rows = frame[(frame[hours] != 0) & frame[start].notna() & frame[finish].notna()]
         spread = cls()
         if rows.empty:
             return spread
-        first_day, last_day = rows[start].min().date(), rows[finish].max().date()
+        dates = pd.concat([rows[start], rows[finish]])
+        first_day, last_day = dates.min().date(), dates.max().date()
         for calendar_id, group in rows.groupby(rows[calendar].fillna(""), sort=False):
             axis = TimeAxis(snapshot.calendar(calendar_id), first_day, last_day)
             work_starts, work_finishes = axis.work_many(group[start]), axis.work_many(group[finish])
-            work_starts, work_finishes = np.minimum(work_starts, work_finishes), np.maximum(work_starts, work_finishes)
             group_hours = group[hours].to_numpy(float)
-            instant = work_finishes == work_starts
+            # as _elapsed (Schedule %): a span of zero or negative working time (finish not after start)
+            # is all at once at its finish
+            instant = work_finishes <= work_starts
             if (~instant).any():
                 spread.groups.append((axis, work_starts[~instant], work_finishes[~instant], group_hours[~instant]))
-            if instant.any():  # all at once when its (single) instant is reached
+            if instant.any():
                 spread.steps.append((group[finish].to_numpy("datetime64[ns]")[instant], group_hours[instant]))
         return spread
 
@@ -187,22 +191,31 @@ class _Spread:
         return total
 
 
-def _pv_spread(baseline: Baseline) -> _Spread:
-    return _Spread.build(baseline.snapshot, baseline.frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
+def pv_curve(baseline: Baseline, snapshot: Snapshot | None = None) -> pd.DataFrame:
+    """Cumulative planned labour hours of the baseline at instants: every midnight from the first
+    EV start's day to the day after the last EV finish, and ``snapshot``'s data date when given.
+    ``pv_cum_hr`` is the PV at ``date``; ``pv_hr`` the hours planned since the previous row.
 
-
-def pv_curve(baseline: Baseline) -> pd.DataFrame:
-    """Daily and cumulative planned labour hours of the baseline (cumulative = end of day), every
-    baseline activity: the plan itself. An update's PV (``ev_point``) leaves out the activities it
-    no longer holds."""
+    Population: with ``snapshot``, the baseline activities the update holds, as ``ev_point``: the
+    curve at the data date is the update's PV, ``pv_pct`` is over its BAC and the curve ends at that
+    BAC (less the hours of activities without both EV dates, which never earn PV). Without, every
+    baseline activity: the plan itself, ``pv_pct`` over ``baseline.bac_hours``."""
     frame = baseline.frame
-    frame = frame[(frame["ev_labor_hr"] > 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
+    bac = baseline.bac_hours
+    if snapshot is not None:
+        frame = frame[frame.index.isin(snapshot.by_code.index)]
+        bac = float(frame["ev_labor_hr"].sum())
+    frame = frame[(frame["ev_labor_hr"] != 0) & frame["ev_start"].notna() & frame["ev_finish"].notna()]
     if frame.empty:
         return pd.DataFrame(columns=["date", "pv_hr", "pv_cum_hr", "pv_pct"])
-    days = pd.date_range(frame["ev_start"].min().normalize(), frame["ev_finish"].max().normalize(), freq="D")
-    curve = pd.DataFrame({"date": days, "pv_cum_hr": _pv_spread(baseline).at(days + pd.Timedelta(days=1))})
+    dates = pd.concat([frame["ev_start"], frame["ev_finish"]])  # a finish before its start: _Spread
+    first, last = dates.min().normalize(), dates.max().normalize() + pd.Timedelta(days=1)
+    instants = pd.date_range(first, last, freq="D")
+    if snapshot is not None and snapshot.data_date is not None:
+        instants = instants.union([snapshot.data_date])
+    spread = _Spread.build(baseline.snapshot, frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
+    curve = pd.DataFrame({"date": instants, "pv_cum_hr": spread.at(instants)})
     curve["pv_hr"] = curve["pv_cum_hr"].diff().fillna(curve["pv_cum_hr"])
-    bac = baseline.bac_hours
     curve["pv_pct"] = 100 * curve["pv_cum_hr"] / bac if bac else np.nan
     return curve[["date", "pv_hr", "pv_cum_hr", "pv_pct"]]
 
@@ -265,7 +278,8 @@ def planned_value_cost(baseline: Baseline, when: pd.Timestamp) -> pd.Series:
 
 
 PV_LABOR_COLUMNS = [
-    "data_date", "activities", "assignments", "labor_assignments", "labor_assignments_with_curve",
+    "data_date", "ev_basis", "baseline_activities", "activities", "deleted_activities",
+    "assignments", "labor_assignments", "labor_assignments_with_curve",
     "bl_hr_with_curve", "bac_activity_hr", "bac_assignment_hr", "pv_activity_hr", "pv_assignment_hr", "gap_hr",
     "pv_calendar_time_hr", "pv_end_of_day_hr", "pv_calendar_time_end_of_day_hr",
 ]  # fmt: skip
@@ -277,14 +291,17 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
     """Diagnostic, not used by any KPI: planned value labour units by activity (``earned`` pv_hr)
     against the same by assignment, at the data date.
 
-    By assignment (P6 Pro 26 glossary, "Planned Value Labor Units"): Σ ``target_qty`` of the
-    labour assignments x the share of their own start-to-finish elapsed, with the convention of the
+    By assignment: Σ ``target_qty`` of the labour assignments x the share of their own
+    start-to-finish elapsed, with the convention of the
     PV cost (``PV_COST_WORKING_TIME``); an activity without labour assignment keeps its activity
-    value. The glossary's resource-curve distribution is not modelled; assignments naming a curve
+    value. Not the P6 24 glossary ("Planned Value Labor Units"), which takes the activity's
+    Schedule % for assignments without a curve (docs/backlog.md): a diagnostic, to detect curves
+    and assignment dates. The curve distribution is not modelled; assignments naming a curve
     are counted. ``gap_hr`` = assignment - activity. Variants of the activity value, to tell which
     convention P6 uses: ``pv_calendar_time_hr`` (Schedule % in calendar time, the glossary writes a
     date difference), ``pv_end_of_day_hr`` (working time, at the end of the data date's day) and
-    both together. Baseline activities the update holds, as ``ev_point``. Returns the totals (one
+    both together. Baseline activities the update holds, as ``ev_point`` (``activities``, of
+    ``baseline_activities``; ``deleted_activities`` left out), on ``ev_basis``. Returns the totals (one
     row) and the split by Schedule % (0 not started, 100 complete). No activity code in either.
     """
     if baseline is None or snapshot.data_date is None:
@@ -316,7 +333,10 @@ def pv_labor_check(snapshot: Snapshot, baseline: Baseline | None) -> tuple[pd.Da
         [
             {
                 "data_date": snapshot.data_date,
+                "ev_basis": baseline.ev_basis,
+                "baseline_activities": len(baseline.frame),
                 "activities": len(values),
+                "deleted_activities": len(baseline.frame) - len(values),
                 "assignments": len(costs),
                 "labor_assignments": len(labor),
                 "labor_assignments_with_curve": len(curved),
@@ -648,8 +668,8 @@ def ev_point(snapshot: Snapshot, baseline: Baseline) -> EvPoint:
     current = earned_values[earned_values["in_snapshot"]]
     deleted = earned_values[~earned_values["in_snapshot"]]
     activities = snapshot.activities
-    unbaselined = sorted(set(activities["task_code"]) - set(baseline.frame.index))
-    on_fallback = current["ev_technique"].isin(["wbs_milestones", "resource_curves"])
+    unbaselined = baseline.unbaselined(snapshot)
+    on_fallback = current["ev_technique"].isin(NOT_MODELLED_TECHNIQUES)
     curves = baseline.assignment_costs
     curve_codes = set(curves.loc[curves["curve"].astype(bool), "task_code"]) & set(current.index)
     return EvPoint(
@@ -680,9 +700,9 @@ def evm_series(store: SnapshotStore, baseline: Baseline, link_by_guid: bool = Fa
 
 
 def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
-    """Cumulative hours, one row per day from the data date's day to the last finish: AC
-    plus the remaining hours of open work spread over working time to each activity's
-    finish. As in ``pv_curve``, a row names a day and holds the cumulative at its end."""
+    """Cumulative hours at the data date (AC) then at every midnight to the day after the last
+    finish: AC plus the remaining hours of open work spread over working time to each activity's
+    finish. As in ``pv_curve``, a row holds the value at its instant."""
     activities = snapshot.activities
     open_work = activities[~activities["is_complete"]].copy()
     data_date = snapshot.data_date
@@ -696,10 +716,12 @@ def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:
     )
     with_remaining = open_work[(open_work["labor_remaining_hr"] > 0) & open_work["fc_finish"].notna()]
     if with_remaining.empty:
-        return pd.DataFrame({"date": [data_date.normalize()], "fc_cum_hr": [actual_hr]})
-    days = pd.date_range(data_date.normalize(), with_remaining["fc_finish"].max().normalize(), freq="D")
+        return pd.DataFrame({"date": [data_date], "fc_cum_hr": [actual_hr]})
+    day = pd.Timedelta(days=1)
+    midnights = pd.date_range(data_date.normalize() + day, with_remaining["fc_finish"].max().normalize() + day)
+    instants = midnights.union([data_date])
     spread = _Spread.build(snapshot, with_remaining, "labor_remaining_hr", "fc_start", "fc_finish", "clndr_id")
-    return pd.DataFrame({"date": days, "fc_cum_hr": actual_hr + spread.at(days + pd.Timedelta(days=1))})
+    return pd.DataFrame({"date": instants, "fc_cum_hr": actual_hr + spread.at(instants)})
 
 
 def bei_series(

@@ -13,6 +13,9 @@ name: image
 # settings > Personal access tokens, Read & Write) and the repository variable
 # DOCKERHUB_IMAGE_OWNER (the Docker Hub account the image is named after; a variable, not a
 # secret, so the image name is not masked in the logs); skipped when any is absent.
+# Each push carries BuildKit's SLSA provenance and an SBOM (build-push-action) and a GitHub
+# build-provenance attestation of the digest (actions/attest-build-provenance), so a puller
+# can check which commit and workflow built the image: docs/deploy.md §7.
 # Nothing is published from a fork: the job runs only in this repository.
 on:
   push:
@@ -26,11 +29,15 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   publish:
     if: github.repository == 'Xerscope/xerscope'
+    permissions:
+      contents: read
+      packages: write                             # push the images and the attestation to ghcr.io
+      id-token: write                             # OIDC token behind the provenance attestation (Sigstore)
+      attestations: write                         # store it with the repository's attestations
     strategy:
       fail-fast: false                              # one image failing does not cancel the other
       matrix:
@@ -66,12 +73,25 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=sha
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # SLSA provenance (BuildKit's in-toto statement, mode=max: source, materials, parameters)
+          # and an SPDX SBOM, both attached to the image's manifest in the registry
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      # GitHub's own build provenance for the pushed digest (verify: gh attestation verify
+      # oci://ghcr.io/xerscope/<image>@sha256:<digest> --owner Xerscope). The Docker Hub copy
+      # shares the digest, so one attestation covers both; docs/deploy.md §7.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/xerscope/${{ matrix.image }}   # lowercase, as metadata-action names it
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

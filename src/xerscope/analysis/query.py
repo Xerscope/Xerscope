@@ -12,7 +12,10 @@ a filter the parser picks is a set the user could have built by hand.
 
 from __future__ import annotations
 
-from .ask.answer import SUGGEST, WORDS, answer, language, suggestions
+import pandas as pd
+
+from ..xer import Snapshot
+from .ask.answer import SUGGEST, WORDS, answer, language, suggestions, worst_float_first
 from .ask.bench import (
     FIELDS,
     by_confidence,
@@ -34,14 +37,45 @@ from .ask.lexicon import CURATED, GENERATED, SUGGESTED, Lexicon, json_quote, lea
 from .ask.parser import MAX_CHARS, parse_keywords
 from .ask.text import FUZZY, MARGIN, MAX_FUZZY, SURE, fold
 from .ask.vocab import Vocabulary, vocabulary
+from .populations import Funnel
 
 __all__ = [
     "CATEGORIES", "CURATED", "GENERATED", "SUGGESTED",
     "FIELDS", "FUZZY", "MARGIN", "MAX_CHARS", "MAX_FUZZY", "STATUSES", "SUGGEST", "SURE", "WORDS", "And", "Atom",
     "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "answer", "apply", "by_confidence",
-    "canonical", "conjuncts", "coverage", "expected_filter", "fold", "funnel_line",
+    "canonical", "conjuncts", "coverage", "expected_filter", "facts", "fold", "funnel_line",
     "json_quote", "language", "learn", "lexicon_from_groups", "load_cases", "load_lexicon", "mask", "parse_keywords",
     "ratios", "said", "score", "self_cases",
     "suggestions", "understood", "vocabulary", "without", "written", "variants", "lexicons",
     "load_variants", "variant_counts", "variants_toml", "load_refusals", "refuse", "near_spellings",
+    "worst_float_first",
 ]  # fmt: skip
+
+
+# --- what an answer computed: the funnel and the worst floats ------------------------------
+
+FACT_ROWS = 10  # activities listed: the worst floats first
+
+
+def facts(funnel: Funnel, snapshot: Snapshot, limit: int = FACT_ROWS) -> dict:
+    """What an answer computed: the funnel's steps and counts, the rows with the worst total
+    float (Activity ID, float in working days, finish date), and the
+    successors of the worst one. Values computed by xerscope, never a name, never the file."""
+    rows = funnel.rows
+    ordered = worst_float_first(rows).head(limit)
+    listed = [
+        [str(code), None if pd.isna(tf) else float(tf), None if pd.isna(finish) else f"{finish:%Y-%m-%d}"]
+        for code, tf, finish in zip(ordered["task_code"], ordered["total_float_d"], ordered["finish"], strict=True)
+    ]
+    worst = listed[0][0] if listed else None
+    successors: list[str] = []
+    if worst is not None and not snapshot.relationships.empty:
+        links = snapshot.relationships
+        successors = sorted(set(links.loc[links["pred_code"] == worst, "succ_code"].astype(str)))[:5]
+    return {
+        "count": int(len(rows)),
+        "steps": [[step.label, int(step.left)] for step in funnel.steps],
+        "rows": listed,
+        "successors_of_worst": successors,
+        "data_date": None if snapshot.data_date is None else f"{snapshot.data_date:%Y-%m-%d}",
+    }
