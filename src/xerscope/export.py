@@ -19,6 +19,7 @@ from typing import Literal
 import pandas as pd
 
 from .config import DATETIME_FMT
+from .csv_safe import csv_safe
 from .store import SnapshotStore
 
 Fmt = Literal["parquet", "csv"]
@@ -38,8 +39,11 @@ CSV_FLOAT_FORMAT = "%.4f"  # hours to the minute (0.0167 h): no float noise (123
 
 def csv_bytes(frame: pd.DataFrame, *, index: bool = False) -> bytes:
     """The one CSV writer of xerscope (app downloads, plain or anonymised, alone or zipped; Power BI
-    tables; CLI files): UTF-8 with BOM (Excel), floats to 4 decimals, dates as P6 writes them."""
-    return frame.to_csv(index=index, float_format=CSV_FLOAT_FORMAT, date_format=DATETIME_FMT).encode("utf-8-sig")
+    tables; CLI files): UTF-8 with BOM (Excel), floats to 4 decimals, dates as P6 writes them; csv_safe
+    keeps a text cell of the file from running as a formula."""
+    return (
+        csv_safe(frame).to_csv(index=index, float_format=CSV_FLOAT_FORMAT, date_format=DATETIME_FMT).encode("utf-8-sig")
+    )
 
 
 def _bytes(df: pd.DataFrame, fmt: Fmt) -> bytes:

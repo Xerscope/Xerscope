@@ -15,7 +15,7 @@ import pandas as pd
 
 from .config import DATE_FMT
 from .xer import Snapshot, load_snapshot, xer_files
-from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL
+from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL, projects_text
 
 # The columns of fact_activity, in the order Power BI users know them: a subset of the model's
 # TASK_COLS + LABOR_COLS (tests/test_store.py checks it). Left out on purpose, the internal keys
@@ -79,6 +79,8 @@ class DuplicateDataDate(ValueError):
 class SnapshotStore:
     def __init__(self, snapshots: Iterable[Snapshot]):
         snaps = sorted(snapshots, key=_sort_key)
+        if not snaps:
+            raise ValueError("no snapshot")
         # One update per data date: the weekly series, the earned-value and health histories
         # are keyed on it. Files sharing a data date are usually versions of one draft or an
         # update and its baseline copy; which one is the update is the user's call, not the
@@ -159,7 +161,7 @@ class SnapshotStore:
                     "file": s.source,
                     "project": s.project_code,
                     "selected_by": s.selected_by,
-                    "projects_in_file": " · ".join(f"{code} ({n})" for code, n in s.project_task_counts.items()),
+                    "projects_in_file": projects_text(s),
                     "data_date": s.data_date,
                     "data_date_from": s.data_date_source,
                     "baseline": s.file_baseline.text,

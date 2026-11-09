@@ -31,7 +31,7 @@ CLICK_KEY = "gantt_clicked"  # the Activity ID of a click in the chart, until th
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
-GANTT_HEIGHT = 680  # px; the chart scrolls inside
+GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
 
 store = require_store()
@@ -376,5 +376,7 @@ with st.expander("Table view"):
         "labor_budget_hr",
         "constraint",
     ]
-    ui.table(tasks, columns=table_columns)
+    # a finished task has no float or remaining duration: a dash, not "None"
+    shown, overrides = ui.numbers_as_text(tasks[table_columns], ["total_float_d", "remaining_d"])
+    ui.table(shown, overrides=overrides)
     csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))

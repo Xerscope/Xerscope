@@ -32,6 +32,7 @@ from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
 from xerscope.app.state import BL_FILE, BL_PLANNED, anonymizers_built
+from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
@@ -369,7 +370,7 @@ def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_di
 
 def _costed_week(tmp_path, cost: str = "5000"):
     """A (cost 5000, 50 % complete) over Mon-Fri, data date Wednesday 08:00: PV cost 5000 x 0.4 = 2000,
-    EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
+    EV cost 5000 x 0.5 = 2500, SPI 1.25; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
     A second assignment without cost makes the count 1 of 2."""
     week = dict(
         target_start_date="2026-03-02 08:00",
@@ -398,14 +399,14 @@ def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
     _costs(at, True)
-    assert next(m for m in at.metric if m.label == "SPI").value == "1.250"
+    assert next(m for m in at.metric if m.label == "SPI").value == "1.25"
     assert not any("Costs ignored" in text for text in _caption_texts(at))
     table = _ev_table(at)
     assert table.loc["BAC cost"].iloc[-1] == "5,000.0"
     assert table.loc["PV cost"].iloc[-1].startswith("2,000.0")
     assert table.loc["EV cost"].iloc[-1].startswith("2,500.0")
     assert table.loc["SPI", "P6 column"] == "Schedule Performance Index"
-    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.250"
+    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.25"
 
 
 def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monkeypatch):
@@ -414,7 +415,7 @@ def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monk
     at.switch_page("views/earned_value.py").run()
     _ok(at)
     labour = next(m for m in at.metric if m.label == "SPI (labor units)")
-    assert labour.value == "1.250"
+    assert labour.value == "1.25"
     assert [m.label for m in at.metric].index("SPI (labor units)") == 2
     assert (
         "Costs ignored: 1 of 2 assignments carry a cost in the file (resource prices). "
@@ -507,8 +508,8 @@ def test_ev_calculation_rows_add_up_as_shown(app):
         if shown["SPI (labor units)"].endswith("–"):
             continue
         ev, pv, spi = numbers["SPI (labor units)"]
-        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
-        assert spi == pytest.approx(ev / pv, abs=0.001), label
+        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 2  # SPI to 2 decimals, as BEI and EV / AC
+        assert spi == pytest.approx(ev / pv, abs=0.005), label
 
 
 def test_changelog_and_ppc_pick_weeks(app):
@@ -537,11 +538,15 @@ def test_the_app_skips_a_file_without_a_status_date(tmp_path, monkeypatch):
     ]
 
 
-def test_empty_state_explains_what_to_do(monkeypatch):
+def test_empty_state_explains_what_to_do_under_the_page_title(monkeypatch):
     monkeypatch.delenv("XERSCOPE_DATA", raising=False)
     at = AppTest.from_file(APP, default_timeout=60).run()
     _ok(at)
     assert any("xerscope sample" in i.value for i in at.info)
+    assert [title.value for title in at.title] == ["Overview"]
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    assert [title.value for title in at.title] == ["Debug"] and any("xerscope sample" in i.value for i in at.info)
 
 
 def _run(data_dir, monkeypatch, baseline=None):
@@ -768,6 +773,29 @@ def test_closing_the_window_without_done_reads_nothing(sample_dir, monkeypatch):
     assert files_line(at) == "Files · none read"
 
 
+def test_the_window_reopened_after_esc_shows_the_folder_and_its_files(sample_dir, monkeypatch):
+    """Esc leaves the folder field's key in the session state with an empty value (the browser's
+    doing, which AppTest does not reproduce: written here by hand): reopened, the window shows the
+    folder again, lists its files, and Select all then Done reads them."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    assert at.text_input(key="files_folder").value == str(sample_dir)
+    close_window(at)
+    at.session_state["files_folder"] = ""
+    at.run()
+    open_files(at)
+    _ok(at)
+    assert at.text_input(key="files_folder").value == str(sample_dir)
+    count = len(list(sample_dir.glob("*.xer")))
+    assert len(file_boxes(at)) == count
+    _button(at, "Select all").click()
+    at.run()
+    files_done(at)
+    _ok(at)
+    assert files_line(at) == f"Files · {count} files · 1 project"
+
+
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
     """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
     from xerscope.app import state
@@ -864,19 +892,52 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     assert files_line(at) == "Files · none read"
 
 
-def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path, monkeypatch):
+def test_select_all_ticks_one_file_per_data_date_and_the_list_names_the_double(sample_dir, tmp_path, monkeypatch):
+    """Two files of the folder share a status date: the list says which file the second doubles,
+    Select all ticks the first by name only, and Done reads the series."""
     files = sorted(sample_dir.glob("*.xer"))
-    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    for f in files[:2]:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    labels = {box.key.rsplit(":", 1)[-1]: box.label.replace("\u00a0", "") for box in file_boxes(at)}
+    assert f"— same date as {files[0].name}" in labels["zz-copy.xer"]
+    assert not any("same date as" in labels[f.name] for f in files[:2])
     _button(at, "Select all").click()
     at.run()
+    assert {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)} == {
+        files[0].name: True,
+        files[1].name: True,
+        "zz-copy.xer": False,
+    }
     files_done(at)
     _ok(at)
-    assert any(f"{files[0].name}, zz-copy.xer" in _shown(e.value) and "Untick" in e.value for e in at.sidebar.error)
-    assert files_line(at) == "Files · none read"
+    assert not at.sidebar.error and files_line(at) == "Files · 2 files · 1 project"
+
+
+def test_select_all_skips_unreadable_files_and_the_error_names_the_file_once(sample_dir, tmp_path, monkeypatch):
+    """An unreadable file is listed but Select all leaves it unticked; ticked by hand, its error
+    carries the file name once (the XerError already names its source)."""
+    files = sorted(sample_dir.glob("*.xer"))
+    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    (tmp_path / "garbage.xer").write_bytes(bytes(range(256)) * 4)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    _button(at, "Select all").click()
+    at.run()
+    ticked = {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)}
+    assert ticked == {files[0].name: True, "garbage.xer": False}
+    next(box for box in file_boxes(at) if box.key.endswith("garbage.xer")).check()
+    files_done(at)
+    _ok(at)
+    (error,) = [_shown(e.value) for e in at.sidebar.error]  # escaped for Markdown (#156)
+    assert error.startswith("garbage.xer: ") and error.count("garbage.xer") == 1
+    assert files_line(at) == "Files · 1 file · 1 project"
 
 
 @pytest.fixture
@@ -1047,7 +1108,7 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     )
     assert not set(flagged.astype(str).to_numpy().ravel()) & originals
     codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
-    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{12}").all()
 
     app.switch_page("views/export.py").run()
     next(b for b in app.button if b.label == "Build anonymized extract").click().run()
@@ -1095,7 +1156,7 @@ def _assert_anonymised(tables: dict, store, anonymous) -> None:
     assert anonymous.leaks(cells) == {}
     assert not cells & {name for name in names if len(name) >= 3}
     codes = pd.concat([table["task_code"].dropna() for table in tables.values() if "task_code" in table])
-    assert codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert codes.str.fullmatch(r"XA[0-9A-F]{12}").all()
 
 
 def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
@@ -1158,7 +1219,7 @@ def test_debug_block_6_lists_the_leveled_activities_anonymised(tmp_path, monkeyp
     tables = _debug_zip(at, downloads)
     assert any("1 open tasks have a remaining early start" in c.value for c in at.main.caption)
     leveling = tables["06_leveling.csv"]
-    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{12}").all()
     _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
 
 
@@ -1215,7 +1276,7 @@ def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, stor
     _ok(app)
     gantt = _csv(_download(app, downloads, "Download CSV · anonymized"))
     assert not set(gantt.astype(str).to_numpy().ravel()) & originals
-    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{12}").all()
 
     app.switch_page("views/export.py").run()
     _ok(app)
@@ -1519,7 +1580,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
     assert "wd on XA" in note  # the activity is named, by its new ID
     summary = _csv(_download(app, downloads, "Summary (CSV) · anonymized"))
     assert "wd on XA" in summary.loc[summary["id"] == "DCMA-12", "note"].iloc[0]
-    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{12}").all()
 
 
 def test_health_summary_file_gains_the_notes(app, store, downloads):
@@ -1528,7 +1589,8 @@ def test_health_summary_file_gains_the_notes(app, store, downloads):
     assert list(summary.columns[-2:]) == ["flagged", "note"]
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
-        assert (got if isinstance(got, str) else "") == result.note_with_baseline
+        expected = result.note_with_baseline  # a note starting with +/- is CSV-guarded (csv_safe)
+        assert (got if isinstance(got, str) else "") == csv_safe(pd.DataFrame({"n": [expected]}))["n"].iloc[0]
     assert "BL finish" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]
 
 
@@ -1743,6 +1805,82 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     assert not any("12 · App runtime" in e.label for e in at.expander)
     assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 12
     assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance
+
+
+# --- visual defects (Playwright campaign): what AppTest can see of each fix --------------------
+
+
+def test_audit_lists_every_standard_in_one_full_width_control(app):
+    """The segmented control stood in a narrow column and cut its labels: it is on a row of its
+    own, the Update and Check pickers under it."""
+    app.switch_page("views/audit.py").run()
+    _ok(app)
+    control = app.get("button_group")[0]
+    assert control.proto.label == "Standard"
+    names = [o.content for o in control.proto.options]
+    assert len(names) == 4 and "P6 Check Schedule" in names and "Integrity" in names
+
+
+def test_earned_value_vac_delta_starts_with_its_sign_and_indices_read_to_two_decimals(app):
+    """st.metric colours a delta by the sign it starts with: "VAC -648 h" read as a gain."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    metrics = {m.label: m for m in app.metric}
+    assert re.fullmatch(r"[+-][\d,]+ h", metrics["EAC"].delta), metrics["EAC"].delta
+    assert "VAC" in metrics["EAC"].proto.help
+    assert re.fullmatch(r"\d\.\d\d", metrics["SPI (labor units)"].value)
+    assert re.fullmatch(r"[+-]\d\.\d\d", metrics["SPI (labor units)"].delta)
+    series = next(d.value for d in app.dataframe if "spi" in d.value.columns)
+    assert series["spi"].iloc[0] == "–" and re.fullmatch(r"\d\.\d\d", series["spi"].iloc[-1])
+    assert "None" not in series.astype(str).to_numpy()
+
+
+def test_gantt_table_view_writes_a_dash_for_a_missing_float_and_shrinks_to_its_rows(app):
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    table = next(d.value for d in app.dataframe if "total_float_d" in d.value.columns)
+    assert "–" in set(table["total_float_d"]) and "None" not in table.astype(str).to_numpy()
+    data = _gantt_data(app)
+    opened = [r for r in data["rows"] if r["parent"] is None or r["parent"] in data["open"]]
+    assert len(opened) < 20 and data["height"] < 680  # a short tree takes less than the cap
+
+
+def test_charts_hide_the_plotly_mode_bar(app):
+    for page in ("views/overview.py", "views/earned_value.py", "views/ppc.py"):
+        app.switch_page(page).run()
+        _ok(app)
+        for chart in app.get("plotly_chart"):
+            assert json.loads(chart.proto.config) == {"displayModeBar": False}, page
+            assert "hoverlabel" in json.loads(chart.proto.spec)["layout"], page
+
+
+def test_health_names_each_group_once_and_offers_one_prepare_button(app):
+    app.switch_page("views/health.py").run()
+    _ok(app)
+    titles = [m.value for m in app.markdown if m.value.startswith("##### ")]
+    assert titles and len(titles) == len(set(titles)), titles
+    assert [b.label for b in app.button].count("Prepare anonymized downloads") == 1
+
+
+def test_changelog_offset_buttons_are_drawn_as_buttons(app):
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    for text in ("Previous", "4 back", "First"):
+        assert app.button(key=f"cl_from_{text}").proto.type == "secondary"
+
+
+def test_milestone_page_title_is_the_navigation_entry(app):
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    assert [t.value for t in app.title] == ["Milestone trend"]
+
+
+def test_score_cards_carry_the_whole_list_of_failed_checks_in_their_help(app):
+    app.switch_page("views/health.py").run()  # computes the P6 results
+    app.switch_page("views/overview.py").run()
+    _ok(app)
+    card = next(m for m in app.metric if m.label == "P6 Check Schedule score")
+    assert "evaluated" in card.delta and card.delta in card.proto.help.replace("\\", "")
 
 
 def test_overview_lists_a_period_across_midnight_under_limits(tmp_path, monkeypatch):

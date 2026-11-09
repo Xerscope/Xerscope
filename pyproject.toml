@@ -26,7 +26,9 @@ crosscheck = ["mpxj>=16.10.0", "jpype1>=1.7.1"]
 xerscope = "xerscope.cli:main"
 
 [dependency-groups]
+# hypothesis: property-based fuzzing of the XER boundary (tests/test_fuzz_parser.py), test time only
 dev = [
+    "hypothesis>=6.170.14",
     "pytest>=9.2.0",
     # code fitness (scripts/fitness.py): exact versions, the baseline it checks against holds
     # their numbers and a new release can score the same code differently

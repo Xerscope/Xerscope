@@ -143,7 +143,7 @@ def test_codes_follow_the_activity_across_files_whatever_their_order():
     backward = Anonymizer.from_raws([week_2, week_1], key=key)
     assert forward.codes["A"] == backward.codes["A"]
     assert set(forward.codes["A"]) == {"FDN-010", "FDN-020", "ROOF-1"}
-    assert all(re.fullmatch(r"XA[0-9A-F]{8}", code) for code in forward.codes["A"].values())
+    assert all(re.fullmatch(r"XA[0-9A-F]{12}", code) for code in forward.codes["A"].values())
     assert len(set(forward.codes["A"].values())) == 3
     names = parse_bytes(forward.xer(week_2)).table("TASK")[["task_code", "task_name"]].values.tolist()
     roof, fdn = forward.codes["A"]["ROOF-1"], forward.codes["A"]["FDN-010"]
@@ -170,27 +170,27 @@ def test_two_ids_on_one_new_code_are_refused(monkeypatch):
         Anonymizer.from_raws([raw])
 
 
-# Under this key the first draw of E1010 is XA69C30507: its hex digits spell the Activity ID C3050.
+# Under this key the first draw of E1010 is XA69C305070C59: its hex digits spell the Activity ID C3050.
 SPELLING_KEY = (488).to_bytes(32, "big")
 
 
 def test_a_code_spelling_an_original_id_is_drawn_again():
-    first = hmac.new(SPELLING_KEY, b"A:E1010", hashlib.sha256).hexdigest().upper()[:8]
-    assert first == "69C30507"
+    first = hmac.new(SPELLING_KEY, b"A:E1010", hashlib.sha256).hexdigest().upper()[:12]
+    assert first == "69C305070C59"
     raw = parse_text(_file([todo("E1010"), todo("C3050")]), source="w.xer")
     anonymizer = Anonymizer.from_raws([raw], key=SPELLING_KEY)
     text = anonymizer.xer(raw).decode()
     assert "C3050" not in text and "E1010" not in text
     new = anonymizer.codes["A"]["E1010"]
-    assert re.fullmatch(r"XA[0-9A-F]{8}", new) and new != "XA69C30507"
+    assert re.fullmatch(r"XA[0-9A-F]{12}", new) and new != "XA69C305070C59"
 
 
 def test_an_original_code_inside_a_field_is_refused():
     raw = parse_text(_file([todo("E1010"), todo("C3050")]), source="w.xer")
     anonymizer = Anonymizer.from_raws([raw])
     origin = anonymizer.secrets_["C3050"]  # TASK.task_code or TASK.task_name (xerkit names it by its code)
-    assert anonymizer.leaks(["XA69C30507", "Activity C3050"]) == {origin: 2}
-    anonymizer.codes["A"]["E1010"] = "XA69C30507"  # as the first draw under SPELLING_KEY
+    assert anonymizer.leaks(["XA69C305070C59", "Activity C3050"]) == {origin: 2}
+    anonymizer.codes["A"]["E1010"] = "XA69C305070C59"  # as the first draw under SPELLING_KEY
     with pytest.raises(LeakError, match=origin):
         anonymizer.xer(raw)
 

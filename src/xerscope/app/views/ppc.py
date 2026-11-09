@@ -240,7 +240,7 @@ with top:
 
 ppc = memo(("ppc", include_overdue), ppc_series, store, include_overdue, baseline=False)
 ui.section("Percent plan complete by week")
-st.plotly_chart(build_ppc(ppc, target), width="stretch")
+ui.chart(build_ppc(ppc, target))
 show_ppc_weeks(ppc)
 
 commitments = committed(previous, current, include_overdue)

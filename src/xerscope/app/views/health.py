@@ -124,7 +124,8 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
             sources=sources,
         )
     with trail_column:
-        if not trail.empty:
+        # the same files as the summary: its Prepare button readies this download too
+        if not trail.empty and downloads_ready(sources):
             front = ["check_id", "check", "check_status"]
             csv_download(
                 trail[front + [column for column in trail.columns if column not in front]],
@@ -302,14 +303,16 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
 def show_details(results, snapshot, only_failed: bool, sources: list[str], standard) -> None:
     ui.section("Detail by check")
     expand_all = st.toggle("Expand all", value=False, key="health_expand")
-    group = None
-    for result in results:
-        if only_failed and result.status != "fail":
-            continue
-        if result.metric.group and result.metric.group != group:
-            group = result.metric.group
+    shown = [result for result in results if not only_failed or result.status == "fail"]
+    # one title per group, the groups in order of first appearance, each check in the standard's
+    # order within its group (a standard may interleave its groups)
+    groups = list(dict.fromkeys(result.metric.group for result in shown))
+    for group in groups:
+        if group:
             st.markdown(f"##### {group}")
-        show_check(result, explain(result), snapshot, expand_all, sources, standard)
+        for result in shown:
+            if result.metric.group == group:
+                show_check(result, explain(result), snapshot, expand_all, sources, standard)
 
 
 def show_trend(store, standard) -> None:
@@ -328,15 +331,14 @@ def show_trend(store, standard) -> None:
     metric_ids = [metric.id for metric in standard.metrics]
     metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=partial(check_label, standard))
     metric = standard[metric_id]
-    st.plotly_chart(
+    ui.chart(
         build_metric_trend(
             history[history["id"] == metric_id],
             metric.name,
             metric.threshold,
             metric.threshold_label,
             metric.unit,
-        ),
-        width="stretch",
+        )
     )
     by_update = health_wide(history, standard)
     with st.expander("All checks, all updates"):

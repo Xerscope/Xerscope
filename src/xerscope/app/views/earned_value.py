@@ -35,6 +35,7 @@ from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 COST_COLUMNS = ["bac_cost", "pv_cost", "ev_cost", "spi_cost"]
 COST_MEASURES = ["BAC cost", "PV cost", "EV cost", "SPI"]  # the rows of the calculation table that read costs
 BEI_METRIC_IDS = {"P6": "P6-13", "DCMA": "DCMA-14"}  # the BEI check of each built-in standard
+INDEX_COLUMNS = ["spi", "spi_cost", "productivity", "cpi", "bei_p6", "bei_dcma"]  # ratios, missing on the first update
 ACTIVITY_COLUMNS = [
     "task_code",
     "bl_name",
@@ -58,7 +59,7 @@ def format_points(change: float) -> str:
 
 
 def format_index_change(change: float) -> str:
-    return f"{change:+.3f}"
+    return f"{change:+.2f}"
 
 
 def format_number(value: float, template: str = "{:,.0f}") -> str:
@@ -72,7 +73,7 @@ def change_since_previous(row: pd.Series, previous: pd.DataFrame, column: str, f
     return formatter(row[column] - previous[column].iloc[0])
 
 
-def cost_spi_text(row: pd.Series, template: str = "{:.3f}") -> str:
+def cost_spi_text(row: pd.Series, template: str = "{:.2f}") -> str:
     """The cost SPI, or why there is none."""
     if pd.notna(row["spi_cost"]):
         return template.format(row["spi_cost"])
@@ -98,7 +99,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
             *([cost_card] if costs else []),
             (
                 "SPI (labor units)",
-                format_number(row["spi"], "{:.3f}"),
+                format_number(row["spi"], "{:.2f}"),
                 change_since_previous(row, previous, "spi", format_index_change),
                 "EV / PV in labor hours; P6 column: Schedule Performance Index - Labor Units",
             ),
@@ -115,8 +116,9 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
             (
                 "EAC",
                 f"{row['eac_hr']:,.0f} h",
-                f"VAC {row['bac_hr'] - row['eac_hr']:+,.0f} h",
-                "AC + remaining hours; VAC = BAC − EAC, negative = overrun",
+                # the signed number first: st.metric colours the delta by the sign it starts with
+                f"{row['bac_hr'] - row['eac_hr']:+,.0f} h",
+                "AC + remaining hours. The delta is the VAC = BAC − EAC: negative = overrun",
             ),
         ],
         formulas=KPI_FORMULAS,
@@ -168,7 +170,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
                 (
                     "SPI (labor units)",
                     "EV / PV",
-                    f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.3f}')}",
+                    f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.2f}')}",
                     "Schedule Performance Index - Labor Units",
                 ),
                 (
@@ -271,15 +273,14 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
     )
     as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
     forecast = memo(("forecast", snapshot.source), forecast_curve, snapshot, baseline=False)
-    st.plotly_chart(
+    ui.chart(
         build_scurve(
             curve,
             series[series["data_date"] <= snapshot.data_date],
             forecast,
             snapshot.data_date,
             as_percent,
-        ),
-        width="stretch",
+        )
     )
 
     ui.section(
@@ -289,7 +290,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
     indices = {"spi": "SPI (labor units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
     if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
-    st.plotly_chart(build_index_trend(series, indices), width="stretch")
+    ui.chart(build_index_trend(series, indices))
     if baseline.is_planned:
         st.caption(
             f"Baseline = the planned dates (`target_*`) of the update shown, {ui.md_text(snapshot.label)}: every "
@@ -297,7 +298,9 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
             "history against that update's planned dates."
         )
     hidden = ["bac_hr"] + ([] if costs else COST_COLUMNS)
-    ui.table(series.drop(columns=hidden))
+    # the first update has no PV yet: its indices are missing, written as a dash
+    shown, overrides = ui.numbers_as_text(series.drop(columns=hidden), INDEX_COLUMNS)
+    ui.table(shown, overrides=overrides)
 
 
 def show_activity_detail(snapshot, baseline, point) -> None:

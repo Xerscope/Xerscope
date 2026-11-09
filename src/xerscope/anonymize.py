@@ -11,9 +11,9 @@ Allowlist, table by table (column meanings: Oracle "XER Import/Export Data Map G
   under a key drawn for the session: the same original value gets the same new code in every
   file and every download of the session (task_code, WBS, project, resource, role, OBS codes).
   Without the key the original cannot be found back. Hex digits can spell an original value
-  ("XA69C30507" holds the Activity ID "C3050"): such a code is drawn again (HMAC of
+  ("XA69C305070C59" holds the Activity ID "C3050"): such a code is drawn again (HMAC of
   "<kind>:<original>:<n>"), so it then depends on the files read.
-- ``LABELS``: names rebuilt from the row's new code ("Activity XA1F09C3B2").
+- ``LABELS``: names rebuilt from the row's new code ("Activity XA1F09C3B2D471").
 - Project ids: ``proj_id`` and every column naming a project by its id (``sum_base_proj_id``,
   ``orig_proj_id``, ``pred_proj_id``…, ``PROJECT_ID_COLUMN``) get a new 9-digit id drawn as the
   codes are (HMAC under the session key, drawn again when it equals an original id), in the XER
@@ -140,9 +140,11 @@ PROJECT_ID_LIST_COLUMNS = frozenset({"baselines_to_export"})
 NOT_AN_ID = frozenset({"absent"})  # app/diagnostic.ABSENT: the file has no such column
 # New project ids: 9 digits, an integer key as P6's own (int32 holds it)
 PROJECT_ID_LOW, PROJECT_ID_SPAN = 100_000_000, 900_000_000
-# Hex digits of each kind of new code. 8 for activities: ~4e9 values, so ~0.03 % chance of two
-# IDs sharing one among 50,000; a clash is refused (CodeClash), never written.
-WIDTH = {"A": 8, "W": 6, "P": 6, "R": 6, "L": 6, "O": 6}
+# Hex digits of each kind of new code. Birthday bound: n values among 16^w codes clash with
+# probability ~ n^2 / (2 * 16^w). 12 for activities: 100,000 IDs clash with p ~ 1.8e-5 (8 digits
+# gave p ~ 0.7 at 100,000 and ~0.25 at 50,000). 8 for WBS, projects, resources, roles, OBS:
+# 10,000 of them clash with p ~ 1.2e-2. A clash is still refused (CodeClash), never written.
+WIDTH = {"A": 12, "W": 8, "P": 8, "R": 8, "L": 8, "O": 8}
 DRAWS = 1000  # draws of one code or GUID before giving up (CodeClash): 3-character originals made of hex digits
 # What CalendarData is written with (P6 5.0 to 25.12, every reference file): nothing else may pass.
 CALENDAR_WORDS = frozenset({"CalendarData", "DaysOfWeek", "Exceptions", "ShowTotal", "VIEW"})
@@ -312,7 +314,7 @@ class Anonymizer:
                     yield part
 
     def _code_inside(self, value: str) -> str | None:
-        """Where the original code found inside ``value`` came from ("Activity C3050", "XA69C30507")."""
+        """Where the original code found inside ``value`` came from ("Activity C3050", "XA69C305070C59")."""
         for start in range(len(value)):
             for end in range(start + 3, len(value) + 1):
                 if value[start:end] in self.original_codes:

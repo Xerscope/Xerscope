@@ -67,11 +67,13 @@ projects not in the file.
 
 from __future__ import annotations
 
+import math
 import re
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
+from pandas.errors import OutOfBoundsDatetime
 
 from ..xer import Snapshot
 from ..xer.calendar import TimeAxis, WorkCalendar
@@ -81,14 +83,24 @@ LATE_LIKE = {"CS_MSO": "start", "CS_MSOB": "start", "CS_MEO": "finish", "CS_MEOB
 MANDATORY = {"CS_MANDSTART": "start", "CS_MANDFIN": "finish"}
 PROGRESSED = ("retained_logic", "progress_override", "actual_dates")
 H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_data=False)
+LINK_TYPES = ("FS", "SS", "FF", "SF")
+# Longest remaining duration, lag or assignment duration the engine schedules, in hours (114 years
+# of 24 h days). Beyond it, or non-finite, the value is refused as a ScheduleError before the passes
+# run; a bounded value that still lands past year 2262 (pandas' limit) on a sparse calendar is
+# translated to the same error in _schedule. The model clamps such values on load with a warning.
+MAX_HOURS = 1e6
 
 
-class CycleError(ValueError):
-    """The logic has a loop; ``members`` are the activities on a loop (not the ones downstream of it)."""
+class ScheduleError(ValueError):
+    """The snapshot cannot be scheduled; ``members`` name the activities (or links) at fault."""
 
     def __init__(self, message: str, members: tuple[str, ...] = ()):
         super().__init__(message)
         self.members = members
+
+
+class CycleError(ScheduleError):
+    """The logic has a loop; ``members`` are the activities on a loop (not the ones downstream of it)."""
 
 
 def _loop_members(candidates: set[str], successors: dict[str, list]) -> list[str]:
@@ -202,14 +214,45 @@ class Options:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Schedule:
-    frame: pd.DataFrame  # index task_code: es, ef, ls, lf, tf_hr, ff_hr, rem_override_hr, ...
+    """One recalculation. ``schedule`` hands every caller its own copy of the frames, the warnings
+    and the minutes, so an edit by one caller never reaches another or the cached result."""
+
+    frame: pd.DataFrame  # index task_code: RESULT_COLS (es, ef, ls, lf, tf_hr, ff_hr, rem_override_hr, ...)
     finish: pd.Timestamp | None
     options: Options
     warnings: list[str] = field(default_factory=list)
     assignments: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per open assignment
     assignment_minutes: dict[str, float] = field(default_factory=dict)  # taskrsrc_id -> remaining minutes as placed
+    # the plain recalculation (file options, no delay), the one cached on the snapshot: its
+    # comparison with the stored dates is cached too (compare_with_stored)
+    plain: bool = False
+
+    def copy(self) -> Schedule:
+        return replace(
+            self,
+            frame=self.frame.copy(),
+            warnings=list(self.warnings),
+            assignments=self.assignments.copy(),
+            assignment_minutes=dict(self.assignment_minutes),
+        )
+
+
+RESULT_COLS = [
+    "task_code",
+    "status_code",
+    "es",
+    "ef",
+    "remaining_start",
+    "ls",
+    "lf",
+    "tf_hr",
+    "ff_hr",
+    "resource_dependent",
+    "longest_path",
+    "rem_override_hr",
+]
 
 
 class _Axes:
@@ -261,8 +304,14 @@ def schedule(
 ) -> Schedule:
     """Recompute early/late dates and float of every activity of ``snap``.
 
-    The plain recalculation (no extra delay, file options) is cached on the snapshot:
-    the integrity check, the critical path test and the weekly history share it.
+    The plain recalculation (no extra delay, file options) is cached on the snapshot: the
+    integrity check, the critical path test and the weekly history share it. Each call returns
+    its own copy (0.1 ms on Hotel against 1 s of scheduling), so a caller may edit what it gets
+    without reaching the cache. The snapshot is immutable; an edited one is a new snapshot
+    (``dataclasses.replace``) with an empty cache.
+
+    Raises ``CycleError`` on a logic loop and ``ScheduleError`` (its base) when a remaining
+    duration, a lag or an assignment duration is not finite or exceeds ``MAX_HOURS``.
 
     ``base``: the plain recalculation, given with ``extra_hours``. A delayed activity then drops
     its expected finish, which would absorb the delay, and runs its remaining duration in
@@ -271,9 +320,9 @@ def schedule(
     if not extra_hours and options is None:
         cached = getattr(snapshot, "_xs_schedule", None)
         if cached is None:
-            cached = _schedule(snapshot, None, None)
+            cached = replace(_schedule(snapshot, None, None), plain=True)
             object.__setattr__(snapshot, "_xs_schedule", cached)
-        return cached
+        return cached.copy()
     return _schedule(snapshot, extra_hours, options, base)
 
 
@@ -292,7 +341,16 @@ class _Asg:
 def _schedule(
     snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None, base: Schedule | None = None
 ) -> Schedule:
-    return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
+    try:
+        return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
+    except ScheduleError:
+        raise
+    except (OverflowError, OutOfBoundsDatetime) as exc:  # a date past year 2262 the time axis cannot hold
+        raise ScheduleError(f"a date falls outside the schedulable range: {exc}") from exc
+    except ValueError as exc:  # the time axis refuses a date outside its range before growing to it
+        if "date out of range" not in str(exc):
+            raise
+        raise ScheduleError(f"a date falls outside the schedulable range: {exc}") from exc
 
 
 class _Run:
@@ -343,6 +401,7 @@ class _Run:
         )
         self.cal_ax = {code: self.axes.of(self.inputs[code]["clndr_id"]) for code in self.activities.index}
         self.status = self.activities["status_code"].to_dict()
+        self._durations()
         self._assignments()
         self.early_start: dict[str, pd.Timestamp] = {}
         self.early_finish: dict[str, pd.Timestamp] = {}
@@ -376,6 +435,25 @@ class _Run:
         self.loe_succs: dict[str, list] = defaultdict(list)
         links = self.snapshot.relationships[["pred_code", "succ_code", "type", "lag_hr"]]
         self.linked_on = set(links["pred_code"])  # has a successor of any kind (LOE, WBS summary included)
+        # Defensive reading of the link table (the model validates it too): a type the passes have
+        # no rule for is left out with a warning rather than read as SF by the FS/SS "else" branches;
+        # a lag the time axis cannot place is a typed error, never an OverflowError.
+        unknown = links[~links["type"].isin(LINK_TYPES)]
+        if not unknown.empty:
+            shown = unknown[["pred_code", "succ_code", "type"]].head(5).itertuples(index=False)
+            self.warnings.append(
+                f"{len(unknown)} relationships of a type not in {LINK_TYPES} ignored: "
+                f"{[f'{p}->{s} {t}' for p, s, t in shown]}"
+            )
+            links = links[links["type"].isin(LINK_TYPES)]
+        lags = pd.to_numeric(links["lag_hr"], errors="coerce").fillna(0.0)
+        unbounded = links[~_bounded(lags)]
+        if not unbounded.empty:
+            raise ScheduleError(
+                f"{len(unbounded)} relationships carry a lag that is not finite or beyond {MAX_HOURS:g} h: "
+                f"{[f'{p}->{s}' for p, s in unbounded[['pred_code', 'succ_code']].head(8).itertuples(index=False)]}",
+                tuple(sorted(set(unbounded["pred_code"]) | set(unbounded["succ_code"]))),
+            )
         for predecessor, successor, link_type, lag in links.itertuples(index=False):
             lag_minutes = float(lag or 0) * 60
             if predecessor in node_set and successor in node_set:
@@ -425,12 +503,36 @@ class _Run:
             raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}", tuple(loop))
         self.order = order
 
+    def _durations(self) -> None:
+        """Remaining durations of the open activities the passes will place: finite and bounded (else a
+        typed error), never negative (read as 0, warned). The model clamps the same values on load with
+        its own warning; this keeps the engine safe on a snapshot built another way."""
+        remaining = {
+            code: self.inputs[code].get("remain_drtn_hr_cnt")
+            for code in self.nodes
+            if self.status[code] != "TK_Complete"
+        }
+        remaining = {code: float(value) for code, value in remaining.items() if pd.notna(value)}
+        unbounded = sorted(code for code, value in remaining.items() if not _bounded(value))
+        if unbounded:
+            raise ScheduleError(
+                f"{len(unbounded)} activities carry a remaining duration that is not finite or beyond "
+                f"{MAX_HOURS:g} h: {unbounded[:8]}",
+                tuple(unbounded),
+            )
+        negative = sorted(code for code, value in remaining.items() if value < 0)
+        if negative:
+            self.warnings.append(
+                f"{len(negative)} activities with a negative remaining duration, read as 0: {negative[:5]}"
+            )
+
     def _assignments(self) -> None:
         """Open assignments. Resource-dependent activities are scheduled from their driving
         assignments, each on its resource's calendar; the others use the activity calendar."""
         inputs, status = self.inputs, self.status
         self.assignments_by_task: dict[str, list[_Asg]] = defaultdict(list)
         assignment_table = self.snapshot.assignments
+        unbounded: list[str] = []
         for row in assignment_table.itertuples(index=False) if not assignment_table.empty else []:
             code = row.task_code
             if code not in inputs or status[code] == "TK_Complete" or self.is_loe[code]:
@@ -440,10 +542,19 @@ class _Run:
             on_rsrc_cal = inputs[code].get("task_type") == "TT_Rsrc" and bool(row.rsrc_clndr_id)
             axis = self.axes.of(row.rsrc_clndr_id) if on_rsrc_cal else self.cal_ax[code]
             remaining_minutes = remaining_units / rate * 60 if rate > 0 else None
-            lag = float(row.relag_drtn_hr_cnt) * 60 if pd.notna(row.relag_drtn_hr_cnt) else 0.0
+            lag_hours = float(row.relag_drtn_hr_cnt) if pd.notna(row.relag_drtn_hr_cnt) else 0.0
+            if not _bounded(lag_hours) or (remaining_minutes is not None and not _bounded(remaining_minutes / 60)):
+                unbounded.append(f"{code}/{row.taskrsrc_id}")
+                continue
             name = str(row.rsrc_short_name or row.rsrc_name or row.rsrc_id or "")
             self.assignments_by_task[code].append(
-                _Asg(str(row.taskrsrc_id), name, axis, lag, remaining_minutes, bool(row.driving))
+                _Asg(str(row.taskrsrc_id), name, axis, lag_hours * 60, remaining_minutes, bool(row.driving))
+            )
+        if unbounded:
+            raise ScheduleError(
+                f"{len(unbounded)} assignments carry a lag or a duration (units / units per hour) that is not "
+                f"finite or beyond {MAX_HOURS:g} h: {unbounded[:8]}",
+                tuple(sorted({entry.split("/")[0] for entry in unbounded})),
             )
         rsrc_type = {
             code for code in self.nodes if inputs[code].get("task_type") == "TT_Rsrc" and status[code] != "TK_Complete"
@@ -497,7 +608,8 @@ class _Run:
         elif code in self.duration_override:  # remaining duration recomputed from an expected finish
             return self.duration_override[code] + self.extra_hours.get(code, 0.0) * 60
         remaining_hr = self.inputs[code].get("remain_drtn_hr_cnt")
-        return (0.0 if pd.isna(remaining_hr) else float(remaining_hr) * 60) + self.extra_hours.get(code, 0.0) * 60
+        remaining = 0.0 if pd.isna(remaining_hr) else max(0.0, float(remaining_hr)) * 60  # negative: 0 (_durations)
+        return remaining + self.extra_hours.get(code, 0.0) * 60
 
     def driving(self, code) -> list[_Asg]:
         return [
@@ -723,8 +835,13 @@ class _Run:
                         finish_linked,
                         options.collapse_early_expected_finish,
                     )
+            actual_start = inputs[code].get("act_start_date") if started else None
+            if started and (actual_start is None or pd.isna(actual_start)):
+                # the mirror of "complete without actual dates": the early start is the remaining start
+                self.warnings.append(f"{code}: in progress without an actual start")
+                actual_start = None
             early_start[code], early_finish[code], remaining_start[code] = (
-                (inputs[code].get("act_start_date") if started and activity_kind == "task" else start),
+                (actual_start if actual_start is not None and activity_kind == "task" else start),
                 finish_time,
                 start,
             )
@@ -1285,7 +1402,7 @@ class _Run:
             self.free_float_hr[code] = 0.0
 
     # --- longest path ------------------------------------------------------------------------
-    def _ends_project(self, code) -> bool:
+    def _ends_project(self, code, enders: list[str]) -> bool:
         """``code`` finishes at the project finish. Equal to the minute; or, when only milestones
         set the project finish, no working minute of ``code``'s calendar between its finish and
         the project finish (Fri 17:00 before a finish milestone written Mon 08:00).
@@ -1297,7 +1414,6 @@ class _Run:
             return True
         if pd.isna(finish) or pd.isna(self.finish):
             return False
-        enders = [c for c in self.nodes if self.early_finish[c] == self.finish]
         if not enders or any(self.kind(c) == "task" for c in enders):
             return False
         if self.cal_ax[code].between(finish, self.finish) != 0:
@@ -1321,7 +1437,9 @@ class _Run:
         "activities that have an early finish equal to the latest calculated early finish
         for the project", then "all driving relationships for those activities")."""
         longest: set[str] = set()
-        pending = [code for code in self.open_ if self._ends_project(code)]
+        # the activities whose early finish is the project finish, found once per trace
+        enders = [c for c in self.nodes if self.early_finish[c] == self.finish]
+        pending = [code for code in self.open_ if self._ends_project(code, enders)]
         while pending:
             code = pending.pop()
             if code in longest:
@@ -1427,8 +1545,8 @@ class _Run:
                 "remaining_start": self.remaining_start.get(code),
                 "ls": self.late_start.get(code),
                 "lf": self.late_finish.get(code),
-                "tf_hr": self.total_float_hr.get(code),
-                "ff_hr": self.free_float_hr.get(code),
+                "tf_hr": self.total_float_hr.get(code, float("nan")),  # NaN: finished, no float
+                "ff_hr": self.free_float_hr.get(code, float("nan")),
                 "resource_dependent": code in self.rsrc_dep,
                 "longest_path": code in longest,
                 # remaining hours an expected finish set in place of the file's (0 = finish before the start)
@@ -1439,7 +1557,7 @@ class _Run:
             for code in self.activities.index
             if code in self.early_start
         ]
-        frame = pd.DataFrame(rows).set_index("task_code")
+        frame = pd.DataFrame(rows, columns=RESULT_COLS).set_index("task_code")  # no row: an empty Schedule
         return Schedule(
             frame, self.finish, self.options, self.warnings, self.assignment_dates(), self.assignment_minutes
         )
@@ -1464,6 +1582,13 @@ class _Run:
 
 
 ASSIGNMENT_COLS = ["taskrsrc_id", "task_code", "rsrc", "driving", "restart", "reend", "rem_late_start", "rem_late_end"]
+
+
+def _bounded(hours) -> bool:
+    """Finite and within ``MAX_HOURS`` in absolute value; element-wise on a Series."""
+    if isinstance(hours, pd.Series):
+        return hours.map(_bounded).astype(bool)
+    return math.isfinite(hours) and abs(hours) <= MAX_HOURS
 
 
 def _early(
@@ -1553,12 +1678,12 @@ def compare_with_stored(snapshot: Snapshot, recomputed: Schedule | None = None) 
     of the activity's calendar (0 with agree False = same instant shown differently,
     e.g. Wednesday 17:00 vs the next working morning).
 
-    Against the plain recalculation (``recomputed`` None or ``schedule(snapshot)``) the table is
-    cached on the snapshot, as ``schedule`` is: INT-01 and the Debug page share it. Each call
-    returns its own copy.
+    Against the plain recalculation (``recomputed`` None or ``schedule(snapshot)``, ``plain``) the
+    table is cached on the snapshot, as ``schedule`` is: INT-01 and the Debug page share it. Each
+    call returns its own copy.
     """
     plain = schedule(snapshot) if recomputed is None else recomputed
-    if plain is not getattr(snapshot, "_xs_schedule", None):
+    if not plain.plain:
         return _comparison(snapshot, plain)
     cached = getattr(snapshot, "_xs_comparison", None)
     if cached is None:
@@ -1643,7 +1768,7 @@ class CptResult:
     blocking: list[dict] = field(default_factory=list)
 
 
-def _cycle_failure(error: CycleError, delayed: str | None = None) -> CptResult:
+def _schedule_failure(error: ScheduleError, delayed: str | None = None) -> CptResult:
     return CptResult(False, str(error), delayed)
 
 
@@ -1659,8 +1784,8 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     activities = snapshot.activities
     try:
         base = schedule(snapshot)
-    except CycleError as exc:
-        return _cycle_failure(exc)
+    except ScheduleError as exc:  # a loop, or a duration / lag the engine cannot place
+        return _schedule_failure(exc)
     # The critical path = the longest path of the recalculated schedule (with negative
     # float, "total float <= 0" would also take in less critical paths).
     frame = base.frame
@@ -1677,8 +1802,8 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     delay_hours = delay_days * hours_per_day
     try:
         late = schedule(snapshot, {code: delay_hours}, base=base)
-    except CycleError as exc:
-        return _cycle_failure(exc, code)
+    except ScheduleError as exc:
+        return _schedule_failure(exc, code)
     has_successor = set(snapshot.relationships["pred_code"])  # built once: per activity it took 33 s on Hotel
     end_points = [code for code in base.frame.index if code not in has_successor]
     base_finish = base.frame.loc[end_points, "ef"].max()

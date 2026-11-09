@@ -50,6 +50,7 @@ source of a wrong number.
 |---|---|---|
 | What a P6 column means (units, identity, best dates, % complete type) | `xer/model.py` | analyses, pages |
 | Working time, calendars | `xer/calendar.py` (`WorkCalendar`, `TimeAxis`) | ad hoc date arithmetic |
+| A check on a file's values (unique keys, finite and bounded numbers, known codes) | one function in `xer/validate.py`, one warning line | the parser, an analysis |
 | A built-in check | one function in `analysis/p6/`, `dcma/`, `decm/` or `integrity.py` + its metric in `standards/*.toml` | a page |
 | A rule for your own standard | a parameterised `@rule` in `analysis/rules.py` | an `if standard == ...` branch |
 | A metric's explanation | `analysis/explain.py` | page text |

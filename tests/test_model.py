@@ -419,7 +419,8 @@ def test_header_takes_what_build_snapshot_takes(case):
     text = HEADER_CASES[case]
     header = _same_as_snapshot(parse_text(text, source=case), parse_text(text, source=case, keep=HEADER_TABLES))
     if case == "two projects":
-        assert header.project_task_counts == {"UPD": 3, "BL": 2} and header.selected_by == "most TASK rows"
+        assert header.project_task_counts == {"1": 3, "2": 2} and header.selected_by == "most TASK rows"
+        assert header.project_codes == {"1": "UPD", "2": "BL"}
     if case == "no recalc date":
         assert header.data_date_source == "plan_start_date"
 
@@ -586,7 +587,7 @@ def test_unknown_pred_type_warns_and_keeps_its_code():
     s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FS", 0), ("B", "C", "XX", 0)])
     assert [w for w in s.warnings if "pred_type" in w] == [
         "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
-        "scheduled as SF in the forward pass, ignored in the backward pass"
+        "kept with its code, ignored by the recalculation"
     ]
     assert sorted(s.relationships["type"]) == ["FS", "PR_XX"]
 

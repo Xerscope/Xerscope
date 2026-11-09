@@ -21,6 +21,7 @@ from xerscope.viz.charts import (
     NEUTRAL,
     SERIES,
     STATUS,
+    TEXT,
     build_activity_dates,
     build_activity_float,
 )
@@ -196,3 +197,19 @@ def test_text_colours_reach_wcag_aa_on_both_backgrounds():
                 assert _contrast(colour, background) >= 4.5, (mode, colour, background)
     for style in ui.STATUS_STYLE.values():
         assert _contrast("#ffffff", ui.BADGE[style.tone]) >= 4.5, style.label
+
+
+def test_hover_text_is_the_text_colour_of_each_theme():
+    # ui.chart sets the Plotly hover text to TEXT[theme] (Streamlit's own fades it to 3.5:1)
+    for mode, theme in _themes().items():
+        assert TEXT[mode].lower() == theme["textColor"].lower(), mode
+
+
+def test_fmt_number_and_tables_write_a_dash_for_a_missing_value():
+    assert ui.fmt_number(1.26) == "1.3" and ui.fmt_number(None) == "–" and ui.fmt_number(float("nan"), "{:d}", "") == ""
+    frame = pd.DataFrame({"total_float_d": [2.0, None], "spi": [None, 0.896], "note": [None, "x"]})
+    shown, overrides = ui.numbers_as_text(frame, ["total_float_d", "spi", "absent"])
+    assert list(shown["total_float_d"]) == ["2.0", "–"] and list(shown["spi"]) == ["–", "0.90"]
+    assert set(overrides) == {"total_float_d", "spi"}
+    assert list(ui.blank_missing(frame)["note"]) == ["–", "x"]
+    assert ui.blank_missing(frame)["spi"].isna().sum() == 1  # numbers are left to numbers_as_text

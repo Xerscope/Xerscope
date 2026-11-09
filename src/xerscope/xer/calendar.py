@@ -33,6 +33,15 @@ DEFAULT_WORKING_DAYS = 5  # a calendar with neither blob nor week hours is Monda
 AXIS_MARGIN_DAYS = 366  # the axis starts a year before the first exception date
 AXIS_SPAN_DAYS = 3 * 366  # and runs three years after it, then grows on demand
 DAYS_DECIMALS = 6  # a minute is 7e-4 day of a 24 h day: rounding at 1e-6 day merges no two minutes
+MIN_HOURS_PER_DAY = 1 / 60  # a working day shorter than a minute has no working time on the axis
+MAX_TREE_DEPTH = 32  # a clndr_data tree is 5 levels deep; deeper is not a calendar
+# The axis works in nanoseconds since the epoch (``Timestamp.value``): the dates it can hold, and the
+# exception dates a calendar keeps (the axis opens AXIS_MARGIN_DAYS before the first exception and
+# AXIS_SPAN_DAYS after it). An exception outside that range is a malformed blob.
+AXIS_FIRST_DATE = (pd.Timestamp.min + pd.Timedelta(days=1)).date()  # 1677-09-22
+AXIS_LAST_DATE = (pd.Timestamp.max - pd.Timedelta(days=1)).date()  # 2262-04-10
+EXCEPTION_FIRST_DATE = AXIS_FIRST_DATE + timedelta(days=AXIS_MARGIN_DAYS)
+EXCEPTION_LAST_DATE = AXIS_LAST_DATE - timedelta(days=AXIS_SPAN_DAYS)
 
 
 def hours_to_days(hours, hours_per_day):
@@ -66,8 +75,10 @@ def _parse_tree(text: str) -> list[_Node]:
     s = "".join(ch for ch in text if ch not in " \t\r\n\x7f")
     pos = 0
 
-    def node() -> _Node:
+    def node(depth: int = 0) -> _Node:
         nonlocal pos
+        if depth > MAX_TREE_DEPTH:
+            raise ValueError(f"nested deeper than {MAX_TREE_DEPTH} levels at {pos}")
         if s[pos] != "(":
             raise ValueError(f"expected '(' at {pos}")
         bar = s.index("||", pos)
@@ -81,7 +92,7 @@ def _parse_tree(text: str) -> list[_Node]:
         pos += 1
         children = []
         while s[pos] == "(":
-            children.append(node())
+            children.append(node(depth + 1))
         if s[pos] != ")":
             raise ValueError(f"expected ')' at {pos}")
         pos += 1  # end of children
@@ -161,7 +172,9 @@ def parse_clndr_data(
     text: str, notes: list[str] | None = None
 ) -> tuple[tuple[Intervals, ...], dict[date, Intervals]] | None:
     """Return (working periods Monday..Sunday, {date: periods} exceptions), or None when the
-    blob holds no week. P6 never writes a malformed blob: one raises ValueError naming the fault.
+    blob holds no week. P6 never writes a malformed blob: one raises ValueError naming the fault
+    (a malformed node, a period time that is not ``HH:MM``, a tree nested past ``MAX_TREE_DEPTH``,
+    an exception dated outside ``EXCEPTION_FIRST_DATE`` .. ``EXCEPTION_LAST_DATE``).
     A period read with a limit (see ``_interval``) adds one line to ``notes`` when given."""
     if not isinstance(text, str) or "DaysOfWeek" not in text:
         return None
@@ -182,22 +195,25 @@ def _read_blob(text: str, notes: list[str] | None) -> tuple[tuple[Intervals, ...
             week[(int(d.name) + 5) % 7] = _day(d, notes)  # P6 1=Sunday -> Python weekday 6
     exceptions: dict[date, Intervals] = {}
     exc = next((r.find("Exceptions") for r in roots if r.find("Exceptions")), None)
+    first, last = (EXCEPTION_FIRST_DATE - EXCEL_EPOCH).days, (EXCEPTION_LAST_DATE - EXCEL_EPOCH).days
     for e in exc.children if exc is not None else []:
         serial = _attrs(e.attrs).get("d", "")
         if not serial.isdigit():
             raise ValueError(f"malformed exception date {serial!r}")
-        try:
-            day = EXCEL_EPOCH + timedelta(days=int(serial))
-        except OverflowError as err:
-            raise ValueError(f"exception date out of range {serial!r}") from err
-        exceptions[day] = _day(e, notes)
+        if not first <= int(serial) <= last:
+            raise ValueError(
+                f"exception date out of range {serial!r} (outside {EXCEPTION_FIRST_DATE}..{EXCEPTION_LAST_DATE})"
+            )
+        exceptions[EXCEL_EPOCH + timedelta(days=int(serial))] = _day(e, notes)
     return tuple(week), exceptions
 
 
 def _default_day(hpd: float) -> Intervals:
+    """One working period from 08:00, ``hpd`` hours long, at least a minute, at most to midnight."""
     if hpd >= 24:
         return ((0, MINUTES_PER_DAY),)
-    return ((DAY_START_MINUTE, min(MINUTES_PER_DAY, DAY_START_MINUTE + int(round(hpd * 60)))),)
+    end = min(MINUTES_PER_DAY, DAY_START_MINUTE + int(round(hpd * 60)))
+    return ((DAY_START_MINUTE, max(end, DAY_START_MINUTE + 1)),)
 
 
 @dataclass(frozen=True)
@@ -216,7 +232,9 @@ class WorkCalendar:
     def from_row(cls, row: pd.Series, default_hpd: float = DEFAULT_SETTINGS.default_hours_per_day) -> WorkCalendar:
         notes: list[str] = []
         hpd = pd.to_numeric(row.get("day_hr_cnt"), errors="coerce")
-        hpd = float(hpd) if pd.notna(hpd) and hpd > 0 else default_hpd
+        if pd.notna(hpd) and 0 < hpd < MIN_HOURS_PER_DAY:
+            notes.append(f"day_hr_cnt {hpd} is under one minute; {default_hpd} h/day used")
+        hpd = float(hpd) if pd.notna(hpd) and hpd >= MIN_HOURS_PER_DAY else default_hpd
         try:
             parsed = parse_clndr_data(row.get("clndr_data", ""), notes)
         except ValueError as err:
@@ -306,25 +324,56 @@ class TimeAxis:
 
     def __init__(self, cal: WorkCalendar, first: date, last: date):
         self.cal = cal
+        self._check_range(first, last)
         self.anchor_ns = pd.Timestamp(first).value
+        # the most working minutes any day of this calendar holds: bounds how far ``at`` may reach
+        days = [*cal.week, *cal.exceptions.values()]
+        self.max_day_minutes = max(1, *(sum(b - a for a, b in periods if b > a) for periods in days))
         self._build(first, last)
 
-    def _periods(self, first: date, last: date) -> tuple[list[int], list[int]]:
-        """Working periods of [first, last] as minute offsets from ``first``."""
-        starts, ends = [], []
-        d, day = first, 0
-        while d <= last:
-            for a, b in self.cal.periods(d):
+    def _periods(self, first: date, last: date) -> tuple[np.ndarray, np.ndarray]:
+        """Working periods of [first, last] as minute offsets from ``first``, in day order then
+        period order: the weekday pattern laid out with numpy, the exception days replaced."""
+        n_days = (last - first).days + 1
+        dated = {(d - first).days: periods for d, periods in self.cal.exceptions.items() if first <= d <= last}
+        dated_days = np.fromiter(dated, dtype=np.int64, count=len(dated))
+        day_of, starts, ends = [], [], []
+        for weekday in range(7):
+            periods = [(a, b) for a, b in self.cal.week[weekday] if b > a]
+            if not periods:
+                continue
+            on_days = np.arange((weekday - first.weekday()) % 7, n_days, 7, dtype=np.int64)
+            if len(dated):
+                on_days = on_days[~np.isin(on_days, dated_days)]
+            midnight = on_days * MINUTES_PER_DAY
+            for a, b in periods:
+                day_of.append(on_days)
+                starts.append(midnight + a)
+                ends.append(midnight + b)
+        for day, periods in dated.items():
+            for a, b in periods:
                 if b > a:
-                    starts.append(day * 1440 + a)
-                    ends.append(day * 1440 + b)
-            d += timedelta(days=1)
-            day += 1
-        return starts, ends
+                    day_of.append(np.array([day], dtype=np.int64))
+                    starts.append(np.array([day * MINUTES_PER_DAY + a], dtype=np.int64))
+                    ends.append(np.array([day * MINUTES_PER_DAY + b], dtype=np.int64))
+        if not starts:
+            return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+        all_starts, all_ends, all_days = np.concatenate(starts), np.concatenate(ends), np.concatenate(day_of)
+        del starts, ends, day_of
+        order = np.lexsort((all_starts, all_days))
+        return all_starts[order], all_ends[order]
+
+    def _check_range(self, first: date, last: date) -> None:
+        if first < AXIS_FIRST_DATE or last > AXIS_LAST_DATE:
+            raise ValueError(
+                f"date out of range: calendar {self.cal.name!r} would run {first}..{last}, "
+                f"outside {AXIS_FIRST_DATE}..{AXIS_LAST_DATE}"
+            )
 
     def _build(self, first: date, last: date) -> None:
+        self._check_range(first, last)
         starts, ends = self._periods(first, last)
-        while not starts:  # e.g. a short window over a shutdown: look further ahead
+        while len(starts) == 0:  # e.g. a short window over a shutdown: look further ahead
             if (last - first).days > 20 * 366:
                 raise ValueError(f"calendar {self.cal.name!r} has no working time")
             last += timedelta(days=400)
@@ -333,8 +382,8 @@ class TimeAxis:
         self.t0 = pd.Timestamp(first)
         self.t0_ns = self.t0.value
         self.span_min = ((last - first).days + 1) * 1440
-        self.starts = np.array(starts, dtype=np.int64)
-        self.ends = np.array(ends, dtype=np.int64)
+        self.starts = starts
+        self.ends = ends
         lengths = self.ends - self.starts
         self.cum = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int64)  # work before period i
         self.base = int(self._raw(np.array([(self.anchor_ns - self.t0_ns) // 60_000_000_000]))[0])
@@ -347,22 +396,29 @@ class TimeAxis:
         return np.where(i >= len(self.starts), self.cum[-1], w)
 
     def _grow(self, earlier: bool) -> None:
-        span = max(400, (self.last - self.first).days)
-        if earlier:
-            self._build(self.first - timedelta(days=span), self.last)
-        else:
-            self._build(self.first, self.last + timedelta(days=span))
+        """Double the window towards the past or the future, up to the dates the axis can hold."""
+        span = timedelta(days=max(400, (self.last - self.first).days))
+        first = max(AXIS_FIRST_DATE, self.first - span) if earlier else self.first
+        last = self.last if earlier else min(AXIS_LAST_DATE, self.last + span)
+        if (first, last) == (self.first, self.last):
+            raise ValueError(f"date out of range: calendar {self.cal.name!r} ends at {first}..{last}")
+        self._build(first, last)
 
     def _ensure(self, ts: pd.Timestamp, margin_days: int = 400) -> None:
         d = ts.date()
         if d < self.first or d > self.last:
-            self._build(
-                min(self.first, d - timedelta(days=margin_days)), max(self.last, d + timedelta(days=margin_days))
-            )
+            margin = timedelta(days=margin_days)
+            first = min(self.first, max(AXIS_FIRST_DATE, d - margin))
+            last = max(self.last, min(AXIS_LAST_DATE, d + margin))
+            self._build(first, last)  # raises "date out of range" when ``d`` itself is outside
 
     def minute(self, ts) -> int:
         ts = ts if isinstance(ts, pd.Timestamp) else pd.Timestamp(ts)
-        m = (ts.value - self.t0_ns) // 60_000_000_000
+        try:
+            ns = ts.value
+        except OverflowError as exc:  # a Timestamp with a coarser unit, outside the nanosecond range
+            raise ValueError(f"date out of range: {ts} is outside {AXIS_FIRST_DATE}..{AXIS_LAST_DATE}") from exc
+        m = (ns - self.t0_ns) // 60_000_000_000
         if m < 0 or m >= self.span_min:
             self._ensure(ts)
             m = (ts.value - self.t0_ns) // 60_000_000_000
@@ -387,6 +443,13 @@ class TimeAxis:
     def at(self, w: float, finish: bool) -> pd.Timestamp:
         """Timestamp after ``w`` working minutes; on a boundary, a period end if ``finish``."""
         w = int(round(w))
+        # No day holds more than ``max_day_minutes`` of work: a value that needs more calendar days
+        # than the Timestamp range has left fails here, before the axis grows towards it.
+        r = w + self.base
+        days_needed = abs(r) // self.max_day_minutes - 1
+        room = (AXIS_LAST_DATE - self.first).days if r >= 0 else (self.first - AXIS_FIRST_DATE).days
+        if days_needed > room:
+            raise ValueError(f"date out of range: {w} working minutes on calendar {self.cal.name!r}")
         while w + self.base < 0 or (finish and w + self.base == 0):
             self._grow(earlier=True)
         while w + self.base > self.cum[-1] or (not finish and w + self.base == self.cum[-1]):
