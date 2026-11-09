@@ -140,7 +140,8 @@ takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New
 the shared folder. The only upload left is a standard (.toml) on the Schedule health page,
 capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`); a lexicon file sent there is refused (no
 `[standard]` table) and never read by the Ask field, which reads the NAS folder only (§10).
-An error shows no traceback on the page
+A message from the browser is capped at 1 MB (`STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE`); the
+Ask sentence is cut at 300 characters by the page itself. An error shows no traceback on the page
 (`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
 
 ## 6. Create the project
@@ -328,7 +329,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App and Caddy images pinned by digest (`:0.1.0@sha256:…`, §7), not by `latest`; the build verified with `gh attestation verify`; the Dockerfiles' base images are pinned the same way (`Dockerfile`, `deploy/caddy/Dockerfile`).
 - [ ] Memory and PID caps on the four containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
-- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (and purged by `lexicon-init`).
+- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (purged by `lexicon-init` and by the app).
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
@@ -371,9 +372,11 @@ section of `report.txt` after a start and copy each true typo into a `curated/` 
 (`[[group]] words = ["gybsum", "gypsum"]`).
 
 A word taught by a click holds for the visitor's session at once; for every session, copy
-it into a `curated/` file. `lexicon-init` purges a suggestion older than 90 days whose word
-`curated/` does not hold. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
-file is named, never fatal to the app; the Debug page lists the load errors).
+it into a `curated/` file. A suggestion older than 90 days whose word `curated/` does not
+hold is purged by `lexicon-init` and by the app at its next click, under the same lock: a
+stack Docker restarts without `lexicon-init` (a NAS reboot) still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
+file is named, never fatal to the app; Debug block 14 lists the load errors to every session,
+each as its file and line or refusal number, never the words it holds).
 
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
 with the app's image and account, no network (`network_mode: none`), a read-only root
@@ -391,15 +394,17 @@ the password reaches the teach buttons. *What they control:* the unknown word (a
 in the Ask field) and the choice among the labels offered (the file's own labels). *What
 stops them:* the file name is fixed (`suggestions.toml`, no path from the input); word and
 label are NFKC-normalised, at most 64 and 160 characters, letters, digits and
-`` .-_'&/()·,:+#`` only (no control character, newline, bracket, quote, backslash or `=`),
+`` .-_'&/()·,:+#`` only (no control character, newline, bracket, quote, backslash, `=` or
+invisible Hangul filler),
 written through `json_quote`, so no TOML table can be injected; one exclusive `flock`
 serialises the size check and the append; the file stops at 256 KB (a refusal shows a
 neutral line that does not repeat the word); it is opened with `O_NOFOLLOW` (a symlink put
 in its place is not followed) and created 0600; nothing is printed or logged. *What it cannot
 reach:* the Ask field of any session, since `suggested/` is read by nothing until you copy a
 word into `curated/`; `curated/` and `generated/`, read-only in the app. *What is left:* a
-visitor can fill `suggestions.toml` up to its cap (the corrections stop being recorded, the
-app keeps working), and the words typed land on the NAS for up to 90 days.
+visitor can fill `suggestions.toml` up to its cap with distinct words (one correction, word,
+label and column, is kept once; past the cap the corrections stop being recorded, the app
+keeps working), and the words typed land on the NAS for up to 90 days.
 `tests/test_ask_suggested.py` has one test per guard.
 
 A language model was measured against this and not kept (`analysis/query.py: llm_backend`

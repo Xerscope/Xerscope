@@ -84,13 +84,15 @@ def _drop(sentence: str, label: str) -> None:
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
-# known, below; a × button per filter understood takes it off.
+# known, below; a × button per filter understood takes it off. max_chars is the browser's; the
+# server cuts too (a message sent past it), keeping one character more so the parser names the cut.
 asked = st.text_input(
     "Ask the schedule",
     placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
     key=ASK_KEY,
     icon=":material/search:",
-)
+    max_chars=query.MAX_CHARS,
+)[: query.MAX_CHARS + 1]
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
 # the variants of each source column, generated from every loaded file, in memory (never written)
@@ -108,9 +110,12 @@ lexicon = memo(  # the labels of every loaded file (memo's key names them all), 
 )
 ask = None
 if asked:
-    ask = memo(  # once per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
-    )
+    try:
+        ask = memo(  # once per sentence and update, baseline-independent
+            ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
+        )
+    except RecursionError:  # parentheses nested past the recursive parser: said, never echoed
+        st.warning("This sentence nests too many parentheses to be read.")
 if ask is not None:  # the filters taken off this sentence (× buttons), from query.without
     held, dropped = st.session_state.get(DROPPED_KEY, ("", []))
     for label in dropped if held == asked else []:
@@ -126,8 +131,17 @@ if ask is not None and ask.matched:  # what was understood, one button each: "Cr
                 args=(asked, label),
             )
 if ask is not None:
-    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
-        offers = query.suggestions(word, lexicon)
+    # a word nothing holds: the closest labels, a click teaches it for the session; the first
+    # MAX_FUZZY words only, each searched once per update and lexicon
+    for word in ask.ignored[: query.MAX_FUZZY]:
+        offers = memo(
+            ("suggest", snapshot.source, word, len(taught)),
+            query.suggestions,
+            word,
+            lexicon,
+            baseline=False,
+            ev_basis=False,
+        )
         if offers:
             with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
                 st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
@@ -278,7 +292,7 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             st.markdown(ui.md_text(said), width="stretch")
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
         how = " · unsure reading" if ask.confidence < query.SURE else ""
-        st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
+        st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

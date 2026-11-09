@@ -1541,6 +1541,98 @@ def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_r
     assert full.read_bytes() == b"#" * suggested.MAX_BYTES
 
 
+def test_the_gantt_ask_field_keeps_max_chars_of_a_huge_sentence(app):
+    """A sentence sent past the browser's max_chars (a crafted websocket message) is cut on the
+    server before anything reads it: the session's memo keys and the × state hold MAX_CHARS + 1
+    characters at most (the extra one names the cut, "…")."""
+    from xerscope.analysis.query import MAX_CHARS
+
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("critical " + "x" * 1_000_000).run()
+    _ok(app)
+    assert _chips(app) == ["Float: Critical"]
+    app.button(key="ask_drop:Float: Critical").click().run()
+    _ok(app)
+    held = [s for key in app.session_state["_memo"] for s in key if isinstance(s, str)]
+    held.append(app.session_state["gantt_ask_dropped"][0])
+    assert max(map(len, held)) <= MAX_CHARS + 1
+    assert app.text_input(key="gantt_ask").max_chars == MAX_CHARS  # the browser cuts first
+
+
+def test_the_gantt_offers_labels_for_a_few_unknown_words_once_per_sentence(app, monkeypatch):
+    """Labels are searched for the first MAX_FUZZY words left out only, once per sentence: a rerun
+    (any click on the page) reads them from the session's memo."""
+    from xerscope.analysis import query
+    from xerscope.analysis.ask.text import MAX_FUZZY
+
+    searched = []
+    real = query.suggestions
+    monkeypatch.setattr(query, "suggestions", lambda word, vocab: searched.append(word) or real(word, vocab))
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value(" ".join(f"qq{i}x" for i in range(20))).run()
+    _ok(app)
+    assert 0 < len(searched) <= MAX_FUZZY
+    searched.clear()
+    _toggle(app, "Logic links", True)
+    assert searched == []
+
+
+def test_the_gantt_ask_field_says_a_sentence_nests_too_deep_without_failing(app):
+    """Parentheses nested past the parser's recursion: a neutral line, the page draws, the
+    sentence is not repeated."""
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("(" * 299 + "x").run()
+    _ok(app)
+    assert [w.value for w in app.warning] == ["This sentence nests too many parentheses to be read."]
+    assert not _chips(app)
+
+
+def test_a_standard_nested_too_deep_is_refused_without_failing(app):
+    """A TOML nested past the recursion limit (well under the 1 MB upload cap): an error naming
+    the file, no exception on the page."""
+    app.switch_page("views/health.py").run()
+    nested = b"x = " + b"[" * 5000 + b"]" * 5000 + b"\n"
+    app.file_uploader(key="std_upload").set_value(("deep.toml", nested, "application/toml")).run()
+    _ok(app)
+    assert any("deep.toml: TOML too deeply nested" in error.value.replace("\\", "") for error in app.error)
+
+
+def test_the_gantt_funnel_line_shows_a_wbs_name_literally(tmp_path, monkeypatch):
+    """A WBS name written as Markdown in the export (a link, an image) is shown as typed in the
+    Ask funnel line: the browser fetches nothing."""
+    wbs = [
+        {"wbs_id": "W1", "proj_id": "1", "wbs_short_name": "LNK", "wbs_name": "[a](http://x)",
+         "proj_node_flag": "N", "parent_wbs_id": "", "seq_num": "1"},
+    ]  # fmt: skip
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A", wbs_id="W1")], wbs=wbs))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    at.text_input(key="gantt_ask").set_value("LNK").run()
+    _ok(at)
+    funnel = [c.value for c in at.caption if "LNK" in c.value]
+    assert funnel and all("\\[a\\]\\(http://x\\)" in line for line in funnel), funnel
+
+
+def test_debug_lists_the_curated_load_errors_to_every_session_without_their_words(app, lexicon_root):
+    """A curated/ file that cannot be read, or a refusal that cannot apply, is named in block 14
+    with where it fails, in every session (not only the first that loaded the lexicon); the text
+    an error quotes (a word, a key) is never shown."""
+    from xerscope.app import ui
+
+    (lexicon_root / "curated" / "bad.toml").write_text('[[group]]\nwords = ["qwfpsecret" "CIV"]\n', encoding="utf-8")
+    (lexicon_root / "curated" / "refusals.toml").write_text(
+        '[[refuse]]\nwords = ["zxcvsecret", "fondations"]\n', encoding="utf-8"
+    )
+    app.switch_page("views/gantt.py").run()  # the first session loads the lexicon
+    for session in (app, read_folder(AppTest.from_file(APP, default_timeout=120).run())):
+        session.switch_page("views/debug.py").run()
+        _ok(session)
+        block = next(e for e in session.main.expander if e.key == "debug_ask_variants")
+        shown = " ".join(m.value for m in [*block.markdown, *block.caption, *block.warning])
+        assert all(ui.md_text(e) in shown for e in ("bad.toml: line 2, column 23", "refusals.toml: refuse #1")), shown
+        assert "secret" not in shown
+
+
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     from xerscope.app import state
 

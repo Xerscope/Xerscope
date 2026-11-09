@@ -327,10 +327,11 @@ def test_lexicon_build_rewrites_generated_and_purges_suggested(capsys, sample_di
 
     for folder in ("generated", "curated", "suggested"):
         (tmp_path / folder).mkdir()
+    # the recent one first: a record purges what is expired at its own date
+    suggested.record(tmp_path / "suggested", "recent", "COM · Commissioning", "wbs", datetime.now(UTC))
     suggested.record(
         tmp_path / "suggested", "ancien", "COM · Commissioning", "wbs", datetime.now(UTC) - timedelta(days=91)
     )
-    suggested.record(tmp_path / "suggested", "recent", "COM · Commissioning", "wbs", datetime.now(UTC))
     out = run(capsys, "lexicon", "build", sample_dir, "--out", tmp_path)
     assert "group(s) from 8 file(s) written, 0 new" in out and "suggestions: 1 kept, 1 purged" in out
     assert "ancien" not in out and "recent" not in out

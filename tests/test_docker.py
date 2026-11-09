@@ -173,7 +173,11 @@ def test_remote_app_settings_reach_streamlit():
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert 'XERSCOPE_DATA_LOCKED: "true"' in c
     env = dict(re.findall(r"^\s+(STREAMLIT_[A-Z_]+): \"?([^\"\s#]+)", c, re.M))
-    assert env == {"STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "1", "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none"}
+    assert env == {
+        "STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "1",
+        "STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE": "1",  # MB per message from the browser: a sentence, a click
+        "STREAMLIT_CLIENT_SHOW_ERROR_DETAILS": "none",
+    }
     app_dir = ROOT / "src" / "xerscope" / "app"  # `xerscope app` runs Streamlit from here (cli.py)
     shown = subprocess.run(
         [sys.executable, "-m", "streamlit", "config", "show"],
@@ -184,6 +188,10 @@ def test_remote_app_settings_reach_streamlit():
         check=True,
     ).stdout
     assert "\nmaxUploadSize = 1\n" in shown and '\nshowErrorDetails = "none"\n' in shown
+    # a hidden option, not listed by `config show`: `streamlit run` reads it from this variable
+    from streamlit.web import cli
+
+    assert "STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE" in {p.envvar for p in cli.main_run.params}
 
 
 def test_caddy_security_headers_and_their_ci_check():

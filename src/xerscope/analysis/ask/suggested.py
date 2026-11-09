@@ -2,22 +2,23 @@
 XERSCOPE_LEXICON: one ``[[suggestion]]`` per click on a suggested label, holding the unknown word,
 the label picked, the label's source column, the filter it gives (facet, value) and the date,
 never the sentence asked. The app appends; nothing reads them for the Ask field until the
-maintainer copies a word into ``curated/``; ``xerscope lexicon build`` (the init service) purges
-a suggestion not copied after RETENTION.
+maintainer copies a word into ``curated/``; a suggestion not copied is purged after RETENTION, by
+``xerscope lexicon build`` (the init service) and by the next record.
 
 The folder is written from a web page, hence the guards: the file name is fixed; word and label
 are NFKC-normalised, bounded (MAX_WORD, MAX_LABEL) and made of letters, digits and PUNCTUATION
 only, refused otherwise (no control character, newline, bracket, quote, backslash or '='); each
 value goes through ``json_quote``; an exclusive ``flock`` serialises the size check and the
 append; the file stops at MAX_BYTES; it is created 0600 and never opened through a symlink;
-nothing is printed or logged. ``flock`` is POSIX: on Windows nothing is recorded."""
+nothing is printed or logged. ``flock`` is POSIX: on Windows nothing is recorded. Each record
+also purges, under its lock, what ``purge`` would: the retention holds without the init service."""
 
 from __future__ import annotations
 
 import os
 import tomllib
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .lexicon import Lexicon, json_quote, write_private
@@ -29,15 +30,16 @@ MAX_LABEL = 160  # characters of the label picked (a WBS "CODE · name", a resou
 MAX_BYTES = 256 * 1024  # about a thousand suggestions; past it a click records nothing
 RETENTION = timedelta(days=90)  # a suggestion not copied into curated/ is purged after this
 PUNCTUATION = frozenset(" .-_'&/()·,:+#")  # what a WBS or resource label may hold besides letters and digits
+INVISIBLE = frozenset("\u115f\u1160\u3164\uffa0")  # Hangul fillers: letters (Lo) drawn with no glyph
 # the kind of label suggestions() offers -> the column it comes from, the facet it filters
 SOURCES = {"wbs": ("PROJWBS.wbs_name", "wbs"), "resource": ("RSRC.rsrc_short_name", "resource")}
 
 
 def clean(text: str, limit: int) -> str | None:
     """``text`` NFKC-normalised and stripped, or None when empty, longer than ``limit`` or holding
-    a character outside letters, digits and PUNCTUATION."""
+    a character outside letters, digits and PUNCTUATION, or an INVISIBLE letter."""
     text = unicodedata.normalize("NFKC", text).strip()
-    allowed = all(unicodedata.category(c)[0] in "LN" or c in PUNCTUATION for c in text)
+    allowed = all((unicodedata.category(c)[0] in "LN" and c not in INVISIBLE) or c in PUNCTUATION for c in text)
     return text if 0 < len(text) <= limit and allowed else None
 
 
@@ -50,8 +52,11 @@ def entry(word: str, label: str, kind: str, at: datetime) -> str:
     return "\n".join([*lines, f"at = {at:%Y-%m-%dT%H:%M:%SZ}", "", ""])
 
 
-def record(folder: str | Path, word: str, label: str, kind: str, at: datetime) -> bool:
-    """Append one correction to ``folder``/FILE; False, and nothing written, when a guard refuses."""
+def record(folder: str | Path, word: str, label: str, kind: str, at: datetime, curated: Lexicon | None = None) -> bool:
+    """Append one correction to ``folder``/FILE; False, and nothing written, when a guard refuses
+    or the file is not TOML; True, and nothing added, when the file holds the same word, label
+    and column. Under the same lock, the suggestions expired at ``at`` (``purge``, with
+    ``curated``) go: the file is then replaced whole, holding the new entry."""
     try:
         import fcntl
     except ImportError:
@@ -59,25 +64,50 @@ def record(folder: str | Path, word: str, label: str, kind: str, at: datetime) -
     word, label = clean(word, MAX_WORD), clean(label, MAX_LABEL)
     if word is None or label is None or kind not in SOURCES or not Path(folder).is_dir():
         return False
-    text = entry(word, label, kind, at).encode()
+    path = Path(folder) / FILE
+    text = entry(word, label, kind, at)
     try:
-        fd = _locked(Path(folder) / FILE, fcntl)
+        fd = _locked(path, fcntl)
     except OSError:  # a symlink in place of the file (ELOOP), a folder not writable
         return False
-    with os.fdopen(fd, "ab") as file:
-        if os.fstat(fd).st_size + len(text) > MAX_BYTES:
+    with os.fdopen(fd, "a+b") as file:
+        file.seek(0)
+        try:
+            entries = tomllib.loads(file.read().decode("utf-8")).get("suggestion", [])
+        except ValueError:  # not UTF-8, not TOML (edited by hand): left as it is
             return False
-        file.write(text)
+        if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+            return False  # TOML of another shape (edited by hand): left as it is
+        live = [(e, t) for e in entries if not _expired(e, curated or {}, at) and (t := _rewritten(e))]
+        kept = [t for _, t in live]
+        same = (word, label, SOURCES[kind][0])
+        held = any((e.get("word"), e.get("label"), e.get("column")) == same for e, _ in live)
+        if len(kept) < len(entries):
+            written = "".join([*kept, "" if held else text])
+            if len(written.encode()) > MAX_BYTES:
+                return False
+            write_private(path, written)
+            return True
+        if held:
+            return True
+        if os.fstat(fd).st_size + len(text.encode()) > MAX_BYTES:
+            return False
+        file.write(text.encode())
     return True
 
 
 def _locked(path: Path, fcntl) -> int:
-    """``path`` opened for appending under an exclusive lock, on the file the path names once
-    locked (a purge replaces it: a writer that waited on the old one opens the new one)."""
+    """``path`` opened for reading and appending under an exclusive lock, on the file the path
+    names once locked (a purge replaces it: a writer that waited on the old one opens the new one)."""
     while True:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        if os.fstat(fd).st_ino == os.stat(path, follow_symlinks=False).st_ino:
+        fd = os.open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            same = os.fstat(fd).st_ino == os.stat(path, follow_symlinks=False).st_ino
+        except BaseException:  # the path removed by hand meanwhile: no descriptor left open
+            os.close(fd)
+            raise
+        if same:
             return fd
         os.close(fd)
 
@@ -103,8 +133,12 @@ def purge(folder: str | Path, curated: Lexicon, now: datetime) -> tuple[int, int
 
 
 def _expired(suggestion: dict, curated: Lexicon, now: datetime) -> bool:
+    """Older than RETENTION at ``now`` (a date without time zone, edited by hand, read as UTC, as
+    ``entry`` writes it) and its word not in ``curated``."""
     at, word = suggestion.get("at"), suggestion.get("word")
-    old = isinstance(at, datetime) and at.tzinfo is not None and now - at >= RETENTION
+    if isinstance(at, datetime) and at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    old = isinstance(at, datetime) and now - at >= RETENTION
     return old and not (isinstance(word, str) and fold(word) in curated)
 
 

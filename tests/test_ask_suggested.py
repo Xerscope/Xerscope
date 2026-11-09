@@ -131,3 +131,80 @@ def test_a_write_after_a_purge_lands_in_the_new_file(tmp_path):
     suggested.purge(tmp_path, {}, NOW)
     assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW)
     assert [e["word"] for e in _entries(tmp_path)] == ["nouveau"]
+
+
+def test_a_record_purges_what_expired_without_the_init_service(tmp_path):
+    """The app purges as it writes, under the same lock: a stack restarted by Docker (no
+    lexicon-init run) or running for months still keeps a suggestion RETENTION at most."""
+    old = NOW - suggested.RETENTION - timedelta(days=1)
+    assert suggested.record(tmp_path, "ancien", "COM · Commissioning", "wbs", old)
+    assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW)
+    assert [e["word"] for e in _entries(tmp_path)] == ["nouveau"]
+    assert os.listdir(tmp_path) == [suggested.FILE]
+    assert stat.S_IMODE((tmp_path / suggested.FILE).stat().st_mode) == 0o600
+
+
+def test_a_record_keeps_an_expired_word_that_curated_holds(tmp_path):
+    old = NOW - suggested.RETENTION - timedelta(days=1)
+    for word in ("ancien", "valide"):
+        assert suggested.record(tmp_path, word, "COM · Commissioning", "wbs", old)
+    curated = {"valide": ("com",), "com": ("valide",)}
+    assert suggested.record(tmp_path, "nouveau", "COM · Commissioning", "wbs", NOW, curated)
+    assert [e["word"] for e in _entries(tmp_path)] == ["valide", "nouveau"]
+
+
+def test_the_same_correction_is_recorded_once(tmp_path):
+    """Clicks on one (word, label, column) add nothing past the first: a visitor cannot fill the
+    file with one correction repeated. Another label or another column for the word is kept."""
+    for _ in range(100):
+        assert suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", NOW)
+    assert suggested.record(tmp_path, "commiss", "COMMISS", "resource", NOW)
+    assert suggested.record(tmp_path, "ｃｏｍｍｉｓｓ", "COM · Commissioning", "wbs", NOW)  # NFKC: the same word
+    assert [(e["word"], e["label"], e["column"]) for e in _entries(tmp_path)] == [
+        ("commiss", "COM · Commissioning", "PROJWBS.wbs_name"),
+        ("commiss", "COMMISS", "RSRC.rsrc_short_name"),
+    ]
+    later = NOW + suggested.RETENTION + timedelta(days=1)  # the first one expired: recorded again
+    assert suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", later)
+    assert [(e["word"], e["at"]) for e in _entries(tmp_path)] == [("commiss", later)]
+
+
+@pytest.mark.parametrize("held", [b"[[suggestion]\n", b"\xff\xfe", b'suggestion = "x"\n', b"suggestion = [1]\n"])
+def test_a_file_edited_into_another_shape_is_left_as_it_is(tmp_path, held):
+    path = tmp_path / suggested.FILE
+    path.write_bytes(held)
+    assert not suggested.record(tmp_path, "commiss", "COM · Commissioning", "wbs", NOW)
+    assert path.read_bytes() == held
+
+
+def test_a_file_removed_between_open_and_check_leaks_no_descriptor(tmp_path, monkeypatch):
+    """The file deleted by hand after it is opened and locked: the check raises (record then
+    returns False, an OSError) and the descriptor is closed."""
+    import fcntl
+
+    def gone(path, follow_symlinks=True):
+        raise FileNotFoundError(path)
+
+    before = len(os.listdir("/proc/self/fd"))
+    monkeypatch.setattr(suggested.os, "stat", gone)
+    with pytest.raises(FileNotFoundError):
+        suggested._locked(tmp_path / suggested.FILE, fcntl)
+    monkeypatch.undo()
+    assert len(os.listdir("/proc/self/fd")) == before
+
+
+def test_a_date_written_without_time_zone_is_read_as_utc_and_purged(tmp_path):
+    """An `at` edited by hand without its "Z" (a local date in TOML) expires as the others do."""
+    (tmp_path / suggested.FILE).write_text(
+        '[[suggestion]]\nword = "ancien"\nlabel = "COM · Commissioning"\ncolumn = "PROJWBS.wbs_name"\n'
+        'facet = "wbs"\nvalue = "COM"\nat = 2026-01-01T00:00:00\n',
+        encoding="utf-8",
+    )
+    assert suggested.purge(tmp_path, {}, NOW) == (0, 1)
+
+
+@pytest.mark.parametrize("filler", ["ᅟ", "ᅠ", "ㅤ", "ﾠ"])
+def test_an_invisible_hangul_filler_is_refused(tmp_path, filler):
+    """Letters (category Lo) with no glyph: a label holding one would read as another."""
+    assert suggested.clean(f"com{filler}miss", suggested.MAX_WORD) is None
+    assert not suggested.record(tmp_path, "commiss", f"COM · Commis{filler}sioning", "wbs", NOW)

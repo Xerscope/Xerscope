@@ -40,13 +40,13 @@ from .ask.generated import to_toml as variants_toml
 from .ask.grammar import CATEGORIES, STATUSES, And, Atom, Expr, Not, Or
 from .ask.lexicon import CURATED, GENERATED, SUGGESTED, Lexicon, json_quote, learn, lexicon_from_groups, load_lexicon
 from .ask.parser import MAX_CHARS, Backend, parse, parse_keywords, warm
-from .ask.text import FUZZY, MARGIN, SURE, fold
+from .ask.text import FUZZY, MARGIN, MAX_FUZZY, SURE, fold
 from .ask.vocab import Vocabulary, vocabulary
 from .populations import Funnel
 
 __all__ = [
     "CATEGORIES", "CURATED", "GENERATED", "SUGGESTED",
-    "FIELDS", "FUZZY", "MARGIN", "MAX_CHARS", "STATUSES", "SUGGEST", "SURE", "WORDS", "And", "Atom",
+    "FIELDS", "FUZZY", "MARGIN", "MAX_CHARS", "MAX_FUZZY", "STATUSES", "SUGGEST", "SURE", "WORDS", "And", "Atom",
     "Backend", "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "answer", "apply", "by_confidence",
     "canonical", "conjuncts", "coverage", "expected_filter", "facts", "fold", "from_answer", "funnel_line",
     "grounded", "json_quote", "language", "learn", "lexicon_from_groups", "llm_backend",

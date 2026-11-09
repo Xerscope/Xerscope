@@ -173,7 +173,7 @@ def teach(word: str, label: str, kind: str) -> bool:
         return True
     taught.append((word, label))
     folders = _lexicon_dirs(query.SUGGESTED)
-    return not folders or suggested.record(folders[0], word, label, kind, datetime.now(UTC))
+    return not folders or suggested.record(folders[0], word, label, kind, datetime.now(UTC), lexicon())
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:
