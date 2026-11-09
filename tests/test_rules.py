@@ -407,7 +407,7 @@ def test_invalid_progress_dates():
     assert codes(run(P6, "P6-10a", s)) == ["EARLY", "LATE", "RUN"]
     assert codes(run(P6, "P6-10b", s)) == ["FUT"]
     assert run(P6, "P6-10a", s).denominator == run(P6, "P6-10b", s).denominator == 5  # OK finished: removed
-    assert run(DCMA, "DCMA-09", s).numerator == 3  # DCMA reads the remaining finish: LATE passes
+    assert run(DCMA, "DCMA-09", s).numerator == 2  # remaining finish: LATE passes; FUT complete: out (§4.0)
 
 
 def test_dcma_09_follows_pam_200_1():
@@ -415,8 +415,9 @@ def test_dcma_09_follows_pam_200_1():
     the IMS status date, or has an actual start/finish date beyond the IMS status date are included in
     this metric."
 
-    4.0 excludes LOE, subprojects and milestones. Completed tasks are kept only when they could still
-    have an actual date beyond the status date: one finished before it is out of the population.
+    4.0: "This analysis should exclude Completed tasks, LOE tasks, Subprojects (called Summary tasks in
+    MS Project), and Milestones." FUT, complete with an actual finish beyond the status date, is out:
+    the metric's subject is "Incomplete tasks" (DECM 06A506a and P6-10b report that date).
     """
     s = snap(
         [
@@ -424,15 +425,15 @@ def test_dcma_09_follows_pam_200_1():
             active("RUN", restart_date="2026-02-26 08:00", reend_date="2026-02-27 17:00"),  # remaining finish: flagged
             todo("MEARLY", task_type="TT_Mile", target_drtn_hr_cnt="0", early_start_date="2026-02-27 08:00"),
             done("OK"),  # finished 2026-02-13, before DD: out
-            done("FUT", act_end_date="2026-03-04 17:00"),  # actual finish beyond DD: flagged
+            done("FUT", act_end_date="2026-03-04 17:00"),  # complete: out, even with an actual beyond DD
             todo("FINE"),
             todo("LOE", task_type="TT_LOE", early_start_date="2026-02-27 08:00"),
         ]
     )
     r = run(DCMA, "DCMA-09", s)
-    # Population: EARLY, RUN, FUT, FINE = 4 (MEARLY milestone, OK done before DD, LOE out).
-    assert codes(r) == ["EARLY", "FUT", "RUN"]
-    assert (r.numerator, r.denominator) == (3, 4)
+    # Population: EARLY, RUN, FINE = 3 (MEARLY milestone, OK and FUT complete, LOE out).
+    assert codes(r) == ["EARLY", "RUN"]
+    assert (r.numerator, r.denominator) == (2, 3)
 
 
 def test_resource_or_expense():
@@ -514,6 +515,7 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     # DCMA-EA PAM 200.1 (Oct 2012) 3.1.2.4: "Tasks missing baseline finish dates are included in the
     # denominator." (step 1: "Filter out Level of Effort (LOE) tasks, summary tasks, and zero duration
     # tasks (milestones)."). NEW has no baseline finish: due, not finished -> A, B done / A, B, C, NEW.
+    # Pins the "with no baseline finish" reading of "missing" (UNRESOLVED in dcma_14_bei).
     dcma = run(DCMA, "DCMA-14", NOW, bl)
     assert (dcma.numerator, dcma.denominator) == (2, 4)
     assert dcma.value == pytest.approx(2 / 4)
@@ -539,11 +541,10 @@ def test_missed_tasks_and_late_activities():
 
 def test_dcma_11_follows_pam_200_1():
     """DCMA-EA PAM 200.1 (Oct 2012) 4.11: a task is due when its baseline finish is on or before the status
-    date; it is missed when its actual or forecast finish is after the baseline finish. The base is the
-    tasks "not missing baseline start or finish dates". 4.0 leaves out completed tasks, LOE, summary tasks and
-    milestones; 4.11 counts actual finishes, so completed tasks stay (4.11 overrides 4.0 there).
-
-    UNRESOLVED: the pamphlet's Finish Variance is working time; the calendar date is compared here.
+    date; it is missed when its actual or forecast finish is after the baseline finish by calendar date,
+    or when its Finish Variance (working time) is greater than zero. The base is the tasks "not missing
+    baseline start or finish dates". 4.0 leaves out completed tasks, LOE, summary tasks and milestones;
+    4.11 counts actual finishes, so completed tasks stay (4.11 overrides 4.0 there).
     """
     st = "2026-02-02 08:00"
     s = snap(
@@ -671,8 +672,9 @@ def test_cpli_uses_the_finish_float():
     assert r.status == "fail"
 
 
-def test_cpli_needs_a_must_finish_by_date():
-    """Without one P6 gives the last activity 0 float: 1.0 whatever the schedule, so n/a."""
+def test_cpli_is_na_without_must_finish_by_or_baseline():
+    """Without a Must Finish By, P6 gives the last activity 0 float (1.0 whatever the schedule); without a
+    baseline there is no finish for the margin either: n/a. With a baseline, see the tests below."""
     chain = CHAIN[:2] + [dict(CHAIN[2], total_float_hr_cnt="0")]
     r = run(DCMA, "DCMA-13", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)]))
     assert r.status == "n/a" and "Must Finish By" in r.note
@@ -732,7 +734,21 @@ def test_cpli_takes_the_end_milestone_that_finishes_last():
     assert r.value == pytest.approx(23 / 21) and "margin of Z2" in r.note
 
 
+def test_cpli_without_must_finish_by_reads_the_stored_finish_as_the_must_finish_by_branch_does():
+    """PAM 200.1 §3.1.2.3: "The CPL is the length in work days from time now until the next program
+    milestone that is being measured": one finish date. Z is chosen on its stored finish, so CPL and the
+    margin run to that same stored finish (Wed 1 Apr 17:00), not to a recalculated one (A -> Z FS would
+    put it on Fri 27 Mar); stored against recalculated dates is INT-01's business. CPL: 20 wd in March
+    + Mon 30, Tue 31, Wed 1 = 23 wd; baseline finish Wed 1 Apr 17:00: margin 0 wd; (23 + 0) / 23."""
+    r = _cpli([A160, _end(finish="2026-04-01 17:00")], [("A", "Z", "FS", 0)], {"Z": "2026-04-01 17:00"})
+    assert r.value == pytest.approx(1.0)
+    assert "CPL 23 wd to Z" in r.note and "margin of Z to its BL finish 2026-04-01: 0 wd" in r.note
+
+
 def test_cpli_is_na_without_a_baseline():
+    """PAM 200.1 §3.1.2.3: "It measures critical path "realism" relative to the baselined finish date,
+    when constrained." Neither a Must Finish By date nor a baseline: no finish to measure against, n/a
+    (TF = 0 by construction would give 1.00 whatever the schedule)."""
     r = run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)]))
     assert r.status == "n/a" and "baseline" in r.note
 
@@ -1111,6 +1127,32 @@ def test_decm_out_of_sequence_ignores_a_completed_predecessor():
     assert links(r) == [("P2", "S2")] and r.denominator == 1
 
 
+def test_decm_06a212a_keeps_a_level_of_effort_predecessor():
+    """UNRESOLVED (06A212a v8.0 does not mention LOE; block 10 takes "all the finish-to-start
+    relationships in the IMS containing an incomplete predecessor task/activity or milestone"). Pins the
+    current reading: LOE (to 13/03) -> A FS, A started 23/02: out of sequence."""
+    s = snap([active("LOE", task_type="TT_LOE"), active("A")], [("LOE", "A", "FS", 0)])
+    r = run(DECM, "06A212a", s)
+    assert (links(r), r.denominator) == ([("LOE", "A")], 1)
+
+
+def test_decm_06a212a_threshold_is_a_count_of_zero():
+    """06A212a v8.0, block 6: "X = Count of out of sequence conditions"; block 7: "X = 0". One
+    condition among 100 links from incomplete predecessors (1 %) fails; none passes. T000..T100 run one
+    hour each, back to back."""
+    hour = pd.Timestamp("2026-03-02 08:00")
+    chain = [
+        todo(f"T{i:03}", early_start_date=f"{hour + pd.Timedelta(hours=i):%Y-%m-%d %H:%M}",
+             early_end_date=f"{hour + pd.Timedelta(hours=i + 1):%Y-%m-%d %H:%M}")
+        for i in range(101)
+    ]  # fmt: skip
+    in_sequence = [(f"T{i:03}", f"T{i + 1:03}", "FS", 0) for i in range(100)]
+    assert run(DECM, "06A212a", snap(chain, in_sequence)).status == "pass"
+    chain[100] = active("T100", act_start_date="2026-02-23 08:00")  # started before T099 finishes
+    r = run(DECM, "06A212a", snap(chain, in_sequence))
+    assert (links(r), r.denominator, r.status) == ([("T099", "T100")], 100, "fail")
+
+
 def test_decm_baseline_and_actual_dates():
     bl = Baseline.from_snapshot(snap([todo("A"), todo("B")]))
     now = snap(
@@ -1160,6 +1202,16 @@ def test_decm_actuals_changed_needs_the_previous_update():
     assert run_metric(DECM["06A504a"], AnalysisContext(week, SnapshotStore([w1, week]))).status == "n/a"  # 7 days
 
 
+def test_decm_06a506b_counts_incomplete_tasks_only():
+    """06A506b v8.0, block 6: "X = Count of incomplete tasks/activities & milestones with either forecast
+    start or" "forecast finish on or before the status date"; block 9: "Incomplete tasks/activities or
+    milestones equals no actual finish date in the IMS." D1, D2 finished: out. L, not started, forecast
+    start Fri 27 Feb before the data date (Mon 2 Mar 08:00): flagged. 1 / 1."""
+    s = snap([done("D1"), done("D2"), todo("L", early_start_date="2026-02-27 08:00")])
+    r = run(DECM, "06A506b", s)
+    assert (codes(r), r.denominator) == (["L"], 1)
+
+
 def test_decm_riding_the_status_date():
     from xerscope.store import SnapshotStore
 
@@ -1194,6 +1246,22 @@ def test_decm_riding_the_status_date_takes_the_status_period_as_a_parameter():
     assert run_metric(with_settings(DECM["06A506c"], params={"status_period_days": 8}), context).status == "n/a"
 
 
+def test_decm_riding_the_status_date_population_is_pinned():
+    """UNRESOLVED (06A506c v8.0, block 6: "Y = Total count of incomplete tasks/activities & milestones").
+    Pins the current population: R rides; L (level of effort) and NEW (not in the earlier update) are
+    left out of Y, so 1 / 1, where the sheet's Y would count 3."""
+    from xerscope.store import SnapshotStore
+
+    m1 = snap([todo("R", early_start_date="2026-03-02 08:00"), todo("L", task_type="TT_LOE")])
+    m2 = snap(
+        [todo("R", early_start_date="2026-04-06 08:00"), todo("L", task_type="TT_LOE"), todo("NEW")],
+        data_date="2026-04-06 08:00",
+    )
+    store = SnapshotStore([m1, m2])
+    r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
+    assert (codes(r), r.denominator) == (["R"], 1)
+
+
 def test_decm_riding_the_status_date_started_work():
     from xerscope.store import SnapshotStore
 
@@ -1221,13 +1289,21 @@ def test_decm_riding_the_status_date_started_work():
 def test_decm_open_ends_on_a_progressed_schedule():
     # D finished; S started with an FS predecessor and no successor: open finish (started
     # tasks count); T not started, FF-only predecessor: open start. Z, the baseline's last
-    # finish, is exempt. The baseline here is the file's own current dates.
+    # finish, is exempt. The update is its own baseline: its planned dates (target_*) are read.
+    def plan(start, finish):
+        return dict(target_start_date=start, target_end_date=finish)
+
     s = snap(
         [
-            done("D"),
-            active("S", early_end_date="2026-03-13 17:00"),
-            todo("T", early_end_date="2026-03-13 17:00"),
-            todo("Z", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+            done("D", **plan("2026-02-02 08:00", "2026-02-13 17:00")),
+            active("S", early_end_date="2026-03-13 17:00", **plan("2026-02-23 08:00", "2026-03-13 17:00")),
+            todo("T", early_end_date="2026-03-13 17:00", **plan("2026-03-02 08:00", "2026-03-13 17:00")),
+            todo(
+                "Z",
+                early_start_date="2026-03-16 08:00",
+                early_end_date="2026-03-20 17:00",
+                **plan("2026-03-16 08:00", "2026-03-20 17:00"),
+            ),
         ],
         [("D", "S", "FS", 0), ("D", "T", "FF", 0), ("T", "Z", "FS", 0)],
     )
@@ -1265,6 +1341,95 @@ def test_decm_project_start_exemption_does_not_move_once_work_is_done():
     r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
     assert "B" in codes(r)  # open start
     assert "C" not in codes(r)  # the last finish of the whole baseline: exempt
+
+
+def planned(code: str, start: str, finish: str, **extra) -> dict:
+    """A not-started task whose baseline (planned) and forecast dates are ``start`` -> ``finish``."""
+    dates = dict(target_start_date=start, target_end_date=finish, early_start_date=start, early_end_date=finish)
+    return todo(code, **dates, **hours(8), **extra)
+
+
+@pytest.mark.parametrize(("link_type", "expected"), [("FF", ["X"]), ("SF", ["X"]), ("FS", []), ("SS", [])])
+def test_decm_06a204b_reads_a_link_to_another_project_by_its_type(link_type, expected):
+    """06A204b v8.0, block 9: an open start is a task whose predecessors are "only finish to finish,
+    start to finish, or blanks"; the sheet does not set links to other projects apart. X's only
+    predecessor is X9 of project 2 (not in the file): linked FF or SF, X is an open start; FS or SS, not.
+    A (first start) -> B (last finish) and X -> B, all FS: nothing else is open."""
+    tasks = [
+        planned("A", "2026-03-02 08:00", "2026-03-02 17:00"),
+        planned("X", "2026-03-03 08:00", "2026-03-03 17:00"),
+        planned("B", "2026-03-04 08:00", "2026-03-05 17:00"),
+    ]
+    s = snap(tasks, [("A", "B", "FS", 0), ("X", "B", "FS", 0), ("X9", "X", link_type, 0, "2")])
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    assert (codes(r), r.denominator) == (expected, 3)
+
+
+def test_decm_06a204b_reads_a_link_to_another_project_as_successor_by_its_type():
+    """06A204b v8.0, block 9, open finish: successors "only start to start, start to finish, or blanks".
+    A (first start) -> M and A -> Z (last finish), FS. M's only successor is Y1 in project 2 of the same
+    file: linked SS, M is an open finish; linked FS, it is not."""
+    tasks = [
+        planned("A", "2026-03-02 08:00", "2026-03-02 17:00"),  # task_id 1
+        planned("M", "2026-03-03 08:00", "2026-03-03 17:00"),  # task_id 2
+        planned("Z", "2026-03-04 08:00", "2026-03-05 17:00"),  # task_id 3
+    ]
+    for link_type, expected in (("SS", ["M"]), ("FS", [])):
+        text = xer_text(tasks, [("A", "M", "FS", 0), ("A", "Z", "FS", 0)])
+        lines = with_second_project(text, "P2", ["Y1"], "2026-03-02 08:00").splitlines()  # Y1: task_id 100
+        i = lines.index("%T\tTASKPRED")
+        header = lines[i + 1].split("\t")[1:]
+        row = dict.fromkeys(header, "")
+        row.update(task_pred_id="9", task_id="100", pred_task_id="2", proj_id="2", pred_proj_id="1",
+                   pred_type=f"PR_{link_type}", lag_hr_cnt="0")  # fmt: skip
+        lines.insert(i + 2, "%R\t" + "\t".join(row[c] for c in header))
+        s = build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), project_code="T")
+        r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+        assert (codes(r), r.denominator) == (expected, 3)
+
+
+def test_decm_06a204b_first_and_last_are_read_in_the_whole_ims():
+    """06A204b v8.0, block 9: "The first tasks/activities & milestones have the earliest baseline start
+    date in the IMS and should be excluded from the open start portion of this metric." and "The last
+    tasks/activities & milestones have the latest baseline finish date in the IMS..."; "Non-LOE" is in
+    X, Y and the steps only, not in these assumptions (rewritten in v3.4-v3.6 after "Non-LOE" came in
+    v3.3). FIRST 03/03 -> LAST 04/03 (FS); FIRST has no predecessor, LAST no successor.
+    - Without LOE: FIRST is first, LAST is last: nothing flagged, 0 / 2.
+    - LOE 02/03-31/03, strictly earlier and later: FIRST and LAST lose the exemption, 2 / 2.
+    - LOE 03/03 08:00-04/03 17:00, tied with both: "The first tasks/activities & milestones" (plural)
+      share the earliest start, so FIRST and LAST keep it, 0 / 2.
+    """
+    discrete = [
+        planned("FIRST", "2026-03-03 08:00", "2026-03-03 17:00"),
+        planned("LAST", "2026-03-04 08:00", "2026-03-04 17:00"),
+    ]
+    wider = planned("LOE", "2026-03-02 08:00", "2026-03-31 17:00", task_type="TT_LOE")
+    tied = planned("LOE", "2026-03-03 08:00", "2026-03-04 17:00", task_type="TT_LOE")
+    for tasks, expected in ((discrete, []), ([wider, *discrete], ["FIRST", "LAST"]), ([tied, *discrete], [])):
+        s = snap(tasks, [("FIRST", "LAST", "FS", 0)])
+        r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+        assert (codes(r), r.denominator) == (expected, 2)
+
+
+def test_decm_06a204b_own_baseline_reads_planned_starts():
+    """06A204b v8.0, block 9: "The first tasks/activities & milestones have the earliest baseline start
+    date in the IMS". When the update is its own baseline, P6's BL Project Start is the planned start
+    (docs/standards.md, R1; EPPM 47222: BL1 Start "is set to the planned start date"; Planned Start "is
+    not changed by the project scheduler after the activity has started"), not the actual start.
+    S (start milestone, planned 02/03 08:00, no predecessor) -> A -> F (finish milestone, 31/03).
+    T started 23/02, planned 09/03, no predecessor, T -> F: its baseline start is 09/03, so S stays the
+    first and T is an open start. D, finished, planned 09/03-20/03, actual start 02/02, no logic: out
+    of the population, and its planned start does not take S's exemption either. 1 / 4."""
+    tasks = [
+        todo("S", **SM, target_start_date="2026-03-02 08:00", target_end_date="2026-03-02 08:00"),
+        planned("A", "2026-03-03 08:00", "2026-03-13 17:00"),
+        todo("F", **FM, target_start_date="2026-03-31 17:00", target_end_date="2026-03-31 17:00"),
+        active("T", target_start_date="2026-03-09 08:00", target_end_date="2026-03-20 17:00"),
+        done("D", target_start_date="2026-03-09 08:00", target_end_date="2026-03-20 17:00"),
+    ]
+    s = snap(tasks, [("S", "A", "FS", 0), ("A", "F", "FS", 0), ("T", "F", "FS", 0)])
+    r = run(DECM, "06A204b", s, Baseline.from_snapshot(s))
+    assert (codes(r), r.denominator) == (["T"], 4)
 
 
 def test_actuals_changed_counts_a_removed_date_on_both_sides():
@@ -1309,11 +1474,16 @@ def test_decm_out_of_sequence_without_incomplete_activity_finds_nothing():
 
 
 def test_dcma_09_compares_dates_by_day_p6_by_timestamp():
-    """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual finish
+    """DCMA-EA PAM 200.1 §4.9 reasons in dates ("on or before 8/1/09, not after 8/1/09"): an actual start
     on the status date, later in the day, is not beyond it. P6 Check Schedule keeps the timestamp
-    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference."""
+    (an actual at 12:00 is after a data date at 08:00). `date_grain` carries the difference. SAMEDAY
+    and LATE are under way (§4.9 counts incomplete tasks): 1 / 3."""
     s = snap(
-        [done("SAMEDAY", act_end_date="2026-03-02 12:00"), done("LATE", act_end_date="2026-03-03 09:00"), todo("FINE")]
+        [
+            active("SAMEDAY", act_start_date="2026-03-02 12:00", early_end_date="2026-03-13 17:00"),
+            active("LATE", act_start_date="2026-03-03 09:00", early_end_date="2026-03-13 17:00"),
+            todo("FINE"),
+        ]
     )
     r = run(DCMA, "DCMA-09", s)
     assert (codes(r), r.denominator) == (["LATE"], 3)

@@ -17,12 +17,12 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 | Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
 | Relationships checked | all except links between two finished activities; a link from another project counted only when that project is in the file (UNRESOLVED, below) | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
-| Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
+| Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish of the whole IMS (LOE included, ties share it) exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > `x` hours, milestones out | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships from an incomplete predecessor, actual else forecast dates, X = 0 |
-| BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
+| BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4, "Tasks missing baseline finish dates are included in the denominator", read as "with no baseline finish"; `UNRESOLVED`: "missing" could mean "missed") | n/a (EVMS cost metrics) |
 
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.
@@ -204,17 +204,27 @@ answer; DECM's status date is P6's data date.
 | 06A505a | In progress without actual start | % complete > 0, no actual start / with progress | ≤ 5 % |
 | 06A505b | Complete without actual finish | 100 %, no actual finish / at 100 % | ≤ 5 % |
 | 06A506a | Actual dates after the status date | / with an actual start | ≤ 5 % |
-| 06A506b | Forecast before the status date | incomplete with a forecast before the data date | X = 0 |
+| 06A506b | Forecast on or before the status date | incomplete with a forecast start (not started) or finish on or before the data date | X = 0 |
 | 06A506c | Riding the status date | start within 3 wd of the data date in both of two monthly updates, or remaining duration within ± 2 wd / incomplete | ≤ 1 % |
 
 Not included: 06A301a (vertical traceability), 06I101b (schedule margin), 06I201a
 (schedule visibility tasks): they need a summary schedule or your coding convention.
 
-**Status date vs data date.** DECM 06A506b says "on or before the status date": the end
-of the reported period. P6's data date is the first instant of remaining work, so a
-forecast exactly on it is valid; the equivalent test is "before the data date"
-(DECM 06A506b has no switch; only the `invalid_dates` rule of your own standard exposes it, as
-`include_data_date`, to read it literally.)
+**Status date vs data date.** The DECM status date is P6's data date (IPMR DID
+DI-MGMT-81861 §3.7.1.3.5.13: "The progress line is the date on which the schedule is statused,
+also known as "time-now," "data date," or "status date.""; 06A506c assumption 2: "If the Status
+Date does not match the Period End Date, use the IMS Status Date"). Each sheet's comparator applies
+to it as written: 06A506a flags an actual "after status date" (> data date, an actual on the data
+date is valid); 06A506b flags a forecast "on or before the status date" (<= data date, block 6 and
+"v8.0 Updated to include on or before status date 5, 6, 10"), so a not-started activity whose
+remaining start is the data date, as P6 schedules it, is flagged. P6's own check keeps "earlier
+than the data date" (101248); the `invalid_dates` rule of your own standard exposes the choice as
+`include_data_date`.
+`UNRESOLVED`: in v8.0, 06A506b block 10 step 3 still reads "forecast finish dates before the status
+date" and 06A506c (no change in v8.0) treats invalid forecasts as "(i.e., < Status Date)", as do PAM
+200.1 §4.9 ("the forecast date should be on or after 8/1/09") and the IPMR DID ("shall not be earlier
+than the status date"). Block 6 is applied; a DCMA text (the DECM v8.0 workbook or the 08/21/2025
+change note) would settle it.
 
 ## DCMA 14-Point (legacy)
 
@@ -238,16 +248,17 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 6 | High float | > 44 wd; a task without a float stays in the base, counted in the note | ≤ 5 % |
 | 7 | Negative float | < 0; a task without a float stays in the base, counted in the note | 0 |
 | 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
-| 9 | Invalid dates | forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
+| 9 | Invalid dates | incomplete tasks (§4.0, §4.9): forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
 | 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
 | 11 | Missed tasks | due by the data date (baseline finish, by calendar day); missed when finished, or forecast to finish, on a later calendar date or with a Finish Variance > 0 in working time (PAM's two criteria, "or") | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
 | 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; with a Must Finish By, CPL to the last open task and TF its float; without one, CPL and TF both on the open finish milestone ending last, TF being its margin to its baseline finish (n/a without a baseline or without a float) | ≥ 0.95 |
-| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
+| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date), both by calendar day (PAM steps 2 and 5 use the same bound); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
 
 **Dates.** The pamphlet reasons in dates ("on or before 8/1/09, not after 8/1/09", §4.9): DCMA-09 and
-DCMA-11 compare the status date by calendar day (`date_grain = "day"` in `dcma.toml`). P6 keeps the
-timestamp (an actual at 12:00 is after a data date at 08:00), which is the rule default and what
+DCMA-11 compare the status date by calendar day, and DCMA-14 reads both its due and its completed
+tasks so (`date_grain = "day"` in `dcma.toml`). P6 keeps the timestamp (an actual at 12:00 is after a
+data date at 08:00), which is the rule default and what
 `p6.toml` uses. A missing total float (DCMA-06, 07, 13) is never read as 0: the task stays in the
 population with a note, and the CPLI is n/a.
 
@@ -274,9 +285,10 @@ on the end keeps its float at 0 and fails both readings.
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
 naming a calendar). Without a Must Finish By, the open finish milestone ending last is the measured milestone
 (PAM §3.1.2.3, "until the next program milestone that is being measured"): CPL runs to its forecast finish and
-TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
+TF is its margin to its baseline finish (project calendar, negative when late); a task
 finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
-has no float (a missing float is not 0).
+has no float (a missing float is not 0). Both branches read the stored finish, the date P6 shows and the one
+the milestone is chosen on; a stored finish the CPM would move is INT-01's finding.
 Reported for review (status info, value 1.00, note "by construction") when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish
