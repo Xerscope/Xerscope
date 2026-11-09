@@ -202,7 +202,12 @@ def _date_and_float_changes(new: Snapshot, previous: pd.DataFrame, current: pd.D
         for code in previous.index[is_open & (move.abs() > 0.005)]:
             before, after = previous.loc[code, column], current.loc[code, column]
             changes.append(_change("Dates", label, code, column, before, after, move[code], "wd"))
-    float_change = (current["total_float_d"] - previous["total_float_d"]).round(2)
+    # in hours, as P6 stores float (a calendar change alone re-expresses the same hours in other
+    # days), the delta in days of the new calendar, as for durations
+    float_change = ((current["total_float_hr_cnt"] - previous["total_float_hr_cnt"]) / current["hours_per_day"]).where(
+        previous["total_float_d"].notna() & current["total_float_d"].notna()
+    )
+    float_change = float_change.round(2)
     for code in previous.index[is_open & (float_change.abs() > 0.005)]:
         before, after = previous.loc[code, "total_float_d"], current.loc[code, "total_float_d"]
         changes.append(

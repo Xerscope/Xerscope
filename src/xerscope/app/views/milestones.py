@@ -9,7 +9,7 @@ from xerscope.viz.charts import SERIES, build_mta
 
 store = require_store()
 page_header(
-    "Milestone trend analysis",
+    "Milestone trend",
     store,
     store.latest,
     lead="Each line is one milestone's forecast date in every update. Flat = stable, rising = slipping. "
@@ -66,7 +66,7 @@ if len(store) < 2:
 trend = memo(("mta", tuple(picked)), milestone_trend, store, picked, baseline=False)
 plotted = plotted_trend(trend)
 if hidden := sorted(set(picked) - set(plotted.loc[plotted["forecast"].notna(), "task_code"])):
-    st.caption(f"Complete before every status date, nothing to plot: {', '.join(hidden)}")
+    st.caption(f"Complete before every status date, nothing to plot: {ui.md_text(', '.join(hidden))}")
 slips = milestone_slips(trend, store)
 if plotted["forecast"].notna().any():
     last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))
@@ -76,8 +76,7 @@ if plotted["forecast"].notna().any():
         order=picked,
         bounds=(store.latest.planned_start, store.latest.finish_date),  # the latest update's project
     )
-    with st.container(key="mta_chart"):  # as tall as wide (style.css): the square plot fills the width
-        st.plotly_chart(figure, width="stretch", height="stretch")
+    ui.chart(figure)  # the figure's own height: the square plot sits in it (constrain="domain")
     st.caption(
         "One colour per milestone, as on its tag above. Last point and label = move in the last update: "
         "red later, green earlier."

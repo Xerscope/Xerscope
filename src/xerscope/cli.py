@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from xerscope.config import DATE_FMT, DATETIME_FMT
-from xerscope.store import DuplicateDataDate
-from xerscope.xer import XerError, xer_files
+from xerscope.xer import xer_files
 
 APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
 # --fail-on: the statuses that make `check` exit 1 (a CI job or script stops on a schedule that misses the standard)
@@ -31,7 +30,7 @@ def fail(message: str) -> NoReturn:
 
 
 def _expand(paths: list[str]) -> list[Path]:
-    """Files as given; folders -> their *.xer, sorted. Nothing to read is an error (exit 2)."""
+    """Files as given; folders -> their *.xer, sorted. Nothing to read stops with exit 2 (``fail``)."""
     found: list[Path] = []
     for path in (Path(raw_path).expanduser() for raw_path in paths):
         if path.is_dir():
@@ -58,7 +57,9 @@ def _add_out(parser: argparse.ArgumentParser, help_text: str) -> None:
 
 
 def _write_csv(frame, path, *, index: bool = False) -> None:
-    frame.to_csv(path, index=index, encoding="utf-8-sig")  # the BOM makes Excel read UTF-8
+    from .export import csv_bytes
+
+    Path(path).write_bytes(csv_bytes(frame, index=index))
 
 
 def _cmd_app(args: argparse.Namespace) -> int:
@@ -89,7 +90,7 @@ def _cmd_app(args: argparse.Namespace) -> int:
 
 
 def _args_app(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--data", help="folder of weekly .xer files to preload")
+    parser.add_argument("--data", help="folder of weekly .xer files listed at start (tick them in Files to read)")
     parser.add_argument("--baseline", help="baseline .xer, or a P6 XML export holding the baseline")
     parser.add_argument("--standards", help="folder of your own standard .toml files")
     parser.add_argument("--port", type=int, default=8501)
@@ -235,14 +236,20 @@ def _expect_differs(results, expect_csv: str) -> bool:
 
     from .analysis import compare_counts
 
-    expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    try:
+        expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    except ValueError as exc:  # pandas.errors.ParserError is a ValueError
+        fail(f"{expect_csv}: not a readable CSV: {exc}")
     missing = {"id", "found", "total"} - set(expected.columns)
     if missing:
         fail(f"{expect_csv}: columns {', '.join(sorted(missing))} missing")
     keys = ["file", "id"] if "file" in expected.columns else ["id"]
     if "file" not in expected.columns and results["file"].nunique() > 1:
         fail(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
-    merged = compare_counts(results, expected, keys)
+    try:
+        merged = compare_counts(results, expected, keys)
+    except (ValueError, TypeError) as exc:  # pyarrow.lib.ArrowInvalid is a ValueError
+        fail(f"{expect_csv}: found and total must be whole numbers: {exc}")
     print(f"\nExpected (from {expect_csv}) vs xerscope:")
     print(merged.to_string(index=False))
     bad = int((~merged["match"]).sum())
@@ -897,7 +904,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.fn(args)
-    except (XerError, DuplicateDataDate, OSError) as exc:
+    except (ValueError, OSError) as exc:
+        # an unusable input is a message, not a traceback: XerError and DuplicateDataDate, an invalid
+        # standard, pandas.errors.ParserError and pyarrow.lib.ArrowInvalid are ValueError subclasses
         fail(str(exc))
 
 

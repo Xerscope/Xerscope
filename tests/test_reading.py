@@ -1,8 +1,13 @@
 """The files read on worker processes (app/reading.py): same snapshots as one after the other, an
 unreadable file reported without stopping the others, and a stop that drops the files not started."""
 
+import sys
+import types
+from pathlib import Path
+
 import pytest
 
+import xerscope
 from xerscope.app.reading import read_update, read_updates, worker_count
 from xerscope.xer import load_snapshot
 
@@ -13,9 +18,26 @@ def items(sample_dir):
 
 
 def test_worker_count_follows_the_variable_and_never_exceeds_the_files(monkeypatch):
-    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "3")
-    assert worker_count(10) == 3 and worker_count(2) == 2
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "2")
+    assert worker_count(10) == 2 and worker_count(1) == 1
     monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    assert worker_count(10) == 1
+
+
+@pytest.mark.parametrize("asked", ["3", "4", "16"])
+def test_worker_count_never_exceeds_two(monkeypatch, asked):
+    # two processes is the most the NAS deployment stays stable with (docs/deploy.md section 7)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", asked)
+    assert worker_count(10) == 2
+
+
+@pytest.mark.parametrize("asked", ["", "0", "-1", "two", "\u00b2", "1.5"])
+def test_an_unusable_variable_falls_back_to_the_default(monkeypatch, asked):
+    # "\u00b2".isdigit() is True but int() refuses it: the reading thread died on it, the series half read
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", asked)
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    assert worker_count(10) == 2
+    monkeypatch.setattr("os.cpu_count", lambda: 1)
     assert worker_count(10) == 1
 
 
@@ -49,3 +71,27 @@ def test_the_parse_cache_entries_name_the_file_and_its_content(items):
     name, snapshot, cache = read_update(*items[0], None)
     ((key, cached),) = cache.items()
     assert key[0] == name and len(key[1]) == 64 and key[2] is None and cached is snapshot
+
+
+def test_a_worker_does_not_run_the_app_script(items, monkeypatch, capfd):
+    """Streamlit installs the app script as ``__main__`` (a module with no spec, ``__file__`` the
+    script); a ``spawn`` worker runs that file again as ``__mp_main__`` before its first task. The
+    script must draw nothing there: it ran the whole app with no session, one "missing
+    ScriptRunContext" warning per Streamlit call, in every worker."""
+    app = types.ModuleType("__main__")
+    app.__file__ = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
+    monkeypatch.setitem(sys.modules, "__main__", app)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "2")
+    results = {name: snapshot for name, snapshot, _ in read_updates(items, {})}
+    assert all(not isinstance(snapshot, str) for snapshot in results.values()) and len(results) == len(items)
+    assert "ScriptRunContext" not in capfd.readouterr().err
+
+
+def test_an_error_names_its_file_once():
+    from xerscope.app.reading import error_text
+    from xerscope.xer import XerError
+
+    assert error_text("a.xer", XerError("a.xer: PROJECT or TASK table missing")) == (
+        "a.xer: PROJECT or TASK table missing"
+    )
+    assert error_text("a.xer", KeyError("task_id")) == "a.xer: 'task_id'"

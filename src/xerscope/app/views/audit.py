@@ -155,11 +155,11 @@ def show_sheet(standard, metric) -> None:
 store = require_store()
 available = standards()
 top = st.container()
-standard_column, snapshot_column, check_column = st.columns([3, 2, 3], vertical_alignment="bottom")
-with standard_column:
-    standard_id = st.segmented_control(
-        "Standard", list(available), format_func=lambda key: available[key].name, key="audit_std"
-    )
+# the standards on a row of their own (as on Schedule health): in a column their names were cut
+standard_id = st.segmented_control(
+    "Standard", list(available), format_func=lambda key: available[key].name, key="audit_std"
+)
+snapshot_column, check_column = st.columns(2, vertical_alignment="bottom")
 with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="audit_snap")
 baseline = baseline_for(snapshot)

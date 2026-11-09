@@ -76,6 +76,10 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
         activities["bl_finish"] = pd.NaT
     activities["w_hr"] = activities["labor_budget_hr"].fillna(0)
     activities["w_d"] = activities["original_d"].fillna(0)
+    # the finish compared with the baseline: over the activities the baseline holds, so an
+    # activity added since does not show as a slip of the node
+    activities["finish_in_bl"] = activities["finish"].where(activities["bl_finish"].notna())
+    activities["outside_bl"] = activities["bl_finish"].isna()
     activities["open_critical"] = activities["is_critical"] & ~activities["is_complete"]
     activities["weighted_pct_hr"] = activities["w_hr"] * activities["pct_complete"]
     activities["weighted_pct_d"] = activities["w_d"] * activities["pct_complete"]
@@ -89,6 +93,8 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
             "start": by_node["start"].min(),
             "finish": by_node["finish"].max(),
             "bl_finish": by_node["bl_finish"].max(),
+            "_finish_in_bl": by_node["finish_in_bl"].max(),
+            "outside_bl": by_node["outside_bl"].sum(),
             "budget_hr": by_node["w_hr"].sum(),
             "actual_hr": by_node["labor_actual_hr"].sum(),
             "remaining_hr": by_node["labor_remaining_hr"].sum(),
@@ -106,10 +112,13 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
     totals["weight"] = np.where(use_hours, "hours", "duration")
     # project calendar: a WBS node has no calendar of its own
     no_calendar = pd.Series("", index=totals.index)
-    totals["finish_variance_wd"] = snapshot.working_days(no_calendar, totals["bl_finish"], totals["finish"]).round(1)
-    totals = totals.drop(columns=["_pct_hr", "_pct_d", "_w_d"])
+    totals["finish_variance_wd"] = snapshot.working_days(
+        no_calendar, totals["bl_finish"], totals["_finish_in_bl"]
+    ).round(1)
+    totals = totals.drop(columns=["_pct_hr", "_pct_d", "_w_d", "_finish_in_bl"])
     out = nodes.join(totals, on="wbs_id", how="left")
-    out[["activities", "complete", "critical"]] = out[["activities", "complete", "critical"]].fillna(0).astype(int)
+    counts = ["activities", "complete", "critical", "outside_bl"]
+    out[counts] = out[counts].fillna(0).astype(int)
     out["label"] = [
         name if depth == 0 else f"{code.split('.')[-1]} · {name}"
         for depth, code, name in zip(out["depth"], out["wbs_code"], out["wbs_name"], strict=True)
