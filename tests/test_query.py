@@ -561,6 +561,29 @@ def test_a_generated_file_is_read_back_per_column(tmp_path):
     }
 
 
+def test_worst_float_is_compared_in_hours_and_ties_go_to_the_lowest_activity_id():
+    """A: -50 h on a 10 h calendar (-5 wd); B: -48 h on 8 h (-6 wd). In hours A is the worse,
+    whatever the days say. X and Y tie at -40 h: X, the lower Activity ID, in either row order."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis.populations import Funnel
+
+    s = snap(
+        [
+            todo("B", clndr_id="C8", total_float_hr_cnt="-48"),
+            todo("A", clndr_id="C10", total_float_hr_cnt="-50"),
+        ]
+    )
+    rows = s.activities
+    for ordered in (rows, rows.iloc[::-1]):
+        said = query.answer(Filter(), Funnel(ordered), Vocabulary(wbs={}))
+        assert "worst float -5 wd (A)" in said
+        assert query.facts(Funnel(ordered), s)["rows"][0][0] == "A"
+    tie = snap([todo("Y", total_float_hr_cnt="-40"), todo("X", total_float_hr_cnt="-40")]).activities
+    for ordered in (tie, tie.iloc[::-1]):
+        assert "worst float -5 wd (X)" in query.answer(Filter(), Funnel(ordered), Vocabulary(wbs={}))
+
+
 def test_a_curated_file_not_utf8_or_misshaped_is_skipped_and_named_without_its_words(tmp_path):
     """curated/ is edited by hand: a file in another encoding, or a key that is not a list of
     tables, is skipped and named with where it fails (file and byte, or table number), never

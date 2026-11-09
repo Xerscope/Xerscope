@@ -4,6 +4,7 @@ import streamlit as st
 from xerscope.app import ui
 from xerscope.app.state import (
     anonymizer,
+    baseline_files_tag,
     baseline_items,
     download,
     fetch,
@@ -83,7 +84,7 @@ def build_anonymised_extract(store) -> None:
             prepare=True,
             anonymous=True,
         )
-    hold(st.session_state, "anon_extract", None, extract)
+    hold(st.session_state, "anon_extract", baseline_files_tag(st.session_state), extract)
 
 
 ui.section(
@@ -95,7 +96,8 @@ ui.section(
 )
 if st.button("Build anonymized extract", icon=":material/visibility_off:", key="anon_build"):
     build_anonymised_extract(store)
-extract = held(st.session_state, "anon_extract", None)
+# built for the loaded files and the baseline file of that time: another baseline file asks for a new one
+extract = held(st.session_state, "anon_extract", baseline_files_tag(st.session_state))
 if extract is not None:
     show_download(
         extract,
@@ -106,8 +108,9 @@ if extract is not None:
         key="anon_download",
     )
     if not extract.refused:
-        report = anonymizer().report
-        if report.dropped_tables or report.emptied_columns:
+        built = anonymizer()
+        report = built.report if built is not None else None
+        if report is not None and (report.dropped_tables or report.emptied_columns):
             st.caption(
                 "Left out: tables "
                 + (", ".join(sorted(report.dropped_tables)) or "none")

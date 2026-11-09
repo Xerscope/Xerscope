@@ -151,7 +151,8 @@ changed over time is measured update by update.
 - **Targets:** the dialog's documented defaults (< 5 %, < 1 % for the inaccuracy checks,
   FS > 90 %, BEI > 0.95 as a P6 Professional report prints it). Copy `src/xerscope/standards/p6.toml` and set them to yours.
 - **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
-  diffs the counts against the ones typed from P6's summary (exit 1 on a difference).
+  diffs the counts against the ones typed from P6's summary (exit 1 on a difference; exit 2 and
+  one `xerscope: ...` line on stderr for a bad file or option).
 - **Definitions:** each check cites the Oracle page or report it comes from. Differences
   with DCMA and DECM: [docs/standards.md](docs/standards.md). Formula and pinning test of
   every number: [docs/formulas.md](docs/formulas.md).
@@ -180,7 +181,7 @@ Configuration (environment variables, also set by the `app` flags):
 
 | Variable | Effect |
 |---|---|
-| `XERSCOPE_DATA` | folder of weekly `.xer` files to preload |
+| `XERSCOPE_DATA` | folder of weekly `.xer` files listed at start (tick them in Files to read) |
 | `XERSCOPE_BASELINE` | baseline `.xer`, or a P6 XML export holding the baselines |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
 | `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA`; no Debug page (remote deployment) |
@@ -213,10 +214,13 @@ Configuration (environment variables, also set by the `app` flags):
 - **EV:** baseline labour units × Performance % Complete, by the WBS's EV technique
   (activity % complete, 0/100, 50/50, custom %). Activities not in the baseline earn
   nothing and are listed. AC is the actual hours; EAC = AC + remaining.
-- **PPC commitments:** the finishes and the starts that update W-1 forecasts before W's
-  data date (in a recalculated file, those forecast during the week); PPC = kept / committed
-  over both, the finishes alone being Last Planner's PPC. Milestones are left out. An
-  activity deleted in W counts as scope change, not as a miss.
+- **PPC commitments:** the starts and the finishes that update W-1 plans on or before W's
+  data date (in a recalculated file, those planned during the week), kept when W's actual
+  date is on or before that data date. PPC Start and PPC Finish (Last Planner's PPC) =
+  kept / committed of each kind, PPC W/W-1 over both; n/a, not 0, when nothing was due.
+  Milestones are left out. An activity deleted in W counts as scope change, not as a miss.
+- **Start and finish variance:** per activity, its date in W-1 and W-2 minus its date in W,
+  in working days of its calendar: negative = late; blank when a date is missing.
 
 ## Validation
 
@@ -249,8 +253,11 @@ schedules, and any gap names a rule to fix.
   (`deploy/caddy/Dockerfile`: Caddy with the `caddy-ratelimit` module). tailscaled runs in
   userspace (no TUN device, route or DNS change), no port is published, and the five
   settings are environment variables in `deploy/.env` (template: `deploy/.env.example`). The host pulls the public images
-  `ghcr.io/xerscope/xerscope:latest` and `ghcr.io/xerscope/xerscope-caddy:latest` built by
-  `.github/workflows/image.yml` (a Docker Hub copy of each when configured, docs/deploy.md §8).
+  `ghcr.io/xerscope/xerscope` and `ghcr.io/xerscope/xerscope-caddy` built by
+  `.github/workflows/image.yml` (a Docker Hub copy of each when configured, docs/deploy.md §8),
+  pinned to a release and its digest rather than `latest` (docs/deploy.md §7). A release is a
+  git tag `v0.1.0` on `main`: the tag publishes `:0.1.0`, with SLSA provenance, an SBOM and a
+  GitHub build attestation; `CHANGELOG.md` lists what each release carries.
   `tests/test_docker.py` and the CI job `deploy` pin those properties.
 
 ```bash
@@ -324,7 +331,7 @@ uv sync --locked
 uv run python tests/reference/fetch.py            # pinned third-party XERs (checksum-verified)
 uv run python tests/reference/fetch_p6_heldout.py # P6 23.12 held-out corpus (pinned commit)
 uv run pytest -rs                                 # corpus and MPXJ tests skip when their data is missing
-uvx ruff check src tests && uvx ruff format --check src tests
+uvx ruff check src tests scripts && uvx ruff format --check src tests scripts
 ```
 
 No real schedule enters the repository, its issues or its pull requests: tests build their

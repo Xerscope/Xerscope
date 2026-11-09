@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import query
-from xerscope.analysis.cpm import CycleError
+from xerscope.analysis.cpm import ScheduleError
 from xerscope.app import diagnostic, ui
 from xerscope.app.state import (
     anonymous_exports,
@@ -16,7 +16,7 @@ from xerscope.app.state import (
     fetch,
     held,
     hold,
-    lexicon_errors,
+    lexicon_and_errors,
     memo,
     page_header,
     require_store,
@@ -40,21 +40,25 @@ with top:
         "Columns keep the XER and analysis field names.",
     )
 
-
 table = partial(ui.table, raw_labels=True)
 
 
 p6_standard = standards()["P6"]
+guid_match = diagnostic.guid_match_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot))
 try:
     frames = memo(
         ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
-        diagnostic.diagnostic_frames,
+        partial(
+            diagnostic.diagnostic_frames,
+            updates=[s.source for s in store],
+            guid_link=st.session_state.get("guid_link", False),
+        ),
         snapshot,
         baseline,
         p6_standard,
     )
-except CycleError as exc:
-    st.error(f"Cannot schedule this file: {exc}", icon=":material/block:")
+except ScheduleError as exc:
+    st.error(f"Cannot schedule this file: {ui.md_text(exc)}", icon=":material/block:")
     st.stop()
 
 with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=True, key="debug_options"):
@@ -97,13 +101,13 @@ with st.expander(
         table(int03, max_height=480)
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
-    st.caption("Targets and x of standards/p6.toml, on the tab of the P6 dialog each check sits on.")
+    st.caption("Targets, x and dialog options of standards/p6.toml, on the tab of the P6 dialog each check sits on.")
     table(frames["04_check_parameters"])
 
 with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(frames["05_baseline"])
     st.caption(
-        "Every update of the series, by data date: the analysed project (proj_id, add_date 'Date Added') and "
+        "Every update of the series, by status date: the analysed project (proj_id, add_date 'Date Added') and "
         "the Project Baseline it names (sum_base_proj_id), held by the file or not. use_project_baseline_flag "
         "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
         "baseline earned value uses (project baseline or each user's primary baseline), unverified."
@@ -111,9 +115,15 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(diagnostic.baseline_pointers(store))
     st.caption(
         "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
-        "previous update under a new Activity ID. P6 links a task to its baseline by Activity ID."
+        "previous update under a new Task ID. P6 links a task to its baseline by Activity ID."
     )
     table(diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)))
+    st.caption(
+        "How this update's tasks match the baseline file and the previous update, by Activity ID and by GUID: "
+        "counts only. renumbered = what 'Link renumbered tasks by GUID' links; gone_guid_absent = tasks gone "
+        "whose GUID this update does not carry (deleted, or a copy of the project with new GUIDs)."
+    )
+    table(guid_match)
     table(frames["05_calendars"])
 
 with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled tasks)", key="debug_load_warnings"):
@@ -172,19 +182,19 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
         "Diagnostic, not used by any KPI. Upload the Activities view of P6 saved as CSV (labour units in hours; "
         "XLSX is not read) with Activity ID, Planned Value Labor Units, Earned Value Labor Units and Schedule % "
         "Complete; optional: BL Project Labor Units, Activity Status, BL Project Start / Finish, Planned Start / "
-        "Finish. Joined on Activity ID with PV and EV of every baseline activity, deleted from the update or not, "
-        "and the update activities the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
-        "counts as 0. The file stays in this session's memory; the activity list is not part of the zip."
+        "Finish. Joined on Activity ID with PV and EV of every baseline task, deleted from the update or not, "
+        "and the update's tasks the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
+        "counts as 0. The file stays in this session's memory; the task list is not part of the zip."
     )
     upload = st.file_uploader("P6 Activities export", type=diagnostic.P6_EXPORT_SUFFIXES, key="debug_p6_export")
     if upload is not None and (baseline is None or snapshot.data_date is None):
-        st.caption("No baseline or no data date: nothing to compare.")
+        st.caption("No baseline or no status date: nothing to compare.")
     elif upload is not None:
         content = upload.getvalue()
         try:
             raw = diagnostic.read_p6_export(upload.name, content)
         except ValueError as exc:
-            st.error(str(exc), icon=":material/block:")
+            st.error(ui.md_text(exc), icon=":material/block:")
             raw = None
         if raw is not None:
             columns = diagnostic.p6_export_columns(raw)
@@ -237,11 +247,11 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                 table(comparison.totals)
                 st.caption("PV gap by Schedule % band, xerscope against P6 (absent: no value on that side)")
                 table(comparison.cross)
-                st.caption("Activities in gap, by candidate cause (several can hold for one activity)")
+                st.caption("Tasks in gap, by candidate cause (several can hold for one task)")
                 table(comparison.causes)
-                st.caption("Matched activities by calendar (clndr_id)")
+                st.caption("Matched tasks by calendar (clndr_id)")
                 table(comparison.by_calendar)
-                st.caption("Activities in gap (PV or EV), largest gap first. On screen only: not in the zip.")
+                st.caption("Tasks in gap (PV or EV), largest gap first. On screen only: not in the zip.")
                 table(comparison.activities, max_height=480)
 
 with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):
@@ -314,9 +324,20 @@ def build_diagnostic(anonymous: bool) -> None:
     sources = sources_of(snapshot, baseline=baseline)
     fetched = fetch(
         st.session_state,
-        lambda: zip_frames({**frames, **p6_frames}, "csv"),
+        lambda: zip_frames({**frames, "05_guid_match": guid_match, **p6_frames}, "csv"),
         lambda anonymizer: anonymizer.zip_frames(
-            {**diagnostic.diagnostic_frames(snapshot, baseline, p6_standard, anonymous=True), **p6_frames}
+            {
+                **diagnostic.diagnostic_frames(
+                    snapshot,
+                    baseline,
+                    p6_standard,
+                    anonymous=True,
+                    updates=[s.source for s in store],
+                    guid_link=st.session_state.get("guid_link", False),
+                ),
+                "05_guid_match": guid_match,
+                **p6_frames,
+            }
         ),
         sources,
         prepare=True,
@@ -340,7 +361,7 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
         "generated in memory from every loaded file; `xerscope lexicon build` writes them as a file."
     )
     table(pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"]))
-    for error in lexicon_errors():  # curated/ files skipped, refusals that cannot apply
+    for error in lexicon_and_errors()[1]:  # curated/ files skipped, refusals that cannot apply
         st.warning(ui.md_text(_where(error)))
 
 
@@ -348,7 +369,7 @@ anonymous = anonymous_exports()
 ui.section(
     "Diagnostic",
     "Blocks 1 to 9, 11 and 13 as CSV, and block 10 without its activity list when an export is loaded. With "
-    "anonymous exports on, Task IDs, resource codes and WBS codes are renamed as in the anonymized XER "
+    "anonymous exports on, Task IDs, resource codes, WBS codes and project ids are renamed as in the anonymized XER "
     "extract; the tables hold no name or project name. Dates are left as they are.",
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):

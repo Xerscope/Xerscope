@@ -7,6 +7,7 @@ few of these combined with ``&``, ``|`` and ``~``.
 
 from __future__ import annotations
 
+import operator
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 
@@ -236,12 +237,16 @@ def at_grain(dates: pd.Series | pd.Timestamp, grain: str):
     return dates.dt.normalize() if isinstance(dates, pd.Series) else dates.normalize()
 
 
-def forecast_before(tasks: pd.DataFrame, data_date, grain: str = "timestamp") -> pd.Series:
-    """Incomplete tasks whose forecast start (not started) or finish is before the status date."""
+def forecast_before(
+    tasks: pd.DataFrame, data_date, grain: str = "timestamp", include_data_date: bool = False
+) -> pd.Series:
+    """Incomplete tasks whose forecast start (not started) or finish is before the status date, or on it
+    with ``include_data_date``."""
     early_start, early_finish = forecast_dates(tasks)  # the same reading as the model's Start / Finish
     early_start, early_finish, data_date = (at_grain(d, grain) for d in (early_start, early_finish, data_date))
-    not_started_and_late = ~tasks["is_started"] & (early_start < data_date)
-    return as_flag(~tasks["is_complete"] & (not_started_and_late | (early_finish < data_date)))
+    before = operator.le if include_data_date else operator.lt
+    not_started_and_late = ~tasks["is_started"] & before(early_start, data_date)
+    return as_flag(~tasks["is_complete"] & (not_started_and_late | before(early_finish, data_date)))
 
 
 def actual_after(tasks: pd.DataFrame, data_date, grain: str = "timestamp") -> pd.Series:

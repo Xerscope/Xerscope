@@ -28,12 +28,14 @@ from xerscope.xer.model import STATUS
 NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
 NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker is drawn before the chart)
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
+CHART_KEY = "gantt_chart"
+CLICK_KEY = "gantt_clicked"  # the Activity ID of a click in the chart, until the run it causes
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
 CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
-GANTT_HEIGHT = 680  # px; the chart scrolls inside
+GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
 
 store = require_store()
@@ -220,7 +222,8 @@ ui.kpis(
             "Forecast finish",
             ui.fmt_date(node["finish"]),
             None if pd.isna(node["finish_variance_wd"]) else f"{node['finish_variance_wd']:+.1f} wd vs BL",
-            None,
+            "Variance to BL: latest finish of the baselined tasks against their latest BL finish"
+            + (f"; {node['outside_bl']} task(s) not in the baseline left out" if node["outside_bl"] else ""),
             "inverse",
         ),
         ("Labor hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
@@ -326,67 +329,79 @@ if focus:
             st.rerun()
 filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the outline stays closed
 
-rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
-root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
-drawn = set(tasks["task_code"])
-picked = st.session_state.get(TASK_KEY)
-picked = picked if picked in drawn else None  # an activity the filters or the update leave out
-open_ids = {r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"}
-if picked:  # keep the picked activity's branch open so its row shows and is scrolled to
-    wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0]
-    chain = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"]
-    open_ids |= {f"w:{a}" for a in (chain.iloc[0] if len(chain) else []) if a in branch_ids}
-chart = ui.GANTT(
-    data=gantt_data(
-        rows,
-        relationships=snapshot.relationships,
-        data_date=snapshot.data_date,
-        span=(root_row["start"], root_row["finish"]),
-        timescale="week" if timescale == "Week" else "month",
-        # a filter opens every branch so each match shows; otherwise the chosen node opens
-        open_ids=open_ids,
-        selected=f"a:{picked}" if picked else f"w:{current}",
-        compare_label=compare_label or "",
-        links=show_links,
-        height=GANTT_HEIGHT,
-    ),
-    key="gantt_chart",
-    on_picked_change=lambda: None,  # a click on an activity row sends "a:<Activity ID>"
-    on_focus_change=lambda: None,  # a double click on a WBS row sends "w:<wbs_id>"
-)
-# the browser sends a row id only; it counts when it names an activity drawn in this chart
-clicked = task_from_row_id(chart.get("picked"))
-if clicked in drawn and clicked != picked:
-    st.session_state[TASK_KEY] = clicked
-    st.rerun()  # draw the chart again with the activity selected
-focused = chart.get("focus")
-if isinstance(focused, str) and focused.startswith("w:") and focused[2:] in branch_ids and focused[2:] != current:
-    st.session_state[NEXT_NODE_KEY] = focused[2:]
-    st.rerun()
+
+def _clicked() -> None:
+    """A click on an activity row: the row id the browser sent, applied by the run it causes."""
+    st.session_state[CLICK_KEY] = task_from_row_id(st.session_state[CHART_KEY].get("picked"))
 
 
 def _pick_from_list() -> None:
     st.session_state[TASK_KEY] = st.session_state[PICK_KEY]
 
 
-codes = tasks["task_code"].tolist()
-names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
-st.session_state[PICK_KEY] = picked
-st.selectbox(
-    "Task",
-    codes,
-    format_func=lambda code: f"{code} · {names.get(code, '')}",
-    placeholder="Click an activity in the chart, or pick one here",
-    key=PICK_KEY,
-    on_change=_pick_from_list,
-)
-if st.session_state.get(TASK_KEY) and not picked:
-    st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
-if picked:
-    with st.container(border=True):
-        show_card(snapshot, picked)
-        ui.section("History across updates")
-        show_history(store, picked)
+@st.fragment
+def chart_and_task() -> None:
+    """The chart, the Task list and the picked activity's card, on the rows the widgets above kept.
+    Picking an activity (a click in the chart, the list) runs this part alone: the page above and
+    the sidebar are not drawn again."""
+    rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
+    root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
+    drawn = set(tasks["task_code"])
+    # the browser sends a row id only; it counts when it names an activity drawn in this chart
+    clicked = st.session_state.pop(CLICK_KEY, None)
+    if clicked in drawn:
+        st.session_state[TASK_KEY] = clicked
+    picked = st.session_state.get(TASK_KEY)
+    picked = picked if picked in drawn else None  # an activity the filters or the update leave out
+    open_ids = {r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"}
+    if picked:  # keep the picked activity's branch open so its row shows and is scrolled to
+        wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0]
+        chain = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"]
+        open_ids |= {f"w:{a}" for a in (chain.iloc[0] if len(chain) else []) if a in branch_ids}
+    chart = ui.GANTT(
+        data=gantt_data(
+            rows,
+            relationships=snapshot.relationships,
+            data_date=snapshot.data_date,
+            span=(root_row["start"], root_row["finish"]),
+            timescale="week" if timescale == "Week" else "month",
+            # a filter opens every branch so each match shows; otherwise the chosen node opens
+            open_ids=open_ids,
+            selected=f"a:{picked}" if picked else f"w:{current}",
+            compare_label=compare_label or "",
+            links=show_links,
+            height=GANTT_HEIGHT,
+        ),
+        key=CHART_KEY,
+        on_picked_change=_clicked,  # a click on an activity row sends "a:<Activity ID>"
+        on_focus_change=lambda: None,  # a double click on a WBS row sends "w:<wbs_id>"
+    )
+    focused = chart.get("focus")
+    if isinstance(focused, str) and focused.startswith("w:") and focused[2:] in branch_ids and focused[2:] != current:
+        st.session_state[NEXT_NODE_KEY] = focused[2:]
+        st.rerun(scope="app")  # the WBS picker is above this part
+
+    codes = tasks["task_code"].tolist()
+    names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
+    st.session_state[PICK_KEY] = picked
+    st.selectbox(
+        "Task",
+        codes,
+        format_func=lambda code: f"{code} · {names.get(code, '')}",
+        placeholder="Click a task in the chart, or pick one here",
+        key=PICK_KEY,
+        on_change=_pick_from_list,
+    )
+    if st.session_state.get(TASK_KEY) and not picked:
+        st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
+    if picked:
+        with st.container(border=True):
+            show_card(snapshot, picked)
+            ui.section("History across updates")
+            show_history(store, picked)
+
+
+chart_and_task()
 
 if ask_funnel is not None and ask_funnel.steps:
     with st.expander("Population, step by step"):
@@ -406,5 +421,7 @@ with st.expander("Table view"):
         "labor_budget_hr",
         "constraint",
     ]
-    ui.table(tasks, columns=table_columns)
+    # a finished task has no float or remaining duration: a dash, not "None"
+    shown, overrides = ui.numbers_as_text(tasks[table_columns], ["total_float_d", "remaining_d"])
+    ui.table(shown, overrides=overrides)
     csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))

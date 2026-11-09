@@ -26,6 +26,10 @@ STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "compl
 NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
 # Decoration (app/style.css, through CSS light-dark()), one per theme: the theme's linkColor.
 ACCENT = {"light": "#1d6a73", "dark": "#6cc0c9"}
+# The theme's textColor, for the hover text (app/ui.py: chart): Streamlit's Plotly theme fades it.
+TEXT = {"light": "#1c1917", "dark": "#ece9e4"}
+MIN_DATE_SPAN = pd.Timedelta(days=14)  # a date axis narrower than this is widened by DATE_PAD each side
+DATE_PAD = pd.Timedelta(days=7)
 LINE = 1.5  # data line width, px
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
@@ -130,12 +134,21 @@ def build_scurve(
 
     At ``data_date`` a vertical mark joins that update's PV and EV, labelled SV = EV − PV in
     the chart's unit: green when EV >= PV (ahead), red when behind. PV there is the update's
-    own (``series.pv_hr``, as in the KPIs), not the daily curve's end-of-day value.
+    own (``series.pv_hr``, as in the KPIs). ``curve`` and ``forecast`` hold the value at each
+    instant (``pv_curve``, ``forecast_curve``): the PV curve passes through that mark.
+
+    ``percent``: each update's EV, AC and SV over its own BAC (``series.bac_hr``, as the KPIs'
+    ``ev_pct``); the PV and forecast curves over the BAC of the update at ``data_date`` (else the
+    last), the update they are drawn for.
     """
     c = SERIES
-    bac = float(series["bac_hr"].iloc[0]) if len(series) else 0.0
-    k = (100 / bac) if (percent and bac) else 1.0
-    unit = "% of BAC" if percent and bac else "labor hours"
+    s = series.dropna(subset=["data_date"])
+    now = s[s["data_date"] == data_date] if data_date is not None else s.iloc[0:0]
+    bac = float((now if len(now) else s)["bac_hr"].iloc[-1]) if len(s) else 0.0
+    percent = bool(percent and bac)
+    k = (100 / bac) if percent else 1.0
+    point_k = 100 / s["bac_hr"].where(s["bac_hr"] > 0) if percent else 1.0  # each update's own BAC
+    unit = "% of BAC" if percent else "labor hours"
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -146,23 +159,22 @@ def build_scurve(
             line=dict(color=c[0], width=LINE),
         )
     )
-    s = series.dropna(subset=["data_date"])
     fig.add_trace(
         go.Scatter(
             x=s["data_date"],
-            y=s["ev_hr"] * k,
+            y=s["ev_hr"] * point_k,
             mode="lines+markers",
             name="EV (earned)",
             line=dict(color=c[1], width=LINE),
             marker=dict(size=8),
-            customdata=s[["sv_hr"]].to_numpy() * k,
+            customdata=(s["sv_hr"] * point_k).to_frame().to_numpy(),
             hovertemplate="%{y:,.1f}  (SV %{customdata[0]:+,.1f})",
         )
     )
     fig.add_trace(
         go.Scatter(
             x=s["data_date"],
-            y=s["ac_hr"] * k,
+            y=s["ac_hr"] * point_k,
             mode="lines+markers",
             name="AC (actual)",
             line=dict(color=c[2], width=LINE),
@@ -190,10 +202,9 @@ def build_scurve(
             fig,
             curve["date"].iloc[-1],
             curve["pv_cum_hr"].iloc[-1] * k,
-            f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f}",
+            f"BAC {curve['pv_cum_hr'].iloc[-1] * k:,.0f} · baseline tasks of this update",
         )
-    # drawn last, over the AC marker and the data-date line it shares x with
-    now = s[s["data_date"] == data_date] if data_date is not None else s.iloc[0:0]
+    # drawn last, over the AC marker and the data-date line it shares x with; k: that update's BAC
     if len(now):
         planned, earned_now, variance = (float(now[col].iloc[-1]) * k for col in ("pv_hr", "ev_hr", "sv_hr"))
         colour = STATUS["good"] if variance >= 0 else STATUS["critical"]
@@ -209,7 +220,7 @@ def build_scurve(
                 hoverinfo="skip",
             )
         )
-        sv_text = f"SV {variance:+,.1f} % of BAC" if percent and bac else f"SV {variance:+,.0f} h"
+        sv_text = f"SV {variance:+,.1f} % of BAC" if percent else f"SV {variance:+,.0f} h"
         # above the mark's top end, left of the data date: clear of the curves, which rise to the right
         fig.add_annotation(
             x=data_date,
@@ -377,10 +388,16 @@ def build_activity_dates(history: pd.DataFrame) -> go.Figure:
     fig = _layout(fig, 380, "Forecast date")
     fig.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
-    if pd.notna(low) and high - low < pd.Timedelta(days=14):
-        # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
-        fig.update_yaxes(range=[low - pd.Timedelta(days=7), high + pd.Timedelta(days=7)])
+    # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
+    _widen_dates(fig.update_yaxes, low, high)
     return fig
+
+
+def _widen_dates(update_axis, low, high) -> None:
+    """A date axis of less than MIN_DATE_SPAN (one update, a date that never moves) gets DATE_PAD
+    each side: zoomed to the hour, Plotly would repeat the same day label on every tick."""
+    if pd.notna(low) and pd.notna(high) and high - low < MIN_DATE_SPAN:
+        update_axis(range=[low - DATE_PAD, high + DATE_PAD])
 
 
 def build_activity_float(history: pd.DataFrame) -> go.Figure:
@@ -417,6 +434,9 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
     fig = _layout(fig, 380, "Forecast finish", legend=False)
     fig.update_yaxes(**DATE_AXIS)
     fig.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
+    if len(updates):  # one update: both axes would zoom on a point
+        _widen_dates(fig.update_xaxes, updates["data_date"].min(), updates["data_date"].max())
+        _widen_dates(fig.update_yaxes, updates["forecast_finish"].min(), updates["forecast_finish"].max())
     return fig
 
 
@@ -434,33 +454,44 @@ def _ppc_text(values, kept, committed) -> list[str]:
     ]
 
 
+def _with_note(texts: list[str], notes: pd.Series) -> list[str]:
+    return [t if not isinstance(n, str) else f"{t}<br>{n}" for t, n in zip(texts, notes, strict=True)]
+
+
 def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
-    """Bars: PPC (finishes kept / committed, Last Planner). Lines: PPC Start and PPC all commitments."""
+    """Bars: PPC Finish (finishes kept / committed, Last Planner). Lines: PPC Start and PPC W/W-1
+    (starts and finishes together).
+
+    A point with a ``note`` (`ppc_series`: more than a week since the previous update, or
+    Activity IDs changed since it) has a hatched bar and the note in every hover of that week.
+    A week with no finish committed has no bar and an "n/a" label (a 0 bar would read as 0 %
+    kept)."""
     c = SERIES
     p = ppc.copy()
     p["label"] = p["data_date"].dt.strftime("%Y-%m-%d")
-    text = _ppc_text(p["ppc"], p["finishes_kept"], p["finishes_committed"])
+    text = _ppc_text(p["ppc_finish"], p["finishes_kept"], p["finishes_committed"])
+    noted = [isinstance(n, str) for n in p["note"]]
     # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
     # the hover keeps the counts)
     weeks = len(p)
-    short = ["" if weeks > LABEL_SHORT_MAX else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc"]]
+    short = ["" if weeks > LABEL_SHORT_MAX else f"{v:.0f}%" if pd.notna(v) else "-" for v in p["ppc_finish"]]
     fig = go.Figure(
         go.Bar(
             x=p["label"],
-            y=p["ppc"].fillna(0),
+            y=p["ppc_finish"].astype(object).where(p["ppc_finish"].notna(), None),  # no commitment: no bar, not 0
             text=text if weeks <= LABEL_FULL_MAX else short,
-            customdata=text,
+            customdata=_with_note(text, p["note"]),
             textposition="outside",
             cliponaxis=False,
-            marker=dict(color=c[0], cornerradius=4),
+            marker=dict(color=c[0], cornerradius=4, pattern=dict(shape=["/" if n else "" for n in noted])),
             width=0.6,
-            name="PPC (finishes)",
-            hovertemplate="Week to %{x}: finishes %{customdata}<extra></extra>",
+            name="PPC Finish",
+            hovertemplate="Week to %{x}: PPC Finish %{customdata}<extra></extra>",
         )
     )
     for column, kept, committed, name, colour in (
         ("ppc_start", "starts_kept", "starts_committed", "PPC Start", c[2]),
-        ("ppc_all", "kept", "committed", "PPC all commitments", c[1]),
+        ("ppc_week", "kept", "committed", "PPC W/W−1", c[1]),
     ):
         fig.add_trace(
             go.Scatter(
@@ -471,8 +502,8 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
                 line=dict(color=colour, width=2),
                 marker=dict(size=7),
                 connectgaps=False,
-                customdata=_ppc_text(p[column], p[kept], p[committed]),
-                hovertemplate="Week to %{x}: " + name.lower() + " %{customdata}<extra></extra>",
+                customdata=_with_note(_ppc_text(p[column], p[kept], p[committed]), p["note"]),
+                hovertemplate="Week to %{x}: " + name + " %{customdata}<extra></extra>",
             )
         )
     critical = STATUS["critical"]
@@ -488,6 +519,8 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         xshift=6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
+    for label in p.loc[p["ppc_finish"].isna(), "label"]:  # a week with nothing committed has no PPC
+        fig.add_annotation(x=label, y=0, text="n/a", showarrow=False, yanchor="bottom", hovertext="no commitment")
     fig = _layout(fig, 400, "PPC (%)", legend=True)
     fig.update_layout(hovermode="closest")
     fig.update_yaxes(range=[0, 115])
