@@ -71,24 +71,28 @@ def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_e
 
 
 def test_only_a_tested_commit_is_published():
-    """image.yml runs after a `tests` run, publishes only when that run succeeded on a push (main or
-    a v* tag, both tested), and builds that run's commit. A workflow_run sees main as github.ref and
-    github.sha: tags and revision come from the triggering run, never from {{is_default_branch}} or type=sha."""
+    """image.yml is only called by the last job of tests.yml, on a push (main or a v* tag), once every
+    other job of that run passed; it builds the pushed commit and never checks out a ref taken from
+    another run (no workflow_run: Scorecard Dangerous-Workflow, a fork's code near the publish token)."""
     image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
-    on = image[image.index("\non:") : image.index("\nconcurrency:")]
-    assert "workflow_run:" in on and "workflows: [tests]" in on and "types: [completed]" in on
-    assert 'branches: [main, "v*"]' in on
-    assert "push:" not in on and "workflow_dispatch" not in on  # no path around the tests
-    assert "github.event.workflow_run.conclusion == 'success'" in image
-    assert "github.event.workflow_run.event == 'push'" in image
-    assert "ref: ${{ github.event.workflow_run.head_sha }}" in image
-    assert "{{is_default_branch}}" not in image and "type=sha" not in image
-    assert "type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}" in image
-    assert "value=${{ github.event.workflow_run.head_branch }}" in image  # the semver tag
-    assert "org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}" in image
+    on = image[image.index("\non:") : image.index("\npermissions:")]
+    assert "workflow_call:" in on
+    assert not re.search(r"^  (push|pull_request\w*|workflow_run|workflow_dispatch|schedule):", on, re.M)
+    assert "workflow_run" not in image and "ref:" not in image  # the checkout takes the pushed commit
+    assert "if: github.repository == 'Xerscope/xerscope' && github.event_name == 'push'" in image
     tests = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert re.search(r"^name: tests$", tests, re.M)
-    assert 'tags: ["v*"]' in tests[: tests.index("pull_request:")]  # a release tag runs the tests
+    assert 'branches: [main]\n    tags: ["v*"]' in tests  # main and release tags only
+    publish = tests[tests.index("\n  publish:") :]
+    jobs = set(re.findall(r"^  ([\w-]+):$", tests[tests.index("\njobs:") :], re.M))
+    needs = set(re.search(r"needs: \[([^\]]*)\]", publish).group(1).split(", "))
+    assert needs == jobs - {"changes", "publish"}  # every job gates the publish; changes is PR-only
+    assert "    if: github.event_name == 'push'\n" in publish  # needs' success() kept: no always()
+    assert "uses: ./.github/workflows/image.yml" in publish and "secrets: inherit" not in publish
+    callers = [p.name for p in (ROOT / ".github" / "workflows").glob("*.yml") if "workflows/image.yml" in p.read_text()]
+    assert callers == ["tests.yml"] and tests.count("uses: ./.github/workflows/image.yml") == 1  # no other path
+    # the image's revision label is the pushed commit: metadata-action's labels reach the build
+    assert "labels: ${{ steps.meta.outputs.labels }}" in image and "org.opencontainers.image.revision" not in image
 
 
 def test_a_pull_request_changing_the_image_builds_and_scans_it():
@@ -115,8 +119,7 @@ def test_runs_on_main_are_never_cancelled_by_the_next_push():
     workflows = (ROOT / ".github" / "workflows").glob("*.yml")
     cancels = {p.name: re.findall(r"cancel-in-progress: (\$\{\{[^}]*\}\}|\S+)", p.read_text()) for p in workflows}
     assert cancels["tests.yml"] == ["${{ github.event_name == 'pull_request' }}"]
-    assert cancels["image.yml"] == ["false"]
-    assert not any(c for name, c in cancels.items() if name not in ("tests.yml", "image.yml")), cancels
+    assert not any(c for name, c in cancels.items() if name != "tests.yml"), cancels  # publish runs in tests'
 
 
 def test_ci_tools_are_pinned_to_one_release():
@@ -160,7 +163,8 @@ def test_ci_cannot_pass_by_skipping_its_evidence():
     assert ".github/trivy/scan.sh xerscope:ci" in wf  # the app image is scanned
     for line in wf.splitlines():
         if "uses:" in line:
-            assert re.search(r"@[0-9a-f]{40} # v", line), line  # pinned by commit, tag in the comment
+            local = line.strip() == "uses: ./.github/workflows/image.yml"  # this repository's own file
+            assert local or re.search(r"@[0-9a-f]{40} # v", line), line  # pinned by commit, tag in the comment
 
 
 def test_sidecars_hardened():
@@ -492,15 +496,21 @@ def test_published_images_carry_provenance_sbom_and_an_attestation():
     assert re.search(r"^permissions:\n  contents: read\n\n", wf, re.M)  # the workflow default stays read-only
     for line in _uses(wf):
         assert re.search(r"@[0-9a-f]{40} # v", line), line
-    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01),
-    # once its tests run passed: tests.yml runs on a push of main or of a v* tag, image.yml follows it
+    # the caller grants exactly these to the called workflow (a called job gets no more than its caller's)
     tests = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    publish = tests[tests.index("\n  publish:") :]
+    granted = publish[publish.index("permissions:") : publish.index("uses:")]
+    assert set(re.findall(r"^\s+([\w-]+): (read|write)", granted, re.M)) == {
+        ("contents", "read"),
+        ("packages", "write"),
+        ("id-token", "write"),
+        ("attestations", "write"),
+    }
+    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01),
+    # once its tests run passed: tests.yml runs on a push of main or of a v* tag and calls image.yml
     assert 'branches: [main]\n    tags: ["v*"]' in tests
-    assert 'branches: [main, "v*"]' in wf
-    semver = "type=semver,pattern={{version}},value=${{ github.event.workflow_run.head_branch }},"
-    assert semver + "enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}" in wf
-    assert "type=raw,value=sha-${{ steps.commit.outputs.short }}" in wf
-    assert "type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}" in wf
+    assert "type=semver,pattern={{version}}" in wf and "type=sha" in wf
+    assert "type=raw,value=latest,enable={{is_default_branch}}" in wf
 
 
 def test_codeql_and_scorecard_run_pinned_with_minimal_permissions():

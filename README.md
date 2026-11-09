@@ -1,7 +1,6 @@
 # xerscope
 
 [![tests](https://github.com/Xerscope/xerscope/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Xerscope/xerscope/actions/workflows/tests.yml)
-[![image](https://github.com/Xerscope/xerscope/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/Xerscope/xerscope/actions/workflows/image.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13%20%7C%203.14-blue)](pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
