@@ -358,7 +358,20 @@ jobs:
     # the images of this commit (image.yml), on a push of main or of a v* tag only, once every
     # job above passed: a red job, a skipped one or a pull request publishes nothing
     needs: [lint, oracle-report, test, fitness, audit, crosscheck, container, deploy]
-    if: github.event_name == 'push'
+    # Each result is asked for by name: `changes` is skipped on a push, container needs it, and a
+    # skipped job skips every job after it in the chain unless the condition calls a status
+    # function (GitHub Docs, "Using jobs in a workflow"). With the default success() alone this
+    # job was skipped on every push. A failed, cancelled or skipped job above publishes nothing.
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push'
+      && needs.lint.result == 'success'
+      && needs.oracle-report.result == 'success'
+      && needs.test.result == 'success'
+      && needs.fitness.result == 'success'
+      && needs.audit.result == 'success'
+      && needs.crosscheck.result == 'success'
+      && needs.container.result == 'success'
+      && needs.deploy.result == 'success' }}
     permissions:
       contents: read
       packages: write                             # push the images and the attestation to ghcr.io
