@@ -70,10 +70,92 @@ def test_funnel_stack_pulls_the_published_image_and_takes_its_secrets_from_the_e
     assert "packages: write" in wf and "ghcr.io" in wf and "push: true" in wf
 
 
+def test_only_a_tested_commit_is_published():
+    """image.yml runs after a `tests` run, publishes only when that run succeeded on a push (main or
+    a v* tag, both tested), and builds that run's commit. A workflow_run sees main as github.ref and
+    github.sha: tags and revision come from the triggering run, never from {{is_default_branch}} or type=sha."""
+    image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    on = image[image.index("\non:") : image.index("\nconcurrency:")]
+    assert "workflow_run:" in on and "workflows: [tests]" in on and "types: [completed]" in on
+    assert 'branches: [main, "v*"]' in on
+    assert "push:" not in on and "workflow_dispatch" not in on  # no path around the tests
+    assert "github.event.workflow_run.conclusion == 'success'" in image
+    assert "github.event.workflow_run.event == 'push'" in image
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in image
+    assert "{{is_default_branch}}" not in image and "type=sha" not in image
+    assert "type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}" in image
+    assert "value=${{ github.event.workflow_run.head_branch }}" in image  # the semver tag
+    assert "org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}" in image
+    tests = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert re.search(r"^name: tests$", tests, re.M)
+    assert 'tags: ["v*"]' in tests[: tests.index("pull_request:")]  # a release tag runs the tests
+
+
+def test_a_pull_request_changing_the_image_builds_and_scans_it():
+    """The container job runs on a pull request whose diff touches what the image is built or
+    scanned from; the filter is grep -E on `git diff --name-only`, applied here to sample paths
+    (the pattern uses only ^, $, |, groups and \\., which read the same in Python's re)."""
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    changes = wf[wf.index("\n  changes:") : wf.index("\n  container:")]
+    assert "if: github.event_name == 'pull_request'" in changes and "fetch-depth: 2" in changes
+    assert "git diff --name-only HEAD^1 HEAD" in changes
+    pattern = re.search(r"grep -qE '([^']+)' changed\.txt", changes).group(1)
+    built = ["Dockerfile", "uv.lock", "pyproject.toml", "src/xerscope/cli.py", ".github/trivy/Dockerfile"]
+    other = ["README.md", "docs/deploy.md", "tests/test_docker.py", "deploy/caddy/Dockerfile", "src.txt"]
+    assert [path for path in built + other if re.search(pattern, path)] == built
+    container = wf[wf.index("\n  container:") : wf.index("\n  deploy:")]
+    assert "needs: changes" in container
+    cond = "if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.image == 'true') }}"
+    assert cond in container
+
+
+def test_runs_on_main_are_never_cancelled_by_the_next_push():
+    """Only a pull request's previous run is cancelled by a new push: every commit merged to main is
+    tested to the end, and a publish under way is not cut."""
+    workflows = (ROOT / ".github" / "workflows").glob("*.yml")
+    cancels = {p.name: re.findall(r"cancel-in-progress: (\$\{\{[^}]*\}\}|\S+)", p.read_text()) for p in workflows}
+    assert cancels["tests.yml"] == ["${{ github.event_name == 'pull_request' }}"]
+    assert cancels["image.yml"] == ["false"]
+    assert not any(c for name, c in cancels.items() if name not in ("tests.yml", "image.yml")), cancels
+
+
+def test_ci_tools_are_pinned_to_one_release():
+    """A new ruff rule or a compromised release does not reach CI unannounced: every uvx tool is
+    pinned to a release, and setup-uv installs the uv release the Dockerfile builds with."""
+    workflows = "".join(p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml"))
+    tools = re.findall(r"run: uvx (\S+)", workflows)
+    assert tools and all(re.fullmatch(r"[\w-]+@\d+\.\d+\.\d+", t) for t in tools), tools
+    uv = re.search(r"^FROM ghcr\.io/astral-sh/uv:(\d+\.\d+\.\d+)-", (ROOT / "Dockerfile").read_text(), re.M).group(1)
+    setups = re.findall(r"uses: astral-sh/setup-uv@\S+ # v\S+\n\s+with:\n((?:\s{10}\S.*\n)+)", workflows)
+    assert len(setups) == workflows.count("astral-sh/setup-uv@"), setups
+    assert all(f'version: "{uv}"' in block for block in setups), setups
+
+
+def test_every_dependabot_version_update_waits_a_week():
+    """Each ecosystem's version updates wait 7 days after a release; security updates do not wait
+    (GitHub docs: cooldown applies to version updates, not security updates)."""
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text()
+    entries = dependabot.split("  - package-ecosystem:")[1:]
+    assert len(entries) == 6
+    for entry in entries:
+        days = re.search(r"^    cooldown:\n      default-days: (\d+)", entry, re.M)
+        assert days and int(days.group(1)) >= 7, entry
+
+
+def test_published_images_carry_provenance_and_sbom():
+    """Each pushed image carries a full SLSA provenance and an SBOM, on ghcr.io and Docker Hub alike
+    (one build-push step pushes every tag of both registries)."""
+    image = (ROOT / ".github" / "workflows" / "image.yml").read_text()
+    assert image.count("docker/build-push-action@") == 1
+    step = image[image.index("docker/build-push-action@") :]
+    assert "provenance: mode=max" in step and "sbom: true" in step
+    assert "push: true" in step and "tags: ${{ steps.meta.outputs.tags }}" in step
+
+
 def test_ci_cannot_pass_by_skipping_its_evidence():
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     assert "XERSCOPE_REQUIRE: reference,p6-corpus\n" in wf and "XERSCOPE_REQUIRE: reference,p6-corpus,mpxj" in wf
-    assert "ruff check src tests" in wf and "ruff format --check src tests" in wf
+    assert re.search(r"uvx ruff@\S+ check src tests", wf) and re.search(r"uvx ruff@\S+ format --check src tests", wf)
     assert "pull_request:" in wf and "load: true" in wf and "_stcore/health" in wf
     assert ".github/trivy/scan.sh xerscope:ci" in wf  # the app image is scanned
     for line in wf.splitlines():
@@ -281,7 +363,9 @@ def test_caddy_build_forces_the_fixed_x_net_and_proves_it():
     assert fixed and tuple(map(int, fixed.group(1)[1:].split("."))) >= (0, 62, 0), fixed
     pattern = "golang\\.org/x/net[[:space:]]+" + fixed.group(1).replace(".", "\\.")  # as the grep spells it
     assert f"go version -m /usr/bin/caddy | grep -Eq '{pattern}'" in df
-    assert "CVE-2026-78661" not in (ROOT / "deploy" / "caddy.trivyignore.yaml").read_text()  # fixed, not excepted
+    jose = re.search(r"--replace github\.com/go-jose/go-jose/v4=github\.com/go-jose/go-jose/v4@(v\d+\.\d+\.\d+)", df)
+    assert jose and tuple(map(int, jose.group(1)[1:].split("."))) >= (4, 1, 6), jose  # CVE-2026-116587
+    assert "grep -Eq 'github\\.com/go-jose/go-jose/v4[[:space:]]+v4\\.1\\.6'" in df
 
 
 def test_base_images_pinned_by_digest():
@@ -290,33 +374,34 @@ def test_base_images_pinned_by_digest():
     assert len(froms) == 3 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
 
 
-@pytest.mark.parametrize("image", ["caddy", "tailscale"])
-def test_sidecar_scan_exceptions_are_dated_and_reasoned(image):
-    """Each Trivy exception for a sidecar image of deploy/compose.yaml names its CVE, why it is not
-    reachable here, and an expiry; the scan of that image, and only that one, reads the file."""
-    import datetime
+def test_no_scan_exception_file():
+    """Findings are fixed or recorded, never excepted: no Trivy ignore file in the repository, and
+    the scan script takes none. Every HIGH and CRITICAL finding is listed, unfixed ones included."""
+    assert not list(ROOT.glob("**/*.trivyignore*")) and not list(ROOT.glob("**/.trivyignore*"))
+    script = (ROOT / ".github" / "trivy" / "scan.sh").read_text()
+    assert "--ignorefile" not in script and "ignorefile" not in script
+    assert "--exit-code 0" in script and script.index("--exit-code 0") < script.index("--exit-code 1")
+    workflows = "".join(p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml"))
+    assert "trivyignore" not in workflows and "--ignorefile" not in workflows
 
-    text = (ROOT / "deploy" / f"{image}.trivyignore.yaml").read_text()
-    entries = re.findall(r"- id: (\S+)\n\s+statement: (.+)\n\s+expired_at: (\d{4}-\d{2}-\d{2})", text)
-    assert entries and len(entries) == text.count("- id:"), entries
-    for cve, statement, expiry in entries:
-        assert cve.startswith(("CVE-", "GHSA-")) and len(statement) > 20, cve
-        datetime.date.fromisoformat(expiry)
+
+def test_deploy_images_are_scanned_on_pull_requests():
+    """A Dependabot bump of Caddy or Tailscale is scanned before it is merged: the deploy job runs on
+    pull requests and neither scan step is skipped there."""
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
-    step = wf[wf.index(f"Known vulnerabilities in the {image.capitalize()} image") :]
-    step = step[: step.index("- name:", 1)]
-    assert f"deploy/{image}.trivyignore.yaml" in step and ".github/trivy/scan.sh" in step, image
-    assert wf.count(".trivyignore.yaml") == 2
+    deploy = wf[wf.index("\n  deploy:") :]
+    for image in ("Caddy", "Tailscale"):
+        step = deploy[deploy.index(f"- name: Known vulnerabilities in the {image} image") :]
+        step = step[: step.index("- name:", 1)]
+        assert ".github/trivy/scan.sh" in step and "pull_request" not in step, step
+    assert "if:" not in deploy[: deploy.index("steps:")]  # the job itself runs on every event
 
 
-def test_tailscale_exception_is_scoped_to_one_module_version_and_proven_absent():
-    """The CVE-2026-78661 exception covers golang.org/x/net v0.60.0 only (purls): another version
-    in a new Tailscale image is scanned again. A step before the scan proves the vulnerable package
-    absent from the image's binaries: Go keeps every function name in its binaries even when
-    stripped (-s -w), so tailscale.com/ names must be found (the names are readable) and no
-    golang.org/x/net/html. name may be."""
-    text = (ROOT / "deploy" / "tailscale.trivyignore.yaml").read_text()
-    assert "purls: [pkg:golang/golang.org/x/net@v0.60.0]" in text
+def test_tailscale_x_net_html_absence_is_recorded_before_the_scan():
+    """CVE-2026-78661 (golang.org/x/net v0.60.0 in the Tailscale image) is not excepted: the scan
+    reports it. A step before the scan records that the vulnerable package is absent from the
+    image's binaries: Go keeps every function name in its binaries even when stripped (-s -w), so
+    tailscale.com/ names must be found (the names are readable) and no golang.org/x/net/html. name may be."""
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
     step = wf[wf.index("No golang.org/x/net/html code in the Tailscale binaries") :]
     step = step[: step.index("- name:", 1)]
@@ -354,6 +439,18 @@ def test_the_pinned_trivy_is_scanned_every_day():
     assert re.search(r"cron: \"\d+ \d+ \* \* \*\"", wf)  # daily
     assert "permissions:\n  contents: read" in wf and "persist-credentials: false" in wf
     assert ".github/trivy/**" in wf and '.github/trivy/scan.sh "$(sed -n' in wf
+
+
+def test_the_published_images_are_scanned_every_day():
+    """The images the NAS pulls are scanned by the daily scanner run with the same pinned Trivy, so a
+    CVE published after the last push is seen the next day."""
+    wf = (ROOT / ".github" / "workflows" / "scanner.yml").read_text()
+    job = wf[wf.index("\n  published:") :]
+    assert "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in job
+    assert "image: [ghcr.io/xerscope/xerscope:latest, ghcr.io/xerscope/xerscope-caddy:latest]" in job
+    assert 'run: .github/trivy/scan.sh "$IMAGE"' in job and "IMAGE: ${{ matrix.image }}" in job
+    compose = (ROOT / "deploy" / "compose.yaml").read_text()  # the tags scanned are the ones pulled
+    assert "ghcr.io/xerscope/xerscope:latest}" in compose and "ghcr.io/xerscope/xerscope-caddy:latest}" in compose
 
 
 def test_schedules_stay_out_of_git():
@@ -395,9 +492,15 @@ def test_published_images_carry_provenance_sbom_and_an_attestation():
     assert re.search(r"^permissions:\n  contents: read\n\n", wf, re.M)  # the workflow default stays read-only
     for line in _uses(wf):
         assert re.search(r"@[0-9a-f]{40} # v", line), line
-    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01)
-    assert 'tags: ["v*"]' in wf and "type=semver,pattern={{version}}" in wf and "type=sha" in wf
-    assert "type=raw,value=latest,enable={{is_default_branch}}" in wf
+    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01),
+    # once its tests run passed: tests.yml runs on a push of main or of a v* tag, image.yml follows it
+    tests = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'branches: [main]\n    tags: ["v*"]' in tests
+    assert 'branches: [main, "v*"]' in wf
+    semver = "type=semver,pattern={{version}},value=${{ github.event.workflow_run.head_branch }},"
+    assert semver + "enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}" in wf
+    assert "type=raw,value=sha-${{ steps.commit.outputs.short }}" in wf
+    assert "type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}" in wf
 
 
 def test_codeql_and_scorecard_run_pinned_with_minimal_permissions():

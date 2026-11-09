@@ -305,8 +305,9 @@ natively:
    Personal access tokens: one **Read & Write** for GitHub, one **Read-only** for the NAS.
 2. GitHub → repository → Settings → Secrets and variables → Actions: secrets
    `DOCKERHUB_USERNAME` (`<docker-hub-login>`) and `DOCKERHUB_TOKEN` (the Read & Write one);
-   variable `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `image` → Run workflow;
-   the run pushes both images to both registries.
+   variable `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `tests` → the latest run
+   on main → Re-run all jobs; once it passes, `image` pushes both images to both registries
+   (`image` publishes only a commit whose `tests` run passed).
 3. NAS: Container Manager → Registry → Docker Hub → Settings → Edit → login + the read-only
    token → **Use**.
 4. `.env`: `XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest` and, if ghcr is out of reach

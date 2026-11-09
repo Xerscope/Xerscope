@@ -2,8 +2,8 @@ name: image
 
 # Builds the container images and publishes them to GitHub's registry, so a machine without a
 # terminal (a NAS running Container Manager) only pulls them:
-#   ghcr.io/xerscope/xerscope:latest            every push to main   (Dockerfile)
-#   ghcr.io/xerscope/xerscope:v1.2.3            every tag v*; plus a sha-<short> tag each build
+#   ghcr.io/xerscope/xerscope:latest            every push to main, once tested   (Dockerfile)
+#   ghcr.io/xerscope/xerscope:v1.2.3            every tag v*, once tested; plus a sha-<short> tag each build
 #   ghcr.io/xerscope/xerscope-caddy:<same tags> Caddy + rate_limit for deploy/ (deploy/caddy/Dockerfile)
 # The owner is lowercased by metadata-action (ghcr.io requires it). A package takes the
 # repository's visibility; a public one pulls without a token.
@@ -17,22 +17,33 @@ name: image
 # build-provenance attestation of the digest (actions/attest-build-provenance), so a puller
 # can check which commit and workflow built the image: docs/deploy.md §7.
 # Nothing is published from a fork: the job runs only in this repository.
+#
+# Only a tested commit is published: this workflow starts when a `tests` run completes, and
+# publishes only if that run succeeded and was started by a push (main, or a tag v*: tests.yml
+# runs on both). It builds that run's commit (head_sha), not the tip of main. A release is
+# tagged on main; the tag push runs tests, and this workflow publishes the v* tag once they pass.
+# To publish again, re-run the `tests` run of that commit.
+# A workflow_run workflow sees main as its own ref and sha (github.ref, github.sha), so the
+# tags and the revision label are given explicitly from the triggering run.
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
+    branches: [main, "v*"]                         # a tag run's head_branch is the tag name
 
 concurrency:
-  group: image-${{ github.ref }}
-  cancel-in-progress: true
+  group: image-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false                      # a publish under way is never cut between registries
 
 permissions:
   contents: read
 
 jobs:
   publish:
-    if: github.repository == 'Xerscope/xerscope'
+    if: >-
+      github.repository == 'Xerscope/xerscope'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
     permissions:
       contents: read
       packages: write                             # push the images and the attestation to ghcr.io
@@ -48,10 +59,14 @@ jobs:
     env:
       # at job level: a step's own `env` is not visible to its `if`
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
+      - id: commit
+        run: echo "short=${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
@@ -70,9 +85,11 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
             name=docker.io/${{ vars.DOCKERHUB_IMAGE_OWNER }}/${{ matrix.image }},enable=${{ secrets.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE_OWNER != '' }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=sha
+            type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}
+            type=semver,pattern={{version}},value=${{ github.event.workflow_run.head_branch }},enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}
+            type=raw,value=sha-${{ steps.commit.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:

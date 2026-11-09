@@ -3,10 +3,12 @@ name: tests
 # Minutes are the scarce resource on a private repository (Windows counts double):
 #   pull requests and main  -> Linux only, two Pythons (oldest and newest supported)
 #   Monday run and manual   -> the full matrix, Windows included
-# A new push to the same branch cancels the run still going for the previous one.
+# A new push to a pull request cancels the run still going for its previous one; on main every
+# commit is tested to the end (image.yml publishes a commit only once its run passed).
 on:
   push:
     branches: [main]
+    tags: ["v*"]          # a release tag is tested before image.yml publishes it
   pull_request:
   workflow_dispatch:
   schedule:
@@ -14,14 +16,16 @@ on:
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: the jobs only read the repo.
 permissions:
   contents: read
 
 # Actions are pinned to a commit SHA (a tag can be moved by whoever controls the repo);
-# Dependabot (.github/dependabot.yml) proposes the updates.
+# Dependabot (.github/dependabot.yml) proposes the updates. uv (setup-uv `version`, the same
+# release as the Dockerfile's) and the tools run with uvx are pinned to one release, bumped by
+# hand: Dependabot reads neither.
 #
 # XERSCOPE_REQUIRE names the evidence a job must have (tests/conftest.py `missing`): a test
 # that would skip for want of it fails instead, so a job cannot go green by skipping the
@@ -34,9 +38,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
       - run: uv sync --locked
-      - run: uvx ruff check src tests scripts
-      - run: uvx ruff format --check src tests scripts
+      - run: uvx ruff@0.17.4 check src tests scripts
+      - run: uvx ruff@0.17.4 format --check src tests scripts
       - name: No schedule or data export is tracked (the repository is public)
         run: "! git ls-files | grep -iE '\\.(xer|parquet|xlsx?|csv)$'"
 
@@ -50,6 +56,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
       - run: uv sync --locked
       - run: uv run python scripts/oracle_report.py | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -69,6 +77,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
+          version: "0.13.7"
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - name: Reference data cache (keyed on the pinned commits and checksums)
@@ -100,6 +109,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
+          version: "0.13.7"
           python-version: "3.13"  # the baseline's; radon 6.0.1 cannot tokenise xer/parser.py on 3.11
       - run: uv sync --locked
       - run: uv run python scripts/fitness.py --markdown "$GITHUB_STEP_SUMMARY" --check tests/fitness_baseline.json
@@ -112,10 +122,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
       - run: uv export --locked --all-extras --all-groups --no-hashes --no-emit-project -o requirements-audit.txt
-      - run: uvx pip-audit -r requirements-audit.txt --disable-pip --no-deps -s osv
-      - run: uvx pip-audit -r requirements-audit.txt --disable-pip --no-deps -s pypi
-      - run: uvx bandit -r src -ll  # medium and high severity only
+      - run: uvx pip-audit@2.10.1 -r requirements-audit.txt --disable-pip --no-deps -s osv
+      - run: uvx pip-audit@2.10.1 -r requirements-audit.txt --disable-pip --no-deps -s pypi
+      - run: uvx bandit@1.9.4 -r src -ll  # medium and high severity only
 
   crosscheck:
     # Independent reading with MPXJ (Java) on the reference files and the demo data, and the
@@ -137,6 +149,7 @@ jobs:
           java-version: ${{ matrix.java }}
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
+          version: "0.13.7"
           python-version: "3.14"
       - run: uv sync --locked --extra crosscheck
       - name: Reference data cache
@@ -153,11 +166,32 @@ jobs:
       - name: CPM against MPXJ (P6 exports, random networks, hand cases, demo)
         run: uv run pytest -rs tests/test_crosscheck_mpxj.py tests/test_reference.py
 
+  changes:
+    # Pull requests only: whether the change touches what the app image is built or scanned from.
+    # The checkout of a pull request is its merge commit; its first parent is the base branch tip.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: diff
+        run: |
+          git diff --name-only HEAD^1 HEAD | tee changed.txt
+          if grep -qE '^(Dockerfile$|uv\.lock$|pyproject\.toml$|src/|\.github/trivy/)' changed.txt; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          fi
+
   container:
     # The image builds, answers on its health endpoint with the demo data mounted, and
-    # Trivy scans it: on main, the Monday run and by hand (the image build is the most
-    # expensive job here; image.yml publishes from main only).
-    if: github.event_name != 'pull_request'
+    # Trivy scans it: on main, tags, the Monday run, by hand, and on a pull request that changes
+    # the Dockerfile, the lock, pyproject.toml, src/ or the Trivy pin (the image build is the
+    # most expensive job here). image.yml publishes a commit only once this job passed on it.
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.image == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -286,13 +320,13 @@ jobs:
           grep -q "HTTP/1.1 429" codes.txt   # over it: refused before any bcrypt run
           docker compose logs --no-color caddy > caddy.log
           grep '"status": 429,' caddy.log | tail -n 1 | grep -q '"Retry-After"'
-      - name: Known vulnerabilities in the Caddy image, fixed ones only (main, Monday, manual)
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
+      - name: Known vulnerabilities in the Caddy image, fixed ones only
+        if: ${{ !cancelled() }}   # each image scanned even if the other fails
         working-directory: .
         env:
           IMAGE: ${{ steps.compose.outputs.caddy }}
-        run: .github/trivy/scan.sh "$IMAGE" deploy/caddy.trivyignore.yaml   # dated exceptions, each with its reason
-      - name: No golang.org/x/net/html code in the Tailscale binaries (evidence for its CVE-2026-78661 exception)
+        run: .github/trivy/scan.sh "$IMAGE"   # no exception file
+      - name: No golang.org/x/net/html code in the Tailscale binaries (CVE-2026-78661 not reachable, recorded)
         if: ${{ !cancelled() }}
         env:
           IMAGE: ${{ steps.compose.outputs.tailscale }}
@@ -306,12 +340,12 @@ jobs:
             echo "$bin: no golang.org/x/net/html code"
           done
           docker rm -f "$cid" > /dev/null
-      - name: Known vulnerabilities in the Tailscale image, fixed ones only (main, Monday, manual)
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}   # each image scanned even if the other fails
+      - name: Known vulnerabilities in the Tailscale image, fixed ones only
+        if: ${{ !cancelled() }}   # each image scanned even if the other fails
         working-directory: .
         env:
           IMAGE: ${{ steps.compose.outputs.tailscale }}
-        run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml   # dated exceptions, each with its reason
+        run: .github/trivy/scan.sh "$IMAGE"   # no exception file
       - name: Container states and logs, when a step failed
         if: failure()
         run: |

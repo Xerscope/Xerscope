@@ -1,9 +1,15 @@
 version: 2
+# Every version update waits 7 days after its release (cooldown): a compromised release withdrawn
+# within the week is never proposed. Security updates are not delayed: "You can use cooldown [...] for
+# version updates, but not security updates" (docs.github.com, Optimizing the creation of pull
+# requests for Dependabot version updates).
 updates:
   - package-ecosystem: uv          # pyproject.toml + uv.lock
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       python:
         patterns: ["*"]
@@ -11,6 +17,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
@@ -18,14 +26,20 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: docker-compose   # image: lines (tailscale) in the Funnel stack
     directory: /deploy
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: docker           # the two caddy tags of the Funnel stack's Caddy image; the
     directory: /deploy/caddy            # caddy-ratelimit version in its RUN line is bumped by hand
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       caddy:
         patterns: ["caddy"]             # builder and runtime move together: one Caddy release
