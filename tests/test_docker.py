@@ -492,9 +492,15 @@ def test_published_images_carry_provenance_sbom_and_an_attestation():
     assert re.search(r"^permissions:\n  contents: read\n\n", wf, re.M)  # the workflow default stays read-only
     for line in _uses(wf):
         assert re.search(r"@[0-9a-f]{40} # v", line), line
-    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01)
-    assert 'tags: ["v*"]' in wf and "type=semver,pattern={{version}}" in wf and "type=sha" in wf
-    assert "type=raw,value=latest,enable={{is_default_branch}}" in wf
+    # a release tag publishes an immutable version tag next to latest and the commit tag (AUDIT-DEP-01),
+    # once its tests run passed: tests.yml runs on a push of main or of a v* tag, image.yml follows it
+    tests = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'branches: [main]\n    tags: ["v*"]' in tests
+    assert 'branches: [main, "v*"]' in wf
+    semver = "type=semver,pattern={{version}},value=${{ github.event.workflow_run.head_branch }},"
+    assert semver + "enable=${{ startsWith(github.event.workflow_run.head_branch, 'v') }}" in wf
+    assert "type=raw,value=sha-${{ steps.commit.outputs.short }}" in wf
+    assert "type=raw,value=latest,enable=${{ github.event.workflow_run.head_branch == 'main' }}" in wf
 
 
 def test_codeql_and_scorecard_run_pinned_with_minimal_permissions():
