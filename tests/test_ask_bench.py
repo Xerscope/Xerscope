@@ -16,17 +16,20 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from asklex import LEXICON
 
 from xerscope.analysis import query
 from xerscope.analysis.query import Vocabulary
 
 ASK = Path(__file__).parent / "ask"
 FLOORS = {"dev": 1.00, "heldout": 1.00}  # share of sentences with every filter right (ratios()["exact"])
+# share of tests/ask/cases.toml understood exactly (query.understood): raise it when it goes up, never lower it
+UNDERSTOOD = 1.00
 
 
 @pytest.fixture(scope="module")
 def lexicon(store):
-    return query.vocabulary(store.latest)
+    return query.vocabulary(store.latest, lexicon=LEXICON)
 
 
 @pytest.mark.parametrize("name", list(FLOORS))
@@ -38,6 +41,21 @@ def test_share_of_sentences_right_never_drops(lexicon, name):
     share = query.ratios(scored)["exact"]
     missed = scored.loc[~scored["exact"], "text"].tolist()
     assert share >= FLOORS[name], f"{name}: {share:.0%} < {FLOORS[name]:.0%}; missed {missed}"
+
+
+def test_share_of_the_grammar_cases_understood_never_drops(store):
+    """tests/ask/cases.toml: FR and EN sentences (the audit's battery, negations, OR, IDs,
+    comparisons, dates, constraints, logic, unknown words), each with its filter written by hand."""
+    from xerscope.analysis import wbs
+
+    snapshot = store.latest
+    vocab = query.vocabulary(snapshot, wbs.tree(snapshot), LEXICON)
+    cases = query.load_cases(ASK / "cases.toml")
+    assert len(cases) >= 80
+    scored = query.understood(cases, vocab)
+    share = float(scored["exact"].mean())
+    missed = [f"{r.text!r}: {r.got!r} != {r.expect!r}" for r in scored[~scored["exact"]].itertuples()]
+    assert share >= UNDERSTOOD, f"{share:.0%} < {UNDERSTOOD:.0%}; missed {missed}"
 
 
 def test_every_field_is_scored_and_a_wrong_expectation_is_an_error(lexicon):

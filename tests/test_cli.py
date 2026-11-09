@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import asklex
 import pandas as pd
 import pytest
 from xerkit import todo, xer_text
@@ -277,14 +278,19 @@ def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_p
     assert "activities in gap" in text
 
 
-def test_ask_bench(capsys, sample_dir):
-    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--cases", "tests/ask/heldout.toml")
+def test_ask_bench(capsys, sample_dir, tmp_path):
+    asklex.write(tmp_path)  # the sentences say trade words in both languages: a company's lexicon
+    out = run(
+        capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--cases", "tests/ask/heldout.toml",
+        "--lexicon", tmp_path,
+    )  # fmt: skip
     assert "dev.toml: 32 sentences" in out and "keywords  exact 100%" in out
     assert "heldout.toml: 20 sentences" in out and "missed:" not in out  # every held-out sentence right
 
 
-def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir):
-    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--anonymize")
+def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir, tmp_path):
+    asklex.write(tmp_path)
+    out = run(capsys, "ask-bench", sample_dir, "--cases", "tests/ask/dev.toml", "--anonymize", "--lexicon", tmp_path)
     assert "anonymised copy XP" in out and "set aside:" in out and "sentences scored" in out
     assert "exact 100%" in out and "15 sentences scored" in out  # the sentences naming things by code or full name
     for secret in ("Civil works", "CIV", "Site crew", "CREW", "PRJ-ALPHA", "Ingénierie", "earthworks"):
@@ -293,8 +299,11 @@ def test_ask_bench_anonymised_shows_no_original_name(capsys, sample_dir):
 
 def test_lexicon_command(capsys, tmp_path):
     out = run(capsys, "lexicon")
+    assert out.strip() == "0 group(s), 0 word(s)"  # no lexicon ships with the package
+    asklex.write(tmp_path)
+    out = run(capsys, "lexicon", str(tmp_path))
     assert "meca, mecanique, mechanical" in out and "group(s)" in out
-    out = run(capsys, "lexicon", "--word", "Mécanique")
+    out = run(capsys, "lexicon", str(tmp_path), "--word", "Mécanique")
     assert out.startswith("mecanique: ") and "mechanical" in out
     (tmp_path / "bad.toml").write_text("[[group]\n", encoding="utf-8")
     assert cli.main(["lexicon", str(tmp_path)]) == 1
@@ -305,3 +314,13 @@ def test_ask_bench_self_coverage(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--self")
     assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
     assert "not reached" not in out
+
+
+def test_lexicon_build_writes_the_variants_to_the_file_named_only(capsys, sample_dir, tmp_path):
+    out = run(capsys, "lexicon", "build", sample_dir, "--out", tmp_path / "generated.toml")
+    assert out.strip().endswith("group(s) from 8 file(s) written")  # counts, never a word
+    text = (tmp_path / "generated.toml").read_text(encoding="utf-8")
+    assert text.startswith("# Variants generated from the files") and list(tmp_path.iterdir()) == [
+        tmp_path / "generated.toml"
+    ]
+    assert cli.main(["lexicon", "build", str(sample_dir)]) == 2  # --out required

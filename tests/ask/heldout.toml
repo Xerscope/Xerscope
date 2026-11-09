@@ -14,9 +14,9 @@ wbs = "MEC"
 float = ["Critical"]
 
 [[case]]
-text = "what is late in procurement"
+text = "what is late in procurement"   # expectation changed with the meaning of late (P6-12 Late Activities)
 wbs = "PRC"
-float = ["Critical"]
+clauses = ["late"]
 
 [[case]]
 text = "jalons non démarrés"
@@ -90,9 +90,8 @@ status = ["Not started"]
 search = "roads"
 
 [[case]]
-text = "ce qui bloque la fin du lot mécanique"
+text = "ce qui bloque la fin du lot mécanique"   # expectation changed: "bloque" has no P6 meaning, not Critical
 wbs = "MEC"
-float = ["Critical"]
 
 [[case]]
 text = "handover"      # an own word of Commissioning

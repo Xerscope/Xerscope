@@ -10,6 +10,7 @@ from xerscope.app.state import (
     baseline_for,
     compare_picker,
     csv_download,
+    file_variants,
     memo,
     page_header,
     require_store,
@@ -30,6 +31,7 @@ CHART_KEY = "gantt_chart"
 CLICK_KEY = "gantt_clicked"  # the Activity ID of a click in the chart, until the run it causes
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
+DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
@@ -69,12 +71,19 @@ labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
 
 def _clear_ask() -> None:
     st.session_state[ASK_KEY] = ""
+    st.session_state[DROPPED_KEY] = ("", [])
+
+
+def _drop(sentence: str, label: str) -> None:
+    """Take one understood filter off (its × button), for this sentence only."""
+    held, labels = st.session_state.get(DROPPED_KEY, ("", []))
+    st.session_state[DROPPED_KEY] = (sentence, [*(labels if held == sentence else []), label])
 
 
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
-# known, below; the chips let a filter go.
+# known, below; a × button per filter understood takes it off.
 asked = st.text_input(
     "Ask the schedule",
     placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
@@ -83,12 +92,16 @@ asked = st.text_input(
 )
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
-lexicon = memo(  # rebuilt when a word is taught
+# the variants of each source column, generated from every loaded file, in memory (never written)
+generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
+lexicon = memo(  # the labels of every loaded file (memo's key names them all), rebuilt when a word is taught
     ("vocabulary", snapshot.source, len(taught)),
     query.vocabulary,
     snapshot,
     nodes,
     session_lexicon(),
+    [other for other in store if other is not snapshot],
+    query.lexicons(generated, file_variants()),
     baseline=False,
     ev_basis=False,
 )
@@ -97,18 +110,20 @@ if asked:
     ask = memo(  # once per sentence and update, baseline-independent
         ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
     )
-if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
-    kept = st.pills(
-        "Understood",
-        list(ask.matched),
-        default=list(ask.matched),
-        selection_mode="multi",
-        key=f"ask_pills:{asked}",  # another sentence starts with every chip on
-        label_visibility="collapsed",
-    )
-    for label in ask.matched:
-        if label not in (kept or []):
-            ask = query.without(ask, label, lexicon)
+if ask is not None:  # the filters taken off this sentence (× buttons), from query.without
+    held, dropped = st.session_state.get(DROPPED_KEY, ("", []))
+    for label in dropped if held == asked else []:
+        ask = query.without(ask, label, lexicon)
+if ask is not None and ask.matched:  # what was understood, one button each: "Critical ×" takes it off
+    with st.container(horizontal=True, gap="small", key="ask_chips"):
+        for label in ask.matched:
+            st.button(
+                f"{ui.md_text(label)} ×",
+                key=f"ask_drop:{label}",
+                help="Remove this filter",
+                on_click=_drop,
+                args=(asked, label),
+            )
 if ask is not None:
     for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
         offers = query.suggestions(word, lexicon)
@@ -250,19 +265,15 @@ if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
 ask_funnel = None
 if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
-    ask_funnel = query.apply(ask, tasks, snapshot, nodes)
+    ask_funnel = query.apply(ask, tasks, snapshot, nodes, baseline)  # "late" reads the page's baseline
     tasks = ask_funnel.rows
     with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
-        unknown = (
-            " The word"
-            + ("s" if len(ask.ignored) > 1 else "")
-            + f" {', '.join(f'« {w} »' for w in ask.ignored)} "
-            + ("are" if len(ask.ignored) > 1 else "is")
-            + " in neither this file nor the lexicon."
-            if ask.ignored
-            else ""
+        # nothing understood but words left out: no row (query.apply); only stop words: no filter
+        said = (  # in the question's language
+            query.answer(ask, ask_funnel, lexicon, query.language(asked))
+            if ask_funnel.steps
+            else "No filter: showing all."
         )
-        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "Nothing understood: showing all."
         banner = st.container(
             border=True,
             horizontal=True,
@@ -270,7 +281,7 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             key="ask_banner_warn" if ask.ignored or ask.confidence < query.SURE else "ask_banner",
         )
         with banner:
-            st.markdown(ui.md_text(said) + unknown, width="stretch")
+            st.markdown(ui.md_text(said), width="stretch")
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
         how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)

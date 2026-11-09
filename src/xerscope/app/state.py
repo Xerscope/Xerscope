@@ -119,9 +119,10 @@ def background_jobs() -> bool:
 
 @functools.cache
 def lexicon_and_errors() -> tuple[query.Lexicon, tuple[str, ...]]:
-    """The Ask field's trade words: the packaged groups plus the *.toml of XERSCOPE_LEXICON (a
-    company's own words), and the files skipped with why. Read once for the process: it holds no
-    session's data. The errors show on the Debug page, never to a visitor of another page."""
+    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON (a company's own words, kept
+    outside the repository; none ships with the app), and the files skipped with why. Read once
+    for the process: it holds no session's data. The errors show on the Debug page, never to a
+    visitor of another page."""
     extra = os.environ.get("XERSCOPE_LEXICON", "")
     found, errors = query.load_lexicon(*([extra] if extra else []))
     return found, tuple(errors)
@@ -129,6 +130,14 @@ def lexicon_and_errors() -> tuple[query.Lexicon, tuple[str, ...]]:
 
 def lexicon() -> query.Lexicon:
     return lexicon_and_errors()[0]
+
+
+@functools.cache
+def file_variants() -> dict[str, list[list[str]]]:
+    """The variant groups of XERSCOPE_LEXICON that name their source column (a file ``xerscope
+    lexicon build`` wrote and the company reviewed), merged with those derived in memory."""
+    extra = os.environ.get("XERSCOPE_LEXICON", "")
+    return query.load_variants(extra) if extra else {}
 
 
 def session_lexicon() -> query.Lexicon:

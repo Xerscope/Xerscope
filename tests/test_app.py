@@ -144,6 +144,11 @@ def _group(at, key: str):
     return next(group for group in at.get("button_group") if group.key == key)
 
 
+def _chips(at) -> list[str]:
+    """The Ask filters understood, as their × buttons name them."""
+    return [b.key.removeprefix("ask_drop:") for b in at.button if b.key and b.key.startswith("ask_drop:")]
+
+
 def _toggle(at, label: str, value: bool) -> None:
     next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
     _ok(at)
@@ -181,28 +186,34 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any(m.value.startswith(f"{len(drawn)} activities critical not started in CIV") for m in app.markdown)
     # the page is on CIV already: the funnel starts from its 8 tasks and names each step
     assert any(c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started ") for c in app.caption)
-    chips = _group(app, "ask_pills:critical not started in civil works")
-    assert chips.value == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
-    chips.set_value(["Status: Not started", "WBS: CIV · Civil works"]).run()  # a chip off: its filter goes
+    assert _chips(app) == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
+    critical = app.button(key="ask_drop:Float: Critical")
+    assert critical.label == "Float: Critical ×"
+    critical.click().run()  # its × takes the filter off (query.without)
     _ok(app)
+    assert _chips(app) == ["Status: Not started", "WBS: CIV · Civil works"]
     rows = [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]
     assert len(rows) > len(drawn) and any(r["category"] != "Critical" for r in rows)
     line = next(c.value for c in app.caption if c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started "))
     assert "float Critical" not in line  # the funnel lost that step
-    app.text_input[0].set_value("jalons xyzzy génie civil").run()  # a word the file does not hold is dropped
+    app.text_input[0].set_value("jalons xyzzy civil").run()  # a word the file does not hold is dropped
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
-    assert any("« xyzzy » is in neither this file nor the lexicon" in m.value for m in app.markdown)
+    assert any("« xyzzy » n'est ni dans ce fichier" in m.value for m in app.markdown)  # the answer in French
+    app.text_input[0].set_value("xyzzy").run()  # nothing understood: no activity, never every activity
+    _ok(app)
+    assert not [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]
+    assert any("no activity shown" in m.value and "xyzzy" in m.value for m in app.markdown)
     app.text_input[0].set_value("commiss").run()  # a word nothing holds, close to Commissioning
     _ok(app)
     app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
     _ok(app)
-    assert _group(app, "ask_pills:commiss").value == ["WBS: COM · Commissioning"]
+    assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
     assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
     app.button(key="ask_clear").click().run()  # Show all empties the field
     _ok(app)
-    assert app.text_input[0].value == "" and not app.get("button_group")[0].key.startswith("ask_pills")
+    assert app.text_input[0].value == "" and _chips(app) == []
     _group(app, "gantt_timescale").set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
@@ -1240,7 +1251,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 13 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 14 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1803,8 +1814,9 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     at.switch_page("views/debug.py").run()
     _ok(at)
     assert not any("12 · App runtime" in e.label for e in at.expander)
-    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 12
+    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 13
     assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance
+    assert any("14 · Ask vocabulary" in e.label for e in at.expander)  # counts only; the download needs exports plain
 
 
 # --- visual defects (Playwright campaign): what AppTest can see of each fix --------------------
