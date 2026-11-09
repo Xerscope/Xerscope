@@ -116,6 +116,12 @@ one that no longer exists, and on a cited path that is gone. Another library's c
 in plain text with the library and its version ("MPXJ 16.10, TableProjectReader"). The files not yet at the standard are listed in `pyproject.toml`
 (`per-file-ignores`): a file leaves the list when it is brought to it, no rule is added.
 
+**Moved code.** `uv run python scripts/same_code.py origin/main` compares every top-level
+definition of `src/xerscope` with `main`, wherever it now lives, and fails on one that
+differs: the proof that a pull request only moves code. With `--ignore-docstrings`, the proof
+that it only rewrites docstrings. It reads the code as text, runs nothing and reads no
+schedule; what it leaves out is listed at the top of the script.
+
 **Code fitness.** `uv run python scripts/fitness.py --check tests/fitness_baseline.json`
 measures each module (maintainability index, cyclomatic and cognitive complexity,
 structural clones) and the whole (mypy errors, deptry violations, the import contracts
