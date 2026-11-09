@@ -19,8 +19,8 @@ Three containers from three images: Tailscale's official one, and two built here
 (`deploy/caddy/Dockerfile`; the stock caddy image has no such module and the NAS cannot
 build). Each build is tagged `latest` (main), `sha-<short>` (its commit) and, from a git tag
 `v0.1.0`, `0.1.0`; `latest` is the compose default for the first start, the NAS then runs a
-release tag or a digest (§7). A fourth, `lexicon-init`, runs the app's image once at each
-start, before the app, and exits (§10). Container Manager with Projects (DSM 7.2+) is
+release tag or a digest (§7). A fourth, `lexicon-init`, runs the app's image on demand only,
+then exits: `up` and Build leave it out (§10). Container Manager with Projects (DSM 7.2+) is
 required: the stack is a compose file.
 
 ## 1. What DSM 7.4 changes
@@ -180,10 +180,7 @@ Then Container Manager → **Project** → **Create**:
 Container Manager pulls the three images (the ghcr pull needs no registry entry) and starts
 the stack. Expected after ~40 s, in Container → each container → Log:
 
-1. `xerscope-lexicon-init-1`: one line per column (`<column>: <n> group(s), <k> new`), then
-   `suggestions: <kept> kept, <purged> purged`; the container stays *Stopped*, exit code 0.
-   An exit code other than 0 keeps the app stopped: read that log (§10).
-   `xerscope`: `You can now view your Streamlit app`. The `/_stcore/health` check turns
+1. `xerscope`: `You can now view your Streamlit app`. The `/_stcore/health` check turns
    the container *Healthy*.
 2. `tailscale`: `Serve config loaded`, then `funnel` lines. No `funnel: not permitted` (ACL
    step missed) and no `permission denied` on `/var/lib/tailscale` (§4 folder permission).
@@ -329,7 +326,7 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App and Caddy images pinned by digest (`:0.1.0@sha256:…`, §7), not by `latest`; the build verified with `gh attestation verify`; the Dockerfiles' base images are pinned the same way (`Dockerfile`, `deploy/caddy/Dockerfile`).
 - [ ] Memory and PID caps on the four containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
-- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (purged by `lexicon-init` and by the app).
+- [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (purged by `lexicon-init` and by the app). `lexicon-init` is not started by Build (profile `lexicon`, §10).
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
 - [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) carry `Cache-Control: no-store`.
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
@@ -361,22 +358,22 @@ one owned by root, and the containers could not write it):
 
 | Folder | Written by | Read by the Ask field | Holds |
 |---|---|---|---|
-| `generated/` | `lexicon-init` only, at each start | `variants.toml` only, less the refusals | `variants.toml`: the exports' variants per source column, plurals and abbreviations (`ask/generated.py`); `report.txt`: groups per column, those new since the last start, and the section "to review (one letter apart, not used)": one pair per line with its column, never read by the Ask field |
+| `generated/` | `lexicon-init` only, when you run it | `variants.toml` only, less the refusals | `variants.toml`: the exports' variants per source column, plurals and abbreviations (`ask/generated.py`); `report.txt`: groups per column, those new since the last run, and the section "to review (one letter apart, not used)": one pair per line with its column, never read by the Ask field |
 | `curated/` | you, by hand; read-only in both containers | yes | `*.toml`: trade words (`[[group]] words = ["CVC", "HVAC"]`) and refusals of generated groups (`[[refuse]] column = "PROJWBS.wbs_name"`, `words = ["fondation", "fondations"]`: the generated group holding all those words is dropped; a refusal wins over `generated/`) |
 | `suggested/` | the app only, appending | no | `suggestions.toml`: one `[[suggestion]]` per click on a "Did you mean" label: the unknown word, the label, its source column, the filter (facet, value) and the date, never the sentence asked |
 
 Two words one letter apart are never read as one: on public XER files that rule joined
 different words ("screed" / "screen", "coarse" / "course", "lighting" / "lightning") and
 nothing in the files tells them from a typo ("gybsum" / "gypsum"). Read the "to review"
-section of `report.txt` after a start and copy each true typo into a `curated/` file
+section of `report.txt` after a run and copy each true typo into a `curated/` file
 (`[[group]] words = ["gybsum", "gypsum"]`).
 
 A word taught by a click holds for the visitor's session at once; for every session, copy
 it into a `curated/` file. A suggestion older than 90 days whose word `curated/` does not
 hold is purged by `lexicon-init` and by the app at its next click, under the same lock: a
-stack Docker restarts without `lexicon-init` (a NAS reboot) still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
+stack where `lexicon-init` is not run for months still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
 file is named, never fatal to the app; Debug block 14 lists the load errors to every session,
-each as its file and line or refusal number, never the words it holds).
+each as its file and where it fails: line and column, byte (a file not saved as UTF-8), group or refusal number; never the words it holds).
 
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
 with the app's image and account, no network (`network_mode: none`), a read-only root
@@ -384,10 +381,39 @@ filesystem, no capability, `no-new-privileges`, the exports read-only and the le
 read-only but for `generated/` and `suggested/`. Both must exist: a missing one stops it
 with `error: create <folder> owned by the app account, see docs/deploy.md §10` and exit
 code 1 (it never creates one: Docker would make it root's). Files are replaced through a temporary file
-and a rename, created 0600 (`mkstemp`); its log holds counts only. The app waits for its
-success (`service_completed_successfully`): an exports folder with no `.xer` or an
-unreadable export stops it with exit code 1 and the app does not start; fix the folder and
-Build again.
+and a rename, created 0600 (`mkstemp`); its log holds counts only.
+
+Each export is checked before the generation and skipped if it fails, the others still read:
+read without error (`unreadable`), its `%E` end line present (`incomplete`, a file still being
+copied), the tables `TASK` and `PROJWBS` present (`missing table TASK`, `missing table
+PROJWBS`), a project to select (`no project`), at most 64 MB (`too large`: a 40 MB export
+peaks at about 1 GB parsed, §7, and the default memory cap is 2 GB; `LEXICON_MAX_BYTES` in
+`cli.py`). The exports are read one at a time and only their words kept, so the peak is the
+largest export's, whatever their number. `report.txt` ends with a section `skipped (not read):`, one `<file>: <reason>` per
+line; the log says `<n> file(s) skipped, named in generated/report.txt` and never names an
+export (their names are often the project's), nor quotes one. When no export passes (or the
+folder holds none), `generated/` is left as it is, the log says `error: no valid XER file in
+the source folder (<n> skipped), generated/ left as it is` and the exit code is 1; the
+suggestions are then not purged either (the app still purges them at its next click).
+
+**When to run it.** `lexicon-init` is in the compose profile `lexicon`: `docker compose up`
+and Container Manager's Build leave it out, and the app never waits for it. The app starts
+with the `generated/` the last run left (none before the first run: the Ask field then reads
+`curated/` and the variants it derives in memory from the loaded files). Run it after new
+exports have landed, before reviewing `report.txt`, or after a curated refusal, from the
+project folder:
+
+```
+docker compose run --rm lexicon-init
+```
+
+Compose enables the profile of a service named on the command line by itself (Docker docs,
+"Using profiles with Compose"). On the NAS, Container Manager has no button for it: enable
+SSH (Control Panel → Terminal & SNMP), then `cd /volume1/docker/xerscope && sudo docker
+compose run --rm lexicon-init`, and disable SSH again. The output is one line per column
+(`<column>: <n> group(s), <k> new`), then `suggestions: <kept> kept, <purged> purged`, exit
+code 0. The app reads `generated/` once per process: Project → Action → Build to use the
+new files (on a PC, `docker compose restart xerscope`).
 
 Threat model of the folder, written from a web page. *Who writes:* anyone holding the URL and
 the password reaches the teach buttons. *What they control:* the unknown word (any text typed

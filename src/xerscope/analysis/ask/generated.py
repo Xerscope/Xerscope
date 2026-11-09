@@ -25,7 +25,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ...xer import Snapshot
-from .lexicon import Lexicon, json_quote, lexicon_from_groups
+from .lexicon import Lexicon, json_quote, lexicon_from_groups, tables, words_of
 from .text import fold
 
 MIN_ABBREVIATION = 3  # letters of an abbreviation ("Mec.")
@@ -61,25 +61,36 @@ COLUMNS = (
     "RSRC.rsrc_name",
 )
 GROUPED = tuple(c for c in COLUMNS if c != "TASK.task_code")  # Activity IDs are never variants
+Terms = dict[str, tuple[set[str], set[str]]]  # column: (words, abbreviated)
 
 
-def terms(snapshots: Iterable[Snapshot]) -> dict[str, tuple[set[str], set[str]]]:
+def terms(snapshots: Iterable[Snapshot]) -> Terms:
     """Per column: its folded words (letters only, 3+), and those written as an abbreviation."""
-    found: dict[str, tuple[set[str], set[str]]] = {}
+    found: Terms = {}
     for snapshot in snapshots:
-        for column, values in _column_values(snapshot).items():
-            words, abbreviated = found.setdefault(column, (set(), set()))
-            for value in values:
-                text = fold(value)
-                words.update(w for w in re.findall(r"[a-z]+", text) if len(w) >= 3)
-                abbreviated.update(w for w in re.findall(r"([a-z]+)\.", text) if len(w) >= MIN_ABBREVIATION)
+        add_terms(found, snapshot)
     return found
+
+
+def add_terms(found: Terms, snapshot: Snapshot) -> None:
+    """Adds one file's terms to ``found``: ``xerscope lexicon build`` reads one export at a time
+    and keeps its words only, never the snapshot."""
+    for column, values in _column_values(snapshot).items():
+        words, abbreviated = found.setdefault(column, (set(), set()))
+        for value in values:
+            text = fold(value)
+            words.update(w for w in re.findall(r"[a-z]+", text) if len(w) >= 3)
+            abbreviated.update(w for w in re.findall(r"([a-z]+)\.", text) if len(w) >= MIN_ABBREVIATION)
 
 
 def variants(snapshots: Iterable[Snapshot]) -> dict[str, list[list[str]]]:
     """Per grouped column, its groups of variants (each sorted, the groups sorted); a column
     with no group is left out."""
-    found = terms(snapshots)
+    return variants_from(terms(snapshots))
+
+
+def variants_from(found: Terms) -> dict[str, list[list[str]]]:
+    """``variants`` of the files whose terms are ``found``."""
     groups = {column: group_words(*found[column]) for column in GROUPED if column in found}
     return {column: g for column, g in groups.items() if g}
 
@@ -87,7 +98,11 @@ def variants(snapshots: Iterable[Snapshot]) -> dict[str, list[list[str]]]:
 def near_spellings(snapshots: Iterable[Snapshot]) -> dict[str, list[tuple[str, str]]]:
     """Per grouped column, its pairs one letter apart (rule C) that its groups do not already
     join (a plural is one letter apart too), sorted; a column with no pair is left out."""
-    found = terms(snapshots)
+    return near_spellings_from(terms(snapshots))
+
+
+def near_spellings_from(found: Terms) -> dict[str, list[tuple[str, str]]]:
+    """``near_spellings`` of the files whose terms are ``found``."""
     pairs: dict[str, list[tuple[str, str]]] = {}
     for column in GROUPED:
         if column in found:
@@ -171,12 +186,12 @@ def load_variants(*dirs: str | Path) -> dict[str, list[list[str]]]:
     found: dict[str, list[list[str]]] = {}
     for file in [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]:
         try:
-            tables = tomllib.loads(file.read_text(encoding="utf-8")).get("group", [])
-        except (OSError, tomllib.TOMLDecodeError):
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):  # TOMLDecodeError, UnicodeDecodeError
             continue
-        for table in tables:
-            if isinstance(table, dict) and isinstance(table.get("column"), str):
-                found.setdefault(table["column"], []).append([w for w in table.get("words", []) if isinstance(w, str)])
+        for table in tables(data, "group"):
+            if words_of(table) is not None and isinstance(table.get("column"), str):
+                found.setdefault(table["column"], []).append([w for w in words_of(table) if isinstance(w, str)])
     return found
 
 
@@ -188,12 +203,12 @@ def load_refusals(*dirs: str | Path) -> tuple[list[tuple[str, frozenset[str]]], 
     errors: list[str] = []
     for file in [f for d in dirs if Path(d).expanduser().is_dir() for f in sorted(Path(d).expanduser().glob("*.toml"))]:
         try:
-            tables = tomllib.loads(file.read_text(encoding="utf-8")).get("refuse", [])
-        except (OSError, tomllib.TOMLDecodeError):
-            continue  # load_lexicon names it
-        for number, table in enumerate(tables, start=1):
-            words = frozenset(fold(w) for w in table.get("words", []) if isinstance(w, str) and fold(w))
-            if not isinstance(table.get("column"), str) or len(words) < 2:
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):  # TOMLDecodeError, UnicodeDecodeError: load_lexicon names it
+            continue
+        for number, table in enumerate(tables(data, "refuse"), start=1):
+            words = frozenset(fold(w) for w in words_of(table) or [] if isinstance(w, str) and fold(w))
+            if len(words) < 2 or not isinstance(table.get("column"), str):
                 errors.append(f"{file.name}: refuse #{number} needs a column and two words or more")
                 continue
             refusals.append((table["column"], words))

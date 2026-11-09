@@ -819,19 +819,66 @@ def _cmd_lexicon(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+# Per export read by `lexicon build`: a 40 MB export peaks at about 1 GB parsed (docs/deploy.md §7),
+# so 64 MB stays under lexicon-init's default 2 GB memory cap.
+LEXICON_MAX_BYTES = 64 * 2**20
+
+
+def _lexicon_export(path: Path):
+    """The snapshot of one export for `lexicon build`, or the fixed reason it is skipped:
+    "too large", "unreadable", "incomplete" (no %E end line), "missing table TASK", "missing
+    table PROJWBS", "no project" (none to select). Never an exception's message: it quotes the
+    file or names it."""
+    from .xer import build_snapshot, parse_bytes, read_header
+
+    try:
+        if path.stat().st_size > LEXICON_MAX_BYTES:
+            return "too large"
+        raw = parse_bytes(path.read_bytes(), source=path.name)
+    except (OSError, ValueError):  # XerError and UnicodeDecodeError are ValueErrors
+        return "unreadable"
+    if not raw.ended:
+        return "incomplete"
+    for table in ("TASK", "PROJWBS"):
+        if raw.table(table).empty:
+            return f"missing table {table}"
+    try:
+        read_header(raw)
+    except ValueError:
+        return "no project"
+    try:
+        return build_snapshot(raw)
+    except ValueError:
+        return "unreadable"
+
+
+def _lexicon_terms(path: Path, found) -> str | None:
+    """Adds the terms of one export to ``found``, or returns why it is skipped
+    (``_lexicon_export``). The snapshot is released on return: one export in memory at a time."""
+    from .analysis.ask.generated import add_terms
+
+    read = _lexicon_export(path)
+    if isinstance(read, str):
+        return read
+    add_terms(found, read)
+    return None
+
+
 def _build_lexicon(source: str, out: str) -> int:
     """ROOT/generated/variants.toml: the variants of each source column of SOURCE's XER files,
     replaced whole (temporary file, rename, 0600); ROOT/generated/report.txt: the groups per
     column, those new since the last run and the pairs one letter apart, to review, never read
-    by Ask; ROOT/suggested/: the suggestions not copied into ROOT/curated/ after the retention
-    purged. Only generated/ and suggested/ are written; a missing one is named (exit 1), never
-    created (owned by root under Docker, the app could not write it)."""
+    by Ask, and the exports skipped (``_lexicon_export``) with their reason; ROOT/suggested/: the
+    suggestions not copied into ROOT/curated/ after the retention purged. Only generated/ and
+    suggested/ are written; a missing one is named (exit 1), never created (owned by root under
+    Docker, the app could not write it). No export passes the check: generated/ is left as it
+    is (exit 1). The output names no export: their names are often the project's."""
     from datetime import UTC, datetime
 
     from .analysis import query
     from .analysis.ask import suggested
+    from .analysis.ask.generated import near_spellings_from, variants_from
     from .analysis.ask.lexicon import write_private
-    from .store import SnapshotStore
 
     if not source or not out:
         print("usage: xerscope lexicon build FOLDER --out LEXICON_FOLDER")
@@ -842,23 +889,35 @@ def _build_lexicon(source: str, out: str) -> int:
         if not folder.is_dir():
             print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
             return 1
-    store = SnapshotStore.from_folder(source)
-    files = list(store)
-    groups, near = query.variants(files), query.near_spellings(files)
+    found, read, skipped = {}, 0, []
+    for path in xer_files(source):
+        reason = _lexicon_terms(path, found)
+        if reason is None:
+            read += 1
+        else:
+            skipped.append(f"{path.name}: {reason}")
+    if not read:
+        print(f"error: no valid XER file in the source folder ({len(skipped)} skipped), generated/ left as it is")
+        return 1
+    groups, near = variants_from(found), near_spellings_from(found)
     before = {c: {tuple(g) for g in gs} for c, gs in query.load_variants(generated).items()}
     new = {c: [g for g in gs if tuple(g) not in before.get(c, set())] for c, gs in groups.items()}
     write_private(generated / "variants.toml", query.variants_toml(groups))
-    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {len(store)} file(s)", "", "column: groups, new"]
+    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {read} file(s) read, {len(skipped)} skipped"]
+    report += ["", "column: groups, new"]
     report += [f"{c}: {n} group(s), {len(new[c])} new" for c, n in query.variant_counts(groups).items()]
     report += ["", "new since the last run:"]
     report += [f"{c}: {', '.join(g)}" for c in sorted(new) for g in new[c]] or ["(none)"]
     report += ["", "to review (one letter apart, not used):"]
     report += [f"{c}: {a}, {b}" for c in sorted(near) for a, b in near[c]] or ["(none)"]
+    report += ["", "skipped (not read):", *skipped] if skipped else []
     write_private(generated / "report.txt", "\n".join(report) + "\n")
     for column, count in query.variant_counts(groups).items():
         print(f"{column}: {count} group(s), {len(new[column])} new")
     total, added = sum(len(g) for g in groups.values()), sum(len(g) for g in new.values())
-    print(f"{total} group(s) from {len(store)} file(s) written, {added} new")
+    print(f"{total} group(s) from {read} file(s) written, {added} new")
+    if skipped:
+        print(f"{len(skipped)} file(s) skipped, named in generated/report.txt")
     curated, _ = query.load_lexicon(root / query.CURATED)
     try:
         kept, purged = suggested.purge(root / query.SUGGESTED, curated, now)

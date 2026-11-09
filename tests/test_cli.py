@@ -7,10 +7,10 @@ import re
 import asklex
 import pandas as pd
 import pytest
-from xerkit import todo, xer_text
+from xerkit import ROOT_WBS, todo, xer_text
 
 from xerscope import cli
-from xerscope.analysis import builtin_standards, compare_counts
+from xerscope.analysis import builtin_standards, compare_counts, query
 
 
 def stops(capsys, *argv) -> bool:
@@ -310,6 +310,126 @@ def test_lexicon_command(capsys, tmp_path):
     assert "error: bad.toml" in capsys.readouterr().out
 
 
+def _without_table(text: str, name: str) -> str:
+    """An XER text less one table (its %T, %F and %R lines)."""
+    lines, kept, skipping = text.split("\n"), [], False
+    for line in lines:
+        if line.startswith("%T\t"):
+            skipping = line == f"%T\t{name}"
+        elif not line.startswith(("%F", "%R")):
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def test_lexicon_build_skips_each_refused_export_and_names_it_in_the_report_only(capsys, tmp_path, monkeypatch):
+    """Each export is checked before the generation: read without error, TASK and PROJWBS
+    present, a project to select, at most LEXICON_MAX_BYTES. A refused one is skipped, the others
+    are read; report.txt names it with a fixed reason, never its text nor an exception's
+    message; the output counts it, never names it (the file name is often the project's)."""
+    good = xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")], wbs=ROOT_WBS)
+    source = tmp_path / "xer"
+    source.mkdir()
+    (source / "a.xer").write_text(good)
+    (source / "b-secretname.xer").write_text("qwfpsecret, not an export")
+    (source / "c.xer").write_text(_without_table(good, "TASK"))
+    (source / "d.xer").write_text(_without_table(good, "PROJWBS"))
+    (source / "e.xer").write_text(_without_table(good, "PROJECT"))
+    (source / "f.xer").write_text(good.removesuffix("%E\n"))
+    monkeypatch.setattr(cli, "LEXICON_MAX_BYTES", len(good.encode()) + 10, raising=False)
+    (source / "g.xer").write_text(good + " " * 20)
+    for folder in ("generated", "suggested"):
+        (tmp_path / folder).mkdir()
+    out = run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    assert "TASK.task_name: 1 group(s), 1 new" in out and "6 file(s) skipped" in out
+    assert "1 group(s) from 1 file(s) written" in out
+    assert not re.search(r"[a-g](-secretname)?\.xer|secret", out)
+    report = (tmp_path / "generated" / "report.txt").read_text(encoding="utf-8")
+    assert report.split("skipped (not read):\n", 1)[1].splitlines()[:6] == [
+        "b-secretname.xer: unreadable",
+        "c.xer: missing table TASK",
+        "d.xer: missing table PROJWBS",
+        "e.xer: no project",
+        "f.xer: incomplete",
+        "g.xer: too large",
+    ]
+    assert "qwfpsecret" not in report and "TASK.task_name: fondation, fondations" in report
+
+
+def _lexicon_source(tmp_path):
+    """Three exports whose groups and pairs to review each join words of two files."""
+    names = [
+        ["Fondation pile", "Instalation pompe", "Gybsum partition"],
+        ["Fondations radier", "Mec. support", "Screed floor"],
+        ["Installation pompe", "Mechanical test", "Screen wall", "Gypsum board", "Screeds L2"],
+    ]
+    source = tmp_path / "xer"
+    source.mkdir()
+    for number, file_names in enumerate(names):
+        tasks = [todo(f"A{number}{i}", task_name=name) for i, name in enumerate(file_names)]
+        (source / f"{number}.xer").write_text(xer_text(tasks, wbs=ROOT_WBS))
+    for folder in ("generated", "suggested"):
+        (tmp_path / folder).mkdir()
+    return source
+
+
+def test_lexicon_build_holds_one_export_in_memory_at_a_time(capsys, tmp_path, monkeypatch):
+    """A parsed 40 MB export holds about 0.75 GB (docs/deploy.md §7): the build keeps each
+    export's words only, so no snapshot outlives the next export read (lexicon-init's 2 GB cap)."""
+    import weakref
+
+    source, read, alive = _lexicon_source(tmp_path), cli._lexicon_export, []
+    refs: list[weakref.ref] = []
+
+    def tracked(path):
+        alive.append(sum(ref() is not None for ref in refs))  # snapshots still held, before this read
+        snapshot = read(path)
+        refs.append(weakref.ref(snapshot))
+        return snapshot
+
+    monkeypatch.setattr(cli, "_lexicon_export", tracked)
+    run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    assert alive == [0, 0, 0]
+
+
+def test_lexicon_build_writes_the_groups_and_pairs_of_every_export_together(capsys, tmp_path):
+    """Read one export at a time, the build writes what the files give read together: groups and
+    pairs to review that join words of two files."""
+    source = _lexicon_source(tmp_path)
+    snapshots = [cli._lexicon_export(path) for path in sorted(source.glob("*.xer"))]
+    groups, near = query.variants(snapshots), query.near_spellings(snapshots)
+    assert groups == {"TASK.task_name": [["fondation", "fondations"], ["mec", "mechanical"], ["screed", "screeds"]]}
+    assert near == {"TASK.task_name": [("gybsum", "gypsum"), ("instalation", "installation"), ("screed", "screen")]}
+    run(capsys, "lexicon", "build", source, "--out", tmp_path)
+    generated = tmp_path / "generated"
+    assert (generated / "variants.toml").read_text(encoding="utf-8") == query.variants_toml(groups)
+    report = (generated / "report.txt").read_text(encoding="utf-8")
+    to_review = report.split("to review (one letter apart, not used):\n", 1)[1].splitlines()
+    assert to_review == [f"TASK.task_name: {a}, {b}" for a, b in near["TASK.task_name"]]
+    assert "3 file(s) read, 0 skipped" in report
+
+
+def test_lexicon_build_with_no_valid_export_leaves_generated_as_it_was(capsys, tmp_path):
+    """No export passes the check (or none at all): generated/ is left untouched, the exit code
+    is 1 and the output names no file."""
+    source = tmp_path / "xer"
+    source.mkdir()
+    for folder in ("generated", "suggested"):
+        (tmp_path / folder).mkdir()
+    before = {"variants.toml": "# kept\n", "report.txt": "kept\n"}
+    for name, text in before.items():
+        (tmp_path / "generated" / name).write_text(text, encoding="utf-8")
+    for files in ({}, {"b-secretname.xer": "qwfpsecret"}):
+        for name, text in files.items():
+            (source / name).write_text(text)
+        assert cli.main(["lexicon", "build", str(source), "--out", str(tmp_path)]) == 1
+        out = capsys.readouterr().out
+        assert "no valid XER file" in out and "generated/ left as it is" in out
+        assert "secret" not in out and ".xer" not in out
+        assert {p.name: p.read_text(encoding="utf-8") for p in (tmp_path / "generated").iterdir()} == before
+
+
 def test_ask_bench_self_coverage(capsys, sample_dir):
     out = run(capsys, "ask-bench", sample_dir, "--self")
     assert "labels of the file (keywords)" in out and "labels covered: " in out and "= 100%" in out
@@ -345,12 +465,10 @@ def test_lexicon_build_rewrites_generated_and_purges_suggested(capsys, sample_di
 
 
 def test_lexicon_build_reports_the_groups_new_since_the_last_run(capsys, tmp_path):
-    from xerkit import todo, xer_text
-
     source = tmp_path / "xer"
     source.mkdir()
     (source / "a.xer").write_text(
-        xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")])
+        xer_text([todo("A1", task_name="Fondation pile"), todo("A2", task_name="Fondations")], wbs=ROOT_WBS)
     )
     (tmp_path / "generated").mkdir()
     (tmp_path / "suggested").mkdir()

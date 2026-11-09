@@ -470,20 +470,23 @@ LEXICON = "${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}"
 
 def test_the_app_reads_the_nas_lexicon_and_writes_suggested_only():
     """The lexicon folder lives on the NAS: read-only in the app, but for suggested/, where the
-    Ask corrections are appended; the app starts once the init service has succeeded."""
+    Ask corrections are appended; the app starts on its own, with the last generated/ (or none)."""
     app = _service((ROOT / "deploy" / "compose.yaml").read_text(), "xerscope")
     assert re.search(r"^\s+XERSCOPE_LEXICON: /lexicon\s", app, re.M)
     mounts = re.findall(r"^\s+- (\$\{XERSCOPE_LEXICON_DIR[^\s#]+)", app, re.M)
     assert mounts == [f"{LEXICON}:/lexicon:ro", f"{LEXICON}/suggested:/lexicon/suggested"]
-    assert re.search(r"depends_on:\n\s+lexicon-init:\n\s+condition: service_completed_successfully", app)
+    assert "depends_on" not in app and "lexicon-init" not in app
 
 
 def test_the_lexicon_init_service_is_sealed():
-    """lexicon-init runs `xerscope lexicon build` once per start: the exports read-only, the
-    lexicon read-only but for generated/ (rewritten) and suggested/ (purged), no network, no
+    """lexicon-init runs `xerscope lexicon build` on demand only (a profile: `up` leaves it out,
+    `docker compose run --rm lexicon-init` runs it, docs/deploy.md §10): the exports read-only,
+    the lexicon read-only but for generated/ (rewritten) and suggested/ (purged), no network, no
     capability, read-only root, the app's user, no restart."""
     nas = (ROOT / "deploy" / "compose.yaml").read_text()
     init = _service(nas, "lexicon-init")
+    assert re.search(r"^\s+profiles: \[lexicon\]", init, re.M)
+    assert "docker compose run --rm lexicon-init" in (ROOT / "docs" / "deploy.md").read_text(encoding="utf-8")
     assert "image: ${XERSCOPE_IMAGE:-ghcr.io/xerscope/xerscope:latest}" in init  # the app's own image
     assert 'command: ["lexicon", "build", "/data", "--out", "/lexicon"]' in init
     assert 'user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"' in init
@@ -511,7 +514,10 @@ def test_the_compose_file_is_valid_for_docker_compose(tmp_path):
         pytest.skip("docker CLI not installed")
     env = {"PATH": "/usr/bin:/bin", "XERSCOPE_USER": "u", "XERSCOPE_PASSWORD_HASH": "h", "XERSCOPE_PATH": "p"}
     done = subprocess.run(
-        ["docker", "compose", "-f", str(ROOT / "deploy" / "compose.yaml"), "config", "--format", "json"],
+        [
+            *("docker", "compose", "-f", str(ROOT / "deploy" / "compose.yaml")),
+            *("--profile", "lexicon", "config", "--format", "json"),
+        ],
         capture_output=True,
         text=True,
         env={**env, "HOME": str(tmp_path)},
@@ -528,7 +534,7 @@ def test_the_compose_file_is_valid_for_docker_compose(tmp_path):
     writable = sorted(v["target"] for v in init["volumes"] if not v.get("read_only"))
     assert writable == ["/lexicon/generated", "/lexicon/suggested"]
     assert sorted(v["target"] for v in app["volumes"] if not v.get("read_only")) == ["/lexicon/suggested"]
-    assert app["depends_on"]["lexicon-init"]["condition"] == "service_completed_successfully"
+    assert init["profiles"] == ["lexicon"] and "lexicon-init" not in app.get("depends_on", {})
 
 
 def test_no_lexicon_file_goes_into_the_image():
