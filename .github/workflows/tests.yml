@@ -186,6 +186,24 @@ jobs:
           docker exec app /app/.venv/bin/xerscope info /data/sample | grep -q data_date
           docker logs app
           docker rm -f app
+      - name: What the scanner cannot see, and the Debian fixes laid over the base
+        # Listed on every run: the OS_FIXES of the Dockerfile with the version the image records,
+        # and the libraries compiled into the managed CPython (Trivy reads dpkg records only).
+        run: |
+          {
+            echo "### Debian fixes laid over the distroless base (Dockerfile OS_FIXES)"
+            sed -n 's/^ARG OS_FIXES="\(.*\)"/\1/p' Dockerfile | tr ' ' '\n' | sed 's/^/- /'
+            echo
+            echo "### Version recorded in the image for each of them"
+            docker create --name rec xerscope:ci >/dev/null
+            for pkg in $(sed -n 's/^ARG OS_FIXES="\(.*\)"/\1/p' Dockerfile | tr ' ' '\n' | cut -d= -f1); do
+              docker cp "rec:/var/lib/dpkg/status.d/$pkg" - | tar -xO | grep -E '^(Package|Version):' | paste -sd' ' | sed 's/^/- /'
+            done
+            docker rm rec >/dev/null
+            echo
+            echo "### Libraries compiled into the image's Python (not scanned by Trivy)"
+            docker run --rm --entrypoint /app/.venv/bin/python xerscope:ci -c "import sys, sqlite3, pyexpat, ssl, zlib; print(f'- python {sys.version.split()[0]}'); print(f'- sqlite {sqlite3.sqlite_version}'); print(f'- {pyexpat.EXPAT_VERSION}'); print(f'- {ssl.OPENSSL_VERSION}'); print(f'- zlib {zlib.ZLIB_RUNTIME_VERSION}')"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Known vulnerabilities in the image (OS packages and Python wheels), fixed ones only
         run: .github/trivy/scan.sh xerscope:ci   # the Trivy pinned in .github/trivy/Dockerfile
 

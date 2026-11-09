@@ -102,6 +102,23 @@ def test_runtime_image_carries_no_pip():
     assert "site-packages/pip " in df and "site-packages/pip-*.dist-info" in df and "bin/pip*" in df
 
 
+def test_os_fixes_are_pinned_justified_and_listed_by_ci():
+    """Each Debian fix laid over the distroless base names its exact version, has a comment line
+    with the CVE it closes, reaches the runtime stage, and the CI job prints it on every run."""
+    df = (ROOT / "Dockerfile").read_text()
+    fixes = re.search(r'^ARG OS_FIXES="([^"]*)"', df, re.M)
+    assert fixes, "OS_FIXES must stay a literal ARG: CI and this test read it"
+    for entry in fixes.group(1).split():
+        pkg, sep, version = entry.partition("=")
+        assert sep and version, f"{entry}: package=version, an exact Debian version"
+        assert re.search(rf"^#\s+{re.escape(pkg)}: CVE-\d{{4}}-\d+", df, re.M), f"{pkg}: no CVE comment"
+    runtime = df[df.rindex("FROM gcr.io/distroless/") :]
+    assert "COPY --from=os-fixes /out/ /" in runtime
+    tests_yml = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert "Debian fixes laid over the distroless base" in tests_yml
+    assert "GITHUB_STEP_SUMMARY" in tests_yml[tests_yml.index("Debian fixes laid over") :]
+
+
 def test_caddy_upstream_is_not_shadowed_by_the_tailscale_hostname():
     """Caddy shares tailscale's namespace and its /etc/hosts, where tailscale's hostname maps to
     tailscale itself: an upstream with that name reaches tailscale, not the app (502, refused)."""
@@ -270,7 +287,7 @@ def test_caddy_build_forces_the_fixed_x_net_and_proves_it():
 def test_base_images_pinned_by_digest():
     df = (ROOT / "Dockerfile").read_text()
     froms = re.findall(r"^FROM (\S+)", df, re.M)
-    assert len(froms) == 2 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
+    assert len(froms) == 3 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
 
 
 @pytest.mark.parametrize("image", ["caddy", "tailscale"])

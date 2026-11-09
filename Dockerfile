@@ -15,6 +15,27 @@
 # lines are literal because it cannot follow an ARG.
 
 ARG PYTHON_VERSION=3.14
+# Debian security fixes the distroless base does not carry yet: package=version, space-separated.
+# Each is downloaded from Debian (apt verifies the archive signature) and laid over the base,
+# with its dpkg record, so the scanner reads the fixed version. Remove an entry once Dependabot
+# brings a distroless digest that ships it (Trivy then reports the same version without it).
+#   zlib1g: CVE-2026-85091, CVE-2026-76844 (HIGH), fixed in Debian, not in cc-debian13 at 08476c24
+ARG OS_FIXES="zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1"
+
+FROM ghcr.io/astral-sh/uv:0.13.7-trixie-slim@sha256:f6da342fe598dc462a7e6f61e7b3bf7fc84e381467efbdf29ccc1d32f2fc68a4 AS os-fixes
+ARG OS_FIXES
+WORKDIR /pkgs
+RUN apt-get update \
+  && apt-get download ${OS_FIXES} \
+  && mkdir -p /out/var/lib/dpkg/status.d \
+  && for deb in *.deb; do \
+       pkg=$(dpkg-deb -f "$deb" Package) \
+       && dpkg-deb -x "$deb" /out \
+       && dpkg-deb -f "$deb" > "/out/var/lib/dpkg/status.d/$pkg" \
+       && dpkg-deb --ctrl-tarfile "$deb" | tar -xO ./md5sums > "/out/var/lib/dpkg/status.d/$pkg.md5sums" \
+       || exit 1; \
+     done \
+  && rm -rf /var/lib/apt/lists/*
 
 FROM ghcr.io/astral-sh/uv:0.13.7-trixie-slim@sha256:f6da342fe598dc462a7e6f61e7b3bf7fc84e381467efbdf29ccc1d32f2fc68a4 AS build
 ARG PYTHON_VERSION
@@ -41,6 +62,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN mkdir -p /data
 
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
+COPY --from=os-fixes /out/ /
 COPY --from=build /python /python
 COPY --from=build /app/.venv /app/.venv
 COPY --from=build --chown=nonroot:nonroot /data /data
