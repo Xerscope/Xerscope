@@ -7,13 +7,11 @@ import os
 import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import NoReturn
 
 from xerscope.config import DATE_FMT, DATETIME_FMT
-from xerscope.store import DuplicateDataDate
-from xerscope.xer import XerError, xer_files
+from xerscope.xer import xer_files
 
 APP_PATH = Path(__file__).parent / "app" / "streamlit_app.py"
 # --fail-on: the statuses that make `check` exit 1 (a CI job or script stops on a schedule that misses the standard)
@@ -31,7 +29,7 @@ def fail(message: str) -> NoReturn:
 
 
 def _expand(paths: list[str]) -> list[Path]:
-    """Files as given; folders -> their *.xer, sorted. Nothing to read is an error (exit 2)."""
+    """Files as given; folders -> their *.xer, sorted. Nothing to read stops with exit 2 (``fail``)."""
     found: list[Path] = []
     for path in (Path(raw_path).expanduser() for raw_path in paths):
         if path.is_dir():
@@ -58,7 +56,9 @@ def _add_out(parser: argparse.ArgumentParser, help_text: str) -> None:
 
 
 def _write_csv(frame, path, *, index: bool = False) -> None:
-    frame.to_csv(path, index=index, encoding="utf-8-sig")  # the BOM makes Excel read UTF-8
+    from .export import csv_bytes
+
+    Path(path).write_bytes(csv_bytes(frame, index=index))
 
 
 def _cmd_app(args: argparse.Namespace) -> int:
@@ -89,7 +89,7 @@ def _cmd_app(args: argparse.Namespace) -> int:
 
 
 def _args_app(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--data", help="folder of weekly .xer files to preload")
+    parser.add_argument("--data", help="folder of weekly .xer files listed at start (tick them in Files to read)")
     parser.add_argument("--baseline", help="baseline .xer, or a P6 XML export holding the baseline")
     parser.add_argument("--standards", help="folder of your own standard .toml files")
     parser.add_argument("--port", type=int, default=8501)
@@ -235,14 +235,20 @@ def _expect_differs(results, expect_csv: str) -> bool:
 
     from .analysis import compare_counts
 
-    expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    try:
+        expected = pd.read_csv(expect_csv, dtype={"id": str, "file": str}).rename(columns=str.strip)
+    except ValueError as exc:  # pandas.errors.ParserError is a ValueError
+        fail(f"{expect_csv}: not a readable CSV: {exc}")
     missing = {"id", "found", "total"} - set(expected.columns)
     if missing:
         fail(f"{expect_csv}: columns {', '.join(sorted(missing))} missing")
     keys = ["file", "id"] if "file" in expected.columns else ["id"]
     if "file" not in expected.columns and results["file"].nunique() > 1:
         fail(f"{expect_csv}: add a 'file' column, {results['file'].nunique()} files were checked")
-    merged = compare_counts(results, expected, keys)
+    try:
+        merged = compare_counts(results, expected, keys)
+    except (ValueError, TypeError) as exc:  # pyarrow.lib.ArrowInvalid is a ValueError
+        fail(f"{expect_csv}: found and total must be whole numbers: {exc}")
     print(f"\nExpected (from {expect_csv}) vs xerscope:")
     print(merged.to_string(index=False))
     bad = int((~merged["match"]).sum())
@@ -611,21 +617,14 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
         help="score the file's own lexicon: every WBS node, resource, status and float, said every way the "
         "grammar should read; prints the labels it cannot name (what a lexicon file should add)",
     )
-    parser.add_argument("--url", default="", help="a llama.cpp server to score as well (XERSCOPE_QUERY_URL)")
-    parser.add_argument("--key", default="", help="the key that server requires (XERSCOPE_QUERY_KEY)")
-    parser.add_argument("--ca", default="", help="that server's certificate, trusted alone (XERSCOPE_QUERY_CA)")
     parser.add_argument(
         "--anonymize",
         action="store_true",
-        help="score on the anonymised copy of the file: the model, the output and the sentences carry "
+        help="score on the anonymised copy of the file: the output and the sentences carry "
         "the new codes only; a sentence still holding an original value is refused (real schedules)",
     )
-    parser.add_argument("--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON)")
     parser.add_argument(
-        "--summary",
-        action="store_true",
-        help="with --url: print the model's summary of each sentence's answer, for a human to read, "
-        "and whether it is grounded in the values given",
+        "--lexicon", default="", help="a folder of *.toml synonym groups to add (XERSCOPE_LEXICON/curated)"
     )
     parser.add_argument("--show", type=int, default=20, help="sentences missed to print per set")
 
@@ -687,7 +686,7 @@ def _anonymised_bench(path: Path, cases: list[dict]):
 
 def _cmd_ask_bench(args: argparse.Namespace) -> int:
     """Share of sentences the Gantt Ask field turns into the right filters, per set and per field:
-    the keyword grammar always, a model when --url is given. The exit code is 0 whatever the
+    the keyword grammar. The exit code is 0 whatever the
     ratios: tests/test_ask_bench.py holds the floors."""
     from .analysis import query
     from .store import SnapshotStore
@@ -695,9 +694,6 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
     files = _expand([args.path])
     real = SnapshotStore.from_paths(files).latest
     latest = next(f for f in files if f.name == real.source or str(f).endswith(real.source))
-    parsers = {"keywords": None}
-    if args.url:
-        parsers["model"] = query.llm_backend(args.url, key=args.key, cafile=args.ca)
     if not args.cases and not args.self:
         raise SystemExit("xerscope ask-bench: give --cases FILE and/or --self")
     if args.self:
@@ -705,14 +701,13 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
         for error in lexicon_errors:
             print(f"  lexicon error: {error}")
         vocab = query.vocabulary(real, lexicon=lexicon)
-        for name, backend in parsers.items():
-            scored, missed = query.coverage(vocab, backend)
-            labels = scored["label"].nunique()
-            print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file ({name})")
-            print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
-            for label in missed:
-                phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
-                print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
+        scored, missed = query.coverage(vocab)
+        labels = scored["label"].nunique()
+        print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file")
+        print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
+        for label in missed:
+            phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
+            print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
     for cases_path in args.cases:
         cases = query.load_cases(cases_path)
         snapshot = real
@@ -729,59 +724,50 @@ def _cmd_ask_bench(args: argparse.Namespace) -> int:
         for error in lexicon_errors:
             print(f"  lexicon error: {error}")
         vocab = query.vocabulary(snapshot, lexicon=lexicon)
-        for name, backend in parsers.items():
-            scored = query.score(cases, vocab, backend)
-            answered = (scored["source"] == name).mean() if name == "model" else 1.0
-            shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
-            print(f"  {name:<9} {shares}" + (f"  (answered {answered:.0%}, the rest by keywords)" if args.url else ""))
-            buckets = query.by_confidence(scored)
-            print(
-                "            "
-                + "  ".join(
-                    f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
-                    for name, row in buckets.iterrows()
-                    if row["sentences"]
-                )
+        scored = query.score(cases, vocab)
+        shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
+        print(f"  keywords  {shares}")
+        buckets = query.by_confidence(scored)
+        print(
+            "            "
+            + "  ".join(
+                f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
+                for name, row in buckets.iterrows()
+                if row["sentences"]
             )
-            missed = scored[~scored["exact"]]
-            for _, row in missed.head(args.show).iterrows():
-                wrong = ", ".join(field for field in query.FIELDS if not row[field])
-                print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
-        if args.summary and args.url:
-            from .analysis import wbs as wbs_tree
-            from .viz import categorise
-
-            nodes = wbs_tree.tree(snapshot)
-            tasks = snapshot.activities.assign(category=categorise(snapshot.activities))
-            backend = parsers["model"]
-            grounded_count = 0
-            print("  summaries (model), for a human to read:")
-            for case in cases:
-                asked = query.parse(case["text"], vocab)
-                funnel = query.apply(asked, tasks, snapshot, nodes)
-                given = query.facts(funnel, snapshot)
-                started = time.perf_counter()
-                text = "".join(query.summary(backend, case["text"], given)).strip()
-                seconds = time.perf_counter() - started
-                ok = bool(text) and query.grounded(text, given)
-                grounded_count += ok
-                print(
-                    f"    {case['text']!r} ({seconds:.1f}s, {'grounded' if ok else 'DROPPED'}): {text or '(no answer)'}"
-                )
-            print(f"  grounded: {grounded_count}/{len(cases)}")
+        )
+        missed = scored[~scored["exact"]]
+        for _, row in missed.head(args.show).iterrows():
+            wrong = ", ".join(field for field in query.FIELDS if not row[field])
+            print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
     return 0
 
 
 def _args_lexicon(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("folder", nargs="?", default="", help="a folder of *.toml groups to add (XERSCOPE_LEXICON)")
+    parser.add_argument(
+        "folder",
+        nargs="?",
+        default="",
+        help="a folder of *.toml groups to check (XERSCOPE_LEXICON/curated); or `build`, then a folder of XER files",
+    )
+    parser.add_argument("source", nargs="?", default="", help="with build: the folder of XER files to read")
     parser.add_argument("--word", default="", help="print the words read as this one")
+    parser.add_argument(
+        "--out",
+        default="",
+        help="with build: the lexicon folder (XERSCOPE_LEXICON): rewrites generated/, purges suggested/",
+    )
 
 
 def _cmd_lexicon(args: argparse.Namespace) -> int:
-    """The trade words the Ask field reads as one: the packaged groups, plus a folder's; a bad
-    file is named (exit 1)."""
+    """The trade words the Ask field reads as one: a folder's groups (XERSCOPE_LEXICON's curated/;
+    none ships with the package); a bad file is named (exit 1). ``lexicon build FOLDER --out
+    ROOT``: the init service of the lexicon folder (``_build_lexicon``); the output prints
+    counts, never a word."""
     from .analysis import query
 
+    if args.folder == "build":
+        return _build_lexicon(args.source, args.out)
     lexicon, errors = query.load_lexicon(*([args.folder] if args.folder else []))
     for error in errors:
         print(f"error: {error}")
@@ -791,8 +777,117 @@ def _cmd_lexicon(args: argparse.Namespace) -> int:
         groups = {tuple(sorted({w, *others})) for w, others in lexicon.items()}
         for group in sorted(groups):
             print(", ".join(group))
-        print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" + {args.folder}" if args.folder else ""))
+        print(f"{len(groups)} group(s), {len(lexicon)} word(s)" + (f" in {args.folder}" if args.folder else ""))
     return 1 if errors else 0
+
+
+# Per export read by `lexicon build`: a 40 MB export peaks at about 1 GB parsed (docs/deploy.md §7),
+# so 64 MB stays under lexicon-init's default 2 GB memory cap.
+LEXICON_MAX_BYTES = 64 * 2**20
+
+
+def _lexicon_export(path: Path):
+    """The snapshot of one export for `lexicon build`, or the fixed reason it is skipped:
+    "too large", "unreadable", "incomplete" (no %E end line), "missing table TASK", "missing
+    table PROJWBS", "no project" (none to select). Never an exception's message: it quotes the
+    file or names it."""
+    from .xer import build_snapshot, parse_bytes, read_header
+
+    try:
+        if path.stat().st_size > LEXICON_MAX_BYTES:
+            return "too large"
+        raw = parse_bytes(path.read_bytes(), source=path.name)
+    except (OSError, ValueError):  # XerError and UnicodeDecodeError are ValueErrors
+        return "unreadable"
+    if not raw.ended:
+        return "incomplete"
+    for table in ("TASK", "PROJWBS"):
+        if raw.table(table).empty:
+            return f"missing table {table}"
+    try:
+        read_header(raw)
+    except ValueError:
+        return "no project"
+    try:
+        return build_snapshot(raw)
+    except ValueError:
+        return "unreadable"
+
+
+def _lexicon_terms(path: Path, found) -> str | None:
+    """Adds the terms of one export to ``found``, or returns why it is skipped
+    (``_lexicon_export``). The snapshot is released on return: one export in memory at a time."""
+    from .analysis.ask.generated import add_terms
+
+    read = _lexicon_export(path)
+    if isinstance(read, str):
+        return read
+    add_terms(found, read)
+    return None
+
+
+def _build_lexicon(source: str, out: str) -> int:
+    """ROOT/generated/variants.toml: the variants of each source column of SOURCE's XER files,
+    replaced whole (temporary file, rename, 0600); ROOT/generated/report.txt: the groups per
+    column, those new since the last run and the pairs one letter apart, to review, never read
+    by Ask, and the exports skipped (``_lexicon_export``) with their reason; ROOT/suggested/: the
+    suggestions not copied into ROOT/curated/ after the retention purged. Only generated/ and
+    suggested/ are written; a missing one is named (exit 1), never created (owned by root under
+    Docker, the app could not write it). No export passes the check: generated/ is left as it
+    is (exit 1). The output names no export: their names are often the project's."""
+    from datetime import UTC, datetime
+
+    from .analysis import query
+    from .analysis.ask import suggested
+    from .analysis.ask.generated import near_spellings_from, variants_from
+    from .analysis.ask.lexicon import write_private
+
+    if not source or not out:
+        print("usage: xerscope lexicon build FOLDER --out LEXICON_FOLDER")
+        return 2
+    root, now = Path(out), datetime.now(UTC)
+    generated = root / query.GENERATED
+    for folder in (generated, root / query.SUGGESTED):
+        if not folder.is_dir():
+            print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
+            return 1
+    found, read, skipped = {}, 0, []
+    for path in xer_files(source):
+        reason = _lexicon_terms(path, found)
+        if reason is None:
+            read += 1
+        else:
+            skipped.append(f"{path.name}: {reason}")
+    if not read:
+        print(f"error: no valid XER file in the source folder ({len(skipped)} skipped), generated/ left as it is")
+        return 1
+    groups, near = variants_from(found), near_spellings_from(found)
+    before = {c: {tuple(g) for g in gs} for c, gs in query.load_variants(generated).items()}
+    new = {c: [g for g in gs if tuple(g) not in before.get(c, set())] for c, gs in groups.items()}
+    write_private(generated / "variants.toml", query.variants_toml(groups))
+    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {read} file(s) read, {len(skipped)} skipped"]
+    report += ["", "column: groups, new"]
+    report += [f"{c}: {n} group(s), {len(new[c])} new" for c, n in query.variant_counts(groups).items()]
+    report += ["", "new since the last run:"]
+    report += [f"{c}: {', '.join(g)}" for c in sorted(new) for g in new[c]] or ["(none)"]
+    report += ["", "to review (one letter apart, not used):"]
+    report += [f"{c}: {a}, {b}" for c in sorted(near) for a, b in near[c]] or ["(none)"]
+    report += ["", "skipped (not read):", *skipped] if skipped else []
+    write_private(generated / "report.txt", "\n".join(report) + "\n")
+    for column, count in query.variant_counts(groups).items():
+        print(f"{column}: {count} group(s), {len(new[column])} new")
+    total, added = sum(len(g) for g in groups.values()), sum(len(g) for g in new.values())
+    print(f"{total} group(s) from {read} file(s) written, {added} new")
+    if skipped:
+        print(f"{len(skipped)} file(s) skipped, named in generated/report.txt")
+    curated, _ = query.load_lexicon(root / query.CURATED)
+    try:
+        kept, purged = suggested.purge(root / query.SUGGESTED, curated, now)
+    except ValueError:  # tomllib.TOMLDecodeError: the file was edited by hand
+        print(f"suggestions: {suggested.FILE} is not TOML, left as it is")
+        return 1
+    print(f"suggestions: {kept} kept, {purged} purged")
+    return 0
 
 
 # name: (help, adds its arguments, runs); the order is the order of `xerscope --help`
@@ -813,7 +908,7 @@ COMMANDS = {
         _cmd_ask_bench,
     ),
     "lexicon": (
-        "list the trade words the Ask field reads as one, or check a folder of them",
+        "list or check the trade words the Ask field reads as one; `build` writes the files' own variants",
         _args_lexicon,
         _cmd_lexicon,
     ),
@@ -830,7 +925,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.fn(args)
-    except (XerError, DuplicateDataDate, OSError) as exc:
+    except (ValueError, OSError) as exc:
+        # an unusable input is a message, not a traceback: XerError and DuplicateDataDate, an invalid
+        # standard, pandas.errors.ParserError and pyarrow.lib.ArrowInvalid are ValueError subclasses
         fail(str(exc))
 
 

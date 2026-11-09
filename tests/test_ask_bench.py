@@ -4,29 +4,30 @@ dev.toml holds the sentences the grammar was tuned on; heldout.toml the sentence
 the grammar was run on them, never used to tune it. FLOORS records each set's share of sentences
 whose every filter was right at the last measurement: a change that lowers one fails here, and a
 change that raises one should raise the floor. The held-out misses are the synonyms the file does
-not hold ("mécanique" for "Mechanical", "mise en service" for "Commissioning"): the model backend's
-job, scored by `xerscope ask-bench --url`, never in this suite.
+not hold ("mécanique" for "Mechanical", "mise en service" for "Commissioning"): a lexicon file's
+job (XERSCOPE_LEXICON).
 
-If a model is ever trained on a folder of real XER files, split by file (and by project), never by
-sentence: two sentences on one file share its lexicon, and a sentence-level split leaks it. Keep the
-held-out files untouched while tuning the prompt or the grammar, exactly as heldout.toml here.
+Keep heldout.toml untouched while tuning the grammar.
 """
 
 from pathlib import Path
 
 import pandas as pd
 import pytest
+from asklex import LEXICON
 
 from xerscope.analysis import query
 from xerscope.analysis.query import Vocabulary
 
 ASK = Path(__file__).parent / "ask"
 FLOORS = {"dev": 1.00, "heldout": 1.00}  # share of sentences with every filter right (ratios()["exact"])
+# share of tests/ask/cases.toml understood exactly (query.understood): raise it when it goes up, never lower it
+UNDERSTOOD = 1.00
 
 
 @pytest.fixture(scope="module")
 def lexicon(store):
-    return query.vocabulary(store.latest)
+    return query.vocabulary(store.latest, lexicon=LEXICON)
 
 
 @pytest.mark.parametrize("name", list(FLOORS))
@@ -34,10 +35,24 @@ def test_share_of_sentences_right_never_drops(lexicon, name):
     cases = query.load_cases(ASK / f"{name}.toml")
     assert len(cases) >= 20
     scored = query.score(cases, lexicon)
-    assert set(scored["source"]) == {"keywords"}
     share = query.ratios(scored)["exact"]
     missed = scored.loc[~scored["exact"], "text"].tolist()
     assert share >= FLOORS[name], f"{name}: {share:.0%} < {FLOORS[name]:.0%}; missed {missed}"
+
+
+def test_share_of_the_grammar_cases_understood_never_drops(store):
+    """tests/ask/cases.toml: FR and EN sentences (the audit's battery, negations, OR, IDs,
+    comparisons, dates, constraints, logic, unknown words), each with its filter written by hand."""
+    from xerscope.analysis import wbs
+
+    snapshot = store.latest
+    vocab = query.vocabulary(snapshot, wbs.tree(snapshot), LEXICON)
+    cases = query.load_cases(ASK / "cases.toml")
+    assert len(cases) >= 80
+    scored = query.understood(cases, vocab)
+    share = float(scored["exact"].mean())
+    missed = [f"{r.text!r}: {r.got!r} != {r.expect!r}" for r in scored[~scored["exact"]].itertuples()]
+    assert share >= UNDERSTOOD, f"{share:.0%} < {UNDERSTOOD:.0%}; missed {missed}"
 
 
 def test_every_field_is_scored_and_a_wrong_expectation_is_an_error(lexicon):
@@ -48,12 +63,6 @@ def test_every_field_is_scored_and_a_wrong_expectation_is_an_error(lexicon):
         query.expected_filter({"text": "x", "wbs": "NOPE"}, lexicon)
     with pytest.raises(KeyError):
         query.expected_filter({"text": "x", "resources": ["NOBODY"]}, lexicon)
-
-
-def test_a_model_backend_is_scored_as_such(lexicon):
-    answer = query.Filter(categories=("Critical",), source="model")
-    scored = query.score([{"text": "late", "float": ["Critical"]}], lexicon, backend=lambda text, vocab: answer)
-    assert scored["exact"].tolist() == [True] and scored["source"].tolist() == ["model"]
 
 
 def test_confidence_buckets():

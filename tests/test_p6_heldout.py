@@ -18,6 +18,8 @@ import pandas as pd
 import pytest
 from conftest import P6_CORPUS_HINT, missing
 
+pytestmark = pytest.mark.oracle("p6")
+
 HELD_OUT = Path(__file__).parent / "reference" / "data" / "p6-heldout" / "validation" / "held-out"
 
 FLOORS = {

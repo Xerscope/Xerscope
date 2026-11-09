@@ -32,6 +32,7 @@ from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
 from xerscope.app.state import BL_FILE, BL_PLANNED, anonymizers_built
+from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
@@ -120,6 +121,11 @@ def _ok(at):
     assert not at.exception, [e.value for e in at.exception]
 
 
+def _shown(markdown: str) -> str:
+    """Text as the page shows it: file text reaches Markdown escaped (ui.md_text)."""
+    return markdown.replace("\\", "")
+
+
 def test_every_page_renders(app):
     _ok(app)
     for page in PAGES:
@@ -136,6 +142,11 @@ def _gantt_data(at) -> dict:
 def _group(at, key: str):
     """The pills or segmented control with ``key``."""
     return next(group for group in at.get("button_group") if group.key == key)
+
+
+def _chips(at) -> list[str]:
+    """The Ask filters understood, as their × buttons name them."""
+    return [b.key.removeprefix("ask_drop:") for b in at.button if b.key and b.key.startswith("ask_drop:")]
 
 
 def _toggle(at, label: str, value: bool) -> None:
@@ -175,28 +186,35 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any(m.value.startswith(f"{len(drawn)} activities critical not started in CIV") for m in app.markdown)
     # the page is on CIV already: the funnel starts from its 8 tasks and names each step
     assert any(c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started ") for c in app.caption)
-    chips = _group(app, "ask_pills:critical not started in civil works")
-    assert chips.value == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
-    chips.set_value(["Status: Not started", "WBS: CIV · Civil works"]).run()  # a chip off: its filter goes
+    assert _chips(app) == ["Float: Critical", "Status: Not started", "WBS: CIV · Civil works"]
+    critical = app.button(key="ask_drop:Float: Critical")
+    assert critical.label == "Float: Critical ×"
+    critical.click().run()  # its × takes the filter off (query.without)
     _ok(app)
+    assert _chips(app) == ["Status: Not started", "WBS: CIV · Civil works"]
     rows = [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]
     assert len(rows) > len(drawn) and any(r["category"] != "Critical" for r in rows)
     line = next(c.value for c in app.caption if c.value.startswith("8 → WBS CIV · Civil works 8 → status Not started "))
     assert "float Critical" not in line  # the funnel lost that step
-    app.text_input[0].set_value("jalons xyzzy génie civil").run()  # a word the file does not hold is dropped
+    app.text_input[0].set_value("jalons xyzzy civil").run()  # a word the file does not hold is dropped
     data = _gantt_data(app)
     assert all(r["milestone"] for r in data["rows"] if r["kind"] == "task") and data["rows"][0]["id"] == "w:7003"
-    assert any("« xyzzy » is in neither this file nor the lexicon" in m.value for m in app.markdown)
+    assert any("« xyzzy » n'est ni dans ce fichier" in m.value for m in app.markdown)  # the answer in French
+    app.text_input[0].set_value("xyzzy").run()  # nothing understood: no activity, never every activity
+    _ok(app)
+    assert not [r for r in _gantt_data(app)["rows"] if r["kind"] == "task"]
+    assert any("no activity shown" in m.value and "xyzzy" in m.value for m in app.markdown)
     app.text_input[0].set_value("commiss").run()  # a word nothing holds, close to Commissioning
     _ok(app)
     app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
     _ok(app)
-    assert _group(app, "ask_pills:commiss").value == ["WBS: COM · Commissioning"]
+    assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
-    assert app.get("download_button")[0].label.startswith("Download the 1 word(s) taught")
+    # the words taught stay in the session: no lexicon file leaves the app (the lexicon lives on the NAS)
+    assert not [b for b in app.get("download_button") if "taught" in b.label]
     app.button(key="ask_clear").click().run()  # Show all empties the field
     _ok(app)
-    assert app.text_input[0].value == "" and not app.get("button_group")[0].key.startswith("ask_pills")
+    assert app.text_input[0].value == "" and _chips(app) == []
     _group(app, "gantt_timescale").set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
@@ -300,8 +318,32 @@ def test_earned_value_shows_the_cost_spi_first_and_the_labour_units_one_second_w
     assert "EV cost / PV cost" in cost.help and "Schedule Performance Index" in cost.help
 
 
+def test_earned_value_bei_help_states_the_two_populations(app):
+    """P6-13 divides by every baseline task (no 'due' step); DCMA-14 by the tasks due, a task without a
+    baseline finish counted as due (fourteen_point.dcma_14_bei)."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    bei = next(m for m in app.metric if m.label == "BEI (P6 / DCMA)")
+    assert "P6 (P6-13): completed / every baseline task" in bei.help
+    assert "no baseline finish = due" in bei.help.split("DCMA (DCMA-14)")[1]
+
+
 def _banner(at) -> str:
     return at.button(key="context_banner").label.replace("\\", "")
+
+
+def test_earned_value_says_the_planned_dates_history_follows_the_update_shown(app, store):
+    """With the planned dates as baseline, every update is measured against the planned dates of
+    the update shown: the page says so, and names that update."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    assert not any("planned dates (`target_*`) of the update shown" in text for text in _caption_texts(app))
+    baseline_box(app).set_value(BL_PLANNED)
+    app.session_state["files_open"] = False
+    app.run()
+    _ok(app)
+    legend = [text for text in _caption_texts(app) if "planned dates (`target_*`) of the update shown" in text]
+    assert len(legend) == 1 and ui.md_text(store.latest.label) in legend[0]
 
 
 def test_the_context_banner_states_each_setting_and_follows_its_changes(app, store):
@@ -311,11 +353,11 @@ def test_the_context_banner_states_each_setting_and_follows_its_changes(app, sto
     first = store.labels[0].split(" · ")[0]
     code = store.latest.project_code
     assert _banner(app) == (
-        f"{code} · data date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
+        f"{code} · status date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
         "EV budgeted, planned dates · costs off · 8 files · 1 project"
     )
     app.selectbox(key="ev_snap").set_value(store.labels[2]).run()
-    assert f"data date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
+    assert f"status date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
     baseline_box(app).set_value(BL_PLANNED)
     assert " · BL planned dates · " in _banner(app)
     baseline_box(app, "ev_basis").set_value("at_completion_current")
@@ -323,7 +365,9 @@ def test_the_context_banner_states_each_setting_and_follows_its_changes(app, sto
     app.session_state["files_open"] = False  # baseline_box leaves the window open
     _costs(app.run(), True)
     assert " · costs on · " in _banner(app)
-    assert f"Data date of the update shown: {ui.fmt_date(store[2].data_date)}" in app.button(key="context_banner").help
+    assert (
+        f"Status date of the update shown: {ui.fmt_date(store[2].data_date)}" in app.button(key="context_banner").help
+    )
 
 
 def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_dir, monkeypatch):
@@ -338,7 +382,7 @@ def test_the_context_banner_counts_the_files_read_and_opens_the_window(sample_di
 
 def _costed_week(tmp_path, cost: str = "5000"):
     """A (cost 5000, 50 % complete) over Mon-Fri, data date Wednesday 08:00: PV cost 5000 x 0.4 = 2000,
-    EV cost 5000 x 0.5 = 2500, SPI 1.250; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
+    EV cost 5000 x 0.5 = 2500, SPI 1.25; the labour units index (40 h x 0.5 / 40 h x 0.4) is the same here.
     A second assignment without cost makes the count 1 of 2."""
     week = dict(
         target_start_date="2026-03-02 08:00",
@@ -367,14 +411,14 @@ def test_earned_value_cost_spi_from_a_file_with_costs(tmp_path, monkeypatch):
     at = _run(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
     _costs(at, True)
-    assert next(m for m in at.metric if m.label == "SPI").value == "1.250"
+    assert next(m for m in at.metric if m.label == "SPI").value == "1.25"
     assert not any("Costs ignored" in text for text in _caption_texts(at))
     table = _ev_table(at)
     assert table.loc["BAC cost"].iloc[-1] == "5,000.0"
     assert table.loc["PV cost"].iloc[-1].startswith("2,000.0")
     assert table.loc["EV cost"].iloc[-1].startswith("2,500.0")
     assert table.loc["SPI", "P6 column"] == "Schedule Performance Index"
-    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.250"
+    assert table.loc["SPI"].iloc[-1] == "2,500.0 / 2,000.0 = 1.25"
 
 
 def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monkeypatch):
@@ -383,7 +427,7 @@ def test_earned_value_hides_every_cost_figure_while_costs_are_off(tmp_path, monk
     at.switch_page("views/earned_value.py").run()
     _ok(at)
     labour = next(m for m in at.metric if m.label == "SPI (labor units)")
-    assert labour.value == "1.250"
+    assert labour.value == "1.25"
     assert [m.label for m in at.metric].index("SPI (labor units)") == 2
     assert (
         "Costs ignored: 1 of 2 assignments carry a cost in the file (resource prices). "
@@ -476,8 +520,8 @@ def test_ev_calculation_rows_add_up_as_shown(app):
         if shown["SPI (labor units)"].endswith("–"):
             continue
         ev, pv, spi = numbers["SPI (labor units)"]
-        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 3  # SPI to 3 decimals
-        assert spi == pytest.approx(ev / pv, abs=0.001), label
+        assert len(shown["SPI (labor units)"].rsplit(".", 1)[-1]) == 2  # SPI to 2 decimals, as BEI and EV / AC
+        assert spi == pytest.approx(ev / pv, abs=0.005), label
 
 
 def test_changelog_and_ppc_pick_weeks(app):
@@ -491,11 +535,30 @@ def test_changelog_and_ppc_pick_weeks(app):
     _ok(app)
 
 
-def test_empty_state_explains_what_to_do(monkeypatch):
+def test_the_app_skips_a_file_without_a_status_date(tmp_path, monkeypatch):
+    """The app's boundary: such a file never reaches the weekly pages (ppc_series copes with it
+    for a SnapshotStore built in code)."""
+    task = todo("A", early_end_date="2026-03-05 17:00")
+    (tmp_path / "w1.xer").write_text(xer_text([task], data_date="2026-03-02 08:00"), encoding="utf-8")
+    (tmp_path / "w2.xer").write_text(xer_text([task], data_date="", project={"plan_start_date": ""}), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/ppc.py").run()
+    _ok(at)
+    # messages go through ui.md_text (#156): the page shows the plain text, the element holds it escaped
+    assert [e.value for e in at.error] == [
+        ui.md_text("w2.xer: no status date (PROJECT.last_recalc_date); the file is skipped")
+    ]
+
+
+def test_empty_state_explains_what_to_do_under_the_page_title(monkeypatch):
     monkeypatch.delenv("XERSCOPE_DATA", raising=False)
     at = AppTest.from_file(APP, default_timeout=60).run()
     _ok(at)
     assert any("xerscope sample" in i.value for i in at.info)
+    assert [title.value for title in at.title] == ["Overview"]
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    assert [title.value for title in at.title] == ["Debug"] and any("xerscope sample" in i.value for i in at.info)
 
 
 def _run(data_dir, monkeypatch, baseline=None):
@@ -535,6 +598,26 @@ def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeyp
     assert shown(["l"]) == {"A", "B"}  # typed text: values L1, L2 (case ignored)
 
 
+def test_gantt_ask_asks_which_code_value_then_filters_on_the_one_clicked(tmp_path, monkeypatch):
+    """ "P1" under two "Phase" types: buttons ask which one, nothing is filtered before the
+    click; the click keeps the choice for the sentence and filters on that value alone."""
+    from test_code_types_blind import GLOBAL_P1, PROJECT_P1, _code_text
+
+    (tmp_path / "phases.xer").write_text(_code_text(), encoding="utf-8")
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    at.text_input[0].set_value("P1").run()
+    _ok(at)
+    shown = {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"}
+    assert shown == {"A", "B", "C"}
+    assert at.button(key=f"clarify_P1_{GLOBAL_P1}").label == ui.md_text("P1 — Phase (global)")  # escaped markdown
+    at.button(key=f"clarify_P1_{PROJECT_P1}").click().run()
+    _ok(at)
+    assert {row["code"] for row in _gantt_data(at)["rows"] if row["kind"] == "task"} == {"B"}
+    assert _chips(at) == ["Phase (project): P1"]
+    assert at.session_state["gantt_ask_chosen"] == {"text": "P1", "chosen": {"P1": PROJECT_P1}}
+
+
 def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
     """1,000 values of one code: all offered as suggestions, and one typed text keeps every
     value containing it without ticking them one by one."""
@@ -572,7 +655,7 @@ def test_baseline_file_from_env_and_its_date_check(sample_dir, tmp_path, monkeyp
     at = _run(tmp_path, monkeypatch, baseline=files[0])
     _ok(at)
     assert baseline_box(at).value == "Separate baseline file"
-    assert any(files[0].stem in c.value and "labor h" in c.value for c in at.sidebar.caption)
+    assert any(files[0].stem in _shown(c.value) and "labor h" in c.value for c in at.sidebar.caption)
     assert not at.sidebar.warning
     # the last export as the baseline: newer than every loaded update
     at = _run(tmp_path, monkeypatch, baseline=files[-1])
@@ -588,7 +671,7 @@ def test_same_data_date_twice_is_refused(sample_dir, tmp_path, monkeypatch):
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     at = _run(tmp_path, monkeypatch)
     _ok(at)
-    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
+    assert any(f"{files[0].name}, zz-copy.xer" in _shown(e.value) and "Untick" in e.value for e in at.sidebar.error)
     assert files_line(at) == "Files · none read"
 
 
@@ -606,7 +689,7 @@ def test_a_file_the_model_cannot_type_is_named_and_the_others_load(sample_dir, t
     (tmp_path / "zz-crafted.xer").write_bytes("\r\n".join(lines).encode("cp1252"))
     at = _run(tmp_path, monkeypatch)
     _ok(at)
-    assert any("zz-crafted.xer" in e.value and "duplicate task_id" in e.value for e in at.sidebar.error)
+    assert any("zz-crafted.xer" in _shown(e.value) and "duplicate task_id" in _shown(e.value) for e in at.sidebar.error)
     assert files_line(at).startswith("Files · 2 files")
 
 
@@ -722,6 +805,29 @@ def test_closing_the_window_without_done_reads_nothing(sample_dir, monkeypatch):
     assert files_line(at) == "Files · none read"
 
 
+def test_the_window_reopened_after_esc_shows_the_folder_and_its_files(sample_dir, monkeypatch):
+    """Esc leaves the folder field's key in the session state with an empty value (the browser's
+    doing, which AppTest does not reproduce: written here by hand): reopened, the window shows the
+    folder again, lists its files, and Select all then Done reads them."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    assert at.text_input(key="files_folder").value == str(sample_dir)
+    close_window(at)
+    at.session_state["files_folder"] = ""
+    at.run()
+    open_files(at)
+    _ok(at)
+    assert at.text_input(key="files_folder").value == str(sample_dir)
+    count = len(list(sample_dir.glob("*.xer")))
+    assert len(file_boxes(at)) == count
+    _button(at, "Select all").click()
+    at.run()
+    files_done(at)
+    _ok(at)
+    assert files_line(at) == f"Files · {count} files · 1 project"
+
+
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
     """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
     from xerscope.app import state
@@ -772,14 +878,14 @@ def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(s
     at.file_uploader(key="files_upload").set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
     _ok(at)
     keep = [box for box in at.checkbox if box.key.startswith("keep:")]
-    assert [box.label for box in keep] == [f.name for f in files] and all(box.value for box in keep)
+    assert [_shown(box.label) for box in keep] == [f.name for f in files] and all(box.value for box in keep)
     assert at.session_state["store"] is None
     files_done(at)
     _ok(at)
     assert [s.source for s in at.session_state["store"]] == [f.name for f in files]
     open_files(at)
     keep = [box for box in at.checkbox if box.key.startswith("keep:")]
-    assert [box.label for box in keep] == [f.name for f in files]  # kept although the upload box is empty
+    assert [_shown(box.label) for box in keep] == [f.name for f in files]  # kept although the upload box is empty
     keep[1].uncheck()
     at.run()
     files_done(at)
@@ -818,19 +924,52 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     assert files_line(at) == "Files · none read"
 
 
-def test_select_all_refuses_two_files_of_the_same_data_date(sample_dir, tmp_path, monkeypatch):
+def test_select_all_ticks_one_file_per_data_date_and_the_list_names_the_double(sample_dir, tmp_path, monkeypatch):
+    """Two files of the folder share a status date: the list says which file the second doubles,
+    Select all ticks the first by name only, and Done reads the series."""
     files = sorted(sample_dir.glob("*.xer"))
-    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    for f in files[:2]:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
     (tmp_path / "zz-copy.xer").write_bytes(files[0].read_bytes())
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    labels = {box.key.rsplit(":", 1)[-1]: box.label.replace("\u00a0", "") for box in file_boxes(at)}
+    assert f"— same date as {files[0].name}" in labels["zz-copy.xer"]
+    assert not any("same date as" in labels[f.name] for f in files[:2])
     _button(at, "Select all").click()
     at.run()
+    assert {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)} == {
+        files[0].name: True,
+        files[1].name: True,
+        "zz-copy.xer": False,
+    }
     files_done(at)
     _ok(at)
-    assert any(f"{files[0].name}, zz-copy.xer" in e.value and "Untick" in e.value for e in at.sidebar.error)
-    assert files_line(at) == "Files · none read"
+    assert not at.sidebar.error and files_line(at) == "Files · 2 files · 1 project"
+
+
+def test_select_all_skips_unreadable_files_and_the_error_names_the_file_once(sample_dir, tmp_path, monkeypatch):
+    """An unreadable file is listed but Select all leaves it unticked; ticked by hand, its error
+    carries the file name once (the XerError already names its source)."""
+    files = sorted(sample_dir.glob("*.xer"))
+    (tmp_path / files[0].name).write_bytes(files[0].read_bytes())
+    (tmp_path / "garbage.xer").write_bytes(bytes(range(256)) * 4)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    _button(at, "Select all").click()
+    at.run()
+    ticked = {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)}
+    assert ticked == {files[0].name: True, "garbage.xer": False}
+    next(box for box in file_boxes(at) if box.key.endswith("garbage.xer")).check()
+    files_done(at)
+    _ok(at)
+    (error,) = [_shown(e.value) for e in at.sidebar.error]  # escaped for Markdown (#156)
+    assert error.startswith("garbage.xer: ") and error.count("garbage.xer") == 1
+    assert files_line(at) == "Files · 1 file · 1 project"
 
 
 @pytest.fixture
@@ -910,7 +1049,7 @@ def test_the_window_lists_the_projects_of_a_file_that_holds_several_and_why_each
     _ok(at)
     box = project_box(at, "w1.xer")
     assert box.value == "1"
-    assert box.options == ["NEW · 02 Mar 2026 · 3 activities", "OLD · 02 Mar 2026 · 2 activities"]
+    assert box.options == ["NEW · 02 Mar 2026 · 3 tasks", "OLD · 02 Mar 2026 · 2 tasks"]
     assert project_box(at, "w2.xer") is None  # one project: no list
     assert _project_rows(at) == {"w1.xer": "**NEW** · most TASK rows", "w2.xer": "**NEW** · only project"}
     assert not [box for box in at.sidebar.selectbox if box.label == "Project"]  # no project picker for all files
@@ -939,8 +1078,8 @@ def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkey
     _ok(at)
     boxes = {box.key.rsplit(":", 1)[1]: box for box in file_boxes(at)}
     # the project's number of tasks on the label: the project info reads without opening the help
-    assert boxes["w1.xer"].label == "w1.xer — NEW · 02 Mar 2026 · 3 tasks · 2 projects"
-    assert boxes["w2.xer"].label.startswith("w2.xer — NEW · 09 Mar 2026 · ") and boxes["w2.xer"].label.endswith(
+    assert _shown(boxes["w1.xer"].label) == "w1.xer — NEW · 02 Mar 2026 · 3 tasks · 2 projects"
+    assert _shown(boxes["w2.xer"].label).startswith("w2.xer — NEW · 09 Mar 2026 · ") and boxes["w2.xer"].label.endswith(
         " tasks"
     )
     assert "NEW (3) · OLD (2)" in boxes["w1.xer"].help and "most TASK rows" in boxes["w1.xer"].help
@@ -955,7 +1094,7 @@ def test_unreadable_file_is_named_in_the_picker(tmp_path, monkeypatch):
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
     (box,) = file_boxes(at)
-    assert box.label == "broken.xer — unreadable" and "TASK table missing" in box.help
+    assert _shown(box.label) == "broken.xer — unreadable" and "TASK table missing" in box.help
 
 
 @pytest.fixture
@@ -1001,7 +1140,7 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
     )
     assert not set(flagged.astype(str).to_numpy().ravel()) & originals
     codes = pd.concat([flagged[column].dropna() for column in ("task_code", "pred_code", "succ_code")])
-    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert len(codes) and codes.str.fullmatch(r"XA[0-9A-F]{12}").all()
 
     app.switch_page("views/export.py").run()
     next(b for b in app.button if b.label == "Build anonymized extract").click().run()
@@ -1049,7 +1188,7 @@ def _assert_anonymised(tables: dict, store, anonymous) -> None:
     assert anonymous.leaks(cells) == {}
     assert not cells & {name for name in names if len(name) >= 3}
     codes = pd.concat([table["task_code"].dropna() for table in tables.values() if "task_code" in table])
-    assert codes.str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert codes.str.fullmatch(r"XA[0-9A-F]{12}").all()
 
 
 def test_debug_diagnostic_leaves_the_app_anonymised(app, store, downloads):
@@ -1112,7 +1251,7 @@ def test_debug_block_6_lists_the_leveled_activities_anonymised(tmp_path, monkeyp
     tables = _debug_zip(at, downloads)
     assert any("1 open tasks have a remaining early start" in c.value for c in at.main.caption)
     leveling = tables["06_leveling.csv"]
-    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert len(leveling) == 1 and leveling["task_code"].str.fullmatch(r"XA[0-9A-F]{12}").all()
     _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
 
 
@@ -1133,7 +1272,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 13 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 14 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -1169,7 +1308,7 @@ def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, stor
     _ok(app)
     gantt = _csv(_download(app, downloads, "Download CSV · anonymized"))
     assert not set(gantt.astype(str).to_numpy().ravel()) & originals
-    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert gantt["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{12}").all()
 
     app.switch_page("views/export.py").run()
     _ok(app)
@@ -1199,6 +1338,17 @@ def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, do
     _ok(app)
     tables = _zip(_download(app, downloads, "Download diagnostic (.zip)"))
     assert set(tables) >= {"01_options.csv", "04_check_parameters.csv"}
+
+
+def test_debug_ask_variants_block_shows_counts_only(app):
+    """Block 14 shows the number of generated groups per column; the groups themselves (the
+    files' words) leave the app through `xerscope lexicon build` only, whatever the switch."""
+    for anonymous in (True, False):
+        app.sidebar.toggle(key="anon_exports").set_value(anonymous).run()
+        app.switch_page("views/debug.py").run()
+        _ok(app)
+        block = next(e for e in app.main.expander if e.key == "debug_ask_variants")
+        assert not block.get("download_button") and not [c for c in block.caption if "download" in c.value]
 
 
 def _session_anonymizer(at):
@@ -1311,7 +1461,7 @@ def test_debug_block_4_follows_an_uploaded_standard_with_the_builtin_id(app):
     app.session_state["uploaded_standards"] = {"P6": dataclasses.replace(builtin, metrics=builtin.metrics[:-1])}
     app.run()
     _ok(app)
-    assert _check_parameters_rows(app) == before - 1
+    assert _check_parameters_rows(app) == before - 3  # P6-17 and its two Dangling options
 
 
 def test_memo_recomputes_for_a_baseline_file_of_other_content(store):
@@ -1339,9 +1489,231 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
     text = template_text().replace('id = "CUSTOM"', 'id = "P6"', 1)
     app.file_uploader(key="std_upload").set_value(("p6.toml", text.encode(), "application/toml")).run()
     _ok(app)
-    assert any("P6" in error.value and "built-in" in error.value for error in app.error)
+    assert any("P6" in error.value and "built-in" in _shown(error.value) for error in app.error)
     assert "P6" not in app.session_state["uploaded_standards"] if "uploaded_standards" in app.session_state else True
     assert not app.success
+
+
+@pytest.fixture
+def lexicon_root(tmp_path, monkeypatch):
+    """XERSCOPE_LEXICON with its three folders; the app's cached reads start and end empty."""
+    from xerscope.app import state
+
+    for folder in ("generated", "curated", "suggested"):
+        (tmp_path / folder).mkdir()
+    monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
+    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+        read.cache_clear()
+    yield tmp_path
+    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+        read.cache_clear()
+
+
+def test_the_ask_field_reads_curated_words_only(app, lexicon_root):
+    """Trade words come from curated/ only: a group in suggested/ or at the root is not read."""
+    for where, word in (("curated", "qwfp"), ("suggested", "zxcv"), (".", "vbnm")):
+        group = f'[[group]]\nwords = ["{word}", "CIV", "Civil works"]\n'
+        (lexicon_root / where / "words.toml").write_text(group, encoding="utf-8")
+    app.switch_page("views/gantt.py").run()
+    for word, chips in (("qwfp", ["WBS: CIV · Civil works"]), ("zxcv", []), ("vbnm", [])):
+        app.text_input[0].set_value(word).run()
+        _ok(app)
+        assert _chips(app) == chips, word
+
+
+def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_back(app, lexicon_root):
+    """A click on a suggestion records the unknown word, the label, its column, the filter and
+    the date in suggested/, never the sentence asked; the word holds for the session only."""
+    import tomllib
+
+    sentence = "jalons commiss en retard"
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value(sentence).run()
+    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    _ok(app)
+    assert "WBS: COM · Commissioning" in _chips(app)
+    written = (lexicon_root / "suggested" / "suggestions.toml").read_text(encoding="utf-8")
+    assert sentence not in written and "jalons" not in written and "retard" not in written
+    (entry,) = tomllib.loads(written)["suggestion"]
+    assert {k: v for k, v in entry.items() if k != "at"} == {
+        "word": "commiss", "label": "COM · Commissioning", "column": "PROJWBS.wbs_name", "facet": "wbs",
+        "value": "COM",
+    }  # fmt: skip
+    assert [p.name for p in lexicon_root.rglob("*") if p.is_file()] == ["suggestions.toml"]
+    fresh = read_folder(AppTest.from_file(APP, default_timeout=120).run())  # a new session
+    fresh.switch_page("views/gantt.py").run()
+    fresh.text_input[0].set_value("commiss").run()
+    assert _chips(fresh) == []  # not read until copied into curated/
+
+
+def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_root):
+    from xerscope.analysis.ask import suggested
+
+    full = lexicon_root / "suggested" / suggested.FILE
+    full.write_bytes(b"#" * suggested.MAX_BYTES)
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("commiss").run()
+    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    _ok(app)
+    assert _chips(app) == ["WBS: COM · Commissioning"]  # taught for the session all the same
+    note = [c.value for c in app.caption if "not kept as a suggestion" in c.value]
+    assert note == ["Taught for this session; not kept as a suggestion."]
+    assert full.read_bytes() == b"#" * suggested.MAX_BYTES
+
+
+def test_the_gantt_ask_field_keeps_max_chars_of_a_huge_sentence(app):
+    """A sentence sent past the browser's max_chars (a crafted websocket message) is cut on the
+    server before anything reads it: the session's memo keys and the × state hold MAX_CHARS + 1
+    characters at most (the extra one names the cut, "…")."""
+    from xerscope.analysis.query import MAX_CHARS
+
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("critical " + "x" * 1_000_000).run()
+    _ok(app)
+    assert _chips(app) == ["Float: Critical"]
+    app.button(key="ask_drop:Float: Critical").click().run()
+    _ok(app)
+    held = [s for key in app.session_state["_memo"] for s in key if isinstance(s, str)]
+    held.append(app.session_state["gantt_ask_dropped"][0])
+    assert max(map(len, held)) <= MAX_CHARS + 1
+    assert app.text_input(key="gantt_ask").max_chars == MAX_CHARS  # the browser cuts first
+
+
+def test_the_gantt_offers_labels_for_a_few_unknown_words_once_per_sentence(app, monkeypatch):
+    """Labels are searched for the first MAX_FUZZY words left out only, once per sentence: a rerun
+    (any click on the page) reads them from the session's memo."""
+    from xerscope.analysis import query
+    from xerscope.analysis.ask.text import MAX_FUZZY
+
+    searched = []
+    real = query.suggestions
+    monkeypatch.setattr(query, "suggestions", lambda word, vocab: searched.append(word) or real(word, vocab))
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value(" ".join(f"qq{i}x" for i in range(20))).run()
+    _ok(app)
+    assert 0 < len(searched) <= MAX_FUZZY
+    searched.clear()
+    _toggle(app, "Logic links", True)
+    assert searched == []
+
+
+def test_the_gantt_ask_field_says_a_sentence_nests_too_deep_without_failing(app):
+    """Parentheses nested past the parser's recursion: a neutral line, the page draws, the
+    sentence is not repeated."""
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("(" * 299 + "x").run()
+    _ok(app)
+    assert [w.value for w in app.warning] == ["This sentence nests too many parentheses to be read."]
+    assert not _chips(app)
+
+
+def test_a_standard_nested_too_deep_is_refused_without_failing(app):
+    """A TOML nested past the recursion limit (well under the 1 MB upload cap): an error naming
+    the file, no exception on the page."""
+    app.switch_page("views/health.py").run()
+    nested = b"x = " + b"[" * 5000 + b"]" * 5000 + b"\n"
+    app.file_uploader(key="std_upload").set_value(("deep.toml", nested, "application/toml")).run()
+    _ok(app)
+    assert any("deep.toml: TOML too deeply nested" in error.value.replace("\\", "") for error in app.error)
+
+
+def test_the_gantt_funnel_line_shows_a_wbs_name_literally(tmp_path, monkeypatch):
+    """A WBS name written as Markdown in the export (a link, an image) is shown as typed in the
+    Ask funnel line: the browser fetches nothing."""
+    wbs = [
+        {"wbs_id": "W1", "proj_id": "1", "wbs_short_name": "LNK", "wbs_name": "[a](http://x)",
+         "proj_node_flag": "N", "parent_wbs_id": "", "seq_num": "1"},
+    ]  # fmt: skip
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A", wbs_id="W1")], wbs=wbs))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/gantt.py").run()
+    at.text_input(key="gantt_ask").set_value("LNK").run()
+    _ok(at)
+    funnel = [c.value for c in at.caption if "LNK" in c.value]
+    assert funnel and all("\\[a\\]\\(http://x\\)" in line for line in funnel), funnel
+
+
+def test_debug_lists_the_curated_load_errors_to_every_session_without_their_words(app, lexicon_root):
+    """A curated/ file that cannot be read, or a refusal that cannot apply, is named in block 14
+    with where it fails, in every session (not only the first that loaded the lexicon); the text
+    an error quotes (a word, a key) is never shown."""
+    from xerscope.app import ui
+
+    (lexicon_root / "curated" / "bad.toml").write_text('[[group]]\nwords = ["qwfpsecret" "CIV"]\n', encoding="utf-8")
+    (lexicon_root / "curated" / "refusals.toml").write_text(
+        '[[refuse]]\nwords = ["zxcvsecret", "fondations"]\n', encoding="utf-8"
+    )
+    app.switch_page("views/gantt.py").run()  # the first session loads the lexicon
+    for session in (app, read_folder(AppTest.from_file(APP, default_timeout=120).run())):
+        session.switch_page("views/debug.py").run()
+        _ok(session)
+        block = next(e for e in session.main.expander if e.key == "debug_ask_variants")
+        shown = " ".join(m.value for m in [*block.markdown, *block.caption, *block.warning])
+        assert all(ui.md_text(e) in shown for e in ("bad.toml: line 2, column 23", "refusals.toml: refuse #1")), shown
+        assert "secret" not in shown
+
+
+def test_debug_names_a_curated_file_not_utf8_or_misshaped_and_the_gantt_still_renders(app, lexicon_root):
+    """A curated/ file in another encoding, or a refusal that is not a table, does not stop the
+    Gantt page; block 14 names it with where it fails, never its words."""
+    from xerscope.app import ui
+
+    latin = '[[group]]\nwords = ["Mécaniquesecret", "MEC"]\n'
+    (lexicon_root / "curated" / "latin.toml").write_bytes(latin.encode("cp1252"))
+    (lexicon_root / "curated" / "refuse.toml").write_text('refuse = "zxcvsecret"\n', encoding="utf-8")
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    block = next(e for e in app.main.expander if e.key == "debug_ask_variants")
+    shown = " ".join(m.value for m in [*block.markdown, *block.caption, *block.warning])
+    expected = (f"latin.toml: byte {latin.index('é')}", "refuse.toml: refuse #1")
+    assert all(ui.md_text(e) in shown for e in expected), shown
+    assert "secret" not in shown
+
+
+def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
+    from xerscope.app import state
+
+    (lexicon_root / "generated" / "variants.toml").write_text(
+        '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
+        '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["beton", "betons"]\n',
+        encoding="utf-8",
+    )
+    (lexicon_root / "curated" / "refusals.toml").write_text(
+        '[[refuse]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
+        '[[group]]\ncolumn = "TASK.task_name"\nwords = ["coffrage", "coffrages"]\n',
+        encoding="utf-8",
+    )
+    (lexicon_root / "suggested" / "suggestions.toml").write_text(
+        '[[group]]\ncolumn = "TASK.task_name"\nwords = ["pose", "poses"]\n', encoding="utf-8"
+    )
+    assert state.file_variants() == {
+        "PROJWBS.wbs_name": [["beton", "betons"]],
+        "TASK.task_name": [["coffrage", "coffrages"]],
+    }
+    assert state.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+
+
+def test_a_lexicon_uploaded_as_a_standard_never_reaches_the_ask_field(app):
+    """The only upload of the locked app is a standard (.toml); the Ask field reads the folder
+    XERSCOPE_LEXICON names and nothing else. A lexicon file is not a standard: refused. A standard
+    carrying lexicon tables is a standard: its groups are not read as trade words."""
+    from xerscope.analysis.standards import template_text
+
+    group = '\n[[group]]\nwords = ["qwfp", "CIV", "Civil works"]\n'
+    app.switch_page("views/health.py").run()
+    app.file_uploader(key="std_upload").set_value(("lexicon.toml", group.encode(), "application/toml")).run()
+    _ok(app)
+    assert any("needs a [standard] table" in error.value.replace("\\", "") for error in app.error) and not app.success
+    mixed = template_text().replace('id = "CUSTOM"', 'id = "MIXED"', 1) + group
+    app.file_uploader(key="std_upload").set_value(("mixed.toml", mixed.encode(), "application/toml")).run()
+    _ok(app)
+    assert "MIXED" in app.session_state["uploaded_standards"]
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("qwfp").run()
+    _ok(app)
+    assert _chips(app) == []  # "qwfp" names no node: the uploaded groups were not read
 
 
 # --- Schedule health: the sets of a check on demand, and all sets as a file ---------------------
@@ -1473,7 +1845,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
     assert "wd on XA" in note  # the activity is named, by its new ID
     summary = _csv(_download(app, downloads, "Summary (CSV) · anonymized"))
     assert "wd on XA" in summary.loc[summary["id"] == "DCMA-12", "note"].iloc[0]
-    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{8}").all()
+    assert long["task_code"].dropna().str.fullmatch(r"XA[0-9A-F]{12}").all()
 
 
 def test_health_summary_file_gains_the_notes(app, store, downloads):
@@ -1482,7 +1854,8 @@ def test_health_summary_file_gains_the_notes(app, store, downloads):
     assert list(summary.columns[-2:]) == ["flagged", "note"]
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
-        assert (got if isinstance(got, str) else "") == result.note_with_baseline
+        expected = result.note_with_baseline  # a note starting with +/- is CSV-guarded (csv_safe)
+        assert (got if isinstance(got, str) else "") == csv_safe(pd.DataFrame({"n": [expected]}))["n"].iloc[0]
     assert "BL finish" in summary.loc[summary["id"] == "DCMA-13", "note"].iloc[0]
 
 
@@ -1541,6 +1914,21 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)
 
 
+def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app, store):
+    """A click stores the row's Activity ID (the chart's callback); the run it causes picks it when
+    the chart draws it, and ignores it otherwise, keeping the activity picked before."""
+    app.switch_page("views/gantt.py").run()
+    app.session_state["gantt_clicked"] = "C3020"  # what the callback stores for a click on its row
+    app.run()
+    _ok(app)
+    assert app.session_state["gantt_task"] == "C3020" and "gantt_clicked" not in app.session_state
+    assert app.selectbox(key="gantt_task_pick").value == "C3020"
+    app.session_state["gantt_clicked"] = "NOT-DRAWN"
+    app.run()
+    _ok(app)
+    assert app.session_state["gantt_task"] == "C3020"
+
+
 @pytest.mark.parametrize(
     ("delta", "colour", "expected"),
     [
@@ -1581,7 +1969,7 @@ def test_debug_block_10_compares_a_p6_export_and_keeps_the_activity_list_out_of_
         ("p6.csv", export.to_csv(index=False).encode(), "text/csv")
     ).run()
     _ok(app)
-    assert any(c.value.startswith("Activities in gap (PV or EV)") for c in app.caption)
+    assert any(c.value.startswith("Tasks in gap (PV or EV)") for c in app.caption)
     next(b for b in app.button if b.label == "Build diagnostic").click().run()
     _ok(app)
     with zipfile.ZipFile(io.BytesIO(_download(app, downloads, "Download diagnostic (.zip) · anonymized"))) as archive:
@@ -1680,5 +2068,97 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     at.switch_page("views/debug.py").run()
     _ok(at)
     assert not any("12 · App runtime" in e.label for e in at.expander)
-    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 12
+    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 13
     assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance
+    assert any("14 · Ask vocabulary" in e.label for e in at.expander)  # counts only; the download needs exports plain
+
+
+# --- visual defects (Playwright campaign): what AppTest can see of each fix --------------------
+
+
+def test_audit_lists_every_standard_in_one_full_width_control(app):
+    """The segmented control stood in a narrow column and cut its labels: it is on a row of its
+    own, the Update and Check pickers under it."""
+    app.switch_page("views/audit.py").run()
+    _ok(app)
+    control = app.get("button_group")[0]
+    assert control.proto.label == "Standard"
+    names = [o.content for o in control.proto.options]
+    assert len(names) == 4 and "P6 Check Schedule" in names and "Integrity" in names
+
+
+def test_earned_value_vac_delta_starts_with_its_sign_and_indices_read_to_two_decimals(app):
+    """st.metric colours a delta by the sign it starts with: "VAC -648 h" read as a gain."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    metrics = {m.label: m for m in app.metric}
+    assert re.fullmatch(r"[+-][\d,]+ h", metrics["EAC"].delta), metrics["EAC"].delta
+    assert "VAC" in metrics["EAC"].proto.help
+    assert re.fullmatch(r"\d\.\d\d", metrics["SPI (labor units)"].value)
+    assert re.fullmatch(r"[+-]\d\.\d\d", metrics["SPI (labor units)"].delta)
+    series = next(d.value for d in app.dataframe if "spi" in d.value.columns)
+    assert series["spi"].iloc[0] == "–" and re.fullmatch(r"\d\.\d\d", series["spi"].iloc[-1])
+    assert "None" not in series.astype(str).to_numpy()
+
+
+def test_gantt_table_view_writes_a_dash_for_a_missing_float_and_shrinks_to_its_rows(app):
+    app.switch_page("views/gantt.py").run()
+    _ok(app)
+    table = next(d.value for d in app.dataframe if "total_float_d" in d.value.columns)
+    assert "–" in set(table["total_float_d"]) and "None" not in table.astype(str).to_numpy()
+    data = _gantt_data(app)
+    opened = [r for r in data["rows"] if r["parent"] is None or r["parent"] in data["open"]]
+    assert len(opened) < 20 and data["height"] < 680  # a short tree takes less than the cap
+
+
+def test_charts_hide_the_plotly_mode_bar(app):
+    for page in ("views/overview.py", "views/earned_value.py", "views/ppc.py"):
+        app.switch_page(page).run()
+        _ok(app)
+        for chart in app.get("plotly_chart"):
+            assert json.loads(chart.proto.config) == {"displayModeBar": False}, page
+            assert "hoverlabel" in json.loads(chart.proto.spec)["layout"], page
+
+
+def test_health_names_each_group_once_and_offers_one_prepare_button(app):
+    app.switch_page("views/health.py").run()
+    _ok(app)
+    titles = [m.value for m in app.markdown if m.value.startswith("##### ")]
+    assert titles and len(titles) == len(set(titles)), titles
+    assert [b.label for b in app.button].count("Prepare anonymized downloads") == 1
+
+
+def test_changelog_offset_buttons_are_drawn_as_buttons(app):
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    for text in ("Previous", "4 back", "First"):
+        assert app.button(key=f"cl_from_{text}").proto.type == "secondary"
+
+
+def test_milestone_page_title_is_the_navigation_entry(app):
+    app.switch_page("views/milestones.py").run()
+    _ok(app)
+    assert [t.value for t in app.title] == ["Milestone trend"]
+
+
+def test_score_cards_carry_the_whole_list_of_failed_checks_in_their_help(app):
+    app.switch_page("views/health.py").run()  # computes the P6 results
+    app.switch_page("views/overview.py").run()
+    _ok(app)
+    card = next(m for m in app.metric if m.label == "P6 Check Schedule score")
+    assert "evaluated" in card.delta and card.delta in card.proto.help.replace("\\", "")
+
+
+def test_overview_lists_a_period_across_midnight_under_limits(tmp_path, monkeypatch):
+    """A calendar period 22:00-06:00 loads (no work counted, as MPXJ) and is named under "Limits"."""
+    periods = "(0||0(s|22:00|f|06:00)())(0||1(s|08:00|f|12:00)())"
+    night = f"(0||CalendarData()((0||DaysOfWeek()((0||2()({periods}))))))"
+    calendar = {"clndr_id": "40", "clndr_name": "", "day_hr_cnt": "4", "clndr_data": night}
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A")], calendars=[calendar]))
+    at = _run(tmp_path, monkeypatch)
+    at.switch_page("views/overview.py").run()
+    _ok(at)
+    assert any("crosses midnight" in w.value and "may differ from P6" in w.value for w in at.warning), [
+        w.value for w in at.warning
+    ]
+    assert "Limits" in [s.value for s in at.subheader]

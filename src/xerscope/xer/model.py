@@ -4,8 +4,10 @@ Key decisions
 - Activities are identified by ``task_code`` (the P6 Activity ID). ``task_id`` is an
   internal database key that can change when a project is re-imported, so it is only
   used to resolve relationships *inside* a single file.
-- The snapshot date is ``PROJECT.last_recalc_date``: that is where P6 stores the data
-  date in an XER. If it is blank, P6 schedules from the planned start, so we do too.
+- The snapshot date is ``PROJECT.last_recalc_date`` ("Last Recalc Date" in Oracle's XER
+  data map, which names no column "Data Date"). MPXJ reads it as the status date
+  (``TableProjectReader``) and writes the status date there; the reference files' stored
+  dates confirm it (docs/cpm.md). If it is blank, the planned start is used.
 - Durations and float are converted from hours to working days with the task's own
   calendar (``CALENDAR.day_hr_cnt``), which is what every standard threshold is
   expressed in (e.g. DCMA's 44 working days).
@@ -16,12 +18,15 @@ Key decisions
   units), as P6 displays it.
 - The forecast finish is the latest activity finish. ``PROJECT.scd_end_date`` is kept as
   ``scheduled_finish`` only: real P6 exports can carry a stale value there.
+- Values P6 would never write (a repeated key, a time-zoned date, an infinite or negative
+  remaining duration, an unknown link type) are repaired by ``validate.py``, one rule and one
+  warning line each, so the file still loads and says what was done to it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from operator import attrgetter
 
@@ -29,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import DATE_FMT, DEFAULT_SETTINGS, Settings
+from . import validate
 from .calendar import TimeAxis, WorkCalendar, hours_to_days
 from .parser import RawXer, XerError
 
@@ -151,7 +157,15 @@ EARLIEST_DATE, LATEST_DATE = pd.Timestamp("1900-01-01"), pd.Timestamp("2200-01-0
 
 def to_datetime(values: pd.Series) -> pd.Series:
     # XER dates are "YYYY-MM-DD HH:MM"; ISO8601 also tolerates exporters adding seconds.
-    dates = pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+    try:
+        dates = pd.to_datetime(_blank_to_na(values), format="ISO8601", errors="coerce")
+    except ValueError:
+        # one cell with a time-zone offset among naive ones: pandas refuses the column even with
+        # errors="coerce" ("Mixed timezones"); such a cell reads as NaT (validate.blank_timezones
+        # does the same on the model's tables, with a warning)
+        dates = pd.to_datetime(
+            _blank_to_na(values.mask(validate.timezone_cells(values))), format="ISO8601", errors="coerce"
+        )
     return dates.where((dates >= EARLIEST_DATE) & (dates < LATEST_DATE))
 
 
@@ -251,6 +265,22 @@ def _task_table(raw: RawXer, projects: pd.DataFrame, warnings: list[str]) -> pd.
     return tasks
 
 
+def _project_table(raw: RawXer, warnings: list[str]) -> pd.DataFrame:
+    """PROJECT with ``proj_id`` checked and unique (the first of two rows with one id is kept)."""
+    projects = raw.table("PROJECT")
+    if projects.empty or raw.table("TASK").empty:
+        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
+    _require(projects, raw.source, "PROJECT", ["proj_id"])
+    return validate.unique_rows(projects, "proj_id", "PROJECT", raw.source, warnings)
+
+
+def _typed_dates(frame: pd.DataFrame, columns: list[str], table: str, inputs: _BuildInputs) -> None:
+    """Type the date ``columns`` of ``frame`` in place; a time-zoned cell reads as NaT, with a warning."""
+    validate.blank_timezones(frame, columns, table, inputs.source, inputs.warnings)
+    for column in columns:
+        frame[column] = to_datetime(frame[column])
+
+
 def _taskpred_table(raw: RawXer, all_tasks: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
     """TASKPRED with proj_id / pred_proj_id derived from TASK when the export omits them.
 
@@ -326,6 +356,8 @@ TASK_COLS = [
     "has_expense",
     "has_external_pred",
     "has_external_succ",
+    "has_external_driving_pred",
+    "has_external_driving_succ",
     # working days
     "start",
     "finish",
@@ -438,12 +470,17 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
     return FileBaseline(pointer, target["proj_short_name"], True, "", str(target["last_baseline_update_date"]))
 
 
-CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq"]
+CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq", "type_name"]
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Snapshot:
+    """One parsed file, read-only once built. Analyses cache their results on it (``by_code``,
+    the CPM's ``_xs_schedule`` / ``_xs_comparison``, written with ``object.__setattr__``), so a
+    changed snapshot is a new one: ``dataclasses.replace(snapshot, tasks=...)`` starts with an
+    empty cache, an in-place edit of a table would not (docs/cpm.md, Performance)."""
+
     source: str
     project_id: str
     project_code: str
@@ -458,7 +495,7 @@ class Snapshot:
     calendars: pd.DataFrame
     assignments: pd.DataFrame  # TASKRSRC rows, may be empty
     projects_in_file: list[str] = field(default_factory=list)
-    project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by project code
+    project_task_counts: dict[str, int] = field(default_factory=dict)  # TASK rows by proj_id
     selected_by: str = ""  # why this project of the file: chosen, only project, most TASK rows
     data_date_source: str = ""  # PROJECT column the data date was read from
     warnings: list[str] = field(default_factory=list)
@@ -469,6 +506,8 @@ class Snapshot:
     expenses: pd.DataFrame = field(default_factory=pd.DataFrame)  # PROJCOST rows, may be empty
     external_tasks: pd.DataFrame = field(default_factory=pd.DataFrame)  # other projects' linked tasks
     external_links: pd.DataFrame = field(default_factory=pd.DataFrame)  # links to/from them
+    # links into this project from a project whose activities are not in the file: not in relationships
+    external_links_dropped: int = 0
     # P6 activity codes: the values of each code type the project's activities use, and which
     # value each activity is assigned (_activity_codes)
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
@@ -565,8 +604,9 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
 
     ``task_codes``: one row per activity and value (TASKACTV rows of the project's TASK
     rows; the type is the value's own). ``code_values``: every value of the types those rows
-    use, parents included, ordered as in P6 (type, then ``seq_num``). Rows naming an unknown
-    task, value or type are left out.
+    use, parents included, ordered as in P6 (type, then ``seq_num``); ``code_type`` is the
+    type's label unique in the file (``_code_type_labels``), ``type_name`` its P6 name, which
+    two types may share. Rows naming an unknown task, value or type are left out.
     """
     types, values, links = raw.table("ACTVTYPE"), raw.table("ACTVCODE"), raw.table("TASKACTV")
     empty = (pd.DataFrame(columns=CODE_VALUE_COLUMNS), pd.DataFrame(columns=TASK_CODE_COLUMNS))
@@ -577,19 +617,21 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
     }
     if any(frame.empty or not set(columns) <= set(frame.columns) for frame, columns in needed.values()):
         return empty
-    type_name = types.drop_duplicates("actv_code_type_id").set_index("actv_code_type_id")["actv_code_type"]
-    values = values.assign(code_type=values["actv_code_type_id"].map(type_name)).dropna(subset=["code_type"])
+    types = types.drop_duplicates("actv_code_type_id")
+    label = _code_type_labels(types)
+    values = values.assign(code_type=values["actv_code_type_id"].map(label)).dropna(subset=["code_type"])
+    type_name = types.set_index("actv_code_type_id")["actv_code_type"]
     code_of_task = tasks.drop_duplicates("task_id").set_index("task_id")["task_code"]
-    type_of_value = values.drop_duplicates("actv_code_id").set_index("actv_code_id")["code_type"]
+    type_of_value = values.drop_duplicates("actv_code_id").set_index("actv_code_id")["actv_code_type_id"]
     task_codes = pd.DataFrame(
         {
             "task_code": links["task_id"].map(code_of_task),
-            "code_type": links["actv_code_id"].map(type_of_value),
+            "code_type": links["actv_code_id"].map(type_of_value).map(label),
             "code_id": links["actv_code_id"],
         }
     ).dropna()
     task_codes = task_codes.drop_duplicates().reset_index(drop=True)
-    used = values[values["code_type"].isin(set(task_codes["code_type"]))]
+    used = values[values["actv_code_type_id"].isin(set(task_codes["code_id"].map(type_of_value)))]
     code_values = pd.DataFrame(
         {
             "code_type": used["code_type"],
@@ -598,10 +640,35 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
             "value": used["short_name"],
             "name": used.get("actv_code_name", used["short_name"]),
             "seq": to_number(used.get("seq_num", pd.Series(0, index=used.index))).fillna(0),
+            "type_name": used["actv_code_type_id"].map(type_name),
         }
     )
     code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])
     return code_values.reset_index(drop=True), task_codes
+
+
+CODE_TYPE_SCOPES = {"AS_Global": "global", "AS_EPS": "EPS", "AS_Project": "project"}
+
+
+def _code_type_labels(types: pd.DataFrame) -> pd.Series:
+    """Label of each code type, by ``actv_code_type_id``. A type is identified by its id: P6
+    does not make ``actv_code_type`` unique across scopes (``actv_code_type_scope``), so a
+    global "Phase" and a project "Phase" are two types. The label is the name when no other
+    type of the file has it, else the name and its scope ("Phase (global)"), plus the id when
+    two types share name and scope ("Phase (project, 702)")."""
+    names = types.set_index("actv_code_type_id")["actv_code_type"]
+    raw_scope = types.get("actv_code_type_scope", pd.Series("", index=types.index)).fillna("")
+    scopes = pd.Series(raw_scope.map(lambda s: CODE_TYPE_SCOPES.get(s, s)).to_numpy(), index=names.index)
+    labels = {}
+    for type_id, name in names.items():
+        same_name = names == name
+        if same_name.sum() == 1:
+            labels[type_id] = name
+        elif scopes[type_id] and (same_name & (scopes == scopes[type_id])).sum() == 1:
+            labels[type_id] = f"{name} ({scopes[type_id]})"
+        else:
+            labels[type_id] = f"{name} ({', '.join(filter(None, [scopes[type_id], type_id]))})"
+    return pd.Series(labels, dtype=object)
 
 
 def _chain(code_id: str, parent: dict[str, str]) -> list[str]:
@@ -670,8 +737,9 @@ def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.Da
         ), None
     _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
     _unique(wbs, raw.source, "PROJWBS", "wbs_id")
+    wbs = wbs[wbs["proj_id"] == project_id]
     wbs = _ensure_cols(
-        wbs[wbs["proj_id"] == project_id].copy(),
+        wbs.copy(),
         [
             "parent_wbs_id",
             "proj_node_flag",
@@ -712,6 +780,7 @@ def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.Da
             in_loop.update(chain[chain.index(wbs_id) :])
         return chain[::-1]
 
+    sequence = validate.bounded_sequence(by_id["seq_num"], "PROJWBS", raw.source, warnings)
     codes, top_levels, sort_keys = [], [], []
     for wbs_id in wbs["wbs_id"]:
         chain = lineage(wbs_id)
@@ -773,8 +842,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     assignments["task_code"] = assignments["task_id"].map(tasks.set_index("task_id")["task_code"])
     for column in ASSIGNMENT_NUM_COLS:
         assignments[column] = to_number(assignments[column])
-    for column in ASSIGNMENT_DATE_COLS:
-        assignments[column] = to_datetime(assignments[column])
+    _typed_dates(assignments, ASSIGNMENT_DATE_COLS, "TASKRSRC", inputs)
     assignments["act_qty"] = assignments["act_reg_qty"].fillna(0) + assignments["act_ot_qty"].fillna(0)
 
     resources = _ensure_cols(
@@ -859,12 +927,12 @@ def _select_project(
     project_code: str | None,
     warnings: list[str],
     project_id: str | None = None,
-) -> tuple[pd.Series, dict[str, int], str]:
-    """The PROJECT row to build the snapshot for, the TASK row count of every project that owns
-    activities (by code, in file order), and how the row was selected (``_default_project``, or
-    ``chosen``). ``project_id`` names a project exactly; ``project_code`` names the projects of that
-    code, of which ``_default_project`` takes one: a baseline copy can carry the code of the project
-    it was copied from."""
+) -> tuple[pd.Series, dict[str, int], dict[str, str], str]:
+    """The PROJECT row to build the snapshot for, the TASK row count and the code of every project
+    that owns activities (both by ``proj_id``, in file order: two projects may share one code), and
+    how the row was selected (``_default_project``, or ``chosen``). ``project_id`` names a project
+    exactly; ``project_code`` names the projects of that code, of which ``_default_project`` takes
+    one: a baseline copy can carry the code of the project it was copied from."""
     task_counts = all_tasks["proj_id"].value_counts()
     projects = _ensure_cols(projects.copy(), ["sum_base_proj_id", "orig_proj_id"])
     copies = set(baseline_copies(projects))
@@ -884,21 +952,36 @@ def _select_project(
     if projects.empty:
         raise XerError(f"{source}: no project owns any task")
     projects["_n"] = projects["proj_id"].map(task_counts)
-    counts = {str(code): int(n) for code, n in zip(projects["proj_short_name"], projects["_n"], strict=True)}
+    counts = {str(pid): int(n) for pid, n in zip(projects["proj_id"], projects["_n"], strict=True)}
+    codes = {str(pid): str(code) for pid, code in zip(projects["proj_id"], projects["proj_short_name"], strict=True)}
     if project_id:
         selected = projects[projects["proj_id"] == project_id]
         if selected.empty:
             raise XerError(f"{source}: project {project_id!r} not found (has {list(counts)})")
-        return selected.iloc[0], counts, "chosen"
+        return selected.iloc[0], counts, codes, "chosen"
     if project_code:
         selected = projects[projects["proj_short_name"] == project_code]
         if selected.empty:
-            raise XerError(f"{source}: project {project_code!r} not found (has {list(counts)})")
-        return _default_project(selected, copies)[0], counts, "chosen"
+            raise XerError(f"{source}: project {project_code!r} not found (has {list(codes.values())})")
+        return _default_project(selected, copies)[0], counts, codes, "chosen"
     project_row, rule = _default_project(projects, copies)
     if len(projects) > 1:
         warnings.append(f"{source}: {len(projects)} projects in file, using {project_row['proj_short_name']}")
-    return project_row, counts, rule
+    return project_row, counts, codes, rule
+
+
+def project_counts_text(counts: Mapping[str, int], codes: Mapping[str, str]) -> str:
+    """The "Projects in file" line: TASK rows by project, each named by its code ("UPD (3) · BL (2)").
+    ``counts`` and ``codes`` are keyed by ``proj_id``, so two projects with one code both appear."""
+    return " · ".join(f"{codes.get(proj_id, proj_id)} ({n})" for proj_id, n in counts.items())
+
+
+def projects_text(snapshot: Snapshot) -> str:
+    """``project_counts_text`` of a snapshot, the codes read from its ``file_projects``."""
+    projects = snapshot.file_projects
+    return project_counts_text(
+        snapshot.project_task_counts, dict(zip(projects["proj_id"], projects["proj_short_name"], strict=True))
+    )
 
 
 def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFrame:
@@ -923,8 +1006,12 @@ def _file_projects(projects: pd.DataFrame, all_tasks: pd.DataFrame) -> pd.DataFr
     return table[FILE_PROJECT_COLUMNS + extra + PCT_TYPE_COUNT_COLUMNS].reset_index(drop=True)
 
 
-def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
-    """CALENDAR table, hours per working day by calendar id, and the parsed work calendars."""
+def _calendars(
+    raw: RawXer, settings: Settings, warnings: list[str]
+) -> tuple[pd.DataFrame, pd.Series, dict[str, WorkCalendar]]:
+    """CALENDAR table, hours per working day by calendar id, and the parsed work calendars; what
+    ``WorkCalendar.from_row`` had to repair in a row (an unreadable blob, an exception out of range,
+    a day under a minute) is one warning per calendar."""
     calendars = raw.table("CALENDAR")
     if calendars.empty:
         return calendars, pd.Series(dtype=float), {}
@@ -936,11 +1023,65 @@ def _calendars(raw: RawXer, settings: Settings) -> tuple[pd.DataFrame, pd.Series
         str(row["clndr_id"]): WorkCalendar.from_row(row, settings.default_hours_per_day)
         for _, row in calendars.iterrows()
     }
+    for calendar in work_calendars.values():
+        if calendar.notes:
+            warnings.append(
+                f"{raw.source}: calendar {calendar.clndr_id} ({calendar.name}): {'; '.join(calendar.notes)}"
+            )
     # one reading of "hours per day": the calendar's own (a missing or zero count is the default)
     hours_per_day = pd.Series(
         {clndr_id: calendar.hours_per_day for clndr_id, calendar in work_calendars.items()}, dtype=float
     )
+    work_calendars = _inherit_base_exceptions(calendars, work_calendars, raw.source, warnings)
     return calendars.drop(columns=["clndr_data"]), hours_per_day, work_calendars  # parsed above; the blob is large
+
+
+def _inherit_base_exceptions(
+    calendars: pd.DataFrame, work_calendars: dict[str, WorkCalendar], source: str, warnings: list[str]
+) -> dict[str, WorkCalendar]:
+    """Each calendar with the holidays and exceptions of its base (``CALENDAR.base_clndr_id``),
+    and of the base's base; on a date both carry, the calendar's own exception wins. The work
+    week stays the calendar's own.
+
+    Oracle, "Assigning a Base Calendar to a Project Calendar": "Assign a base calendar to
+    determine holidays and exceptions for the selected project calendar." MPXJ reads a XER the
+    same way: ``TableContextReader.processCalendars`` sets the base as parent, and
+    ``ProjectCalendar.getException`` looks in the parent when the calendar has no exception of
+    its own on the date. Whether P6 already copies the base's exceptions into the derived blob
+    is not documented; the reference files that have a base (Hotel, Terminal) carry them, and
+    then nothing is added. Each calendar that does gain exceptions is named in ``warnings``.
+    """
+    if "base_clndr_id" not in calendars.columns:
+        return work_calendars
+    base_of = {
+        str(clndr_id): str(base)
+        for clndr_id, base in zip(calendars["clndr_id"], calendars["base_clndr_id"], strict=True)
+        if isinstance(base, str) and base.strip()
+    }
+    out = dict(work_calendars)
+    for clndr_id, calendar in work_calendars.items():
+        chain = [clndr_id]  # the calendar, its base, the base's base...
+        base = base_of.get(clndr_id)
+        while base is not None:
+            if base in chain:
+                warnings.append(f"{source}: calendar {clndr_id}: loop of base calendars {[*chain, base]}")
+                break
+            if base not in work_calendars:
+                warnings.append(f"{source}: calendar {chain[-1]}: base calendar {base} is not in the file")
+                break
+            chain.append(base)
+            base = base_of.get(base)
+        exceptions: dict = {}
+        for member in reversed(chain):  # the farthest base first, the calendar's own last
+            exceptions.update(work_calendars[member].exceptions)
+        inherited = len(exceptions) - len(calendar.exceptions)
+        if inherited:
+            out[clndr_id] = replace(calendar, exceptions=exceptions)
+            warnings.append(
+                f"{source}: calendar {clndr_id}: {inherited} holiday or exception{'s' if inherited > 1 else ''}"
+                f" inherited from base calendar {chain[1]}"
+            )
+    return out
 
 
 def _header_field(header: list[str], index: int) -> str:
@@ -956,6 +1097,11 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         if "proj_id" in schedule_options.columns:
             rows = schedule_options[schedule_options["proj_id"] == inputs.project_id]
         schedule_row = rows.iloc[0].to_dict() if not rows.empty else {}
+        if rows.empty:
+            inputs.warnings.append(
+                f"{inputs.source}: SCHEDOPTIONS has no row for project {inputs.project_row['proj_short_name']}: "
+                "P6's default scheduling options used"
+            )
     # Oracle (P6 Professional 24, Schedule Options > General): "If you do not select a
     # calendar, Successor Activity Calendar is used to calculate lag."
     chosen_lag_calendar = schedule_row.get("sched_calendar_on_relationship_lag")
@@ -976,7 +1122,6 @@ def _scheduling_options(inputs: _BuildInputs) -> dict:
         "progressed": progressed,
         "critical_path_type": project_row["critical_path_type"] or "CT_TotFloat",
         "critical_float_hr": None if pd.isna(critical_hours) else float(critical_hours),
-        "has_schedoptions": not schedule_options.empty,
         "sched": schedule_row,  # the raw SCHEDOPTIONS row: read by analysis.cpm
         # ERMHDR: P6 version and product that wrote the file ("" when the header leaves them out)
         "export": {"version": _header_field(inputs.raw.header, 0), "product": _header_field(inputs.raw.header, 6)},
@@ -1006,10 +1151,14 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
         + TASK_DATE_COLS
         + TASK_NUM_COLS,
     )
-    for column in TASK_DATE_COLS:
-        tasks[column] = to_datetime(tasks[column])
+    _typed_dates(tasks, TASK_DATE_COLS, "TASK", inputs)
     for column in TASK_NUM_COLS:
         tasks[column] = to_number(tasks[column])
+    # The remaining duration drives the CPM and the % complete: unusable values read as 0, said once.
+    remaining = validate.usable_hours(
+        tasks["remain_drtn_hr_cnt"], "activity remaining duration", tasks["task_code"], source, inputs.warnings
+    )
+    tasks["remain_drtn_hr_cnt"] = validate.nonnegative_remaining(remaining, source, inputs.warnings)
 
     default_hours = inputs.fallback_hours_per_day
     task_hours_per_day = tasks["clndr_id"].map(inputs.hours_per_day).astype(float)
@@ -1029,6 +1178,13 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     tasks["is_milestone"] = tasks["is_start_milestone"] | (tasks["task_type"] == "TT_FinMile")
     _warn_unknown_codes(
         tasks["task_type"], TASK_TYPE, f"{source}: TASK.task_type", "read as Task Dependent", inputs.warnings
+    )
+    _warn_unknown_codes(
+        tasks["complete_pct_type"],
+        {**PCT_COMPLETE_TYPE, "": "blank"},  # a blank is counted per project (tasks_pct_blank), not warned
+        f"{source}: TASK.complete_pct_type",
+        "% complete read as Physical",
+        inputs.warnings,
     )
     if (tasks["task_type"] == "TT_StartMile").any():
         inputs.warnings.append(f"{source}: non-standard task_type TT_StartMile read as a start milestone")
@@ -1089,17 +1245,20 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
     return tasks
 
 
-def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
-    """The project's schedulable relationships, and the successors that also have an external predecessor."""
+def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set, set, int]:
+    """The project's schedulable relationships, the successors that also have an external predecessor,
+    those whose external predecessor is linked FS or SS (it drives their start), and the number of
+    links from a project whose activities are not in the file (dropped)."""
     all_relationships = inputs.all_relationships
     if all_relationships.empty:
         columns = ["task_id", "pred_task_id", "succ_code", "pred_code", "type", "lag_hr", "lag_d", "is_external"]
-        return pd.DataFrame(columns=columns), set()
+        return pd.DataFrame(columns=columns), set(), set(), 0
     project_id, default_hours = inputs.project_id, inputs.fallback_hours_per_day
     relationships = _ensure_cols(
         all_relationships[all_relationships["proj_id"] == project_id].copy(),
         ["pred_proj_id", "pred_type", "lag_hr_cnt"],
     )
+    relationships = relationships.copy()
     all_tasks = _ensure_cols(inputs.all_tasks.copy(), ["clndr_id"])
     code_by_id = all_tasks.set_index("task_id")["task_code"]
     hours_per_day_by_id = (
@@ -1112,10 +1271,14 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
         relationships["pred_type"],
         REL_TYPE,
         f"{inputs.source}: TASKPRED.pred_type",
-        "scheduled as SF in the forward pass, ignored in the backward pass",
+        "kept with its code, ignored by the recalculation",
         inputs.warnings,
     )
-    relationships["lag_hr"] = to_number(relationships["lag_hr_cnt"]).fillna(0.0)
+    lag_names = relationships["pred_code"].astype(str) + "->" + relationships["succ_code"].astype(str)
+    lag_hours = to_number(relationships["lag_hr_cnt"]).fillna(0.0)
+    relationships["lag_hr"] = validate.usable_hours(
+        lag_hours, "relationship lag", lag_names, inputs.source, inputs.warnings
+    )
     # Lag hours -> days. Oracle: "Lag entered in a unit other than hours is converted
     # to hours based on the predecessor activity's calendar", whatever calendar the lag
     # is then scheduled on (that one is the CPM's business, analysis/cpm.py).
@@ -1129,8 +1292,12 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
     external_in_file = relationships["is_external"] & relationships["pred_code"].notna()
     external_names = "[ext]" + relationships.loc[external_in_file, "pred_task_id"].astype(str)
     relationships.loc[external_in_file, "pred_code"] = external_names
+    local_codes = all_tasks.loc[all_tasks["proj_id"] == project_id, "task_code"]
+    validate.placeholder_clashes(local_codes, external_names, inputs.source, inputs.warnings)
     # Counted before the unschedulable links go: those still have an external predecessor.
     external_predecessors = set(relationships.loc[relationships["is_external"], "task_id"])
+    start_driving = relationships["is_external"] & relationships["type"].isin(("FS", "SS"))
+    external_driving_predecessors = set(relationships.loc[start_driving, "task_id"])
 
     # A predecessor with no TASK row is a link to another project (P6 exports the link, not
     # the other project's activities) or a corrupt link. Either way it is not logic that can
@@ -1151,7 +1318,8 @@ def _relationships(inputs: _BuildInputs) -> tuple[pd.DataFrame, set]:
             f"{inputs.source}: {int(corrupt.sum())} relationship(s) to a task "
             "not in the file; ignored by the schedule and the checks"
         )
-    return relationships[~lost].copy(), external_predecessors
+    dropped = int((lost & relationships["is_external"]).sum())
+    return relationships[~lost].copy(), external_predecessors, external_driving_predecessors, dropped
 
 
 def _external_links(
@@ -1172,8 +1340,7 @@ def _external_links(
         all_tasks[all_tasks["task_id"].isin(other_ids)].copy(),
         ["task_code", "status_code", "clndr_id"] + TASK_DATE_COLS,
     )
-    for column in TASK_DATE_COLS:
-        external_tasks[column] = to_datetime(external_tasks[column])
+    _typed_dates(external_tasks, TASK_DATE_COLS, "TASK", inputs)
     external_tasks["task_code"] = "[ext]" + external_tasks["task_id"].astype(str)
     external_code = external_tasks.set_index("task_id")["task_code"]
     own_code = tasks.set_index("task_id")["task_code"]
@@ -1284,23 +1451,23 @@ class FileHeader:
     source: str
     project_code: str  # the project build_snapshot takes by default
     selected_by: str
-    project_task_counts: dict[str, int]  # TASK rows by project code
+    project_task_counts: dict[str, int]  # TASK rows by proj_id
     data_date: pd.Timestamp | None
     data_date_source: str
+    project_codes: dict[str, str] = field(default_factory=dict)  # proj_id -> project code
 
 
 def read_header(raw: RawXer) -> FileHeader:
     """The default project and data date of a file, by the rules of build_snapshot, from
     PROJECT and TASK alone (a RawXer parsed with ``keep=HEADER_TABLES`` is enough)."""
-    projects = raw.table("PROJECT")
-    if projects.empty or raw.table("TASK").empty:
-        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
-    _require(projects, raw.source, "PROJECT", ["proj_id"])
     warnings: list[str] = []
+    projects = _project_table(raw, warnings)
     all_tasks = _task_table(raw, projects, warnings)
-    project_row, task_counts, selected_by = _select_project(raw.source, projects, all_tasks, None, warnings)
+    project_row, task_counts, codes, selected_by = _select_project(raw.source, projects, all_tasks, None, warnings)
     data_date, data_date_source = _data_date(project_row)
-    return FileHeader(raw.source, project_row["proj_short_name"], selected_by, task_counts, data_date, data_date_source)
+    return FileHeader(
+        raw.source, project_row["proj_short_name"], selected_by, task_counts, data_date, data_date_source, codes
+    )
 
 
 def build_snapshot(
@@ -1315,39 +1482,40 @@ def build_snapshot(
     project with the most activities is used and a warning is recorded. ``project_id``
     (PROJECT.proj_id) selects one exactly, over ``project_code``.
     """
-    projects = raw.table("PROJECT")
-    if projects.empty or raw.table("TASK").empty:
-        raise XerError(f"{raw.source}: PROJECT or TASK table missing")
     if not raw.ended:
         # the last row read may be cut and the tables after it lost: no number of it can be trusted
         raise XerError(f"{raw.source}: incomplete file, no %E end line (still being copied, or cut short)")
-    _require(projects, raw.source, "PROJECT", ["proj_id"])
     warnings = list(raw.warnings)  # appended to in the order the steps run: that order is observable
+    projects = _project_table(raw, warnings)
     all_tasks = _task_table(raw, projects, warnings)
     all_relationships = _taskpred_table(raw, all_tasks, warnings)
 
     # The project, its data date and its calendars
-    project_row, task_counts, selected_by = _select_project(
+    project_row, task_counts, _codes, selected_by = _select_project(
         raw.source, projects, all_tasks, project_code, warnings, project_id
     )
     planned_start = _parse_date(project_row["plan_start_date"])
     data_date, data_date_source = _data_date(project_row)
     if data_date is None:
         warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
-    calendars, hours_per_day, work_calendars = _calendars(raw, settings)
+    calendars, hours_per_day, work_calendars = _calendars(raw, settings, warnings)
     inputs = _BuildInputs(raw, all_tasks, all_relationships, project_row, hours_per_day, settings, warnings)
     wbs, project_name = _wbs_frame(raw, inputs.project_id, warnings)
     options = _scheduling_options(inputs)
 
     # Activities, the logic between them, and the links to other projects
     tasks = _task_frame(inputs, wbs, options)
-    relationships, external_predecessors = _relationships(inputs)
+    relationships, external_predecessors, external_driving_predecessors, external_links_dropped = _relationships(inputs)
     links_out = pd.DataFrame(columns=["task_id", "pred_task_id", "pred_type", "lag_hr_cnt"])
     if not all_relationships.empty and "proj_id" in all_relationships.columns:
         from_other_projects = all_relationships["proj_id"] != inputs.project_id
         links_out = all_relationships[from_other_projects & all_relationships["pred_task_id"].isin(tasks["task_id"])]
     tasks["has_external_pred"] = tasks["task_id"].isin(external_predecessors)
     tasks["has_external_succ"] = tasks["task_id"].isin(set(links_out["pred_task_id"]))
+    tasks["has_external_driving_pred"] = tasks["task_id"].isin(external_driving_predecessors)
+    out_types = _ensure_cols(links_out.copy(), ["pred_type"])["pred_type"].map(REL_TYPE)
+    finish_driving = out_types.isin(("FS", "FF"))  # it drives our finish
+    tasks["has_external_driving_succ"] = tasks["task_id"].isin(set(links_out.loc[finish_driving, "pred_task_id"]))
     external_tasks, external_links = _external_links(inputs, relationships, links_out, tasks)
 
     # Resources, labour hours, leveling, expenses
@@ -1401,6 +1569,7 @@ def build_snapshot(
         work_calendars=work_calendars,
         external_tasks=external_tasks.reset_index(drop=True),
         external_links=external_links.reset_index(drop=True),
+        external_links_dropped=external_links_dropped,
         project_clndr_id=str(project_row["clndr_id"] or ""),
         expenses=expenses.reset_index(drop=True),
         code_values=code_values,

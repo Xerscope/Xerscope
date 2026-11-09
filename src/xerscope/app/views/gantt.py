@@ -10,8 +10,10 @@ from xerscope.app.state import (
     baseline_for,
     compare_picker,
     csv_download,
+    file_variants,
     memo,
     page_header,
+    refusals,
     require_store,
     session_lexicon,
     snapshot_picker,
@@ -26,10 +28,14 @@ from xerscope.xer.model import STATUS
 NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
 NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker is drawn before the chart)
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
+CHART_KEY = "gantt_chart"
+CLICK_KEY = "gantt_clicked"  # the Activity ID of a click in the chart, until the run it causes
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
+DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
+CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
-GANTT_HEIGHT = 680  # px; the chart scrolls inside
+GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
 
 store = require_store()
@@ -67,65 +73,109 @@ labels = dict(zip(nodes["wbs_id"], nodes["label"], strict=True))
 
 def _clear_ask() -> None:
     st.session_state[ASK_KEY] = ""
+    st.session_state[DROPPED_KEY] = ("", [])
+
+
+def _drop(sentence: str, label: str) -> None:
+    """Take one understood filter off (its × button), for this sentence only."""
+    held, labels = st.session_state.get(DROPPED_KEY, ("", []))
+    st.session_state[DROPPED_KEY] = (sentence, [*(labels if held == sentence else []), label])
+
+
+def _choose(text: str, word: str, value: str) -> None:
+    """Keep the user's answer to one of the sentence's questions; another sentence drops it."""
+    held = st.session_state.get(CHOSEN_KEY) or {}
+    chosen = held.get("chosen", {}) if held.get("text") == text else {}
+    st.session_state[CHOSEN_KEY] = {"text": text, "chosen": {**chosen, word: value}}
 
 
 # The Ask field: a sentence turned into the page's filters (analysis/query.py: the grammar, the
 # lexicon, the file's own labels; no model), the first control of the page. The answer (one
 # sentence over the rows, the funnel line) is written into ``answer_box`` once the rows are
-# known, below; the chips let a filter go.
+# known, below; a × button per filter understood takes it off. max_chars is the browser's; the
+# server cuts too (a message sent past it), keeping one character more so the parser names the cut.
 asked = st.text_input(
     "Ask the schedule",
     placeholder='"critical not started in civil works", "jalons en retard", "crew tasks"…',
     key=ASK_KEY,
     icon=":material/search:",
-)
+    max_chars=query.MAX_CHARS,
+)[: query.MAX_CHARS + 1]
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
-lexicon = memo(  # rebuilt when a word is taught
+# the variants of each source column, generated from every loaded file, in memory (never written)
+generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
+lexicon = memo(  # the labels of every loaded file (memo's key names them all), rebuilt when a word is taught
     ("vocabulary", snapshot.source, len(taught)),
     query.vocabulary,
     snapshot,
     nodes,
     session_lexicon(),
+    [other for other in store if other is not snapshot],
+    query.lexicons(query.refuse(generated, refusals()), file_variants()),
     baseline=False,
     ev_basis=False,
 )
 ask = None
+chosen_held = st.session_state.get(CHOSEN_KEY) or {}
+chosen = chosen_held.get("chosen", {}) if chosen_held.get("text") == asked else {}
 if asked:
-    ask = memo(  # once per sentence and update, baseline-independent
-        ("ask", snapshot.source, asked, len(taught)), query.parse, asked, lexicon, baseline=False, ev_basis=False
-    )
-if ask is not None and ask.matched:  # what was understood, one chip each; a chip taken off drops its filter
-    kept = st.pills(
-        "Understood",
-        list(ask.matched),
-        default=list(ask.matched),
-        selection_mode="multi",
-        key=f"ask_pills:{asked}",  # another sentence starts with every chip on
-        label_visibility="collapsed",
-    )
-    for label in ask.matched:
-        if label not in (kept or []):
-            ask = query.without(ask, label, lexicon)
+    try:
+        ask = memo(  # once per sentence, answers and update, baseline-independent
+            ("ask", snapshot.source, asked, len(taught), tuple(sorted(chosen.items()))),
+            query.parse_keywords,
+            asked,
+            lexicon,
+            chosen,
+            baseline=False,
+            ev_basis=False,
+        )
+    except RecursionError:  # parentheses nested past the recursive parser: said, never echoed
+        st.warning("This sentence nests too many parentheses to be read.")
+if ask is not None:  # the filters taken off this sentence (× buttons), from query.without
+    held, dropped = st.session_state.get(DROPPED_KEY, ("", []))
+    for label in dropped if held == asked else []:
+        ask = query.without(ask, label, lexicon)
+if ask is not None and ask.matched:  # what was understood, one button each: "Critical ×" takes it off
+    with st.container(horizontal=True, gap="small", key="ask_chips"):
+        for label in ask.matched:
+            st.button(
+                f"{ui.md_text(label)} ×",
+                key=f"ask_drop:{label}",
+                help="Remove this filter",
+                on_click=_drop,
+                args=(asked, label),
+            )
 if ask is not None:
-    for word in ask.ignored:  # a word nothing holds: the closest labels, a click teaches it for the session
-        offers = query.suggestions(word, lexicon)
+    # a word naming several code values or types of one name: nothing filtered on it until a
+    # click picks one (query.Filter.clarify); the choice is kept for this sentence
+    for word in dict.fromkeys(choice.word for choice in ask.clarify):
+        with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"clarify_{word}"):
+            st.markdown(f"Which **{ui.md_text(word)}**:")
+            for choice in (c for c in ask.clarify if c.word == word):
+                if st.button(ui.md_text(choice.label), key=f"clarify_{word}_{choice.value}", type="tertiary"):
+                    _choose(asked, word, choice.value)
+                    st.rerun()
+    # a word nothing holds: the closest labels, a click teaches it for the session; the first
+    # MAX_FUZZY words only, each searched once per update and lexicon
+    for word in ask.ignored[: query.MAX_FUZZY]:
+        offers = memo(
+            ("suggest", snapshot.source, word, len(taught)),
+            query.suggestions,
+            word,
+            lexicon,
+            baseline=False,
+            ev_basis=False,
+        )
         if offers:
             with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
                 st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
-                for _kind, label, _ratio in offers:
+                for kind, label, _ratio in offers:
                     if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
-                        teach(word, label)
+                        st.session_state["teach_unrecorded"] = not teach(word, label, kind)
                         st.rerun()
-    if taught:
-        st.download_button(
-            f"Download the {len(taught)} word(s) taught (.toml, for XERSCOPE_LEXICON)",
-            data=query.learned_toml(taught).encode(),
-            file_name="lexicon-taught.toml",
-            mime="application/toml",
-            key="gantt_taught_download",
-            type="tertiary",
-        )
+    if st.session_state.pop("teach_unrecorded", False):  # neutral: the visitor's word is never echoed
+        st.caption("Taught for this session; not kept as a suggestion.")
 
 
 # "CIV · Civil works › ZA · Zone A": each node and the nodes above it, built once (the list
@@ -172,7 +222,8 @@ ui.kpis(
             "Forecast finish",
             ui.fmt_date(node["finish"]),
             None if pd.isna(node["finish_variance_wd"]) else f"{node['finish_variance_wd']:+.1f} wd vs BL",
-            None,
+            "Variance to BL: latest finish of the baselined tasks against their latest BL finish"
+            + (f"; {node['outside_bl']} task(s) not in the baseline left out" if node["outside_bl"] else ""),
             "inverse",
         ),
         ("Labor hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
@@ -247,19 +298,16 @@ if code_type and picks:
     tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
 ask_funnel = None
 if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
-    ask_funnel = query.apply(ask, tasks, snapshot, nodes)
+    ask_funnel = query.apply(ask, tasks, snapshot, nodes, baseline)  # "late" reads the page's baseline
     tasks = ask_funnel.rows
     with answer_box:  # the banner: the sentence's answer, amber when a word was left out, "Show all"
-        unknown = (
-            " The word"
-            + ("s" if len(ask.ignored) > 1 else "")
-            + f" {', '.join(f'« {w} »' for w in ask.ignored)} "
-            + ("are" if len(ask.ignored) > 1 else "is")
-            + " in neither this file nor the lexicon."
-            if ask.ignored
-            else ""
-        )
-        said = query.answer(ask, ask_funnel, lexicon) if ask_funnel.steps else "Nothing understood: showing all."
+        # nothing understood but words left out: no row (query.apply); only stop words: no filter
+        if ask_funnel.steps:  # in the question's language
+            said = query.answer(ask, ask_funnel, lexicon, query.language(asked))
+        elif ask.clarify:
+            said = "Pick one of the choices below: nothing is filtered on that word until then."
+        else:
+            said = "No filter: showing all."
         banner = st.container(
             border=True,
             horizontal=True,
@@ -267,10 +315,10 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
             key="ask_banner_warn" if ask.ignored or ask.confidence < query.SURE else "ask_banner",
         )
         with banner:
-            st.markdown(ui.md_text(said) + unknown, width="stretch")
+            st.markdown(ui.md_text(said), width="stretch")
             st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
         how = " · unsure reading" if ask.confidence < query.SURE else ""
-        st.caption((query.funnel_line(ask_funnel) if ask_funnel.steps else "no filter") + how)
+        st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]
@@ -281,67 +329,79 @@ if focus:
             st.rerun()
 filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the outline stays closed
 
-rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
-root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
-drawn = set(tasks["task_code"])
-picked = st.session_state.get(TASK_KEY)
-picked = picked if picked in drawn else None  # an activity the filters or the update leave out
-open_ids = {r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"}
-if picked:  # keep the picked activity's branch open so its row shows and is scrolled to
-    wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0]
-    chain = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"]
-    open_ids |= {f"w:{a}" for a in (chain.iloc[0] if len(chain) else []) if a in branch_ids}
-chart = ui.GANTT(
-    data=gantt_data(
-        rows,
-        relationships=snapshot.relationships,
-        data_date=snapshot.data_date,
-        span=(root_row["start"], root_row["finish"]),
-        timescale="week" if timescale == "Week" else "month",
-        # a filter opens every branch so each match shows; otherwise the chosen node opens
-        open_ids=open_ids,
-        selected=f"a:{picked}" if picked else f"w:{current}",
-        compare_label=compare_label or "",
-        links=show_links,
-        height=GANTT_HEIGHT,
-    ),
-    key="gantt_chart",
-    on_picked_change=lambda: None,  # a click on an activity row sends "a:<Activity ID>"
-    on_focus_change=lambda: None,  # a double click on a WBS row sends "w:<wbs_id>"
-)
-# the browser sends a row id only; it counts when it names an activity drawn in this chart
-clicked = task_from_row_id(chart.get("picked"))
-if clicked in drawn and clicked != picked:
-    st.session_state[TASK_KEY] = clicked
-    st.rerun()  # draw the chart again with the activity selected
-focused = chart.get("focus")
-if isinstance(focused, str) and focused.startswith("w:") and focused[2:] in branch_ids and focused[2:] != current:
-    st.session_state[NEXT_NODE_KEY] = focused[2:]
-    st.rerun()
+
+def _clicked() -> None:
+    """A click on an activity row: the row id the browser sent, applied by the run it causes."""
+    st.session_state[CLICK_KEY] = task_from_row_id(st.session_state[CHART_KEY].get("picked"))
 
 
 def _pick_from_list() -> None:
     st.session_state[TASK_KEY] = st.session_state[PICK_KEY]
 
 
-codes = tasks["task_code"].tolist()
-names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
-st.session_state[PICK_KEY] = picked
-st.selectbox(
-    "Task",
-    codes,
-    format_func=lambda code: f"{code} · {names.get(code, '')}",
-    placeholder="Click an activity in the chart, or pick one here",
-    key=PICK_KEY,
-    on_change=_pick_from_list,
-)
-if st.session_state.get(TASK_KEY) and not picked:
-    st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
-if picked:
-    with st.container(border=True):
-        show_card(snapshot, picked)
-        ui.section("History across updates")
-        show_history(store, picked)
+@st.fragment
+def chart_and_task() -> None:
+    """The chart, the Task list and the picked activity's card, on the rows the widgets above kept.
+    Picking an activity (a click in the chart, the list) runs this part alone: the page above and
+    the sidebar are not drawn again."""
+    rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
+    root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
+    drawn = set(tasks["task_code"])
+    # the browser sends a row id only; it counts when it names an activity drawn in this chart
+    clicked = st.session_state.pop(CLICK_KEY, None)
+    if clicked in drawn:
+        st.session_state[TASK_KEY] = clicked
+    picked = st.session_state.get(TASK_KEY)
+    picked = picked if picked in drawn else None  # an activity the filters or the update leave out
+    open_ids = {r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"}
+    if picked:  # keep the picked activity's branch open so its row shows and is scrolled to
+        wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0]
+        chain = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"]
+        open_ids |= {f"w:{a}" for a in (chain.iloc[0] if len(chain) else []) if a in branch_ids}
+    chart = ui.GANTT(
+        data=gantt_data(
+            rows,
+            relationships=snapshot.relationships,
+            data_date=snapshot.data_date,
+            span=(root_row["start"], root_row["finish"]),
+            timescale="week" if timescale == "Week" else "month",
+            # a filter opens every branch so each match shows; otherwise the chosen node opens
+            open_ids=open_ids,
+            selected=f"a:{picked}" if picked else f"w:{current}",
+            compare_label=compare_label or "",
+            links=show_links,
+            height=GANTT_HEIGHT,
+        ),
+        key=CHART_KEY,
+        on_picked_change=_clicked,  # a click on an activity row sends "a:<Activity ID>"
+        on_focus_change=lambda: None,  # a double click on a WBS row sends "w:<wbs_id>"
+    )
+    focused = chart.get("focus")
+    if isinstance(focused, str) and focused.startswith("w:") and focused[2:] in branch_ids and focused[2:] != current:
+        st.session_state[NEXT_NODE_KEY] = focused[2:]
+        st.rerun(scope="app")  # the WBS picker is above this part
+
+    codes = tasks["task_code"].tolist()
+    names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
+    st.session_state[PICK_KEY] = picked
+    st.selectbox(
+        "Task",
+        codes,
+        format_func=lambda code: f"{code} · {names.get(code, '')}",
+        placeholder="Click a task in the chart, or pick one here",
+        key=PICK_KEY,
+        on_change=_pick_from_list,
+    )
+    if st.session_state.get(TASK_KEY) and not picked:
+        st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
+    if picked:
+        with st.container(border=True):
+            show_card(snapshot, picked)
+            ui.section("History across updates")
+            show_history(store, picked)
+
+
+chart_and_task()
 
 if ask_funnel is not None and ask_funnel.steps:
     with st.expander("Population, step by step"):
@@ -361,5 +421,7 @@ with st.expander("Table view"):
         "labor_budget_hr",
         "constraint",
     ]
-    ui.table(tasks, columns=table_columns)
+    # a finished task has no float or remaining duration: a dash, not "None"
+    shown, overrides = ui.numbers_as_text(tasks[table_columns], ["total_float_d", "remaining_d"])
+    ui.table(shown, overrides=overrides)
     csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))

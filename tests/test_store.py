@@ -111,3 +111,18 @@ def test_store_column_lists_exist_in_snapshot_frames(store):
 def test_load_snapshot_from_bytes_needs_a_name():
     with pytest.raises(ValueError, match="file name"):
         load_snapshot(b"ERMHDR\t24.12")
+
+
+def test_fact_activity_carries_hours_per_day_so_days_convert_back():
+    """total_float_d is in days of each activity's calendar: 80 h is 10 d on C8, 8 d on C10.
+    Power BI needs hours_per_day to sum or compare them (days x hours_per_day = P6's hours)."""
+    from xerkit import snap, todo
+
+    from xerscope.export import export_tables
+    from xerscope.store import SnapshotStore
+
+    s = snap([todo("A", clndr_id="C8", total_float_hr_cnt="80"), todo("B", clndr_id="C10", total_float_hr_cnt="80")])
+    fact = export_tables(SnapshotStore([s]))["fact_activity"].set_index("task_code")
+    assert fact["total_float_d"].to_dict() == {"A": 10.0, "B": 8.0}
+    assert fact["hours_per_day"].to_dict() == {"A": 8.0, "B": 10.0}
+    assert (fact["total_float_d"] * fact["hours_per_day"]).tolist() == [80.0, 80.0]

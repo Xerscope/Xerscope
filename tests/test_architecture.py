@@ -8,8 +8,8 @@ SRC = Path(__file__).parents[1] / "src" / "xerscope"
 LAYERS = {  # layer -> exactly what it imports from the other layers
     "xer": {"config"},
     "store": {"xer", "config"},
-    "export": {"store", "config"},
-    "anonymize": {"xer"},
+    "export": {"store", "config", "csv_safe"},
+    "anonymize": {"xer", "export"},
     "analysis": {"xer", "store"},
     "viz": {"config", "analysis.wbs.ROOT"},
     "verify": {"xer", "analysis.cpm", "config"},
@@ -20,7 +20,6 @@ LAYERS = {  # layer -> exactly what it imports from the other layers
         "xer",
         "store",
         "analysis",
-        "viz",
         "export",
         "sample",
         "verify",

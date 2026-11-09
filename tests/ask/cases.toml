@@ -1,0 +1,574 @@
+# Sentences for the Gantt Ask field, each with the filter a planner means, written by hand
+# on the demo series (`xerscope sample --weeks 8`, latest update, data date 2026-10-19) and
+# the tests' generic lexicon (tests/asklex.py). `expect` is the filter in canonical form
+# (query.canonical): atoms status:…, float:…, wbs:CODE, code:Type=Value, resource:SHORT,
+# milestone, loe, word:w, id:ID, late, tf/od/rd/pct with <, <=, =, >=, > and d, h or %,
+# start/finish/active:[from,to), constraint:any|hard|soft, pred, succ, longest; !x, (a | b),
+# (a & b), children sorted, the conjuncts of the sentence joined by " & ". "" = no filter.
+# `ignored`, when given, is the words the sentence holds that nothing reads. The test scores
+# the share right against FLOORS in tests/test_query.py.
+
+[[case]]
+text = "tâches critiques"  # battery; « tâches » does not filter the type (L3)
+expect = "float:Critical"
+
+[[case]]
+text = "activités critiques non démarrées"  # battery
+expect = "float:Critical & status:Not started"
+
+[[case]]
+text = "non critique"  # battery; H1: the complement, not Critical
+expect = "!float:Critical"
+
+[[case]]
+text = "pas critique"  # battery
+expect = "!float:Critical"
+
+[[case]]
+text = "hors chemin critique"  # battery
+expect = "!float:Critical"
+
+[[case]]
+text = "jalons"  # battery
+expect = "milestone"
+
+[[case]]
+text = "jalons en retard"  # battery; H2: late = P6-12 (finish after baseline finish), not Critical
+expect = "late & milestone"
+
+[[case]]
+text = "jalons non terminés"  # battery; H1
+expect = "!status:Complete & milestone"
+
+[[case]]
+text = "milestones not started"  # battery
+expect = "milestone & status:Not started"
+
+[[case]]
+text = "critical milestones"  # battery
+expect = "float:Critical & milestone"
+
+[[case]]
+text = "en retard"  # battery
+expect = "late"
+
+[[case]]
+text = "tâches en retard"  # battery
+expect = "late"
+
+[[case]]
+text = "late activities"  # battery
+expect = "late"
+
+[[case]]
+text = "behind schedule"  # battery
+expect = "late"
+
+[[case]]
+text = "marge négative"  # battery
+expect = "tf<0d"
+
+[[case]]
+text = "negative float"  # battery
+expect = "tf<0d"
+
+[[case]]
+text = "marge totale nulle"  # battery
+expect = "tf=0d"
+
+[[case]]
+text = "float zero"  # battery
+expect = "tf=0d"
+
+[[case]]
+text = "marge inférieure à 5 jours"  # battery
+expect = "tf<5d"
+
+[[case]]
+text = "float less than 10 days"  # battery
+expect = "tf<10d"
+
+[[case]]
+text = "en cours"  # battery
+expect = "status:In progress"
+
+[[case]]
+text = "in progress"  # battery
+expect = "status:In progress"
+
+[[case]]
+text = "terminées"  # battery
+expect = "status:Complete"
+
+[[case]]
+text = "completed"  # battery
+expect = "status:Complete"
+
+[[case]]
+text = "non démarrées"  # battery
+expect = "status:Not started"
+
+[[case]]
+text = "not started"  # battery
+expect = "status:Not started"
+
+[[case]]
+text = "restantes"  # battery; L4: remaining work includes in progress
+expect = "(status:In progress | status:Not started)"
+
+[[case]]
+text = "critique ou terminé"  # battery; M7
+expect = "(float:Critical | status:Complete)"
+
+[[case]]
+text = "critical or complete"  # battery; M7
+expect = "(float:Critical | status:Complete)"
+
+[[case]]
+text = "critique et en cours"  # battery
+expect = "float:Critical & status:In progress"
+
+[[case]]
+text = "critical and in progress"  # battery
+expect = "float:Critical & status:In progress"
+
+[[case]]
+text = "commence cette semaine"  # battery; ISO week of the data date 2026-10-19
+expect = "start:[2026-10-19,2026-10-26)"
+
+[[case]]
+text = "starting next week"  # battery; not « setting » (MEC)
+expect = "start:[2026-10-26,2026-11-02)"
+
+[[case]]
+text = "finissent avant fin décembre"  # battery
+expect = "finish:[,2027-01-01)"
+
+[[case]]
+text = "due this month"  # battery
+expect = "finish:[2026-10-01,2026-11-01)"
+
+[[case]]
+text = "LOE"  # battery
+expect = "loe"
+
+[[case]]
+text = "level of effort"  # battery
+expect = "loe"
+
+[[case]]
+text = "contraintes"  # battery
+expect = "constraint:any"
+
+[[case]]
+text = "activités avec contrainte"  # battery
+expect = "constraint:any"
+
+[[case]]
+text = "hard constraints"  # battery; P6 Professional set (101248)
+expect = "constraint:hard"
+
+[[case]]
+text = "sans prédécesseur"  # battery
+expect = "!pred"
+
+[[case]]
+text = "open ends"  # battery
+expect = "(!pred | !succ)"
+
+[[case]]
+text = "sans successeur"  # battery
+expect = "!succ"
+
+[[case]]
+text = "longest path"  # battery
+expect = "longest"
+
+[[case]]
+text = "chemin le plus long"  # battery; not « long » (Procurement)
+expect = "longest"
+
+[[case]]
+text = "durée supérieure à 20 jours"  # battery
+expect = "od>20d"
+
+[[case]]
+text = "long durations"  # battery; P6-04 Long Durations, x = 352 h
+expect = "rd>352h"
+
+[[case]]
+text = "pump motor"  # battery; words the demo does not hold: nothing shown
+expect = ""
+ignored = ["pump", "motor"]
+
+[[case]]
+text = "motor pump"  # battery
+expect = ""
+ignored = ["motor", "pump"]
+
+[[case]]
+text = ""  # empty
+expect = ""
+
+[[case]]
+text = "   "  # blank
+expect = ""
+
+[[case]]
+text = "non critique ou terminé"  # NOT binds tighter than OR
+expect = "(!float:Critical | status:Complete)"
+
+[[case]]
+text = "pas non critique"  # double negation
+expect = "float:Critical"
+
+[[case]]
+text = "not not critical"  # double negation
+expect = "float:Critical"
+
+[[case]]
+text = "ni critique ni terminé"  # ni ... ni
+expect = "!float:Critical & !status:Complete"
+
+[[case]]
+text = "pas critique et pas terminé"
+expect = "!float:Critical & !status:Complete"
+
+[[case]]
+text = "not complete"  # H1
+expect = "!status:Complete"
+
+[[case]]
+text = "non terminées"  # H1
+expect = "!status:Complete"
+
+[[case]]
+text = "incomplete"
+expect = "(status:In progress | status:Not started)"
+
+[[case]]
+text = "pas démarré"  # a phrase, not NOT In progress
+expect = "status:Not started"
+
+[[case]]
+text = "not in progress"  # H1
+expect = "!status:In progress"
+
+[[case]]
+text = "not near critical"  # H1
+expect = "!float:Near critical"
+
+[[case]]
+text = "critique et quasi critique"  # same exclusive facet: union
+expect = "(float:Critical | float:Near critical)"
+
+[[case]]
+text = "en cours et terminées"  # same exclusive facet: union
+expect = "(status:Complete | status:In progress)"
+
+[[case]]
+text = "critique ou terminé en génie civil"  # OR binds tighter than AND
+expect = "(float:Critical | status:Complete) & wbs:CIV"
+
+[[case]]
+text = "(critique ou quasi critique) non démarrées"  # parentheses
+expect = "(float:Critical | float:Near critical) & status:Not started"
+
+[[case]]
+text = "critical milestones or loe"  # milestone and LOE: one type facet
+expect = "(loe | milestone) & float:Critical"
+
+[[case]]
+text = "critique ET (en cours OU terminé)"
+expect = "(status:Complete | status:In progress) & float:Critical"
+
+[[case]]
+text = "critiques, non démarrées"  # comma = and
+expect = "float:Critical & status:Not started"
+
+[[case]]
+text = "critical but not started"  # but = and
+expect = "float:Critical & status:Not started"
+
+[[case]]
+text = "sauf jalons"
+expect = "!milestone"
+
+[[case]]
+text = "except LOE"
+expect = "!loe"
+
+[[case]]
+text = "pas en génie civil"
+expect = "!wbs:CIV"
+
+[[case]]
+text = "or"  # dangling operator
+expect = ""
+
+[[case]]
+text = "critical or"  # dangling operator
+expect = "float:Critical"
+
+[[case]]
+text = "not"  # dangling operator
+expect = ""
+
+[[case]]
+text = "((critique)"  # unbalanced parentheses
+expect = "float:Critical"
+
+[[case]]
+text = "critique)"  # stray parenthesis
+expect = "float:Critical"
+
+[[case]]
+text = "C3020"  # exact ID
+expect = "id:C3020"
+
+[[case]]
+text = "c3020 c3030"  # two IDs: union
+expect = "(id:C3020 | id:C3030)"
+
+[[case]]
+text = "k5020 non terminé"
+expect = "!status:Complete & id:K5020"
+
+[[case]]
+text = "A1000"  # M8: an unknown ID is never read as another
+expect = ""
+ignored = ["a1000"]
+
+[[case]]
+text = "C3021"  # M8: one digit from C3020, not read as it
+expect = ""
+ignored = ["c3021"]
+
+[[case]]
+text = "critical jalons"  # mixed
+expect = "float:Critical & milestone"
+
+[[case]]
+text = "jalons not started"  # mixed
+expect = "milestone & status:Not started"
+
+[[case]]
+text = "jalons critiques en retard dans MEC"
+expect = "float:Critical & late & milestone & wbs:MEC"
+
+[[case]]
+text = "float < 10"  # a number without unit: working days
+expect = "tf<10d"
+
+[[case]]
+text = "float < 10h"
+expect = "tf<10h"
+
+[[case]]
+text = "total float <= 0"
+expect = "tf<=0d"
+
+[[case]]
+text = "marge totale au moins 15 jours"
+expect = "tf>=15d"
+
+[[case]]
+text = "avancement > 50%"
+expect = "pct>50%"
+
+[[case]]
+text = "% complete < 25"
+expect = "pct<25%"
+
+[[case]]
+text = "durée restante supérieure à 10 jours"
+expect = "rd>10d"
+
+[[case]]
+text = "remaining duration over 80 h"
+expect = "rd>80h"
+
+[[case]]
+text = "float between 0 and 10 days"
+expect = "tf<=10d & tf>=0d"
+
+[[case]]
+text = "durée > 20"
+expect = "od>20d"
+
+[[case]]
+text = "duration = 0"
+expect = "od=0d"
+
+[[case]]
+text = "marge > 2 semaines"  # weeks refused: a working week depends on the calendar
+expect = ""
+
+[[case]]
+text = "negative float or near critical"
+expect = "(float:Near critical | tf<0d)"
+
+[[case]]
+text = "late or critical"
+expect = "(float:Critical | late)"
+
+[[case]]
+text = "finish before 31/12"  # day/month
+expect = "finish:[,2026-12-31)"
+
+[[case]]
+text = "finissent avant le 31/12/2026"
+expect = "finish:[,2026-12-31)"
+
+[[case]]
+text = "finish by 2026-11-30"  # by = the day included
+expect = "finish:[,2026-12-01)"
+
+[[case]]
+text = "starting after 15/11"  # after = the day excluded
+expect = "start:[2026-11-16,)"
+
+[[case]]
+text = "commence en novembre"
+expect = "start:[2026-11-01,2026-12-01)"
+
+[[case]]
+text = "activités de la semaine prochaine"  # no anchor: overlap
+expect = "active:[2026-10-26,2026-11-02)"
+
+[[case]]
+text = "this week"
+expect = "active:[2026-10-19,2026-10-26)"
+
+[[case]]
+text = "due next month"
+expect = "finish:[2026-11-01,2026-12-01)"
+
+[[case]]
+text = "finish between 01/11 and 30/11"
+expect = "finish:[2026-11-01,2026-12-01)"
+
+[[case]]
+text = "start before end of December"
+expect = "start:[,2027-01-01)"
+
+[[case]]
+text = "jalons avant fin décembre"
+expect = "active:[,2027-01-01) & milestone"
+
+[[case]]
+text = "critical starting next week"
+expect = "float:Critical & start:[2026-10-26,2026-11-02)"
+
+[[case]]
+text = "show me critical activities starting this week in procurement"
+expect = "float:Critical & start:[2026-10-19,2026-10-26) & wbs:PRC"
+
+[[case]]
+text = "contraintes dures"
+expect = "constraint:hard"
+
+[[case]]
+text = "soft constraints"  # P6 Professional set (101248)
+expect = "constraint:soft"
+
+[[case]]
+text = "sans contrainte"
+expect = "!constraint:any"
+
+[[case]]
+text = "no predecessor or no successor"
+expect = "(!pred | !succ)"
+
+[[case]]
+text = "critique sans successeur"
+expect = "!succ & float:Critical"
+
+[[case]]
+text = "longest path not started"
+expect = "longest & status:Not started"
+
+[[case]]
+text = "zone Q9"  # M9: nothing understood shows nothing
+expect = ""
+
+[[case]]
+text = "xyzzy"  # M9
+expect = ""
+ignored = ["xyzzy"]
+
+[[case]]
+text = "critique xyzzy"  # partial: the rest applies
+expect = "float:Critical"
+ignored = ["xyzzy"]
+
+[[case]]
+text = "pas xyzzy critique"  # NOT on an unknown word is not applied
+expect = "float:Critical"
+ignored = ["xyzzy"]
+
+[[case]]
+text = "critique ou xyzzy"  # an OR with an unknown operand is not applied
+expect = ""
+ignored = ["xyzzy"]
+
+[[case]]
+text = "starting"  # not « setting »
+expect = ""
+ignored = ["starting"]
+
+[[case]]
+text = "critical not started in civil works"
+expect = "float:Critical & status:Not started & wbs:CIV"
+
+[[case]]
+text = "long"  # a word of the names, not a WBS alias
+expect = "word:long"
+
+[[case]]
+text = "earthworks"  # an own word of Civil works: the node and a search
+expect = "wbs:CIV & word:earthworks"
+
+[[case]]
+text = "piping in progress"
+expect = "status:In progress & wbs:MEC & word:piping"
+
+[[case]]
+text = "site crew en cours"
+expect = "resource:CREW & status:In progress"
+
+[[case]]
+text = "vendor"
+expect = "resource:VENDOR"
+
+[[case]]
+text = "fournisseur"  # a synonym of the test lexicon
+expect = "resource:VENDOR"
+
+[[case]]
+text = "mécanique critique"  # a synonym of the name: the node only
+expect = "float:Critical & wbs:MEC"
+
+[[case]]
+text = "activities in MEC or COM"
+expect = "(wbs:COM | wbs:MEC)"
+
+[[case]]
+text = "MEC"
+expect = "wbs:MEC"
+
+[[case]]
+text = "Mechanical & electrical"  # the full name
+expect = "wbs:MEC"
+
+[[case]]
+text = "critque"  # a typo on a grammar word
+expect = "float:Critical"
+
+[[case]]
+text = "not strated"  # a typo on a two-word phrase
+expect = "status:Not started"
+
+[[case]]
+text = "installation design"  # H3: every word, any order; each an own word of a node (ENG, MEC): the nodes united
+expect = "(wbs:ENG | wbs:MEC) & word:design & word:installation"
