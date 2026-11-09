@@ -132,7 +132,7 @@ LIMIT_MARK = "dates on this calendar may differ from P6"
 def _interval(n: _Node, notes: list[str] | None = None) -> tuple[int, int] | None:
     """One working period, minutes from midnight; None for an empty one.
 
-    Only "f|00:00" ends at midnight, as MPXJ reads it (``LocalTimeHelper.getMillisecondsInRange``:
+    Only "f|00:00" ends at midnight, as MPXJ 16.10 reads it (LocalTimeHelper.getMillisecondsInRange:
     an end at MIDNIGHT runs to the end of the day, any other end gives end - start). A period
     ending at its start is empty. One ending before its start (22:00-06:00) crosses midnight:
     P6's dialog enters a night shift day by day (22:00-24:00, then 00:00-06:00 the next day) and

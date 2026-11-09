@@ -111,7 +111,9 @@ nothing else:
 Argument and return types are in the annotations, not repeated. A comment in a body says
 why, never what the line does. At most 12 lines for a function or a class
 (`tests/test_docstrings.py`). An example gives values a named test proves; a longer worked
-example goes to `docs/`. The files not yet at the standard are listed in `pyproject.toml`
+example goes to `docs/`. Double backquotes are for names of xerscope: the same test fails on
+one that no longer exists, and on a cited path that is gone. Another library's class is cited
+in plain text with the library and its version ("MPXJ 16.10, TableProjectReader"). The files not yet at the standard are listed in `pyproject.toml`
 (`per-file-ignores`): a file leaves the list when it is brought to it, no rule is added.
 
 **Code fitness.** `uv run python scripts/fitness.py --check tests/fitness_baseline.json`

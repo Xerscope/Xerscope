@@ -9,7 +9,7 @@ Python builds the rows (``gantt_rows``) and the data (``gantt_data``); ``gantt.j
 - Diamonds = milestones. Dark thin bar = WBS summary. Dashed vertical line = data date.
 
 Schedule text (activity and WBS names come from the XER file) reaches the browser only as
-the component's data, never in its markup, and the script writes it with ``textContent``.
+the component's data, never in its markup, and the script writes it with the DOM property textContent.
 Page colours and font follow the theme in the browser (gantt.css, --st-* variables).
 """
 

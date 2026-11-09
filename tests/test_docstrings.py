@@ -1,10 +1,12 @@
 """Docstring standard of src/xerscope (CONTRIBUTING.md, Docstrings): what ruff does not check.
 
 ruff checks the PEP 257 form (job lint). Here: a function or class docstring holds at most
-MAX_LINES lines, and the debt recorded in pyproject.toml only shrinks.
+MAX_LINES lines, the debt recorded in pyproject.toml only shrinks, and a name or a file a
+docstring cites exists.
 """
 
 import ast
+import re
 import tomllib
 from pathlib import Path
 
@@ -82,3 +84,51 @@ def test_docstring_debt_only_shrinks():
     assert all(rule.startswith("D") for _, rule in debt), "src/ entries hold docstring rules only"
     assert all((ROOT / path).is_file() for path, _ in debt), "an entry names a file that is gone"
     assert len(debt) <= MAX_DEBT, f"{len(debt)} (file, rule) pairs, {MAX_DEBT} allowed: the debt only shrinks"
+
+
+def _cited(text: str) -> tuple[set[str], set[str]]:
+    """Return the code names (between double backquotes) and the repository paths ``text`` cites."""
+    names = {ref for ref in re.findall(r"``([^`]+)``", text) if re.fullmatch(r"[A-Za-z_][\w.]*", ref)}
+    paths = set(re.findall(r"\b((?:tests|docs|scripts|src)/[\w./-]+\.(?:py|md|toml|json))", text))
+    return names, paths
+
+
+def _names_of_the_code() -> set[str]:
+    """Return every name src/xerscope defines or uses: modules, functions, variables, attributes, keys."""
+    names: set[str] = set()
+    for path in SRC.rglob("*.py"):
+        names.update(path.relative_to(SRC).with_suffix("").parts)
+        names.add(path.name)
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                names.add(node.name)
+            elif isinstance(node, ast.Name):
+                names.add(node.id)
+            elif isinstance(node, ast.arg | ast.keyword) and node.arg:
+                names.add(node.arg)
+            elif isinstance(node, ast.Attribute):
+                names.add(node.attr)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                names.add(node.value)
+    return names
+
+
+def test_docstrings_cite_names_and_files_that_exist():
+    """A name between double backquotes is a name of xerscope, a cited path a file of the repository.
+
+    A renamed function, or a moved file, fails here until the docstrings that cite it follow.
+    Another library's class is cited in plain text, with the library and its version.
+    """
+    known = _names_of_the_code()
+    lost = []
+    for path in sorted(SRC.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                continue
+            names, paths = _cited(ast.get_docstring(node) or "")
+            where = f"{path.relative_to(SRC).as_posix()}:{getattr(node, 'name', '<module>')}"
+            lost += [
+                f"{where}: ``{ref}``" for ref in sorted(names) if ref not in known and not set(ref.split(".")) <= known
+            ]
+            lost += [f"{where}: {ref}" for ref in sorted(paths) if not (ROOT / ref).exists()]
+    assert not lost, "cited in a docstring, not found:\n" + "\n".join(lost)

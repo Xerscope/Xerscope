@@ -6,7 +6,7 @@ script). Debug, block 12, shows what was read.
 
 Streamlit installs this script as the ``__main__`` module of each run. A file-reading worker
 (``app/reading.py``, start method ``spawn``) runs the parent's ``__main__`` file again, as
-``__mp_main__``, before its first task; the guard at the bottom keeps the app, and Streamlit, out of
+"__mp_main__", before its first task; the guard at the bottom keeps the app, and Streamlit, out of
 the workers (Python documentation, multiprocessing, "Safe importing of main module").
 """
 
