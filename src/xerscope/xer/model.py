@@ -6,7 +6,7 @@ Key decisions
   used to resolve relationships *inside* a single file.
 - The snapshot date is ``PROJECT.last_recalc_date`` ("Last Recalc Date" in Oracle's XER
   data map, which names no column "Data Date"). MPXJ reads it as the status date
-  (``TableProjectReader``) and writes the status date there; the reference files' stored
+  (16.10, TableProjectReader) and writes the status date there; the reference files' stored
   dates confirm it (docs/cpm.md). If it is blank, the planned start is used.
 - Durations and float are converted from hours to working days with the task's own
   calendar (``CALENDAR.day_hr_cnt``), which is what every standard threshold is
@@ -708,8 +708,8 @@ class _BuildInputs:
 
         The chain of ``Snapshot.calendar``: the project's calendar, then the file's first
         calendar, then the standard one. MPXJ resolves it the same way
-        (``Task.getEffectiveCalendar`` -> ``ProjectFile.getDefaultCalendar`` ->
-        ``ProjectCalendarContainer.findOrCreateDefaultCalendar``); no Oracle page states it.
+        (16.10: Task.getEffectiveCalendar -> ProjectFile.getDefaultCalendar ->
+        ProjectCalendarContainer.findOrCreateDefaultCalendar); no Oracle page states it.
         """
         project_clndr_id = str(self.project_row.get("clndr_id") or "")
         if project_clndr_id in self.hours_per_day.index:
@@ -1045,8 +1045,8 @@ def _inherit_base_exceptions(
 
     Oracle, "Assigning a Base Calendar to a Project Calendar": "Assign a base calendar to
     determine holidays and exceptions for the selected project calendar." MPXJ reads a XER the
-    same way: ``TableContextReader.processCalendars`` sets the base as parent, and
-    ``ProjectCalendar.getException`` looks in the parent when the calendar has no exception of
+    same way (16.10): TableContextReader.processCalendars sets the base as parent, and
+    ProjectCalendar.getException looks in the parent when the calendar has no exception of
     its own on the date. Whether P6 already copies the base's exceptions into the derived blob
     is not documented; the reference files that have a base (Hotel, Terminal) carry them, and
     then nothing is added. Each calendar that does gain exceptions is named in ``warnings``.

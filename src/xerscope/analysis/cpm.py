@@ -915,7 +915,7 @@ class _Run:
         or a constraint give the start. An FF / SF bound later than that finish wins
         instead, with the file's remaining duration and the start placed back from it, as
         without an expected finish. The remaining duration the backward pass uses follows
-        the early dates (``dur_override``).
+        the early dates (``duration_override``).
 
         Observed, not explained: work under way under Progress Override with an FF / SF
         predecessor keeps its remaining duration when the expected finish falls before its
