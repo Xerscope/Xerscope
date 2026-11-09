@@ -5,7 +5,7 @@ Target: one person outside the home network, on a laptop that can install nothin
 everything goes out through Tailscale Funnel.
 
 ```
-GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest, xerscope-caddy:latest (public, no login)
+GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:<tag>, xerscope-caddy:<tag> (public, no login)
                                    │ pull (Container Manager > Project)
       ┌─────────────── project "xerscope" on the DS918+ ───────────────┐
       │ tailscale (userspace, Funnel) ◀─── https ─── visitor's browser │
@@ -17,8 +17,11 @@ GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:latest, xerscope-ca
 Three containers from three images: Tailscale's official one, and two built here by
 `.github/workflows/image.yml`, the app and Caddy with the `rate_limit` module
 (`deploy/caddy/Dockerfile`; the stock caddy image has no such module and the NAS cannot
-build). A fourth, `lexicon-init`, runs the app's image once at each start, before the app,
-and exits (§10). Container Manager with Projects (DSM 7.2+) is required: the stack is a compose file.
+build). Each build is tagged `latest` (main), `sha-<short>` (its commit) and, from a git tag
+`v0.1.0`, `0.1.0`; `latest` is the compose default for the first start, the NAS then runs a
+release tag or a digest (§7). A fourth, `lexicon-init`, runs the app's image once at each
+start, before the app, and exits (§10). Container Manager with Projects (DSM 7.2+) is
+required: the stack is a compose file.
 
 ## 1. What DSM 7.4 changes
 
@@ -158,8 +161,8 @@ XERSCOPE_PATH=<random>                 # no slashes
 XERSCOPE_EXPORTS=/volume1/<shared-folder>   # exact case
 XERSCOPE_UID=<uid>                          # the dedicated account (§5)
 XERSCOPE_GID=<gid>
-# XERSCOPE_IMAGE=<image>@sha256:<digest>    # the build to run, pinned (§7)
-# XERSCOPE_CADDY_IMAGE=<image>@sha256:<digest>   # the same for Caddy (§7, §8)
+# XERSCOPE_IMAGE=ghcr.io/xerscope/xerscope:0.1.0@sha256:<digest>      # the build to run, pinned (§7)
+# XERSCOPE_CADDY_IMAGE=ghcr.io/xerscope/xerscope-caddy:0.1.0@sha256:<digest>   # the same for Caddy (§7, §8)
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
 # XERSCOPE_LOAD_WORKERS=1                  # files read at once (§7)
 # XERSCOPE_DEBUG_PAGE=1                    # the Debug page, for a diagnosis only (§9)
@@ -193,6 +196,19 @@ the stack. Expected after ~40 s, in Container → each container → Log:
 First certificate: Tailscale asks Let's Encrypt on the first HTTPS request, up to a
 minute of `connection reset` before the page comes up.
 
+Once the node is up, the auth key has done its work (`TS_AUTH_ONCE`): delete the `TS_AUTHKEY`
+line from `.env`, Project → Action → Build, and revoke the key in the admin console (Settings
+→ Keys). Then check that the container no longer carries it, from the NAS's SSH or any PC
+with the Docker CLI on the stack:
+
+```bash
+docker inspect <tailscale-container> --format '{{.Config.Env}}'   # TS_AUTHKEY= (empty) or absent; never tskey-auth-...
+```
+
+`docker inspect` shows every environment variable of a container to anyone who can run it,
+which is why the key leaves the file as soon as the node exists. Container Manager shows the
+same list under Container → `tailscale` → Details → Environment.
+
 ## 7. Update, rollback, change a secret
 
 Nothing auto-updates: an update is a decision. Project → `xerscope` → **Action**:
@@ -200,12 +216,53 @@ Nothing auto-updates: an update is a decision. Project → `xerscope` → **Acti
 | Want | Do |
 |---|---|
 | new app or Caddy build | Container → Image → the image (`ghcr.io/xerscope/xerscope`, `ghcr.io/xerscope/xerscope-caddy`, or their Docker Hub copies) → Update, then Project → Action → **Build** (recreates from the new image; the node state is kept, the URL does not change) |
-| pin a build | `.env`: `XERSCOPE_IMAGE=<image>@sha256:<digest>`, Build. The `image` run prints the digest (`pushing manifest for …@sha256:…`); a tag (`sha-<short>`, `:0.1.0` from a git tag `v0.1.0`) can be pushed again by whoever holds the push token, a digest cannot change. Rollback = the previous digest, Build |
+| pin a build | `.env`: `XERSCOPE_IMAGE=ghcr.io/xerscope/xerscope:0.1.0@sha256:<digest>` (and `XERSCOPE_CADDY_IMAGE`), Build; how to read the digest and bump it: below. Rollback = the previous digest, Build |
 | new password or login | edit `.env` → Project → Action → Build (Caddy reads them at start) |
 | new `deploy/` files (a merged PR changed `Caddyfile`, `compose.yaml` or `tailscale-serve.json`) | copy the changed files over the ones in `docker/xerscope/`, keep `.env`, add any new variable from `.env.example`, Build |
 | hash made at another cost | bcrypt reads the cost from the hash: a `$2a$14$` hash still logs in, but every wrong password then costs the NAS cost 14 (§3). Regenerate it at cost 10, `.env`, Build |
 | new prefix | `.env` → `XERSCOPE_PATH` → Build; the old URL goes 404 at once |
 | new Tailscale key | only for a new node: Project → Stop, Container Manager → Volume → delete `xerscope_tailscale-state`, new key in `.env`, Build; delete the old machine in the admin console |
+
+### Pinning and upgrading the image
+
+`compose.yaml` defaults to `:latest` so a first start needs no value, but `latest` moves with
+every merge to `main` and a tag (`latest`, `sha-<short>`, `0.1.0`) can be pushed again by
+whoever holds a push token. The NAS runs a digest: the content hash of the image index,
+which cannot change. A release tag in front of it (`0.1.0@sha256:…`) keeps the line readable;
+Docker checks the digest only.
+
+Read the digest of a published build, from a PC:
+
+```bash
+# the image index (multi-arch manifest list) of a tag, without pulling it
+docker buildx imagetools inspect ghcr.io/xerscope/xerscope:0.1.0 | head -3        # Digest: sha256:...
+# or from the registry API, no Docker needed (an anonymous pull token for a public package)
+TOKEN=$(curl -s 'https://ghcr.io/token?scope=repository:xerscope/xerscope:pull' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+curl -sI -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.oci.image.index.v1+json' \
+  https://ghcr.io/v2/xerscope/xerscope/manifests/0.1.0 | grep -i docker-content-digest
+# or, after a pull: docker inspect ghcr.io/xerscope/xerscope:0.1.0 --format '{{index .RepoDigests 0}}'
+```
+
+The `image` run prints the same value (`pushing manifest for …@sha256:…`), and the GitHub
+package page (Packages → `xerscope` → the tag) shows it. Before pinning, check who built it:
+
+```bash
+gh attestation verify oci://ghcr.io/xerscope/xerscope@sha256:<digest> --owner Xerscope   # the commit and the workflow run
+docker buildx imagetools inspect ghcr.io/xerscope/xerscope@sha256:<digest> --format '{{json .Provenance}}'   # BuildKit's SLSA provenance
+docker buildx imagetools inspect ghcr.io/xerscope/xerscope@sha256:<digest> --format '{{json .SBOM}}'         # the SPDX SBOM
+```
+
+A release is cut on `main` by its maintainer: `CHANGELOG.md` gets the version and the date,
+then `git tag v0.1.0 && git push origin v0.1.0`; the tag runs `image.yml`, which publishes
+`ghcr.io/xerscope/xerscope:0.1.0` and `xerscope-caddy:0.1.0` (and the Docker Hub copies) next
+to `latest`. Nothing but a tag on `main` publishes a version.
+
+To bump: read the new release's digest as above, replace the `XERSCOPE_IMAGE` and
+`XERSCOPE_CADDY_IMAGE` lines in `.env` (both move together: a Caddy release or a Dependabot
+bump of `deploy/caddy/Dockerfile` is a new `xerscope-caddy` build), copy any changed `deploy/`
+file (previous row), Project → Action → Build. Keep the previous lines in a note: rolling back
+is putting them back and building again. `docker ps --format '{{.Image}}'` on the stack (or
+Container → Details → Image) shows what runs.
 
 Caddy/Tailscale bumps: Dependabot opens a PR on `deploy/`. After merge, a Caddy bump is a
 new `xerscope-caddy` image (update it as above); a Tailscale bump is the pin in
@@ -230,7 +287,8 @@ plus about 0.13 GB for its own Python, inside the same cap, while the app keeps 
 read (0.75 GB each). At the end of a load the peak is about `weeks × 0.75 + workers × 1.1` GB for
 exports of that size: 6 weeks on 2 workers, 6.7 GB, needs `XERSCOPE_MEM_LIMIT=8g`; the default
 `2g` holds one file at a time and a couple of weeks. Two workers read about 1.8 times faster than
-one; raise both values together, then read the peak in Container Manager as above.
+one. The app never starts more than two (`MAX_WORKERS`, `app/reading.py`): a higher value reads as 2.
+Raise both values together, then read the peak in Container Manager as above.
 
 ## 8. Image on Docker Hub
 
@@ -266,9 +324,9 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 ## 9. Security checklist
 
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
-- [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env` (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume).
+- [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env`, Build (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume), and `docker inspect <tailscale-container> --format '{{.Config.Env}}'` shows no `tskey-auth-` value (§6).
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
-- [ ] App image pinned by digest (`@sha256:`), not by tag (§7); the Dockerfile's base images are pinned the same way.
+- [ ] App and Caddy images pinned by digest (`:0.1.0@sha256:…`, §7), not by `latest`; the build verified with `gh attestation verify`; the Dockerfiles' base images are pinned the same way (`Dockerfile`, `deploy/caddy/Dockerfile`).
 - [ ] Memory and PID caps on the four containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
 - [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (and purged by `lexicon-init`).
 - [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).

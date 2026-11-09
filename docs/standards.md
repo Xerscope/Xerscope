@@ -16,13 +16,13 @@ GAO-16-89G and NDIA PASEG v6.0 are out of scope for now (notes at the end).
 |---|---|---|---|
 | Units | hours (limit `x` in `p6.toml`) | working days of each activity's calendar | working days |
 | Activities checked | WBS summary and actual-finished removed; LOE removed for constraints, float, durations, BEI; completed activities stay in for resource / cost | incomplete activities; LOE and milestones excluded (PAM 200.1 §4.0) | incomplete (no actual finish) tasks and milestones; LOE per metric |
-| Relationships checked | all except links between two finished activities | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
-| Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish exempt |
+| Relationships checked | all except links between two finished activities; a link from another project counted only when that project is in the file (UNRESOLVED, below) | links into incomplete work, a predecessor in another project of the file included | links into incomplete work |
+| Logic | open ends; an actual start passes the predecessor check, start and finish milestones are counted (101248 exempts start milestones, P6 Professional 26.8 and r22.12 reports do not), external links pass | open ends of incomplete non-milestone tasks (PAM 200.1 §4.1); no exemption, no dangling | 06A204b: open start = only FF/SF predecessors or none; open finish = only SS/SF successors or none; a milestone only needs one link; started tasks count; earliest baseline start / latest baseline finish of the whole IMS (LOE included, ties share it) exempt |
 | Hard constraints | Mandatory Start, Start On, Mandatory Finish, Finish On (P6 Professional; EPPM counts the two Mandatory only) | MSO, MFO, SNLT, FNLT and mandatory | Mandatory Start, Mandatory Finish (Primavera), target 0 % |
 | Lags | links with a positive lag | links with a positive lag | activities with ≥ 1 lagged predecessor, ≤ 10 % |
 | Long durations | remaining > `x` hours, milestones out | original > 44 wd | n/a |
 | Out of sequence | n/a | n/a | 06A212a: relationships from an incomplete predecessor, actual else forecast dates, X = 0 |
-| BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4) | n/a (EVMS cost metrics) |
+| BEI | completed / every baseline activity, whatever its baseline finish (P6 Professional report; 101248 says those due only) | an activity without a baseline finish counts as due (PAM 200.1 §3.1.2.4, "Tasks missing baseline finish dates are included in the denominator", read as "with no baseline finish"; `UNRESOLVED`: "missing" could mean "missed") | n/a (EVMS cost metrics) |
 
 These differences change results on real files: see `tests/test_rules.py` for one
 hand-made schedule per difference.
@@ -52,11 +52,45 @@ A P6 Professional 26.8 report on the synthetic project of `tests/test_p6_checksc
 anyone can rebuild, shows the same three populations. P6-04: 1 / 11, its 14 activities less 2
 milestones and 1 completed. P6-12: 2 / 11, the completed activity out. P6-13: BEI 1 / 12, every
 non-milestone activity, where 3 were due by the data date.
+Unresolved: both reports measure a project that is its own baseline. Ten Six reads an r22.12 report
+with a separate baseline at 6 / 6 where 11 were due (https://tensix.com/using-the-p6-check-schedule-tool/),
+which fits neither the help text nor these reports. The P6 26.8 report of a project with a separate
+baseline assigned, holding a baseline activity that finishes after the data date and one finished early,
+settles whether every baseline activity is counted there too. Without a data date P6-13 stays n/a: the
+help defines it against the data date and no report exists for that case.
 Invalid Progress Dates is one check of the dialog but two lines of the report (before / after the data
 date, each with its own target, P6 Professional 26.8): P6-10a and P6-10b.
 P6-15 to P6-17 (out of sequence, dangling start, dangling finish) are not in 101248; they
 are written from R1 alone, and their open points are marked `UNRESOLVED` in the
-rule docstrings (`analysis/p6/check_schedule.py`).
+rule docstrings (`analysis/p6/check_schedule.py`). Among them: P6-16 and P6-17 read only the
+relationships between activities of the project, so a link to an activity of another project
+neither makes a task dangling nor drives it, whereas P6-01 lets such a link pass (46291). The
+Dangling help (113174, 101496, 101497) does not say how P6 treats it; the current reading is pinned by
+`test_p6_16_and_17_do_not_read_links_to_other_projects` until a P6 report on a schedule with external
+FS / FF links settles it. Both checks also leave completed tasks out of the numerator: no Oracle
+text says so (113174 names in-progress tasks only, for Dangling Start), and the 26.8 report's one
+completed task has FS logic on both sides, so it does not tell. Pinned by
+`test_p6_16_and_17_never_count_a_completed_task`; settled by a P6 report on a completed task with
+FF-only predecessors and one with SS-only successors.
+P6-01 reads 46291 ("Activities with external predecessors or successors pass the check") link by
+link: an external predecessor satisfies the predecessor test only, an external successor the successor
+test only. The sentence could also mean that any external link passes the whole check; no report in
+hand shows it. Pinned by `test_p6_01_external_link_passes_only_its_own_end`.
+P6-16 / P6-17 leave milestones out because R1 shows 0 for milestones with FF / SS logic only; those
+milestones carried Start on or after constraints, which "Ignore activities with soft constraints"
+(113174) would also leave out of P6-17, and R1 does not record the options. The exclusion is a
+reading until a report with the options unchecked shows it (`test_p6_16_and_17_leave_milestones_out`).
+P6-15 reads FS and SS links between activities of the project; FF, SF and links to other projects
+are not read (`test_p6_15_reads_fs_and_ss_links_inside_the_project_only`).
+The relationship checks (P6-05, P6-07, P6-08, P6-09) count the links into the project's activities.
+A link from an activity of another project is counted when that project's activities are in the
+file (the predecessor reads `[ext]<task_id>`), and dropped when they are not
+(`Snapshot.external_links_dropped`): the same project gives two denominators depending on what the
+export holds. Oracle's relationship sections (113174, 46287–46290) say nothing about external links,
+and the report lists "Projects Checked Have Links to the Following Closed Projects" without saying
+whether those links are counted. Until a P6 report settles it, each check's note gives both numbers
+(`test_relationship_checks_say_which_external_links_they_hold`). A link to a successor in another
+project belongs to that project's relationships, never to this one's.
 The subset column is the dialog help (101248) or, where that is silent, the EPPM help of
 the report section (pages 46277–46291). Every percentage = items found / items in the
 checked subset.
@@ -79,8 +113,8 @@ checked subset.
 | P6-13 | | BEI: completed / every baseline activity (R1; 26.8 report); listed: due by the data date and not completed | WBS, milestones, LOE removed on both sides | > 0.95 (report R1; EPPM help: 0.95 or greater) |
 | P6-14 | | Negative float | WBS, actual finish, LOE removed | < 1 % |
 | P6-15 | Inaccuracy | Out of sequence (started; an FS predecessor not completed at the data date, or an SS predecessor not started) | all activities; one row per activity and predecessor, counted once per activity | `p6.toml` |
-| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; started and milestones not counted ("Ignore In Progress Activities" checked) | `p6.toml` |
-| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted | `p6.toml` |
+| P6-16 | | Dangling start (predecessors exist, none FS or SS) | all activities; completed and milestones not counted, in progress not counted while `ignore_in_progress` is on (R1) | `p6.toml` |
+| P6-17 | | Dangling finish (successors exist, none FS or FF) | all activities; completed and milestones not counted, nor the constrained tasks `ignore_soft_constraints` / `ignore_hard_constraints` leave out | `p6.toml` |
 
 **Targets** are those of the Check Schedule dialog as the P6 EPPM 25 help prints them
 ([91574](https://docs.oracle.com/cd/G18294_01/p6help/en/91574.htm): "should be less than 5 %",
@@ -90,13 +124,47 @@ report. P6-15 to P6-17 have no documented default, and the duration limit `x` of
 P6-04 to P6-06 is a setting of the dialog: their values are in `p6.toml` only. Edit
 `p6.toml` (or a copy) to match your dialog, so pass/fail lines up with P6.
 
+**Dangling options.** The Relationships and Assignments tab of the dialog
+([113174](https://docs.oracle.com/cd/G48902_01/client_help/en_US/113174.htm), P6 Professional 26)
+has three options, read from `p6.toml` as rule parameters:
+
+> **Ignore in-progress activities for dangling start activities**: Mark to disregard activities that
+> are in progress when checking for activities with start dates not driven by their predecessors.
+
+> **Ignore activities with soft constraints**: Mark to disregard activities with soft constraints when
+> checking for activities with finish dates that do not drive successors. Soft constraints are Start On,
+> Start On or After, Start On or Before, Finish On, Finish On or After, Finish On or Before, and As Late
+> As Possible
+
+> **Ignore activities with hard constraints**: Mark to disregard activities with hard constraints when
+> checking for activities with finish dates that do not drive successors. Hard constraints are:
+> Mandatory Start and Mandatory Finish.
+
+| Option | Check | Parameter | `p6.toml` |
+|---|---|---|---|
+| Ignore in-progress activities | P6-16 | `ignore_in_progress` | `true` (checked in R1) |
+| Ignore activities with soft constraints | P6-17 | `ignore_soft_constraints` | `false` |
+| Ignore activities with hard constraints | P6-17 | `ignore_hard_constraints` | `false` |
+
+These constraint sets are the options' own, not those of P6-02 / P6-03: Start On and Finish On
+are soft here and hard on the Constraints tab
+([113176](https://docs.oracle.com/cd/G48902_01/client_help/en_US/113176.htm)). Oracle documents no
+default for the three options, nor whether "disregard" also removes the task from the
+denominator: xerscope keeps it in the denominator and out of the numerator, as for every other
+task P6-16 / P6-17 do not count. A constraint counts whether it is primary or secondary, as in
+P6-02 / P6-03. The Debug page (block 04) shows the values in use. The XER data map lists no
+column for Check Schedule settings, so they are not read from the file.
+
 ### Comparing with a P6 Check Schedule report
 
 `xerscope check file.xer --standard P6 --baseline BL.xer --flagged out/` writes one CSV per
 check with the activities (or relationships) found, to diff against the report's lists.
 `--expect report.csv` compares the counts: a CSV with columns `id,found,total` (plus `file`
 when several files are checked) typed from the report's summary; every line is printed as
-expected / got and the command exits 1 on any difference.
+expected / got and the command exits 1 on any difference. Exit codes of `check`: 0, 1 when
+`--fail-on` or `--expect` finds the schedule short of the standard, 2 for a usage or input
+error (no such file, unreadable XER or CSV, invalid standard), reported as one
+`xerscope: <message>` line on stderr.
 
 `--baseline-in-file` measures each file against the P6 Project Baseline it holds
 (`PROJECT.sum_base_proj_id`, `Snapshot.file_baseline`), the project baseline Check Schedule reads for
@@ -139,17 +207,27 @@ answer; DECM's status date is P6's data date.
 | 06A505a | In progress without actual start | % complete > 0, no actual start / with progress | ≤ 5 % |
 | 06A505b | Complete without actual finish | 100 %, no actual finish / at 100 % | ≤ 5 % |
 | 06A506a | Actual dates after the status date | / with an actual start | ≤ 5 % |
-| 06A506b | Forecast before the status date | incomplete with a forecast before the data date | X = 0 |
+| 06A506b | Forecast on or before the status date | incomplete with a forecast start (not started) or finish on or before the data date | X = 0 |
 | 06A506c | Riding the status date | start within 3 wd of the data date in both of two monthly updates, or remaining duration within ± 2 wd / incomplete | ≤ 1 % |
 
 Not included: 06A301a (vertical traceability), 06I101b (schedule margin), 06I201a
 (schedule visibility tasks): they need a summary schedule or your coding convention.
 
-**Status date vs data date.** DECM 06A506b says "on or before the status date": the end
-of the reported period. P6's data date is the first instant of remaining work, so a
-forecast exactly on it is valid; the equivalent test is "before the data date"
-(DECM 06A506b has no switch; only the `invalid_dates` rule of your own standard exposes it, as
-`include_data_date`, to read it literally.)
+**Status date vs data date.** The DECM status date is P6's data date (IPMR DID
+DI-MGMT-81861 §3.7.1.3.5.13: "The progress line is the date on which the schedule is statused,
+also known as "time-now," "data date," or "status date.""; 06A506c assumption 2: "If the Status
+Date does not match the Period End Date, use the IMS Status Date"). Each sheet's comparator applies
+to it as written: 06A506a flags an actual "after status date" (> data date, an actual on the data
+date is valid); 06A506b flags a forecast "on or before the status date" (<= data date, block 6 and
+"v8.0 Updated to include on or before status date 5, 6, 10"), so a not-started activity whose
+remaining start is the data date, as P6 schedules it, is flagged. P6's own check keeps "earlier
+than the data date" (101248); the `invalid_dates` rule of your own standard exposes the choice as
+`include_data_date`.
+`UNRESOLVED`: in v8.0, 06A506b block 10 step 3 still reads "forecast finish dates before the status
+date" and 06A506c (no change in v8.0) treats invalid forecasts as "(i.e., < Status Date)", as do PAM
+200.1 §4.9 ("the forecast date should be on or after 8/1/09") and the IPMR DID ("shall not be earlier
+than the status date"). Block 6 is applied; a DCMA text (the DECM v8.0 workbook or the 08/21/2025
+change note) would settle it.
 
 ## DCMA 14-Point (legacy)
 
@@ -173,16 +251,17 @@ no detail planning period (DCMA-08: every baseline start qualifies).
 | 6 | High float | > 44 wd; a task without a float stays in the base, counted in the note | ≤ 5 % |
 | 7 | Negative float | < 0; a task without a float stays in the base, counted in the note | 0 |
 | 8 | High duration | baseline duration > 44 wd (n/a without a baseline) | ≤ 5 % |
-| 9 | Invalid dates | forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
+| 9 | Invalid dates | incomplete tasks (§4.0, §4.9): forecast before / actual after the data date, by calendar day (`date_grain = "day"`; P6 compares timestamps) | 0 |
 | 10 | Resources | duration but no resource or cost; n/a when the project has no assignment and no budgeted labour hours | 0 % |
 | 11 | Missed tasks | due by the data date (baseline finish, by calendar day); missed when finished, or forecast to finish, on a later calendar date or with a Finish Variance > 0 in working time (PAM's two criteria, "or") | ≤ 5 % |
 | 12 | Critical path test | +600 wd on the first open activity of the longest path moves the finish as much | pass |
 | 13 | CPLI | (CPL + TF) / CPL, in working days of the project calendar; with a Must Finish By, CPL to the last open task and TF its float; without one, CPL and TF both on the open finish milestone ending last, TF being its margin to its baseline finish (n/a without a baseline or without a float) | ≥ 0.95 |
-| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
+| 14 | BEI | completed (actual finish ≤ data date) / due (baseline finish ≤ data date), both by calendar day (PAM steps 2 and 5 use the same bound); tasks with no original duration out (PAM step 1) | ≥ 0.95 |
 
 **Dates.** The pamphlet reasons in dates ("on or before 8/1/09, not after 8/1/09", §4.9): DCMA-09 and
-DCMA-11 compare the status date by calendar day (`date_grain = "day"` in `dcma.toml`). P6 keeps the
-timestamp (an actual at 12:00 is after a data date at 08:00), which is the rule default and what
+DCMA-11 compare the status date by calendar day, and DCMA-14 reads both its due and its completed
+tasks so (`date_grain = "day"` in `dcma.toml`). P6 keeps the timestamp (an actual at 12:00 is after a
+data date at 08:00), which is the rule default and what
 `p6.toml` uses. A missing total float (DCMA-06, 07, 13) is never read as 0: the task stays in the
 population with a note, and the CPLI is n/a.
 
@@ -209,9 +288,10 @@ on the end keeps its float at 0 and fails both readings.
 **DCMA-13.** CPL and TF are in working days of the project calendar (PAM and Acumen say days without
 naming a calendar). Without a Must Finish By, the open finish milestone ending last is the measured milestone
 (PAM §3.1.2.3, "until the next program milestone that is being measured"): CPL runs to its forecast finish and
-TF is its margin to its baseline finish (recalculated early finish, project calendar, negative when late); a task
+TF is its margin to its baseline finish (project calendar, negative when late); a task
 finishing after that milestone does not lengthen the CPL. n/a without a baseline, and n/a when the finish driver
-has no float (a missing float is not 0).
+has no float (a missing float is not 0). Both branches read the stored finish, the date P6 shows and the one
+the milestone is chosen on; a stored finish the CPM would move is INT-01's finding.
 Reported for review (status info, value 1.00, note "by construction") when the baseline is the planned dates of the file (`Baseline.is_planned`, target_* dates): P6 Professional 26
 help, Dates columns (Oracle 47222) says the Planned Finish is calculated by the project scheduler and not changed
 by it once the activity has started, so the planned finish of a not-started milestone follows its early finish
@@ -258,8 +338,17 @@ uv run xerscope app --data exports/ --standards folder-with-my-toml/
 
 A wrong rule, parameter name or value (choice, number, flag, list of names), population
 keyword, unit or target is rejected on load with the exact name, so a typo cannot silently
-change a result. `group` (optional) gives a section title. The formula behind every
-metric is in [formulas.md](formulas.md).
+change a result. The shape of the file is checked first, with the same kind of message
+(`my-standard.toml: metric #3 (ACME-03): ...`): `[[metric]]` must be an array of tables,
+`params` a table, `id`, `name`, `rule` and the optional text keys (`description`, `unit`,
+`target`, `source`, `group`) strings; an `id` holds letters, digits, `.`, `_` and `-` only
+(it names the `--flagged` files); a numeric parameter is finite (`nan` and `inf` would turn
+every comparison into a silent pass); `target = "pass"` goes with a `pass/fail` rule and only
+there, which takes no numeric target; a TOML nested thousands of levels deep is refused as
+"too deeply nested". Every load error is a `ValueError` naming the file: the app lists it
+under the standard picker, the CLI prints `xerscope: <message>` and exits 2. `group`
+(optional) gives a section title. The formula behind every metric is in
+[formulas.md](formulas.md).
 
 To try a target or a threshold before writing it down, open the check on the Audit page:
 it re-runs the check with the values set there, shows the sets behind the count, and gives

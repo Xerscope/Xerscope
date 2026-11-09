@@ -53,7 +53,7 @@ name = "Soft Constraints"
 description = "Constraints that do not prevent activities being moved"
 rule = "p6_03_soft_constraints"
 target = "< 5%"
-source = "101248 (P6 Professional help, Soft Constraints) and 46285: Start on or before / on or after, Finish on or before / on or after, As late as possible; completed, WBS summary and LOE removed; start constraints ignored once started"
+source = "101248 and 113176 (P6 Professional help, Soft Constraints): Start on or before / on or after, Finish on or before / on or after, As late as possible. 46285: completed, WBS summary and LOE removed; start constraints ignored once started"
 
 [[metric]]
 id = "P6-04"
@@ -185,8 +185,9 @@ group = "Inaccuracy"
 name = "Dangling Start Activities"
 description = "Activities with start dates that are not driven by predecessors"
 rule = "p6_16_dangling_start"
+params = { ignore_in_progress = true }  # the dialog's "Ignore in-progress activities" (113174), checked in R1
 target = "<= 0%"
-source = "P6 Professional Check Schedule report (R1, Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"
+source = "P6 Professional Check Schedule report (R1, Dangling Activities, 'Ignore In Progress Activities' checked): predecessors exist but none FS or SS; an activity without any predecessor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only). 113174: the option; its default is not documented"
 
 [[metric]]
 id = "P6-17"
@@ -194,5 +195,7 @@ group = "Inaccuracy"
 name = "Dangling Finish Activities"
 description = "Activities with finish dates that do not drive successors"
 rule = "p6_17_dangling_finish"
+# the dialog's "Ignore activities with soft / hard constraints" (113174); defaults not documented
+params = { ignore_soft_constraints = false, ignore_hard_constraints = false }
 target = "<= 0%"
-source = "P6 Professional Check Schedule report (R1, Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only)"
+source = "P6 Professional Check Schedule report (R1, Dangling Activities): successors exist but none FS or FF; an activity without any successor is listed under Logic only; milestones out (0 on the report for milestones with FF / SS logic only). 113174: the two constraint options and their constraint types; their defaults are not documented"

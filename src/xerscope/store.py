@@ -15,14 +15,15 @@ import pandas as pd
 
 from .config import DATE_FMT
 from .xer import Snapshot, load_snapshot, xer_files
-from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL
+from .xer.model import ASSIGNMENT_COLS_MODEL, LABOR_COLS, REL_COLS_MODEL, projects_text
 
 # The columns of fact_activity, in the order Power BI users know them: a subset of the model's
 # TASK_COLS + LABOR_COLS (tests/test_store.py checks it). Left out on purpose, the internal keys
-# and the raw P6 values that a derived column replaces: task_id, wbs_id, hours_per_day,
+# and the raw P6 values that a derived column replaces: task_id, wbs_id,
 # is_wbs_summary, status_code, ev_user_pct, cstr_date, cstr_type2, cstr_date2, total_float_hr_cnt,
 # free_float_hr_cnt, target_drtn_hr_cnt, remain_drtn_hr_cnt, restart_date, reend_date, constraint,
-# has_resource, has_expense, has_external_pred, has_external_succ.
+# has_resource, has_expense, has_external_pred, has_external_succ, has_external_driving_pred,
+# has_external_driving_succ.
 HISTORY_COLS = [
     "task_code",
     "task_name",
@@ -47,6 +48,7 @@ HISTORY_COLS = [
     "free_float_d",
     "remaining_d",
     "original_d",
+    "hours_per_day",  # of the activity's calendar: the _d columns x hours_per_day = P6's hours
     "pct_complete",
     "complete_pct_type",
     "is_complete",
@@ -77,6 +79,8 @@ class DuplicateDataDate(ValueError):
 class SnapshotStore:
     def __init__(self, snapshots: Iterable[Snapshot]):
         snaps = sorted(snapshots, key=_sort_key)
+        if not snaps:
+            raise ValueError("no snapshot")
         # One update per data date: the weekly series, the earned-value and health histories
         # are keyed on it. Files sharing a data date are usually versions of one draft or an
         # update and its baseline copy; which one is the update is the user's call, not the
@@ -93,6 +97,12 @@ class SnapshotStore:
             )
         self._snaps: list[Snapshot] = snaps
         self.warnings: list[str] = [w for s in snaps for w in s.warnings]
+        by_day: dict[pd.Timestamp, list[str]] = {}
+        for date, sources in by_date.items():
+            by_day.setdefault(date.normalize(), []).extend(sources)
+        for day, sources in by_day.items():
+            if len(sources) > 1:  # kept, in time order: two statuses of one day are two updates
+                self.warnings.append(f"several updates on {day:{DATE_FMT}} at other hours: {', '.join(sources)}")
         codes = {s.project_code for s in self._snaps}
         if len(codes) > 1:
             self.warnings.append(f"project code differs across snapshots (renamed or other project): {sorted(codes)}")
@@ -151,7 +161,7 @@ class SnapshotStore:
                     "file": s.source,
                     "project": s.project_code,
                     "selected_by": s.selected_by,
-                    "projects_in_file": " · ".join(f"{code} ({n})" for code, n in s.project_task_counts.items()),
+                    "projects_in_file": projects_text(s),
                     "data_date": s.data_date,
                     "data_date_from": s.data_date_source,
                     "baseline": s.file_baseline.text,

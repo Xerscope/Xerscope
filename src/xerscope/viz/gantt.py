@@ -33,6 +33,9 @@ PALETTE = {
     "Complete": STATUS["complete"],
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
+ROW_PX = 26  # px per row, as .row / .trow in gantt.css and ROW in gantt.js
+CHROME_PX = 96  # px of toolbar, legend, header (52) and borders around the rows
+MIN_ROWS = 4  # rows the component is sized for at least: the "no activity" notice needs the room
 WEEK_WINDOW = (pd.Timedelta(weeks=2), pd.Timedelta(weeks=10))  # week timescale: before / after the data date
 SPAN_PAD = pd.Timedelta(days=7)  # month timescale: margin around the schedule
 
@@ -166,6 +169,21 @@ def _window(rows: list[dict], timescale: str, data_date, span) -> tuple[pd.Times
     return (dates.min() - SPAN_PAD, dates.max() + SPAN_PAD) if len(dates) else (pd.Timestamp.now(),) * 2
 
 
+def visible_rows(rows: list[dict], open_ids: set[str]) -> int:
+    """How many rows the component draws with ``open_ids`` open (gantt.js: visibleRows)."""
+    shown: set[str] = set()
+    for row in rows:
+        if row["parent"] is None or (row["parent"] in shown and row["parent"] in open_ids):
+            shown.add(row["id"])
+    return len(shown)
+
+
+def fitted_height(rows: list[dict], open_ids: set[str], height: int) -> int:
+    """``height`` at most, less when the rows drawn need less: no blank space under a short tree.
+    Branches the viewer opens in the browser scroll inside."""
+    return min(height, CHROME_PX + ROW_PX * max(MIN_ROWS, visible_rows(rows, open_ids)))
+
+
 def gantt_data(
     rows: list[dict],
     *,
@@ -181,6 +199,7 @@ def gantt_data(
 ) -> dict:
     """The component's data: rows, links, window and options, all plain JSON values.
 
+    ``height`` is the most the component takes; it shrinks to the rows ``open_ids`` show.
     ``open_ids`` are the row ids drawn open (default: the top row). ``span`` (start,
     finish) sets the month timescale; "week" shows WEEK_WINDOW around the data date.
     Logic links join the activities drawn, from the predecessor's driving end to the
@@ -192,6 +211,7 @@ def gantt_data(
         pairs = relationships[["pred_code", "succ_code", "type"]].itertuples(index=False)
         link_rows = [[f"a:{p}", f"a:{s}", str(k)] for p, s, k in pairs if f"a:{p}" in ids and f"a:{s}" in ids]
     window = _window(rows, timescale, data_date, span)
+    open_rows = open_ids if open_ids is not None else {r["id"] for r in rows[:1]}
     payload = {
         "rows": rows,
         "links": link_rows,
@@ -200,10 +220,10 @@ def gantt_data(
         "timescale": timescale,
         "palette": PALETTE,
         "categories": CATEGORY_ORDER,
-        "open": sorted(open_ids if open_ids is not None else {r["id"] for r in rows[:1]}),
+        "open": sorted(open_rows),
         "selected": selected,
         "compareLabel": compare_label,
-        "height": height,
+        "height": fitted_height(rows, set(open_rows), height),
     }
     return payload
 

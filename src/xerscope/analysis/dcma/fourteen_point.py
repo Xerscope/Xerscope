@@ -13,7 +13,6 @@ import pandas as pd
 
 from ...xer.calendar import hours_to_days
 from ...xer.model import CONSTRAINT, HARD_CONSTRAINTS
-from ..cpm import schedule
 from ..populations import (
     Funnel,
     activity_funnel,
@@ -242,18 +241,21 @@ def dcma_08_high_duration(context, limit_days: float = DCMA_HIGH_DAYS) -> RuleOu
 def dcma_09_invalid_dates(context, date_grain: Literal["timestamp", "day"] = "timestamp") -> RuleOutput:
     """Progress dates on the wrong side of the status date.
     Counts: with invalid dates / checked
-    Excludes: level of effort, milestones, tasks completed before the status date.
+    Excludes: level of effort, milestones, completed tasks.
 
-    DCMA-EA PAM 200.1 §4.9: incomplete tasks with a forecast start/finish before the status date, or an
-    actual start/finish beyond it, compared by calendar day as the pamphlet does ("on or before 8/1/09,
-    not after 8/1/09"; ``date_grain``, "timestamp" being P6's reading); §4.0: LOE and milestones
-    excluded. Completed tasks: §4.0 excludes them all, §4.9 flags an actual date beyond the status date,
-    so xerscope keeps the tasks completed on or after it (its reading of §4.9 over §4.0)
+    DCMA-EA PAM 200.1 §4.9: "Incomplete tasks that have a forecast start/finish date prior to the IMS
+    status date, or has an actual start/finish date beyond the IMS status date are included in this
+    metric.", compared by calendar day as the pamphlet does ("on or before 8/1/09, not after 8/1/09";
+    ``date_grain``, "timestamp" being P6's reading); §4.0: "This analysis should exclude Completed
+    tasks, LOE tasks, Subprojects (called Summary tasks in MS Project), and Milestones." A completed
+    task whose actual finish is after the status date is out, not flagged: DECM 06A506a and P6's own
+    check (P6-10b) report it. UNRESOLVED: what §4.9's "actual start/finish" meant for completed tasks;
+    no other public version of the pamphlet settles it
     """
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
-    funnel = _discrete_tasks(activity_funnel(context.snapshot)).exclude("complete_before_data_date", "PAM 200.1")
+    funnel = _discrete_tasks(activity_funnel(context.snapshot)).exclude("complete", "PAM 200.1")
     tasks = funnel.rows
 
     forecast = forecast_before(tasks, data_date, date_grain)
@@ -393,7 +395,7 @@ def _baseline_margin(context, last_task) -> Margin:
         note = "no Must Finish By date and no open finish milestone to measure the float on"
         return RuleOutput(note=note), "", 0, "", None
     end = ends.sort_values(["finish", "task_code"]).iloc[-1]
-    forecast = schedule(snapshot).frame["ef"].get(end["task_code"], end["finish"])
+    forecast = end["finish"]  # the stored finish it was chosen on, as the Must Finish By branch reads it
     if context.baseline.is_planned:
         # the planned finish of a not-started milestone is its early finish (Oracle 47222): margin 0
         return None, end["task_code"], 0.0, f"{forecast:%Y-%m-%d}", forecast
@@ -415,11 +417,19 @@ def dcma_13_cpli(context) -> RuleOutput:
     P6 writes that float against the Must Finish By date. Without one, the open finish milestone ending
     last is the measured milestone: CPL runs to its forecast finish and TF is its margin to its baseline
     finish (PAM: CPL "until the next program milestone that is being measured", TF "relative to the
-    baselined finish date, when constrained") (recalculated early finish, project calendar;
-    negative when late); n/a without a baseline or without a baseline finish for it. With the planned
+    baselined finish date, when constrained") (project calendar; negative when late). Both branches
+    read the stored finish, the date P6 shows (a stored finish that the CPM would move is INT-01's
+    finding); n/a without a baseline or without a baseline finish for it. With the planned
     dates baseline the value is reported for review, not judged: the planned finish of a not-started
     milestone follows its early finish (Oracle 47222), so the margin is 0 and the CPLI 1.00 by
-    construction, whatever the schedule. No constraint is read
+    construction, whatever the schedule. No constraint is read.
+
+    n/a with neither a Must Finish By date nor a baseline: PAM §3.1.2.3 "It measures critical path
+    "realism" relative to the baselined finish date, when constrained." and "Total Float used for this
+    method is the float for the completion milestone identified on the critical path."; unconstrained,
+    P6 gives the last milestone LF = EF, so TF = 0 and a 1.00 that measures nothing would pass "A CPLI
+    less than 0.95 should be considered a flag". UNRESOLVED: the margin to the baseline finish used
+    without a Must Finish By is xerscope's reading; the pamphlet inserts a task, it adds no constraint
     """
     snapshot = context.snapshot
     last_task = finish_driver(snapshot)
@@ -465,13 +475,22 @@ def dcma_14_bei(context, date_grain: Literal["timestamp", "day"] = "timestamp") 
     """Due by the status date but not completed.
     Counts: completed / due by the status date
     Excludes: level of effort, milestones, tasks with no original duration.
-    Tasks without a baseline finish are counted as due. Completed = tasks with an actual finish on or
-        before the status date (``date_grain``: by calendar day for the pamphlet), early ones included.
+    Tasks without a baseline finish are counted as due. Due = baseline finish on or before the status
+        date; completed = actual finish on or before it, early ones included; both compared at
+        ``date_grain`` (by calendar day for the pamphlet).
 
     DCMA-EA PAM 200.1 §3.1.2.4: Baseline Execution Index = tasks completed / tasks due by the
     status date; step 1 filters out LOE, summary and zero duration tasks (milestones), so a task with
-    no original duration is out whatever its type; step 5 keeps the actual finishes "up to the current
-    reporting period"; tasks missing baseline finish dates are included in the denominator
+    no original duration is out whatever its type; steps 2 and 5 keep the baseline finishes and the
+    actual finishes "up to the current reporting period", the same bound for both; tasks missing
+    baseline finish dates are included in the denominator
+
+    UNRESOLVED: "Tasks missing baseline finish dates are included in the denominator" is read as "with
+    no baseline finish date" (as §4.11's "tasks missing baseline start or finish dates"), so a task
+    added since the baseline is due. Steps 2-3 count only dates "up to the current reporting period",
+    which a task with no date cannot pass, and the formula's second term is "Total # of Tasks Missing
+    Baseline Finish Date"; a reading of "missing" as "missed" (incomplete and past its baseline finish)
+    would leave those tasks out
     """
     data_date = context.snapshot.data_date
     if data_date is None:
@@ -482,7 +501,10 @@ def dcma_14_bei(context, date_grain: Literal["timestamp", "day"] = "timestamp") 
     funnel.keep(
         "due by the status date",
         "PAM 200.1",
-        lambda rows: as_flag(rows["bl_finish"] <= data_date) | rows["bl_finish"].isna(),
+        lambda rows: (
+            as_flag(at_grain(rows["bl_finish"], date_grain) <= at_grain(data_date, date_grain))
+            | rows["bl_finish"].isna()
+        ),
     )
     bei = bei_from_snapshot(
         tasks, data_date, missing_baseline_is_due=True, completed_by_data_date=True, date_grain=date_grain

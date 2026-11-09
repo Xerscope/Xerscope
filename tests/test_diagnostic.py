@@ -1,5 +1,6 @@
 """Debug page block 6: the activities behind each load warning of the file."""
 
+import dataclasses
 from datetime import date
 
 import pandas as pd
@@ -7,7 +8,14 @@ import pytest
 from xerkit import active, clndr_data, done, snap, todo
 
 from xerscope.analysis import builtin_standards
-from xerscope.app.diagnostic import ABSENT, costs_table, diagnostic_frames, finish_table, leveling_table
+from xerscope.app.diagnostic import (
+    ABSENT,
+    check_parameters,
+    costs_table,
+    diagnostic_frames,
+    finish_table,
+    leveling_table,
+)
 
 
 def test_leveling_table_lists_the_activities_the_warning_counts():
@@ -457,3 +465,113 @@ def test_calendar_detail_is_in_the_diagnostic_zip_without_names_when_anonymous()
     assert "clndr_name" not in calendar_summary_table(snapshot, anonymous=True).columns
     frames = diagnostic_frames(snapshot, None, builtin_standards()["P6"], anonymous=True)
     assert {"13_calendar_summary", "13_calendar_week", "13_calendar_exceptions"} <= set(frames)
+
+
+def test_check_parameters_show_the_dangling_options_the_standard_sets():
+    """Block 04 reads the Dangling options (113174) from the standard in use, not fixed text."""
+    p6 = builtin_standards()["P6"]
+
+    def options(standard):
+        table = check_parameters(standard).set_index("check")
+        return {check: table.loc[check, "target"] for check in table.index if "Ignore" in check}
+
+    assert options(p6) == {
+        "P6-16 · Ignore in-progress activities": "checked",
+        "P6-17 · Ignore activities with soft constraints": "unchecked",
+        "P6-17 · Ignore activities with hard constraints": "unchecked",
+    }
+    metrics = [
+        dataclasses.replace(metric, params={**metric.params, "ignore_in_progress": False})
+        if metric.id == "P6-16"
+        else dataclasses.replace(metric, params={**metric.params, "ignore_hard_constraints": True})
+        if metric.id == "P6-17"
+        else metric
+        for metric in p6.metrics
+    ]
+    assert options(dataclasses.replace(p6, metrics=metrics)) == {
+        "P6-16 · Ignore in-progress activities": "unchecked",
+        "P6-17 · Ignore activities with soft constraints": "unchecked",
+        "P6-17 · Ignore activities with hard constraints": "checked",
+    }
+
+
+def test_baseline_block_names_the_kind_basis_and_link_of_the_baseline_in_use():
+    """Block 5: a loaded update used as baseline is not a "separate file"; a P6 XML baseline and a
+    fallback say so; the EV basis and the GUID link option are written, the source unless anonymous."""
+    import dataclasses
+
+    from xerscope.analysis import Baseline
+    from xerscope.app.diagnostic import baseline_table
+
+    first = dataclasses.replace(snap([todo("A")], data_date="2026-03-02 08:00"), source="a.xer")
+    update = dataclasses.replace(snap([todo("A")], data_date="2026-03-09 08:00"), source="b.xer")
+    loaded = Baseline.from_snapshot(first, "budgeted_current")
+    row = baseline_table(update, loaded, updates=["a.xer", "b.xer"], guid_link=True).iloc[0]
+    assert (row["kind"], row["ev_basis"], row["guid_link"]) == ("loaded update", "budgeted_current", True)
+    xml = dataclasses.replace(
+        Baseline.from_snapshot(dataclasses.replace(first, source="export.xml")),
+        source="P6 Project Baseline 370 from export.xml",
+    )
+    row = baseline_table(update, xml, updates=["b.xer"]).iloc[0]
+    assert (row["kind"], row["source"]) == ("P6 XML baseline file", "P6 Project Baseline 370 from export.xml")
+    assert baseline_table(update, xml, anonymous=True, updates=["b.xer"]).loc[0, "source"] == ""
+    fallback = dataclasses.replace(Baseline.planned(update), source="fallback (planned dates)")
+    assert baseline_table(update, fallback).loc[0, "kind"] == "fallback, planned dates (target_*)"
+
+
+def test_pv_labor_check_states_its_basis_and_population():
+    """Block 9: baseline B and D (40 h each), the update holds B only: PV over 1 of 2 baseline activities,
+    1 deleted, on the default EV basis."""
+    from xerscope.analysis import Baseline
+    from xerscope.analysis.evm import pv_labor_check
+
+    baseline = Baseline.from_snapshot(snap([todo("B", **WEEK, target_work_qty="40"), todo("D", **WEEK)]))
+    totals, _ = pv_labor_check(snap([todo("B", **WEEK)], data_date=WED), baseline)
+    row = totals.iloc[0]
+    assert (row["ev_basis"], row["baseline_activities"], row["activities"], row["deleted_activities"]) == (
+        "budgeted_planned",
+        2,
+        1,
+        1,
+    )
+
+
+def test_guid_match_counts_ids_guids_and_what_the_option_links():
+    """Baseline A, B, C, X, F; update A, B2 (B's GUID), X (C's GUID, X already in the baseline), N, M (no
+    GUID). Linked: B -> B2. Gone and not linked: C (its GUID in the update under X, which the option
+    cannot take) and F (GUID absent from the update)."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis import Baseline
+    from xerscope.app.diagnostic import guid_match_table
+
+    baseline = Baseline.from_snapshot(
+        snap(
+            [
+                todo("A", guid="g1"),
+                todo("B", guid="g2"),
+                todo("C", guid="g3"),
+                todo("X", guid="gx"),
+                todo("F", guid="gf"),
+            ]
+        )
+    )
+    update = snap([todo("A", guid="g1"), todo("B2", guid="g2"), todo("X", guid="g3"), todo("N", guid="g9"), todo("M")])
+    (row,) = guid_match_table(update, baseline, None).to_dict("records")
+    assert row == {
+        "against": "baseline",
+        "tasks": 5,
+        "tasks_against": 5,
+        "guids_blank": 1,
+        "guids_repeated": 0,
+        "guids_shared": 3,
+        "ids_in_both": 2,
+        "ids_gone": 3,
+        "ids_new": 3,
+        "renumbered": 1,
+        "gone_guid_in_update": 1,
+        "gone_guid_absent": 1,
+    }
+    previous = snap([todo("A", guid="g1")])
+    assert guid_match_table(update, None, previous)["against"].tolist() == ["previous update"]
+    assert guid_match_table(update, None, None).empty

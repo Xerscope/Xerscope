@@ -20,7 +20,7 @@ from dataclasses import replace
 import pandas as pd
 
 from ..xer import Snapshot
-from .ask.answer import SUGGEST, WORDS, answer, language, suggestions
+from .ask.answer import SUGGEST, WORDS, answer, language, suggestions, worst_float_first
 from .ask.bench import (
     FIELDS,
     by_confidence,
@@ -52,7 +52,8 @@ __all__ = [
     "grounded", "json_quote", "language", "learn", "lexicon_from_groups", "llm_backend",
     "load_cases", "load_lexicon", "mask", "parse", "parse_keywords", "ratios", "said", "score", "self_cases",
     "suggestions", "summary", "understood", "vocabulary", "warm", "without", "written", "variants", "lexicons",
-    "load_variants", "variant_counts", "variants_toml", "load_refusals", "refuse", "near_spellings",
+    "load_variants", "variant_counts", "variants_toml", "worst_float_first", "load_refusals", "refuse",
+    "near_spellings",
 ]  # fmt: skip
 
 
@@ -66,7 +67,7 @@ def facts(funnel: Funnel, snapshot: Snapshot, limit: int = FACT_ROWS) -> dict:
     with the worst total float (Activity ID, float in working days, finish date), and the
     successors of the worst one. Values computed by xerscope, never a name, never the file."""
     rows = funnel.rows
-    ordered = rows.sort_values("total_float_d", na_position="last").head(limit) if len(rows) else rows
+    ordered = worst_float_first(rows).head(limit)
     listed = [
         [str(code), None if pd.isna(tf) else float(tf), None if pd.isna(finish) else f"{finish:%Y-%m-%d}"]
         for code, tf, finish in zip(ordered["task_code"], ordered["total_float_d"], ordered["finish"], strict=True)

@@ -1,0 +1,37 @@
+name: scorecard
+
+# OpenSSF Scorecard: measures the repository's supply-chain practices (pinned dependencies,
+# token permissions, branch protection, SAST, fuzzing, signed releases...) on every push to
+# main and once a week, and publishes the result to the public Scorecard API
+# (https://scorecard.dev/viewer/?uri=github.com/Xerscope/xerscope). Findings also land in
+# Security > Code scanning as SARIF. Read-only on the repository; id-token: write is the OIDC
+# token that signs the published result, nothing else is written.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * 1"                           # Mondays 06:41 UTC
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    if: github.repository == 'Xerscope/xerscope'   # publish_results refuses a fork
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write                       # upload the SARIF results
+      id-token: write                              # sign the published result (publish_results)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: results.sarif

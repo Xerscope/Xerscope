@@ -9,7 +9,7 @@ shows in the number. The interval Mon 2026-03-02 08:00 -> Tue 2026-03-03 12:00 i
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, run
-from xerkit import FM, active, clndr_data, hours, snap, todo
+from xerkit import FM, MON_FRI_10H, active, clndr_data, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, run_metric
 from xerscope.analysis.changelog import changelog
@@ -271,3 +271,78 @@ def test_weekly_finish_shifts_add_up_to_the_total_shift():
     shifts = SnapshotStore(updates).summary["finish_shift_wd"]
     assert shifts.iloc[1:].tolist() == [0.25, 0.25, 0.25, 0.25]
     assert shifts.sum() == 1.0
+
+
+# --- a missing date: the shift is missing, not zero ------------------------------------------
+
+NO_DATES = dict(early_start_date="", early_end_date="", target_start_date="", target_end_date="")
+
+
+def test_working_days_to_a_missing_date_is_nan():
+    """The scalar version agrees with the row-wise one (NaN where a date is missing): 0 would
+    read as "did not move"."""
+    s = snap([todo("A")], data_date=FIRST)
+    assert pd.isna(s.calendar().working_days(pd.NaT, pd.Timestamp(LAST)))
+    assert pd.isna(s.project_working_days(s.data_date, None))
+    assert pd.isna(s.activity_working_days("C10", None, pd.Timestamp(LAST)))
+    assert s.calendar().working_days(pd.Timestamp(FIRST), pd.Timestamp(LAST)) == pytest.approx(WD["C8"])
+
+
+def test_changelog_status_date_shift_is_blank_when_the_new_update_has_none():
+    old = snap([todo("A")], data_date=FIRST)
+    new = snap([todo("A")], data_date="", project={"plan_start_date": ""})
+    assert new.data_date is None
+    row = changelog(old, new).query("category == 'Project'").set_index("field").loc["status date"]
+    assert pd.isna(row["delta"])
+
+
+def test_milestone_slip_is_blank_when_the_latest_forecast_is_missing():
+    """M forecast Fri 10 April, then no date at all in the latest update: no slip is known,
+    and the earlier date is not carried over as the latest forecast."""
+    updates = [
+        snap([todo("M", early_end_date="2026-04-10 17:00", **FM)], data_date=FIRST),
+        snap([todo("M", **FM, **NO_DATES)], data_date=LAST),
+    ]
+    store = SnapshotStore(updates)
+    slip = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M"]
+    assert pd.isna(slip["latest_forecast"])
+    assert pd.isna(slip["slip_wd"]) and pd.isna(slip["last_week_wd"])
+
+
+# --- changelog float: hours, not days of a changing calendar ----------------------------------
+
+
+@pytest.mark.parametrize("before, after", [("C8", "C10"), ("C10", "C8")])
+def test_changelog_float_ignores_a_calendar_change_at_constant_hours(before, after):
+    """80 h of total float is 10 d on C8 and 8 d on C10: the same float, as P6 stores it in hours."""
+
+    def update(calendar: str, data_date: str):
+        return snap([todo("A", clndr_id=calendar, total_float_hr_cnt="80")], data_date=data_date)
+
+    log = changelog(update(before, FIRST), update(after, LAST)).query("category != 'Project'")
+    assert list(log["change"]) == ["calendar changed"]
+
+
+def test_changelog_float_change_hidden_by_a_calendar_change_is_listed_in_new_days():
+    """80 h on C8 (10 d) -> 100 h on C10 (10 d): +20 h, 2 d of the new 10 h calendar."""
+    old = snap([todo("A", clndr_id="C8", total_float_hr_cnt="80")], data_date=FIRST)
+    new = snap([todo("A", clndr_id="C10", total_float_hr_cnt="100")], data_date=LAST)
+    row = changelog(old, new).query("change == 'total float changed'").iloc[0]
+    assert row["delta"] == pytest.approx(2.0)
+
+
+def test_activity_page_slip_of_a_deleted_activity_is_on_its_own_calendar():
+    """Z is on calendar 12 (Mon-Fri 10 h), which only the two updates holding Z define; the
+    latest update has neither. Its slip is measured on calendar 12 (1.4 wd), not on the latest
+    update's project calendar C8 (1.5 wd)."""
+    ten_hours = {"clndr_id": "12", "clndr_name": "Mon-Fri 10h bis", "day_hr_cnt": "10", "week_hr_cnt": "50"}
+    ten_hours["clndr_data"] = MON_FRI_10H
+
+    def update(finish: str, data_date: str):
+        z = todo("Z", clndr_id="12", early_start_date=FIRST, early_end_date=finish)
+        return snap([z], data_date=data_date, calendars=[ten_hours])
+
+    gone = snap([todo("Y")], data_date="2026-03-09 08:00")
+    store = SnapshotStore([update(FIRST, FIRST), update(LAST, LAST), gone])
+    history = store.history.query("task_code == 'Z'").sort_values("data_date")
+    assert activity_finish_shift(store, history) == pytest.approx(WD["C10"])
