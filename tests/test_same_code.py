@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 
-from same_code import compare  # noqa: E402
+from same_code import compare, differences, report  # noqa: E402
 
 BASE = {
     "pkg/model.py": '''"""The model."""
@@ -108,3 +108,18 @@ def test_a_docstring_added_to_a_function_without_one_is_left_out_too():
 def test_the_same_definition_in_two_files_is_counted_twice():
     twice = dict(BASE, **{"pkg/other.py": BASE["pkg/units.py"]})
     assert compare(twice, BASE) == ["removed: def to_days"]
+
+
+def test_the_report_says_where_a_definition_lives_and_what_changed_in_it():
+    text = report(differences(BASE, moved(**{"sum(values)": "max(values)"})))
+    assert text.splitlines()[0] == "changed: def total    pkg/model.py -> pkg/sub/values.py"
+    assert "-    return to_days(sum(values)) * scale" in text
+    assert "+    return to_days(max(values)) * scale" in text
+
+
+def test_the_report_names_the_file_of_a_removed_or_added_definition():
+    head = dict(BASE, **{"pkg/units.py": "def to_weeks(hours):\n    return hours / 40\n"})
+    assert report(differences(BASE, head)).splitlines() == [
+        "removed: def to_days    pkg/units.py -> -",
+        "added: def to_weeks    - -> pkg/units.py",
+    ]

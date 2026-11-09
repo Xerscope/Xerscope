@@ -12,7 +12,8 @@ blank lines and formatting do not count, and neither does the file a definition 
 Not compared: import statements at module level (a move rewrites them) and module docstrings.
 Inside a function, an import counts by the names it brings in, not by the module they come
 from. ``--ignore-docstrings`` also leaves out the docstrings of functions and classes, for a
-pull request that rewrites only those. Exit status 1 when a definition differs.
+pull request that rewrites only those. Exit status 1 when a definition differs: each one is
+printed with the file it lives in on each side and, when it changed, the diff of its text.
 
 What it does not see: the order modules are imported in, and what a name now resolves to.
 The test suite and the comparison of outputs cover those.
@@ -20,9 +21,9 @@ The test suite and the comparison of outputs cover those.
 
 import argparse
 import ast
+import difflib
 import subprocess
 import sys
-from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -54,14 +55,17 @@ class _Normalise(ast.NodeTransformer):
         return ast.Expr(ast.Constant(sorted(alias.asname or alias.name for alias in node.names)))
 
 
-def definitions(sources: dict[str, str], ignore_docstrings: bool = False) -> Counter:
-    """Count the top-level definitions of ``sources`` (path -> text) as (label, syntax tree) pairs.
+def definitions(
+    sources: dict[str, str], ignore_docstrings: bool = False
+) -> dict[tuple[str, str], list[tuple[str, str]]]:
+    """Return the top-level definitions of ``sources`` (path -> text), each with where it lives.
 
-    The label is the kind and the name ("def schedule", "class Snapshot", "FLOAT_TYPE ="), or
-    "statement" for anything else. Two files holding the same definition count it twice.
+    Key: the label and the syntax tree. The label is the kind and the name ("def schedule",
+    "class Snapshot", "FLOAT_TYPE ="), or "statement" for anything else. Value: one (path,
+    source text) per file holding that definition, so the same one in two files counts twice.
     """
-    found: Counter = Counter()
-    for text in sources.values():
+    found: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for path, text in sources.items():
         body = ast.parse(text).body
         if body and _is_docstring(body[0]):
             body = body[1:]
@@ -77,26 +81,52 @@ def definitions(sources: dict[str, str], ignore_docstrings: bool = False) -> Cou
                 label = ", ".join(ast.unparse(target) for target in targets) + " ="
             else:
                 label = "statement"
-            found[(label, ast.dump(_Normalise(ignore_docstrings).visit(node)))] += 1
+            source = ast.get_source_segment(text, node) or ""
+            tree = ast.dump(_Normalise(ignore_docstrings).visit(node))
+            found.setdefault((label, tree), []).append((path, source))
     return found
 
 
+def differences(base: dict[str, str], head: dict[str, str], ignore_docstrings: bool = False) -> list[dict]:
+    """Return the definitions that differ between ``base`` and ``head``, sorted by label.
+
+    One entry per label: ``kind`` ("changed", "removed" or "added"), ``label``, and the
+    (path, source text) pairs found only in ``base`` (``before``) and only in ``head`` (``after``).
+    """
+    old, new = definitions(base, ignore_docstrings), definitions(head, ignore_docstrings)
+    before: dict[str, list] = {}
+    after: dict[str, list] = {}
+    for key in old.keys() | new.keys():
+        surplus = len(old.get(key, [])) - len(new.get(key, []))
+        if surplus > 0:
+            before.setdefault(key[0], []).extend(old[key][:surplus])
+        elif surplus < 0:
+            after.setdefault(key[0], []).extend(new[key][:-surplus])
+    out = []
+    for label in sorted(before.keys() | after.keys()):
+        kind = "changed" if label in before and label in after else "removed" if label in before else "added"
+        out.append({"kind": kind, "label": label, "before": before.get(label, []), "after": after.get(label, [])})
+    return out
+
+
 def compare(base: dict[str, str], head: dict[str, str], ignore_docstrings: bool = False) -> list[str]:
-    """Return one line per definition that differs between ``base`` and ``head``, sorted; [] when none does."""
-    before, after = definitions(base, ignore_docstrings), definitions(head, ignore_docstrings)
-    gone, new = (
-        Counter(label for label, _ in (before - after).elements()),
-        Counter(label for label, _ in (after - before).elements()),
-    )
+    """Return one line per definition that differs between ``base`` and ``head``, sorted by label; [] when none does."""
+    return [f"{item['kind']}: {item['label']}" for item in differences(base, head, ignore_docstrings)]
+
+
+def report(items: list[dict]) -> str:
+    """Return the differences as text: each definition, where it lives on each side, and its diff."""
     lines = []
-    for label in sorted(gone.keys() | new.keys()):
-        if gone[label] and new[label]:
-            lines.append(f"changed: {label}")
-        elif gone[label]:
-            lines.append(f"removed: {label}")
-        else:
-            lines.append(f"added: {label}")
-    return lines
+    for item in items:
+        before, after = (", ".join(sorted(path for path, _ in item[side])) or "-" for side in ("before", "after"))
+        lines.append(f"{item['kind']}: {item['label']}    {before} -> {after}")
+        if item["kind"] == "changed" and len(item["before"]) == len(item["after"]) == 1:
+            (old_path, old_text), (new_path, new_text) = item["before"][0], item["after"][0]
+            diff = difflib.unified_diff(
+                old_text.splitlines(), new_text.splitlines(), old_path, new_path, lineterm="", n=2
+            )
+            lines += [f"    {line}" for line in diff]
+    return "\n".join(lines)
 
 
 def _git(*args: str) -> str:
@@ -120,11 +150,11 @@ def main(argv=None) -> int:
     parser.add_argument("head", nargs="?", help="git revision to compare to (default: the working tree)")
     parser.add_argument("--ignore-docstrings", action="store_true", help="leave function and class docstrings out")
     args = parser.parse_args(argv)
-    lines = compare(read_version(args.base), read_version(args.head), args.ignore_docstrings)
-    for line in lines:
-        print(line)
-    print(f"{len(lines)} definition(s) differ" if lines else "same code")
-    return 1 if lines else 0
+    items = differences(read_version(args.base), read_version(args.head), args.ignore_docstrings)
+    if items:
+        print(report(items))
+    print(f"{len(items)} definition(s) differ" if items else "same code")
+    return 1 if items else 0
 
 
 if __name__ == "__main__":
