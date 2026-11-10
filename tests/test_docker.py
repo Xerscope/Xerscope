@@ -87,7 +87,13 @@ def test_only_a_tested_commit_is_published():
     jobs = set(re.findall(r"^  ([\w-]+):$", tests[tests.index("\njobs:") :], re.M))
     needs = set(re.search(r"needs: \[([^\]]*)\]", publish).group(1).split(", "))
     assert needs == jobs - {"changes", "publish"}  # every job gates the publish; changes is PR-only
-    assert "    if: github.event_name == 'push'\n" in publish  # needs' success() kept: no always()
+    # changes is skipped on a push and container needs it: with the default success() the publish was
+    # skipped on every push. The condition asks each job for 'success' by name, on a push, nothing else.
+    condition = publish[publish.index("    if: >-") : publish.index("    permissions:")]
+    terms = [t.strip() for t in " ".join(condition.split()).removeprefix("if: >- ${{").removesuffix("}}").split("&&")]
+    assert sorted(terms) == sorted(
+        ["!cancelled()", "github.event_name == 'push'", *(f"needs.{job}.result == 'success'" for job in needs)]
+    ), terms
     assert "uses: ./.github/workflows/image.yml" in publish and "secrets: inherit" not in publish
     callers = [p.name for p in (ROOT / ".github" / "workflows").glob("*.yml") if "workflows/image.yml" in p.read_text()]
     assert callers == ["tests.yml"] and tests.count("uses: ./.github/workflows/image.yml") == 1  # no other path
