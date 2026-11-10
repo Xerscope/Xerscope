@@ -125,7 +125,12 @@ def p6_02_hard_constraints(context) -> RuleOutput:
     Excludes: completed tasks, level of effort.
     Constraint types: Mandatory start, Start on, Mandatory finish, Finish on.
 
-    46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started"""
+    46286: WBS summary, actual-finish and LOE removed; start constraints ignored once started
+
+    UNRESOLVED: a constraint counts whether it is primary or secondary. 46286 counts activities and
+    gives the report a Position column (primary or secondary), but no Oracle text says that an activity
+    whose only hard constraint is the secondary one is counted, and no P6 report settles it
+    """
     funnel = _open_not_loe(context)
     activities = funnel.rows
     has_hard_constraint = constrained_by(activities, P6_HARD_CONSTRAINTS, ignore_started_starts=True)
