@@ -61,3 +61,24 @@ def test_dcma_08_high_duration_update_0(store):
     r = run_on_store(store, 0, "DCMA-08")
     assert counts(r) == (1, 24)
     assert codes(r) == ["P2030"]
+
+
+def test_dcma_14_bei_series(store):
+    """BEI = completed / (baseline finish on or before the status date + no baseline finish).
+
+    PAM 200.1 §3.1.2.4; LOE and zero duration tasks (milestones) excluded; dates compared by day;
+    baseline = update 0.
+    Due per update: 1 C3010; 2 + E1010; 3 same; 4 + E1040 P2010; 5 + E1020 P2020; 6 + E1030;
+    7 + E1050 C3020 (baseline finish 2026-10-19, the status date: due).
+    No baseline finish: C3045, added in update 4, counted in the denominator from then on.
+    Completed: 1 C3010; 2 C3010; 3 + E1010; 4 + P2010; 5 + E1040; 6 E1010 E1040 P2010 P2020;
+    7 + E1020. C3010 is marked complete in updates 6 and 7 with an actual finish after the status
+    date (2026-10-14 against 10-12, 2026-10-21 against 10-19): due, not completed.
+    Update 7 flagged = due and not completed (C3010 C3020 E1030 E1050) + no baseline finish (C3045).
+    """
+    expected = [(0, 0), (1, 1), (1, 2), (2, 2), (3, 5), (4, 7), (4, 8), (5, 10)]
+    results = [run_on_store(store, update, "DCMA-14") for update in range(8)]
+    assert [counts(r) for r in results] == expected
+    assert results[7].value == pytest.approx(0.5)
+    assert results[7].status == "fail"
+    assert codes(results[7]) == ["C3010", "C3020", "C3045", "E1030", "E1050"]
