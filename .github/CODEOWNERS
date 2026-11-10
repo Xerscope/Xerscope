@@ -8,3 +8,5 @@
 /tests/test_p6_heldout.py       @QuentinGouttaya
 /src/xerscope/standards/*.toml  @QuentinGouttaya
 /tests/ask/heldout.toml         @QuentinGouttaya
+# what the fitness check accepts: raising it hides a regression
+/tests/fitness_baseline.json    @QuentinGouttaya

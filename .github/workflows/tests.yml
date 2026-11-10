@@ -98,11 +98,10 @@ jobs:
           uv run xerscope export data/sample --out export --format csv
 
   fitness:
-    # Code fitness against tests/fitness_baseline.json (scripts/fitness.py), table in the job summary.
-    # Measure only for now: continue-on-error goes once the baseline is validated, and the job
-    # then fails on any measure worse than the baseline.
+    # Code fitness against tests/fitness_baseline.json (scripts/fitness.py): fails on any measure worse
+    # than the baseline. The job summary gives what remains on every run, green or not. The baseline
+    # itself only moves the wrong way with a justified line (values.yml).
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

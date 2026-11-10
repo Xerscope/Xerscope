@@ -127,7 +127,11 @@ measures each module (maintainability index, cyclomatic and cognitive complexity
 structural clones) and the whole (mypy errors, deptry violations, the import contracts
 generated from `LAYERS` in `tests/test_architecture.py`), and fails if a measure is worse
 than the baseline. When a change improves one, `--out tests/fitness_baseline.json`
-rewrites the baseline so the gain is kept; review the diff.
+rewrites the baseline so the gain is kept; review the diff. A measure the new baseline lets get
+worse needs its line in the pull request description, like a moved value (`values` workflow):
+`fitness/<module>.<measure>: old -> new — why, and the pull request that brings it back`. The
+job summary lists what remains (mypy errors, functions over 15, clones, modules below rank A)
+on every run: a green check means "no worse than the baseline", not "nothing left".
 
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and
