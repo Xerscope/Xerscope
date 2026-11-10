@@ -188,3 +188,15 @@ def test_the_report_shows_a_decorator_that_changed():
         "    before, line 1:  @cache",
         "    after,  line 1:  @lru_cache",
     ]
+
+
+def test_a_line_separator_inside_a_string_does_not_shift_the_lines():
+    """U+2028 in a literal is not a new line for Python: the text kept for the definitions after it
+    must still be theirs (xer/parser.py held one)."""
+    text = 'SEPARATORS = " "\n\n\ndef first():\n    return 1\n\n\ndef second():\n    return 2\n'
+    head = {"pkg/a.py": text.replace("return 2", "return 3")}
+    assert report(differences({"pkg/a.py": text}, head)).splitlines()[2:] == [
+        "CHANGED  def second  (in pkg/a.py)",
+        "    before, line 9:  return 2",
+        "    after,  line 9:  return 3",
+    ]

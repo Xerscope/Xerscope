@@ -24,12 +24,22 @@ The test suite and the comparison of outputs cover those.
 import argparse
 import ast
 import difflib
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 SRC = "src/xerscope"
+
+
+def _lines(text: str) -> list[str]:
+    """Split source text where Python counts a new line: on \\n, \\r\\n or \\r only.
+
+    ``str.splitlines`` also splits on a form feed, on U+2028 and on a few others, which a string
+    literal or a comment may hold: the lines would no longer match those of the syntax tree.
+    """
+    return re.split(r"\r\n|\r|\n", text)
 
 
 def _is_docstring(node: ast.stmt) -> bool:
@@ -82,7 +92,7 @@ def definitions(sources: dict[str, str], ignore_docstrings: bool = False) -> dic
     """
     found: dict[tuple[str, str], list[dict]] = {}
     for path, text in sources.items():
-        lines = text.splitlines()
+        lines = _lines(text)
         body = ast.parse(text).body
         if body and _is_docstring(body[0]):
             body = body[1:]
@@ -179,7 +189,7 @@ def _owners(text: str) -> list[str]:
 
     "" for a line of the definition itself: only a line deeper than that needs naming.
     """
-    owners = [""] * len(text.splitlines())
+    owners = [""] * len(_lines(text))
 
     def walk(node: ast.AST, prefix: str, depth: int) -> None:
         for child in ast.iter_child_nodes(node):
@@ -202,7 +212,7 @@ def _changed_lines(before: dict, after: dict) -> list[str]:
 
     Each group of lines is headed by the method it is in, when it is in one.
     """
-    old, new = before["text"].splitlines(), after["text"].splitlines()
+    old, new = _lines(before["text"]), _lines(after["text"])
     old_owner, new_owner = _owners(before["text"]), _owners(after["text"])
     out, last = [], None
     for kind, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
