@@ -180,8 +180,22 @@ def compare(current, baseline):
 COLUMNS = ["mi", "mi_rank", "cc_max", "cc_over_15", "cognitive_max", "cognitive_over_15", "clones", "near_clones"]
 
 
+def remaining(result) -> dict[str, int]:
+    """What the code still carries, whatever the baseline allows: the totals a green check hides."""
+    rows = result["modules"].values()
+    return {
+        "mypy errors": result["global"]["mypy_errors"],
+        "functions over 15, cyclomatic": sum(row["cc_over_15"] for row in rows),
+        "functions over 15, cognitive": sum(row["cognitive_over_15"] for row in rows),
+        "cloned functions": sum(row["clones"] for row in rows),
+        "modules below rank A": sum(row["mi_rank"] != "A" for row in rows),
+    }
+
+
 def markdown(result, worse=(), better=()):
-    lines = ["## Code fitness", "", "| module | " + " | ".join(COLUMNS) + " |", "|---" * (len(COLUMNS) + 1) + "|"]
+    lines = ["## Code fitness", "", "### What remains", "", "| measure | now |", "|---|---|"]
+    lines += [f"| {name} | {count} |" for name, count in remaining(result).items()]
+    lines += ["", "### By module", "", "| module | " + " | ".join(COLUMNS) + " |", "|---" * (len(COLUMNS) + 1) + "|"]
     for name, row in result["modules"].items():
         lines.append(f"| {name} | " + " | ".join(str(row[c]) for c in COLUMNS) + " |")
     lines += ["", "| global | value |", "|---|---|"]

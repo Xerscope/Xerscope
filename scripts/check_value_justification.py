@@ -1,5 +1,6 @@
 """Every value a pull request moves in the golden file, FLOORS or a standard TOML is justified
-in its description, and no FLOORS value goes down.
+in its description, and so is every measure it lets get worse in the fitness baseline; no FLOORS
+value goes down.
 
     PR_BODY="..." python scripts/check_value_justification.py BASE_SHA
 
@@ -9,7 +10,9 @@ description, copied from what this script prints and completed with its evidence
     ID: old -> new — source
 
 ``old`` and ``new`` are written as JSON (``absent`` for a value added or removed). Prose fields
-of a standard (name, description, source) are not values. Standard library only: the CI job
+of a standard (name, description, source) are not values. In tests/fitness_baseline.json only a
+measure that gets worse needs a line (a count or a maximum that goes up, a maintainability rank
+that drops, as scripts/fitness.py reads them): an improvement is free. Standard library only: the CI job
 runs it without installing the project.
 """
 
@@ -28,6 +31,10 @@ FLOORS_FILE = "tests/test_p6_heldout.py"
 STANDARDS_DIR = "src/xerscope/standards/"
 PROSE = frozenset({"name", "description", "source"})
 ABSENT = "absent"
+FITNESS = "tests/fitness_baseline.json"
+# as scripts/fitness.py: measures it reports without checking, and the order of the ranks
+FITNESS_UNCHECKED = frozenset({"mi", "near_clones", "import_contracts"})
+RANKS = "ABC"
 
 
 def _show(value) -> str:
@@ -80,6 +87,29 @@ def floor_values(text: str | None) -> dict[str, str]:
     return {f"FLOORS/{key}": _show(value) for key, value in floors(text).items()}
 
 
+def fitness_values(text: str | None) -> dict[str, str]:
+    """Checked measures of the fitness baseline, by ``fitness/<module>.<measure>`` (``fitness/global.<measure>``)."""
+    if not text:
+        return {}
+    data = json.loads(text)
+    rows = {**data.get("modules", {}), "global": data.get("global", {})}
+    return {
+        f"fitness/{name}.{measure}": _show(value)
+        for name, row in rows.items()
+        for measure, value in row.items()
+        if measure not in FITNESS_UNCHECKED
+    }
+
+
+def _worse(key: str, old: str, new: str) -> bool:
+    """A fitness measure went the wrong way; one that is new counts from 0, or from rank A."""
+    if new == ABSENT:
+        return False  # a module removed
+    if key.endswith(".mi_rank"):
+        return RANKS.index(json.loads(new)) > (0 if old == ABSENT else RANKS.index(json.loads(old)))
+    return json.loads(new) > (0 if old == ABSENT else json.loads(old))
+
+
 def moved(old: dict[str, str], new: dict[str, str]) -> list[tuple[str, str, str]]:
     """(id, old, new) of each value that differs, ``absent`` on the side that lacks it."""
     return [
@@ -118,6 +148,8 @@ def values(path: str, text: str | None) -> dict[str, str]:
         return golden_values(text)
     if path == FLOORS_FILE:
         return floor_values(text)
+    if path == FITNESS:
+        return fitness_values(text)
     return standard_values(path.removeprefix(STANDARDS_DIR).removesuffix(".toml"), text)
 
 
@@ -129,6 +161,8 @@ def check(files: dict[str, tuple[str | None, str | None]], body: str) -> tuple[l
     missing = []
     for path, (old_text, new_text) in sorted(files.items()):
         for key, old, new in moved(values(path, old_text), values(path, new_text)):
+            if path == FITNESS and not _worse(key, old, new):
+                continue
             if f"{key}: {old} -> {new}" not in done:
                 missing.append(f"{key}: {old} -> {new} — <source>")
     return lowered, missing
@@ -149,7 +183,7 @@ def _read(path: str) -> str | None:
 
 def watched(base: str) -> dict[str, tuple[str | None, str | None]]:
     """Base and head text of every watched file present on either side."""
-    paths = {GOLDEN, FLOORS_FILE}
+    paths = {GOLDEN, FLOORS_FILE, FITNESS}
     paths |= set((_git("ls-tree", "--name-only", base, STANDARDS_DIR) or "").split())
     paths |= {STANDARDS_DIR + name for name in os.listdir(STANDARDS_DIR)}
     return {p: (_git("show", f"{base}:{p}"), _read(p)) for p in paths if p.endswith((".json", ".py", ".toml"))}
@@ -167,11 +201,12 @@ def main(argv: list[str]) -> int:
         print("FLOORS only go up (tests/test_p6_heldout.py):\n" + "\n".join(lowered) + "\n")
     if missing:
         print("Values moved without a justification line. Add each line below to the pull request")
-        print("description, <source> replaced by its evidence (P6 export, held-out corpus, MPXJ, standard text):\n")
+        print("description, <source> replaced by its evidence (P6 export, held-out corpus, MPXJ, standard text;")
+        print("for a fitness measure, why it gets worse and the pull request that will bring it back):\n")
         print("\n".join(missing))
     if lowered or missing:
         return 1
-    print("Every moved value is justified; no FLOORS value lowered.")
+    print("Every moved value is justified; no FLOORS value lowered; no fitness measure worse without its line.")
     return 0
 
 

@@ -2,7 +2,8 @@ name: values
 
 # A pull request that moves a value of tests/golden/standards.json, of FLOORS
 # (tests/test_p6_heldout.py) or of a standard TOML justifies each one in its description,
-# one line per value: `ID: old -> new — source`; and no FLOORS value goes down.
+# one line per value: `ID: old -> new — source`; and no FLOORS value goes down. The same line is
+# asked for each measure of tests/fitness_baseline.json that gets worse.
 # scripts/check_value_justification.py prints the lines to copy. A separate workflow, like
 # attribution.yml: re-run when the description is edited, without re-running the tests.
 on:

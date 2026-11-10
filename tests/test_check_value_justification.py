@@ -149,3 +149,66 @@ def test_the_command_reads_the_base_commit_and_the_description(tmp_path):
     assert "demo/A_2026-08-31.xer/DCMA/DCMA-01/value: 4.17 -> 8.33 — <source>" in out.stdout
     (tmp_path / FLOORS).write_text(floors_file(H1=0.99))
     assert run("demo/A_2026-08-31.xer/DCMA/DCMA-01/value: 4.17 -> 8.33 — P6 export").returncode == 0
+
+
+FITNESS = cvj.FITNESS
+
+
+def baseline(mypy=100, **module):
+    row = {"mi": 45.0, "mi_rank": "A", "cc_max": 12, "cc_over_15": 0, "clones": 0, "near_clones": 0} | module
+    return json.dumps({"modules": {"analysis/cpm.py": row}, "global": {"mypy_errors": mypy, "import_contracts": 11}})
+
+
+def test_a_fitness_measure_that_gets_worse_needs_its_line():
+    files = {FITNESS: (baseline(), baseline(mypy=102, cc_max=14))}
+    assert cvj.check(files, "") == (
+        [],
+        ["fitness/analysis/cpm.py.cc_max: 12 -> 14 — <source>", "fitness/global.mypy_errors: 100 -> 102 — <source>"],
+    )
+    body = (
+        "fitness/analysis/cpm.py.cc_max: 12 -> 14 — one more branch, PR3\nfitness/global.mypy_errors: 100 -> 102 — PR1"
+    )
+    assert cvj.check(files, body) == ([], [])
+
+
+def test_a_fitness_measure_that_improves_needs_no_line():
+    assert cvj.check({FITNESS: (baseline(mypy=100, cc_max=12), baseline(mypy=90, cc_max=9))}, "") == ([], [])
+
+
+def test_a_lower_maintainability_rank_needs_its_line_and_a_better_one_does_not():
+    assert cvj.check({FITNESS: (baseline(), baseline(mi_rank="B"))}, "") == (
+        [],
+        ['fitness/analysis/cpm.py.mi_rank: "A" -> "B" — <source>'],
+    )
+    assert cvj.check({FITNESS: (baseline(mi_rank="C"), baseline(mi_rank="A"))}, "") == ([], [])
+
+
+def test_measures_fitness_reports_without_checking_are_free():
+    head = json.loads(baseline(mi=12.0, near_clones=3))
+    head["global"]["import_contracts"] = 12
+    assert cvj.check({FITNESS: (baseline(), json.dumps(head))}, "") == ([], [])
+
+
+def test_a_new_module_counts_from_zero_and_rank_a_and_a_removed_one_is_free():
+    new = json.loads(baseline())
+    new["modules"]["viz/new.py"] = {"mi": 9.0, "mi_rank": "C", "cc_max": 20, "cc_over_15": 1, "clones": 0}
+    assert cvj.check({FITNESS: (baseline(), json.dumps(new))}, "") == (
+        [],
+        [
+            "fitness/viz/new.py.cc_max: absent -> 20 — <source>",
+            "fitness/viz/new.py.cc_over_15: absent -> 1 — <source>",
+            'fitness/viz/new.py.mi_rank: absent -> "C" — <source>',
+        ],
+    )
+    assert cvj.check({FITNESS: (json.dumps(new), baseline())}, "") == ([], [])
+
+
+def test_the_baseline_is_watched_owned_and_blocking():
+    """The check reads the baseline at the base commit, its owner is asked for review, and the
+    fitness job fails the run when a measure is worse."""
+    assert FITNESS in cvj.watched("HEAD")
+    assert "/tests/fitness_baseline.json" in (ROOT / ".github" / "CODEOWNERS").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    job = workflow[workflow.index("\n  fitness:") :]
+    job = job[: job.index("\n  audit:")]
+    assert "continue-on-error" not in job and "--check tests/fitness_baseline.json" in job

@@ -93,3 +93,25 @@ def test_new_module_must_be_rank_a_without_complex_function_or_clone():
 
 def test_removed_module_is_not_a_regression():
     assert compare(result({}), BASELINE) == ([], [])
+
+
+def test_the_summary_gives_what_remains_whatever_the_baseline_allows():
+    from fitness import markdown, remaining
+
+    measured = result(
+        {
+            "a.py": module(cc_over_15=2, cognitive_over_15=3, clones=1),
+            "b.py": module(mi_rank="C", cc_over_15=1),
+        },
+        mypy_errors=169,
+    )
+    assert remaining(measured) == {
+        "mypy errors": 169,
+        "functions over 15, cyclomatic": 3,
+        "functions over 15, cognitive": 3,
+        "cloned functions": 1,
+        "modules below rank A": 1,
+    }
+    summary = markdown(measured)  # no regression, no improvement: the totals are still there
+    assert "### What remains" in summary and "| mypy errors | 169 |" in summary
+    assert summary.index("### What remains") < summary.index("### By module")
