@@ -1775,15 +1775,16 @@ def _schedule_failure(error: ScheduleError, delayed: str | None = None) -> CptRe
 def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     """Add ``delay_days`` to the first open activity of the critical path; the delay must reach the finish.
 
-    The finish is measured on the project's end points (activities without successors), in
-    working time of the delayed activity's calendar. Pass = the whole delay reached it (further
-    is a calendar effect), or part of it did and nothing stopped the rest: the end points that
-    finish the plain schedule moved and no expected finish downstream gave up remaining duration.
-    The part that did not arrive is float on the delayed activity's own finish (it may be on the
-    longest path by its start alone) or calendars on the way; the note gives the amount. Fail =
-    those end points do not move (nothing follows the delayed finish, or a mandatory date or a link
-    that binds nothing stops the delay), or an expected finish absorbs part of it (its activity
-    loses its remaining duration when the delay pushes it past that date); the note names what it can.
+    The finish is measured on the project's end points (activities that no activity other than a
+    level of effort follows, level of effort left out), in working time of the delayed activity's
+    calendar. Pass = the whole delay reached it (further is a calendar effect), or part of it did
+    and nothing stopped the rest: the end points that finish the plain schedule moved and no
+    expected finish downstream gave up remaining duration. The part that did not arrive is float
+    on the delayed activity's own finish (it may be on the longest path by its start alone) or
+    calendars on the way; the note gives the amount. Fail = those end points do not move (nothing
+    follows the delayed finish, or a mandatory date or a link that binds nothing stops the delay),
+    or an expected finish absorbs part of it (its activity loses its remaining duration when the
+    delay pushes it past that date); the note names what it can.
     """
     activities = snapshot.activities
     try:
@@ -1808,8 +1809,14 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         late = schedule(snapshot, {code: delay_hours}, base=base)
     except ScheduleError as exc:
         return _schedule_failure(exc, code)
-    has_successor = set(snapshot.relationships["pred_code"])  # built once: per activity it took 33 s on Hotel
-    end_points = [code for code in base.frame.index if code not in has_successor]
+    # End points: the activities no work follows. A level of effort is never one (P6 computes its
+    # dates from the activities it is linked to, it drives nothing), and a level-of-effort successor
+    # does not make its predecessor something other than an end.
+    links = snapshot.relationships
+    loe = set(activities.loc[activities["is_loe"].astype(bool), "task_code"])
+    # built once: per activity it took 33 s on Hotel
+    has_successor = set(links.loc[~links["succ_code"].isin(loe), "pred_code"])
+    end_points = [code for code in base.frame.index if code not in has_successor and code not in loe]
     base_finish = base.frame.loc[end_points, "ef"].max()
     delayed_finish = late.frame.loc[end_points, "ef"].max()
     axis = TimeAxis(
@@ -1860,7 +1867,6 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         )
     blocking = []
     if not passed:
-        links = snapshot.relationships
         if not reached and links[(links["pred_code"] == code) & links["type"].isin(["FS", "FF"])].empty:
             note += f"; {code} has no FS or FF successor: nothing follows its finish"
         # only open work can absorb a delay: a finished activity's mandatory date is history
