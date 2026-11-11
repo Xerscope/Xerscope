@@ -728,6 +728,25 @@ def test_cpli_uses_the_finish_float():
     assert r.status == "fail"
 
 
+def test_cpli_reads_the_least_float_among_the_tasks_ending_last_together():
+    """Two open tasks end last at the same instant. PAM 200.1 §3.1.2.3 reads the float of the completion
+    milestone of the critical path and does not say which of two: the least float, the critical one, then the
+    lowest Activity ID, whatever the order of the rows. CPL 20 wd, float -16 h = -2 d."""
+    links = [("A", "B", "FS", 0), ("B", "Y", "FS", 0), ("B", "Z", "FS", 0)]
+    ahead = dict(CHAIN[2], task_code="Y", total_float_hr_cnt="80")
+    behind = dict(CHAIN[2], total_float_hr_cnt="-16")
+    for last_two in ([ahead, behind], [behind, ahead]):
+        r = run(DCMA, "DCMA-13", snap(CHAIN[:2] + last_two, links, **MFB))
+        assert r.value == pytest.approx((20 - 2) / 20) and "to Z" in r.note
+    same = dict(ahead, total_float_hr_cnt="-16")
+    for last_two in ([same, behind], [behind, same]):
+        assert "to Y" in run(DCMA, "DCMA-13", snap(CHAIN[:2] + last_two, links, **MFB)).note
+    unknown = dict(ahead, total_float_hr_cnt="")
+    for last_two in ([unknown, behind], [behind, unknown]):
+        r = run(DCMA, "DCMA-13", snap(CHAIN[:2] + last_two, links, **MFB))
+        assert r.status == "n/a" and "total float missing on Y" in r.note
+
+
 def test_cpli_is_na_without_must_finish_by_or_baseline():
     """Without a Must Finish By, P6 gives the last activity 0 float (1.0 whatever the schedule); without a
     baseline there is no finish for the margin either: n/a. With a baseline, see the tests below."""

@@ -156,10 +156,17 @@ def with_baseline(baseline: Baseline, activities: pd.DataFrame) -> pd.DataFrame:
 
 
 def finish_driver(snapshot: Snapshot) -> pd.Series | None:
-    """The open, non-LOE task with the latest forecast finish; None when no work remains."""
+    """The open, non-LOE task with the latest forecast finish; None when no work remains.
+
+    Several ending at that instant: a missing total float first (the float of the end is then unknown),
+    else the least total float (the critical one), then the lowest Activity ID.
+    """
     activities = snapshot.activities
     remaining = activities[~activities["is_complete"] & ~activities["is_loe"] & activities["finish"].notna()]
-    return None if remaining.empty else remaining.loc[remaining["finish"].idxmax()]
+    if remaining.empty:
+        return None
+    last = remaining[remaining["finish"] == remaining["finish"].max()]
+    return last.sort_values(["total_float_hr_cnt", "task_code"], na_position="first").iloc[0]
 
 
 def has_predecessor_in_project(snapshot: Snapshot, activities: pd.DataFrame) -> pd.Series:
