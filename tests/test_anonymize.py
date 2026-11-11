@@ -654,3 +654,30 @@ def test_an_error_message_naming_a_calendar_leaves_with_the_name_hidden(monkeypa
     text = Anonymizer.from_raws([raw]).csv(results_frame([result])).decode("utf-8-sig")
     assert CALENDAR_NAME not in text and "Night Shift" not in text
     assert "ValueError: calendar '[hidden]' has no working time" in text
+
+
+def test_a_task_name_inside_a_note_leaves_hidden():
+    """A note that quotes a task name inside a sentence (an error message copied by run_metric): the
+    name is replaced by [hidden], whole or between other words, and the Task ID beside it is renamed.
+    A longer word that only starts like the name is not a value of the file and stays."""
+    raw = parse_text(_file([todo("PUMP-7", task_name="Pour slab level three")]), source="x.xer")
+    anonymizer = Anonymizer.from_raws([raw])
+    new = anonymizer.codes["A"]["PUMP-7"]
+    notes = pd.DataFrame(
+        {
+            "note": [
+                "ValueError: cannot read 'Pour slab level three' (PUMP-7)",
+                "Pour slab level three",
+                "late: Pour slab level three, since 2026-03-02",
+                "Pour slab level threes",
+            ]
+        }
+    )
+    out = anonymizer.frame(notes)["note"].tolist()
+    assert out == [
+        f"ValueError: cannot read '[hidden]' ({new})",
+        "[hidden]",
+        "late: [hidden], since 2026-03-02",
+        "Pour slab level threes",
+    ]
+    assert "Pour slab" not in anonymizer.csv(notes.iloc[:3]).decode("utf-8-sig")
