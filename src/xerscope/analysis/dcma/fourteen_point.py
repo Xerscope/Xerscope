@@ -158,6 +158,10 @@ def dcma_05_hard_constraints(context) -> RuleOutput:
 
     DCMA-EA PAM 200.1 §4.5 (and §4.0: milestones excluded); MSO = Start On / Mandatory Start, MFO = Finish
     On / Mandatory Finish, SNLT = Start On or Before, FNLT = Finish On or Before
+
+    UNRESOLVED: §4.5 does not mention secondary constraints; a hard secondary constraint counts here.
+    §4.5 divides "the total number of hard constraints" by the incomplete tasks: a task with a hard
+    primary and a hard secondary constraint is counted once, where a count of constraints gives two
     """
     funnel = _open_tasks(context)
     tasks = funnel.rows

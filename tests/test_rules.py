@@ -235,9 +235,11 @@ def test_dcma_05_follows_pam_200_1():
     """DCMA-EA PAM 200.1 (Oct 2012) 4.5: "Divide the total number of hard constraints by the number of
     incomplete tasks."
 
-    Hard constraints are MFO, MSO, SNLT and FNLT (a secondary constraint counts, a started task is
-    not exempt); soft ones (SNET, FNET, ASAP) are not. 4.0 excludes completed tasks, LOE,
-    subprojects and milestones: MSF, a finish milestone with FNLT, is out of numerator and population.
+    Hard constraints are MFO, MSO, SNLT and FNLT (a started task is not exempt); soft ones (SNET,
+    FNET, ASAP) are not. 4.0 excludes completed tasks, LOE, subprojects and milestones: MSF, a finish
+    milestone with FNLT, is out of numerator and population. SEC, whose only hard constraint is the
+    secondary one, is counted by xerscope's reading, not by the pamphlet, which does not mention
+    secondary constraints (UNRESOLVED, dcma_05_hard_constraints).
     """
     s = snap(
         [
@@ -259,6 +261,38 @@ def test_dcma_05_follows_pam_200_1():
     r = run(DCMA, "DCMA-05", s)
     assert codes(r) == ["LB", "MF", "MS", "SEC", "STB"]
     assert (r.numerator, r.denominator) == (5, 6)
+
+
+@pytest.mark.oracle("characterization")
+def test_secondary_constraint_characterization():
+    """UNRESOLVED (p6_02_hard_constraints, dcma_05_hard_constraints): no text says how a secondary
+    constraint is counted. Pinned reading, five tasks:
+    SEC, Mandatory Start as secondary only: hard for P6-02 and DCMA-05.
+    BOTH, Start On or Before primary and Finish On or Before secondary: two soft constraints for P6,
+    one task in P6-03; two hard constraints for DCMA, one task in DCMA-05.
+    STARTED, in progress, Start On or Before as secondary only: a start constraint on a started task,
+    ignored by P6-03 (46285), counted by DCMA-05.
+    SOFT2, Start On or After as secondary only: soft for P6-03, not hard for DCMA-05.
+    NONE: no constraint.
+    """
+    on = "2026-04-01 08:00"
+    s = snap(
+        [
+            todo("SEC", cstr_type2="CS_MANDSTART", cstr_date2=on),
+            todo("BOTH", cstr_type="CS_MSOB", cstr_date=on, cstr_type2="CS_MEOB", cstr_date2="2026-04-10 17:00"),
+            active("STARTED", cstr_type2="CS_MSOB", cstr_date2="2026-02-23 08:00"),
+            todo("SOFT2", cstr_type2="CS_MSOA", cstr_date2=on),
+            todo("NONE"),
+        ]
+    )
+    expected = {
+        (P6, "P6-02"): (1, ["SEC"]),
+        (P6, "P6-03"): (2, ["BOTH", "SOFT2"]),
+        (DCMA, "DCMA-05"): (3, ["BOTH", "SEC", "STARTED"]),
+    }
+    for (standard, metric), (found, flagged) in expected.items():
+        r = run(standard, metric, s)
+        assert ((r.numerator, r.denominator), codes(r)) == ((found, 5), flagged), metric
 
 
 def test_float_threshold_in_hours_vs_working_days():
