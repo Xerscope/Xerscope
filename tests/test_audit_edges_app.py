@@ -109,6 +109,16 @@ def test_metric_id_is_a_file_name_safe_token():
     assert std('[[metric]]\nid = "P6-01.a_b"\nname = "m"\nrule = "constraints"\n').metrics[0].id == "P6-01.a_b"
 
 
+def test_standard_id_is_a_file_name_safe_token():
+    """The standard id names the files downloaded from the Schedule health page (summary, flagged,
+    sets): it follows the rule of the metric id."""
+    metric = '[[metric]]\nid = "M"\nname = "m"\nrule = "constraints"\n'
+    for bad in ("sub/S", "a b", "x\\y", "", "../S"):
+        with pytest.raises(ValueError, match=r"\[standard\] id .*letters, digits, '.', '_' and '-' only"):
+            loads_standard(f'[standard]\nid = "{bad}"\nname = "s"\n{metric}'.replace("\\", "\\\\"))
+    assert loads_standard(f'[standard]\nid = "MY-STD.v2_a"\nname = "s"\n{metric}').id == "MY-STD.v2_a"
+
+
 def test_params_of_wrong_shape_raise_value_error():
     """AUDIT-APP-02: params as an array is a ValueError (the handlers catch it), not a TypeError."""
     with pytest.raises(ValueError, match=r"metric #1 \(M\): params must be a table"):
