@@ -767,6 +767,20 @@ def test_critical_path_test_delays_the_lowest_activity_id_among_the_tasks_starti
         assert (r.delayed, r.passed) == ("A1", passed)
 
 
+def test_critical_path_test_does_not_take_a_level_of_effort_for_the_finish():
+    """L (level of effort, no successor) spans A to B and ends with the project; Z, the finish milestone,
+    holds a Mandatory Finish. +600 wd on A stretch L with B, but Z does not move: the delay did not reach
+    the finish. P6 computes a level-of-effort duration from the activities it is linked to (Oracle, Level
+    of effort activity), so L moving shows nothing. Without Z, B is the finish though L follows it: pass."""
+    spans = [("A", "L", "SS", 0), ("B", "L", "FF", 0)]
+    pinned = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]
+    loe = todo("L", task_type="TT_LOE")
+    r = run(DCMA, "DCMA-12", snap([*pinned, loe], [("A", "B", "FS", 0), ("B", "Z", "FS", 0), *spans]))
+    assert r.status == "fail" and "moved +0.0 wd instead of +600" in r.note and codes(r) == ["Z"]
+    r = run(DCMA, "DCMA-12", snap([*CHAIN[:2], loe], [("A", "B", "FS", 0), *spans]))
+    assert r.status == "pass" and "2026-03-27 -> " in r.note and "moved +600.0 wd" in r.note
+
+
 def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     # a finished activity cannot absorb a delay: its mandatory date is not listed
     chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]
