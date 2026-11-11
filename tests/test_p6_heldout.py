@@ -23,36 +23,36 @@ pytestmark = pytest.mark.oracle("p6")
 HELD_OUT = Path(__file__).parent / "reference" / "data" / "p6-heldout" / "validation" / "held-out"
 
 FLOORS = {
-    "H1": 1.00,
-    "H2": 0.99,
-    "H3": 0.99,
-    "H4": 1.00,
-    "H5": 0.99,
-    "H6": 0.99,
-    "H7": 1.00,
-    "H8": 0.99,
-    "H9": 0.99,
-    "H10": 0.96,
-    "H11": 0.99,
-    "H12": 0.98,
-    "H13": 0.99,
-    "H14": 0.95,
-    "H15": 0.99,
-    "H16": 0.89,
-    "H17": 0.95,
-    "H18": 0.97,
-    "H19": 0.98,
-    "H20": 0.94,
-    "H21": 0.99,
-    "H22": 0.99,
-    "H23": 0.76,
-    "H24": 0.72,
-    "H25": 0.74,
-    "H26": 0.78,
-    "H27": 0.76,
-    "H28": 0.74,
-    "H29": 0.76,
-    "H30": 0.85,
+    "H1": 1.000,
+    "H2": 0.998,
+    "H3": 0.996,
+    "H4": 1.000,
+    "H5": 0.996,
+    "H6": 0.998,
+    "H7": 1.000,
+    "H8": 0.996,
+    "H9": 0.998,
+    "H10": 0.970,
+    "H11": 0.993,
+    "H12": 0.988,
+    "H13": 0.990,
+    "H14": 0.954,
+    "H15": 0.995,
+    "H16": 0.899,
+    "H17": 0.952,
+    "H18": 0.979,
+    "H19": 0.982,
+    "H20": 0.944,
+    "H21": 0.996,
+    "H22": 0.994,
+    "H23": 0.765,
+    "H24": 0.721,
+    "H25": 0.745,
+    "H26": 0.785,
+    "H27": 0.765,
+    "H28": 0.745,
+    "H29": 0.768,
+    "H30": 0.851,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -121,7 +121,7 @@ def test_float_type_codes_read_as_p6_does(corpus):
     share = {code: {k: v / h["n"] for k, v in h.items() if k != "n"} for code, h in hits.items()}
     assert share["FT_FF"]["finish"] == 1.0, share["FT_FF"]
     assert share["FT_SS"]["start"] == 1.0, share["FT_SS"]
-    assert share["FT_Min"]["min"] >= 0.96 and share["FT_Min"]["min"] == max(share["FT_Min"].values()), share["FT_Min"]
+    assert share["FT_Min"]["min"] >= 0.966 and share["FT_Min"]["min"] == max(share["FT_Min"].values()), share["FT_Min"]
     assert share["FT_Start"]["finish"] == max(share["FT_Start"].values()), share["FT_Start"]
     for code, best in {"FT_FF": "finish", "FT_SS": "start", "FT_Min": "min", "FT_Start": "finish"}.items():
         assert FLOAT_TYPE[code] == best
