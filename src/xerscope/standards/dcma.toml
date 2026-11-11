@@ -117,11 +117,11 @@ source = "DCMA-EA PAM 200.1 (Oct 2012) 4.11: baseline finish on or before the st
 [[metric]]
 id = "DCMA-12"
 name = "Critical path test"
-description = "A delay on the critical path moves the finish by the same amount"
+description = "A delay on the critical path reaches the finish"
 rule = "dcma_12_critical_path_test"
 params = { slip_days = 600 }  # working days; xerscope's choice: PAM 200.1 §4.12 gives no length
 target = "pass"
-source = "DCMA-EA PAM 200.1 §4.12: a slip is introduced on a task of the critical path and the project completion date must move \"in direct proportion\" (the pamphlet's other criterion, a completion date showing negative total float, is the same test: with a Must Finish By the end's float falls by exactly the finish's shift, and a Mandatory Finish keeps it at 0 and fails both). Method (xerscope's choice, the pamphlet names only \"a task of the critical path\"): the first open task of the longest path has its remaining duration extended; the delayed task drops its expected finish. 600 working days is xerscope's choice: neither PAM 200.1 §4.12 nor DECM v8.0 06A401a gives a slip length"
+source = "DCMA-EA PAM 200.1 §4.12: a slip is introduced on a task of the critical path and the project completion date must move \"in direct proportion\" (the pamphlet's other criterion, a completion date showing negative total float, is the same test: with a Must Finish By the end's float falls by exactly the finish's shift, and a Mandatory Finish keeps it at 0 and fails both). Method (xerscope's choice, the pamphlet names only \"a task of the critical path\"): the first open task of the longest path has its remaining duration extended; the delayed task drops its expected finish. 600 working days is xerscope's choice: neither PAM 200.1 §4.12 nor DECM v8.0 06A401a gives a slip length. Reading of the result (xerscope's choice: the pamphlet gives no tolerance and reads its proportion \"assuming zero float\"): pass when the whole slip reaches the finish, or part of it with nothing stopping the rest (float on the delayed task's own finish, calendars on the way); fail when the activities that finish the project do not move, or an expected finish downstream absorbs part of the slip. UNRESOLVED: how much of the slip must arrive when the delayed task has float on its finish"
 
 [[metric]]
 id = "DCMA-13"

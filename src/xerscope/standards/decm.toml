@@ -91,11 +91,11 @@ source = "06A212a v8.0 (8/21/2025): block 6 \"X = Count of out of sequence condi
 id = "06A401a"
 group = "Critical path"
 name = "Critical path test"
-description = "A delay on the critical path moves the project finish by the same amount"
+description = "A delay on the critical path reaches the project finish"
 rule = "decm_06a401a_critical_path_test"
 params = { slip_days = 600 }  # working days added to the first open critical activity
 target = "pass"
-source = "06A401a: the schedule's critical path is the longest path. The DECM v8.0 sheet tests it with a constraint (finish no later than six months before the baseline finish) and compares the critical sets; it gives no slip length. xerscope runs the slip test of DCMA-12 instead (600 working days, xerscope's choice): an approximation of 06A401a, not its method"
+source = "06A401a: the schedule's critical path is the longest path. The DECM v8.0 sheet tests it with a constraint (finish no later than six months before the baseline finish) and compares the critical sets; it gives no slip length. xerscope runs the slip test of DCMA-12 instead (600 working days, xerscope's choice), read as DCMA-12 reads it: an approximation of 06A401a, not its method"
 
 [[metric]]
 id = "06A501a"

@@ -371,11 +371,17 @@ def dcma_11_missed_tasks(context, date_grain: Literal["timestamp", "day"] = "tim
 
 @rule("dcma_12_critical_path_test", "pass/fail")
 def dcma_12_critical_path_test(context, slip_days: float = DCMA_SLIP_DAYS) -> RuleOutput:
-    """Add the slip (working days) to the first open critical task; the finish must slip as much.
+    """Add the slip (working days) to the first open critical task; the slip must reach the finish.
 
     DCMA-EA PAM 200.1 §4.12: the project completion date must move "in direct proportion" to the
-    "intentional slip" introduced. The pamphlet gives no slip length; 600 working days is xerscope's
-    choice, DECM 06A401a gives none either
+    "intentional slip" introduced, "assuming zero float"; the defect it looks for is broken logic,
+    missing predecessors or successors. The pamphlet gives no slip length, no task and no tolerance:
+    600 working days and the first open task of the longest path are xerscope's choice (DECM 06A401a
+    gives none either), and so is the reading of the result. Pass: the whole slip reaches the finish,
+    or part of it with nothing stopping the rest (float on the delayed task's own finish or calendars
+    on the way take the difference, given in the note). Fail: the activities that finish the project
+    do not move, or an expected finish downstream absorbs part of the slip. UNRESOLVED: how much of
+    the slip must arrive when the delayed task has float on its finish
     """
     return critical_path_output(context, slip_days)
 
