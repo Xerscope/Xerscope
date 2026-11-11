@@ -1577,6 +1577,36 @@ def test_dcma_14_leaves_out_zero_duration_tasks_and_says_so():
     assert "1 without original duration" in r.note
 
 
+@pytest.mark.oracle("characterization")
+def test_zero_duration_task_characterization():
+    """UNRESOLVED (_discrete_tasks, fourteen_point.py): PAM 200.1 §4.0 excludes milestones and does not
+    name the duration. Pinned reading: ZERO, a TT_Task with no original duration, is a task of every
+    check but the two whose text names the duration, DCMA-10 (§4.10) and DCMA-14 (§3.1.2.4 step 1).
+
+    ZERO, A and NONE: not started, no logic, planned finish 2026-02-27 before the status date; A alone
+    has a resource. Population 3 where ZERO stays, 2 where it is left out.
+    """
+    planned = dict(target_start_date="2026-02-02 08:00", target_end_date="2026-02-27 17:00")
+    s = snap(
+        [todo("ZERO", target_drtn_hr_cnt="0", **planned), todo("A", **planned), todo("NONE", **planned)],
+        rsrc=["A"],
+    )
+    expected = {
+        "DCMA-01": ((3, 3), ["A", "NONE", "ZERO"]),
+        "DCMA-05": ((0, 3), []),
+        "DCMA-06": ((0, 3), []),
+        "DCMA-07": ((0, 3), []),
+        "DCMA-08": ((0, 3), []),
+        "DCMA-09": ((0, 3), []),
+        "DCMA-10": ((1, 2), ["NONE"]),
+        "DCMA-11": ((3, 3), ["A", "NONE", "ZERO"]),
+        "DCMA-14": ((0, 2), ["A", "NONE"]),
+    }
+    for metric, (found, flagged) in expected.items():
+        r = run(DCMA, metric, s, Baseline.planned(s))
+        assert ((r.numerator, r.denominator), codes(r)) == (found, flagged), metric
+
+
 def test_dcma_06_07_name_open_tasks_without_float():
     """PAM 200.1 is silent on a missing float: the task stays in "# of incomplete tasks" and cannot be
     flagged; the note says how many and why."""

@@ -43,7 +43,15 @@ DCMA_HARD_CONSTRAINTS = HARD_CONSTRAINTS
 
 
 def _discrete_tasks(funnel: Funnel) -> Funnel:
-    """PAM 200.1 section 4.0: LOE and milestones are not tasks."""
+    """PAM 200.1 section 4.0: LOE and milestones are not tasks.
+
+    UNRESOLVED: a milestone is the P6 activity type; a task of another type with no original duration
+    stays in the population. Only §3.1.2.4 step 1 ("zero duration tasks (milestones)", DCMA-14) and
+    §4.10 ("tasks with durations greater than zero", DCMA-10) name the duration, and those two checks
+    leave such a task out (``no_duration``). Step 1 equates the two, and in MS Project, which the
+    pamphlet describes, a milestone is a zero duration task: read that way, §4.0 would remove it from
+    every check.
+    """
     return funnel.exclude("loe", "PAM 200.1").exclude("milestones", "PAM 200.1")
 
 
