@@ -44,7 +44,7 @@ name = "Hard Constraints"
 description = "Constraints that prevent activities being moved (Mandatory Start, Start On, Mandatory Finish, Finish On)"
 rule = "p6_02_hard_constraints"
 target = "< 1%"
-source = "101248 (P6 Professional help, Hard Constraints) and 46286: completed, WBS summary and LOE removed; start constraints ignored once started"
+source = "101248 (P6 Professional help, Hard Constraints) and 46286: completed, WBS summary and LOE removed; start constraints ignored once started. UNRESOLVED: a constraint counts whether it is primary or secondary; 46286 counts activities and gives the report a Position column (primary or secondary), but no Oracle text says that an activity whose only hard constraint is the secondary one is counted"
 
 [[metric]]
 id = "P6-03"
