@@ -1773,13 +1773,17 @@ def _schedule_failure(error: ScheduleError, delayed: str | None = None) -> CptRe
 
 
 def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
-    """Add ``delay_days`` to the first open activity of the critical path; the finish must move as much.
+    """Add ``delay_days`` to the first open activity of the critical path; the delay must reach the finish.
 
-    The finish is measured on the project's end points (activities without successors),
-    in working time of the delayed activity's calendar. Pass = it moved by at least the
-    delay (further is a calendar effect, less means something absorbed the delay: a mandatory
-    date, or an expected finish downstream, whose activity loses its remaining duration when the
-    delay pushes it past that date; both are named with what they absorbed).
+    The finish is measured on the project's end points (activities without successors), in
+    working time of the delayed activity's calendar. Pass = the whole delay reached it (further
+    is a calendar effect), or part of it did and nothing stopped the rest: the end points that
+    finish the plain schedule moved and no expected finish downstream gave up remaining duration.
+    The part that did not arrive is float on the delayed activity's own finish (it may be on the
+    longest path by its start alone) or calendars on the way; the note gives the amount. Fail =
+    those end points do not move (nothing follows the delayed finish, or a mandatory date or a link
+    that binds nothing stops the delay), or an expected finish absorbs part of it (its activity
+    loses its remaining duration when the delay pushes it past that date); the note names what it can.
     """
     activities = snapshot.activities
     try:
@@ -1817,10 +1821,20 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     # read less for the same reason (the window of the move holds non-working days of that
     # calendar the downstream path does not observe), so the proportion is also read in calendar
     # days: the finish must move at least as much as the delayed activity's own finish did.
-    # Less on both readings means a constraint, an expected finish or broken logic absorbed it.
     own_move = late.frame.at[code, "ef"] - base.frame.at[code, "ef"]
     end_move = delayed_finish - base_finish
-    passed = shift >= delay_hours - 1e-6 or end_move >= own_move
+    whole = shift >= delay_hours - 1e-6 or end_move >= own_move
+    # Less on both readings is not a failure by itself: PAM 200.1 §4.12 reads its proportion
+    # "assuming zero float", and the delayed activity may have float on its own finish (it can be
+    # on the longest path by its start alone), or the path may cross calendars. A delay that stops
+    # on the way is: the end points that finish the plain schedule do not move, or an expected
+    # finish downstream gives up remaining duration (to 0 once pushed past that date: the
+    # shortening is the absorption).
+    ends = base.frame.loc[end_points, "ef"]
+    reached = late.frame.loc[ends.index[ends == base_finish], "ef"].max() > base_finish
+    shortened = (base.frame["rem_override_hr"] - late.frame["rem_override_hr"].reindex(base.frame.index)).fillna(0)
+    shortened = shortened[(shortened > 1e-6) & (shortened.index != code)]
+    passed = whole or (reached and shortened.empty)
     note = (
         f"+{delay_days:g} wd on {code}: forecast finish {base_finish:%Y-%m-%d} -> {delayed_finish:%Y-%m-%d}, "
         f"moved {shift / hours_per_day:+.1f} wd"
@@ -1835,13 +1849,20 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         project_shift_wd = (
             project_axis.between(base_finish, delayed_finish) / 60 / (project.hours_per_day or hours_per_day)
         )
+        reading = ""
+        if whole:
+            reading = ": a calendar effect, the whole delay reached the finish"
+        elif passed:
+            reading = f": the delay reaches the finish, less float on {code}'s own finish or a calendar effect"
         note += (
             f" ({project_shift_wd:+.1f} wd on the project calendar; {end_move.days:+d} calendar days against "
-            f"{own_move.days:+d} for {code}'s own finish"
-            + (": a calendar effect, the whole delay reached the finish)" if passed else ")")
+            f"{own_move.days:+d} for {code}'s own finish{reading})"
         )
     blocking = []
     if not passed:
+        links = snapshot.relationships
+        if not reached and links[(links["pred_code"] == code) & links["type"].isin(["FS", "FF"])].empty:
+            note += f"; {code} has no FS or FF successor: nothing follows its finish"
         # only open work can absorb a delay: a finished activity's mandatory date is history
         mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
         pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
@@ -1851,10 +1872,6 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
         ]
         if blocking:
             note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"
-        # an expected finish downstream shortens the remaining duration of its activity when the
-        # delay pushes its start past that date (to 0 beyond it): the shortening is the absorption
-        shortened = (base.frame["rem_override_hr"] - late.frame["rem_override_hr"].reindex(base.frame.index)).fillna(0)
-        shortened = shortened[(shortened > 1e-6) & (shortened.index != code)]
         if not shortened.empty:
             names = activities.set_index("task_code")["task_name"]
             hours = activities.set_index("task_code")["hours_per_day"].astype(float)

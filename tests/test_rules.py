@@ -696,6 +696,77 @@ def test_critical_path_test_reads_the_proportion_in_calendar_days_across_calenda
     assert "a calendar effect, the whole delay reached the finish" in r.note
 
 
+def test_critical_path_test_passes_when_float_on_the_delayed_finish_takes_part_of_the_delay():
+    """A (1 wd) is on the longest path by its start: it drives B (5 wd) start-to-start, and B ends the
+    project on Fri 6. A's own finish goes to Z through C (1 wd), which could end three days later: 3 wd
+    of float. +600 wd on A move Z by 597 wd: the logic carries the delay, the float took 3 wd of it.
+    PAM 200.1 §4.12 reads the proportion "assuming zero float" and names missing predecessors or
+    successors as the defect: there is none here."""
+    tasks = [todo("A", **hours(8)), todo("B", **hours(40)), todo("C", **hours(8)), todo("Z", **FM)]
+    s = snap(tasks, [("A", "B", "SS", 0), ("B", "Z", "FS", 0), ("A", "C", "FS", 0), ("C", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "pass" and "+600 wd on A:" in r.note and "moved +597.0 wd" in r.note
+    assert "the delay reaches the finish, less float on A's own finish or a calendar effect" in r.note
+    assert run(STANDARDS["DECM"], "06A401a", s).status == "pass"  # the same test, read the same way
+
+
+def test_critical_path_test_fails_when_nothing_follows_the_finish_of_the_delayed_task():
+    """Same start-to-start driver, without C: A's finish has no successor. Its delay moves nothing, and
+    the note says why (P6-17 lists A as a dangling finish)."""
+    tasks = [todo("A", **hours(8)), todo("B", **hours(40)), todo("Z", **FM)]
+    s = snap(tasks, [("A", "B", "SS", 0), ("B", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "fail" and "moved +0.0 wd instead of +600" in r.note
+    assert "A has no FS or FF successor: nothing follows its finish" in r.note and codes(r) == []
+    assert codes(run(P6, "P6-17", s)) == ["A"]
+
+
+def test_critical_path_test_fails_when_the_delay_only_reaches_another_open_end():
+    """Z ends the project and holds a Mandatory Finish; S (1 wd, no successor) follows A too and ends
+    earlier. +600 wd on A move S past Z, 591 wd later than Z's date, but Z itself does not move: the
+    delay did not reach the activity that ends the project. A has successors by its finish, so the
+    note does not call its finish dangling."""
+    chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00"), todo("S", **hours(8))]
+    r = run(DCMA, "DCMA-12", snap(chain, [("A", "B", "FS", 0), ("B", "Z", "FS", 0), ("A", "S", "FS", 0)]))
+    assert r.status == "fail" and "moved +591.0 wd instead of +600" in r.note and codes(r) == ["Z"]
+    assert "no FS or FF successor" not in r.note
+
+
+def test_critical_path_test_passes_when_the_path_leaves_a_week_off_behind():
+    """B (10 wd) runs on a calendar closed Mon 9 to Fri 13 Mar 2026: in the plain schedule it starts
+    Tue 3 and ends Mon 23, across that week; delayed, it runs in 2028 without it. Z moves 834 calendar
+    days against 841 for A's own finish, 595 wd on A's calendar: nothing absorbed the delay, the week
+    off is no longer on the way."""
+    from datetime import date
+
+    from xerkit import clndr_data
+
+    first_day_off = (date(2026, 3, 9) - date(1899, 12, 30)).days  # Excel serial, as P6 stores exception days
+    week_off = tuple(first_day_off + k for k in range(5))
+    calendar = {
+        "clndr_id": "11", "clndr_name": "week off", "day_hr_cnt": "8", "week_hr_cnt": "40",
+        "clndr_data": clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], week_off),
+    }  # fmt: skip
+    tasks = [todo("A", **hours(8)), todo("B", clndr_id="11"), todo("Z", **FM)]
+    s = snap(tasks, [("A", "B", "FS", 0), ("B", "Z", "FS", 0)], calendars=[calendar])
+    r = run(DCMA, "DCMA-12", s)
+    assert r.status == "pass"
+    assert "2026-03-23 -> 2028-07-04, moved +595.0 wd" in r.note
+    assert "+834 calendar days against +841 for A's own finish: the delay reaches the finish" in r.note
+
+
+def test_critical_path_test_delays_the_lowest_activity_id_among_the_tasks_starting_first():
+    """Two open tasks of the longest path start together on Mon 2: the start-to-start driver and the task
+    it drives. The lowest Activity ID is delayed, so the same network passes or fails with the names:
+    the task whose finish ends the project (pass), or the driver nothing follows (fail)."""
+    from xerscope.analysis.cpm import critical_path_test
+
+    for driver, driven, passed in (("A2", "A1", True), ("A1", "A2", False)):
+        tasks = [todo(driver, **hours(8)), todo(driven, **hours(40)), todo("Z", **FM)]
+        r = critical_path_test(snap(tasks, [(driver, driven, "SS", 0), (driven, "Z", "FS", 0)]), 600)
+        assert (r.delayed, r.passed) == ("A1", passed)
+
+
 def test_critical_path_test_does_not_blame_a_completed_mandatory_date():
     # a finished activity cannot absorb a delay: its mandatory date is not listed
     chain = CHAIN[:2] + [dict(CHAIN[2], cstr_type="CS_MANDFIN", cstr_date="2026-03-27 17:00")]

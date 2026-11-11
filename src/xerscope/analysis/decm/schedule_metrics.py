@@ -276,11 +276,11 @@ def decm_06a212a_out_of_sequence(context) -> RuleOutput:
 
 @rule("decm_06a401a_critical_path_test", "pass/fail")
 def decm_06a401a_critical_path_test(context, slip_days: float = SLIP_DAYS) -> RuleOutput:
-    """Add the slip (working days) to the first open critical task; the finish must slip as much.
+    """Add the slip (working days) to the first open critical task; the slip must reach the finish.
 
     06A401a asks whether the critical path is the longest path; its sheet (v8.0) tests that with a
     constraint six months before the baseline finish and compares the critical sets. This rule runs the
-    slip test of DCMA-12 instead: an approximation of 06A401a, not its method
+    slip test of DCMA-12 instead, read as DCMA-12 reads it: an approximation of 06A401a, not its method
     """
     return critical_path_output(context, slip_days)
 
