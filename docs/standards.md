@@ -341,8 +341,9 @@ keyword, unit or target is rejected on load with the exact name, so a typo canno
 change a result. The shape of the file is checked first, with the same kind of message
 (`my-standard.toml: metric #3 (ACME-03): ...`): `[[metric]]` must be an array of tables,
 `params` a table, `id`, `name`, `rule` and the optional text keys (`description`, `unit`,
-`target`, `source`, `group`) strings; an `id` holds letters, digits, `.`, `_` and `-` only
-(it names the `--flagged` files); a numeric parameter is finite (`nan` and `inf` would turn
+`target`, `source`, `group`) strings; an `id`, of a metric or of the standard, holds letters,
+digits, `.`, `_` and `-` only (the metric id names the `--flagged` files, the standard id the
+files downloaded from Schedule health); a numeric parameter is finite (`nan` and `inf` would turn
 every comparison into a silent pass); `target = "pass"` goes with a `pass/fail` rule and only
 there, which takes no numeric target; a TOML nested thousands of levels deep is refused as
 "too deeply nested". Every load error is a `ValueError` naming the file: the app lists it
