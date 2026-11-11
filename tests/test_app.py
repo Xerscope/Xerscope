@@ -134,6 +134,50 @@ def test_every_page_renders(app):
         assert app.title, f"{page} rendered no title"
 
 
+@pytest.fixture
+def one_file_app(sample_dir, monkeypatch):
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    return read_folder(AppTest.from_file(APP, default_timeout=120).run(), count=1)
+
+
+@pytest.mark.parametrize(
+    "page, message",
+    [
+        ("views/changelog.py", "Load at least two XER files to compare them."),
+        ("views/milestones.py", "The trend needs at least two updates."),
+        ("views/ppc.py", "PPC compares consecutive updates: load at least two."),
+    ],
+)
+def test_pages_comparing_updates_ask_for_two_and_show_nothing_else(one_file_app, page, message):
+    """Changelog, milestone trend and PPC compare updates with each other: with one file read they
+    say so and compute nothing."""
+    one_file_app.switch_page(page).run()
+    _ok(one_file_app)
+    assert [i.value for i in one_file_app.info] == [message]
+    assert not one_file_app.metric
+    assert not one_file_app.dataframe
+    assert not one_file_app.get("plotly_chart")
+
+
+def test_earned_value_renders_with_a_single_update(one_file_app):
+    """Earned value measures one update against its baseline: one file is enough, the page shows its
+    six indicators and its two charts, and does not ask for a second update."""
+    one_file_app.switch_page("views/earned_value.py").run()
+    _ok(one_file_app)
+    assert [m.label for m in one_file_app.metric] == [
+        "Percent complete",
+        "Percent scheduled",
+        "SPI (labor units)",
+        "SV",
+        "BEI (P6 / DCMA)",
+        "EAC",
+    ]
+    assert len(one_file_app.get("plotly_chart")) == 2
+    assert not any("at least two" in i.value for i in one_file_app.info)
+    assert not one_file_app.warning
+
+
 def _gantt_data(at) -> dict:
     """The Gantt component's data, as the browser receives it."""
     return json.loads(at.get("bidi_component")[0].proto.json)
@@ -637,7 +681,9 @@ def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):
-    """Series pages (PPC, trend, earned value) need two updates; with one they say so."""
+    """No page fails with a single update read. What the pages comparing updates say then, and what
+    earned value shows, is pinned by test_pages_comparing_updates_ask_for_two_and_show_nothing_else
+    and test_earned_value_renders_with_a_single_update."""
     first = sorted(sample_dir.glob("*.xer"))[0]
     (tmp_path / first.name).write_bytes(first.read_bytes())
     at = _run(tmp_path, monkeypatch)
