@@ -166,6 +166,8 @@ def parse_standard(data: dict, path: str = "") -> Standard:
     for key in ("id", "name", "description", "source"):
         if key in head and not isinstance(head[key], str):
             raise ValueError(f"{where}: [standard] {key} must be a string, got {head[key]!r}")
+    if not _ID.match(head["id"]):
+        raise ValueError(f"{where}: [standard] id {head['id']!r}: letters, digits, '.', '_' and '-' only")
     entries = data.get("metric", [])
     if not isinstance(entries, list):
         raise ValueError(f"{where}: 'metric' must be an array of tables ([[metric]]), got {entries!r}")
