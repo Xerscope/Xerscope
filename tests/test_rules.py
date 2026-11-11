@@ -295,6 +295,28 @@ def test_secondary_constraint_characterization():
         assert ((r.numerator, r.denominator), codes(r)) == ((found, 5), flagged), metric
 
 
+@pytest.mark.oracle("characterization")
+def test_secondary_hard_constraint_on_a_started_task_characterization():
+    """UNRESOLVED (p6_02_hard_constraints, dcma_05_hard_constraints), a started task whose only hard
+    constraint is the secondary one. Pinned reading, three tasks:
+    STARTED, in progress, Mandatory Start as secondary: a start constraint on a started task, ignored
+    by P6-02 (46286), counted by DCMA-05.
+    FINISH, in progress, Mandatory Finish as secondary: counted by both.
+    NONE: no constraint.
+    """
+    s = snap(
+        [
+            active("STARTED", cstr_type2="CS_MANDSTART", cstr_date2="2026-02-23 08:00"),
+            active("FINISH", cstr_type2="CS_MANDFIN", cstr_date2="2026-04-01 17:00"),
+            todo("NONE"),
+        ]
+    )
+    r = run(P6, "P6-02", s)
+    assert ((r.numerator, r.denominator), codes(r)) == ((1, 3), ["FINISH"])
+    r = run(DCMA, "DCMA-05", s)
+    assert ((r.numerator, r.denominator), codes(r)) == ((2, 3), ["FINISH", "STARTED"])
+
+
 def test_float_threshold_in_hours_vs_working_days():
     # 10 h/day calendar: 400 h = 40 working days. P6 (> 352 h) flags it, DCMA (> 44 d) does not.
     s = snap(
@@ -1605,6 +1627,24 @@ def test_zero_duration_task_characterization():
     for metric, (found, flagged) in expected.items():
         r = run(DCMA, metric, s, Baseline.planned(s))
         assert ((r.numerator, r.denominator), codes(r)) == (found, flagged), metric
+
+
+@pytest.mark.oracle("characterization")
+def test_links_into_a_zero_duration_task_characterization():
+    """UNRESOLVED (_discrete_tasks, fourteen_point.py): ZERO, a TT_Task with no original duration, is a
+    task of the relationship checks too. A -> ZERO (FS, lag 8 h) and ZERO -> B (FS, lag 0): both
+    relationships are checked by DCMA-02, DCMA-03 and DCMA-04, and the lag into ZERO is counted.
+    """
+    s = snap(
+        [todo("A"), todo("ZERO", target_drtn_hr_cnt="0"), todo("B")],
+        preds=[("A", "ZERO", "FS", 8), ("ZERO", "B", "FS", 0)],
+    )
+    r = run(DCMA, "DCMA-02", s)
+    assert ((r.numerator, r.denominator), links(r)) == ((0, 2), [])
+    r = run(DCMA, "DCMA-03", s)
+    assert ((r.numerator, r.denominator), links(r)) == ((1, 2), [("A", "ZERO")])
+    r = run(DCMA, "DCMA-04", s)
+    assert (r.numerator, r.denominator) == (2, 2)
 
 
 def test_dcma_06_07_name_open_tasks_without_float():
