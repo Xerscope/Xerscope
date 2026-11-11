@@ -681,7 +681,9 @@ def test_gantt_code_search_scales_to_a_thousand_values(tmp_path, monkeypatch):
 
 
 def test_one_snapshot_renders_every_page(sample_dir, tmp_path, monkeypatch):
-    """Series pages (PPC, trend, earned value) need two updates; with one they say so."""
+    """No page fails with a single update read. What the pages comparing updates say then, and what
+    earned value shows, is pinned by test_pages_comparing_updates_ask_for_two_and_show_nothing_else
+    and test_earned_value_renders_with_a_single_update."""
     first = sorted(sample_dir.glob("*.xer"))[0]
     (tmp_path / first.name).write_bytes(first.read_bytes())
     at = _run(tmp_path, monkeypatch)
