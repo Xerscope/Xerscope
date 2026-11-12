@@ -608,10 +608,14 @@ def share_of_type(relationships: pd.DataFrame, link_type: str) -> RuleOutput:
 
 
 def late_output(context: AnalysisContext, population: pd.DataFrame, tolerance_hours: float = 0) -> RuleOutput:
-    """The tasks finishing later than ``bl_finish`` by more than the tolerance, in working time."""
+    """The tasks finishing later than ``bl_finish`` by more than the tolerance, in working time.
+
+    ``finish_variance_wd`` has P6's sign, baseline finish minus finish: a late finish reads negative
+    (Finish Variance of the Check Schedule report of P6 26, tests/test_p6_checksched.py)."""
     variance_hours = context.snapshot.work_hours(population["clndr_id"], population["bl_finish"], population["finish"])
     flagged = population[as_flag(variance_hours > tolerance_hours)]
-    variance_days = (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
+    # 0.0 - x, not -x: a variance that rounds to 0.00 stays 0.0 and never prints as -0.0
+    variance_days = 0.0 - (variance_hours[flagged.index] / flagged["hours_per_day"]).round(2)
     extra = {"bl_finish": flagged["bl_finish"], "finish_variance_wd": variance_days}
     # A task with no finish date (a file never scheduled, or a blank early_end_date) has no variance: it
     # cannot be judged late, yet stays in the denominator. Said in the note, so the reader sees the count.
