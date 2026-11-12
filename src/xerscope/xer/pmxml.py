@@ -79,7 +79,7 @@ def is_pmxml(data: bytes) -> bool:
 def _root(data: bytes, source: str) -> tuple[ET.Element, str]:
     try:
         root = ET.fromstring(data)  # nosec B314 - a file the user chose; Python's parser expands no external entity
-    except ET.ParseError as exc:
+    except (ET.ParseError, LookupError, ValueError) as exc:  # the last two: an encoding Python cannot read
         raise XerError(f"{source}: not a readable P6 XML file ({exc})") from exc
     namespace = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
     if root.tag.removeprefix(namespace) != "APIBusinessObjects":
