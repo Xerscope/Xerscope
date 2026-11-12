@@ -10,3 +10,5 @@
 /tests/ask/heldout.toml         @QuentinGouttaya
 # what the fitness check accepts: raising it hides a regression
 /tests/fitness_baseline.json    @QuentinGouttaya
+# what the mutation check accepts: lowering it hides a weaker test suite
+/tests/mutation_baseline.json   @QuentinGouttaya

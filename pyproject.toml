@@ -37,6 +37,8 @@ dev = [
     "import-linter==2.16",
     "mypy==2.4.1",
     "radon==6.0.1",
+    # mutation score (scripts/mutation.py): exact version, tests/mutation_baseline.json holds its counts
+    "mutmut==3.8.1",
 ]
 
 [build-system]
@@ -56,6 +58,38 @@ filterwarnings = [
     "ignore::DeprecationWarning:streamlit.*",
     # a date read without a format is a guess: every date of the app is "YYYY-MM-DD HH:MM" (ISO 8601)
     "error:Could not infer format:UserWarning",
+]
+
+[tool.mutmut]
+# The modules whose mutation score is kept in tests/mutation_baseline.json (scripts/mutation.py).
+# mutmut leaves decorated functions alone: the @rule checks of analysis/p6 and analysis/dcma are
+# out of its reach, so their modules are not listed.
+# Only the mutated files are copied by default: the rest of the package is copied as it is,
+# and docs/ because a test reads docs/standards.md.
+source_paths = [
+    "src/xerscope/analysis/progress.py",
+    "src/xerscope/xer/calendar.py",
+    "src/xerscope/analysis/standards.py",
+]
+also_copy = ["src", "docs"]
+# The test files that exercise these modules and run in seconds. A mutant only a slow suite
+# kills (P6 corpus, MPXJ, app pages) counts as survived.
+pytest_add_cli_args_test_selection = [
+    "tests/test_rules.py",
+    "tests/test_p6_check_schedule.py",
+    "tests/test_p6_checksched.py",
+    "tests/test_calendar_and_standards.py",
+    "tests/test_boundaries_blind.py",
+    "tests/test_standards_conformity.py",
+    "tests/test_ppc_blind.py",
+    "tests/test_weekly.py",
+    "tests/test_shift_calendar.py",
+    "tests/test_time_semantics.py",
+    "tests/test_result_contracts.py",
+    "tests/test_demo_counts_blind.py",
+    "tests/test_characterization.py",
+    "tests/test_scores.py",
+    "tests/test_explain.py",
 ]
 
 [tool.ruff]

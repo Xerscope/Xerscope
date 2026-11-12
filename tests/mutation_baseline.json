@@ -1,0 +1,23 @@
+{
+  "src/xerscope/analysis/progress.py": {
+    "mutants": 979,
+    "killed": 848,
+    "survived": 131,
+    "no_tests": 0,
+    "unchecked": 0
+  },
+  "src/xerscope/analysis/standards.py": {
+    "mutants": 404,
+    "killed": 256,
+    "survived": 131,
+    "no_tests": 17,
+    "unchecked": 0
+  },
+  "src/xerscope/xer/calendar.py": {
+    "mutants": 995,
+    "killed": 743,
+    "survived": 225,
+    "no_tests": 24,
+    "unchecked": 0
+  }
+}
