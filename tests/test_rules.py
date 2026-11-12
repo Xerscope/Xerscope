@@ -1188,6 +1188,23 @@ def test_a_late_finish_too_small_to_show_reads_zero_without_a_sign():
     assert str(r.flagged.iloc[0]["finish_variance_wd"]) == "0.0"
 
 
+def test_the_generic_late_rule_gives_the_variance_with_p6s_sign():
+    """late_vs_baseline is the parameterised form of P6-12: its finish_variance_wd reads as P6's
+    Finish Variance, baseline finish minus finish, so a late task reads negative.
+
+    A: baseline finish Mon 2026-03-02 17:00, finish Fri 2026-03-13 17:00, 8 h days:
+    Tue 3 to Fri 6 (4 days) + Mon 9 to Fri 13 (5 days) = 9 working days = 72 h.
+    Tolerance 40 h: late, variance -9.0. Tolerance 72 h: not later by more than 72 h, not late."""
+    from xerscope.analysis.rules import RULES
+
+    bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-02 17:00")]))
+    now = snap([todo("A", early_end_date="2026-03-13 17:00")])
+    late = RULES["late_vs_baseline"].fn(AnalysisContext(now, baseline=bl), tolerance_hours=40)
+    assert codes(late) == ["A"] and counts(late) == (1, 1)
+    assert late.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(-9.0)
+    assert codes(RULES["late_vs_baseline"].fn(AnalysisContext(now, baseline=bl), tolerance_hours=72)) == []
+
+
 def test_assignment_dates_integrity():
     stored = dict(
         restart_date="2026-03-02 08:00",
