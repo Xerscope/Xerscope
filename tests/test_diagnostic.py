@@ -10,12 +10,39 @@ from xerkit import active, clndr_data, done, snap, todo
 from xerscope.analysis import builtin_standards
 from xerscope.app.diagnostic import (
     ABSENT,
+    DEFAULTED,
+    FROM_FILE,
     check_parameters,
     costs_table,
     diagnostic_frames,
     finish_table,
     leveling_table,
+    options_comparison,
+    options_table,
 )
+
+
+def test_options_comparison_puts_the_baseline_next_to_the_update_and_says_what_differs():
+    """Two files of one project scheduled with different options give dates that do not compare.
+    Update: Progress Override, total float = start float (FT_SS). Baseline file: Retained Logic, no
+    float type written, so P6's default (finish float, FT_FF) applies. Two options differ, float_type
+    and progressed; the nine others are the same on both sides."""
+    update = snap(
+        [todo("A")],
+        sched={"sched_retained_logic": "N", "sched_progress_override": "Y", "sched_float_type": "FT_SS"},
+    )
+    baseline = snap([todo("A")], sched={"sched_retained_logic": "Y", "sched_progress_override": "N"})
+    table = options_comparison(update, baseline).set_index("option")
+    assert list(table.index) == list(options_table(update)["option"])  # one row per option, same order
+    assert list(table.index[table["differs"]]) == ["float_type", "progressed"]
+    assert table.loc["float_type", ["update", "update_origin", "baseline", "baseline_origin"]].tolist() == [
+        "FT_SS",
+        FROM_FILE,
+        "FT_FF",
+        DEFAULTED,
+    ]
+    assert table.loc["progressed", ["update", "baseline"]].tolist() == ["progress_override", "retained_logic"]
+    assert not options_comparison(update, update)["differs"].any()  # a file against itself: nothing differs
 
 
 def test_leveling_table_lists_the_activities_the_warning_counts():
