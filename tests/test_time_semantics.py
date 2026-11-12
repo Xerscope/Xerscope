@@ -431,8 +431,9 @@ def test_milestone_slip_is_working_time_not_calendar_date(first, latest, slip):
     Finish - Finish Date") and "Durations Columns of the Activity Table" (47223.htm: "Variance - BL
     Project Finish Date ... calculated as Finish minus BL Project Finish"). Working vs calendar days not
     stated by Oracle; engine convention, to verify against a P6 column. Mon 08:00 to Mon 17:00 = 1 wd:
-    consistent with the engine, no P6 source."""
-    assert _slip(_milestone_store(first, latest)) == slip
+    consistent with the engine, no P6 source. No move reads 0.0, never -0.0."""
+    value = float(_slip(_milestone_store(first, latest)))
+    assert value == slip and str(value) == str(float(slip))
 
 
 # --- 6. earned value: Schedule % Complete ------------------------------------------------------------

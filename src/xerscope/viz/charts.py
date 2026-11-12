@@ -292,8 +292,8 @@ def build_mta(
     Each line keeps its own series colour so milestones stay distinguishable: the colour of
     its position in ``order`` (the user's pick order, so the picker's tags can match), else
     of its position in ``trend``. The move in
-    the last update (``last_shift_wd``, working days, `milestone_slips.last_week_wd`) marks
-    the last point and the end label: red later, green earlier, line colour unchanged.
+    the last update (``last_shift_wd``, working days, `milestone_slips.last_week_wd`: negative =
+    later) marks the last point and the end label: red later, green earlier, line colour unchanged.
     Lines with the same dates hide each other: the unified hover lists every line at a
     reporting date and their end labels merge.
     """
@@ -334,7 +334,7 @@ def build_mta(
             continue
         color = series[order.index(code) % len(series)]
         shift = last_shift_wd.get(code, 0.0)
-        moved = status["critical"] if shift > 0 else status["good"] if shift < 0 else None
+        moved = status["critical"] if shift < 0 else status["good"] if shift > 0 else None
         g = rows.loc[: rows["forecast"].last_valid_index()]  # blank forecast = hidden update: the line breaks
         done = g["is_complete"].to_numpy()
         fig.add_trace(
@@ -355,7 +355,7 @@ def build_mta(
         )
         label = code + (format_shift(shift) if shift else "")
         if moved:  # the arrow carries the colour (a mark, 3:1 on both themes); the text keeps the theme's
-            label = f'<span style="color:{moved}">{"▲" if shift > 0 else "▼"}</span> {label}'
+            label = f'<span style="color:{moved}">{"▲" if shift < 0 else "▼"}</span> {label}'
         ends.append((g["data_date"].iloc[-1], g["forecast"].iloc[-1], label))
     _end_labels(fig, ends, (hi - lo).value)
     fig = _layout(fig, 760, "Forecast date")
