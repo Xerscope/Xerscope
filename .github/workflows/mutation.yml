@@ -4,7 +4,7 @@ name: mutation
 # tests/mutation_baseline.json: scripts/mutation.py fails when the share of killed mutants of a
 # module goes down. The job summary gives the counts on every run.
 #
-# Every Monday and by hand, never on a pull request: a full run takes about 50 minutes on a
+# Every Monday and by hand, never on a pull request: a full run takes about an hour and a half on a
 # GitHub runner (a surviving mutant runs every test that reaches it). A separate workflow: every
 # job of tests.yml gates the publish, this one must not.
 on:
@@ -22,6 +22,7 @@ permissions:
 jobs:
   mutation:
     runs-on: ubuntu-latest
+    timeout-minutes: 150  # a full run took 94 minutes; without a limit a stuck run holds its runner for 6 hours
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
