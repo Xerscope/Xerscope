@@ -113,7 +113,7 @@ def _invalid_dates_notes(params: dict) -> list[str]:
 
 
 def _late_vs_baseline_notes(params: dict) -> list[str]:
-    notes = ["Variance is working time on the task's calendar, as P6's Finish Variance."]
+    notes = ["Variance is working time on the task's calendar, as P6's Finish Variance: negative = late."]
     if params.get("no_baseline") == "planned":
         notes.append("A task with no baseline finish is late when its finish is later than its planned finish.")
     return notes
