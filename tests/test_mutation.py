@@ -96,7 +96,7 @@ def test_check_exit_code(tmp_path):
 
 
 def test_the_mutation_job_runs_weekly_or_by_hand_and_caps_the_memory_of_a_mutant():
-    """mutation.yml never runs on a pull request or a push (a full run takes about 50 minutes): every
+    """mutation.yml never runs on a pull request or a push (a full run takes about an hour and a half): every
     Monday and by hand only. mutmut runs under a limit of address space, so a mutant that loops and
     allocates without end is a killed mutant, not a lost runner."""
     workflow = (ROOT / ".github" / "workflows" / "mutation.yml").read_text(encoding="utf-8")
@@ -105,6 +105,8 @@ def test_the_mutation_job_runs_weekly_or_by_hand_and_caps_the_memory_of_a_mutant
     assert triggers == ["workflow_dispatch", "schedule"]
     assert re.search(r"^  schedule:\n    - cron: \"\d+ \d+ \* \* 1\"", on, re.M)
     steps = workflow[workflow.index("\njobs:") :]
+    limit = re.search(r"^    timeout-minutes: (\d+)", steps, re.M)  # GitHub's default lets a stuck run last 6 hours
+    assert limit and 94 < int(limit.group(1)) <= 180  # above the measured full run, under twice that
     assert steps.count("mutmut run") == 1
     assert re.search(r"run: \|\n\s+ulimit -v \d+\n\s+uv run mutmut run\n", steps)
     assert steps.index("mutmut run") < steps.index("scripts/mutation.py")

@@ -15,7 +15,7 @@
   },
   "src/xerscope/xer/calendar.py": {
     "mutants": 995,
-    "killed": 743,
+    "killed": 745,
     "survived": 225,
     "no_tests": 24,
     "unchecked": 0
