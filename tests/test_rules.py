@@ -180,6 +180,18 @@ def test_lead_long_lag_and_fs_share():
     assert fs.value == pytest.approx(200 / 3)
 
 
+def test_dcma_02_and_03_count_a_lead_and_a_lag_of_half_an_hour():
+    """PAM 200.1 §4.2 counts a lead (negative lag) and §4.3 a lag, whatever their length.
+    A -> B: lead of 0.5 h. B -> C: lag of 0.5 h. C -> D: neither. One lead and one lag of 3 links."""
+    s = snap(
+        [todo("A"), todo("B"), todo("C"), todo("D")],
+        [("A", "B", "FS", -0.5), ("B", "C", "FS", 0.5), ("C", "D", "FS", 0)],
+    )
+    leads, lags = run(DCMA, "DCMA-02", s), run(DCMA, "DCMA-03", s)
+    assert links(leads) == [("A", "B")] and counts(leads) == (1, 3)
+    assert links(lags) == [("B", "C")] and counts(lags) == (1, 3)
+
+
 def test_dcma_02_03_04_follow_pam_200_1():
     """DCMA-EA PAM 200.1 (Oct 2012) 4.2: "the number of logic links with a lead (negative lag) in
     predecessor relationships for incomplete tasks"; 4.3: "the number of lags in predecessor logic

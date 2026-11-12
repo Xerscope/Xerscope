@@ -233,6 +233,15 @@ def test_p6_09_negative_lag_counts_done_to_todo_not_done_to_done_and_not_zero():
     assert links(r) == [("D1", "T1")]
 
 
+def test_p6_09_a_lead_of_half_an_hour_is_a_negative_lag_and_no_lag_is_not():
+    """Negative Lags (101248): a relationship whose lag is below 0. A -> B with a lag of -0.5 h is one;
+    B -> C with no lag is not. 1 of 2."""
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "FS", -0.5), ("B", "C", "FS", 0)])
+    r = run(P6, "P6-09", s)
+    assert counts(r) == (1, 2)
+    assert links(r) == [("A", "B")]
+
+
 def test_p6_05_done_to_done_link_with_a_long_lag_is_outside_the_denominator():
     """'Relationships between completed activities are not included in this analysis.' (Long Lags, 101248)"""
     s = snap(
@@ -319,6 +328,35 @@ def test_p6_13_bei_is_completed_over_all_baseline_activities():
     assert r.value == 1.0
     assert r.status == "pass"
     assert r.note == "2 completed / 2 baseline tasks"
+
+
+def test_p6_14_half_an_hour_of_negative_float_is_negative_and_no_float_is_not():
+    """Negative Float (46283): total float below 0 hours. A at -0.5 h is negative; B at 0 h is not. 1 of 2."""
+    s = snap([todo("A", total_float_hr_cnt="-0.5"), todo("B", total_float_hr_cnt="0")])
+    r = run(P6, "P6-14", s)
+    assert counts(r) == (1, 2)
+    assert codes(r) == ["A"]
+
+
+def test_p6_13_lists_the_tasks_due_by_the_status_date_and_not_completed():
+    """The list of P6-13 holds the tasks whose baseline finish is on or before the status date
+    (Mon 2026-03-02 08:00) and that are not completed.
+    DUE: baseline finish at the status date to the minute, not completed: listed.
+    LATER: baseline finish one minute after it, not completed: not due, not listed.
+    DONE: baseline finish before it, completed: not listed.
+    BEI itself is completed / baseline tasks = 1 / 3."""
+    baseline = Baseline.from_snapshot(
+        snap(
+            [
+                todo("DUE", early_end_date=DD),
+                todo("LATER", early_end_date="2026-03-02 08:01"),
+                todo("DONE", early_end_date=BL_BEFORE_DD),
+            ]
+        )
+    )
+    r = run(P6, "P6-13", snap([todo("DUE"), todo("LATER"), done("DONE")]), baseline)
+    assert codes(r) == ["DUE"]
+    assert counts(r) == (1, 3)
 
 
 def test_p6_13_a_baseline_milestone_is_not_counted():
