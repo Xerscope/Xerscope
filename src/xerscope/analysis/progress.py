@@ -425,22 +425,24 @@ def rollup_delta(delta: pd.DataFrame, by: str = "wbs_l1") -> pd.DataFrame:
 
 
 def finish_shift_since_first(store: SnapshotStore) -> float | None:
-    """Working days (project calendar) the forecast finish moved since the first update; None if unknown."""
+    """Working days (project calendar) gained (+) or lost (-) on the forecast finish since the first
+    update: a finish that went later reads negative. None if unknown."""
     first, latest = store.first.finish_date, store.latest.finish_date
     if len(store) < 2 or first is None or latest is None:
         return None
-    return store.latest.project_working_days(first, latest)
+    return 0.0 - store.latest.project_working_days(first, latest)
 
 
 def activity_finish_shift(store: SnapshotStore, history: pd.DataFrame) -> float | None:
-    """Working days between an activity's first and last forecast finish, on its calendar in the
-    last row of ``history``, as the update of that row defines it (the latest update for an
-    activity still in it; for one deleted since, the last update that holds it, where its
-    calendar exists); None with one update or a missing finish."""
+    """Working days gained (+) or lost (-) between an activity's first and last forecast finish (a
+    finish that went later reads negative), on its calendar in the last row of ``history``, as the
+    update of that row defines it (the latest update for an activity still in it; for one deleted
+    since, the last update that holds it, where its calendar exists); None with one update or a
+    missing finish."""
     if len(history) < 2 or history["finish"].isna().any():
         return None
     clndr_id = history["clndr_id"].iloc[-1]
     last_update = store[int(history["snapshot_idx"].iloc[-1])]
-    return last_update.activity_working_days(
+    return 0.0 - last_update.activity_working_days(
         clndr_id if isinstance(clndr_id, str) else None, history["finish"].iloc[0], history["finish"].iloc[-1]
     )

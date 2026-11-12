@@ -51,19 +51,19 @@ def two_updates(project: str, activity: str, **task):
 @PAIRS
 def test_store_finish_shift_is_on_the_project_calendar(project, activity):
     store = SnapshotStore(two_updates(project, activity))
-    assert store.summary["finish_shift_wd"].iloc[1] == pytest.approx(round(WD[project], 1))
+    assert store.summary["finish_shift_wd"].iloc[1] == pytest.approx(-round(WD[project], 1))  # later: negative
 
 
 @PAIRS
 def test_finish_shift_since_first_is_on_the_project_calendar(project, activity):
-    assert finish_shift_since_first(SnapshotStore(two_updates(project, activity))) == pytest.approx(WD[project])
+    assert finish_shift_since_first(SnapshotStore(two_updates(project, activity))) == pytest.approx(-WD[project])
 
 
 @PAIRS
 def test_changelog_project_rows_are_on_the_project_calendar(project, activity):
     log = changelog(*two_updates(project, activity)).query("category == 'Project'").set_index("field")
-    assert log.loc["status date", "delta"] == pytest.approx(WD[project])
-    assert log.loc["forecast finish", "delta"] == pytest.approx(WD[project])
+    assert log.loc["status date", "delta"] == pytest.approx(WD[project])  # working days elapsed
+    assert log.loc["forecast finish", "delta"] == pytest.approx(-WD[project])  # a later finish: days lost
 
 
 @PAIRS
@@ -91,7 +91,22 @@ def test_dcma_13_length_and_float_are_on_the_project_calendar(project, activity)
 def test_changelog_date_moves_are_on_the_activity_calendar(project, activity):
     log = changelog(*two_updates(project, activity)).query("category == 'Dates'")
     assert list(log["change"]) == ["finish moved"]
-    assert log["delta"].iloc[0] == pytest.approx(WD[activity], abs=0.005)
+    assert log["delta"].iloc[0] == pytest.approx(-WD[activity], abs=0.005)  # moved later: negative
+
+
+def test_changelog_date_moves_read_days_lost_as_negative_and_days_gained_as_positive():
+    """A on the 8 h calendar. Start Mon 2 -> Tue 3 March 08:00: one working day later, -1.
+    Finish Fri 13 -> Thu 12 March 17:00: one working day earlier, +1. The status date row is not
+    a gain or a loss: Mon 2 -> Mon 9 March reads the 5 working days elapsed."""
+    old = snap([todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-13 17:00")])
+    new = snap(
+        [todo("A", early_start_date="2026-03-03 08:00", early_end_date="2026-03-12 17:00")],
+        data_date="2026-03-09 08:00",
+    )
+    log = changelog(old, new).set_index("change")
+    assert log.loc["start moved", "delta"] == -1
+    assert log.loc["finish moved", "delta"] == 1
+    assert log.loc["status date", "delta"] == 5
 
 
 @PAIRS
@@ -123,7 +138,7 @@ def test_milestone_slip_is_on_the_milestone_calendar(project, activity):
 def test_activity_page_slip_is_on_the_activity_calendar(project, activity):
     store = SnapshotStore(two_updates(project, activity))
     history = store.history.query("task_code == 'Z'").sort_values("data_date")
-    assert activity_finish_shift(store, history) == pytest.approx(WD[activity])
+    assert activity_finish_shift(store, history) == pytest.approx(-WD[activity])
 
 
 def test_activity_page_slip_needs_two_forecast_finishes():
@@ -260,7 +275,7 @@ def test_changelog_lists_an_hours_change_hidden_by_a_calendar_change():
 
 
 def test_weekly_finish_shifts_add_up_to_the_total_shift():
-    """Four updates, the finish moving 2 h a week on C8: 0.25 wd each, 1.0 wd in all. Stored
+    """Four updates, the finish moving 2 h later a week on C8: -0.25 wd each, -1.0 wd in all. Stored
     rounded to 0.1 (half to even: 0.2) they summed to 0.8 wd, in Power BI as on the page."""
     finishes = ["2026-03-13 17:00", "2026-03-16 10:00", "2026-03-16 12:00", "2026-03-16 15:00", "2026-03-16 17:00"]
     data_dates = ["2026-03-02 08:00", "2026-03-09 08:00", "2026-03-10 08:00", "2026-03-11 08:00", "2026-03-12 08:00"]
@@ -269,8 +284,8 @@ def test_weekly_finish_shifts_add_up_to_the_total_shift():
         for finish, data_date in zip(finishes, data_dates, strict=True)
     ]
     shifts = SnapshotStore(updates).summary["finish_shift_wd"]
-    assert shifts.iloc[1:].tolist() == [0.25, 0.25, 0.25, 0.25]
-    assert shifts.sum() == 1.0
+    assert shifts.iloc[1:].tolist() == [-0.25, -0.25, -0.25, -0.25]
+    assert shifts.sum() == -1.0
 
 
 # --- a missing date: the shift is missing, not zero ------------------------------------------
@@ -345,4 +360,4 @@ def test_activity_page_slip_of_a_deleted_activity_is_on_its_own_calendar():
     gone = snap([todo("Y")], data_date="2026-03-09 08:00")
     store = SnapshotStore([update(FIRST, FIRST), update(LAST, LAST), gone])
     history = store.history.query("task_code == 'Z'").sort_values("data_date")
-    assert activity_finish_shift(store, history) == pytest.approx(WD["C10"])
+    assert activity_finish_shift(store, history) == pytest.approx(-WD["C10"])

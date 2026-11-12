@@ -228,10 +228,11 @@ class SnapshotStore:
                 }
             )
         df = pd.DataFrame(rows)
-        # working days on the newer update's project calendar, like every other "wd" figure
+        # working days on the newer update's project calendar, like every other "wd" figure; a finish
+        # that goes later reads negative (days lost), and 0.0 - x keeps an unmoved finish at 0.0
         shifts = [None]
         for prev, cur in zip(self._snaps, self._snaps[1:], strict=False):
             a, b = prev.finish_date, cur.finish_date
-            shifts.append(None if a is None or b is None else cur.project_working_days(a, b))
+            shifts.append(None if a is None or b is None else 0.0 - cur.project_working_days(a, b))
         df["finish_shift_wd"] = pd.Series(shifts, dtype=float)
         return df

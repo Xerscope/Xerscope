@@ -238,8 +238,8 @@ def show_history(store, task_code: str) -> None:
                 "Forecast finish",
                 ui.fmt_date(last["finish"], "—"),
                 None if slip is None else f"{slip:+.1f} wd since first",
-                None,
-                "inverse",
+                "Working days gained (+) or lost (−) since the first forecast of this task, on its calendar: "
+                "a later finish reads negative",
             ),
             ("Total float", "–" if pd.isna(last["total_float_d"]) else f"{last['total_float_d']:.1f} wd"),
             ("% complete", "–" if pd.isna(last["pct_complete"]) else f"{last['pct_complete']:.0f} %"),

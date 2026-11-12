@@ -4,6 +4,11 @@ One row per change: ``category, change, task_code, task_name, wbs_code, field, b
 after, delta, unit``. ``before`` / ``after`` are display strings (dates, numbers and text
 mix in one column); ``delta`` is numeric where it means something: working days on the
 activity's calendar for dates and durations, points for % complete, hours for budgets.
+
+Sign of ``delta``. A start, a finish or the forecast finish of the project: working days gained
+(+) or lost (-), so a date that goes later reads negative, as the finish variances do. Every
+other row is after minus before (a duration from 10 to 15 days reads +5); the status date row
+is the working days elapsed between the two updates.
 """
 
 from __future__ import annotations
@@ -101,7 +106,10 @@ def changelog(old: Snapshot, new: Snapshot) -> pd.DataFrame:
 
 def _project_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame, current_all: pd.DataFrame) -> list:
     data_date_shift = new.project_working_days(old.data_date, new.data_date) if old.data_date is not None else None
-    finish_shift = new.project_working_days(old.finish_date, new.finish_date) if old.finish_date is not None else None
+    # days lost read negative; 0.0 - x, not -x: a finish that did not move stays 0.0, never -0.0
+    finish_shift = (
+        0.0 - new.project_working_days(old.finish_date, new.finish_date) if old.finish_date is not None else None
+    )
     old_links, new_links = len(old.relationships), len(new.relationships)
     old_count, new_count = len(previous_all), len(current_all)
     return [
@@ -198,7 +206,8 @@ def _date_and_float_changes(new: Snapshot, previous: pd.DataFrame, current: pd.D
     changes = []
     is_open = ~current["is_complete"]
     for column, label in [("start", "start moved"), ("finish", "finish moved")]:
-        move = new.working_days(current["clndr_id"], previous[column], current[column]).round(2)
+        # working days gained (+) or lost (-): a date that goes later reads negative
+        move = 0.0 - new.working_days(current["clndr_id"], previous[column], current[column]).round(2)
         for code in previous.index[is_open & (move.abs() > 0.005)]:
             before, after = previous.loc[code, column], current.loc[code, column]
             changes.append(_change("Dates", label, code, column, before, after, move[code], "wd"))

@@ -74,7 +74,7 @@ def test_changelog_finds_each_kind_of_change():
     dur = by(log, "original duration changed").iloc[0]
     assert (dur["task_code"], dur["delta"]) == ("B", 5)  # 80 h -> 120 h on 8 h days
     fin = log[(log["change"] == "finish moved") & (log["task_code"] == "A")].iloc[0]
-    assert fin["delta"] == 1  # Fri 13 -> Mon 16 = one working day, not three calendar days
+    assert fin["delta"] == -1  # Fri 13 -> Mon 16 = one working day later (lost), not three calendar days
     retro = by(log, "actual start changed (retroactive)").iloc[0]
     assert (retro["task_code"], retro["before"], retro["after"]) == ("C", "2026-02-23 08:00", "2026-02-24 08:00")
     assert by(log, "primary constraint added").iloc[0]["after"] == "CS_MSOA 2026-03-02 08:00"
@@ -1160,7 +1160,7 @@ def test_weekly_change_matrix_counts_per_category_kind_and_week(store):
 def test_forecast_finish_shift_since_first_update_in_working_days(store):
     from xerscope.analysis.progress import finish_shift_since_first
 
-    assert finish_shift_since_first(store) == 15.0
+    assert finish_shift_since_first(store) == -15.0  # the forecast finish went 15 working days later
     assert finish_shift_since_first(SnapshotStore([store.first])) is None
 
 
