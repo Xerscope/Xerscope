@@ -34,8 +34,8 @@ def show_kpis(log: pd.DataFrame, counts: pd.DataFrame) -> None:
                 "Forecast finish",
                 finish_text,
                 None if shift is None or pd.isna(shift) else f"{shift:+.1f} wd",
-                None,
-                "inverse",
+                "Working days gained (+) or lost (−) on the forecast finish between the two updates "
+                "(project calendar): a later finish reads negative",
             ),
             (
                 "Added / deleted",
@@ -82,7 +82,10 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
         view = view[view["change"].isin(kinds)]
     if search:
         view = view[ui.search_mask(view, SEARCH_COLUMNS, search)]
-    st.caption(f"{len(view):,} change(s) shown")
+    st.caption(
+        f"{len(view):,} change(s) shown. Δ of a start or a finish: working days gained (+) or lost (−), a later "
+        "date reads negative. Δ of the other rows: after minus before."
+    )
     ui.table(view, max_height=640, key="changelog_all", open_task=partial(open_in_gantt, snapshot=new))
     csv_download(
         log,

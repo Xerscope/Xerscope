@@ -1975,6 +1975,38 @@ def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app, store):
     assert app.session_state["gantt_task"] == "C3020"
 
 
+def test_a_finish_that_goes_later_reads_negative_and_red_on_every_readout(app):
+    """Demo series: the forecast finish goes 2 working days later in the last update and 15 since the
+    first (tests/test_weekly.py); the CIV node finishes after its baseline finish. Each readout shows
+    working days lost as a negative number, drawn by st.metric in its normal colours (negative = red):
+    a readout left on "inverse" would draw the loss in green."""
+    normal = 0  # st.metric delta_color as AppTest reports it: 0 normal, 1 inverse, 2 off
+
+    def readout(label):
+        return next(m for m in app.metric if m.label == label)
+
+    app.switch_page("views/overview.py").run()
+    _ok(app)
+    finish = readout("Forecast finish")
+    assert (finish.delta, finish.color) == ("-2 wd vs previous update", normal)
+    assert readout("Shift since first update").value == "-15.0 wd"
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    finish = readout("Forecast finish")
+    assert (finish.delta, finish.color) == ("-2.0 wd", normal)
+    assert any("a later date reads negative" in caption.value for caption in app.caption)
+    app.switch_page("views/gantt.py").run()
+    app.selectbox(key="gantt_node").set_value("7003").run()  # demo WBS "CIV"
+    _ok(app)
+    finish = readout("Forecast finish")
+    assert finish.delta.startswith("-") and finish.delta.endswith(" wd vs BL") and finish.color == normal
+    app.switch_page("views/activity.py").run()
+    app.selectbox[0].set_value("M9999").run()  # the project finish milestone: it follows the forecast finish
+    _ok(app)
+    finish = readout("Forecast finish")
+    assert (finish.delta, finish.color) == ("-15.0 wd since first", normal)
+
+
 @pytest.mark.parametrize(
     ("delta", "colour", "expected"),
     [

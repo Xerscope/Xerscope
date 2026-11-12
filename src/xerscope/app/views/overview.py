@@ -40,14 +40,15 @@ ui.kpis(
             "Forecast finish",
             ui.fmt_date(latest.finish_date),
             None if pd.isna(shift) else f"{round(shift, 1):+g} wd vs previous update",
-            "Latest early finish of the project",
-            "inverse",
+            "Latest early finish of the project. Against the previous update: working days gained (+) or "
+            "lost (−) on the project calendar, a later finish reads negative.",
         ),
         (
             "Shift since first update",
             "–" if total is None else f"{total:+.1f} wd",
             None,
-            "Forecast finish now minus the forecast in the first loaded update (working days, project calendar)",
+            "Working days gained (+) or lost (−) on the forecast finish since the first loaded update "
+            "(project calendar): a later finish reads negative",
         ),
         (
             "Tasks complete",

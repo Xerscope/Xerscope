@@ -28,6 +28,7 @@ def test_summary_tracks_slip(store):
     s = store.summary
     assert s["forecast_finish"].is_monotonic_increasing
     assert s.loc[5, "finish_shift_wd"] < 0  # vendor delay week: the finish goes later, days lost
+    assert str(s.loc[2, "finish_shift_wd"]) == "0.0"  # a week without a move: 0.0, never -0.0
     assert s["complete"].iloc[-1] > s["complete"].iloc[0]
 
 
