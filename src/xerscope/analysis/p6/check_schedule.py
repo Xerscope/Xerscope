@@ -377,7 +377,7 @@ def p6_12_late_activities(context) -> RuleOutput:
     """Forecast to finish after their baseline finish.
     Counts: late / checked
     Excludes: completed tasks, milestones, level of effort.
-    Variance is working time on the task's calendar, as P6's Finish Variance.
+    Variance is working time on the task's calendar, as P6's Finish Variance: negative = late.
     A task with no baseline finish is late when its finish is later than its planned finish.
 
     101248: milestones, WBS summary and LOE not included; a P6 Professional report checks the Large
@@ -387,6 +387,10 @@ def p6_12_late_activities(context) -> RuleOutput:
     activities = with_baseline(context.baseline, funnel.rows)
     activities["bl_finish"] = activities["bl_finish"].combine_first(activities["target_end_date"])
     out = late_output(context, activities)
+    # P6 prints the variance as baseline finish minus finish: a late finish reads negative
+    # (Check Schedule report of P6 26, tests/test_p6_checksched.py). Who is late is decided above.
+    # 0.0 - x, not -x: a variance that rounds to 0.00 stays 0.0 and never prints as -0.0.
+    out.flagged["finish_variance_wd"] = 0.0 - out.flagged["finish_variance_wd"]
     out.funnel = funnel
     return out
 

@@ -1178,6 +1178,16 @@ def test_late_activities_use_working_time():
     assert codes(r) == ["A"] and r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(-1 / 8, abs=0.01)
 
 
+def test_a_late_finish_too_small_to_show_reads_zero_without_a_sign():
+    """One working minute late on an 8 h day: 1 / 480 day, 0.00 at the two decimals of the column.
+    The task is late and listed; its variance prints 0.0, never -0.0."""
+    bl = Baseline.from_snapshot(snap([todo("A", early_end_date="2026-03-09 09:00")]))
+    now = snap([todo("A", early_end_date="2026-03-09 09:01")])
+    r = run(P6, "P6-12", now, bl)
+    assert codes(r) == ["A"]
+    assert str(r.flagged.iloc[0]["finish_variance_wd"]) == "0.0"
+
+
 def test_assignment_dates_integrity():
     stored = dict(
         restart_date="2026-03-02 08:00",
