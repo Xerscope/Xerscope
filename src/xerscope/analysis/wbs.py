@@ -112,7 +112,9 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
     totals["weight"] = np.where(use_hours, "hours", "duration")
     # project calendar: a WBS node has no calendar of its own
     no_calendar = pd.Series("", index=totals.index)
-    totals["finish_variance_wd"] = snapshot.working_days(
+    # baseline finish minus finish: a node finishing later reads negative, as the late activities do.
+    # 0.0 - x, not -x: a node that did not move stays 0.0 and never prints as -0.0.
+    totals["finish_variance_wd"] = 0.0 - snapshot.working_days(
         no_calendar, totals["bl_finish"], totals["_finish_in_bl"]
     ).round(1)
     totals = totals.drop(columns=["_pct_hr", "_pct_d", "_w_d", "_finish_in_bl"])

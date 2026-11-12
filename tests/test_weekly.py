@@ -863,11 +863,12 @@ CIVIL = [
 ]
 
 
-@pytest.mark.parametrize("a_now, variance", [("2026-03-13 17:00", 0.0), ("2026-03-16 17:00", 1.0)])
+@pytest.mark.parametrize("a_now, variance", [("2026-03-13 17:00", 0.0), ("2026-03-16 17:00", -1.0)])
 def test_wbs_finish_variance_compares_the_baselined_activities_only(a_now, variance):
     """A is in the baseline (finish Fri 13 March), NEW was added after it (finish Fri 10 April).
-    The node's finish against its baseline finish is read on A only: 0 wd while A holds, 1 wd
-    when A moves to Mon 16 March. Reading the node's finish over every activity gave
+    The node's finish against its baseline finish is read on A only: 0 wd while A holds, -1 wd
+    when A moves to Mon 16 March (baseline finish minus finish: one working day lost reads -1,
+    and no move reads 0.0, never -0.0). Reading the node's finish over every activity gave
     13 March -> 10 April = 20 weekdays less Good Friday (3 April, a C8 holiday) = 19 wd."""
     baseline = snap([todo("A", wbs_id="11", early_end_date="2026-03-13 17:00")], wbs=CIVIL)
     now = snap(
@@ -876,7 +877,7 @@ def test_wbs_finish_variance_compares_the_baselined_activities_only(a_now, varia
     )
     node = rollup(now, Baseline.from_snapshot(baseline)).set_index("wbs_id").loc["11"]
     assert node["finish"] == pd.Timestamp("2026-04-10 17:00")  # the bar still ends with NEW
-    assert node["finish_variance_wd"] == variance
+    assert node["finish_variance_wd"] == variance and str(node["finish_variance_wd"]) == str(variance)
     assert node["outside_bl"] == 1
 
 
