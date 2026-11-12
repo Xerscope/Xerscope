@@ -70,7 +70,7 @@ def test_changelog_project_rows_are_on_the_project_calendar(project, activity):
 def test_wbs_finish_variance_is_on_the_project_calendar(project, activity):
     old, new = two_updates(project, activity)
     nodes = rollup(new, Baseline.from_snapshot(old)).set_index("wbs_id")
-    assert nodes.loc[ROOT, "finish_variance_wd"] == pytest.approx(round(WD[project], 1))
+    assert nodes.loc[ROOT, "finish_variance_wd"] == pytest.approx(-round(WD[project], 1))  # later: negative
 
 
 @PAIRS
