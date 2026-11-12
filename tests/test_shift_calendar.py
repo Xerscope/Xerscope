@@ -100,7 +100,7 @@ def test_gantt_finish_shift_is_on_the_activity_calendar(project, activity):
     tasks = new.activities.assign(category=categorise(new.activities))
     rows = gantt_rows(tasks, rollup(new), compare=old.activities, snapshot=new)
     shift = next(r for r in rows if r["id"] == "a:Z")["shift_wd"]
-    assert shift == pytest.approx(round(WD[activity], 1))
+    assert shift == pytest.approx(-round(WD[activity], 1))  # later than the comparison: negative
 
 
 @PAIRS
@@ -115,8 +115,8 @@ def test_milestone_slip_is_on_the_milestone_calendar(project, activity):
     ]
     store = SnapshotStore(updates)
     slip = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M"]
-    assert slip["slip_wd"] == pytest.approx(round(WD[activity], 1))
-    assert slip["last_week_wd"] == pytest.approx(round(WD[activity], 1))
+    assert slip["slip_wd"] == pytest.approx(-round(WD[activity], 1))  # later than first forecast: negative
+    assert slip["last_week_wd"] == pytest.approx(-round(WD[activity], 1))
 
 
 @PAIRS

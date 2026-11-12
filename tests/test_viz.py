@@ -76,7 +76,8 @@ def test_mta_line_breaks_at_a_hidden_update_and_ends_at_its_last_shown_one():
 
 def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
-    fig = build_mta(_mta_frame(lines), {"LATE": 2.0, "EARLY": -1.5, "SAME": 0.0})
+    # the move in the last update: a milestone that went later reads negative
+    fig = build_mta(_mta_frame(lines), {"LATE": -2.0, "EARLY": 1.5, "SAME": 0.0})
     traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
     red, green = STATUS["critical"], STATUS["good"]
     # one series colour per milestone, in order, so lines stay distinguishable
@@ -91,8 +92,8 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     assert texts == sorted(
         [
             "SAME",
-            f'<span style="color:{red}">▲</span> LATE (+2 wd)',
-            f'<span style="color:{green}">▼</span> EARLY (-1.5 wd)',
+            f'<span style="color:{red}">▲</span> LATE (-2 wd)',
+            f'<span style="color:{green}">▼</span> EARLY (+1.5 wd)',
         ]
     )
 
@@ -296,7 +297,10 @@ def test_gantt_rows_compare_dates_and_shift():
     earlier = s.activities.assign(finish=s.activities["finish"] - pd.Timedelta(days=1))
     row = next(r for r in _rows(s, compare=earlier, snapshot=s) if r["id"] == "a:B")
     assert row["cmp_finish"] == "2026-03-12T17:00" and row["finish"] == "2026-03-13T17:00"
-    assert row["shift_wd"] == 1  # Thu 12 -> Fri 13 March, Mon-Fri calendar
+    # Thu 12 -> Fri 13 March, Mon-Fri calendar: one working day later reads -1 (comparison finish minus finish)
+    assert row["shift_wd"] == -1
+    same = next(r for r in _rows(s, compare=s.activities, snapshot=s) if r["id"] == "a:B")
+    assert same["shift_wd"] == 0 and str(same["shift_wd"]) == "0.0"  # no move: 0.0, never -0.0
 
 
 def test_gantt_keeps_schedule_text_out_of_the_markup():

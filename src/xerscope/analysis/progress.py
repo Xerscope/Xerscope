@@ -72,7 +72,9 @@ def plotted_trend(trend: pd.DataFrame) -> pd.DataFrame:
 
 
 def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
-    """First vs latest forecast per milestone, in working days of its own calendar (latest update).
+    """First vs latest forecast per milestone, in working days of its own calendar (latest update):
+    first forecast minus latest, so a milestone that went later reads negative (``slip_wd``, and
+    ``last_week_wd`` for the move in the last update).
 
     ``deleted``: not in the latest update (the changelog's Scope / deleted); its last move is
     blank, the latest update having none for it."""
@@ -90,8 +92,9 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
         }
     )
     slips["deleted"] = ~slips.index.isin(latest.by_code.index)
+    # 0.0 - x, not -x: a milestone that did not move stays 0.0 and never reads -0.0
     slips["slip_wd"] = [
-        round(latest.activity_working_days(calendar_ids.get(code), first, latest_forecast), 1)
+        0.0 - round(latest.activity_working_days(calendar_ids.get(code), first, latest_forecast), 1)
         for code, first, latest_forecast in zip(
             slips.index, slips["first_forecast"], slips["latest_forecast"], strict=True
         )
@@ -100,7 +103,8 @@ def milestone_slips(trend: pd.DataFrame, store: SnapshotStore) -> pd.DataFrame:
     last_two = trend.sort_values("snapshot_idx").groupby("task_code").tail(2).groupby("task_code")["forecast"]
     previous_forecast = last_two.first(skipna=False)
     slips["last_week_wd"] = [
-        round(
+        0.0
+        - round(
             latest.activity_working_days(
                 calendar_ids.get(code), previous_forecast[code], slips.loc[code, "latest_forecast"]
             ),

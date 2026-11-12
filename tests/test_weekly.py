@@ -892,7 +892,7 @@ def test_milestone_slip_in_working_days(tmp_path):
         )
     store = SnapshotStore.from_folder(tmp_path)
     s = milestone_slips(milestone_trend(store), store).set_index("task_code").loc["M1"]
-    assert s["slip_wd"] == 2  # Fri 10 -> Tue 14 April = Mon + Tue
+    assert s["slip_wd"] == -2  # Fri 10 -> Tue 14 April = Mon + Tue, later: negative
 
 
 def test_mta_drops_a_milestone_complete_before_the_data_date(tmp_path):
@@ -926,7 +926,7 @@ def test_mta_drops_a_milestone_complete_before_the_data_date(tmp_path):
 
 def test_mta_marks_a_deleted_milestone_and_leaves_it_out_of_the_open_ones():
     """M1 moves Fri 10 -> Fri 17 April in the second update and is deleted in the third. It
-    is not open: it is deleted, as the changelog says. Its last move (+5 wd) dates from two
+    is not open: it is deleted, as the changelog says. Its last move (-5 wd) dates from two
     updates back, not from the last one: the last update has no move for it. M2 holds."""
     weeks = {
         "2026-03-02 08:00": [todo("M1", early_end_date="2026-04-10 17:00", **FM)],
@@ -939,9 +939,9 @@ def test_mta_marks_a_deleted_milestone_and_leaves_it_out_of_the_open_ones():
     store = SnapshotStore(updates)
     s = milestone_slips(milestone_trend(store), store).set_index("task_code")
     assert s["deleted"].to_dict() == {"M1": True, "M2": False}
-    assert s.loc["M1", "slip_wd"] == 5  # 10 -> 17 April while it existed
+    assert s.loc["M1", "slip_wd"] == -5  # 10 -> 17 April while it existed, later: negative
     assert pd.isna(s.loc["M1", "last_week_wd"])
-    assert s.loc["M2", "last_week_wd"] == 0
+    assert s.loc["M2", "last_week_wd"] == 0 and str(s.loc["M2", "last_week_wd"]) == "0.0"  # never -0.0
     assert milestone_codes(store, open_only=True) == ["M2"]
     assert milestone_codes(store) == ["M2", "M1"]  # the trend still draws its history
 

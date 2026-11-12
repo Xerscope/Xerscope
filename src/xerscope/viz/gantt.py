@@ -59,12 +59,14 @@ def _number(value, digits: int = 1) -> float | None:
 
 
 def _compare_columns(t: pd.DataFrame, compare: pd.DataFrame | None, snapshot) -> pd.DataFrame:
-    """Comparison start / finish and the finish shift (working days of each activity's calendar)."""
+    """Comparison start / finish and the finish shift (working days of each activity's calendar):
+    comparison finish minus finish, so an activity finishing later than the comparison reads negative."""
     if compare is None or compare.empty:
         return t.assign(cmp_start=pd.NaT, cmp_finish=pd.NaT, shift_wd=np.nan)
     cmp = compare.drop_duplicates("task_code").set_index("task_code")[["start", "finish"]]
     t = t.assign(cmp_start=t["task_code"].map(cmp["start"]), cmp_finish=t["task_code"].map(cmp["finish"]))
-    shift = np.nan if snapshot is None else snapshot.working_days(t["clndr_id"], t["cmp_finish"], t["finish"])
+    # 0.0 - x, not -x: an activity that did not move stays 0.0 and never reads -0.0
+    shift = np.nan if snapshot is None else 0.0 - snapshot.working_days(t["clndr_id"], t["cmp_finish"], t["finish"])
     return t.assign(shift_wd=shift)
 
 
