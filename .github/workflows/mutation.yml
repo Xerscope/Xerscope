@@ -1,0 +1,68 @@
+name: mutation
+
+# Mutation score of the modules named in [tool.mutmut] (pyproject.toml) against
+# tests/mutation_baseline.json: scripts/mutation.py fails when the share of killed mutants of a
+# module goes down. The job summary gives the counts on every run.
+#
+# The longest job of the repository (a surviving mutant runs every test that reaches it), so:
+#   - a separate workflow: every job of tests.yml gates the publish, this one must not;
+#   - not a required check: a pull request can merge before it ends;
+#   - on a pull request, only when it touches what the score is computed from: the mutated
+#     modules, the test files mutmut runs and their helpers, the configuration, the baseline;
+#   - every Monday and by hand, for what the filter cannot see (a test of the list reaches the
+#     mutated modules through the rest of src/).
+# tests/test_mutation.py keeps the paths below in step with [tool.mutmut].
+on:
+  pull_request:
+    paths:
+      - src/xerscope/analysis/progress.py
+      - src/xerscope/xer/calendar.py
+      - src/xerscope/analysis/standards.py
+      - tests/test_rules.py
+      - tests/test_p6_check_schedule.py
+      - tests/test_p6_checksched.py
+      - tests/test_calendar_and_standards.py
+      - tests/test_boundaries_blind.py
+      - tests/test_standards_conformity.py
+      - tests/test_ppc_blind.py
+      - tests/test_weekly.py
+      - tests/test_shift_calendar.py
+      - tests/test_time_semantics.py
+      - tests/test_result_contracts.py
+      - tests/test_demo_counts_blind.py
+      - tests/test_characterization.py
+      - tests/test_scores.py
+      - tests/test_explain.py
+      - tests/conftest.py
+      - tests/xerkit.py
+      - tests/rulekit.py
+      - tests/mutation_baseline.json
+      - scripts/mutation.py
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/mutation.yml
+  workflow_dispatch:
+  schedule:
+    - cron: "47 5 * * 1"  # every Monday, after the tests run
+
+# One run per branch at a time; a newer push waits for the run under way and replaces the one waiting.
+concurrency:
+  group: mutation-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
+          python-version: "3.13"  # the baseline's
+      - run: uv sync --locked
+      - run: uv run mutmut run
+      - run: uv run python scripts/mutation.py --markdown "$GITHUB_STEP_SUMMARY" --check tests/mutation_baseline.json

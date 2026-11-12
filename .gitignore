@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 fitness.json
+mutation.json
+mutants/
 data/
 export/
 *.egg-info/
