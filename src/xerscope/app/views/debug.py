@@ -73,7 +73,7 @@ with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=Tru
     table(options)
     if baseline is not None and not baseline.is_planned and baseline.snapshot is not snapshot:
         compared = diagnostic.options_comparison(snapshot, baseline.snapshot)
-        differing = compared.loc[compared["differs"], "option"]
+        differing = compared.loc[~compared["same"], "option"]
         if differing.empty:
             st.caption("Against the baseline file: the same value applied for every option.")
         else:

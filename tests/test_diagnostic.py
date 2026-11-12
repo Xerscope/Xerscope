@@ -34,7 +34,7 @@ def test_options_comparison_puts_the_baseline_next_to_the_update_and_says_what_d
     baseline = snap([todo("A")], sched={"sched_retained_logic": "Y", "sched_progress_override": "N"})
     table = options_comparison(update, baseline).set_index("option")
     assert list(table.index) == list(options_table(update)["option"])  # one row per option, same order
-    assert list(table.index[table["differs"]]) == ["float_type", "progressed"]
+    assert list(table.index[~table["same"]]) == ["float_type", "progressed"]
     assert table.loc["float_type", ["update", "update_origin", "baseline", "baseline_origin"]].tolist() == [
         "FT_SS",
         FROM_FILE,
@@ -42,7 +42,7 @@ def test_options_comparison_puts_the_baseline_next_to_the_update_and_says_what_d
         DEFAULTED,
     ]
     assert table.loc["progressed", ["update", "baseline"]].tolist() == ["progress_override", "retained_logic"]
-    assert not options_comparison(update, update)["differs"].any()  # a file against itself: nothing differs
+    assert options_comparison(update, update)["same"].all()  # a file against itself: nothing differs
 
 
 def test_leveling_table_lists_the_activities_the_warning_counts():

@@ -145,8 +145,8 @@ def options_table(snapshot: Snapshot) -> pd.DataFrame:
 
 def options_comparison(update: Snapshot, baseline: Snapshot) -> pd.DataFrame:
     """The scheduling options of an update next to those of its baseline file: one row per option of
-    ``options_table``, the value applied on each side with its origin, and ``differs`` where the two
-    applied values are not the same. Two files scheduled with different options (retained logic or
+    ``options_table``, the value applied on each side with its origin, and ``same`` where the two
+    applied values are equal. Two files scheduled with different options (retained logic or
     progress override, float type, lag calendar...) hold dates and floats that do not compare."""
     ours, theirs = options_table(update).set_index("option"), options_table(baseline).set_index("option")
     frame = pd.DataFrame(
@@ -158,7 +158,7 @@ def options_comparison(update: Snapshot, baseline: Snapshot) -> pd.DataFrame:
             "baseline_origin": theirs["origin"],
         }
     )
-    frame["differs"] = frame["update"] != frame["baseline"]
+    frame["same"] = frame["update"] == frame["baseline"]
     return frame.reset_index()
 
 
