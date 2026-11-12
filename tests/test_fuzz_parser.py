@@ -7,6 +7,13 @@ spliced in):
 - ``parse_bytes`` returns a ``RawXer`` or raises ``XerError``, never another exception;
 - ``build_snapshot(parse_bytes(x))`` returns a ``Snapshot`` or raises ``XerError``.
 
+The two other files a user uploads have the same property, over arbitrary bytes and over
+mutations of a valid file:
+
+- ``read_pmxml_baseline`` (a P6 XML export of baselines) returns a ``RawXer`` that
+  ``build_snapshot`` accepts or refuses, or raises ``XerError``;
+- ``loads_standard`` (a custom standard in TOML) returns a ``Standard`` or raises ``ValueError``.
+
 ``HYPOTHESIS_PROFILE=ci`` runs 1000 examples per property instead of 200.
 
 A crash Hypothesis finds is recorded in ``REGRESSIONS`` with its minimal example and the audit
@@ -21,10 +28,14 @@ import os
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from pmxmlkit import activity, baseline, pmxml_bytes
 from xerkit import clndr_data, xer_text
 
+from xerscope.analysis import loads_standard, template_text
+from xerscope.analysis.standards import Standard
 from xerscope.xer import Snapshot, build_snapshot
 from xerscope.xer.parser import RawXer, XerError, parse_bytes
+from xerscope.xer.pmxml import read_pmxml_baseline
 
 _HEALTH = [HealthCheck.too_slow, HealthCheck.filter_too_much]
 settings.register_profile("default", max_examples=200, deadline=None, suppress_health_check=_HEALTH)
@@ -79,12 +90,12 @@ REGRESSIONS = [  # the crashes the audit's fuzzing found, each fixed since; repl
 
 
 @st.composite
-def mutated_export(draw) -> bytes:
-    """``BASE`` with a few edits: a token or random bytes inserted, a span deleted or replaced."""
-    data = bytearray(BASE)
+def mutated(draw, base: bytes, tokens: list[bytes]) -> bytes:
+    """``base`` with a few edits: a token or random bytes inserted, a span deleted or replaced."""
+    data = bytearray(base)
     for _ in range(draw(st.integers(min_value=1, max_value=6))):
         pos = draw(st.integers(min_value=0, max_value=len(data)))
-        payload = draw(st.one_of(st.sampled_from(TOKENS), st.binary(min_size=1, max_size=8)))
+        payload = draw(st.one_of(st.sampled_from(tokens), st.binary(min_size=1, max_size=8)))
         op = draw(st.sampled_from(["insert", "delete", "replace"]))
         end = min(len(data), pos + draw(st.integers(min_value=1, max_value=40)))
         if op == "insert":
@@ -96,7 +107,7 @@ def mutated_export(draw) -> bytes:
     return bytes(data)
 
 
-INPUTS = st.one_of(st.binary(max_size=4096), mutated_export())
+INPUTS = st.one_of(st.binary(max_size=4096), mutated(BASE, TOKENS))
 
 
 def _parse(data: bytes) -> RawXer | None:
@@ -150,3 +161,66 @@ def test_build_snapshot_returns_snapshot_or_xererror(data: bytes):
 @pytest.mark.parametrize("data", REGRESSIONS)
 def test_former_crashes_stay_fixed(data: bytes):
     _load(data)
+
+
+XML_BASE = pmxml_bytes(
+    [baseline("100", "BL1", [activity("A", "1", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)])],
+    current_baseline="100",
+)
+XML_TOKENS = [b"<", b">", b"</", b"/>", b"&", b'"', b"<Activity>", b"</Activity>", b"<ObjectId>", b"<Calendar>",
+              b"T08:00:00", b"-", b"\x00"]  # fmt: skip
+XML_INPUTS = st.one_of(st.binary(max_size=4096), mutated(XML_BASE, XML_TOKENS))
+
+TOML_BASE = template_text().encode()
+TOML_TOKENS = [b"[", b"]", b"[[metric]]\n", b"=", b'"', b"{", b"}", b",", b"\n", b"params = ", b"id = ", b"1",
+               b"true", b"#"]  # fmt: skip
+TOML_INPUTS = st.one_of(st.binary(max_size=4096), mutated(TOML_BASE, TOML_TOKENS))
+
+
+def _load_pmxml(data: bytes) -> None:
+    try:
+        raw = read_pmxml_baseline(data, "fuzz.xml")
+    except XerError:
+        return
+    assert isinstance(raw, RawXer)
+    _snapshot(raw)
+
+
+def test_the_bases_of_the_mutations_are_valid_files():
+    """Mutations start from files the readers accept, so one edit reaches the code past the first check."""
+    assert isinstance(read_pmxml_baseline(XML_BASE, "base.xml"), RawXer)
+    assert isinstance(loads_standard(TOML_BASE, "base.toml"), Standard)
+
+
+@pytest.mark.oracle("property")
+@given(XML_INPUTS)
+def test_read_pmxml_baseline_returns_rawxer_or_xererror(data: bytes):
+    _load_pmxml(data)
+
+
+@pytest.mark.oracle("property")
+@given(TOML_INPUTS)
+def test_loads_standard_returns_standard_or_valueerror(data: bytes):
+    try:
+        standard = loads_standard(data, "fuzz.toml")
+    except ValueError:
+        return
+    assert isinstance(standard, Standard)
+
+
+def _declared(encoding: str) -> bytes:
+    return XML_BASE.replace(b'encoding="UTF-8"', f'encoding="{encoding}"'.encode())
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    "data",
+    [  # found by test_read_pmxml_baseline_returns_rawxer_or_xererror: the encoding the XML declaration names
+        pytest.param(_declared("U"), id="unknown encoding (LookupError)"),
+        pytest.param(_declared("utf-32"), id="multi-byte encoding (ValueError)"),
+        pytest.param(_declared("undefined"), id="undefined encoding (UnicodeError)"),
+    ],
+)
+def test_pmxml_declaring_an_encoding_python_cannot_read_is_refused(data: bytes):
+    with pytest.raises(XerError, match="not a readable P6 XML file"):
+        read_pmxml_baseline(data, "fuzz.xml")
