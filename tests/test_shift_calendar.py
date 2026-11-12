@@ -143,7 +143,7 @@ def test_p6_12_variance_is_on_the_activity_calendar(project, activity):
     now = snap([todo("Z", early_end_date=LAST, **task)], project={"clndr_id": project})
     r = run(P6, "P6-12", now, baseline)
     assert codes(r) == ["Z"]
-    assert r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(WD[activity], abs=0.005)
+    assert r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(-WD[activity], abs=0.005)  # late: negative
 
 
 @pytest.mark.parametrize("project", ["C8", "C10"])
