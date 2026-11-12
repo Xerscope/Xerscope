@@ -232,7 +232,7 @@ def test_check_schedule_lists_match_the_p6_26_report(checksched, metric_id):
 def test_late_activities_variance_matches_the_report(checksched):
     result = run_metric(STANDARDS["P6"]["P6-12"], checksched)
     variance_wd = dict(zip(result.flagged["task_code"], result.flagged["finish_variance_wd"], strict=True))
-    assert {code: -8 * days for code, days in variance_wd.items()} == REPORT_FINISH_VARIANCE_HOURS
+    assert {code: 8 * days for code, days in variance_wd.items()} == REPORT_FINISH_VARIANCE_HOURS
 
 
 @pytest.mark.oracle("p6")

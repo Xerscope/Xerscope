@@ -554,6 +554,6 @@ def test_p6_12_and_13_with_the_planned_dates_baseline_reproduce_p6():
     late = run(P6, "P6-12", current, baseline)
     assert counts(late) == (1, 2)  # completed activities are not checked
     assert codes(late) == ["RUN"]
-    assert late.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(10)  # P6: -80 h on an 8 h day
+    assert late.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(-10)  # P6: -80 h on an 8 h day
     bei = run(P6, "P6-13", current, baseline)
     assert counts(bei) == (1, 3)  # completed / every activity of the baseline (the file itself)

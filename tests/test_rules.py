@@ -1174,7 +1174,8 @@ def test_late_activities_use_working_time():
     assert codes(run(P6, "P6-12", now, bl)) == []
     later = snap([todo("A", early_end_date="2026-03-09 09:00")])
     r = run(P6, "P6-12", later, bl)
-    assert codes(r) == ["A"] and r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(1 / 8, abs=0.01)
+    # one working hour late on an 8 h day; P6 prints a late finish as a negative variance
+    assert codes(r) == ["A"] and r.flagged.iloc[0]["finish_variance_wd"] == pytest.approx(-1 / 8, abs=0.01)
 
 
 def test_assignment_dates_integrity():
