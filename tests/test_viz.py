@@ -76,7 +76,8 @@ def test_mta_line_breaks_at_a_hidden_update_and_ends_at_its_last_shown_one():
 
 def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
-    fig = build_mta(_mta_frame(lines), {"LATE": 2.0, "EARLY": -1.5, "SAME": 0.0})
+    # the move in the last update: a milestone that went later reads negative
+    fig = build_mta(_mta_frame(lines), {"LATE": -2.0, "EARLY": 1.5, "SAME": 0.0})
     traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
     red, green = STATUS["critical"], STATUS["good"]
     # one series colour per milestone, in order, so lines stay distinguishable
@@ -91,8 +92,8 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     assert texts == sorted(
         [
             "SAME",
-            f'<span style="color:{red}">▲</span> LATE (+2 wd)',
-            f'<span style="color:{green}">▼</span> EARLY (-1.5 wd)',
+            f'<span style="color:{red}">▲</span> LATE (-2 wd)',
+            f'<span style="color:{green}">▼</span> EARLY (+1.5 wd)',
         ]
     )
 

@@ -411,15 +411,16 @@ def _slip(store):
 
 
 def test_milestone_slip_counts_working_days_of_its_own_calendar():
-    """progress.py `milestone_slips`: one calendar week on the 7-day calendar is 7 wd (5 on the project's C8)."""
-    assert _slip(_milestone_store("2026-03-13 16:00", "2026-03-20 16:00", clndr="C7D")) == 7
+    """progress.py `milestone_slips`: one calendar week on the 7-day calendar is 7 wd (5 on the project's C8);
+    a milestone that went later reads negative."""
+    assert _slip(_milestone_store("2026-03-13 16:00", "2026-03-20 16:00", clndr="C7D")) == -7
 
 
 @pytest.mark.parametrize(
     ("first", "latest", "slip"),
     [
         ("2026-03-13 17:00", "2026-03-16 08:00", 0),  # Fri end of day = Mon start: no working time
-        ("2026-03-16 08:00", "2026-03-16 17:00", 1),  # Mon 08:00 as a finish = Fri 17:00: a working day
+        ("2026-03-16 08:00", "2026-03-16 17:00", -1),  # Mon 08:00 as a finish = Fri 17:00: a working day later
         ("2026-03-16 12:00", "2026-03-16 13:00", 0),  # across lunch
     ],
 )
