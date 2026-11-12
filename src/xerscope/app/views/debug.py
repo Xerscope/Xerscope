@@ -71,6 +71,18 @@ with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=Tru
             icon=":material/warning:",
         )
     table(options)
+    if baseline is not None and not baseline.is_planned and baseline.snapshot is not snapshot:
+        compared = diagnostic.options_comparison(snapshot, baseline.snapshot)
+        differing = compared.loc[~compared["same"], "option"]
+        if differing.empty:
+            st.caption("Against the baseline file: the same value applied for every option.")
+        else:
+            st.warning(
+                "Not the same in this update and in its baseline file: " + ", ".join(differing) + ". "
+                "Dates and floats of two files scheduled with different options do not compare.",
+                icon=":material/warning:",
+            )
+        table(compared)
     st.caption(
         "Projects in the file: sum_base_proj_id is the project's P6 Project Baseline, orig_proj_id the project "
         "a baseline copy was made from."
