@@ -180,6 +180,7 @@ def test_lead_long_lag_and_fs_share():
     assert fs.value == pytest.approx(200 / 3)
 
 
+@pytest.mark.oracle("standard")
 def test_dcma_02_and_03_count_a_lead_and_a_lag_of_half_an_hour():
     """PAM 200.1 §4.2 counts a lead (negative lag) and §4.3 a lag, whatever their length.
     A -> B: lead of 0.5 h. B -> C: lag of 0.5 h. C -> D: neither. One lead and one lag of 3 links."""
@@ -708,6 +709,7 @@ def test_critical_path_test_reads_the_proportion_in_calendar_days_across_calenda
     assert "a calendar effect, the whole delay reached the finish" in r.note
 
 
+@pytest.mark.oracle("standard")
 def test_critical_path_test_passes_when_float_on_the_delayed_finish_takes_part_of_the_delay():
     """A (1 wd) is on the longest path by its start: it drives B (5 wd) start-to-start, and B ends the
     project on Fri 6. A's own finish goes to Z through C (1 wd), which could end three days later: 3 wd
@@ -722,6 +724,7 @@ def test_critical_path_test_passes_when_float_on_the_delayed_finish_takes_part_o
     assert run(STANDARDS["DECM"], "06A401a", s).status == "pass"  # the same test, read the same way
 
 
+@pytest.mark.oracle("standard")
 def test_critical_path_test_fails_when_nothing_follows_the_finish_of_the_delayed_task():
     """Same start-to-start driver, without C: A's finish has no successor. Its delay moves nothing, and
     the note says why (P6-17 lists A as a dangling finish)."""
@@ -733,6 +736,7 @@ def test_critical_path_test_fails_when_nothing_follows_the_finish_of_the_delayed
     assert codes(run(P6, "P6-17", s)) == ["A"]
 
 
+@pytest.mark.oracle("standard")
 def test_critical_path_test_fails_when_the_delay_only_reaches_another_open_end():
     """Z ends the project and holds a Mandatory Finish; S (1 wd, no successor) follows A too and ends
     earlier. +600 wd on A move S past Z, 591 wd later than Z's date, but Z itself does not move: the
@@ -744,6 +748,7 @@ def test_critical_path_test_fails_when_the_delay_only_reaches_another_open_end()
     assert "no FS or FF successor" not in r.note
 
 
+@pytest.mark.oracle("standard")
 def test_critical_path_test_passes_when_the_path_leaves_a_week_off_behind():
     """B (10 wd) runs on a calendar closed Mon 9 to Fri 13 Mar 2026: in the plain schedule it starts
     Tue 3 and ends Mon 23, across that week; delayed, it runs in 2028 without it. Z moves 834 calendar
@@ -767,6 +772,7 @@ def test_critical_path_test_passes_when_the_path_leaves_a_week_off_behind():
     assert "+834 calendar days against +841 for A's own finish: the delay reaches the finish" in r.note
 
 
+@pytest.mark.oracle("standard")
 def test_critical_path_test_delays_the_lowest_activity_id_among_the_tasks_starting_first():
     """Two open tasks of the longest path start together on Mon 2: the start-to-start driver and the task
     it drives. The lowest Activity ID is delayed, so the same network passes or fails with the names:
@@ -779,6 +785,7 @@ def test_critical_path_test_delays_the_lowest_activity_id_among_the_tasks_starti
         assert (r.delayed, r.passed) == ("A1", passed)
 
 
+@pytest.mark.oracle("standard")
 def test_critical_path_test_does_not_take_a_level_of_effort_for_the_finish():
     """L (level of effort, no successor) spans A to B and ends with the project; Z, the finish milestone,
     holds a Mandatory Finish. +600 wd on A stretch L with B, but Z does not move: the delay did not reach

@@ -233,6 +233,7 @@ def test_p6_09_negative_lag_counts_done_to_todo_not_done_to_done_and_not_zero():
     assert links(r) == [("D1", "T1")]
 
 
+@pytest.mark.oracle("standard")
 def test_p6_09_a_lead_of_half_an_hour_is_a_negative_lag_and_no_lag_is_not():
     """Negative Lags (101248): a relationship whose lag is below 0. A -> B with a lag of -0.5 h is one;
     B -> C with no lag is not. 1 of 2."""
@@ -330,6 +331,7 @@ def test_p6_13_bei_is_completed_over_all_baseline_activities():
     assert r.note == "2 completed / 2 baseline tasks"
 
 
+@pytest.mark.oracle("standard")
 def test_p6_14_half_an_hour_of_negative_float_is_negative_and_no_float_is_not():
     """Negative Float (46283): total float below 0 hours. A at -0.5 h is negative; B at 0 h is not. 1 of 2."""
     s = snap([todo("A", total_float_hr_cnt="-0.5"), todo("B", total_float_hr_cnt="0")])
@@ -338,6 +340,7 @@ def test_p6_14_half_an_hour_of_negative_float_is_negative_and_no_float_is_not():
     assert codes(r) == ["A"]
 
 
+@pytest.mark.oracle("standard")
 def test_p6_13_lists_the_tasks_due_by_the_status_date_and_not_completed():
     """The list of P6-13 holds the tasks whose baseline finish is on or before the status date
     (Mon 2026-03-02 08:00) and that are not completed.
