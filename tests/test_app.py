@@ -614,6 +614,31 @@ def _run(data_dir, monkeypatch, baseline=None):
     return read_folder(AppTest.from_file(APP, default_timeout=120).run())
 
 
+def test_debug_says_which_scheduling_options_differ_between_the_update_and_its_baseline_file(tmp_path, monkeypatch):
+    """The update is scheduled with total float = start float (FT_SS); its baseline file writes no float
+    type, so P6's default applies (FT_FF). The Debug page names float_type as differing, and nothing
+    else. With the update's own options in the baseline file, it says every option is the same."""
+    data, other = tmp_path / "data", tmp_path / "baseline"
+    data.mkdir()
+    other.mkdir()
+    (data / "w1.xer").write_text(xer_text([todo("A")], sched={"sched_float_type": "FT_SS"}), encoding="utf-8")
+
+    def debug_page(baseline_sched):
+        (other / "bl.xer").write_text(xer_text([todo("A")], sched=baseline_sched), encoding="utf-8")
+        at = _run(data, monkeypatch, baseline=other / "bl.xer")
+        at.switch_page("views/debug.py").run()
+        _ok(at)
+        return at
+
+    at = debug_page({"sched_retained_logic": "Y"})
+    assert any(
+        w.value.startswith("Not the same in this update and in its baseline file: float_type. ") for w in at.warning
+    )
+    at = debug_page({"sched_float_type": "FT_SS"})
+    assert not any("Not the same in this update" in w.value for w in at.warning)
+    assert any("the same value applied for every option" in c.value for c in at.caption)
+
+
 def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeypatch):
     """Two steps: the code type, then values picked from the suggestions (exact, as P6's
     "equals") or text typed (every value containing it, as "contains")."""
