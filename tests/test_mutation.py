@@ -3,7 +3,6 @@
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -96,28 +95,19 @@ def test_check_exit_code(tmp_path):
     assert main(["--mutants", str(tmp_path / "none"), "--out", str(tmp_path / "out.json")]) == 1
 
 
-def test_a_pull_request_runs_the_mutation_job_when_it_touches_what_the_score_comes_from():
-    """mutation.yml runs on a pull request touching a mutated module, a test file mutmut runs, a
-    helper of those tests, the configuration or the baseline, and on nothing else: the job is the
-    longest of the repository. Its paths are whole file names, no pattern."""
+def test_the_mutation_job_runs_weekly_or_by_hand_and_caps_the_memory_of_a_mutant():
+    """mutation.yml never runs on a pull request or a push (a full run takes about 50 minutes): every
+    Monday and by hand only. mutmut runs under a limit of address space, so a mutant that loops and
+    allocates without end is a killed mutant, not a lost runner."""
     workflow = (ROOT / ".github" / "workflows" / "mutation.yml").read_text(encoding="utf-8")
     on = workflow[workflow.index("\non:") : workflow.index("\nconcurrency:")]
-    paths = re.findall(r"^      - (\S+)$", on[on.index("  pull_request:") : on.index("  workflow_dispatch:")], re.M)
-    mutmut = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
-    measured = mutmut["source_paths"] + mutmut["pytest_add_cli_args_test_selection"]
-    around = [
-        "tests/conftest.py",
-        "tests/xerkit.py",
-        "tests/rulekit.py",
-        "tests/mutation_baseline.json",
-        "scripts/mutation.py",
-        "pyproject.toml",
-        "uv.lock",
-        ".github/workflows/mutation.yml",
-    ]
-    assert paths == measured + around
-    assert all((ROOT / path).is_file() for path in paths), [path for path in paths if not (ROOT / path).is_file()]
-    assert "src/xerscope/analysis/cpm.py" not in paths and not any("*" in path for path in paths)
-    assert re.search(r"^  schedule:\n    - cron: \"\d+ \d+ \* \* 1\"", on, re.M) and "  workflow_dispatch:" in on
+    triggers = re.findall(r"^  (\w+):", on, re.M)
+    assert triggers == ["workflow_dispatch", "schedule"]
+    assert re.search(r"^  schedule:\n    - cron: \"\d+ \d+ \* \* 1\"", on, re.M)
+    steps = workflow[workflow.index("\njobs:") :]
+    assert steps.count("mutmut run") == 1
+    assert re.search(r"run: \|\n\s+ulimit -v \d+\n\s+uv run mutmut run\n", steps)
+    assert steps.index("mutmut run") < steps.index("scripts/mutation.py")
+    assert "--check tests/mutation_baseline.json" in steps
     # every job of tests.yml gates the publish (tests/test_docker.py): the mutation job is not one of them
     assert "mutmut" not in (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
