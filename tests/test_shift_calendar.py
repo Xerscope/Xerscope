@@ -100,7 +100,7 @@ def test_gantt_finish_shift_is_on_the_activity_calendar(project, activity):
     tasks = new.activities.assign(category=categorise(new.activities))
     rows = gantt_rows(tasks, rollup(new), compare=old.activities, snapshot=new)
     shift = next(r for r in rows if r["id"] == "a:Z")["shift_wd"]
-    assert shift == pytest.approx(round(WD[activity], 1))
+    assert shift == pytest.approx(-round(WD[activity], 1))  # later than the comparison: negative
 
 
 @PAIRS

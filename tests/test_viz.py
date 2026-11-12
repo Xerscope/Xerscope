@@ -296,7 +296,10 @@ def test_gantt_rows_compare_dates_and_shift():
     earlier = s.activities.assign(finish=s.activities["finish"] - pd.Timedelta(days=1))
     row = next(r for r in _rows(s, compare=earlier, snapshot=s) if r["id"] == "a:B")
     assert row["cmp_finish"] == "2026-03-12T17:00" and row["finish"] == "2026-03-13T17:00"
-    assert row["shift_wd"] == 1  # Thu 12 -> Fri 13 March, Mon-Fri calendar
+    # Thu 12 -> Fri 13 March, Mon-Fri calendar: one working day later reads -1 (comparison finish minus finish)
+    assert row["shift_wd"] == -1
+    same = next(r for r in _rows(s, compare=s.activities, snapshot=s) if r["id"] == "a:B")
+    assert same["shift_wd"] == 0 and str(same["shift_wd"]) == "0.0"  # no move: 0.0, never -0.0
 
 
 def test_gantt_keeps_schedule_text_out_of_the_markup():
