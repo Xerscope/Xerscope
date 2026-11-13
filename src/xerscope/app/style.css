@@ -114,10 +114,19 @@
   transform: translateY(-1px);
 }
 
-/* A caption that holds a link (Schedule health: the standard's "reference"): the caption's 60 %
-   opacity would dim the link to 2.6:1, so the text alone is faded and the link keeps its colour */
+/* Captions: Streamlit's 60 % opacity gives the light theme 4.43:1 on the sidebar and 4.45:1 on a
+   panel; 65 % reaches 4.5:1 on every surface of both themes (WCAG 2.2 SC 1.4.3) */
+[data-testid="stCaptionContainer"] { opacity: 0.65; }
+/* A caption that holds a link (Schedule health: the standard's "reference"): the opacity would
+   dim the link too, so the text alone is faded and the link keeps its colour */
 [data-testid="stCaptionContainer"]:has(a) { opacity: 1; }
-[data-testid="stCaptionContainer"]:has(a) p { color: color-mix(in srgb, currentColor 60%, transparent); }
+[data-testid="stCaptionContainer"]:has(a) p { color: color-mix(in srgb, currentColor 65%, transparent); }
+
+/* Text-only buttons (the sidebar's Files line, the banner of a page): Streamlit colours their
+   text with primaryColor under the pointer, too dark for text on the dark theme (3.4:1) */
+[data-testid="stBaseButton-tertiary"]:hover,
+[data-testid="stBaseButton-tertiary"]:focus-visible,
+[data-testid="stBaseButton-tertiary"]:active { color: var(--accent); }
 
 /* Sidebar navigation: the current page carries a bar in the accent, the others light up on hover */
 [data-testid="stSidebarNavLink"] {

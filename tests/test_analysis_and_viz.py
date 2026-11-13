@@ -4,10 +4,12 @@ sample.py documents what it plants; these tests check the analysis finds exactly
 independently of how the rules are written.
 """
 
+import re
 import tomllib
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from rulekit import STANDARDS, codes, run_on_store
 
 import xerscope
@@ -155,6 +157,57 @@ def test_accent_is_the_link_colour_of_each_theme_and_primary_carries_white_text(
             assert _contrast(ACCENT[mode], background) >= 4.5, (mode, background)
             assert _contrast(theme["primaryColor"], background) >= 3, (mode, background)
         assert _contrast("#ffffff", theme["primaryColor"]) >= 4.5, mode
+
+
+def _backgrounds(theme: dict) -> list[str]:
+    """Every surface text sits on: the page and its panels, the sidebar and its panels."""
+    return [theme["backgroundColor"], theme["secondaryBackgroundColor"], *theme["sidebar"].values()]
+
+
+def _faded(colour: str, background: str, share: float) -> str:
+    """``colour`` drawn at ``share`` opacity over ``background``, as one opaque colour."""
+    mixed = [
+        round(share * int(colour[i : i + 2], 16) + (1 - share) * int(background[i : i + 2], 16)) for i in (1, 3, 5)
+    ]
+    return "#" + "".join(f"{channel:02x}" for channel in mixed)
+
+
+@pytest.mark.oracle("standard")
+def test_captions_reach_wcag_aa_on_every_background():
+    """WCAG 2.2 SC 1.4.3, 4.5:1. A caption is the theme's text at the opacity style.css gives it. At
+    Streamlit's own 60 % the light theme falls short on two surfaces: 4.45 on a panel (#F7F5F1) and
+    4.43 on the sidebar (#F4F1EC), measured in the browser on the sidebar's baseline line."""
+    css = (Path(xerscope.__file__).parent / "app" / "style.css").read_text(encoding="utf-8")
+    share = float(re.search(r'^\[data-testid="stCaptionContainer"\] \{ opacity: ([\d.]+); \}$', css, re.M).group(1))
+    # the caption that holds a link fades its text alone, by the same share
+    assert f"color-mix(in srgb, currentColor {share:.0%}, transparent)" in css
+    for mode, theme in _themes().items():
+        for background in _backgrounds(theme):
+            faded = _faded(theme["textColor"], background, share)
+            assert _contrast(faded, background) >= 4.5, (mode, background, faded)
+
+
+@pytest.mark.oracle("standard")
+def test_a_text_button_under_the_pointer_takes_the_accent_not_the_primary_colour():
+    """WCAG 2.2 SC 1.4.3. Streamlit colours the text of a text-only button with primaryColor under the
+    pointer; the dark theme's primaryColor is for white text on it (3.6:1 on the sidebar, 3.4:1 on the
+    page). style.css gives it the accent, which reads on every surface of each theme."""
+    css = (Path(xerscope.__file__).parent / "app" / "style.css").read_text(encoding="utf-8")
+    states = [f'[data-testid="stBaseButton-tertiary"]:{state}' for state in ("hover", "focus-visible", "active")]
+    assert ",\n".join(states) + " { color: var(--accent); }\n" in css
+    for mode, theme in _themes().items():
+        for background in _backgrounds(theme):
+            assert _contrast(ACCENT[mode], background) >= 4.5, (mode, background)
+    dark = _themes()["dark"]
+    assert _contrast(dark["primaryColor"], dark["sidebar"]["backgroundColor"]) < 4.5  # why the rule exists
+
+
+@pytest.mark.oracle("standard")
+def test_gantt_rows_scroll_from_the_keyboard():
+    """WCAG 2.2 SC 2.1.1: the box that scrolls the rows takes the keyboard focus, so the arrow and page
+    keys move it; it holds no focusable element of its own."""
+    script = gantt_assets()["js"]
+    assert 'const scroll = el("div", "scroll");\n  scroll.tabIndex = 0;' in script
 
 
 def test_fonts_are_served_by_the_app_and_used_everywhere():

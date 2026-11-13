@@ -102,6 +102,7 @@ export default function (component) {
   toolbar.append(legend);
 
   const scroll = el("div", "scroll");
+  scroll.tabIndex = 0; // the rows scroll from the keyboard (arrow and page keys)
   const head = el("div", "head");
   const ghead = el("div", "ghead cols");
   ghead.append(el("div", null, "Activity / WBS"), el("div", null, "%"), el("div", null, "Float"));
