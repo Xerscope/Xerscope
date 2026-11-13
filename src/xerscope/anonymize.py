@@ -53,7 +53,7 @@ import pandas as pd
 from .export import csv_bytes, zip_frames
 from .xer.parser import RawXer
 
-KEEP = {
+_KEEP_COLUMNS = {
     "PROJECT": """acct_id act_pct_link_flag act_this_per_link_flag add_act_remain_flag add_date allow_complete_flag
         allow_neg_act_flag apply_actuals_date base_proj_id base_proj_id1 base_proj_id2 base_type_id batch_sum_flag
         close_period_flag loaded_scope_level new_fin_dates_id sum_refresh_date sumtask_loaded trsrcsum_loaded
@@ -107,7 +107,7 @@ KEEP = {
     # name and label stay secrets
     "UDFTYPE": "udf_type_id table_name logical_data_type super_flag export_flag",
 }
-KEEP = {table: frozenset(columns.split()) for table, columns in KEEP.items()}
+KEEP = {table: frozenset(columns.split()) for table, columns in _KEEP_COLUMNS.items()}
 CODES = {  # (table, column) -> kind of code; the kind's letter follows "X" in the new code
     ("TASK", "task_code"): "A",
     ("PROJWBS", "wbs_short_name"): "W",

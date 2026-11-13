@@ -263,7 +263,7 @@ def _cpm(activities: dict[str, Activity], links, data_day: int) -> dict[str, dic
             late = min(late, activity.constraint_day)
         late_finish[code] = late
 
-    out = {}
+    out: dict[str, dict[str, int | None]] = {}
     for code in order:
         activity = activities[code]
         if activity.kind == "TT_LOE":
@@ -304,7 +304,7 @@ def _progress(
         if activity.act_finish is not None:
             continue
         if activity.act_start is None:
-            allowed = previous_data_day
+            allowed: float = previous_data_day
             for predecessor, link_type, lag in preds[code]:
                 predecessor_activity = activities[predecessor]
                 if predecessor_activity.kind == "TT_LOE" or link_type in ("FF", "SF"):
@@ -522,7 +522,7 @@ def _status(activity: Activity, dates: dict, data_day: int) -> tuple[str, int, i
 def _early_texts(activity: Activity, dates: dict, data_day: int) -> tuple[str, str]:
     """Early start and finish as P6 writes them: actual, then remaining, then planned."""
     done = activity.act_finish is not None
-    if done:
+    if activity.act_finish is not None:
         start = _start_text(activity.act_start)
         finish = _finish(activity.act_finish, activity.duration, activity.kind)
     elif activity.act_start is not None:
@@ -544,12 +544,18 @@ def _task_row(
     started = activity.act_start is not None
     status, remaining_days, percent = _status(activity, dates, data_day)
     early_start_text, early_finish_text = _early_texts(activity, dates, data_day)
-    actual_end_text = _finish(activity.act_finish, activity.duration, activity.kind) if done else ""
+    actual_end_text = (
+        _finish(activity.act_finish, activity.duration, activity.kind) if activity.act_finish is not None else ""
+    )
     if snapshot_index >= 6 and activity.code == "C3010" and done:  # injected data-quality issue
         actual_end_text = _finish_text(data_day + 3)  # two days after the data date
     total_float = dates["tf"]
     crew = CREW[activity.wbs] if activity.has_resource and activity.duration > 0 else 0
-    worked = 0 if not started else (min(data_day, activity.act_finish if done else data_day) - activity.act_start)
+    worked = (
+        0
+        if activity.act_start is None
+        else (min(data_day, activity.act_finish if activity.act_finish is not None else data_day) - activity.act_start)
+    )
     hours = (
         activity.duration * HOURS_PER_DAY * crew,
         worked * HOURS_PER_DAY * crew,

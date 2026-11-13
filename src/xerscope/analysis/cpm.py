@@ -769,6 +769,7 @@ class _Run:
             axis = self.cal_ax[code]
             started = status[code] == "TK_Active"
             activity_kind, duration = self.kind(code), self.dur_min(code)
+            finish_bounds: list[pd.Timestamp]
             start_bounds, finish_bounds = [data_date], []
             resume = inputs[code].get("resume_date") if started else None
             if resume is not None and pd.notna(resume):
@@ -1011,6 +1012,8 @@ class _Run:
     def successor_limits(self, code, late: bool) -> tuple[list, list]:
         """Latest start / finish ``c`` may have against its successors' late (or early) dates."""
         inputs, status = self.inputs, self.status
+        late_start_bounds: list[pd.Timestamp]
+        late_finish_bounds: list[pd.Timestamp]
         late_start_bounds, late_finish_bounds = [], []
         progress_override = self.options.progressed == "progress_override"
         for successor, link_type, link_lag in self.succs[code]:
@@ -1337,6 +1340,8 @@ class _Run:
                 )
                 continue
             axis = self.cal_ax[code]
+            starts: list[pd.Timestamp]
+            end_points: list[pd.Timestamp]
             starts, end_points = [], []
             for predecessor, link_type, lag in self.loe_preds[code]:
                 link_axis = self.lag_axis(predecessor, code)
@@ -1370,6 +1375,7 @@ class _Run:
                 max(loe_finish, axis.snap_start(max(loe_start, data_date))),
             )
             remaining_start[code] = axis.snap_start(data_date) if active else loe_start
+            lends: list[pd.Timestamp]
             lstarts, lends = [], []
             for predecessor, link_type, lag in self.loe_preds[code]:
                 if self.status[predecessor] == "TK_Complete":

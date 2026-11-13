@@ -302,7 +302,12 @@ def _assignment_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame
     for key in sorted(set(old_units.index) & set(new_units.index)):
         delta = round(float(new_units[key] - old_units[key]), 2)
         if delta:
-            changes.append(assignment_change("budgeted units changed", *key, old_units[key], new_units[key], delta))
+            # key is a (task_code, resource) pair, the two index levels of ``units``: *key fills task_code and who
+            changes.append(
+                assignment_change(  # type: ignore[call-arg]
+                    "budgeted units changed", *key, old_units[key], new_units[key], delta
+                )
+            )
     return changes
 
 
