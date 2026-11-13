@@ -45,7 +45,7 @@ dev = [
 # Accessibility check of the rendered pages (scripts/accessibility.py, workflow accessibility.yml).
 # Its own group: a browser driver no test of the suite needs. Exact version: the Chromium build
 # the workflow installs comes with it.
-accessibility = ["playwright==1.63.0"]
+accessibility = ["playwright==1.64.1"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
