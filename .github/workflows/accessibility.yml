@@ -1,0 +1,39 @@
+name: accessibility
+
+# axe-core on the pages as a browser renders them (scripts/accessibility.py): the files window, the
+# sidebar's Files line under the pointer and every page, two themes, two widths, against WCAG 2.2
+# A and AA. Fails on a finding that is not in the script's KNOWN list (Streamlit's own markup).
+#
+# Every Monday and by hand, never on a pull request: it installs a browser and takes minutes, and
+# the tests of a pull request must stay short. A separate workflow: every job of tests.yml gates
+# the publish, this one must not.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 6 * * 1"  # every Monday, after the mutation run starts
+
+# One run per branch at a time; a newer one waits for the run under way and replaces the one waiting.
+concurrency:
+  group: accessibility-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  accessibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20  # a run takes about 3 minutes once the browser is installed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.7"
+          python-version: "3.13"
+      - run: uv sync --locked --group accessibility
+      # the Chromium build of the playwright version in uv.lock, with the system libraries it needs
+      - run: uv run playwright install --with-deps chromium
+      # axe-core is no dependency of the repository: the script refuses any file but the 4.14.0 build
+      - run: npm install --no-save --ignore-scripts axe-core@4.14.0
+      - run: uv run python scripts/accessibility.py --axe node_modules/axe-core/axe.min.js --markdown "$GITHUB_STEP_SUMMARY"
