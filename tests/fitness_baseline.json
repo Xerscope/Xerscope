@@ -723,7 +723,7 @@
     "xer/__init__.py": {
       "mi": 77.1,
       "mi_rank": "A",
-      "cc_max": 6,
+      "cc_max": 4,
       "cc_over_15": 0,
       "cognitive_max": 5,
       "cognitive_over_15": 0,
@@ -782,7 +782,7 @@
     }
   },
   "global": {
-    "mypy_errors": 169,
+    "mypy_errors": 131,
     "deptry_violations": 0,
     "import_contracts": 11,
     "import_contracts_broken": 0

@@ -29,11 +29,13 @@ def load_snapshot(
 
     A P6 XML export is read for one of its baselines (``pmxml``): ``project_id`` then names the
     baseline (an update's PROJECT.sum_base_proj_id), else the file's Project Baseline is read."""
-    if isinstance(source, bytes) and not name:
-        # The name becomes Snapshot.source, which keys caches and orders the series.
-        raise ValueError("load_snapshot(bytes) needs the file name")
-    data = source if isinstance(source, bytes) else Path(source).read_bytes()
-    source_name = name if isinstance(source, bytes) else Path(source).name
+    if isinstance(source, bytes):
+        if not name:
+            # The name becomes Snapshot.source, which keys caches and orders the series.
+            raise ValueError("load_snapshot(bytes) needs the file name")
+        data, source_name = source, name
+    else:
+        data, source_name = Path(source).read_bytes(), Path(source).name
     if is_pmxml(data):
         raw = read_pmxml_baseline(data, source_name, project_id)
         return build_snapshot(raw, project_code=project_code)
