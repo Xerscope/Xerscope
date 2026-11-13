@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pandas as pd
@@ -41,7 +41,7 @@ def self_cases(vocab: Vocabulary) -> list[dict]:
 
 def _grammar_cases(vocab: Vocabulary) -> list[dict]:
     """Each status and float category in both languages; milestones and LOE when the file has them."""
-    cases = [{"text": t, "status": [s], "label": f"status {s}"} for s in STATUSES for t in _SAID[s]]
+    cases: list[dict] = [{"text": t, "status": [s], "label": f"status {s}"} for s in STATUSES for t in _SAID[s]]
     cases += [{"text": t, "float": [c], "label": f"float {c}"} for c in CATEGORIES[:3] for t in _SAID[c]]
     if vocab.has_milestones:
         cases += [{"text": t, "milestones": True, "label": "milestones"} for t in ("milestones", "jalons")]
@@ -127,7 +127,7 @@ def _expected_resources(case: Mapping, vocab: Vocabulary) -> frozenset[str]:
     return frozenset(by_short[n] for n in case.get("resources", []))
 
 
-def score(cases: list[Mapping], vocab: Vocabulary) -> pd.DataFrame:
+def score(cases: Sequence[Mapping], vocab: Vocabulary) -> pd.DataFrame:
     """One row per case: the sentence, whether every field matched (``exact``), one column per
     field (True when it matched) and the reading's confidence. A ratio of a column is the share
     of cases it got right; ``exact`` is the share of sentences whose every filter was right."""

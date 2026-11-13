@@ -110,8 +110,8 @@ def _typo_items(tokens: list[str], used: set[int], found: list[Item], vocab: Voc
         for start, said in attempts:
             close = closest([said], PHRASES_OF_SIZE[len(said.split())], spaced=True)
             if close:
-                if start < i:
-                    found.remove(before)
+                if start < i:  # only the attempt that starts at the NOT before it, added when ``before`` is set
+                    found.remove(before)  # type: ignore[arg-type]  # mypy cannot link ``start`` to ``before``
                 found.append((start, "x", TABLE[tuple(close[1].split())][1]))
                 used.update(range(start, start + len(said.split())))
                 confidence = min(confidence, close[2])
@@ -300,8 +300,8 @@ def _code_items(rest: _Rest, vocab: Vocabulary, found: list[Item], chosen: Mappi
         answer = answers.get(fold(name))
         if answer in labels:  # the type picked: its values are asked next
             clarify += [Choice(name, c, f"{v} — {t}") for c, (t, v, _) in vocab.codes.items() if t == answer]
-        elif answer in vocab.codes and vocab.codes[answer][0] in labels:
-            pick(answer, index)
+        elif answer in vocab.codes and vocab.codes[answer][0] in labels:  # type: ignore[index]  # None is in no dict
+            pick(answer, index)  # type: ignore[arg-type]  # same test: ``answer`` is a key of vocab.codes
         else:
             clarify += [Choice(name, label, label) for label in labels]
     for kind in {*type_name, *type_name.values()}:

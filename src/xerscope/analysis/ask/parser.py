@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from typing import TypeGuard
 
 from .filters import Choice, Filter, to_filter
 from .grammar import FACETS, UNKNOWN, And, Atom, Expr, Not, Or
@@ -159,7 +160,7 @@ def _one(parts: list[Expr], join) -> Expr | None:
     return None if not parts else parts[0] if len(parts) == 1 else join(tuple(parts))
 
 
-def _unknown(expr: Expr | None) -> bool:
+def _unknown(expr: Expr | None) -> TypeGuard[Atom]:
     return isinstance(expr, Atom) and expr.kind == UNKNOWN
 
 

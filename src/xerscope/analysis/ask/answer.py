@@ -133,7 +133,7 @@ def _asked(filter: Filter, vocab: Vocabulary, words: dict) -> list[str]:
     parts += [words["status"][st] for st in filter.status if st in words["status"]]
     parts += [words["loe"]] if filter.loe else []
     if filter.wbs_id in vocab.wbs:
-        parts.append(words["in"].format(label=vocab.wbs[filter.wbs_id]))
+        parts.append(words["in"].format(label=vocab.wbs[filter.wbs_id]))  # type: ignore[index]  # None is in no dict
     names = [vocab.resources[r][0] or vocab.resources[r][1] for r in sorted(filter.resources) if r in vocab.resources]
     parts += [words["resource"].format(name=", ".join(names))] if names else []
     return parts + ([words["named"].format(text=filter.search)] if filter.search else [])

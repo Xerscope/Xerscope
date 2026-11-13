@@ -140,7 +140,7 @@ def resource_names(snapshot: Snapshot) -> dict[str, tuple[str, str]]:
     named = assigned.dropna(subset=["rsrc_id"]).drop_duplicates("rsrc_id")
     rows = zip(named["rsrc_id"], named["rsrc_short_name"], named["rsrc_name"], strict=True)
     return {
-        rsrc_id: tuple("" if pd.isna(s) else str(s) for s in (short, name))
+        rsrc_id: ("" if pd.isna(short) else str(short), "" if pd.isna(name) else str(name))
         for rsrc_id, short, name in rows
         if isinstance(rsrc_id, str) and rsrc_id
     }

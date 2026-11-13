@@ -44,7 +44,8 @@ def apply(
         return funnel.keep("nothing understood", "ask", lambda rows: pd.Series(False, index=rows.index))
     context = Context(snapshot, nodes, baseline)
     for label, expr in [*facet_steps(filter, tasks, snapshot, nodes), *filter.clauses]:
-        funnel.keep(label, "ask", lambda rows, expr=expr: mask(expr, rows, context))
+        # the default argument pins this step's expression; mypy rejects any lambda with one against Callable[[X], Y]
+        funnel.keep(label, "ask", lambda rows, expr=expr: mask(expr, rows, context))  # type: ignore[misc]
     return funnel
 
 

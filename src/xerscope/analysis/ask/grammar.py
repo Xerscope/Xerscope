@@ -294,8 +294,8 @@ def _entries() -> list[tuple[str, object, Mapping[str, list[str]]]]:
     entries.append(("x", Atom("cmp", ("rd", ">", LARGE_HOURS, "h")), LONG_DURATIONS))
     for kind, table in (("measure", MEASURES), ("cmp", COMPARISONS), ("sign", SIGNS), ("unit", UNITS)):
         entries += [(kind, value, phrases) for value, phrases in table.items()]
-    for kind, table in (("prep", PREPOSITIONS), ("period", PERIODS), ("month", MONTHS), ("edge", EDGES)):
-        entries += [(kind, value, phrases) for value, phrases in table.items()]
+    for kind, dated in (("prep", PREPOSITIONS), ("period", PERIODS), ("month", MONTHS), ("edge", EDGES)):
+        entries += [(kind, value, phrases) for value, phrases in dated.items()]
     entries.append(("between", None, BETWEEN))
     return entries + _anchors(entries)
 
