@@ -40,6 +40,10 @@ dev = [
     # mutation score (scripts/mutation.py): exact version, tests/mutation_baseline.json holds its counts
     "mutmut==3.8.1",
 ]
+# Accessibility check of the rendered pages (scripts/accessibility.py, workflow accessibility.yml).
+# Its own group: a browser driver no test of the suite needs. Exact version: the Chromium build
+# the workflow installs comes with it.
+accessibility = ["playwright==1.63.0"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
