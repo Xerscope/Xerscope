@@ -88,7 +88,7 @@ class RuleOutput:
     checked: pd.DataFrame | None = None  # the rows behind the denominator
     funnel: Funnel | None = None  # how ``checked`` was cut from the file, step by step
     counted: pd.DataFrame | None = None  # the rows behind the numerator, when they are not ``flagged``
-    status: str | None = None  # "info" when the rule reports a value for review, not against the target
+    status: Literal["info"] | None = None  # "info" when the rule reports a value for review, not against the target
 
 
 COMPARE = {"<": operator.lt, ">": operator.gt, "<=": operator.le, ">=": operator.ge, "==": operator.eq}
@@ -203,7 +203,7 @@ ALLOWED: dict[str, set[str]] = {
 }
 
 
-def activities(context: AnalysisContext, exclude: list[str]) -> pd.DataFrame:
+def activities(context: AnalysisContext, exclude: Names) -> pd.DataFrame:
     return without(context.snapshot.activities, context.snapshot.data_date, exclude)
 
 
@@ -238,10 +238,12 @@ def link_funnel(
         excluded_task_codes = snapshot.activities.loc[
             as_flag(exclusion.removes(snapshot.activities, snapshot.data_date)), "task_code"
         ]
+        # ``excluded`` binds this iteration's codes; the predicate is still called with the rows alone
+        # (mypy cannot infer a lambda that has a defaulted second parameter)
         funnel.keep(
             f"successor {exclusion.label}",
             source,
-            lambda links, excluded=excluded_task_codes: ~links["succ_code"].isin(excluded),
+            lambda links, excluded=excluded_task_codes: ~links["succ_code"].isin(excluded),  # type: ignore[misc]
         )
     if exclude_loe:
         loe = tasks["is_loe"]

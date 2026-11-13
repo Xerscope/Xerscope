@@ -899,7 +899,9 @@ def _default_project(projects: pd.DataFrame, copies: set[str]) -> tuple[pd.Serie
         return rows[0], "only project"
     pool = [row for row in rows if row["proj_id"] not in copies]
     if pool:
-        keys = [(row["_n"], _data_date(row)[0] or pd.Timestamp.min) for row in pool]
+        keys: list[tuple[int | pd.Timestamp, ...]] = [
+            (row["_n"], _data_date(row)[0] or pd.Timestamp.min) for row in pool
+        ]
         names = ["most TASK rows", "latest data date"]
     else:
         pool = rows
