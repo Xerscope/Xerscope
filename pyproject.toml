@@ -30,6 +30,8 @@ xerscope = "xerscope.cli:main"
 dev = [
     "hypothesis>=6.170.14",
     "pytest>=9.2.0",
+    # the CI test job runs the test files in parallel, one whole file per process (tests.yml)
+    "pytest-xdist>=3.8.0",
     # code fitness (scripts/fitness.py): exact versions, the baseline it checks against holds
     # their numbers and a new release can score the same code differently
     "complexipy==8.3.0",
