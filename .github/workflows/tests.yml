@@ -89,8 +89,10 @@ jobs:
         run: |
           uv run python tests/reference/fetch.py
           uv run python tests/reference/fetch_p6_heldout.py
+      # One process per core, a whole test file per process: the files share nothing, and the app
+      # tests keep the app their file starts once (module fixtures).
       - name: Tests (parser, model, CPM against P6, checks, app pages)
-        run: uv run pytest -rs
+        run: uv run pytest -rs -n auto --dist loadfile
       - name: CLI smoke test
         run: |
           uv run xerscope sample --out data/sample
