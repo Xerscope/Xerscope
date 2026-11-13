@@ -28,6 +28,7 @@ import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
+from typing import Literal
 
 from .rules import COMPARE, RULES, Unit
 
@@ -63,7 +64,7 @@ class Metric:
             return "info"
         return f"{self.comparator} {self.threshold:g}{'%' if self.unit == '%' else ''}"
 
-    def evaluate(self, value: float | None) -> str:
+    def evaluate(self, value: float | None) -> Literal["pass", "fail", "info", "n/a"]:
         if value is None:
             return "n/a"
         if self.comparator is None or self.threshold is None:

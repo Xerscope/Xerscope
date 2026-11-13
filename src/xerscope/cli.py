@@ -658,6 +658,7 @@ def _anonymised_bench(path: Path, cases: list[dict]):
             text = re.sub(rf"(?<![\w])(?:{re.escape(original)})(?![\w])", new, text, flags=re.IGNORECASE)
         return text
 
+    aside: dict[str, int]
     rewritten, aside, refused = [], {}, 0
     for case in cases:
         if case.get("search") or case.get("codes"):
@@ -839,7 +840,7 @@ def _build_lexicon(source: str, out: str) -> int:
 
     from .analysis import query
     from .analysis.ask import suggested
-    from .analysis.ask.generated import near_spellings_from, variants_from
+    from .analysis.ask.generated import Terms, near_spellings_from, variants_from
     from .analysis.ask.lexicon import write_private
 
     if not source or not out:
@@ -851,6 +852,7 @@ def _build_lexicon(source: str, out: str) -> int:
         if not folder.is_dir():
             print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
             return 1
+    found: Terms
     found, read, skipped = {}, 0, []
     for path in xer_files(source):
         reason = _lexicon_terms(path, found)
