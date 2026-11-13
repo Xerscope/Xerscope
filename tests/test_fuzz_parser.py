@@ -14,7 +14,7 @@ mutations of a valid file:
   ``build_snapshot`` accepts or refuses, or raises ``XerError``;
 - ``loads_standard`` (a custom standard in TOML) returns a ``Standard`` or raises ``ValueError``.
 
-``HYPOTHESIS_PROFILE=ci`` runs 1000 examples per property instead of 200.
+``HYPOTHESIS_PROFILE=ci`` runs 1000 examples per property instead of 200 (tests/conftest.py).
 
 A crash Hypothesis finds is recorded in ``REGRESSIONS`` with its minimal example and the audit
 finding it belongs to, then fixed; ``test_former_crashes_stay_fixed`` replays each. The seven
@@ -23,10 +23,8 @@ entries are the crashes the audit's fuzzing found, all fixed.
 
 from __future__ import annotations
 
-import os
-
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from pmxmlkit import activity, baseline, pmxml_bytes
 from xerkit import clndr_data, xer_text
@@ -36,11 +34,6 @@ from xerscope.analysis.standards import Standard
 from xerscope.xer import Snapshot, build_snapshot
 from xerscope.xer.parser import RawXer, XerError, parse_bytes
 from xerscope.xer.pmxml import read_pmxml_baseline
-
-_HEALTH = [HealthCheck.too_slow, HealthCheck.filter_too_much]
-settings.register_profile("default", max_examples=200, deadline=None, suppress_health_check=_HEALTH)
-settings.register_profile("ci", max_examples=1000, deadline=None, suppress_health_check=_HEALTH)
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 BASE = xer_text(
     [{"task_code": "A"}, {"task_code": "B", "target_drtn_hr_cnt": "16"}, {"task_code": "C"}],
