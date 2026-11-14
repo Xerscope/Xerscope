@@ -194,44 +194,42 @@ def _topo(activities: dict[str, Activity], links) -> list[str]:
     return order
 
 
-def _links_by_end(links) -> tuple[dict[str, list], dict[str, list]]:
-    """The links of each activity: those arriving at it, those leaving it."""
-    predecessors_of, successors_of = defaultdict(list), defaultdict(list)
+def _predecessor_links(links) -> dict[str, list]:
+    """The links arriving at each activity: (predecessor, link type, lag)."""
+    predecessors_of = defaultdict(list)
     for predecessor, successor, link_type, lag in links:
         predecessors_of[successor].append((predecessor, link_type, lag))
-        successors_of[predecessor].append((successor, link_type, lag))
-    return predecessors_of, successors_of
+    return predecessors_of
 
 
 def _remaining_days(activity: Activity) -> int:
     return 0 if activity.act_finish is not None else math.ceil(activity.remaining)
 
 
-def _cpm(activities: dict[str, Activity], links, data_day: int) -> dict[str, dict]:
-    """Forward/backward pass in whole days from the data day ``data_day``."""
-    order = _topo(activities, links)
-    predecessors_of, successors_of = _links_by_end(links)
-    scheduled = [code for code in order if activities[code].kind != "TT_LOE"]  # a level of effort follows the rest
+def _early_dates(activities: dict[str, Activity], links, data_day: int) -> dict[str, dict]:
+    """Early start ("es") and finish ("ef") of every activity, in whole days from ``data_day``.
 
+    A forward pass only: it says what can start in the week simulated and fixes the planned dates.
+    The late dates, the floats and the Longest Path of a file come from ``analysis.cpm``
+    (``_store_p6_dates``).
+    """
+    order = _topo(activities, links)
+    predecessors_of = _predecessor_links(links)
     early: dict[str, tuple[int, int]] = {}  # code -> (early start, early finish)
-    for code in scheduled:
-        early[code] = _early_days(activities[code], predecessors_of[code], activities, early, data_day)
+    for code in order:
+        if activities[code].kind != "TT_LOE":
+            early[code] = _early_days(activities[code], predecessors_of[code], activities, early, data_day)
     finish = max(early_finish for _, early_finish in early.values())
 
-    late_finish: dict[str, int] = {}
-    for code in reversed(scheduled):
-        late_finish[code] = _late_finish_day(activities[code], successors_of[code], activities, late_finish, finish)
-
-    out: dict[str, dict[str, int | None]] = {}
+    out: dict[str, dict[str, int]] = {}
     for code in order:
         activity = activities[code]
-        if activity.kind == "TT_LOE":
+        if activity.kind == "TT_LOE":  # a level of effort follows the rest
             loe_start = activity.act_start if activity.act_start is not None else data_day
-            out[code] = {"es": loe_start, "ef": finish, "lf": finish, "tf": 0}
+            out[code] = {"es": loe_start, "ef": finish}
         else:
             early_start, early_finish = early[code]
-            total_float = None if activity.act_finish is not None else late_finish[code] - early_finish
-            out[code] = {"es": early_start, "ef": early_finish, "lf": late_finish[code], "tf": total_float}
+            out[code] = {"es": early_start, "ef": early_finish}
     return out
 
 
@@ -268,42 +266,6 @@ def _start_a_link_allows(link_type: str, lag: int, predecessor_early: tuple[int,
     }[link_type]
 
 
-def _late_finish_day(
-    activity: Activity,
-    successor_links: list,
-    activities: dict[str, Activity],
-    late_finish: dict[str, int],
-    finish: int,
-) -> int:
-    """Late finish of one activity: its actual finish, else what its open successors allow."""
-    if activity.act_finish is not None:
-        return activity.act_finish
-    remaining = _remaining_days(activity)
-    late = finish
-    for successor, link_type, lag in successor_links:
-        successor_activity = activities[successor]
-        if successor_activity.kind == "TT_LOE" or successor_activity.act_finish is not None:
-            continue
-        successor_late_start = late_finish[successor] - _remaining_days(successor_activity)
-        allowed = _finish_a_link_allows(link_type, lag, successor_late_start, late_finish[successor], remaining)
-        late = min(late, allowed)
-    if activity.constraint == "CS_MEOB" and activity.constraint_day is not None:
-        late = min(late, activity.constraint_day)
-    return late
-
-
-def _finish_a_link_allows(
-    link_type: str, lag: int, successor_late_start: int, successor_late_finish: int, remaining: int
-) -> int:
-    """The latest finish one link leaves to its predecessor, which has ``remaining`` days to do."""
-    return {
-        "FS": successor_late_start - lag,
-        "SS": successor_late_start - lag + remaining,
-        "FF": successor_late_finish - lag,
-        "SF": successor_late_finish - lag + remaining,
-    }[link_type]
-
-
 STALLS = {4: {"E1040": 3}, 6: {"E1020": 7}}  # snapshot -> {activity: working days lost}
 
 
@@ -316,7 +278,7 @@ def _progress(
     lost: dict[str, int] | None = None,
 ) -> None:
     """Advance work from previous_data_day to data_day, respecting FS/SS logic with actual dates."""
-    predecessors_of, _ = _links_by_end(links)
+    predecessors_of = _predecessor_links(links)
     for code in _topo(activities, links):
         activity = activities[code]
         if activity.kind == "TT_LOE":
@@ -490,7 +452,7 @@ def _stamp(timestamp) -> str:
 def _store_p6_dates(path: Path, tables: dict, export: date) -> None:
     """Replace the simulation's dates by the validated P6-style CPM, as P6 would store them.
 
-    The simple day-based CPM above drives the week-by-week progress; what the files carry
+    The day-based forward pass above drives the week-by-week progress; what the files carry
     (early/late dates, float, remaining dates) is recalculated with analysis.cpm, so the
     demo passes the same integrity check a real P6 export does.
     """
@@ -622,7 +584,6 @@ def _task_row(
     status, remaining_days, percent = _status(activity, dates, data_day)
     early_start_text, early_finish_text = _early_texts(activity, dates, data_day)
     actual_end_text = _actual_finish_text(snapshot_index, activity, data_day)
-    total_float = dates["tf"]
     hours = _labour_hours(activity, remaining_days, data_day)
     row = [
         _task_id(snapshot_index, row_index),
@@ -636,15 +597,15 @@ def _task_row(
         status,
         activity.code,
         activity.name,
-        "" if total_float is None else total_float * HOURS_PER_DAY,
+        "",  # total and free float, like the late dates below: written by _store_task_dates
         "",
         remaining_days * HOURS_PER_DAY,
         activity.duration * HOURS_PER_DAY,
         _constraint_text(activity),
         _start_text(activity.act_start) if started else "",
         actual_end_text,
-        "" if done else _start_text(dates["lf"] - remaining_days),
-        "" if done else _finish(dates["lf"], remaining_days, activity.kind),
+        "",
+        "",
         "",
         early_start_text,
         early_finish_text,
@@ -653,7 +614,7 @@ def _task_row(
         _start_text(activity.target[0]),
         _finish(activity.target[1], activity.duration, activity.kind),
         activity.constraint,
-        "Y" if (total_float is not None and total_float <= 0 and activity.kind != "TT_LOE") else "N",
+        "N",  # on the Longest Path: written by _store_task_dates for an open activity
         "",
         CREATED,
         _start_text(data_day),
@@ -848,7 +809,7 @@ def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
             _progress(activities, links, previous_data_day, data_day, rng, STALLS.get(snapshot_index))
         if snapshot_index == 5 and activities["P2030"].act_finish is None:
             activities["P2030"].remaining += 10  # vendor delay
-        day_schedule = _cpm(activities, links, data_day)
+        day_schedule = _early_dates(activities, links, data_day)
         _set_targets(activities, day_schedule)
 
         tables = _tables(snapshot_index, activities, links, day_schedule, data_day)
