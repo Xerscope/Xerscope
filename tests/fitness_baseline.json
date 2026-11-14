@@ -782,7 +782,7 @@
     }
   },
   "global": {
-    "mypy_errors": 93,
+    "mypy_errors": 91,
     "deptry_violations": 0,
     "import_contracts": 11,
     "import_contracts_broken": 0

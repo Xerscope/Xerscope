@@ -504,6 +504,7 @@ FILTER_HINT = {
     "date": ">2026-11-01, 2026-11, 2026-11..2026-12",
 }
 _OPERATOR = re.compile(r"^(<=|>=|<|>|=)?\s*(.+)$")
+_YEAR_MONTH_OR_DAY = re.compile(r"\d{4}(-\d{2}(-\d{2})?)?")
 
 
 def filter_kind(column: str, values: pd.Series) -> str:
@@ -526,12 +527,21 @@ def _range(text: str) -> tuple[str, str] | None:
     return (text[:cut], text[cut + 2 :]) if cut > 0 else None
 
 
+def _operator_and_value(text: str) -> tuple[str, str]:
+    """The comparison a filter starts with ("" when it has none) and the value after it."""
+    found = _OPERATOR.match(text)
+    if found is None:  # the pattern reads one line: a value holding a line break is not a filter
+        raise ValueError(f"not a filter: {text!r}")
+    operator, value = found.groups()
+    return operator or "", value
+
+
 def _number_test(text: str) -> Callable[[pd.Series], pd.Series]:
     bounds = _range(text)
     if bounds:
         low, high = _number(bounds[0]), _number(bounds[1])
         return lambda values: values.between(low, high)
-    operator, value = _OPERATOR.match(text).groups()
+    operator, value = _operator_and_value(text)
     number = _number(value)
     return {
         "<": lambda values: values < number,
@@ -541,14 +551,23 @@ def _number_test(text: str) -> Callable[[pd.Series], pd.Series]:
     }.get(operator or "=", lambda values: values == number)
 
 
+def _period(text: str) -> pd.Period:
+    """The year, month or day a filter names (2026, 2026-11, 2026-11-01). Any other text is refused:
+    read loosely, "3 4" would be 4 March of the year 1."""
+    written = text.strip()
+    if not _YEAR_MONTH_OR_DAY.fullmatch(written):
+        raise ValueError(f"not a year, a month or a day: {text!r}")
+    return pd.Period(written)
+
+
 def _date_test(text: str) -> Callable[[pd.Series], pd.Series]:
     """A date may be a year, a month or a day: "=" keeps the whole period, ">" what is after it."""
     bounds = _range(text)
     if bounds:
-        start, end = pd.Period(bounds[0].strip()).start_time, pd.Period(bounds[1].strip()).end_time
+        start, end = _period(bounds[0]).start_time, _period(bounds[1]).end_time
         return lambda values: (values >= start) & (values <= end)
-    operator, value = _OPERATOR.match(text).groups()
-    period = pd.Period(value.strip())
+    operator, value = _operator_and_value(text)
+    period = _period(value)
     start, end = period.start_time, period.end_time
     return {
         "<": lambda values: values < start,
