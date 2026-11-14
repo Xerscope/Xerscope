@@ -27,4 +27,5 @@ uvx ruff check src tests scripts
 - [ ] A moved number comes with a test that fails before and passes after, and its evidence (P6 export, held-out corpus, MPXJ, hand calculation)
 - [ ] `tests/golden/standards.json` unchanged, or its diff reviewed and each moved value justified above (`ID: old -> new — source`)
 - [ ] No `FLOORS` value lowered in `tests/test_p6_heldout.py`; a raised one justified above
+- [ ] Each function written or modified reads without help: one role, a name that says it, two levels of nesting at most, whole-word names (CONTRIBUTING.md, Readable code)
 - [ ] Docs updated where behaviour changed (`docs/standards.md`, `docs/formulas.md`, `docs/cpm.md`, `docs/backlog.md`)

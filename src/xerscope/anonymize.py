@@ -412,43 +412,61 @@ class Anonymizer:
     # --- XER -------------------------------------------------------------------------------
 
     def table(self, name: str, frame: pd.DataFrame) -> pd.DataFrame | None:
-        """The anonymised table, or None when the table is left out."""
+        """The anonymised table, or None when the table is left out.
+
+        A column is, in this order: a code (replaced by a new code), a label (rebuilt from the
+        row's code), or any other column (``_other_column``)."""
         if name not in KEEP:
             self.report.dropped_tables.add(name)
             return None
         out = frame.copy()
         new_codes = {}
-        for column in frame.columns:
+        for column in frame.columns:  # the codes first: the labels below are built from them
             if (name, column) in CODES:
-                kind = CODES[name, column]
-                if name == "PROJWBS" and "proj_node_flag" in frame.columns:
-                    # the project node's short name is the project code
-                    is_node = frame["proj_node_flag"] == "Y"
-                    out[column] = [
-                        self.code("P" if node else kind, value)
-                        for node, value in zip(is_node, frame[column], strict=True)
-                    ]
-                else:
-                    out[column] = [self.code(kind, value) for value in frame[column]]
-                new_codes[column] = out[column]
+                out[column] = new_codes[column] = self._code_column(name, column, frame)
         for column in frame.columns:
             if (name, column) in CODES:
                 continue
             if (name, column) in LABELS:
-                prefix, source = LABELS[name, column]
-                codes = new_codes.get(source, frame[source] if source in frame.columns else None)
-                out[column] = [f"{prefix} {code}" if code else "" for code in codes] if codes is not None else ""
-            elif column in KEEP[name]:
-                out[column] = self._kept(column, frame[column])
-            elif column in MONEY.get(name, ()):
-                out[column] = ["0" if value.strip() else "" for value in frame[column]]
-            elif column in GUIDS:
-                out[column] = [self.guid(value) for value in frame[column]]
+                out[column] = self._label_column(name, column, frame, new_codes)
             else:
-                if (frame[column] != "").any():
-                    self.report.emptied_columns.add(f"{name}.{column}")
-                out[column] = ""
+                out[column] = self._other_column(name, column, frame[column])
         return out
+
+    def _code_column(self, name: str, column: str, frame: pd.DataFrame) -> list[str]:
+        """The new code of each row of a code column (CODES)."""
+        kind = CODES[name, column]
+        if name == "PROJWBS" and "proj_node_flag" in frame.columns:
+            # the project node's short name is the project code
+            kinds = ["P" if flag == "Y" else kind for flag in frame["proj_node_flag"]]
+        else:
+            kinds = [kind] * len(frame)
+        return [self.code(row_kind, value) for row_kind, value in zip(kinds, frame[column], strict=True)]
+
+    def _label_column(self, name: str, column: str, frame: pd.DataFrame, new_codes: dict) -> list[str] | str:
+        """A label column (LABELS) rebuilt as "<prefix> <the row's code>"; blank where the row has no
+        code, and for the whole column when the table has no column for that code."""
+        prefix, source = LABELS[name, column]
+        if source in new_codes:
+            codes = new_codes[source]
+        elif source in frame.columns:
+            codes = frame[source]
+        else:
+            return ""
+        return [f"{prefix} {code}" if code else "" for code in codes]
+
+    def _other_column(self, name: str, column: str, values: pd.Series) -> pd.Series | list[str] | str:
+        """A column that is neither a code nor a label: kept as it is when KEEP lists it, an amount
+        (MONEY) written 0, a GUID replaced; anything else is emptied, and reported when it held a value."""
+        if column in KEEP[name]:
+            return self._kept(column, values)
+        if column in MONEY.get(name, ()):
+            return ["0" if value.strip() else "" for value in values]
+        if column in GUIDS:
+            return [self.guid(value) for value in values]
+        if (values != "").any():
+            self.report.emptied_columns.add(f"{name}.{column}")
+        return ""
 
     def _kept(self, column: str, values: pd.Series) -> pd.Series | list[str]:
         """A kept column as written: the calendar data checked, the project ids renewed."""
