@@ -26,7 +26,7 @@ class Context:
 
 
 def apply(
-    filter: Filter,
+    ask: Filter,
     tasks: pd.DataFrame,
     snapshot: Snapshot,
     nodes: pd.DataFrame | None = None,
@@ -40,40 +40,40 @@ def apply(
     sentence of which nothing was understood but words were left out keeps no row (the page
     then offers the closest labels), never every row."""
     funnel = Funnel(tasks, snapshot.data_date)
-    if filter.empty and filter.ignored:
+    if ask.empty and ask.ignored:
         return funnel.keep("nothing understood", "ask", lambda rows: pd.Series(False, index=rows.index))
     context = Context(snapshot, nodes, baseline)
-    for label, expr in [*facet_steps(filter, tasks, snapshot, nodes), *filter.clauses]:
+    for label, expr in [*facet_steps(ask, tasks, snapshot, nodes), *ask.clauses]:
         # the default argument pins this step's expression; mypy rejects any lambda with one against Callable[[X], Y]
         funnel.keep(label, "ask", lambda rows, expr=expr: mask(expr, rows, context))  # type: ignore[misc]
     return funnel
 
 
 def facet_steps(
-    filter: Filter, tasks: pd.DataFrame, snapshot: Snapshot, nodes: pd.DataFrame | None
+    ask: Filter, tasks: pd.DataFrame, snapshot: Snapshot, nodes: pd.DataFrame | None
 ) -> list[tuple[str, Expr]]:
     """(step label, expression) of each facet the filter holds, as the funnel names them."""
     steps: list[tuple[str, Expr]] = []
-    if filter.wbs_id and nodes is not None:  # a node of another update only: no row here
-        node = nodes.loc[nodes["wbs_id"] == filter.wbs_id]
+    if ask.wbs_id and nodes is not None:  # a node of another update only: no row here
+        node = nodes.loc[nodes["wbs_id"] == ask.wbs_id]
         label = f"{node.iloc[0]['wbs_code']} · {node.iloc[0]['wbs_name']}" if len(node) else "not in this update"
-        steps.append((f"WBS {label}", Atom("wbs", filter.wbs_id)))
-    if filter.status:
-        steps.append((f"status {' / '.join(filter.status)}", _any("status", filter.status)))
-    if filter.categories and "category" in tasks:
-        steps.append((f"float {' / '.join(filter.categories)}", _any("float", filter.categories)))
-    if filter.code_type and filter.code_ids:
+        steps.append((f"WBS {label}", Atom("wbs", ask.wbs_id)))
+    if ask.status:
+        steps.append((f"status {' / '.join(ask.status)}", _any("status", ask.status)))
+    if ask.categories and "category" in tasks:
+        steps.append((f"float {' / '.join(ask.categories)}", _any("float", ask.categories)))
+    if ask.code_type and ask.code_ids:
         values = snapshot.code_values
-        named = sorted(values.loc[values["code_id"].isin(filter.code_ids), "value"])
-        steps.append((f"{filter.code_type} {' / '.join(named)}", _any("code", sorted(filter.code_ids))))
-    if filter.resources:
+        named = sorted(values.loc[values["code_id"].isin(ask.code_ids), "value"])
+        steps.append((f"{ask.code_type} {' / '.join(named)}", _any("code", sorted(ask.code_ids))))
+    if ask.resources:
         assigned = snapshot.assignments
-        names = assigned.loc[assigned["rsrc_id"].isin(filter.resources), "rsrc_short_name"].dropna().unique()
-        steps.append((f"resource {' / '.join(map(str, sorted(names)))}", _any("resource", sorted(filter.resources))))
-    steps += [("milestones", Atom("milestone"))] if filter.milestones else []
-    steps += [("level of effort", Atom("loe"))] if filter.loe else []
-    if filter.search:  # every word, in any order (an AND of words, not one phrase)
-        words = filter.search.split()
+        names = assigned.loc[assigned["rsrc_id"].isin(ask.resources), "rsrc_short_name"].dropna().unique()
+        steps.append((f"resource {' / '.join(map(str, sorted(names)))}", _any("resource", sorted(ask.resources))))
+    steps += [("milestones", Atom("milestone"))] if ask.milestones else []
+    steps += [("level of effort", Atom("loe"))] if ask.loe else []
+    if ask.search:  # every word, in any order (an AND of words, not one phrase)
+        words = ask.search.split()
         steps.append(
             ("name contains " + " and ".join(f'"{w}"' for w in words), And(tuple(Atom("word", w) for w in words)))
         )

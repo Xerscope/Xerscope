@@ -58,7 +58,8 @@ class _Normalise(ast.NodeTransformer):
             node.body = node.body[1:] or [ast.Pass()]
         return node
 
-    visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _body
+    # ast.NodeTransformer looks these three names up
+    visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _body  # noqa: N815
 
     def visit_Import(self, node: ast.Import):
         return ast.Expr(ast.Constant(sorted(alias.asname or alias.name for alias in node.names)))
