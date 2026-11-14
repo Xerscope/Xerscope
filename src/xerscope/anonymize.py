@@ -175,6 +175,16 @@ def _project_ids_in(raw: RawXer) -> Iterator[str]:
             yield from (value for value in frame[column] if value)
 
 
+def _codes_in(raw: RawXer) -> dict[str, set[str]]:
+    """The codes of one file (the CODES columns), by kind."""
+    found: dict[str, set[str]] = {kind: set() for kind in WIDTH}
+    for (table, column), kind in CODES.items():
+        frame = raw.table(table)
+        if column in frame.columns:
+            found[kind].update(value for value in frame[column] if value)
+    return found
+
+
 def _is_text(value: str) -> bool:
     """Worth looking for in an output: three characters or more, at least one letter."""
     return len(value) >= 3 and any(character.isalpha() for character in value)
@@ -218,57 +228,75 @@ class Anonymizer:
         """One pass over the files given. With the session's ``key``, a code is the same whichever
         files were read (an anonymizer of one update and one of the whole series agree), unless
         it is drawn again for holding an original value of the files read."""
-        found: dict[str, set[str]] = {kind: set() for kind in WIDTH}
         anonymizer = cls() if key is None else cls(key=key)
-        project_nodes: list[tuple[pd.DataFrame, pd.DataFrame]] = []
+        found: dict[str, set[str]] = {kind: set() for kind in WIDTH}
+        wbs_tables: list[pd.DataFrame] = []
         for raw in raws:
             anonymizer._collect_secrets(raw)
             anonymizer.original_project_ids.update(_project_ids_in(raw))
-            for (table, column), kind in CODES.items():
-                frame = raw.table(table)
-                if column in frame.columns:
-                    found[kind].update(value for value in frame[column] if value)
-            project_nodes.append((raw.table("PROJWBS"), raw.table("PROJECT")))
-        codes = {value for values in found.values() for value in values}
-        anonymizer.original_codes = codes & set(anonymizer.secrets_)
-        for kind, values in found.items():
-            for value in sorted(values):
-                anonymizer.code(kind, value)
-        for value in sorted(anonymizer.original_project_ids):
-            anonymizer.project_id(value)
-        for wbs, _project in project_nodes:
+            for kind, values in _codes_in(raw).items():
+                found[kind] |= values
+            wbs_tables.append(raw.table("PROJWBS"))
+        anonymizer._draw_codes(found)
+        for wbs in wbs_tables:
             anonymizer._map_wbs_paths(wbs)
         return anonymizer
+
+    def _draw_codes(self, found: dict[str, set[str]]) -> None:
+        """A new code for every code read, then a new id for every project: in sorted order, so that
+        the same files give the same codes whatever order they were read in."""
+        every_code = {value for values in found.values() for value in values}
+        self.original_codes = every_code & set(self.secrets_)
+        for kind, values in found.items():
+            for value in sorted(values):
+                self.code(kind, value)
+        for value in sorted(self.original_project_ids):
+            self.project_id(value)
 
     # --- what must not come out ------------------------------------------------------------
 
     def _collect_secrets(self, raw: RawXer) -> None:
+        """Every text of one file that must not come out: of its header, its name and its tables."""
+        self._collect_header_secrets(raw)
+        self._collect_file_name(raw)
+        self._collect_table_secrets(raw)
+
+    def _collect_header_secrets(self, raw: RawXer) -> None:
         for position in (3, 4, 5):  # ERMHDR fields: version, date, "Project", login, full name, database
             if len(raw.header) > position and raw.header[position] not in GENERIC_HEADER:
                 self.secrets_.setdefault(raw.header[position], "ERMHDR")
-        if raw.source:
-            name = re.split(r"[/\\]", raw.source)[-1]
-            stem = name.rsplit(".", 1)[0]
-            # a stem that is a word of xerscope's own output ("Baseline.xml") names no project and would
-            # be found in every table: the full name is still searched, the bare word is not
-            parts = (name,) if stem.lower() in GENERIC_FILE_STEMS else (name, stem)
-            if stem.lower() not in GENERIC_FILE_STEMS:
-                self.secrets_.setdefault(stem, "file name")
-            self.file_names.update(part for part in parts if _is_text(part))
+
+    def _collect_file_name(self, raw: RawXer) -> None:
+        if not raw.source:
+            return
+        name = re.split(r"[/\\]", raw.source)[-1]
+        stem = name.rsplit(".", 1)[0]
+        # a stem that is a word of xerscope's own output ("Baseline.xml") names no project and would
+        # be found in every table: the full name is still searched, the bare word is not
+        parts = (name,) if stem.lower() in GENERIC_FILE_STEMS else (name, stem)
+        if stem.lower() not in GENERIC_FILE_STEMS:
+            self.secrets_.setdefault(stem, "file name")
+        self.file_names.update(part for part in parts if _is_text(part))
+
+    def _collect_table_secrets(self, raw: RawXer) -> None:
         kept_values: set[str] = set()
         for table, frame in raw.tables.items():
-            keep = KEEP.get(table, frozenset())
+            kept_columns = KEEP.get(table, frozenset())
             for column in frame.columns:
-                values = {value.strip() for value in frame[column] if _is_text(value.strip())}
-                if column in keep:
-                    kept_values |= values
+                texts = {value.strip() for value in frame[column] if _is_text(value.strip())}
+                if column in kept_columns:
+                    kept_values |= texts
                 else:
-                    for value in values:
-                        self.secrets_.setdefault(value, f"{table}.{column}")
+                    self._remember(texts, f"{table}.{column}")
         # a value also written in a kept column (an enumeration, a unit) is not a secret of the file
         self.kept |= kept_values
         for value in kept_values:
             self.secrets_.pop(value, None)
+
+    def _remember(self, texts: set[str], origin: str) -> None:
+        """``texts`` become values that must not come out; one already known keeps its first origin."""
+        for text in texts:
+            self.secrets_.setdefault(text, origin)
 
     def _holds_original(self, new: str) -> bool:
         """Whether ``new`` (a code or GUID drawn here) holds a text value of the originals."""
@@ -280,31 +308,46 @@ class Anonymizer:
         """Original text values found among ``fields``, counted by the column they came from."""
         found: dict[str, int] = {}
         values = list(fields)
-        inside: dict[str, str | None] = {}
+        origins_inside: dict[str, str | None] = {}  # one search per distinct field: tables repeat their values
         longest = max(map(len, self.secrets_), default=0)
         for value in values:
-            origin = self.secrets_.get(value.strip())
-            if origin is None and value not in self.kept and _is_text(value):
-                if value not in inside:
-                    secret = next(self._secrets_inside(value, longest), None)
-                    inside[value] = self._code_inside(value) or (self.secrets_[secret] if secret else None)
-                origin = inside[value]
+            origin = self._origin(value, origins_inside, longest)
             if origin is not None:
                 found[origin] = found.get(origin, 0) + 1
-        if self.file_names:
-            # a name is not a word of the output: found whole, whatever surrounds it, in any case
-            names = "|".join(re.escape(name) for name in sorted(self.file_names, key=len, reverse=True))
-            pattern = re.compile(rf"(?<![A-Za-z0-9])(?:{names})(?![A-Za-z0-9])", re.IGNORECASE)
-            hits = sum(1 for value in values if pattern.search(value))
-            if hits:
-                found["file name"] = max(found.get("file name", 0), hits)
+        naming_a_file = self._fields_naming_a_file(values)
+        if naming_a_file:
+            found["file name"] = max(found.get("file name", 0), naming_a_file)
         return found
+
+    def _origin(self, value: str, origins_inside: dict[str, str | None], longest: int) -> str | None:
+        """The column an original text value in ``value`` came from: ``value`` itself, or a value or a
+        code inside it. None when it holds none."""
+        origin = self.secrets_.get(value.strip())
+        if origin is not None or value in self.kept or not _is_text(value):
+            return origin
+        if value not in origins_inside:
+            secret = next(self._secrets_inside(value, longest), None)
+            origins_inside[value] = self._code_inside(value) or (self.secrets_[secret] if secret else None)
+        return origins_inside[value]
+
+    def _fields_naming_a_file(self, values: list[str]) -> int:
+        """How many fields hold the name of a file read. A name is not a word of the output: it is
+        found whole, whatever surrounds it, in any case."""
+        if not self.file_names:
+            return 0
+        names = "|".join(re.escape(name) for name in sorted(self.file_names, key=len, reverse=True))
+        pattern = re.compile(rf"(?<![A-Za-z0-9])(?:{names})(?![A-Za-z0-9])", re.IGNORECASE)
+        return sum(1 for value in values if pattern.search(value))
 
     def _secrets_inside(self, value: str, longest: int) -> Iterator[str]:
         """Text values of the originals inside ``value`` (not ``value`` itself), each starting and
         ending where a run of letters and digits does: "Night Shift" in "calendar 'Night Shift' has
         no working time", not "Shift" in "Shifts"."""
-        bounds = [p for p in range(len(value) + 1) if p in (0, len(value)) or not value[p - 1 : p + 1].isalnum()]
+        bounds = [
+            position
+            for position in range(len(value) + 1)
+            if position in (0, len(value)) or not value[position - 1 : position + 1].isalnum()
+        ]
         for i, start in enumerate(bounds):
             for end in bounds[i + 1 :]:
                 if end - start > longest:
@@ -519,6 +562,7 @@ class Anonymizer:
         "succ_name": "succ_code",
         "bl_name": "task_code",
     }
+    WBS_CODE_COLUMNS = frozenset({"wbs_code", "pred_wbs_code", "succ_wbs_code"})
     # columns xerscope writes itself (statuses, P6 enumerations, rule reasons, check names)
     # lists of Activity IDs a rule writes: "B2, C3" (drives, lagged_from) or "B2 (FS), C3 (SS)" (ahead_of)
     CODE_LIST_COLUMNS = frozenset({"drives", "lagged_from", "ahead_of"})
@@ -565,7 +609,7 @@ class Anonymizer:
         items = []
         for item in text.split(", "):
             code, bracket, rest = item.partition(" (")
-            new = self.codes.get("A", {}).get(code, "")
+            new = self._new_code("A", code)
             items.append(f"{new}{bracket}{rest}" if new else "")
         return ", ".join(items)
 
@@ -581,32 +625,50 @@ class Anonymizer:
         """A table of activities or relationships with new codes and names; other text emptied."""
         out = frame.copy()
         for column in frame.columns:
-            values = frame[column]
-            if column in self.CODE_COLUMNS:
-                out[column] = [
-                    self.codes.get("A", {}).get(value, "") if isinstance(value, str) else "" for value in values
-                ]
-            elif column in self.NAME_COLUMNS:
-                continue
-            elif (renamed := self._renamed(column, values)) is not None:
-                out[column] = renamed
-            elif column in ("wbs_code", "pred_wbs_code", "succ_wbs_code"):
-                out[column] = [self.wbs_paths.get(value, "") if isinstance(value, str) else "" for value in values]
-            elif column in self.CODE_LIST_COLUMNS:
-                out[column] = [self._code_list(value) for value in values]
-            elif column in self.SAFE_TEXT or not (values.dtype == object or pd.api.types.is_string_dtype(values)):
-                continue
-            elif values.map(lambda value: isinstance(value, str)).any():
-                self.report.emptied_columns.add(f"table.{column}")
-                out[column] = ""
+            new_values = self._frame_column(column, frame[column])
+            if new_values is not None:
+                out[column] = new_values
         for column in MONEY_COLUMNS & set(out.columns):
             out[column] = [self._zeroed(value) for value in out[column]]
-        for column, source in self.NAME_COLUMNS.items():
-            if column in frame.columns:
-                codes = out[source] if source in out.columns else pd.Series("", index=out.index)
-                out[column] = [f"Activity {code}" if code else "" for code in codes]
+        self._name_activities(out)
         self._refuse_frame_leaks(out, "table")
         return out
+
+    def _name_activities(self, out: pd.DataFrame) -> None:
+        """Each name column of ``out`` written from its code column, already renamed: "Activity <new code>"."""
+        for column, code_column in self.NAME_COLUMNS.items():
+            if column in out.columns:
+                new_codes = out[code_column] if code_column in out.columns else pd.Series("", index=out.index)
+                out[column] = [f"Activity {code}" if code else "" for code in new_codes]
+
+    def _frame_column(self, column: str, values: pd.Series) -> list | str | None:
+        """The new values of one column of a table shown by the app; None when it is written as it is."""
+        if column in self.CODE_COLUMNS:
+            return [self._new_code("A", value) for value in values]
+        if column in self.NAME_COLUMNS:
+            return None  # written by ``_name_activities`` once every code column is renamed
+        renamed = self._renamed(column, values)
+        if renamed is not None:
+            return renamed
+        if column in self.WBS_CODE_COLUMNS:
+            return [self._new_wbs_path(value) for value in values]
+        if column in self.CODE_LIST_COLUMNS:
+            return [self._code_list(value) for value in values]
+        holds_text = values.dtype == object or pd.api.types.is_string_dtype(values)
+        if column in self.SAFE_TEXT or not holds_text:
+            return None
+        if values.map(lambda value: isinstance(value, str)).any():
+            self.report.emptied_columns.add(f"table.{column}")
+            return ""
+        return None
+
+    def _new_code(self, kind: str, original: object) -> str:
+        """The new code of an original already read; "" for any other value: nothing is drawn here."""
+        return self.codes.get(kind, {}).get(original, "") if isinstance(original, str) else ""
+
+    def _new_wbs_path(self, original: object) -> str:
+        """The new path of a WBS code already read; "" for any other value."""
+        return self.wbs_paths.get(original, "") if isinstance(original, str) else ""
 
     def csv(self, frame: pd.DataFrame) -> bytes:
         return csv_bytes(self.frame(frame))
@@ -656,17 +718,22 @@ class Anonymizer:
         """
         outputs = {}
         for name, frame in frames.items():
-            out = frame.copy()
-            for column, kind in self.DIAGNOSTIC_CODES.items():
-                if column in out.columns:
-                    mapping = self.codes.get(kind, {})
-                    out[column] = [mapping.get(value, "") if isinstance(value, str) else "" for value in out[column]]
-            if "wbs_code" in out.columns:
-                out["wbs_code"] = [self.wbs_paths.get(v, "") if isinstance(v, str) else "" for v in out["wbs_code"]]
-            self._renew_project_ids(out)
-            for column in self.DIAGNOSTIC_MONEY:
-                if column in out.columns:
-                    out[column] = [self._zeroed(value) for value in out[column]]
+            out = self._diagnostic_table(frame)
             self._refuse_frame_leaks(out, f"table {name}")
             outputs[name] = out
         return zip_frames(outputs, "csv")
+
+    def _diagnostic_table(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """One table of the Debug page with its codes, WBS codes and project ids renamed and its cost
+        figures set to 0."""
+        out = frame.copy()
+        for column, kind in self.DIAGNOSTIC_CODES.items():
+            if column in out.columns:
+                out[column] = [self._new_code(kind, value) for value in out[column]]
+        if "wbs_code" in out.columns:
+            out["wbs_code"] = [self._new_wbs_path(value) for value in out["wbs_code"]]
+        self._renew_project_ids(out)
+        for column in self.DIAGNOSTIC_MONEY:
+            if column in out.columns:
+                out[column] = [self._zeroed(value) for value in out[column]]
+        return out

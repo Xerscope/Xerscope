@@ -361,12 +361,12 @@
       "near_clones": 0
     },
     "anonymize.py": {
-      "mi": 12.1,
+      "mi": 9.0,
       "mi_rank": "B",
-      "cc_max": 23,
-      "cc_over_15": 2,
-      "cognitive_max": 44,
-      "cognitive_over_15": 5,
+      "cc_max": 13,
+      "cc_over_15": 0,
+      "cognitive_max": 15,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
