@@ -97,46 +97,46 @@ WORDS = {
 }
 
 
-def answer(filter: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") -> str:
+def answer(ask: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") -> str:
     """One sentence from the funnel's rows, in ``lang``: the count, what was asked (node, status,
     float, resource, milestones, LOE, search, clauses), then the worst total float and the
     latest finish of the rows, and the words left out. Every number is a column of the frame
     (``total_float_d`` in working days, ``finish``); nothing is estimated."""
     words = WORDS["fr" if lang == "fr" else "en"]
-    unknown = _unknown_note(filter, words)
-    if filter.empty and filter.ignored:
+    unknown = _unknown_note(ask, words)
+    if ask.empty and ask.ignored:
         return words["nothing"] + unknown
     rows = funnel.rows
     if rows.empty:
         return words["none"] + unknown
-    sentence = " ".join([_head(filter, len(rows), words), *_asked(filter, vocab, words)])
-    sentence += "".join(", " + said(expr, vocab, lang) for _, expr in filter.clauses)
+    sentence = " ".join([_head(ask, len(rows), words), *_asked(ask, vocab, words)])
+    sentence += "".join(", " + said(expr, vocab, lang) for _, expr in ask.clauses)
     details = _details(rows, words)
     return sentence + ("; " + ", ".join(details) if details else "") + "." + unknown
 
 
-def _unknown_note(filter: Filter, words: dict) -> str:
-    if not filter.ignored:
+def _unknown_note(ask: Filter, words: dict) -> str:
+    if not ask.ignored:
         return ""
-    key = "unknown_one" if len(filter.ignored) == 1 else "unknown_many"
-    return words[key].format(words=", ".join(f"« {w} »" for w in filter.ignored))
+    key = "unknown_one" if len(ask.ignored) == 1 else "unknown_many"
+    return words[key].format(words=", ".join(f"« {w} »" for w in ask.ignored))
 
 
-def _head(filter: Filter, n: int, words: dict) -> str:
-    if filter.milestones:
+def _head(ask: Filter, n: int, words: dict) -> str:
+    if ask.milestones:
         return words["milestone_one"] if n == 1 else words["milestone_many"].format(n=n)
     return words["one"] if n == 1 else words["many"].format(n=n)
 
 
-def _asked(filter: Filter, vocab: Vocabulary, words: dict) -> list[str]:
-    parts = [words["float"][c] for c in filter.categories if c in words["float"]]
-    parts += [words["status"][st] for st in filter.status if st in words["status"]]
-    parts += [words["loe"]] if filter.loe else []
-    if filter.wbs_id in vocab.wbs:
-        parts.append(words["in"].format(label=vocab.wbs[filter.wbs_id]))  # type: ignore[index]  # None is in no dict
-    names = [vocab.resources[r][0] or vocab.resources[r][1] for r in sorted(filter.resources) if r in vocab.resources]
+def _asked(ask: Filter, vocab: Vocabulary, words: dict) -> list[str]:
+    parts = [words["float"][c] for c in ask.categories if c in words["float"]]
+    parts += [words["status"][st] for st in ask.status if st in words["status"]]
+    parts += [words["loe"]] if ask.loe else []
+    if ask.wbs_id in vocab.wbs:
+        parts.append(words["in"].format(label=vocab.wbs[ask.wbs_id]))  # type: ignore[index]  # None is in no dict
+    names = [vocab.resources[r][0] or vocab.resources[r][1] for r in sorted(ask.resources) if r in vocab.resources]
     parts += [words["resource"].format(name=", ".join(names))] if names else []
-    return parts + ([words["named"].format(text=filter.search)] if filter.search else [])
+    return parts + ([words["named"].format(text=ask.search)] if ask.search else [])
 
 
 def _details(rows: pd.DataFrame, words: dict) -> list[str]:
