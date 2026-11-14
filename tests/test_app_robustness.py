@@ -199,7 +199,8 @@ def bad_lexicon(tmp_path, monkeypatch):
     state.lexicon_and_errors.cache_clear()
 
 
-def test_lexicon_load_errors_show_on_the_debug_page_of_every_session(bad_lexicon, sample_dir, monkeypatch):
+@pytest.mark.usefixtures("bad_lexicon")
+def test_lexicon_load_errors_show_on_the_debug_page_of_every_session(sample_dir, monkeypatch):
     """A malformed lexicon file is skipped, and said so on the Debug page, in each session (the
     lexicon is loaded once for the process, not once per session)."""
     from xerscope.app.state import lexicon
