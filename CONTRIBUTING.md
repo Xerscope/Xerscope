@@ -44,6 +44,51 @@ activity's own calendar; activities are identified by `task_code` (Activity ID),
 `task_id`. Mixing hours and days, or calendar days and working days, is the most common
 source of a wrong number.
 
+## Readable code
+
+The maintainer reads, changes and debugs this code by hand. Code he cannot follow is not
+done, whatever the tests say. These rules apply to every line written or modified; an
+existing file is brought to them when it is touched, not by a mass rename.
+
+Reading:
+
+1. **A function does one thing, and its name says which.** `_code_column` gives the new
+   code of each row; it does not also empty the other columns.
+2. **One level of nesting, two at most.** A loop holding an `if` holding another `if` is
+   split: each case becomes a function with a name. The fitness check counts it
+   (cognitive complexity above 15 is a debt, and may not grow).
+3. **A docstring says what comes out, and why when it is not obvious.** It names the
+   source for a rule (Oracle page, PAM section). It does not repeat the code.
+4. **A comment explains a reason, never a line.** "the codes first: the labels are built
+   from them" stays; "loop over the columns" goes.
+5. **Nothing clever where plain works.** No nested comprehension, no chained conditional
+   expression, no helper used once to save two lines.
+6. **A rewrite for readability changes no result.** It comes with the proof: the same
+   output before and after (golden files, or a digest of the outputs), stated in the
+   pull request.
+7. **The pull request says what to read first** and what each part does.
+
+Names:
+
+1. Whole words, not letters: `for column in columns`, not `for c in columns`.
+2. No abbreviation outside the P6 vocabulary: `axis`, `calendar`, `predecessors`, not
+   `ax`, `cal`, `preds`.
+3. A function that returns something is named after what it returns
+   (`flagged_activities`).
+4. A function that acts carries a verb (`record`, `write_private`).
+5. A yes/no function starts with `is_`, `has_` or `can_`.
+6. A table is named after its rows (`tasks`, `links`), never `df`.
+7. A duration or a date carries its unit (`total_float_hr`, `lag_d`).
+8. P6 fields keep their XER name (`task_code`, `cstr_type`).
+
+Allowed short forms: `i` for a plain counter; the units `hr`, `wd`, `d`; the trade's
+acronyms (WBS, LOE, CPM, BEI, EV). ruff checks the case of names and that none hides a
+Python built-in (`N`, `A`); whether a name is clear is for the review.
+
+Before / after, `Anonymizer.table`: one function of 38 lines with six cases three levels
+deep became four, each one case to read (`table`, `_code_column`, `_label_column`,
+`_other_column`), with a byte-identical anonymised file.
+
 ## Where a change goes
 
 | Change | Goes in | Never in |
