@@ -621,12 +621,12 @@
       "near_clones": 0
     },
     "sample.py": {
-      "mi": 16.4,
+      "mi": 16.7,
       "mi_rank": "B",
-      "cc_max": 22,
-      "cc_over_15": 3,
-      "cognitive_max": 49,
-      "cognitive_over_15": 5,
+      "cc_max": 12,
+      "cc_over_15": 0,
+      "cognitive_max": 15,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 2
     },
