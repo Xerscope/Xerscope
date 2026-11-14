@@ -102,6 +102,19 @@ def test_a_filter_holding_a_line_break_is_reported_not_raised(text):
     assert set(errors) == {"total_float_d", "finish"}
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["3 4", "1/2", "11/2026", "nov 2026", "2026Q4", "20261101", "2026-1", "2026-11-1", "2026-11-01 08:00", "2026..1/2"],
+)
+def test_a_date_filter_is_a_year_a_month_or_a_day_never_a_guess(text):
+    """The three forms the hint shows: 2026, 2026-11, 2026-11-01. Any other text is reported as
+    unread: read loosely, "3 4" is 4 March of the year 1 and "1/2" is 2 January of the year 1, which
+    keep no row and say nothing."""
+    rows, errors = ui.filter_rows(FRAME, {"finish": text})
+    assert set(errors) == {"finish"}
+    assert len(rows) == len(FRAME)  # an unread filter is skipped
+
+
 def test_dates_are_read_as_iso_8601_never_guessed():
     """A date column still held as text (an export, a diagnostic frame) is read with the XER format,
     "YYYY-MM-DD HH:MM" (ISO 8601): no element-by-element guess, so no dateutil fallback and no
