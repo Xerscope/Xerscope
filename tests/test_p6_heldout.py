@@ -72,8 +72,9 @@ def _score(name: str) -> pd.DataFrame:
     return p6_heldout_score(HELD_OUT / name)
 
 
+@pytest.mark.usefixtures("corpus")
 @pytest.mark.parametrize("name", list(FLOORS))
-def test_share_of_values_identical_to_p6_never_drops(corpus, name):
+def test_share_of_values_identical_to_p6_never_drops(name):
     d = _score(name)
     errors = d[d["field"] == "error"]
     assert errors.empty, errors[["case", "xerscope"]].to_string()
@@ -127,7 +128,8 @@ def test_float_type_codes_read_as_p6_does(corpus):
         assert FLOAT_TYPE[code] == best
 
 
-def test_total_float_agrees_wherever_the_four_dates_do(corpus):
+@pytest.mark.usefixtures("corpus")
+def test_total_float_agrees_wherever_the_four_dates_do():
     """An activity whose early and late dates are P6's has P6's total float too, under
     FT_FF and FT_SS (the codes P6 itself writes). The float-type reading is then the only
     thing between the dates and the float, and it must be right. (FT_Min, FT_Start and
@@ -256,8 +258,9 @@ PINNED = {
 }
 
 
+@pytest.mark.usefixtures("corpus")
 @pytest.mark.parametrize("rule", list(PINNED))
-def test_rule_reproduces_p6_on_its_corpus_witness(corpus, rule):
+def test_rule_reproduces_p6_on_its_corpus_witness(rule):
     for set_name, case, code, field in PINNED[rule]:
         d = _score(set_name)
         row = d[(d["case"] == case) & (d["task_code"] == code) & (d["field"] == field)]

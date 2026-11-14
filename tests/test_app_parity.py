@@ -314,7 +314,7 @@ def test_audit_settings_rerun_the_check_and_leave_schedule_health_alone(app, sto
     assert "Audit" not in _metrics(app)
 
 
-def test_audit_page_shows_the_calculation_sheet_of_a_p6_check(app, store):
+def test_audit_page_shows_the_calculation_sheet_of_a_p6_check(app):
     """The sheet shown is the file's text (the P6-04 sheet names its field and x)."""
     from xerscope.analysis.audit import sheet
 

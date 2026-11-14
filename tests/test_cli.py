@@ -13,7 +13,7 @@ from xerscope import cli
 from xerscope.analysis import builtin_standards, compare_counts, query
 
 
-def stops(capsys, *argv) -> bool:
+def stops(*argv) -> bool:
     """True when the command stops on its input with exit code 2 (cli.INPUT_ERROR)."""
     with pytest.raises(SystemExit) as stop:
         cli.main(list(argv))
@@ -102,12 +102,12 @@ def test_check_baseline_in_file_refuses_two_files_of_one_name(capsys, tmp_path):
     for folder in ("w1", "w2"):
         (tmp_path / folder).mkdir()
         (tmp_path / folder / "a.xer").write_text(xer_text([todo("A1")]))
-    assert stops(capsys, "check", str(tmp_path / "w1"), str(tmp_path / "w2"), "--baseline-in-file")
+    assert stops("check", str(tmp_path / "w1"), str(tmp_path / "w2"), "--baseline-in-file")
     assert "distinct file names" in capsys.readouterr().err
 
 
 def test_check_rejects_unknown_standard(capsys, sample_dir):
-    assert stops(capsys, "check", str(sample_dir), "--standard", "nope")
+    assert stops("check", str(sample_dir), "--standard", "nope")
     assert "unknown standard" in capsys.readouterr().err
 
 
@@ -176,9 +176,9 @@ def test_check_exit_code_follows_fail_on(capsys, sample_dir):
 
 
 def test_paths_with_nothing_to_read_stop_with_a_message(capsys, tmp_path):
-    assert stops(capsys, "check", str(tmp_path))
+    assert stops("check", str(tmp_path))
     assert "no .xer file" in capsys.readouterr().err
-    assert stops(capsys, "info", str(tmp_path / "missing.xer"))
+    assert stops("info", str(tmp_path / "missing.xer"))
     assert "no such file" in capsys.readouterr().err
 
 
@@ -207,13 +207,13 @@ def test_an_unusable_file_stops_with_one_line_and_exit_2(capsys, tmp_path, comma
     (folder / "bad.xer").write_text(text)
     # export reads a folder of weekly files; the others take the file itself
     target = [str(folder), "--out", str(tmp_path / "bi")] if command == "export" else [str(folder / "bad.xer")]
-    assert stops(capsys, command, *target)
+    assert stops(command, *target)
     err = capsys.readouterr().err
     assert err.startswith("xerscope: bad.xer: ") and message in err and "Traceback" not in err
 
 
 def test_a_missing_baseline_file_stops_with_exit_2(capsys, sample_dir, tmp_path):
-    assert stops(capsys, "check", str(sample_dir), "--baseline", str(tmp_path / "absent.xer"))
+    assert stops("check", str(sample_dir), "--baseline", str(tmp_path / "absent.xer"))
     assert "absent.xer" in capsys.readouterr().err
 
 
@@ -223,7 +223,7 @@ def test_same_data_date_twice_stops_with_the_files(capsys, sample_dir, tmp_path)
     folder.mkdir()
     for name in (first.name, "zz-copy.xer"):
         (folder / name).write_bytes(first.read_bytes())
-    assert stops(capsys, "export", str(folder), "--out", str(tmp_path / "bi"))
+    assert stops("export", str(folder), "--out", str(tmp_path / "bi"))
     assert re.search(f"several files per status date.*{first.name}, zz-copy.xer", capsys.readouterr().err)
 
 
@@ -267,7 +267,7 @@ def test_pv_compare_names_the_missing_column_and_accepts_a_mapping(capsys, tmp_p
     (tmp_path / "w.xer").write_text(xer_text(UPDATE, data_date=WED))
     (tmp_path / "p6.csv").write_text("Activity ID,PV,Earned Value Labor Units,Schedule % Complete\nA,50,62.5,40%\n")
     assert stops(
-        capsys, "pv-compare", str(tmp_path / "w.xer"), "--baseline", str(tmp_path / "bl.xer"),
+        "pv-compare", str(tmp_path / "w.xer"), "--baseline", str(tmp_path / "bl.xer"),
         "--p6", str(tmp_path / "p6.csv"),
     )  # fmt: skip
     assert "pv_hr" in capsys.readouterr().err

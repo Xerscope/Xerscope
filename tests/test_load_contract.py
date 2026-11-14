@@ -153,17 +153,16 @@ def test_a_column_named_twice_is_refused():
 
 
 @pytest.mark.parametrize(
-    ("table", "column", "crash_before"),
-    [
-        ("TASK", "task_id", "InvalidIndexError when relationships and assignments look tasks up"),
-        ("PROJWBS", "wbs_id", "ValueError (truth value of a Series) when WBS paths are built"),
-        ("CALENDAR", "clndr_id", "none: the last calendar of that id silently replaced the first"),
+    ("table", "column"),
+    [  # beside each key, what happened before the check
+        ("TASK", "task_id"),  # InvalidIndexError when relationships and assignments look tasks up
+        ("PROJWBS", "wbs_id"),  # ValueError (truth value of a Series) when WBS paths are built
+        ("CALENDAR", "clndr_id"),  # no error: the last calendar of that id silently replaced the first
     ],
 )
-def test_a_duplicated_primary_key_is_refused(table, column, crash_before, request):
+def test_a_duplicated_primary_key_is_refused(table, column):
     """task_id, wbs_id and clndr_id are the keys every other table points at: with two rows on one
-    key, a lookup either fails or picks one row arbitrarily. Behaviour without the check: see
-    ``crash_before``."""
+    key, a lookup either fails or picks one row arbitrarily."""
     text = full_file()
     _, rows = table_lines(text, table)
     lines = lines_of(text)

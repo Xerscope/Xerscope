@@ -812,7 +812,7 @@ def test_locked_server_offers_the_baseline_file_it_names(sample_dir, monkeypatch
     assert isinstance(at.session_state["baseline"], Baseline)
 
 
-def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app, store):
+def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app):
     """The sidebar's Baseline line opens the same window, Baseline section first; a choice applied
     with Done stays once the window is closed, although its selectors are no longer drawn."""
     _ok(app)
@@ -1401,7 +1401,7 @@ def test_exports_are_anonymised_by_default_and_plain_when_switched_off(app, stor
     assert set(_csv(_download(app, downloads, "Download CSV"))["task_code"]) <= set(store.history["task_code"])
 
 
-def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, store, downloads):
+def test_debug_diagnostic_in_plain_when_anonymous_exports_are_off(app, downloads):
     app.sidebar.toggle(key="anon_exports").set_value(False).run()
     app.switch_page("views/debug.py").run()
     _ok(app)
@@ -1985,7 +1985,7 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)
 
 
-def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app, store):
+def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app):
     """A click stores the row's Activity ID (the chart's callback); the run it causes picks it when
     the chart draws it, and ignores it otherwise, keeping the activity picked before."""
     app.switch_page("views/gantt.py").run()
