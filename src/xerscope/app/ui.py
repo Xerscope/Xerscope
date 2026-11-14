@@ -526,12 +526,21 @@ def _range(text: str) -> tuple[str, str] | None:
     return (text[:cut], text[cut + 2 :]) if cut > 0 else None
 
 
+def _operator_and_value(text: str) -> tuple[str, str]:
+    """The comparison a filter starts with ("" when it has none) and the value after it."""
+    found = _OPERATOR.match(text)
+    if found is None:  # the pattern reads one line: a value holding a line break is not a filter
+        raise ValueError(f"not a filter: {text!r}")
+    operator, value = found.groups()
+    return operator or "", value
+
+
 def _number_test(text: str) -> Callable[[pd.Series], pd.Series]:
     bounds = _range(text)
     if bounds:
         low, high = _number(bounds[0]), _number(bounds[1])
         return lambda values: values.between(low, high)
-    operator, value = _OPERATOR.match(text).groups()
+    operator, value = _operator_and_value(text)
     number = _number(value)
     return {
         "<": lambda values: values < number,
@@ -547,7 +556,7 @@ def _date_test(text: str) -> Callable[[pd.Series], pd.Series]:
     if bounds:
         start, end = pd.Period(bounds[0].strip()).start_time, pd.Period(bounds[1].strip()).end_time
         return lambda values: (values >= start) & (values <= end)
-    operator, value = _OPERATOR.match(text).groups()
+    operator, value = _operator_and_value(text)
     period = pd.Period(value.strip())
     start, end = period.start_time, period.end_time
     return {
