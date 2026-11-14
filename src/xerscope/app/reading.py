@@ -52,7 +52,7 @@ def read_update(
     digest = hashlib.sha256(data).hexdigest()
     try:
         snapshot = parse(data, name=name, project_id=None)
-        cache = {(name, digest, None): snapshot}
+        cache: dict[tuple[str, str, str | None], Snapshot] = {(name, digest, None): snapshot}
         if chosen_project in set(snapshot.file_projects["proj_id"]) and chosen_project != snapshot.project_id:
             snapshot = parse(data, name=name, project_id=chosen_project)
             cache[(name, digest, chosen_project)] = snapshot

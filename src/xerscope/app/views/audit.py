@@ -42,7 +42,7 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
         help="e.g. < 5%, <= 0, >= 0.95, pass, info",
     )
     saved[f"{prefix}:target"] = target
-    params = {}
+    params: dict[str, object] = {}
     for name, default in rule.params.items():
         key = f"{prefix}:{name}"
         current = saved.get(key, metric.params.get(name, default))

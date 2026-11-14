@@ -16,7 +16,7 @@ from xerscope.app.state import (
     show_download,
     source_raws,
 )
-from xerscope.export import export_tables, zip_tables
+from xerscope.export import Fmt, export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
 
 store = require_store()
@@ -40,7 +40,8 @@ ui.table(
     },
 )
 
-table_format = st.radio("Format", ["parquet", "csv"], horizontal=True)
+table_formats: list[Fmt] = ["parquet", "csv"]
+table_format = st.radio("Format", table_formats, horizontal=True)
 download(
     f"Download {table_format.upper()} tables (.zip)",
     f"{store.latest.project_code}_xerscope_{table_format}.zip",

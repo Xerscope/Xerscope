@@ -53,7 +53,8 @@ BADGE = {**STATUS, "muted": "#5b6b82"}
 
 # The WBS Gantt (viz/gantt.js), registered once: this module is imported once per process. A
 # component, not an iframe, so its colours follow the theme's --st-* variables in the browser.
-GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())
+# gantt_assets() holds only the html, css and js strings; mypy reads its dict[str, str] as also feeding the bool option
+GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())  # type: ignore[arg-type]
 
 
 STYLE = Path(__file__).parent / "style.css"
@@ -354,7 +355,8 @@ def kpis(items: Sequence[tuple], formulas: Mapping[str, Mapping[str, str]] | Non
                 # marked for style.css: Streamlit's neutral chip is a fixed grey, too faint on the
                 # light theme, and the page's text colour replaces it
                 box = box.container(key=f"kpi_off_{index}_{zlib.crc32(label.encode()):08x}")
-            box.metric(label, value, delta=delta, help=help_, delta_color=delta_color)
+            # delta_color is "off" or the caller's colour name; st.metric checks it, its stub lists the names
+            box.metric(label, value, delta=delta, help=help_, delta_color=delta_color)  # type: ignore[arg-type]
     known = [label for label in labels if formulas and label in formulas]
     if known:
         with st.popover("Formulas", icon=":material/function:", help="How each figure is computed, by standard"):
@@ -660,7 +662,7 @@ def table(
             if st.button(
                 f"Open {md_text(code)} in the Gantt", icon=":material/view_timeline:", key=f"{kwargs['key']}:open"
             ):
-                open_task(code)
+                open_task(code)  # type: ignore[misc]  # linked is True only when open_task is not None
         else:
             st.caption("Select a row to open its task in the Gantt.")
     return event
