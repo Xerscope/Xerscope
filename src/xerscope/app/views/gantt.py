@@ -185,7 +185,13 @@ path_labels = {
     for wbs_id, ancestors in zip(nodes["wbs_id"], nodes["ancestors"], strict=True)
 }
 
-current = st.selectbox("WBS", nodes["wbs_id"].tolist(), format_func=path_labels.get, key=NODE_KEY)
+# every option is a key of path_labels (both come from nodes["wbs_id"]), so .get never gives None
+current = st.selectbox(
+    "WBS",
+    nodes["wbs_id"].tolist(),
+    format_func=path_labels.get,  # type: ignore[arg-type]
+    key=NODE_KEY,
+)
 node = nodes[nodes["wbs_id"] == current].iloc[0]
 
 
@@ -279,7 +285,8 @@ timescale = options.segmented_control(
     key="gantt_timescale",
 )
 
-branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)
+# st.selectbox types its value as None-able for an empty option list; nodes always holds the ROOT row
+branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)  # type: ignore[arg-type]
 branch = nodes[nodes["wbs_id"].isin(branch_ids)]
 tasks = snapshot.activities
 if current != ROOT:
