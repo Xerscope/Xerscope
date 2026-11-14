@@ -286,12 +286,12 @@ class WorkCalendar:
         was built (``work_hours`` returns differences). The frozen dataclass keeps the cache
         in a declared field, set once through ``object.__setattr__``.
         """
-        ax = self._axis
-        if ax is None:
+        time_axis = self._axis
+        if time_axis is None:
             origin = min(self.exceptions) if self.exceptions else date(2020, 1, 1)
-            ax = TimeAxis(self, origin - timedelta(days=AXIS_MARGIN_DAYS), origin + timedelta(days=AXIS_SPAN_DAYS))
-            object.__setattr__(self, "_axis", ax)
-        return ax
+            time_axis = TimeAxis(self, origin - timedelta(days=AXIS_MARGIN_DAYS), origin + timedelta(days=AXIS_SPAN_DAYS))
+            object.__setattr__(self, "_axis", time_axis)
+        return time_axis
 
     def work_hours(self, a: pd.Timestamp, b: pd.Timestamp) -> float:
         """Working hours from ``a`` to ``b`` (negative if ``b`` is earlier), to the minute."""
