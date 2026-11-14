@@ -161,36 +161,36 @@ def to_filter(conjuncts: list[tuple[int, Expr]], ignored: list[str], confidence:
     return facets.filter(ignored, confidence)
 
 
-def conjuncts(filter: Filter) -> list[Expr]:
+def conjuncts(ask: Filter) -> list[Expr]:
     """The filter as the expressions it intersects: each facet (one value, or an OR of its
     values), each search word, each clause."""
     facets = [
-        ("wbs", [filter.wbs_id] if filter.wbs_id else []),
-        ("status", filter.status),
-        ("float", filter.categories),
-        ("code", sorted(filter.code_ids) if filter.code_type else []),
-        ("resource", sorted(filter.resources)),
-        ("milestone", [None] if filter.milestones else []),
-        ("loe", [None] if filter.loe else []),
+        ("wbs", [ask.wbs_id] if ask.wbs_id else []),
+        ("status", ask.status),
+        ("float", ask.categories),
+        ("code", sorted(ask.code_ids) if ask.code_type else []),
+        ("resource", sorted(ask.resources)),
+        ("milestone", [None] if ask.milestones else []),
+        ("loe", [None] if ask.loe else []),
     ]
     out: list[Expr] = []
     for kind, values in facets:
         atoms = [Atom(kind, v) for v in values]
         if atoms:
             out.append(atoms[0] if len(atoms) == 1 else Or(tuple(atoms)))
-    out += [Atom("word", w) for w in filter.search.split()]
-    return out + [expr for _, expr in filter.clauses]
+    out += [Atom("word", w) for w in ask.search.split()]
+    return out + [expr for _, expr in ask.clauses]
 
 
 # --- written forms ----------------------------------------------------------------------------
 
 
-def canonical(filter: Filter, vocab: Vocabulary) -> str:
+def canonical(ask: Filter, vocab: Vocabulary) -> str:
     """The filter in one written form, for the tests' expectations: atoms ``status:Not started``,
     ``float:Critical``, ``wbs:CIV``, ``code:Zone=B2``, ``resource:CREW``, ``milestone``,
     ``loe``, ``word:pump``, ``late``...; ``!x``, ``(a | b)``, ``(a & b)``; children sorted;
-    the conjuncts joined by `` & ``. "" is no filter."""
-    return " & ".join(sorted(written(e, vocab) for e in conjuncts(filter)))
+    the conjuncts joined by `` & ``. "" is no ask."""
+    return " & ".join(sorted(written(e, vocab) for e in conjuncts(ask)))
 
 
 def written(expr: Expr, vocab: Vocabulary) -> str:
@@ -364,21 +364,21 @@ def say_label(expr: Expr, vocab: Vocabulary) -> str:
 # --- a chip taken off -------------------------------------------------------------------------
 
 
-def without(filter: Filter, label: str, vocab: Vocabulary) -> Filter:
-    """``filter`` less the one item ``label`` names, as ``Filter.matched`` spells it ("WBS: CIV ·
+def without(ask: Filter, label: str, vocab: Vocabulary) -> Filter:
+    """``ask`` less the one item ``label`` names, as ``Filter.matched`` spells it ("WBS: CIV ·
     Civil works", "Status: Not started", "Float: Critical", "Zone: B2", "Resource: CREW",
     "Milestones", "Level of effort", "Search: piping", or a clause's label "Not critical"): the
     chip a user takes off the page."""
     kind, _, value = label.partition(": ")
-    if any(c[0] == label for c in filter.clauses):
-        out = replace(filter, clauses=tuple(c for c in filter.clauses if c[0] != label))
-    elif kind == filter.code_type and kind:  # "Zone: B2"
-        kept = frozenset(c for c in filter.code_ids if vocab.codes.get(c, ("", "", ""))[1] != value)
-        out = replace(filter, code_ids=kept, code_type=filter.code_type if kept else None)
+    if any(c[0] == label for c in ask.clauses):
+        out = replace(ask, clauses=tuple(c for c in ask.clauses if c[0] != label))
+    elif kind == ask.code_type and kind:  # "Zone: B2"
+        kept = frozenset(c for c in ask.code_ids if vocab.codes.get(c, ("", "", ""))[1] != value)
+        out = replace(ask, code_ids=kept, code_type=ask.code_type if kept else None)
     else:
         drop = _DROP.get(kind) or _DROP.get(label)
-        out = drop(filter, value, vocab) if drop else filter
-    return replace(out, matched=tuple(m for m in filter.matched if m != label)) if out != filter else filter
+        out = drop(ask, value, vocab) if drop else ask
+    return replace(out, matched=tuple(m for m in ask.matched if m != label)) if out != ask else ask
 
 
 _DROP = {

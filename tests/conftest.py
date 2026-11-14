@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, settings
 
 from xerscope.sample import generate
 from xerscope.store import SnapshotStore
@@ -16,6 +17,14 @@ if _MPXJ_CPM:
 # AppTest returns when the script run ends: the app reads every file and computes the Overview
 # scores in that run (state.background_jobs). test_app_background.py lifts this for its own tests.
 os.environ.setdefault("XERSCOPE_SYNC_LOAD", "1")
+
+
+# The fuzz tests (tests/test_fuzz_parser.py, tests/test_fuzz_ask.py): 200 examples per property,
+# 1000 with HYPOTHESIS_PROFILE=ci.
+_HEALTH = [HealthCheck.too_slow, HealthCheck.filter_too_much]
+settings.register_profile("default", max_examples=200, deadline=None, suppress_health_check=_HEALTH)
+settings.register_profile("ci", max_examples=1000, deadline=None, suppress_health_check=_HEALTH)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 
 # What a test's expected values come from (marker declared in pyproject.toml; counted by

@@ -394,7 +394,7 @@ def lag(
 @rule("relationship_type", "%", links=True)
 def relationship_type(
     context,
-    type: Literal["FS", "SS", "FF", "SF"] = "FS",
+    type: Literal["FS", "SS", "FF", "SF"] = "FS",  # noqa: A002  the key a standard's TOML writes
     links: LinkPop = "succ_incomplete",
     exclude_loe: bool = False,
     exclude: Names = (),

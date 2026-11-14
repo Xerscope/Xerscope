@@ -106,9 +106,11 @@ extend-exclude = ["tests/reference/data"]  # third-party corpora, not ours to fo
 [tool.ruff.lint]
 # pyflakes, pycodestyle, bugbear, imports, pyupgrade, simplify, comprehensions, return, pylint basics
 # D: docstrings, PEP 257 (CONTRIBUTING.md, Docstrings)
-select = ["E", "F", "W", "B", "I", "UP", "SIM", "C4", "PIE", "RET", "PLE", "PLW", "PLR0124", "PLC0206", "D"]
+# N: the case of names, PEP 8. A: a name never hides a Python built-in (filter, id, type).
+select = ["E", "F", "W", "B", "I", "UP", "SIM", "C4", "PIE", "RET", "PLE", "PLW", "PLR0124", "PLC0206", "D", "N", "A"]
 # C408: dict(...) reads better in Plotly layouts. RET504/505: early returns kept for clarity.
-ignore = ["C408", "RET504", "RET505", "SIM108"]
+# N818: DuplicateDataDate and CodeClash name the condition they report; the tests and the app catch them by name.
+ignore = ["C408", "RET504", "RET505", "SIM108", "N818"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
@@ -117,6 +119,11 @@ convention = "pep257"
 # Docstring rules apply to src/xerscope. A test's docstring states what the test proves, in prose.
 "tests/**" = ["D"]
 "scripts/**" = ["D"]
+# Naming debt of the tests at 5eab5e0: per file, the rule it does not meet yet. No line gains a rule.
+"tests/test_calendar_and_standards.py" = ["N806"]
+"tests/test_cpm_properties.py" = ["N806"]
+"tests/test_reference.py" = ["N812"]
+"tests/test_sheets.py" = ["N802"]
 # Docstring debt of main at f98589e: per file, the rules it does not meet yet. A new file has no
 # entry; a file brought to the standard loses its line; no line gains a rule.
 "src/xerscope/analysis/ask/__init__.py" = ["D205", "D209"]
