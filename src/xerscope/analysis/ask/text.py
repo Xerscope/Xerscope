@@ -100,7 +100,7 @@ def typo_word(word: str) -> bool:
     return len(word) >= 5 and not any(c.isdigit() for c in word) and word not in STOP and word not in COMMON
 
 
-def closest(words: list[str], phrases: list[str], spaced: bool = False) -> tuple[str, str, float] | None:
+def closest(words: list[str], phrases: list[str] | Index, spaced: bool = False) -> tuple[str, str, float] | None:
     """The word closest to one of the phrases (5+ letters, same first letter, length within 2;
     single words unless ``spaced``), with the ratio, when at least FUZZY: a typo ("critque",
     "fondation") still finds its phrase, at a lower confidence. The first MAX_FUZZY words only."""
@@ -114,7 +114,7 @@ def closest(words: list[str], phrases: list[str], spaced: bool = False) -> tuple
     return best
 
 
-def _near(phrases, word: str) -> list[str]:
+def _near(phrases: list[str] | Index, word: str) -> list[str]:
     """The phrases a typo on ``word`` may stand for: same first letter, length within 2, 5+ letters."""
     if isinstance(phrases, Index):
         return phrases.near(word)

@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 
 from ...xer import Snapshot
@@ -113,7 +114,7 @@ def near_spellings_from(found: Terms) -> dict[str, list[tuple[str, str]]]:
     return pairs
 
 
-def group_words(words: set[str], abbreviated: set[str] = frozenset()) -> list[list[str]]:
+def group_words(words: set[str], abbreviated: AbstractSet[str] = frozenset()) -> list[list[str]]:
     """The words of one column joined by the rules B of the module docstring."""
     parent = {w: w for w in words}
 
@@ -131,7 +132,7 @@ def group_words(words: set[str], abbreviated: set[str] = frozenset()) -> list[li
     return sorted(g for g in groups.values() if len(g) > 1)
 
 
-def _pairs(words: set[str], abbreviated: set[str]) -> list[tuple[str, str]]:
+def _pairs(words: set[str], abbreviated: AbstractSet[str]) -> list[tuple[str, str]]:
     pairs = [(w, p) for w in words for p in _plurals(w) if p in words]
     for short in abbreviated & words:
         longer = [w for w in words if w != short and w.startswith(short)]
@@ -190,8 +191,8 @@ def load_variants(*dirs: str | Path) -> dict[str, list[list[str]]]:
         except (OSError, ValueError):  # TOMLDecodeError, UnicodeDecodeError
             continue
         for table in tables(data, "group"):
-            if words_of(table) is not None and isinstance(table.get("column"), str):
-                found.setdefault(table["column"], []).append([w for w in words_of(table) if isinstance(w, str)])
+            if (words := words_of(table)) is not None and isinstance(table.get("column"), str):
+                found.setdefault(table["column"], []).append([w for w in words if isinstance(w, str)])
     return found
 
 

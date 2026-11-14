@@ -61,11 +61,11 @@ def record(folder: str | Path, word: str, label: str, kind: str, at: datetime, c
         import fcntl
     except ImportError:
         return False
-    word, label = clean(word, MAX_WORD), clean(label, MAX_LABEL)
-    if word is None or label is None or kind not in SOURCES or not Path(folder).is_dir():
+    cleaned_word, cleaned_label = clean(word, MAX_WORD), clean(label, MAX_LABEL)
+    if cleaned_word is None or cleaned_label is None or kind not in SOURCES or not Path(folder).is_dir():
         return False
     path = Path(folder) / FILE
-    text = entry(word, label, kind, at)
+    text = entry(cleaned_word, cleaned_label, kind, at)
     try:
         fd = _locked(path, fcntl)
     except OSError:  # a symlink in place of the file (ELOOP), a folder not writable
@@ -80,7 +80,7 @@ def record(folder: str | Path, word: str, label: str, kind: str, at: datetime, c
             return False  # TOML of another shape (edited by hand): left as it is
         live = [(e, t) for e in entries if not _expired(e, curated or {}, at) and (t := _rewritten(e))]
         kept = [t for _, t in live]
-        same = (word, label, SOURCES[kind][0])
+        same = (cleaned_word, cleaned_label, SOURCES[kind][0])
         held = any((e.get("word"), e.get("label"), e.get("column")) == same for e, _ in live)
         if len(kept) < len(entries):
             written = "".join([*kept, "" if held else text])

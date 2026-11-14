@@ -30,9 +30,9 @@ def raw(token: str) -> tuple[str, object] | None:
         year, month, day = map(int, match.groups())
         return "day", (day, month, year)
     if match := re.fullmatch(r"(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?", token):
-        day, month, year = match.groups()
-        year = None if year is None else int(year) + (2000 if len(year) == 2 else 0)
-        return "day", (int(day), int(month), year)
+        day_text, month_text, year_text = match.groups()
+        full_year = None if year_text is None else int(year_text) + (2000 if len(year_text) == 2 else 0)
+        return "day", (int(day_text), int(month_text), full_year)
     return None
 
 
@@ -133,7 +133,7 @@ class Composer:
     # --- dates ---------------------------------------------------------------------------------
 
     def _date(self) -> bool:
-        index, _, kind, value = self._peek()
+        index, _, kind, value = self.parts[self.at]
         column = "active"
         if kind == "anchor":
             self._take()
