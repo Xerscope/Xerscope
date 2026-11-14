@@ -194,74 +194,33 @@ def _topo(activities: dict[str, Activity], links) -> list[str]:
     return order
 
 
+def _links_by_end(links) -> tuple[dict[str, list], dict[str, list]]:
+    """The links of each activity: those arriving at it, those leaving it."""
+    predecessors_of, successors_of = defaultdict(list), defaultdict(list)
+    for predecessor, successor, link_type, lag in links:
+        predecessors_of[successor].append((predecessor, link_type, lag))
+        successors_of[predecessor].append((successor, link_type, lag))
+    return predecessors_of, successors_of
+
+
+def _remaining_days(activity: Activity) -> int:
+    return 0 if activity.act_finish is not None else math.ceil(activity.remaining)
+
+
 def _cpm(activities: dict[str, Activity], links, data_day: int) -> dict[str, dict]:
     """Forward/backward pass in whole days from the data day ``data_day``."""
     order = _topo(activities, links)
-    preds, succs = defaultdict(list), defaultdict(list)
-    for predecessor, successor, link_type, lag in links:
-        preds[successor].append((predecessor, link_type, lag))
-        succs[predecessor].append((successor, link_type, lag))
+    predecessors_of, successors_of = _links_by_end(links)
+    scheduled = [code for code in order if activities[code].kind != "TT_LOE"]  # a level of effort follows the rest
 
-    def remaining_days(activity: Activity) -> int:
-        return 0 if activity.act_finish is not None else math.ceil(activity.remaining)
+    early: dict[str, tuple[int, int]] = {}  # code -> (early start, early finish)
+    for code in scheduled:
+        early[code] = _early_days(activities[code], predecessors_of[code], activities, early, data_day)
+    finish = max(early_finish for _, early_finish in early.values())
 
-    early_start, early_finish = {}, {}
-    for code in order:
-        activity = activities[code]
-        if activity.kind == "TT_LOE":
-            continue
-        if activity.act_finish is not None:
-            early_start[code], early_finish[code] = activity.act_start, activity.act_finish
-            continue
-        remaining = remaining_days(activity)
-        if activity.act_start is not None:
-            early_start[code], early_finish[code] = activity.act_start, data_day + remaining
-            continue
-        start = data_day
-        for predecessor, link_type, lag in preds[code]:
-            if activities[predecessor].kind == "TT_LOE":
-                continue
-            start = max(
-                start,
-                {
-                    "FS": early_finish[predecessor] + lag,
-                    "SS": early_start[predecessor] + lag,
-                    "FF": early_finish[predecessor] + lag - remaining,
-                    "SF": early_start[predecessor] + lag - remaining,
-                }[link_type],
-            )
-        if activity.constraint == "CS_MSOA" and activity.constraint_day is not None:
-            start = max(start, activity.constraint_day)
-        early_start[code], early_finish[code] = start, start + remaining
-
-    finish = max(early_finish.values())
     late_finish: dict[str, int] = {}
-    for code in reversed(order):
-        activity = activities[code]
-        if activity.kind == "TT_LOE":
-            continue
-        if activity.act_finish is not None:
-            late_finish[code] = activity.act_finish
-            continue
-        remaining = remaining_days(activity)
-        late = finish
-        for successor, link_type, lag in succs[code]:
-            successor_activity = activities[successor]
-            if successor_activity.kind == "TT_LOE" or successor_activity.act_finish is not None:
-                continue
-            successor_late_start = late_finish[successor] - remaining_days(successor_activity)
-            late = min(
-                late,
-                {
-                    "FS": successor_late_start - lag,
-                    "SS": successor_late_start - lag + remaining,
-                    "FF": late_finish[successor] - lag,
-                    "SF": late_finish[successor] - lag + remaining,
-                }[link_type],
-            )
-        if activity.constraint == "CS_MEOB" and activity.constraint_day is not None:
-            late = min(late, activity.constraint_day)
-        late_finish[code] = late
+    for code in reversed(scheduled):
+        late_finish[code] = _late_finish_day(activities[code], successors_of[code], activities, late_finish, finish)
 
     out: dict[str, dict[str, int | None]] = {}
     for code in order:
@@ -270,13 +229,79 @@ def _cpm(activities: dict[str, Activity], links, data_day: int) -> dict[str, dic
             loe_start = activity.act_start if activity.act_start is not None else data_day
             out[code] = {"es": loe_start, "ef": finish, "lf": finish, "tf": 0}
         else:
-            out[code] = {
-                "es": early_start[code],
-                "ef": early_finish[code],
-                "lf": late_finish[code],
-                "tf": None if activity.act_finish is not None else late_finish[code] - early_finish[code],
-            }
+            early_start, early_finish = early[code]
+            total_float = None if activity.act_finish is not None else late_finish[code] - early_finish
+            out[code] = {"es": early_start, "ef": early_finish, "lf": late_finish[code], "tf": total_float}
     return out
+
+
+def _early_days(
+    activity: Activity,
+    predecessor_links: list,
+    activities: dict[str, Activity],
+    early: dict[str, tuple[int, int]],
+    data_day: int,
+) -> tuple[int, int]:
+    """Early start and finish of one activity: its actual dates, else what its predecessors allow."""
+    if activity.act_start is not None and activity.act_finish is not None:  # finished, so started
+        return activity.act_start, activity.act_finish
+    remaining = _remaining_days(activity)
+    if activity.act_start is not None:
+        return activity.act_start, data_day + remaining
+    start = data_day
+    for predecessor, link_type, lag in predecessor_links:
+        if activities[predecessor].kind != "TT_LOE":
+            start = max(start, _start_a_link_allows(link_type, lag, early[predecessor], remaining))
+    if activity.constraint == "CS_MSOA" and activity.constraint_day is not None:
+        start = max(start, activity.constraint_day)
+    return start, start + remaining
+
+
+def _start_a_link_allows(link_type: str, lag: int, predecessor_early: tuple[int, int], remaining: int) -> int:
+    """The earliest start one link leaves to its successor, which has ``remaining`` days to do."""
+    predecessor_start, predecessor_finish = predecessor_early
+    return {
+        "FS": predecessor_finish + lag,
+        "SS": predecessor_start + lag,
+        "FF": predecessor_finish + lag - remaining,
+        "SF": predecessor_start + lag - remaining,
+    }[link_type]
+
+
+def _late_finish_day(
+    activity: Activity,
+    successor_links: list,
+    activities: dict[str, Activity],
+    late_finish: dict[str, int],
+    finish: int,
+) -> int:
+    """Late finish of one activity: its actual finish, else what its open successors allow."""
+    if activity.act_finish is not None:
+        return activity.act_finish
+    remaining = _remaining_days(activity)
+    late = finish
+    for successor, link_type, lag in successor_links:
+        successor_activity = activities[successor]
+        if successor_activity.kind == "TT_LOE" or successor_activity.act_finish is not None:
+            continue
+        successor_late_start = late_finish[successor] - _remaining_days(successor_activity)
+        allowed = _finish_a_link_allows(link_type, lag, successor_late_start, late_finish[successor], remaining)
+        late = min(late, allowed)
+    if activity.constraint == "CS_MEOB" and activity.constraint_day is not None:
+        late = min(late, activity.constraint_day)
+    return late
+
+
+def _finish_a_link_allows(
+    link_type: str, lag: int, successor_late_start: int, successor_late_finish: int, remaining: int
+) -> int:
+    """The latest finish one link leaves to its predecessor, which has ``remaining`` days to do."""
+    return {
+        "FS": successor_late_start - lag,
+        "SS": successor_late_start - lag + remaining,
+        "FF": successor_late_finish - lag,
+        "SF": successor_late_finish - lag + remaining,
+    }[link_type]
 
 
 STALLS = {4: {"E1040": 3}, 6: {"E1020": 7}}  # snapshot -> {activity: working days lost}
@@ -291,56 +316,75 @@ def _progress(
     lost: dict[str, int] | None = None,
 ) -> None:
     """Advance work from previous_data_day to data_day, respecting FS/SS logic with actual dates."""
-    order = _topo(activities, links)
-    preds = defaultdict(list)
-    for predecessor, successor, link_type, lag in links:
-        preds[successor].append((predecessor, link_type, lag))
-    for code in order:
+    predecessors_of, _ = _links_by_end(links)
+    for code in _topo(activities, links):
         activity = activities[code]
         if activity.kind == "TT_LOE":
-            if activity.act_start is None and activities["M1000"].act_start is not None:
-                activity.act_start = activities["M1000"].act_start
+            if activity.act_start is None:
+                activity.act_start = activities["M1000"].act_start  # starts with the project, once it has
             continue
         if activity.act_finish is not None:
             continue
-        if activity.act_start is None:
-            allowed: float = previous_data_day
-            for predecessor, link_type, lag in preds[code]:
-                predecessor_activity = activities[predecessor]
-                if predecessor_activity.kind == "TT_LOE" or link_type in ("FF", "SF"):
-                    continue
-                if link_type == "FS":
-                    allowed = (
-                        max(allowed, predecessor_activity.act_finish + lag)
-                        if predecessor_activity.act_finish is not None
-                        else math.inf
-                    )
-                else:  # SS
-                    allowed = (
-                        max(allowed, predecessor_activity.act_start + lag)
-                        if predecessor_activity.act_start is not None
-                        else math.inf
-                    )
-            if activity.constraint == "CS_MSOA" and activity.constraint_day is not None:
-                allowed = max(allowed, activity.constraint_day)
-            if allowed >= data_day:
-                continue
-            allowed = int(allowed)
-            if activity.duration == 0:
-                activity.act_start = activity.act_finish = allowed
-                continue
-            activity.act_start = allowed
-        else:
-            allowed = previous_data_day
-        productivity_today = activity.productivity * rng.uniform(0.9, 1.1)
-        work = max(0, data_day - allowed - (lost or {}).get(code, 0)) * productivity_today
-        if work >= activity.remaining:
-            activity.act_finish = min(
-                data_day, allowed + (lost or {}).get(code, 0) + math.ceil(activity.remaining / productivity_today)
-            )
-            activity.remaining = 0
-        else:
-            activity.remaining -= work
+        work_from = _start_when_allowed(activity, predecessors_of[code], activities, previous_data_day, data_day)
+        if work_from is not None:
+            _work(activity, work_from, data_day, (lost or {}).get(code, 0), rng)
+
+
+def _start_when_allowed(
+    activity: Activity,
+    predecessor_links: list,
+    activities: dict[str, Activity],
+    previous_data_day: int,
+    data_day: int,
+) -> int | None:
+    """The day ``activity`` works from in this period; None when it has no work to do.
+
+    One already started works from the previous data day. One not started starts on the day its
+    logic allows, when that day is in the period. No work: it cannot start yet, or it is a
+    milestone, reached at once.
+    """
+    if activity.act_start is not None:
+        return previous_data_day
+    allowed = _day_logic_allows(activity, predecessor_links, activities, previous_data_day)
+    if allowed >= data_day:
+        return None
+    activity.act_start = int(allowed)
+    if activity.duration == 0:
+        activity.act_finish = activity.act_start
+        return None
+    return activity.act_start
+
+
+def _day_logic_allows(
+    activity: Activity, predecessor_links: list, activities: dict[str, Activity], previous_data_day: int
+) -> float:
+    """The first day ``activity`` may start, infinite while a predecessor holds it back.
+
+    An FS link holds it until its predecessor finishes, an SS link until it starts; FF and SF
+    links hold no start back.
+    """
+    allowed: float = previous_data_day
+    for predecessor, link_type, lag in predecessor_links:
+        predecessor_activity = activities[predecessor]
+        if predecessor_activity.kind == "TT_LOE" or link_type in ("FF", "SF"):
+            continue
+        reached = predecessor_activity.act_finish if link_type == "FS" else predecessor_activity.act_start
+        allowed = max(allowed, reached + lag) if reached is not None else math.inf
+    if activity.constraint == "CS_MSOA" and activity.constraint_day is not None:
+        allowed = max(allowed, activity.constraint_day)
+    return allowed
+
+
+def _work(activity: Activity, work_from: int, data_day: int, days_lost: int, rng: random.Random) -> None:
+    """The work of one period taken off what remains; the activity finishes when nothing remains."""
+    productivity_today = activity.productivity * rng.uniform(0.9, 1.1)
+    work = max(0, data_day - work_from - days_lost) * productivity_today
+    if work >= activity.remaining:
+        days_needed = math.ceil(activity.remaining / productivity_today)
+        activity.act_finish = min(data_day, work_from + days_lost + days_needed)
+        activity.remaining = 0
+    else:
+        activity.remaining -= work
 
 
 def _day(day_index: int) -> date:
@@ -454,42 +498,51 @@ def _store_p6_dates(path: Path, tables: dict, export: date) -> None:
     from .xer import load_snapshot
 
     recomputed = schedule(load_snapshot(path))
-    frame = recomputed.frame
-    assignment_column = {code: column_index for column_index, code in enumerate(XER_TASKRSRC_FIELDS)}
-    assignment_dates = recomputed.assignments.set_index("taskrsrc_id")
-    task_column = {code: day_index for day_index, code in enumerate(XER_TASK_FIELDS)}
-
-    for row in tables["TASK"][1]:
-        code, status = row[task_column["task_code"]], row[task_column["status_code"]]
-        if code not in frame.index or status == "TK_Complete":
-            continue
-        dates = frame.loc[code]
-        row[task_column["early_start_date"]] = _stamp(dates["remaining_start"])  # P6 stores the remaining start
-        row[task_column["early_end_date"]] = _stamp(dates["ef"])
-        row[task_column["late_start_date"]] = _stamp(dates["ls"])
-        row[task_column["late_end_date"]] = _stamp(dates["lf"])
-        row[task_column["total_float_hr_cnt"]] = f"{dates['tf_hr']:g}"
-        row[task_column["free_float_hr_cnt"]] = f"{dates['ff_hr']:g}"
-        if status == "TK_Active":
-            row[task_column["restart_date"]], row[task_column["reend_date"]] = (
-                _stamp(dates["remaining_start"]),
-                _stamp(dates["ef"]),
-            )
-        row[task_column["driving_path_flag"]] = "Y" if dates["longest_path"] else "N"
-    for row in tables["TASKRSRC"][1]:  # assignment remaining dates, as P6 stores them
-        taskrsrc_id = str(row[assignment_column["taskrsrc_id"]])
-        if taskrsrc_id in assignment_dates.index:
-            dates = assignment_dates.loc[taskrsrc_id]
-            for computed_name, stored_name in (
-                ("restart", "restart_date"),
-                ("reend", "reend_date"),
-                ("rem_late_start", "rem_late_start_date"),
-                ("rem_late_end", "rem_late_end_date"),
-            ):
-                row[assignment_column[stored_name]] = _stamp(dates[computed_name])
+    _store_task_dates(tables["TASK"][1], recomputed.frame)
+    _store_assignment_dates(tables["TASKRSRC"][1], recomputed.assignments.set_index("taskrsrc_id"))
     project_columns, project_rows = tables["PROJECT"]
-    project_rows[0][project_columns.index("scd_end_date")] = _stamp(frame["ef"].max())
+    project_rows[0][project_columns.index("scd_end_date")] = _stamp(recomputed.frame["ef"].max())
     _write(path, tables, export)
+
+
+def _store_task_dates(task_rows: list[list], recomputed) -> None:
+    """Dates, floats and Longest Path flag of every open activity, written in its TASK row."""
+    position = {column: index for index, column in enumerate(XER_TASK_FIELDS)}
+    for row in task_rows:
+        code, status = row[position["task_code"]], row[position["status_code"]]
+        if code not in recomputed.index or status == "TK_Complete":
+            continue
+        dates = recomputed.loc[code]
+        row[position["early_start_date"]] = _stamp(dates["remaining_start"])  # P6 stores the remaining start
+        row[position["early_end_date"]] = _stamp(dates["ef"])
+        row[position["late_start_date"]] = _stamp(dates["ls"])
+        row[position["late_end_date"]] = _stamp(dates["lf"])
+        row[position["total_float_hr_cnt"]] = f"{dates['tf_hr']:g}"
+        row[position["free_float_hr_cnt"]] = f"{dates['ff_hr']:g}"
+        if status == "TK_Active":
+            row[position["restart_date"]] = _stamp(dates["remaining_start"])
+            row[position["reend_date"]] = _stamp(dates["ef"])
+        row[position["driving_path_flag"]] = "Y" if dates["longest_path"] else "N"
+
+
+ASSIGNMENT_DATES = {  # column of the recalculated assignments -> TASKRSRC column P6 stores it in
+    "restart": "restart_date",
+    "reend": "reend_date",
+    "rem_late_start": "rem_late_start_date",
+    "rem_late_end": "rem_late_end_date",
+}
+
+
+def _store_assignment_dates(assignment_rows: list[list], recomputed) -> None:
+    """Remaining dates of every assignment recalculated, written in its TASKRSRC row."""
+    position = {column: index for index, column in enumerate(XER_TASKRSRC_FIELDS)}
+    for row in assignment_rows:
+        taskrsrc_id = str(row[position["taskrsrc_id"]])
+        if taskrsrc_id not in recomputed.index:
+            continue
+        dates = recomputed.loc[taskrsrc_id]
+        for computed_column, stored_column in ASSIGNMENT_DATES.items():
+            row[position[stored_column]] = _stamp(dates[computed_column])
 
 
 def _task_id(snapshot_index: int, row_index: int) -> int:
@@ -499,11 +552,12 @@ def _task_id(snapshot_index: int, row_index: int) -> int:
 def _set_targets(activities: dict[str, Activity], day_schedule: dict) -> None:
     """Planned dates and constraint dates are fixed the first time an activity is scheduled."""
     for code, activity in activities.items():
-        if activity.target is None:
-            activity.target = (day_schedule[code]["es"], day_schedule[code]["ef"])
-            if activity.constraint:
-                anchor = activity.target[1] if activity.constraint == "CS_MEOB" else activity.target[0]
-                activity.constraint_day = anchor + activity.constraint_offset
+        if activity.target is not None:
+            continue
+        activity.target = (day_schedule[code]["es"], day_schedule[code]["ef"])
+        if activity.constraint:
+            anchor = activity.target[1] if activity.constraint == "CS_MEOB" else activity.target[0]
+            activity.constraint_day = anchor + activity.constraint_offset
 
 
 def _status(activity: Activity, dates: dict, data_day: int) -> tuple[str, int, int]:
@@ -536,6 +590,29 @@ def _early_texts(activity: Activity, dates: dict, data_day: int) -> tuple[str, s
     return start, finish
 
 
+def _actual_finish_text(snapshot_index: int, activity: Activity, data_day: int) -> str:
+    """Actual finish as the file writes it; "" while the activity is open."""
+    if activity.act_finish is None:
+        return ""
+    if snapshot_index >= 6 and activity.code == "C3010":  # injected data-quality issue
+        return _finish_text(data_day + 3)  # two days after the data date
+    return _finish(activity.act_finish, activity.duration, activity.kind)
+
+
+def _labour_hours(activity: Activity, remaining_days: int, data_day: int) -> tuple[int, int, int]:
+    """Budget, actual and remaining labour hours of an activity: its crew, eight hours a day."""
+    crew = CREW[activity.wbs] if activity.has_resource and activity.duration > 0 else 0
+    days_worked = 0
+    if activity.act_start is not None:
+        worked_until = data_day if activity.act_finish is None else min(data_day, activity.act_finish)
+        days_worked = worked_until - activity.act_start
+    return (
+        activity.duration * HOURS_PER_DAY * crew,
+        days_worked * HOURS_PER_DAY * crew,
+        remaining_days * HOURS_PER_DAY * crew,
+    )
+
+
 def _task_row(
     snapshot_index: int, row_index: int, activity: Activity, dates: dict, data_day: int
 ) -> tuple[list, tuple[int, int, int]]:
@@ -544,23 +621,9 @@ def _task_row(
     started = activity.act_start is not None
     status, remaining_days, percent = _status(activity, dates, data_day)
     early_start_text, early_finish_text = _early_texts(activity, dates, data_day)
-    actual_end_text = (
-        _finish(activity.act_finish, activity.duration, activity.kind) if activity.act_finish is not None else ""
-    )
-    if snapshot_index >= 6 and activity.code == "C3010" and done:  # injected data-quality issue
-        actual_end_text = _finish_text(data_day + 3)  # two days after the data date
+    actual_end_text = _actual_finish_text(snapshot_index, activity, data_day)
     total_float = dates["tf"]
-    crew = CREW[activity.wbs] if activity.has_resource and activity.duration > 0 else 0
-    worked = (
-        0
-        if activity.act_start is None
-        else (min(data_day, activity.act_finish if activity.act_finish is not None else data_day) - activity.act_start)
-    )
-    hours = (
-        activity.duration * HOURS_PER_DAY * crew,
-        worked * HOURS_PER_DAY * crew,
-        remaining_days * HOURS_PER_DAY * crew,
-    )
+    hours = _labour_hours(activity, remaining_days, data_day)
     row = [
         _task_id(snapshot_index, row_index),
         PROJECT_ID,
@@ -746,6 +809,27 @@ def _fixed_tables() -> dict[str, tuple[list[str], list[list]]]:
     }
 
 
+def _tables(snapshot_index: int, activities: dict[str, Activity], links, day_schedule: dict, data_day: int) -> dict:
+    """The tables of one weekly file, in the order the file writes them."""
+    task_rows = []
+    hours: dict[str, tuple[int, int, int]] = {}
+    for row_index, (code, activity) in enumerate(activities.items()):
+        row, hours[code] = _task_row(snapshot_index, row_index, activity, day_schedule[code], data_day)
+        task_rows.append(row)
+    task_ids = {code: _task_id(snapshot_index, row_index) for row_index, code in enumerate(activities)}
+    finish_day = max(dates["ef"] for dates in day_schedule.values())
+    return {
+        "PROJECT": _project_table(data_day, finish_day),
+        **_fixed_tables(),
+        "TASK": (XER_TASK_FIELDS, task_rows),
+        "TASKPRED": (
+            ["task_pred_id", "task_id", "pred_task_id", "proj_id", "pred_proj_id", "pred_type", "lag_hr_cnt"],
+            _link_rows(snapshot_index, links, task_ids),
+        ),
+        "TASKRSRC": (XER_TASKRSRC_FIELDS, _assignment_rows(snapshot_index, activities, task_ids, hours)),
+    }
+
+
 def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
     output_dir = Path(out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -767,24 +851,7 @@ def generate(out_dir: str | Path, weeks: int = 8, seed: int = 7) -> list[Path]:
         day_schedule = _cpm(activities, links, data_day)
         _set_targets(activities, day_schedule)
 
-        task_rows = []
-        hours: dict[str, tuple[int, int, int]] = {}
-        for row_index, (code, activity) in enumerate(activities.items()):
-            row, hours[code] = _task_row(snapshot_index, row_index, activity, day_schedule[code], data_day)
-            task_rows.append(row)
-        task_ids = {code: _task_id(snapshot_index, row_index) for row_index, code in enumerate(activities)}
-        finish_day = max(activity["ef"] for activity in day_schedule.values())
-
-        tables = {
-            "PROJECT": _project_table(data_day, finish_day),
-            **_fixed_tables(),
-            "TASK": (XER_TASK_FIELDS, task_rows),
-            "TASKPRED": (
-                ["task_pred_id", "task_id", "pred_task_id", "proj_id", "pred_proj_id", "pred_type", "lag_hr_cnt"],
-                _link_rows(snapshot_index, links, task_ids),
-            ),
-            "TASKRSRC": (XER_TASKRSRC_FIELDS, _assignment_rows(snapshot_index, activities, task_ids, hours)),
-        }
+        tables = _tables(snapshot_index, activities, links, day_schedule, data_day)
         data_date = _day(data_day)
         path = output_dir / f"{PROJECT_CODE}_{data_date:{DATE_FMT}}.xer"
         _write(path, tables, data_date + timedelta(days=1))
