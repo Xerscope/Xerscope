@@ -289,7 +289,9 @@ class WorkCalendar:
         time_axis = self._axis
         if time_axis is None:
             origin = min(self.exceptions) if self.exceptions else date(2020, 1, 1)
-            time_axis = TimeAxis(self, origin - timedelta(days=AXIS_MARGIN_DAYS), origin + timedelta(days=AXIS_SPAN_DAYS))
+            time_axis = TimeAxis(
+                self, origin - timedelta(days=AXIS_MARGIN_DAYS), origin + timedelta(days=AXIS_SPAN_DAYS)
+            )
             object.__setattr__(self, "_axis", time_axis)
         return time_axis
 
