@@ -59,24 +59,22 @@ def uses_baseline(metric: Metric) -> bool:
 
 
 def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
-    used = context.baseline
-    baseline = ("none" if used is None else used.source or used.label) if uses_baseline(metric) else ""
+    """One check of a standard run on a file: the rule's output judged against the metric's target.
+
+    A rule that needs a baseline and has none is "n/a"; a rule that raises is "error", its message
+    in the note; a rule with nothing to check (no value, a denominator of 0) is "n/a".
+    """
+    baseline = _baseline_named(metric, context.baseline)
     if metric.needs_baseline and context.baseline is None:
         return CheckResult(metric, "n/a", note="needs a baseline", baseline=baseline)
     try:
         out = RULES[metric.rule].fn(context, **metric.params)
     except Exception as exc:  # noqa: BLE001 - reported in the result
         return CheckResult(metric, "error", note=f"{type(exc).__name__}: {exc}", baseline=baseline)
-    value = out.value
-    if metric.unit == "count":
-        value = None if out.numerator is None else float(out.numerator)
-    elif value is None and metric.unit == "%" and out.numerator is not None:
-        value = 100.0 * out.numerator / out.denominator if out.denominator else None
-    status = out.status or metric.evaluate(value)
+    value = _value(metric, out)
+    status, note = out.status or metric.evaluate(value), out.note
     if value is None and out.denominator == 0:
         status, note = "n/a", out.note or "nothing to check"
-    else:
-        note = out.note
     return CheckResult(
         metric,
         status,
@@ -90,6 +88,24 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
         out.funnel,
         baseline,
     )
+
+
+def _baseline_named(metric: Metric, baseline) -> str:
+    """The baseline a result is computed on, for its note: "" when the metric does not read one,
+    "none" when it reads one and the file has none."""
+    if not uses_baseline(metric):
+        return ""
+    return "none" if baseline is None else baseline.source or baseline.label
+
+
+def _value(metric: Metric, out) -> float | None:
+    """The value judged against the target: the rule's own, the count it found (unit "count"), or
+    for a "%" the share its numerator is of its denominator."""
+    if metric.unit == "count":
+        return None if out.numerator is None else float(out.numerator)
+    if out.value is None and metric.unit == "%" and out.numerator is not None:
+        return 100.0 * out.numerator / out.denominator if out.denominator else None
+    return out.value
 
 
 def run_standard(standard: Standard, context: AnalysisContext) -> list[CheckResult]:
