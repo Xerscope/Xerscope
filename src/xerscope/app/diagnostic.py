@@ -492,35 +492,43 @@ def calendar_summary_table(snapshot: Snapshot, anonymous: bool = False) -> pd.Da
     rows = []
     for clndr_id, calendar in snapshot.work_calendars.items():
         stored_row = stored.loc[clndr_id] if clndr_id in stored.index else pd.Series(dtype=object)
-        stored_hours = {column: pd.to_numeric(stored_row.get(column), errors="coerce") for column in HOUR_COUNT_COLUMNS}
-        day_lengths = sorted({working_hours_of(periods) for periods in calendar.week if periods})
-        week_hours = sum(working_hours_of(periods) for periods in calendar.week)
-        kinds = pd.Series(
-            [exception_kind(periods, calendar.week[day.weekday()]) for day, periods in calendar.exceptions.items()],
-            dtype=object,
-        ).value_counts()
         rows.append(
             {
                 "clndr_id": clndr_id,
                 **({} if anonymous else {"clndr_name": calendar.name}),
-                **{column: stored_row.get(column, "") for column in CALENDAR_TEXT_COLUMNS},
-                **stored_hours,
-                "periods_read_from": "clndr_data" if calendar.from_data else "guessed from day/week hours",
-                "working_days_per_week": sum(1 for periods in calendar.week if periods),
-                "week_hours_from_periods": week_hours,
-                "day_lengths_from_periods": ", ".join(f"{hours:g}" for hours in day_lengths),
-                "day_hr_cnt_matches_periods": len(day_lengths) == 1 and stored_hours["day_hr_cnt"] == day_lengths[0],
-                "week_hr_cnt_matches_periods": stored_hours["week_hr_cnt"] == week_hours,
-                "hours_per_day_used_for_days": calendar.hours_per_day,
-                "exceptions": len(calendar.exceptions),
-                **{f"exceptions_{kind.replace(' ', '_')}": int(kinds.get(kind, 0)) for kind in EXCEPTION_KINDS},
-                "first_exception": min(calendar.exceptions, default=None),
-                "last_exception": max(calendar.exceptions, default=None),
+                **_calendar_summary(calendar, stored_row),
                 "activities": int(activities_per_calendar.get(clndr_id, 0)),
                 "project_default": clndr_id == snapshot.project_clndr_id,
             }
         )
     return pd.DataFrame(rows)
+
+
+def _calendar_summary(calendar, stored_row: pd.Series) -> dict:
+    """What one calendar stores (``stored_row``, its CALENDAR row) beside what its periods add up to,
+    and its exceptions by kind."""
+    stored_hours = {column: pd.to_numeric(stored_row.get(column), errors="coerce") for column in HOUR_COUNT_COLUMNS}
+    day_lengths = sorted({working_hours_of(periods) for periods in calendar.week if periods})
+    week_hours = sum(working_hours_of(periods) for periods in calendar.week)
+    kinds = pd.Series(
+        [exception_kind(periods, calendar.week[day.weekday()]) for day, periods in calendar.exceptions.items()],
+        dtype=object,
+    ).value_counts()
+    return {
+        **{column: stored_row.get(column, "") for column in CALENDAR_TEXT_COLUMNS},
+        **stored_hours,
+        "periods_read_from": "clndr_data" if calendar.from_data else "guessed from day/week hours",
+        "working_days_per_week": sum(1 for periods in calendar.week if periods),
+        "week_hours_from_periods": week_hours,
+        "day_lengths_from_periods": ", ".join(f"{hours:g}" for hours in day_lengths),
+        "day_hr_cnt_matches_periods": len(day_lengths) == 1 and stored_hours["day_hr_cnt"] == day_lengths[0],
+        "week_hr_cnt_matches_periods": stored_hours["week_hr_cnt"] == week_hours,
+        "hours_per_day_used_for_days": calendar.hours_per_day,
+        "exceptions": len(calendar.exceptions),
+        **{f"exceptions_{kind.replace(' ', '_')}": int(kinds.get(kind, 0)) for kind in EXCEPTION_KINDS},
+        "first_exception": min(calendar.exceptions, default=None),
+        "last_exception": max(calendar.exceptions, default=None),
+    }
 
 
 def calendar_week_table(snapshot: Snapshot) -> pd.DataFrame:
@@ -605,27 +613,34 @@ def costs_table(snapshot: Snapshot) -> pd.DataFrame:
     TASKRSRC the smallest and largest ``cost_per_qty``. "absent": the column is missing or blank
     on every row.
     """
-    assignments, expenses = snapshot.assignments, snapshot.expenses
-
-    def values(frame: pd.DataFrame, column: str) -> pd.Series:
-        return to_number(frame[column]).dropna() if column in frame.columns else pd.Series(dtype=float)
-
-    def figures(frame: pd.DataFrame, rate: bool) -> dict:
-        cost, per_qty = values(frame, "target_cost"), values(frame, "cost_per_qty")
-        return {
-            "rows": len(frame),
-            "rows_with_cost": int((cost > 0).sum()) if len(cost) else ABSENT,
-            "target_cost_total": float(cost.sum()) if len(cost) else ABSENT,
-            "cost_per_qty_min": (float(per_qty.min()) if len(per_qty) else ABSENT) if rate else "",
-            "cost_per_qty_max": (float(per_qty.max()) if len(per_qty) else ABSENT) if rate else "",
-        }
-
     return pd.DataFrame(
         [
-            {"table": "TASKRSRC", **figures(assignments, rate=True)},
-            {"table": "PROJCOST", **figures(expenses, rate=False)},
+            {"table": "TASKRSRC", **_cost_figures(snapshot.assignments, with_rate=True)},
+            {"table": "PROJCOST", **_cost_figures(snapshot.expenses, with_rate=False)},
         ]
     )
+
+
+def _numbers_of(frame: pd.DataFrame, column: str) -> pd.Series:
+    """The numbers a column holds; none when the column is missing or blank on every row."""
+    return to_number(frame[column]).dropna() if column in frame.columns else pd.Series(dtype=float)
+
+
+def _cost_figures(frame: pd.DataFrame, with_rate: bool) -> dict:
+    """The cost figures of one table; ``with_rate``: its ``cost_per_qty`` range too (TASKRSRC has one)."""
+    cost = _numbers_of(frame, "target_cost")
+    figures: dict[str, object] = {
+        "rows": len(frame),
+        "rows_with_cost": int((cost > 0).sum()) if len(cost) else ABSENT,
+        "target_cost_total": float(cost.sum()) if len(cost) else ABSENT,
+        "cost_per_qty_min": "",
+        "cost_per_qty_max": "",
+    }
+    if with_rate:
+        rate = _numbers_of(frame, "cost_per_qty")
+        figures["cost_per_qty_min"] = float(rate.min()) if len(rate) else ABSENT
+        figures["cost_per_qty_max"] = float(rate.max()) if len(rate) else ABSENT
+    return figures
 
 
 def xer_tables_table(snapshot: Snapshot) -> pd.DataFrame:

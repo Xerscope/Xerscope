@@ -381,12 +381,12 @@
       "near_clones": 0
     },
     "app/diagnostic.py": {
-      "mi": 20.8,
+      "mi": 19.9,
       "mi_rank": "A",
-      "cc_max": 17,
-      "cc_over_15": 1,
-      "cognitive_max": 25,
-      "cognitive_over_15": 2,
+      "cc_max": 13,
+      "cc_over_15": 0,
+      "cognitive_max": 12,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
