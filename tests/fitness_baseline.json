@@ -451,12 +451,12 @@
       "near_clones": 0
     },
     "app/ui.py": {
-      "mi": 26.0,
+      "mi": 25.4,
       "mi_rank": "A",
-      "cc_max": 17,
-      "cc_over_15": 2,
-      "cognitive_max": 21,
-      "cognitive_over_15": 3,
+      "cc_max": 14,
+      "cc_over_15": 0,
+      "cognitive_max": 10,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
