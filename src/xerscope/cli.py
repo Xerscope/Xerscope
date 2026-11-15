@@ -183,45 +183,55 @@ def _cmd_check(args: argparse.Namespace) -> int:
     from .xer import load_snapshot
 
     standard = _standard(args.standard)
-    baseline = Baseline.from_snapshot(load_snapshot(args.baseline)) if args.baseline else None
-    frames = []
+    baseline_file = Baseline.from_snapshot(load_snapshot(args.baseline)) if args.baseline else None
     files = _expand(args.paths)
     by_name = {path.name: path for path in files}  # Snapshot.source is the file name
     if args.baseline_in_file and len(by_name) < len(files):
         fail("--baseline-in-file needs distinct file names")
     # one series, so checks against the previous update (DECM 06A504, 06A506c) can run
     store = SnapshotStore.from_paths(files, args.project)
+    frames = []
     for snapshot in store:
-        path = Path(snapshot.source)
+        file_name = Path(snapshot.source).name
         in_file = baseline_in_file(snapshot, by_name[snapshot.source].read_bytes()) if args.baseline_in_file else None
-        applied_baseline = in_file or baseline or (Baseline.planned(snapshot) if args.planned_baseline else None)
-        results = run_standard(standard, AnalysisContext(snapshot, store, baseline=applied_baseline))
+        # first found: the baseline the file holds, the baseline file, the file's own planned dates
+        baseline = in_file or baseline_file or (Baseline.planned(snapshot) if args.planned_baseline else None)
+        results = run_standard(standard, AnalysisContext(snapshot, store, baseline=baseline))
         frame = results_frame(results)
-        frame.insert(0, "file", path.name)
+        frame.insert(0, "file", file_name)
         frame.insert(1, "data_date", snapshot.data_date)
         frames.append(frame)
-        if args.flagged:  # the items behind each count, to diff against P6's own lists
-            out_dir = Path(args.flagged)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            for result in results:
-                if not result.flagged.empty:
-                    _write_csv(result.flagged, out_dir / f"{path.stem}_{result.metric.id}.csv")
+        if args.flagged:
+            _write_flagged(results, Path(args.flagged), Path(snapshot.source).stem)
         print(
-            f"\n{standard.name} · {path.name} · data date {_when(snapshot.data_date)}"
-            f" · baseline {applied_baseline.label if applied_baseline else 'none'}"
+            f"\n{standard.name} · {file_name} · data date {_when(snapshot.data_date)}"
+            f" · baseline {baseline.label if baseline else 'none'}"
         )
         columns = ["id", "check", "target", "actual", "found", "total", "status"]
         print(frame[columns].to_string(index=False, float_format="{:.2f}".format))
-    results = pd.concat(frames)
+    every_result = pd.concat(frames)
     if args.out:
-        _write_csv(results, args.out)
+        _write_csv(every_result, args.out)
         print(f"\nwritten {args.out}")
-    if args.expect and _expect_differs(results, args.expect):
+    return _check_exit_code(every_result, args.expect, args.fail_on)
+
+
+def _write_flagged(results, out_dir: Path, file_stem: str) -> None:
+    """The items behind each count, one CSV per check that found some: to diff against P6's own lists."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for result in results:
+        if not result.flagged.empty:
+            _write_csv(result.flagged, out_dir / f"{file_stem}_{result.metric.id}.csv")
+
+
+def _check_exit_code(every_result, expect_csv: str | None, fail_on: str) -> int:
+    """1 when the counts differ from those expected, or a result has a status ``--fail-on`` names; else 0."""
+    if expect_csv and _expect_differs(every_result, expect_csv):
         return 1
-    bad = FAIL_ON[args.fail_on]
-    hits = results[results["status"].isin(bad)]
+    statuses = FAIL_ON[fail_on]
+    hits = every_result[every_result["status"].isin(statuses)]
     if len(hits):
-        print(f"\n{len(hits)} result(s) with status {'/'.join(sorted(bad))}", file=sys.stderr)
+        print(f"\n{len(hits)} result(s) with status {'/'.join(sorted(statuses))}", file=sys.stderr)
         return 1
     return 0
 
@@ -316,41 +326,49 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
         if stored.empty:
             print("  no stored dates to compare (never scheduled in P6?)")
         else:
-            agg = stored.groupby("field")["agree"].agg(["sum", "count"])
-            for field, row in agg.iterrows():
-                print(f"  {field:20} {int(row['sum']):>7} / {int(row['count']):<7} identical")
-            wrong = stored[~stored["agree"]]
-            if len(wrong):
-                print(wrong.head(args.show).to_string(index=False))
-            if args.report and len(wrong):
-                from .verify.shapes import difference_report
-
-                report = difference_report(snapshot, comparison)
-                report["share"] = report["share"].map("{:.0%}".format)
-                print("\n  differences by activity shape (status · type · constraint · links · option):")
-                print(report.to_string(index=False))
-        assignment_comparison = compare_assignments(snapshot, recalculated)
-        assignment_comparison = assignment_comparison[assignment_comparison["stored"].notna()]
-        if len(assignment_comparison):
-            print(
-                f"  assignments ({assignment_comparison['taskrsrc_id'].nunique()}): "
-                f"{int(assignment_comparison['agree'].sum())} / {len(assignment_comparison)} stored dates identical"
-            )
-            assignment_wrong = assignment_comparison[~assignment_comparison["agree"]]
-            if len(assignment_wrong):
-                print(assignment_wrong.head(args.show).to_string(index=False))
+            _print_stored_dates(snapshot, comparison, stored, args.show, args.report)
+        _print_stored_assignment_dates(compare_assignments(snapshot, recalculated), args.show)
         for warning in recalculated.warnings + [warning for warning in snapshot.warnings if "leveling" in warning]:
             print(f"  warning: {warning}")
         if args.out:
             out = recalculated.frame.join(snapshot.activities.set_index("task_code")[["task_name"]])
-            dest = (
-                Path(args.out)
-                if len(args.paths) == 1
-                else Path(args.out).with_name(f"{path.stem}_{Path(args.out).name}")
-            )
+            one_file = len(args.paths) == 1  # several files: one CSV each, named after its file
+            dest = Path(args.out) if one_file else Path(args.out).with_name(f"{path.stem}_{Path(args.out).name}")
             _write_csv(out, dest, index=True)
             print(f"  written {dest}")
     return 0
+
+
+def _print_stored_dates(snapshot, comparison, stored, show: int, by_shape: bool) -> None:
+    """How many stored dates of each field the recalculation reproduces, then the first that differ."""
+    identical = stored.groupby("field")["agree"].agg(["sum", "count"])
+    for field, row in identical.iterrows():
+        print(f"  {field:20} {int(row['sum']):>7} / {int(row['count']):<7} identical")
+    wrong = stored[~stored["agree"]]
+    if wrong.empty:
+        return
+    print(wrong.head(show).to_string(index=False))
+    if by_shape:
+        from .verify.shapes import difference_report
+
+        report = difference_report(snapshot, comparison)
+        report["share"] = report["share"].map("{:.0%}".format)
+        print("\n  differences by activity shape (status · type · constraint · links · option):")
+        print(report.to_string(index=False))
+
+
+def _print_stored_assignment_dates(comparison, show: int) -> None:
+    """The same count for the remaining dates of the assignments; nothing when the file stores none."""
+    stored = comparison[comparison["stored"].notna()]
+    if stored.empty:
+        return
+    print(
+        f"  assignments ({stored['taskrsrc_id'].nunique()}): "
+        f"{int(stored['agree'].sum())} / {len(stored)} stored dates identical"
+    )
+    wrong = stored[~stored["agree"]]
+    if len(wrong):
+        print(wrong.head(show).to_string(index=False))
 
 
 def _args_changelog(parser: argparse.ArgumentParser) -> None:
@@ -409,6 +427,30 @@ def _args_pv_compare(parser: argparse.ArgumentParser) -> None:
     _add_out(parser, "write the five tables to this folder (default pv_compare)")
 
 
+def _p6_export_columns(p6_csv: str, raw, named: list[str]) -> dict:
+    """The column of the P6 export holding each field, those ``--column FIELD=HEADER`` names first.
+
+    Stops when a named field is unknown or a required one has no column."""
+    from .app import diagnostic
+
+    chosen = {}
+    for item in named:
+        field, _, header = item.partition("=")
+        if field not in diagnostic.P6_EXPORT_FIELDS or not header:
+            fail(f"--column {item!r}: expected FIELD=HEADER with FIELD among {' '.join(diagnostic.P6_EXPORT_FIELDS)}")
+        chosen[field] = header
+    columns = diagnostic.p6_export_columns(raw, chosen)
+    missing = [
+        field for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required and columns[field] is None
+    ]
+    if missing:
+        fail(
+            f"{p6_csv}: column(s) not found for {', '.join(missing)}; headers read: {', '.join(raw.columns)}. "
+            "Name them with --column FIELD=HEADER."
+        )
+    return columns
+
+
 def _cmd_pv_compare(args: argparse.Namespace) -> int:
     """Block 10 of the diagnostic from the disk: PV and EV labour units of the update against a P6
     Activities export, nothing kept. Four tables without code or name, and the activities in gap."""
@@ -429,21 +471,7 @@ def _cmd_pv_compare(args: argparse.Namespace) -> int:
         raw = diagnostic.read_p6_export(args.p6, Path(args.p6).read_bytes())
     except ValueError as exc:
         fail(f"{args.p6}: {exc}")
-    chosen = {}
-    for item in args.column:
-        field, _, header = item.partition("=")
-        if field not in diagnostic.P6_EXPORT_FIELDS or not header:
-            fail(f"--column {item!r}: expected FIELD=HEADER with FIELD among {' '.join(diagnostic.P6_EXPORT_FIELDS)}")
-        chosen[field] = header
-    columns = diagnostic.p6_export_columns(raw, chosen)
-    missing = [
-        field for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required and columns[field] is None
-    ]
-    if missing:
-        fail(
-            f"{args.p6}: column(s) not found for {', '.join(missing)}; headers read: {', '.join(raw.columns)}. "
-            "Name them with --column FIELD=HEADER."
-        )
+    columns = _p6_export_columns(args.p6, raw, args.column)
     tolerance = diagnostic.PV_P6_TOLERANCE_HR if args.tolerance is None else args.tolerance
     comparison, notes = diagnostic.compare_p6_export(snapshot, baseline, raw, columns, tolerance, args.p6_total)
     out = Path(args.out or "pv_compare")
