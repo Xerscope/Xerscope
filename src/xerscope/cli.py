@@ -566,18 +566,7 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
     """xerscope's CPM against MPXJ's PrimaveraScheduler, and both against what P6 stored."""
     import pandas as pd
 
-    from .crosscheck import (
-        P6_SETTLED,
-        UNRESOLVED,
-        cpm_crosscheck,
-        excused_row,
-        mpxj_inconsistent,
-        mpxj_scheduler_source,
-        mpxj_unsupported,
-        settled_patterns,
-        unresolved_patterns,
-    )
-    from .xer import load_snapshot
+    from .crosscheck import mpxj_scheduler_source
 
     source = mpxj_scheduler_source()
     print(f"MPXJ scheduler: {source}")
@@ -589,38 +578,59 @@ def _cmd_crosscheck_cpm(args: argparse.Namespace) -> int:
         )
     frames, unexplained = [], 0
     for path in _expand(args.paths):
-        snapshot = load_snapshot(path)
-        comparison = cpm_crosscheck(path).assign(file=path.name)
+        comparison, differences = _crosscheck_cpm_file(path, args.show)
         frames.append(comparison)
-        ok = comparison[comparison["comparable"]]
-        print(f"\n{path.name} · {ok['task_code'].nunique()} open activities")
-        agreement = ok.groupby("field")[["xs_mpxj_work", "xs_p6", "mpxj_p6"]].mean().mul(100).round(2)
-        agreement.columns = ["xerscope = MPXJ %", "xerscope = stored %", "MPXJ = stored %"]
-        print(agreement.to_string())
-        for option in mpxj_unsupported(snapshot):
-            print(f"  option MPXJ does not model: {option}")
-        for pattern in sorted(settled_patterns(snapshot)):
-            print(f"  MPXJ differs from P6 here: {P6_SETTLED[pattern]}")
-        for pattern in sorted(unresolved_patterns(snapshot)):
-            print(f"  open question present: {UNRESOLVED[pattern]}")
-        broken = mpxj_inconsistent(snapshot, comparison)
-        if broken:
-            print(f"  MPXJ contradicts itself on: {', '.join(sorted(broken)[:8])}")
-        wrong = ok[~ok["xs_mpxj_work"]]
-        wrong = wrong[
-            [
-                excused_row(snapshot, task_code, field) is None
-                for task_code, field in zip(wrong["task_code"], wrong["field"], strict=True)
-            ]
-        ]
-        explained = unresolved_patterns(snapshot) or settled_patterns(snapshot) or broken or mpxj_unsupported(snapshot)
-        if len(wrong) and not explained:
-            unexplained += len(wrong)
-            print(wrong[["task_code", "field", "p6", "xerscope", "mpxj"]].head(args.show).to_string(index=False))
+        unexplained += differences
     if args.out:
         _write_csv(pd.concat(frames), args.out)
     print(f"\n{unexplained} difference(s) no listed cause explains")
     return 1 if unexplained else 0
+
+
+def _crosscheck_cpm_file(path: Path, show: int):
+    """One file against MPXJ, printed: the share of identical values per field, what explains a
+    difference, then the differences nothing explains. Returns the comparison and their number."""
+    from .crosscheck import (
+        P6_SETTLED,
+        UNRESOLVED,
+        cpm_crosscheck,
+        excused_row,
+        mpxj_inconsistent,
+        mpxj_unsupported,
+        settled_patterns,
+        unresolved_patterns,
+    )
+    from .xer import load_snapshot
+
+    snapshot = load_snapshot(path)
+    comparison = cpm_crosscheck(path).assign(file=path.name)
+    comparable = comparison[comparison["comparable"]]
+    print(f"\n{path.name} · {comparable['task_code'].nunique()} open activities")
+    agreement = comparable.groupby("field")[["xs_mpxj_work", "xs_p6", "mpxj_p6"]].mean().mul(100).round(2)
+    agreement.columns = ["xerscope = MPXJ %", "xerscope = stored %", "MPXJ = stored %"]
+    print(agreement.to_string())
+    unsupported = mpxj_unsupported(snapshot)
+    settled = settled_patterns(snapshot)
+    unresolved = unresolved_patterns(snapshot)
+    for option in unsupported:
+        print(f"  option MPXJ does not model: {option}")
+    for pattern in sorted(settled):
+        print(f"  MPXJ differs from P6 here: {P6_SETTLED[pattern]}")
+    for pattern in sorted(unresolved):
+        print(f"  open question present: {UNRESOLVED[pattern]}")
+    contradicted = mpxj_inconsistent(snapshot, comparison)
+    if contradicted:
+        print(f"  MPXJ contradicts itself on: {', '.join(sorted(contradicted)[:8])}")
+    differing = comparable[~comparable["xs_mpxj_work"]]
+    not_excused = [
+        excused_row(snapshot, task_code, field) is None
+        for task_code, field in zip(differing["task_code"], differing["field"], strict=True)
+    ]
+    differing = differing[not_excused]
+    if differing.empty or unresolved or settled or contradicted or unsupported:  # a listed cause explains the file
+        return comparison, 0
+    print(differing[["task_code", "field", "p6", "xerscope", "mpxj"]].head(show).to_string(index=False))
+    return comparison, len(differing)
 
 
 def _args_sample(parser: argparse.ArgumentParser) -> None:
@@ -681,95 +691,117 @@ def _anonymised_bench(path: Path, cases: list[dict]):
     names = [(text, new) for text, new in names if text and new]
     names.sort(key=lambda pair: -len(pair[0]))
 
-    def rewrite(text: str) -> str:
-        for original, new in names:
-            text = re.sub(rf"(?<![\w])(?:{re.escape(original)})(?![\w])", new, text, flags=re.IGNORECASE)
-        return text
-
-    aside: dict[str, int]
-    rewritten, aside, refused = [], {}, 0
+    rewritten, refused = [], 0
+    aside: dict[str, int] = {}  # reason a case is set aside -> how many
     for case in cases:
-        if case.get("search") or case.get("codes"):
-            aside["searching activity names or code values"] = (
-                aside.get("searching activity names or code values", 0) + 1
-            )
-            continue
-        text = rewrite(case["text"])
-        if anonymous.leaks([text]):
+        outcome = _anonymised_case(case, names, anonymous)
+        if isinstance(outcome, dict):
+            rewritten.append(outcome)
+        elif outcome == REFUSED:
             refused += 1  # counted, never printed: it holds an original value
-            continue
-        new_case = {**case, "text": text}
-        if case.get("wbs"):
-            new_case["wbs"] = anonymous.code("W", case["wbs"])
-        if case.get("resources"):
-            new_case["resources"] = [anonymous.code("R", name) for name in case["resources"]]
-        wanted = [new_case.get("wbs") or "", *new_case.get("resources", [])]
-        if any(code and code not in text for code in wanted):  # "mécanique", "achats": a synonym or a part of a name
-            aside["naming a node or a resource by a synonym or a part of its name"] = (
-                aside.get("naming a node or a resource by a synonym or a part of its name", 0) + 1
-            )
-            continue
-        rewritten.append(new_case)
+        else:
+            aside[outcome] = aside.get(outcome, 0) + 1
     return snapshot, rewritten, aside, refused
+
+
+SEARCHES_NAMES = "searching activity names or code values"
+NAMES_BY_SYNONYM = "naming a node or a resource by a synonym or a part of its name"
+REFUSED = "refused"
+
+
+def _anonymised_case(case: dict, names: list[tuple[str, str]], anonymous) -> dict | str:
+    """One case rewritten for the anonymised file, or why it is not scored: ``SEARCHES_NAMES``,
+    ``NAMES_BY_SYNONYM`` (set aside) or ``REFUSED`` (it still holds an original value)."""
+    if case.get("search") or case.get("codes"):
+        return SEARCHES_NAMES
+    text = case["text"]
+    for original, new in names:
+        text = re.sub(rf"(?<![\w])(?:{re.escape(original)})(?![\w])", new, text, flags=re.IGNORECASE)
+    if anonymous.leaks([text]):
+        return REFUSED
+    new_case = {**case, "text": text}
+    if case.get("wbs"):
+        new_case["wbs"] = anonymous.code("W", case["wbs"])
+    if case.get("resources"):
+        new_case["resources"] = [anonymous.code("R", name) for name in case["resources"]]
+    wanted = [new_case.get("wbs") or "", *new_case.get("resources", [])]
+    if any(code and code not in text for code in wanted):  # "mécanique", "achats": a synonym or a part of a name
+        return NAMES_BY_SYNONYM
+    return new_case
 
 
 def _cmd_ask_bench(args: argparse.Namespace) -> int:
     """Share of sentences the Gantt Ask field turns into the right filters, per set and per field:
     the keyword grammar. The exit code is 0 whatever the
     ratios: tests/test_ask_bench.py holds the floors."""
-    from .analysis import query
     from .store import SnapshotStore
 
     files = _expand([args.path])
     real = SnapshotStore.from_paths(files).latest
-    latest = next(f for f in files if f.name == real.source or str(f).endswith(real.source))
+    latest = next(file for file in files if file.name == real.source or str(file).endswith(real.source))
     if not args.cases and not args.self:
         raise SystemExit("xerscope ask-bench: give --cases FILE and/or --self")
     if args.self:
-        lexicon, lexicon_errors = query.load_lexicon(*([args.lexicon] if args.lexicon else []))
-        for error in lexicon_errors:
-            print(f"  lexicon error: {error}")
-        vocab = query.vocabulary(real, lexicon=lexicon)
-        scored, missed = query.coverage(vocab)
-        labels = scored["label"].nunique()
-        print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file")
-        print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
-        for label in missed:
-            phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
-            print(f"  not reached: {label}: {', '.join(repr(p) for p in phrases[: args.show])}")
+        _print_own_coverage(real, args.lexicon, args.show)
     for cases_path in args.cases:
-        cases = query.load_cases(cases_path)
-        snapshot = real
-        if args.anonymize:
-            snapshot, cases, aside, refused = _anonymised_bench(latest, cases)
-            print(f"\n{cases_path}: anonymised copy {snapshot.source}; {len(cases)} sentences scored")
-            for reason, count in aside.items():
-                print(f"  set aside: {count} {reason} (not expressible with the new codes)")
-            if refused:
-                print(f"  refused: {refused} still holding an original value after rewriting")
-        else:
-            print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
-        lexicon, lexicon_errors = query.load_lexicon(*([args.lexicon] if args.lexicon else []))
-        for error in lexicon_errors:
-            print(f"  lexicon error: {error}")
-        vocab = query.vocabulary(snapshot, lexicon=lexicon)
-        scored = query.score(cases, vocab)
-        shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
-        print(f"  keywords  {shares}")
-        buckets = query.by_confidence(scored)
-        print(
-            "            "
-            + "  ".join(
-                f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
-                for name, row in buckets.iterrows()
-                if row["sentences"]
-            )
-        )
-        missed = scored[~scored["exact"]]
-        for _, row in missed.head(args.show).iterrows():
-            wrong = ", ".join(field for field in query.FIELDS if not row[field])
-            print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
+        _print_scores(cases_path, real, latest if args.anonymize else None, args.lexicon, args.show)
     return 0
+
+
+def _bench_lexicon(folder: str):
+    """The lexicon of ``folder`` (none when ""), its load errors printed."""
+    from .analysis import query
+
+    lexicon, errors = query.load_lexicon(*([folder] if folder else []))
+    for error in errors:
+        print(f"  lexicon error: {error}")
+    return lexicon
+
+
+def _print_own_coverage(real, lexicon_folder: str, show: int) -> None:
+    """``--self``: how many labels of the file the grammar reaches, and the phrases that miss the others."""
+    from .analysis import query
+
+    vocab = query.vocabulary(real, lexicon=_bench_lexicon(lexicon_folder))
+    scored, missed = query.coverage(vocab)
+    labels = scored["label"].nunique()
+    print(f"\n{real.source}: {len(scored)} phrases for {labels} labels of the file")
+    print(f"  labels covered: {labels - len(missed)}/{labels} = {(labels - len(missed)) / labels:.0%}")
+    for label in missed:
+        phrases = scored.loc[(scored["label"] == label) & ~scored["exact"], "text"].tolist()
+        print(f"  not reached: {label}: {', '.join(repr(phrase) for phrase in phrases[:show])}")
+
+
+def _print_scores(cases_path: str, real, file_to_anonymise: Path | None, lexicon_folder: str, show: int) -> None:
+    """One set of sentences scored on the file, or on its anonymised copy: the share right per
+    field and per confidence, then the first sentences missed."""
+    from .analysis import query
+
+    cases = query.load_cases(cases_path)
+    snapshot = real
+    if file_to_anonymise is not None:
+        snapshot, cases, aside, refused = _anonymised_bench(file_to_anonymise, cases)
+        print(f"\n{cases_path}: anonymised copy {snapshot.source}; {len(cases)} sentences scored")
+        for reason, count in aside.items():
+            print(f"  set aside: {count} {reason} (not expressible with the new codes)")
+        if refused:
+            print(f"  refused: {refused} still holding an original value after rewriting")
+    else:
+        print(f"\n{cases_path}: {len(cases)} sentences on {snapshot.source}")
+    vocab = query.vocabulary(snapshot, lexicon=_bench_lexicon(lexicon_folder))
+    scored = query.score(cases, vocab)
+    shares = "  ".join(f"{field} {share:.0%}" for field, share in query.ratios(scored).items())
+    print(f"  keywords  {shares}")
+    by_confidence = [
+        f"{name}: {int(row['sentences'])} sentences, {row['exact']:.0%} right"
+        for name, row in query.by_confidence(scored).iterrows()
+        if row["sentences"]
+    ]
+    print("            " + "  ".join(by_confidence))
+    missed = scored[~scored["exact"]]
+    for _, row in missed.head(show).iterrows():
+        wrong = ", ".join(field for field in query.FIELDS if not row[field])
+        print(f"    missed: {row['text']!r} ({wrong}; confidence {row['confidence']:.2f})")
 
 
 def _args_lexicon(parser: argparse.ArgumentParser) -> None:
@@ -867,8 +899,7 @@ def _build_lexicon(source: str, out: str) -> int:
     from datetime import UTC, datetime
 
     from .analysis import query
-    from .analysis.ask import suggested
-    from .analysis.ask.generated import Terms, near_spellings_from, variants_from
+    from .analysis.ask.generated import near_spellings_from, variants_from
     from .analysis.ask.lexicon import write_private
 
     if not source or not out:
@@ -880,36 +911,73 @@ def _build_lexicon(source: str, out: str) -> int:
         if not folder.is_dir():
             print(f"error: create {folder} owned by the app account, see docs/deploy.md §10")
             return 1
-    found: Terms
-    found, read, skipped = {}, 0, []
+    found, read, skipped = _terms_of_exports(source)
+    if not read:
+        print(f"error: no valid XER file in the source folder ({len(skipped)} skipped), generated/ left as it is")
+        return 1
+    groups, near = variants_from(found), near_spellings_from(found)
+    new = _groups_not_in(groups, query.load_variants(generated))
+    write_private(generated / "variants.toml", query.variants_toml(groups))
+    write_private(generated / "report.txt", _lexicon_report(now, read, skipped, groups, new, near))
+    for column, count in query.variant_counts(groups).items():
+        print(f"{column}: {count} group(s), {len(new[column])} new")
+    total = sum(len(column_groups) for column_groups in groups.values())
+    added = sum(len(column_groups) for column_groups in new.values())
+    print(f"{total} group(s) from {read} file(s) written, {added} new")
+    if skipped:
+        print(f"{len(skipped)} file(s) skipped, named in generated/report.txt")
+    return _purge_suggestions(root, now)
+
+
+def _groups_not_in(groups: dict, earlier_groups: dict) -> dict:
+    """Per column, the groups the last run had not written."""
+    earlier = {column: {tuple(group) for group in column_groups} for column, column_groups in earlier_groups.items()}
+    return {
+        column: [group for group in column_groups if tuple(group) not in earlier.get(column, set())]
+        for column, column_groups in groups.items()
+    }
+
+
+def _terms_of_exports(source: str):
+    """The terms of every export of ``source`` that passes the check, how many were read, and the
+    others as "name: reason" lines for the report."""
+    from .analysis.ask.generated import Terms
+
+    found: Terms = {}
+    read, skipped = 0, []
     for path in xer_files(source):
         reason = _lexicon_terms(path, found)
         if reason is None:
             read += 1
         else:
             skipped.append(f"{path.name}: {reason}")
-    if not read:
-        print(f"error: no valid XER file in the source folder ({len(skipped)} skipped), generated/ left as it is")
-        return 1
-    groups, near = variants_from(found), near_spellings_from(found)
-    before = {c: {tuple(g) for g in gs} for c, gs in query.load_variants(generated).items()}
-    new = {c: [g for g in gs if tuple(g) not in before.get(c, set())] for c, gs in groups.items()}
-    write_private(generated / "variants.toml", query.variants_toml(groups))
-    report = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {read} file(s) read, {len(skipped)} skipped"]
-    report += ["", "column: groups, new"]
-    report += [f"{c}: {n} group(s), {len(new[c])} new" for c, n in query.variant_counts(groups).items()]
-    report += ["", "new since the last run:"]
-    report += [f"{c}: {', '.join(g)}" for c in sorted(new) for g in new[c]] or ["(none)"]
-    report += ["", "to review (one letter apart, not used):"]
-    report += [f"{c}: {a}, {b}" for c in sorted(near) for a, b in near[c]] or ["(none)"]
-    report += ["", "skipped (not read):", *skipped] if skipped else []
-    write_private(generated / "report.txt", "\n".join(report) + "\n")
-    for column, count in query.variant_counts(groups).items():
-        print(f"{column}: {count} group(s), {len(new[column])} new")
-    total, added = sum(len(g) for g in groups.values()), sum(len(g) for g in new.values())
-    print(f"{total} group(s) from {read} file(s) written, {added} new")
+    return found, read, skipped
+
+
+def _lexicon_report(now, read: int, skipped: list[str], groups: dict, new: dict, near: dict) -> str:
+    """The text of generated/report.txt: groups per column, those new since the last run, the
+    pairs one letter apart to review, the exports skipped."""
+    from .analysis import query
+
+    lines = [f"xerscope lexicon build, {now:%Y-%m-%d %H:%M} UTC, {read} file(s) read, {len(skipped)} skipped"]
+    lines += ["", "column: groups, new"]
+    lines += [
+        f"{column}: {count} group(s), {len(new[column])} new" for column, count in query.variant_counts(groups).items()
+    ]
+    lines += ["", "new since the last run:"]
+    lines += [f"{column}: {', '.join(group)}" for column in sorted(new) for group in new[column]] or ["(none)"]
+    lines += ["", "to review (one letter apart, not used):"]
+    lines += [f"{column}: {first}, {second}" for column in sorted(near) for first, second in near[column]] or ["(none)"]
     if skipped:
-        print(f"{len(skipped)} file(s) skipped, named in generated/report.txt")
+        lines += ["", "skipped (not read):", *skipped]
+    return "\n".join(lines) + "\n"
+
+
+def _purge_suggestions(root: Path, now) -> int:
+    """The suggestions past their retention and not copied into curated/ purged; 1 when their file is not TOML."""
+    from .analysis import query
+    from .analysis.ask import suggested
+
     curated, _ = query.load_lexicon(root / query.CURATED)
     try:
         kept, purged = suggested.purge(root / query.SUGGESTED, curated, now)
