@@ -344,26 +344,37 @@ def kpis(items: Sequence[tuple], formulas: Mapping[str, Mapping[str, str]] | Non
         columns = st.columns(2, gap="large") if len(items) > 4 else [st.container()]
         per_column = -(-len(items) // len(columns))  # read down the first column, then the second
         for index, item in enumerate(items):
-            label, value, *rest = item
-            delta = rest[0] if len(rest) > 0 else None
-            help_ = rest[1] if len(rest) > 1 else None
-            colour = rest[2] if len(rest) > 2 else "normal"
-            help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
-            delta_color = delta_colour(delta, colour)
-            box = columns[index // per_column]
-            if delta_color == "off":
-                # marked for style.css: Streamlit's neutral chip is a fixed grey, too faint on the
-                # light theme, and the page's text colour replaces it
-                box = box.container(key=f"kpi_off_{index}_{zlib.crc32(label.encode()):08x}")
-            # delta_color is "off" or the caller's colour name; st.metric checks it, its stub lists the names
-            box.metric(label, value, delta=delta, help=help_, delta_color=delta_color)  # type: ignore[arg-type]
-    known = [label for label in labels if formulas and label in formulas]
-    if known:
-        with st.popover("Formulas", icon=":material/function:", help="How each figure is computed, by standard"):
-            for label in known:
-                by_standard = formulas[label].items()  # type: ignore[index]
-                lines = "\n".join(f"- *{standard}* · {formula}" for standard, formula in by_standard)
-                st.markdown(f"**{label}**\n{lines}")
+            _figure(columns[index // per_column], index, item)
+    if formulas:
+        _formulas_popover(labels, formulas)
+
+
+def _figure(box, index: int, item: tuple) -> None:
+    """One line of a readout, drawn in ``box``: (label, value[, delta[, help[, delta_color]]])."""
+    label, value, *rest = item
+    delta = rest[0] if len(rest) > 0 else None
+    help_ = rest[1] if len(rest) > 1 else None
+    colour = rest[2] if len(rest) > 2 else "normal"
+    help_ = "\n\n".join(part for part in (help_, spelled_out(label)) if part) or None
+    delta_color = delta_colour(delta, colour)
+    if delta_color == "off":
+        # marked for style.css: Streamlit's neutral chip is a fixed grey, too faint on the
+        # light theme, and the page's text colour replaces it
+        box = box.container(key=f"kpi_off_{index}_{zlib.crc32(label.encode()):08x}")
+    # delta_color is "off" or the caller's colour name; st.metric checks it, its stub lists the names
+    box.metric(label, value, delta=delta, help=help_, delta_color=delta_color)  # type: ignore[arg-type]
+
+
+def _formulas_popover(labels: Sequence[str], formulas: Mapping[str, Mapping[str, str]]) -> None:
+    """A "Formulas" popover: how each figure of the readout is computed, by standard. Nothing when
+    ``formulas`` knows none of the labels."""
+    known = [label for label in labels if label in formulas]
+    if not known:
+        return
+    with st.popover("Formulas", icon=":material/function:", help="How each figure is computed, by standard"):
+        for label in known:
+            lines = "\n".join(f"- *{standard}* · {formula}" for standard, formula in formulas[label].items())
+            st.markdown(f"**{label}**\n{lines}")
 
 
 SCORE_HELP = (
@@ -617,26 +628,34 @@ def _filtered(frame: pd.DataFrame, config: dict, key: str, status: str | None) -
     }
     active = sum(bool(st.session_state.get(prefix + str(column))) for column in frame.columns)
     title = f"Filter columns · {active}" if active else "Filter columns"
-    filters: dict[str, str] = {}
-    choices: dict[str, list] = {}
     with st.popover(title, icon=":material/filter_list:"):
-        for column in frame.columns:
-            label, widget_key = labels[column], prefix + str(column)
-            if column == status:
-                options = sorted({status_label(value) for value in frame[column].dropna()})
-                choices[column] = st.multiselect(label, options, key=widget_key, placeholder="any")
-            else:
-                hint = FILTER_HINT[filter_kind(column, frame[column])]
-                filters[column] = st.text_input(label, key=widget_key, placeholder=hint)
+        filters, statuses_picked = _filter_inputs(frame, labels, prefix, status)
         rows, errors = filter_rows(frame, filters)
         for column, message in errors.items():
             st.caption(f":red[{md_text(labels[column])}: {md_text(message)}]")
-    for column, picked in choices.items():
-        if picked:
-            rows = rows[rows[column].map(status_label).isin(picked)]
+    if status is not None and statuses_picked:
+        rows = rows[rows[status].map(status_label).isin(statuses_picked)]
     if len(rows) != len(frame):
         st.caption(f"{len(rows):,} of {len(frame):,} rows")
     return rows
+
+
+def _filter_inputs(
+    frame: pd.DataFrame, labels: dict, prefix: str, status: str | None
+) -> tuple[dict[str, str], list[str]]:
+    """One input per column: a text filter, or for the status column a choice among its labels.
+    Returns the texts typed, by column, and the status labels picked."""
+    filters: dict[str, str] = {}
+    statuses_picked: list[str] = []
+    for column in frame.columns:
+        label, widget_key = labels[column], prefix + str(column)
+        if column == status:
+            options = sorted({status_label(value) for value in frame[column].dropna()})
+            statuses_picked = st.multiselect(label, options, key=widget_key, placeholder="any")
+        else:
+            hint = FILTER_HINT[filter_kind(column, frame[column])]
+            filters[column] = st.text_input(label, key=widget_key, placeholder=hint)
+    return filters, statuses_picked
 
 
 def table(
@@ -674,17 +693,21 @@ def table(
         kwargs.update(on_select="rerun", selection_mode="single-row")
     data = status_style(frame, status) if status else frame
     event = st.dataframe(data, column_config=config, **kwargs)
-    if linked:
-        rows = event.selection.rows if event is not None and hasattr(event, "selection") else []
-        if rows:
-            code = str(frame.iloc[rows[0]]["task_code"])
-            if st.button(
-                f"Open {md_text(code)} in the Gantt", icon=":material/view_timeline:", key=f"{kwargs['key']}:open"
-            ):
-                open_task(code)  # type: ignore[misc]  # linked is True only when open_task is not None
-        else:
-            st.caption("Select a row to open its task in the Gantt.")
+    if open_task is not None and linked:
+        _open_in_gantt_button(event, frame, kwargs["key"], open_task)
     return event
+
+
+def _open_in_gantt_button(event, frame: pd.DataFrame, table_key: str, open_task: Callable[[str], None]) -> None:
+    """Under a table with selectable rows: a button opening the Gantt on the row selected, or the
+    invitation to select one."""
+    selected = event.selection.rows if event is not None and hasattr(event, "selection") else []
+    if not selected:
+        st.caption("Select a row to open its task in the Gantt.")
+        return
+    code = str(frame.iloc[selected[0]]["task_code"])
+    if st.button(f"Open {md_text(code)} in the Gantt", icon=":material/view_timeline:", key=f"{table_key}:open"):
+        open_task(code)
 
 
 def status_style(frame: pd.DataFrame, column: str = "status"):
