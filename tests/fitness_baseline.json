@@ -571,12 +571,12 @@
       "near_clones": 0
     },
     "cli.py": {
-      "mi": 4.8,
+      "mi": 4.9,
       "mi_rank": "C",
       "cc_max": 26,
-      "cc_over_15": 5,
+      "cc_over_15": 3,
       "cognitive_max": 30,
-      "cognitive_over_15": 7,
+      "cognitive_over_15": 4,
       "clones": 0,
       "near_clones": 0
     },
