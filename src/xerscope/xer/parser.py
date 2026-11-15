@@ -140,18 +140,23 @@ class _Table:
         if twice:  # P6 names each column once; a second one would shadow the first (#133)
             raise XerError(f"{self.where}: table {self.name} names column {twice[0]} twice")
         if self.declared is None:
-            self.declared = names
-            if self.wanted is None:
-                self.picked, self.names = None, names
-            else:
-                self.picked = [i + 1 for i, name in enumerate(names) if name in self.wanted]
-                self.names = [names[i - 1] for i in self.picked]
+            self._declare(names)
             self.open(capacity)
         elif names != self.declared:
             self.ignoring = True
             self.notes.append(
                 f"table {self.name}: a %F line with other columns than its first one; the rows under it are ignored"
             )
+
+    def _declare(self, names: list[str]) -> None:
+        """The table's columns, from its first %F line: all of them, or those ``keep`` asks for."""
+        self.declared = names
+        if self.wanted is None:
+            self.picked, self.names = None, names
+            return
+        # a %R line starts with its tag: the column at index i of the %F line is at i + 1 of the row
+        self.picked = [index + 1 for index, name in enumerate(names) if name in self.wanted]
+        self.names = [names[position - 1] for position in self.picked]
 
     def open(self, capacity: int) -> None:
         """Start a block: the rows read so far go to ``frames``."""
@@ -174,18 +179,22 @@ class _Table:
         if self.rows is None:
             self.unlabelled += 1
             return
-        if self.picked is None:
-            values = parts[1:]
-            width = self.rows.width
-            if len(values) > width:
-                if any(v.strip() for v in values[width:]):
-                    self.long_rows += 1
-                values = values[:width]
-        else:
-            values = [parts[i] if i < len(parts) else "" for i in self.picked]
+        values = self._values(parts, self.rows.width)
         seen = self.seen
         intern = seen.setdefault if len(seen) < INTERNED_PER_TABLE else seen.get
-        self.rows.add([intern(v, v) for v in values])
+        self.rows.add([intern(value, value) for value in values])
+
+    def _values(self, parts: list[str], width: int) -> list[str]:
+        """The fields of a %R line for the table's columns: a short row is padded by the block, a long
+        one cut to ``width`` and counted when what is cut is not blank."""
+        if self.picked is not None:
+            return [parts[position] if position < len(parts) else "" for position in self.picked]
+        values = parts[1:]
+        if len(values) <= width:
+            return values
+        if any(value.strip() for value in values[width:]):
+            self.long_rows += 1
+        return values[:width]
 
     def finish(self, warnings: list[str]) -> pd.DataFrame | None:
         """The table's frame, or None (and a warning) when it never had a usable %F line."""
@@ -224,39 +233,36 @@ class _Reader:
         self.orphans = 0  # %R rows outside any named %T table
 
     def run(self) -> None:
-        text, n = self.text, len(self.text)
+        text, length = self.text, len(self.text)
         pos = 0
         # split on "\n" only: task names may contain characters that splitlines() treats
         # as line breaks (\x0b, \x1c, ...), and calendar blobs contain lone "\r".
-        while pos < n:
+        while pos < length:
             end = text.find("\n", pos)
             if end < 0:
-                end = n
+                end = length
             line = text[pos:end].rstrip("\r")
             pos = end + 1
-            if not line:
-                continue
-            if line.startswith("%R"):
-                if self.skipping:
-                    continue
-                parts = line.split("\t")
-                if parts[0] == "%R":
-                    self.row(parts)
-            elif line.startswith("%T"):
-                parts = line.split("\t")
-                if parts[0] == "%T":
-                    self.table(parts, pos)
-            elif line.startswith("%F"):
-                parts = line.split("\t")
-                if parts[0] == "%F" and self.current is not None:
-                    self.current.fields(parts[1:], self.rows_ahead(pos))
-            elif line.startswith("ERMHDR"):
-                parts = line.split("\t")
-                if parts[0] == "ERMHDR":
-                    self.header = parts[1:]
-            elif line == "%E":
+            if line == "%E":
                 self.ended = True
                 break
+            if line:
+                self.line(line, pos)
+
+    def line(self, line: str, next_line: int) -> None:
+        """One line by its tag (the text before the first tab); a line with another tag is passed over."""
+        if self.skipping and line.startswith("%R"):
+            return  # the rows of a table left out by ``keep`` are not split
+        parts = line.split("\t")
+        tag = parts[0]
+        if tag == "%R":
+            self.row(parts)
+        elif tag == "%T":
+            self.table(parts, next_line)
+        elif tag == "%F" and self.current is not None:
+            self.current.fields(parts[1:], self.rows_ahead(next_line))
+        elif tag == "ERMHDR":
+            self.header = parts[1:]
 
     def row(self, parts: list[str]) -> None:
         if self.current is None:
