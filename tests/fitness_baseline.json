@@ -181,12 +181,12 @@
       "near_clones": 2
     },
     "analysis/changelog.py": {
-      "mi": 31.1,
+      "mi": 33.0,
       "mi_rank": "A",
-      "cc_max": 10,
+      "cc_max": 8,
       "cc_over_15": 0,
-      "cognitive_max": 27,
-      "cognitive_over_15": 1,
+      "cognitive_max": 14,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },

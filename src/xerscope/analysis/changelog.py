@@ -311,38 +311,53 @@ def _assignment_changes(old: Snapshot, new: Snapshot, previous_all: pd.DataFrame
     return changes
 
 
+Link = tuple[str, float, float]  # relationship type, lag in hours, lag in days
+
+
 def _relationship_changes(old: Snapshot, new: Snapshot) -> list:
-    def by_pair(relationships: pd.DataFrame) -> dict[tuple[str, str], set[tuple[str, float, float]]]:
-        # identity on the lag in hours (what P6 stores); days only for display, since they
-        # depend on the predecessor's calendar
-        pairs: dict = {}
-        columns = ["pred_code", "succ_code", "type", "lag_hr", "lag_d"]
-        for predecessor, successor, link_type, lag_hr, lag_d in relationships[columns].itertuples(index=False):
-            pairs.setdefault((predecessor, successor), set()).add(
-                (link_type, round(float(lag_hr or 0), 2), round(float(lag_d or 0), 2))
-            )
-        return pairs
-
-    def label(links: set) -> str:
-        return ", ".join(
-            f"{link_type}{lag_d:+g}d" if lag_hr else link_type for link_type, lag_hr, lag_d in sorted(links)
-        )
-
-    def relationship_change(change, predecessor, successor, before, after):
-        return _change("Relationships", change, successor, f"{predecessor} → {successor}", before, after)
-
-    old_pairs, new_pairs = by_pair(old.relationships), by_pair(new.relationships)
+    old_links, new_links = _links_by_pair(old.relationships), _links_by_pair(new.relationships)
     changes = []
-    for pair in sorted(set(new_pairs) - set(old_pairs)):
-        changes.append(relationship_change("added", *pair, "", label(new_pairs[pair])))
-    for pair in sorted(set(old_pairs) - set(new_pairs)):
-        changes.append(relationship_change("deleted", *pair, label(old_pairs[pair]), ""))
-    for pair in sorted(set(old_pairs) & set(new_pairs)):
-        if {link[:2] for link in old_pairs[pair]} != {link[:2] for link in new_pairs[pair]}:
-            same_types = {link[0] for link in old_pairs[pair]} == {link[0] for link in new_pairs[pair]}
-            change = "lag changed" if same_types else "type changed"
-            changes.append(relationship_change(change, *pair, label(old_pairs[pair]), label(new_pairs[pair])))
+    for pair in sorted(set(new_links) - set(old_links)):
+        changes.append(_relationship_change("added", pair, "", _links_label(new_links[pair])))
+    for pair in sorted(set(old_links) - set(new_links)):
+        changes.append(_relationship_change("deleted", pair, _links_label(old_links[pair]), ""))
+    for pair in sorted(set(old_links) & set(new_links)):
+        change = _what_changed(old_links[pair], new_links[pair])
+        if change:
+            before, after = _links_label(old_links[pair]), _links_label(new_links[pair])
+            changes.append(_relationship_change(change, pair, before, after))
     return changes
+
+
+def _links_by_pair(relationships: pd.DataFrame) -> dict[tuple[str, str], set[Link]]:
+    """The links of each (predecessor, successor) pair: two activities may be tied more than once.
+
+    A link is identified by its lag in hours (what P6 stores); the days are kept for display only,
+    since they depend on the predecessor's calendar."""
+    pairs: dict[tuple[str, str], set[Link]] = {}
+    columns = ["pred_code", "succ_code", "type", "lag_hr", "lag_d"]
+    for predecessor, successor, link_type, lag_hr, lag_d in relationships[columns].itertuples(index=False):
+        link = (link_type, round(float(lag_hr or 0), 2), round(float(lag_d or 0), 2))
+        pairs.setdefault((predecessor, successor), set()).add(link)
+    return pairs
+
+
+def _links_label(links: set[Link]) -> str:
+    """The links of a pair as the log writes them: "FS, SS+2d"."""
+    return ", ".join(f"{link_type}{lag_d:+g}d" if lag_hr else link_type for link_type, lag_hr, lag_d in sorted(links))
+
+
+def _what_changed(old_links: set[Link], new_links: set[Link]) -> str:
+    """What moved between two updates of a pair's links: "type changed", "lag changed", or "" for neither."""
+    if {link[:2] for link in old_links} == {link[:2] for link in new_links}:
+        return ""
+    same_types = {link[0] for link in old_links} == {link[0] for link in new_links}
+    return "lag changed" if same_types else "type changed"
+
+
+def _relationship_change(change: str, pair: tuple[str, str], before: str, after: str):
+    predecessor, successor = pair
+    return _change("Relationships", change, successor, f"{predecessor} → {successor}", before, after)
 
 
 def summary(log: pd.DataFrame) -> pd.DataFrame:
