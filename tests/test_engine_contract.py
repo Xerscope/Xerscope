@@ -10,7 +10,8 @@ past the repairs of the load: a delay asked of ``schedule`` that is out of range
 edited after loading with such a lag or remaining duration.
 A refusal names the activities at fault, except a date beyond the time axis (year 2262), which a
 chain of long durations reaches together: that one names the calendar.
-A delay that is not a number (NaN) is not drawn: it leaves ``schedule`` as a plain ValueError.
+A delay that is not a number (NaN) is not drawn here: its own test below holds that it is refused
+like a delay out of range.
 The dates of a valid network are held by tests/test_cpm_properties.py; here only the outcome is.
 """
 
@@ -18,13 +19,15 @@ from __future__ import annotations
 
 import dataclasses
 import random
+import re
 
 import pytest
+from rulekit import STANDARDS, codes, run
 from test_cpm_properties import random_network
-from xerkit import CONSTRAINT_TYPES, snap
+from xerkit import CONSTRAINT_TYPES, hours, snap, todo, xer_text
 
-from xerscope.analysis.cpm import CycleError, ScheduleError, schedule
-from xerscope.xer import XerError
+from xerscope.analysis.cpm import MAX_HOURS, CycleError, ScheduleError, critical_path_test, schedule
+from xerscope.xer import XerError, build_snapshot, parse_text
 
 pytestmark = pytest.mark.oracle("property")
 
@@ -129,3 +132,72 @@ def test_a_damaged_network_is_scheduled_or_refused_by_name(seed, damage):
         return
     assert damage not in ("loop", "self link"), (seed, damage, "a logic loop was scheduled")
     assert len(result.frame) and result.frame["ef"].notna().all(), (seed, damage, "an activity without a date")
+
+
+@pytest.mark.parametrize("delay_hr", [MAX_HOURS + 1, 1e30, float("inf"), float("-inf"), float("nan"), -MAX_HOURS - 1])
+def test_a_delay_out_of_range_is_refused_by_naming_the_delayed_activity(delay_hr):
+    """A delay asked of ``schedule`` follows the rule of a remaining duration or a lag: not finite,
+    or beyond ``MAX_HOURS``, it is refused before the passes run and the refusal names the
+    activity that was to be delayed, and only that one."""
+    snapshot = snap([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)])
+    with pytest.raises(ScheduleError, match="delay") as refused:
+        schedule(snapshot, extra_hours={"A": 8.0, "B": delay_hr})
+    assert refused.value.members == ("B",)
+
+
+def test_a_delay_at_the_limit_is_not_refused_as_a_delay():
+    """``MAX_HOURS`` itself passes the guard, as it does for a duration: what stops the run then is
+    the date, past the year the time axis holds, and that refusal names no activity."""
+    snapshot = snap([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)])
+    with pytest.raises(ScheduleError, match="schedulable range") as refused:
+        schedule(snapshot, extra_hours={"B": MAX_HOURS})
+    assert refused.value.members == ()
+    delayed = schedule(snapshot, extra_hours={"B": 8.0})
+    assert delayed.frame.at["B", "ef"] > schedule(snapshot).frame.at["B", "ef"]
+
+
+def _without_any_date(tasks, links):
+    """The file of ``tasks`` and ``links`` with every date left blank: P6 writes none, the load warns."""
+    text = re.sub(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", "", xer_text(tasks, links))
+    return build_snapshot(parse_text(text, source="test.xer"))
+
+
+def test_a_file_without_any_date_is_refused_as_a_schedule_error():
+    """No status date, no planned start and no activity date: nothing to schedule from. The refusal
+    is a ``ScheduleError`` like the others; it names no activity, the file is at fault. The critical
+    path test then answers a failure with that message, it does not raise."""
+    snapshot = _without_any_date([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)])
+    assert snapshot.data_date is None and snapshot.planned_start is None
+    with pytest.raises(ScheduleError, match="nothing to schedule from") as refused:
+        schedule(snapshot)
+    assert refused.value.members == ()
+    assert not isinstance(refused.value, CycleError)
+    test = critical_path_test(snapshot, 600)
+    assert not test.passed and "nothing to schedule from" in test.note
+
+
+@pytest.mark.parametrize("metric_id", ["INT-01", "INT-03", "INT-04", "INT-07", "INT-08"])
+@pytest.mark.parametrize(
+    "links", [[("A", "B", "FS", 0)], [("A", "B", "FS", 0), ("B", "A", "FS", 0)]], ids=["chain", "loop"]
+)
+def test_an_integrity_check_on_a_file_without_any_date_says_it_cannot_schedule(metric_id, links):
+    """Each integrity check that needs the recalculation answers "cannot schedule" and no verdict,
+    with or without a loop in the logic: the loops are looked for after the dates."""
+    snapshot = _without_any_date([todo("A", **hours(40)), todo("B", **hours(40))], links)
+    result = run(STANDARDS["INTEGRITY"], metric_id, snapshot)
+    assert result.status == "n/a", (result.status, result.note)
+    assert result.note.startswith("cannot schedule: ") and "nothing to schedule from" in result.note
+
+
+def test_a_loop_beside_another_refusal_is_not_counted_as_no_loop():
+    """INT-04 counts the activities on a loop. When the engine refuses for another reason first (a lag
+    beyond ``MAX_HOURS`` on a snapshot edited after the load), the loops were not looked for: the
+    check says it cannot schedule, it does not pass with a count of zero."""
+    looped = snap([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0), ("B", "A", "FS", 0)])
+    found = run(STANDARDS["INTEGRITY"], "INT-04", looped)
+    assert found.status == "fail" and codes(found) == ["A", "B"]
+    links = looped.relationships.astype({"lag_hr": float})
+    links.loc[links.index[0], "lag_hr"] = MAX_HOURS + 1
+    refused = run(STANDARDS["INTEGRITY"], "INT-04", dataclasses.replace(looped, relationships=links))
+    assert refused.status == "n/a", (refused.status, refused.note)
+    assert refused.note.startswith("cannot schedule: ") and codes(refused) == []
