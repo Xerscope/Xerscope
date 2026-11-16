@@ -2,9 +2,13 @@ name: scanner
 
 # The Trivy the CI scans with (.github/trivy/Dockerfile), scanned with itself: every day, since new
 # CVEs land without a push, and on any change to its pin (a Dependabot bump is checked before it
-# is merged). A finding here allows a bump before Dependabot's cooldown ends.
+# is merged). A finding here allows a bump before Dependabot's cooldown ends. One dated exception
+# file, .github/trivy/self.trivyignore.yaml: the git of the Trivy image, which scan.sh keeps
+# from running.
 # The images the NAS pulls (image.yml, latest) are scanned every day too: a CVE published
-# between two pushes is seen the next morning, not at the next push or Monday run.
+# between two pushes is seen the next morning, not at the next push or Monday run. The ghcr
+# packages are private (GitHub's default for a first publish): the job logs in with the
+# workflow's token, which reads packages and nothing more.
 on:
   schedule:
     - cron: "41 4 * * *"
@@ -26,10 +30,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Known vulnerabilities in the pinned Trivy image, fixed ones only
-        run: .github/trivy/scan.sh "$(sed -n 's/^FROM //p' .github/trivy/Dockerfile)"
+        run: .github/trivy/scan.sh "$(sed -n 's/^FROM //p' .github/trivy/Dockerfile)" .github/trivy/self.trivyignore.yaml
 
   published:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: read                                # pull the two private images from ghcr.io
     strategy:
       fail-fast: false                              # each image scanned even if the other fails
       matrix:
@@ -39,7 +46,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Known vulnerabilities in the published image, fixed ones only
         env:
           IMAGE: ${{ matrix.image }}
-        run: .github/trivy/scan.sh "$IMAGE"   # pulled without login, as the NAS pulls it
+        run: .github/trivy/scan.sh "$IMAGE"   # no exception file

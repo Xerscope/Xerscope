@@ -681,12 +681,12 @@
       "near_clones": 0
     },
     "verify/shapes.py": {
-      "mi": 70.7,
+      "mi": 70.4,
       "mi_rank": "A",
-      "cc_max": 10,
+      "cc_max": 5,
       "cc_over_15": 0,
-      "cognitive_max": 19,
-      "cognitive_over_15": 1,
+      "cognitive_max": 8,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },

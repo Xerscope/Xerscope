@@ -1,0 +1,27 @@
+# Read by one scan only: the pinned Trivy image scanned with itself (scanner.yml, job trivy;
+# tests/test_docker.py allows this file, these three entries and no other).
+# The image of Trivy 0.76.2 holds git 2.54.0-r0 (its Dockerfile: alpine, `apk add git`), fixed in
+# 2.54.1-r0. Trivy publishes no rebuilt image of a release, and 0.76.2 is the latest one.
+# The three CVEs need git to be run on input an attacker chose: a recursive clone (111760), a
+# merge (105437), a fast-import stream (114466). Trivy runs git through go-getter only, for a
+# plugin, a VEX repository or a remote Terraform module; `trivy image --input` with the default
+# scanners reaches none of them. scan.sh does not rest on that reading: it mounts /dev/null over
+# /usr/bin/git in every scanning container, so git cannot run there.
+# The entries end by themselves, and the job turns red, in three cases:
+#   - the date below is reached: bump Trivy if a release holds the fix, or renew with a new accord;
+#   - the image holds another git version (purls): that version is scanned again;
+#   - the finding is gone from the image: .github/trivy/scan.sh refuses an entry that matches
+#     nothing, so this file is deleted with the Trivy bump that fixes it.
+vulnerabilities:
+  - id: CVE-2026-105437
+    statement: git heap corruption in a merge; git cannot run in the scanning container (scan.sh mounts /dev/null over it)
+    expired_at: 2026-12-16
+    purls: [pkg:apk/alpine/git@2.54.0-r0, pkg:apk/alpine/git-init-template@2.54.0-r0]
+  - id: CVE-2026-111760
+    statement: git code execution in a recursive clone; git cannot run in the scanning container (scan.sh mounts /dev/null over it)
+    expired_at: 2026-12-16
+    purls: [pkg:apk/alpine/git@2.54.0-r0, pkg:apk/alpine/git-init-template@2.54.0-r0]
+  - id: CVE-2026-114466
+    statement: git fast-import file access; git cannot run in the scanning container (scan.sh mounts /dev/null over it)
+    expired_at: 2026-12-16
+    purls: [pkg:apk/alpine/git@2.54.0-r0, pkg:apk/alpine/git-init-template@2.54.0-r0]
