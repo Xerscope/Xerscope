@@ -681,3 +681,59 @@ def test_a_task_name_inside_a_note_leaves_hidden():
         "Pour slab level threes",
     ]
     assert "Pour slab" not in anonymizer.csv(notes.iloc[:3]).decode("utf-8-sig")
+
+
+def _debug_zip_inputs(**file_parts):
+    """An anonymizer and the Debug page's tables for one hand-made file, with the packaged P6 standard."""
+    from xerscope.app.diagnostic import diagnostic_frames
+
+    raw = parse_text(_file([todo("PUMP-7", task_name="Pump house")], **file_parts), source="x.xer")
+    frames = diagnostic_frames(build_snapshot(raw), None, builtin_standards()["P6"], anonymous=True)
+    return Anonymizer.from_raws([raw]), frames
+
+
+def test_a_file_value_that_is_a_word_of_the_packaged_check_names_does_not_stop_the_debug_zip():
+    """An activity code value "Late" is a word of "P6-12 · Late Activities", which the package writes
+    for every file: the zip is written, and the table of check parameters is the packaged one."""
+    from xerscope.app.diagnostic import own_text
+
+    anonymizer, frames = _debug_zip_inputs(codes=[("PUMP-7", "Phase", "Late")])
+    assert anonymizer.secrets_["Late"] == "ACTVCODE.short_name"
+    with pytest.raises(LeakError, match=r"table 04_check_parameters not written.*ACTVCODE\.short_name \(1\)"):
+        anonymizer.zip_frames(frames)  # without the packaged texts named, the guard cannot tell
+    with zipfile.ZipFile(io.BytesIO(anonymizer.zip_frames(frames, own_text()))) as archive:
+        written = pd.read_csv(io.BytesIO(archive.read("04_check_parameters.csv")))
+    assert written["check"].tolist() == frames["04_check_parameters"]["check"].tolist()
+    assert "P6-12 · Late Activities" in written["check"].tolist()
+
+
+def test_a_check_name_the_package_does_not_write_is_still_checked():
+    """A cell of the check parameters that is not the packaged text (a renamed check, a custom
+    standard) is searched as before: here it carries an activity name of the file."""
+    from xerscope.app.diagnostic import own_text
+
+    anonymizer, frames = _debug_zip_inputs(codes=[("PUMP-7", "Phase", "Late")])
+    renamed = frames["04_check_parameters"].copy()
+    renamed.loc[0, "check"] = "P6-01 · Logic of Pump house"
+    with pytest.raises(LeakError, match=r"table 04_check_parameters not written.*TASK\.task_name \(1\)"):
+        anonymizer.zip_frames({**frames, "04_check_parameters": renamed}, own_text())
+
+
+def test_the_packaged_text_of_one_table_is_checked_in_another():
+    """The packaged check names are written as they are in the table of check parameters only."""
+    from xerscope.app.diagnostic import own_text
+
+    anonymizer, frames = _debug_zip_inputs(codes=[("PUMP-7", "Phase", "Late")])
+    other = pd.DataFrame({"note": ["P6-12 · Late Activities"]})
+    with pytest.raises(LeakError, match=r"table 09_other not written.*ACTVCODE\.short_name \(1\)"):
+        anonymizer.zip_frames({"04_check_parameters": frames["04_check_parameters"], "09_other": other}, own_text())
+
+
+def test_every_table_holding_an_original_value_is_named_at_once():
+    anonymizer, _ = _debug_zip_inputs()
+    first = pd.DataFrame({"note": ["Pump house"]})
+    second = pd.DataFrame({"note": ["see PUMP-7"]})
+    with pytest.raises(LeakError) as refused:
+        anonymizer.zip_frames({"01_first": first, "02_fine": pd.DataFrame({"count": [3]}), "03_second": second})
+    assert "table 01_first not written" in str(refused.value) and "table 03_second not written" in str(refused.value)
+    assert "02_fine" not in str(refused.value)

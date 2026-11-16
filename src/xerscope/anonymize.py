@@ -45,7 +45,7 @@ import io
 import re
 import secrets
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -703,24 +703,37 @@ class Anonymizer:
             if is_project_id_column(column) or column in PROJECT_ID_LIST_COLUMNS:
                 out[column] = [self._project_ids(value) for value in out[column]]
 
-    def _refuse_frame_leaks(self, out: pd.DataFrame, where: str) -> None:
-        """``_refuse_leaks`` on the column names and every cell of ``out``."""
+    def _refuse_frame_leaks(self, out: pd.DataFrame, where: str, own_text: frozenset[str] = frozenset()) -> None:
+        """``_refuse_leaks`` on the column names and every cell of ``out``. A column name or a cell that
+        is one of ``own_text`` is not searched: xerscope writes it the same whatever the files hold."""
         cells = (str(value) for value in out.astype(str).to_numpy().ravel())
-        self._refuse_leaks([*map(str, out.columns), *cells], where)
+        texts = [text for text in (*map(str, out.columns), *cells) if text not in own_text]
+        self._refuse_leaks(texts, where)
 
-    def zip_frames(self, frames: dict[str, pd.DataFrame]) -> bytes:
+    def zip_frames(
+        self, frames: dict[str, pd.DataFrame], own_text: Mapping[str, frozenset[str]] | None = None
+    ) -> bytes:
         """CSV of each frame, with the codes of ``DIAGNOSTIC_CODES``, the WBS codes and the project ids
         renamed as in the XER extract and the figures of ``DIAGNOSTIC_MONEY`` set to 0.
 
         No other column changes: the caller selects ids, dates, durations, flags and P6
         enumerations only. Every cell of every table is still checked against the originals'
-        text values; one match and nothing is written (``LeakError``).
+        text values; one match and nothing is written (``LeakError``, naming every table that
+        holds one). ``own_text``: per table, the column names and cells the package writes for
+        every file ("P6-12 · Late Activities"); a cell that is exactly one of them is written as
+        it is, even when a file holds one of its words as a value.
         """
         outputs = {}
+        refused = []
         for name, frame in frames.items():
             out = self._diagnostic_table(frame)
-            self._refuse_frame_leaks(out, f"table {name}")
+            try:
+                self._refuse_frame_leaks(out, f"table {name}", (own_text or {}).get(name, frozenset()))
+            except LeakError as error:
+                refused.append(str(error))
             outputs[name] = out
+        if refused:
+            raise LeakError("; ".join(refused))
         return zip_frames(outputs, "csv")
 
     def _diagnostic_table(self, frame: pd.DataFrame) -> pd.DataFrame:
