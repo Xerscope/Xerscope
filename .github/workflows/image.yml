@@ -5,8 +5,8 @@ name: image
 #   ghcr.io/xerscope/xerscope:latest            every push to main, once tested   (Dockerfile)
 #   ghcr.io/xerscope/xerscope:v1.2.3            every tag v*, once tested; plus a sha-<short> tag each build
 #   ghcr.io/xerscope/xerscope-caddy:<same tags> Caddy + rate_limit for deploy/ (deploy/caddy/Dockerfile)
-# The owner is lowercased by metadata-action (ghcr.io requires it). A package takes the
-# repository's visibility; a public one pulls without a token.
+# The owner is lowercased by metadata-action (ghcr.io requires it). A package is private when
+# first published, whatever the repository's visibility; a public one pulls without a token.
 # The images also go to Docker Hub when wanted (a Container Manager that cannot pull
 # from ghcr.io, docs/deploy.md §8): <owner>/xerscope and <owner>/xerscope-caddy. That leg needs the
 # repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (hub.docker.com > Account
