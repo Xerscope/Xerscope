@@ -34,6 +34,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import DATE_FMT, DATETIME_FMT
+from .xer.calendar import clndr_data_node
 
 HOURS_PER_DAY = 8
 PROJECT_ID = "4501"
@@ -45,10 +46,14 @@ PROJECT_NAME = "Usine de traitement – Phase 1"  # en dash + accent: exercises 
 CALENDAR_ID = "601"
 # every day 08:00-16:00, written in full (P6 exports always carry the blob; without it each
 # reader would guess the working week its own way)
-CALENDAR_DATA = (
-    "(0||CalendarData()((0||DaysOfWeek()("
-    + "".join(f"(0||{d}()((0||0(s|08:00|f|16:00)())))" for d in range(1, 8))
-    + "))(0||Exceptions()())))"
+EIGHT_TO_FOUR = clndr_data_node(0, attributes="s|08:00|f|16:00")
+CALENDAR_DATA = clndr_data_node(
+    "CalendarData",
+    children=clndr_data_node(
+        "DaysOfWeek",
+        children="".join(clndr_data_node(day_number, children=EIGHT_TO_FOUR) for day_number in range(1, 8)),
+    )
+    + clndr_data_node("Exceptions"),
 )
 START = date(2026, 8, 31)
 

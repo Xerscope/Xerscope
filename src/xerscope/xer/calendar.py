@@ -70,6 +70,19 @@ class _Node:
         return None
 
 
+def clndr_data_node(name: str | int, attributes: str = "", children: str = "") -> str:
+    """One node of a ``clndr_data`` blob as P6 writes it: ``(0||name(attributes)(children))``.
+
+    ``children`` is the text of the nodes it holds, one after the other. Attributes are pairs
+    separated by ``|``: ``s|08:00|f|16:00`` is a working period (start, finish), ``d|46115`` the date
+    of an exception (an Excel serial number).
+
+    Nothing is escaped. Callers pass a fixed name or a number; an attribute taken from a file may
+    hold a bracket, and the blob is then one the reader refuses (``parse_clndr_data``).
+    """
+    return f"(0||{name}({attributes})({children}))"
+
+
 def _parse_tree(text: str) -> list[_Node]:
     """The nodes of a ``clndr_data`` blob: "(0||name(attributes)(children))", one after the other."""
     # Exporters separate nodes with whitespace or DEL (\x7f) characters: drop them.
