@@ -71,42 +71,47 @@ class _Node:
 
 
 def _parse_tree(text: str) -> list[_Node]:
+    """The nodes of a ``clndr_data`` blob: "(0||name(attributes)(children))", one after the other."""
     # Exporters separate nodes with whitespace or DEL (\x7f) characters: drop them.
-    s = "".join(ch for ch in text if ch not in " \t\r\n\x7f")
+    compact = "".join(character for character in text if character not in " \t\r\n\x7f")
+    nodes = []
     pos = 0
+    while pos < len(compact) and compact[pos] == "(":
+        node, pos = _read_node(compact, pos, depth=0)
+        nodes.append(node)
+    if pos != len(compact):
+        raise ValueError(f"unexpected text at {pos}: {compact[pos : pos + 20]!r}")
+    return nodes
 
-    def node(depth: int = 0) -> _Node:
-        nonlocal pos
-        if depth > MAX_TREE_DEPTH:
-            raise ValueError(f"nested deeper than {MAX_TREE_DEPTH} levels at {pos}")
-        if s[pos] != "(":
-            raise ValueError(f"expected '(' at {pos}")
-        bar = s.index("||", pos)
-        name_end = s.index("(", bar + 2)
-        name = s[bar + 2 : name_end]
-        attrs_end = s.index(")", name_end)
-        attrs = s[name_end + 1 : attrs_end]
-        pos = attrs_end + 1
-        if s[pos] != "(":
-            raise ValueError(f"expected children at {pos}")
-        pos += 1
-        children = []
-        while s[pos] == "(":
-            children.append(node(depth + 1))
-        if s[pos] != ")":
-            raise ValueError(f"expected ')' at {pos}")
-        pos += 1  # end of children
-        if s[pos] != ")":
-            raise ValueError(f"expected ')' at {pos}")
-        pos += 1  # end of node
-        return _Node(name, attrs, children)
 
-    out = []
-    while pos < len(s) and s[pos] == "(":
-        out.append(node())
-    if pos != len(s):
-        raise ValueError(f"unexpected text at {pos}: {s[pos : pos + 20]!r}")
-    return out
+def _read_node(compact: str, start: int, depth: int) -> tuple[_Node, int]:
+    """The node that starts at ``start``, with its children, and the position after it."""
+    if depth > MAX_TREE_DEPTH:
+        raise ValueError(f"nested deeper than {MAX_TREE_DEPTH} levels at {start}")
+    if compact[start] != "(":
+        raise ValueError(f"expected '(' at {start}")
+    bar = compact.index("||", start)
+    name_end = compact.index("(", bar + 2)
+    name = compact[bar + 2 : name_end]
+    attrs_end = compact.index(")", name_end)
+    attrs = compact[name_end + 1 : attrs_end]
+    pos = attrs_end + 1
+    if compact[pos] != "(":
+        raise ValueError(f"expected children at {pos}")
+    pos += 1
+    children = []
+    while compact[pos] == "(":
+        child, pos = _read_node(compact, pos, depth + 1)
+        children.append(child)
+    pos = _after_closing_bracket(compact, pos)  # end of children
+    pos = _after_closing_bracket(compact, pos)  # end of node
+    return _Node(name, attrs, children), pos
+
+
+def _after_closing_bracket(compact: str, pos: int) -> int:
+    if compact[pos] != ")":
+        raise ValueError(f"expected ')' at {pos}")
+    return pos + 1
 
 
 def _attrs(text: str) -> dict[str, str]:
@@ -307,6 +312,23 @@ class WorkCalendar:
         return float("nan") if pd.isna(h) else float(hours_to_days(h, self.hours_per_day))
 
 
+_Block = tuple[np.ndarray, np.ndarray, np.ndarray]  # days of the window, start and end minute of a period on each
+
+
+def _exception_blocks(dated: dict[int, Intervals]) -> list[_Block]:
+    """One block per working period of each exception day (a day off has none)."""
+    return [
+        (
+            np.array([day], dtype=np.int64),
+            np.array([day * MINUTES_PER_DAY + start], dtype=np.int64),
+            np.array([day * MINUTES_PER_DAY + end], dtype=np.int64),
+        )
+        for day, periods in dated.items()
+        for start, end in periods
+        if end > start
+    ]
+
+
 class TimeAxis:
     """One calendar's working periods on an absolute minute axis, for exact date arithmetic.
 
@@ -337,34 +359,34 @@ class TimeAxis:
     def _periods(self, first: date, last: date) -> tuple[np.ndarray, np.ndarray]:
         """Working periods of [first, last] as minute offsets from ``first``, in day order then
         period order: the weekday pattern laid out with numpy, the exception days replaced."""
-        n_days = (last - first).days + 1
-        dated = {(d - first).days: periods for d, periods in self.cal.exceptions.items() if first <= d <= last}
+        day_count = (last - first).days + 1
+        # the exception days of the window, by their rank in it: they replace the weekday pattern
+        dated = {(day - first).days: periods for day, periods in self.cal.exceptions.items() if first <= day <= last}
+        blocks = [*self._weekday_blocks(first.weekday(), day_count, dated), *_exception_blocks(dated)]
+        if not blocks:
+            return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+        all_days = np.concatenate([days for days, _, _ in blocks])
+        all_starts = np.concatenate([starts for _, starts, _ in blocks])
+        all_ends = np.concatenate([ends for _, _, ends in blocks])
+        del blocks
+        order = np.lexsort((all_starts, all_days))
+        return all_starts[order], all_ends[order]
+
+    def _weekday_blocks(self, first_weekday: int, day_count: int, dated: dict[int, Intervals]) -> list[_Block]:
+        """One block per working period of each weekday: the days of the window that weekday falls
+        on, the exception days left out, with the start and the end of the period on each."""
         dated_days = np.fromiter(dated, dtype=np.int64, count=len(dated))
-        day_of, starts, ends = [], [], []
+        blocks = []
         for weekday in range(7):
-            periods = [(a, b) for a, b in self.cal.week[weekday] if b > a]
+            periods = [(start, end) for start, end in self.cal.week[weekday] if end > start]
             if not periods:
                 continue
-            on_days = np.arange((weekday - first.weekday()) % 7, n_days, 7, dtype=np.int64)
+            on_days = np.arange((weekday - first_weekday) % 7, day_count, 7, dtype=np.int64)
             if len(dated):
                 on_days = on_days[~np.isin(on_days, dated_days)]
             midnight = on_days * MINUTES_PER_DAY
-            for a, b in periods:
-                day_of.append(on_days)
-                starts.append(midnight + a)
-                ends.append(midnight + b)
-        for day, day_periods in dated.items():
-            for a, b in day_periods:
-                if b > a:
-                    day_of.append(np.array([day], dtype=np.int64))
-                    starts.append(np.array([day * MINUTES_PER_DAY + a], dtype=np.int64))
-                    ends.append(np.array([day * MINUTES_PER_DAY + b], dtype=np.int64))
-        if not starts:
-            return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
-        all_starts, all_ends, all_days = np.concatenate(starts), np.concatenate(ends), np.concatenate(day_of)
-        del starts, ends, day_of
-        order = np.lexsort((all_starts, all_days))
-        return all_starts[order], all_ends[order]
+            blocks += [(on_days, midnight + start, midnight + end) for start, end in periods]
+        return blocks
 
     def _check_range(self, first: date, last: date) -> None:
         if first < AXIS_FIRST_DATE or last > AXIS_LAST_DATE:

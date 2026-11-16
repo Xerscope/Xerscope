@@ -731,12 +731,12 @@
       "near_clones": 0
     },
     "xer/calendar.py": {
-      "mi": 26.7,
+      "mi": 25.4,
       "mi_rank": "A",
       "cc_max": 13,
       "cc_over_15": 0,
-      "cognitive_max": 19,
-      "cognitive_over_15": 2,
+      "cognitive_max": 15,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 2
     },
