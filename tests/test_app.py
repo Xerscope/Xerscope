@@ -1955,6 +1955,19 @@ def test_debug_costs_block_serialises_without_streamlit_fallback(tmp_path, monke
     assert not [m for m in fallbacks if "Arrow" in str(m)]
 
 
+def test_changelog_tables_keep_their_filters_under_their_own_names(app):
+    """Each table of the Changelog page is drawn with a key: its column filters are kept in the
+    session under that name, not under the file and line of the call. On the demo, the list of all
+    changes and the week-by-week table are long enough to carry filters; the table of categories
+    (3 rows) is not."""
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    inputs = [*app.text_input, *app.multiselect]
+    filter_keys = [widget.key for widget in inputs if (widget.key or "").startswith("filter:")]
+    assert {key.split(":")[1] for key in filter_keys} == {"changelog_all", "changelog_weekly"}
+    assert len(filter_keys) == len(set(filter_keys))
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
