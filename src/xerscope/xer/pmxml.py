@@ -23,6 +23,7 @@ from functools import partial
 
 import pandas as pd
 
+from .calendar import clndr_data_node
 from .parser import RawXer, XerError
 
 EXCEL_EPOCH = date(1899, 12, 30)  # CALENDAR.clndr_data dates are Excel serial numbers
@@ -148,7 +149,7 @@ def _work_periods(element: ET.Element, namespace: str) -> str:
         if not start or not finish:
             continue
         end = (datetime.strptime(finish[:5], "%H:%M") + timedelta(minutes=1)).strftime("%H:%M")  # 23:59 -> 00:00
-        periods.append(f"(0||{index}(s|{start}|f|{end})())")
+        periods.append(clndr_data_node(index, attributes=f"s|{start}|f|{end}"))
     return "".join(periods)
 
 
@@ -164,7 +165,9 @@ def _day_nodes(calendar: ET.Element, namespace: str) -> str:
         day_number = WEEKDAY_NUMBER.get(_text(standard_work_hours, namespace, "DayOfWeek"))
         if day_number:
             periods_by_day_number[day_number] = _work_periods(standard_work_hours, namespace)
-    return "".join(f"(0||{day_number}()({periods_by_day_number.get(day_number, '')}))" for day_number in range(1, 8))
+    return "".join(
+        clndr_data_node(day_number, children=periods_by_day_number.get(day_number, "")) for day_number in range(1, 8)
+    )
 
 
 def _exception_nodes(calendar: ET.Element, namespace: str) -> str:
@@ -178,15 +181,16 @@ def _exception_nodes(calendar: ET.Element, namespace: str) -> str:
         exception_date = _text(exception, namespace, "Date")[:10]
         if exception_date:
             excel_serial = (date.fromisoformat(exception_date) - EXCEL_EPOCH).days
-            nodes.append(f"(0||{index}(d|{excel_serial})({_work_periods(exception, namespace)}))")
+            periods = _work_periods(exception, namespace)
+            nodes.append(clndr_data_node(index, attributes=f"d|{excel_serial}", children=periods))
     return "".join(nodes)
 
 
 def _calendar_rows(root: ET.Element, namespace: str) -> list[dict]:
     rows = []
     for calendar in root.iter(namespace + "Calendar"):
-        days_of_week_node = f"(0||DaysOfWeek()({_day_nodes(calendar, namespace)}))"
-        exceptions_node = f"(0||Exceptions()({_exception_nodes(calendar, namespace)}))"
+        days_of_week_node = clndr_data_node("DaysOfWeek", children=_day_nodes(calendar, namespace))
+        exceptions_node = clndr_data_node("Exceptions", children=_exception_nodes(calendar, namespace))
         rows.append(
             {
                 "clndr_id": _text(calendar, namespace, "ObjectId"),
@@ -199,7 +203,7 @@ def _calendar_rows(root: ET.Element, namespace: str) -> list[dict]:
                 "week_hr_cnt": _text(calendar, namespace, "HoursPerWeek"),
                 "month_hr_cnt": _text(calendar, namespace, "HoursPerMonth"),
                 "year_hr_cnt": _text(calendar, namespace, "HoursPerYear"),
-                "clndr_data": f"(0||CalendarData()({days_of_week_node}{exceptions_node}))",
+                "clndr_data": clndr_data_node("CalendarData", children=days_of_week_node + exceptions_node),
             }
         )
     return rows
