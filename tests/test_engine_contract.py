@@ -21,9 +21,9 @@ import random
 
 import pytest
 from test_cpm_properties import random_network
-from xerkit import CONSTRAINT_TYPES, snap
+from xerkit import CONSTRAINT_TYPES, hours, snap, todo
 
-from xerscope.analysis.cpm import CycleError, ScheduleError, schedule
+from xerscope.analysis.cpm import MAX_HOURS, CycleError, ScheduleError, schedule
 from xerscope.xer import XerError
 
 pytestmark = pytest.mark.oracle("property")
@@ -129,3 +129,25 @@ def test_a_damaged_network_is_scheduled_or_refused_by_name(seed, damage):
         return
     assert damage not in ("loop", "self link"), (seed, damage, "a logic loop was scheduled")
     assert len(result.frame) and result.frame["ef"].notna().all(), (seed, damage, "an activity without a date")
+
+
+@pytest.mark.parametrize("delay_hr", [MAX_HOURS + 1, 1e30, float("inf"), float("-inf"), float("nan"), -MAX_HOURS - 1])
+def test_a_delay_out_of_range_is_refused_by_naming_the_delayed_activity(delay_hr):
+    """A delay asked of ``schedule`` follows the rule of a remaining duration or a lag: not finite,
+    or beyond ``MAX_HOURS``, it is refused before the passes run and the refusal names the
+    activity that was to be delayed, and only that one."""
+    snapshot = snap([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)])
+    with pytest.raises(ScheduleError, match="delay") as refused:
+        schedule(snapshot, extra_hours={"A": 8.0, "B": delay_hr})
+    assert refused.value.members == ("B",)
+
+
+def test_a_delay_at_the_limit_is_not_refused_as_a_delay():
+    """``MAX_HOURS`` itself passes the guard, as it does for a duration: what stops the run then is
+    the date, past the year the time axis holds, and that refusal names no activity."""
+    snapshot = snap([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)])
+    with pytest.raises(ScheduleError, match="schedulable range") as refused:
+        schedule(snapshot, extra_hours={"B": MAX_HOURS})
+    assert refused.value.members == ()
+    delayed = schedule(snapshot, extra_hours={"B": 8.0})
+    assert delayed.frame.at["B", "ef"] > schedule(snapshot).frame.at["B", "ef"]
