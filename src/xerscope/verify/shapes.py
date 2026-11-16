@@ -27,31 +27,39 @@ def shapes(snapshot: Snapshot) -> pd.Series:
     """One label per activity (indexed by task_code)."""
     activities = snapshot.by_code
     relationships = snapshot.relationships
-    predecessors = relationships.groupby("succ_code")["type"].agg(join_unique)
-    successors = relationships.groupby("pred_code")["type"].agg(join_unique)
+    predecessor_types = relationships.groupby("succ_code")["type"].agg(join_unique)
+    successor_types = relationships.groupby("pred_code")["type"].agg(join_unique)
     lagged_links = relationships[relationships["lag_hr"] != 0]
     lagged = set(lagged_links["succ_code"]) | set(lagged_links["pred_code"])
-    option = snapshot.options.get("progressed", "retained_logic").replace("_", " ")
+    progressed_option = snapshot.options.get("progressed", "retained_logic").replace("_", " ")
 
-    def label(code: str) -> str:
-        row = activities.loc[code]
-        parts = [str(row["status"]).lower(), str(row["type"]).lower()]
-        for constraint_column in ("cstr_type", "cstr_type2"):
-            constraint = row.get(constraint_column)
-            if isinstance(constraint, str) and constraint:
-                label = CONSTRAINT.get(constraint)
-                parts.append(label.lower() if label else constraint)
-        if row.get("expect_end_date") is not None and pd.notna(row.get("expect_end_date")):
+    def shape(code: str) -> str:
+        activity = activities.loc[code]
+        parts = [str(activity["status"]).lower(), str(activity["type"]).lower()]
+        parts += _constraint_names(activity)
+        if pd.notna(activity.get("expect_end_date")):
             parts.append("expected finish")
-        parts.append(f"pred {predecessors.get(code, 'none')}")
-        parts.append(f"succ {successors.get(code, 'none')}")
+        parts.append(f"pred {predecessor_types.get(code, 'none')}")
+        parts.append(f"succ {successor_types.get(code, 'none')}")
         if code in lagged:
             parts.append("lag")
-        if row.get("is_started") and option != "retained logic":
-            parts.append(option)
+        if activity.get("is_started") and progressed_option != "retained logic":
+            parts.append(progressed_option)
         return " · ".join(parts)
 
-    return pd.Series({code: label(code) for code in activities.index}, name="shape")
+    return pd.Series({code: shape(code) for code in activities.index}, name="shape")
+
+
+def _constraint_names(activity: pd.Series) -> list[str]:
+    """Name the primary and the secondary constraint of an activity; a code P6 does not list is
+    kept as it is."""
+    names = []
+    for column in ("cstr_type", "cstr_type2"):
+        code = activity.get(column)
+        if isinstance(code, str) and code:
+            name = CONSTRAINT.get(code)
+            names.append(name.lower() if name else code)
+    return names
 
 
 def count_wrong(agree: pd.Series) -> int:
