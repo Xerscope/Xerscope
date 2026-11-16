@@ -171,13 +171,13 @@ def _tasks_with_wrong_span(cpm_run, tasks, mpxj_by_task, unstarted_codes) -> set
     for code in unstarted_codes:
         axis = cpm_run.cal_ax[code]
         # whole minutes, as TimeAxis.at rounds them: 8.2 h * 60 is 491.99999999999994, not 492
-        remaining_min = round(float(tasks.at[code, "remain_drtn_hr_cnt"] or 0) * 60)
+        remaining_minutes = round(float(tasks.at[code, "remain_drtn_hr_cnt"] or 0) * 60)
         early_start, early_finish, late_start, late_finish = (
             pd.Timestamp(mpxj_by_task.at[code, field]) for field in ("es", "ef", "ls", "lf")
         )
         if (
-            axis.work(early_finish) - axis.work(early_start) != remaining_min
-            or axis.work(late_finish) - axis.work(late_start) != remaining_min
+            axis.work(early_finish) - axis.work(early_start) != remaining_minutes
+            or axis.work(late_finish) - axis.work(late_start) != remaining_minutes
         ):
             wrong_span_codes.add(code)
     return wrong_span_codes
@@ -188,8 +188,8 @@ def _links_between_unstarted(cpm_run, mpxj_by_task, unstarted_codes) -> list[tup
     links = []
     for successor in unstarted_codes:
         links += [
-            (predecessor, successor, link_type, lag_min)
-            for predecessor, link_type, lag_min in cpm_run.preds[successor]
+            (predecessor, successor, link_type, lag_minutes)
+            for predecessor, link_type, lag_minutes in cpm_run.preds[successor]
             if predecessor in mpxj_by_task.index and predecessor in unstarted_codes
         ]
     return links
@@ -198,11 +198,11 @@ def _links_between_unstarted(cpm_run, mpxj_by_task, unstarted_codes) -> list[tup
 def _successors_of_violated_links(cpm_run, mpxj_by_task, links) -> set[str]:
     """Successors whose MPXJ date is earlier than the link and its lag allow."""
     violated_successors: set[str] = set()
-    for predecessor, successor, link_type, lag_min in links:
+    for predecessor, successor, link_type, lag_minutes in links:
         lag_axis = cpm_run.lag_axis(predecessor, successor)
         from_date = pd.Timestamp(mpxj_by_task.at[predecessor, "ef" if link_type in ("FS", "FF") else "es"])
         to_date = pd.Timestamp(mpxj_by_task.at[successor, "es" if link_type in ("FS", "SS") else "ef"])
-        if lag_axis.work(to_date) < lag_axis.work(from_date) + round(lag_min):
+        if lag_axis.work(to_date) < lag_axis.work(from_date) + round(lag_minutes):
             violated_successors.add(successor)
     return violated_successors
 
@@ -276,7 +276,10 @@ def _normalise_tasks(mpxj_project, mpxj_properties) -> None:
 
 
 def _set_start_milestone_type(mpxj_task) -> None:
-    """Read a task with no activity type (the non-standard TT_StartMile) as a start milestone."""
+    """Read an activity with no activity type (the non-standard TT_StartMile) as a start milestone.
+
+    A WBS node has no activity type either and keeps none: MPXJ reads it as a summary task.
+    """
     from org.mpxj import ActivityType
 
     if mpxj_task.getActivityType() is None and not mpxj_task.getSummary():
@@ -325,7 +328,10 @@ def _duration_hr(mpxj_duration, mpxj_properties) -> float:
 
 
 def _schedule_rows(mpxj_project, mpxj_properties) -> dict[str, dict]:
-    """Scheduled dates and floats of each activity by activity id; WBS summaries are left out."""
+    """Scheduled dates and floats by activity id; activities of type WBS Summary are left out.
+
+    A WBS node has a row too, under its WBS code: MPXJ gives it that code as activity id.
+    """
     rows = {}
     for mpxj_task in mpxj_project.getTasks():
         if mpxj_task.getActivityID() is None or str(mpxj_task.getActivityType()) == "WBS_SUMMARY":

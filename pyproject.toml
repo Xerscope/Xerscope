@@ -182,7 +182,6 @@ convention = "pep257"
 "src/xerscope/export.py" = ["D103", "D205", "D209", "D401"]
 "src/xerscope/sample.py" = ["D101", "D103", "D401"]
 "src/xerscope/store.py" = ["D101", "D102", "D105", "D107"]
-"src/xerscope/verify/mpxj_cpm.py" = ["D103"]
 "src/xerscope/verify/mpxj_reader.py" = ["D401"]
 "src/xerscope/verify/p6_corpus.py" = ["D205", "D209"]
 "src/xerscope/verify/shapes.py" = ["D103", "D205", "D209"]
