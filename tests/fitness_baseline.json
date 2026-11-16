@@ -741,12 +741,12 @@
       "near_clones": 2
     },
     "xer/model.py": {
-      "mi": 8.0,
+      "mi": 7.4,
       "mi_rank": "C",
-      "cc_max": 17,
-      "cc_over_15": 1,
-      "cognitive_max": 21,
-      "cognitive_over_15": 3,
+      "cc_max": 13,
+      "cc_over_15": 0,
+      "cognitive_max": 15,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },

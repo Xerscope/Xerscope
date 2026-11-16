@@ -719,22 +719,38 @@ class _BuildInputs:
         return self.settings.default_hours_per_day
 
 
+WBS_COLUMNS_OF_A_FILE_WITHOUT_WBS = [
+    "wbs_id",
+    "wbs_code",
+    "wbs_name",
+    "wbs_l1",
+    "wbs_sort",
+    "ev_compute_type",
+    "ev_user_pct",
+    "ev_etc_compute_type",
+    "ev_etc_user_value",
+]
+
+
+def _wbs_lineage(wbs_id: str, parent: dict, is_project_node: dict) -> tuple[list[str], list[str]]:
+    """The nodes from the top level down to ``wbs_id``, the project node left out; and, when the
+    way up comes back on a node already passed, the nodes of that loop."""
+    chain: list[str] = []
+    seen: set[str] = set()
+    while wbs_id in parent and wbs_id not in seen:
+        seen.add(wbs_id)
+        if is_project_node[wbs_id]:
+            break
+        chain.append(wbs_id)
+        wbs_id = parent[wbs_id]
+    looping = chain[chain.index(wbs_id) :] if wbs_id in seen and not is_project_node[wbs_id] else []
+    return chain[::-1], looping
+
+
 def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.DataFrame, str | None]:
     wbs = raw.table("PROJWBS")
     if wbs.empty:
-        return pd.DataFrame(
-            columns=[
-                "wbs_id",
-                "wbs_code",
-                "wbs_name",
-                "wbs_l1",
-                "wbs_sort",
-                "ev_compute_type",
-                "ev_user_pct",
-                "ev_etc_compute_type",
-                "ev_etc_user_value",
-            ]
-        ), None
+        return pd.DataFrame(columns=WBS_COLUMNS_OF_A_FILE_WITHOUT_WBS), None
     _require(wbs, raw.source, "PROJWBS", ["proj_id", "wbs_id"])
     _unique(wbs, raw.source, "PROJWBS", "wbs_id")
     wbs = wbs[wbs["proj_id"] == project_id]
@@ -766,24 +782,11 @@ def _wbs_frame(raw: RawXer, project_id: str, warnings: list[str]) -> tuple[pd.Da
     sequence = to_number(by_id["seq_num"]).fillna(0).astype(int).to_dict()
 
     in_loop: set[str] = set()  # P6 refuses a hierarchy loop (error PRM 009009044): a damaged file
-
-    def lineage(wbs_id: str) -> list[str]:
-        chain: list[str] = []
-        seen: set[str] = set()
-        while wbs_id in parent and wbs_id not in seen:
-            seen.add(wbs_id)
-            if is_project_node[wbs_id]:
-                break
-            chain.append(wbs_id)
-            wbs_id = parent[wbs_id]
-        if wbs_id in seen and not is_project_node[wbs_id]:
-            in_loop.update(chain[chain.index(wbs_id) :])
-        return chain[::-1]
-
     sequence = validate.bounded_sequence(by_id["seq_num"], "PROJWBS", raw.source, warnings)
     codes, top_levels, sort_keys = [], [], []
     for wbs_id in wbs["wbs_id"]:
-        chain = lineage(wbs_id)
+        chain, looping = _wbs_lineage(wbs_id, parent, is_project_node)
+        in_loop.update(looping)
         codes.append(".".join(short_name[element] for element in chain))
         # P6 orders WBS siblings by seq_num, not alphabetically. The key sorts as text, which holds
         # for 0-999999 (the reference exports: 0-26381); a negative or 7-digit seq_num would not.
@@ -897,29 +900,37 @@ def _default_project(projects: pd.DataFrame, copies: set[str]) -> tuple[pd.Serie
     rows = [row for _, row in projects.iterrows()]  # file order
     if len(rows) == 1:
         return rows[0], "only project"
-    pool = [row for row in rows if row["proj_id"] not in copies]
-    if pool:
-        keys: list[tuple[int | pd.Timestamp, ...]] = [
-            (row["_n"], _data_date(row)[0] or pd.Timestamp.min) for row in pool
-        ]
-        names = ["most TASK rows", "latest data date"]
-    else:
+    not_copies = [row for row in rows if row["proj_id"] not in copies]
+    every_project_a_copy = not not_copies
+    keys: list[tuple[int | pd.Timestamp, ...]]
+    if every_project_a_copy:
         pool = rows
         keys = [(row["_n"],) for row in pool]
         names = ["most TASK rows"]
+    else:
+        pool = not_copies
+        keys = [(row["_n"], _data_date(row)[0] or pd.Timestamp.min) for row in pool]
+        names = ["most TASK rows", "latest data date"]
     # sorted is stable, reverse included: projects with the same keys keep their file order
     order = sorted(range(len(pool)), key=keys.__getitem__, reverse=True)
     best = order[0]
     if len(pool) == 1:
         return pool[best], "only project not a baseline copy"
-    differs = [n for n, a, b in zip(names, keys[best], keys[order[1]], strict=True) if a != b]
-    rule = differs[0] if differs else "first in file"
+    rule = _deciding_rule(names, keys[best], keys[order[1]])
     set_aside = len(rows) - len(pool)
-    if pool is rows and copies:
+    if every_project_a_copy:
         rule += ", every project a baseline copy"
     elif set_aside:
         rule += f", {set_aside} baseline cop{'y' if set_aside == 1 else 'ies'} set aside"
     return pool[best], rule
+
+
+def _deciding_rule(names: list[str], best_key: tuple, second_key: tuple) -> str:
+    """The name of the first key on which the project picked and the next one differ."""
+    for name, best_value, second_value in zip(names, best_key, second_key, strict=True):
+        if best_value != second_value:
+            return name
+    return "first in file"
 
 
 def _select_project(
@@ -1038,6 +1049,25 @@ def _calendars(
     return calendars.drop(columns=["clndr_data"]), hours_per_day, work_calendars  # parsed above; the blob is large
 
 
+def _base_chain(
+    clndr_id: str, base_of: dict[str, str], work_calendars: dict[str, WorkCalendar], source: str, warnings: list[str]
+) -> list[str]:
+    """A calendar, its base, the base's base... The chain stops, with a warning, on a base that
+    is not in the file or that is already in the chain."""
+    chain = [clndr_id]
+    base = base_of.get(clndr_id)
+    while base is not None:
+        if base in chain:
+            warnings.append(f"{source}: calendar {clndr_id}: loop of base calendars {[*chain, base]}")
+            break
+        if base not in work_calendars:
+            warnings.append(f"{source}: calendar {chain[-1]}: base calendar {base} is not in the file")
+            break
+        chain.append(base)
+        base = base_of.get(base)
+    return chain
+
+
 def _inherit_base_exceptions(
     calendars: pd.DataFrame, work_calendars: dict[str, WorkCalendar], source: str, warnings: list[str]
 ) -> dict[str, WorkCalendar]:
@@ -1062,17 +1092,7 @@ def _inherit_base_exceptions(
     }
     out = dict(work_calendars)
     for clndr_id, calendar in work_calendars.items():
-        chain = [clndr_id]  # the calendar, its base, the base's base...
-        base = base_of.get(clndr_id)
-        while base is not None:
-            if base in chain:
-                warnings.append(f"{source}: calendar {clndr_id}: loop of base calendars {[*chain, base]}")
-                break
-            if base not in work_calendars:
-                warnings.append(f"{source}: calendar {chain[-1]}: base calendar {base} is not in the file")
-                break
-            chain.append(base)
-            base = base_of.get(base)
+        chain = _base_chain(clndr_id, base_of, work_calendars, source, warnings)
         exceptions: dict = {}
         for member in reversed(chain):  # the farthest base first, the calendar's own last
             exceptions.update(work_calendars[member].exceptions)
