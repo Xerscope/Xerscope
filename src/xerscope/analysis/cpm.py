@@ -312,7 +312,8 @@ def schedule(
 
     Raises ``CycleError`` on a logic loop and ``ScheduleError`` (its base) when a remaining
     duration, a lag, an assignment duration or a delay of ``extra_hours`` is not finite or exceeds
-    ``MAX_HOURS``.
+    ``MAX_HOURS``, or when the file holds no date to schedule from. The dates and the lags are
+    checked before the loops are looked for, the durations after.
 
     ``base``: the plain recalculation, given with ``extra_hours``. A delayed activity then drops
     its expected finish, which would absorb the delay, and runs its remaining duration in
@@ -395,7 +396,7 @@ class _Run:
                 else pd.Series(dtype="datetime64[ns]")
             )
             if stamps.empty:
-                raise ValueError("no status date, no planned start and no task date: nothing to schedule from")
+                raise ScheduleError("no status date, no planned start and no task date: nothing to schedule from")
             known = [stamps.min()]
             self.warnings.append(
                 f"no status date or planned start: scheduled from the earliest task date {known[0]:%Y-%m-%d %H:%M}"

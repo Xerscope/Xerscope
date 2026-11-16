@@ -124,14 +124,16 @@ def int_04_relationship_loops(context) -> RuleOutput:
     Excludes: tasks downstream of a loop, level of effort (its links are not part of the network).
 
     Mirrors the P6 log error 'Tasks that have invalid relationship loops'. The loop is found by the
-    CPM's topological pass (analysis/cpm.py), narrowed to the tasks that lie on a loop.
+    CPM's topological pass (analysis/cpm.py), narrowed to the tasks that lie on a loop. When the
+    engine refuses the file before that pass (no date, a lag out of range), there is no count:
+    the note says why.
     """
     try:
         schedule(context.snapshot)
     except CycleError as exc:
         members = list(exc.members)
-    except ScheduleError:  # unschedulable for another reason (a duration or lag out of range): no loop found
-        members = []
+    except ScheduleError as exc:  # refused before the loops were looked for: there is no count to give
+        return RuleOutput(note=f"cannot schedule: {exc}")
     else:
         members = []
     funnel = activity_funnel(context.snapshot)
