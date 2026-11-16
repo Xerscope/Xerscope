@@ -31,7 +31,7 @@ from xerscope.analysis.evm import (
     pv_p6_comparison,
 )
 from xerscope.analysis.rules import RULES
-from xerscope.analysis.standards import Standard
+from xerscope.analysis.standards import Standard, builtin_standards
 from xerscope.app.ui import as_dates
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.calendar import Intervals
@@ -346,6 +346,15 @@ def assignments_table(snapshot: Snapshot) -> pd.DataFrame:
     assignments = snapshot.assignments.astype({"taskrsrc_id": str}).set_index("taskrsrc_id")
     inputs = assignments.loc[out.index, [column for column in ASSIGNMENT_INPUT_COLS if column in assignments]]
     return out.join(inputs).reset_index()
+
+
+def own_text() -> dict[str, frozenset[str]]:
+    """Per table of the Debug zip, the column names and cells that come from the package alone: the
+    check parameters of the packaged P6 standard. ``Anonymizer.zip_frames`` writes them as they are;
+    a cell a custom standard or a changed target writes differently is checked like any other."""
+    packaged = check_parameters(builtin_standards()["P6"])
+    cells = (str(value) for value in packaged.astype(str).to_numpy().ravel())
+    return {"04_check_parameters": frozenset([*map(str, packaged.columns), *cells])}
 
 
 def check_parameters(standard: Standard) -> pd.DataFrame:

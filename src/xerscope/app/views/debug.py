@@ -349,7 +349,8 @@ def build_diagnostic(anonymous: bool) -> None:
                 ),
                 "05_guid_match": guid_match,
                 **p6_frames,
-            }
+            },
+            diagnostic.own_text(),
         ),
         sources,
         prepare=True,

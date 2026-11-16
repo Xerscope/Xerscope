@@ -1326,6 +1326,16 @@ def test_debug_block_6_lists_the_leveled_activities_anonymised(tmp_path, monkeyp
     _assert_anonymised(tables, at.session_state["store"], _session_anonymizer(at))
 
 
+def test_debug_zip_is_written_when_an_activity_code_value_is_a_word_of_a_check_name(tmp_path, monkeypatch, downloads):
+    """An activity code value "Late" is a word of the packaged check "P6-12 · Late Activities": the
+    anonymized zip is written all the same, block 4 with the packaged names."""
+    (tmp_path / "w1.xer").write_text(xer_text([{"task_code": "PLAIN-1"}], codes=[("PLAIN-1", "Phase", "Late")]))
+    at = _run(tmp_path, monkeypatch)
+    tables = _debug_zip(at, downloads)
+    assert _session_anonymizer(at).secrets_["Late"] == "ACTVCODE.short_name"  # the file's value is still kept out
+    assert "P6-12 · Late Activities" in tables["04_check_parameters.csv"]["check"].tolist()
+
+
 def test_debug_page_shows_the_export_version(tmp_path, monkeypatch, downloads):
     """Block 1 lists the ERMHDR version and product with the rule applied; the anonymised zip keeps the row."""
     header = "26.8\t2026-03-02\tProject\tadmin\tPlanner\tdbxDatabaseNoName\tProject Management Cloud\tEUR"

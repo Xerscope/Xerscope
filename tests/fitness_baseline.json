@@ -361,8 +361,8 @@
       "near_clones": 0
     },
     "anonymize.py": {
-      "mi": 9.0,
-      "mi_rank": "B",
+      "mi": 8.4,
+      "mi_rank": "C",
       "cc_max": 13,
       "cc_over_15": 0,
       "cognitive_max": 15,
@@ -381,7 +381,7 @@
       "near_clones": 0
     },
     "app/diagnostic.py": {
-      "mi": 19.9,
+      "mi": 19.8,
       "mi_rank": "A",
       "cc_max": 13,
       "cc_over_15": 0,
@@ -491,7 +491,7 @@
       "near_clones": 0
     },
     "app/views/debug.py": {
-      "mi": 40.3,
+      "mi": 38.0,
       "mi_rank": "A",
       "cc_max": 2,
       "cc_over_15": 0,
