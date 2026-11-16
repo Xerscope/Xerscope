@@ -58,71 +58,88 @@ P6_SETTLED = {
 }
 
 
-def settled_patterns(snap) -> set[str]:
-    """Keys of P6_SETTLED present in ``snap``: MPXJ is known to differ from P6 there."""
-    t = snap.by_code
-    st, r = t["status_code"], snap.relationships
-    p, s = r["pred_code"].map(st), r["succ_code"].map(st)
-    out = set()
-    if ((r["type"] == "SF") & (p == "TK_Active") & (s == "TK_NotStart")).any():
-        out.add("sf_from_started")
-    retained = snap.options.get("progressed", "retained_logic") == "retained_logic"
-    if retained and ((s == "TK_Complete") & (p != "TK_Complete") & (r["lag_hr"] != 0)).any():
-        out.add("lag_to_finished_successor")
-    if (snap.options.get("sched") or {}).get("sched_use_expect_end_flag", "Y") != "N" and "expect_end_date" in t:
-        exp = t["expect_end_date"]
-        has = exp.notna() & (t["task_type"] == "TT_Task") & (t["status_code"] != "TK_Complete")
-        linked = t.index.isin(r.loc[r["type"].isin(["FF", "SF"]), "succ_code"])
-        before_dd = (exp < snap.data_date) if snap.data_date is not None else False
-        if (has & (linked | before_dd)).any():
-            out.add("expected_finish_edge")
-    return out
+def settled_patterns(snapshot) -> set[str]:
+    """Keys of P6_SETTLED present in ``snapshot``: MPXJ is known to differ from P6 there."""
+    tasks = snapshot.by_code
+    task_status = tasks["status_code"]
+    links = snapshot.relationships
+    predecessor_status = links["pred_code"].map(task_status)
+    successor_status = links["succ_code"].map(task_status)
+    patterns = set()
+    if ((links["type"] == "SF") & (predecessor_status == "TK_Active") & (successor_status == "TK_NotStart")).any():
+        patterns.add("sf_from_started")
+    is_retained_logic = snapshot.options.get("progressed", "retained_logic") == "retained_logic"
+    if (
+        is_retained_logic
+        and ((successor_status == "TK_Complete") & (predecessor_status != "TK_Complete") & (links["lag_hr"] != 0)).any()
+    ):
+        patterns.add("lag_to_finished_successor")
+    uses_expected_end = (snapshot.options.get("sched") or {}).get("sched_use_expect_end_flag", "Y") != "N"
+    if uses_expected_end and "expect_end_date" in tasks:
+        expected_end = tasks["expect_end_date"]
+        has_expected_end = (
+            expected_end.notna() & (tasks["task_type"] == "TT_Task") & (tasks["status_code"] != "TK_Complete")
+        )
+        is_ff_sf_successor = tasks.index.isin(links.loc[links["type"].isin(["FF", "SF"]), "succ_code"])
+        ends_before_data_date = (expected_end < snapshot.data_date) if snapshot.data_date is not None else False
+        if (has_expected_end & (is_ff_sf_successor | ends_before_data_date)).any():
+            patterns.add("expected_finish_edge")
+    return patterns
 
 
-def unresolved_patterns(snap) -> set[str]:
-    """Keys of UNRESOLVED present in ``snap`` (network-wide: a difference propagates)."""
-    t = snap.by_code
-    st, r = t["status_code"], snap.relationships
-    p, s = r["pred_code"].map(st), r["succ_code"].map(st)
-    out = set()
-    if ((r["type"].isin(["FF", "SF"])) & (r["lag_hr"] != 0) & (p == "TK_Complete")).any():
-        out.add("ff_sf_lag_from_finished")
-    if ((r["type"] == "SF") & ((s != "TK_NotStart") | (p == "TK_Complete"))).any():
-        out.add("sf_progressed")
-    lead = r["lag_hr"] < 0
-    if (lead & ((p == "TK_Complete") | ((p == "TK_Active") & r["type"].isin(["FS", "FF"])))).any():
-        out.add("lead_from_progressed")
-    if ((r["type"] != "FS") & (p == "TK_Complete") & (s == "TK_Active")).any():
-        out.add("finished_into_started")
-    a = snap.assignments
-    if not a.empty:
-        rsrc = a[a["task_code"].map(t["task_type"]).eq("TT_Rsrc") & a["driving"].astype(bool)]
-        own = rsrc["task_code"].map(t["clndr_id"]).astype(str)
-        cal = rsrc["rsrc_clndr_id"].astype(str)
-        if ((cal != "") & (cal != own)).any():
-            out.add("rsrc_calendar")
-        if (rsrc["relag_drtn_hr_cnt"].fillna(0) != 0).any():
-            out.add("assignment_lag")
-    return out
+def unresolved_patterns(snapshot) -> set[str]:
+    """Keys of UNRESOLVED present in ``snapshot`` (network-wide: a difference propagates)."""
+    tasks = snapshot.by_code
+    task_status = tasks["status_code"]
+    links = snapshot.relationships
+    predecessor_status = links["pred_code"].map(task_status)
+    successor_status = links["succ_code"].map(task_status)
+    patterns = set()
+    if ((links["type"].isin(["FF", "SF"])) & (links["lag_hr"] != 0) & (predecessor_status == "TK_Complete")).any():
+        patterns.add("ff_sf_lag_from_finished")
+    if ((links["type"] == "SF") & ((successor_status != "TK_NotStart") | (predecessor_status == "TK_Complete"))).any():
+        patterns.add("sf_progressed")
+    is_lead = links["lag_hr"] < 0
+    if (
+        is_lead
+        & (
+            (predecessor_status == "TK_Complete")
+            | ((predecessor_status == "TK_Active") & links["type"].isin(["FS", "FF"]))
+        )
+    ).any():
+        patterns.add("lead_from_progressed")
+    if ((links["type"] != "FS") & (predecessor_status == "TK_Complete") & (successor_status == "TK_Active")).any():
+        patterns.add("finished_into_started")
+    assignments = snapshot.assignments
+    if not assignments.empty:
+        is_resource_dependent = assignments["task_code"].map(tasks["task_type"]).eq("TT_Rsrc")
+        resource_dependent = assignments[is_resource_dependent & assignments["driving"].astype(bool)]
+        activity_calendar_id = resource_dependent["task_code"].map(tasks["clndr_id"]).astype(str)
+        resource_calendar_id = resource_dependent["rsrc_clndr_id"].astype(str)
+        if ((resource_calendar_id != "") & (resource_calendar_id != activity_calendar_id)).any():
+            patterns.add("rsrc_calendar")
+        if (resource_dependent["relag_drtn_hr_cnt"].fillna(0) != 0).any():
+            patterns.add("assignment_lag")
+    return patterns
 
 
-def excused_row(snap, task_code: str, field: str) -> str | None:
+def excused_row(snapshot, task_code: str, field: str) -> str | None:
     """UNRESOLVED key for a single value that differs for a known reason, else None."""
     if field != "ff_hr":
         return None
-    r = snap.relationships
-    if ((r["pred_code"] == task_code) & (r["lag_hr"] < 0)).any():
+    links = snapshot.relationships
+    if ((links["pred_code"] == task_code) & (links["lag_hr"] < 0)).any():
         return "free_float_lead"
-    t = snap.activities.set_index("task_code")
-    if task_code in t.index and {t.at[task_code, "cstr_type"], t.at[task_code, "cstr_type2"]} & {
-        "CS_MANDSTART",
-        "CS_MANDFIN",
-    }:
+    activities = snapshot.activities.set_index("task_code")
+    if task_code in activities.index and {
+        activities.at[task_code, "cstr_type"],
+        activities.at[task_code, "cstr_type2"],
+    } & {"CS_MANDSTART", "CS_MANDFIN"}:
         return "free_float_mandatory"
     return None
 
 
-def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
+def mpxj_inconsistent(snapshot, comparison: pd.DataFrame) -> set[str]:
     """Unstarted tasks where MPXJ's dates contradict themselves or the logic.
 
     Seen in MPXJ 16.10 / master 8c4f646 with constraints: the early finish is not
@@ -135,26 +152,59 @@ def mpxj_inconsistent(snap, cmp: pd.DataFrame) -> set[str]:
     """
     from ..analysis.cpm import Options, _Run
 
-    run = _Run(snap, {}, Options.from_snapshot(snap))
-    t = snap.by_code
-    m = cmp.pivot_table(index="task_code", columns="field", values="mpxj", aggfunc="first")
-    out: set[str] = set()
-    todo = [c for c in m.index if t.at[c, "task_type"] == "TT_Task" and t.at[c, "status_code"] == "TK_NotStart"]
-    for c in todo:
-        ax = run.cal_ax[c]
+    cpm_run = _Run(snapshot, {}, Options.from_snapshot(snapshot))
+    tasks = snapshot.by_code
+    mpxj_by_task = comparison.pivot_table(index="task_code", columns="field", values="mpxj", aggfunc="first")
+    unstarted_codes = [
+        code
+        for code in mpxj_by_task.index
+        if tasks.at[code, "task_type"] == "TT_Task" and tasks.at[code, "status_code"] == "TK_NotStart"
+    ]
+    wrong_span_codes = _tasks_with_wrong_span(cpm_run, tasks, mpxj_by_task, unstarted_codes)
+    links = _links_between_unstarted(cpm_run, mpxj_by_task, unstarted_codes)
+    return wrong_span_codes | _successors_of_violated_links(cpm_run, mpxj_by_task, links)
+
+
+def _tasks_with_wrong_span(cpm_run, tasks, mpxj_by_task, unstarted_codes) -> set[str]:
+    """Tasks whose MPXJ early or late span, in working minutes, is not the remaining duration."""
+    wrong_span_codes: set[str] = set()
+    for code in unstarted_codes:
+        axis = cpm_run.cal_ax[code]
         # whole minutes, as TimeAxis.at rounds them: 8.2 h * 60 is 491.99999999999994, not 492
-        d = round(float(t.at[c, "remain_drtn_hr_cnt"] or 0) * 60)
-        es, ef, ls, lf = (pd.Timestamp(m.at[c, k]) for k in ("es", "ef", "ls", "lf"))
-        if ax.work(ef) - ax.work(es) != d or ax.work(lf) - ax.work(ls) != d:
-            out.add(c)
-    links = [(p, succ, typ, lag) for succ in todo for p, typ, lag in run.preds[succ] if p in m.index and p in todo]
-    for p, s, typ, lag_m in links:
-        lx = run.lag_axis(p, s)
-        frm = pd.Timestamp(m.at[p, "ef" if typ in ("FS", "FF") else "es"])
-        to = pd.Timestamp(m.at[s, "es" if typ in ("FS", "SS") else "ef"])
-        if lx.work(to) < lx.work(frm) + round(lag_m):
-            out.add(s)
-    return out
+        remaining_minutes = round(float(tasks.at[code, "remain_drtn_hr_cnt"] or 0) * 60)
+        early_start, early_finish, late_start, late_finish = (
+            pd.Timestamp(mpxj_by_task.at[code, field]) for field in ("es", "ef", "ls", "lf")
+        )
+        if (
+            axis.work(early_finish) - axis.work(early_start) != remaining_minutes
+            or axis.work(late_finish) - axis.work(late_start) != remaining_minutes
+        ):
+            wrong_span_codes.add(code)
+    return wrong_span_codes
+
+
+def _links_between_unstarted(cpm_run, mpxj_by_task, unstarted_codes) -> list[tuple]:
+    """(predecessor, successor, link type, lag in minutes) of the links joining two compared unstarted tasks."""
+    links = []
+    for successor in unstarted_codes:
+        links += [
+            (predecessor, successor, link_type, lag_minutes)
+            for predecessor, link_type, lag_minutes in cpm_run.preds[successor]
+            if predecessor in mpxj_by_task.index and predecessor in unstarted_codes
+        ]
+    return links
+
+
+def _successors_of_violated_links(cpm_run, mpxj_by_task, links) -> set[str]:
+    """Successors whose MPXJ date is earlier than the link and its lag allow."""
+    violated_successors: set[str] = set()
+    for predecessor, successor, link_type, lag_minutes in links:
+        lag_axis = cpm_run.lag_axis(predecessor, successor)
+        from_date = pd.Timestamp(mpxj_by_task.at[predecessor, "ef" if link_type in ("FS", "FF") else "es"])
+        to_date = pd.Timestamp(mpxj_by_task.at[successor, "es" if link_type in ("FS", "SS") else "ef"])
+        if lag_axis.work(to_date) < lag_axis.work(from_date) + round(lag_minutes):
+            violated_successors.add(successor)
+    return violated_successors
 
 
 def mpxj_scheduler_source() -> str:
@@ -165,30 +215,31 @@ def mpxj_scheduler_source() -> str:
     return str(PrimaveraScheduler.class_.getProtectionDomain().getCodeSource().getLocation())
 
 
-def mpxj_unsupported(snap) -> list[str]:
-    """Scheduling options of ``snap`` that MPXJ's PrimaveraScheduler does not model."""
-    o = snap.options
-    s = o.get("sched", {}) or {}
-    out = []
-    if o.get("progressed") != "retained_logic":
-        out.append(f"progressed activities scheduled with {o.get('progressed')} (MPXJ: retained logic only)")
-    if s.get("sched_lag_early_start_flag", "Y") not in ("Y", ""):
-        out.append("SS lag from actual start (MPXJ: early start only)")
-    if s.get("sched_open_critical_flag", "N") == "Y":
-        out.append("open ends critical")
-    if not s.get("sched_calendar_on_relationship_lag"):
-        out.append("no lag calendar stated (P6 uses the successor's, MPXJ the predecessor's)")
-    if (s.get("sched_outer_depend_type") or "SD_Both") != "SD_Both":
-        out.append("relationships to other projects ignored")
-    a, t = snap.assignments, snap.activities
-    rsrc_dep = set(t.loc[(t["task_type"] == "TT_Rsrc") & ~t["is_complete"], "task_code"])
-    if not a.empty and (~a["driving"].astype(bool) & a["task_code"].isin(rsrc_dep)).any():
-        out.append("resource-dependent activity with a non-driving assignment (MPXJ lets every assignment drive)")
-    return out
-
-
-def _jdt(v) -> pd.Timestamp | None:
-    return None if v is None else pd.Timestamp(str(v))
+def mpxj_unsupported(snapshot) -> list[str]:
+    """Scheduling options of ``snapshot`` that MPXJ's PrimaveraScheduler does not model."""
+    options = snapshot.options
+    sched_options = options.get("sched", {}) or {}
+    reasons = []
+    if options.get("progressed") != "retained_logic":
+        reasons.append(f"progressed activities scheduled with {options.get('progressed')} (MPXJ: retained logic only)")
+    if sched_options.get("sched_lag_early_start_flag", "Y") not in ("Y", ""):
+        reasons.append("SS lag from actual start (MPXJ: early start only)")
+    if sched_options.get("sched_open_critical_flag", "N") == "Y":
+        reasons.append("open ends critical")
+    if not sched_options.get("sched_calendar_on_relationship_lag"):
+        reasons.append("no lag calendar stated (P6 uses the successor's, MPXJ the predecessor's)")
+    if (sched_options.get("sched_outer_depend_type") or "SD_Both") != "SD_Both":
+        reasons.append("relationships to other projects ignored")
+    assignments, activities = snapshot.assignments, snapshot.activities
+    resource_dependent_codes = set(
+        activities.loc[(activities["task_type"] == "TT_Rsrc") & ~activities["is_complete"], "task_code"]
+    )
+    if (
+        not assignments.empty
+        and (~assignments["driving"].astype(bool) & assignments["task_code"].isin(resource_dependent_codes)).any()
+    ):
+        reasons.append("resource-dependent activity with a non-driving assignment (MPXJ lets every assignment drive)")
+    return reasons
 
 
 def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataFrame:
@@ -200,49 +251,111 @@ def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataF
     from the stored dates), and the non-standard TT_StartMile is read as a start milestone.
     """
     reader = start_jvm()  # first: the org.mpxj imports below need the JVM running
-    from org.mpxj import ActivityType, Duration, TimeUnit
     from org.mpxj.cpm import PrimaveraScheduler
 
     path = Path(path)
     if project_code is None:
         project_code = build_snapshot(read_xer(path)).project_code
-    proj = read_project(reader, path, project_code)
-    props = proj.getProjectProperties()
-
-    def duration_hours(d) -> float:
-        return 0.0 if d is None else float(d.convertUnits(TimeUnit.HOURS, props).getDuration())
-
-    status = props.getStatusDate()
-    for t in proj.getTasks():
-        if t.getActivityID() is None:
-            continue
-        if t.getActivityType() is None and not t.getSummary():
-            t.setActivityType(ActivityType.START_MILESTONE)
-        a_s, a_f = t.getActualStart(), t.getActualFinish()
-        if a_s is not None and a_f is None and status is not None and t.getSuspendDate() is None:
-            # P6's actual duration: working time from the actual start to the data date (what
-            # MPXJ's own reader computes first, before deriving it again from stored dates)
-            end = status if status.isAfter(a_s) else a_s
-            t.setActualDuration(t.getEffectiveCalendar().getWork(a_s, end, TimeUnit.HOURS))
-        if t.getRemainingDuration() is not None:
-            total = duration_hours(t.getActualDuration()) + duration_hours(t.getRemainingDuration())
-            t.setDuration(Duration.getInstance(total, TimeUnit.HOURS))
-    PrimaveraScheduler().schedule(proj, props.getStartDate())
-    rows = {}
-    for t in proj.getTasks():
-        if t.getActivityID() is None or str(t.getActivityType()) == "WBS_SUMMARY":
-            continue
-        tf, ff = t.getTotalSlack(), t.getFreeSlack()
-        rows[str(t.getActivityID())] = {
-            "es": _jdt(t.getEarlyStart()),
-            "ef": _jdt(t.getEarlyFinish()),
-            "ls": _jdt(t.getLateStart()),
-            "lf": _jdt(t.getLateFinish()),
-            "tf_hr": None if tf is None else round(duration_hours(tf), 2),
-            "ff_hr": None if ff is None else round(duration_hours(ff), 2),
-            "complete": t.getActualFinish() is not None,
-        }
+    mpxj_project = read_project(reader, path, project_code)
+    mpxj_properties = mpxj_project.getProjectProperties()
+    _normalise_tasks(mpxj_project, mpxj_properties)
+    PrimaveraScheduler().schedule(mpxj_project, mpxj_properties.getStartDate())
+    rows = _schedule_rows(mpxj_project, mpxj_properties)
     return pd.DataFrame.from_dict(rows, orient="index").rename_axis("task_code")
+
+
+def _normalise_tasks(mpxj_project, mpxj_properties) -> None:
+    """Prepare every activity of ``mpxj_project`` for scheduling, in place."""
+    mpxj_status_date = mpxj_properties.getStatusDate()
+    for mpxj_task in mpxj_project.getTasks():
+        if mpxj_task.getActivityID() is None:
+            continue
+        _set_start_milestone_type(mpxj_task)
+        _set_actual_duration(mpxj_task, mpxj_status_date)
+        _set_total_duration(mpxj_task, mpxj_properties)
+
+
+def _set_start_milestone_type(mpxj_task) -> None:
+    """Read an activity with no activity type (the non-standard TT_StartMile) as a start milestone.
+
+    A WBS node has no activity type either and keeps none: MPXJ reads it as a summary task.
+    """
+    from org.mpxj import ActivityType
+
+    if mpxj_task.getActivityType() is None and not mpxj_task.getSummary():
+        mpxj_task.setActivityType(ActivityType.START_MILESTONE)
+
+
+def _set_actual_duration(mpxj_task, mpxj_status_date) -> None:
+    """Set P6's actual duration on started, unfinished, not suspended work: working time from actual start to data date.
+
+    MPXJ's own reader computes it first, then derives it again from the stored dates.
+    """
+    from org.mpxj import TimeUnit
+
+    mpxj_actual_start = mpxj_task.getActualStart()
+    if (
+        mpxj_actual_start is not None
+        and mpxj_task.getActualFinish() is None
+        and mpxj_status_date is not None
+        and mpxj_task.getSuspendDate() is None
+    ):
+        work_end = mpxj_status_date if mpxj_status_date.isAfter(mpxj_actual_start) else mpxj_actual_start
+        mpxj_task.setActualDuration(
+            mpxj_task.getEffectiveCalendar().getWork(mpxj_actual_start, work_end, TimeUnit.HOURS)
+        )
+
+
+def _set_total_duration(mpxj_task, mpxj_properties) -> None:
+    """Set the at-completion duration to actual + remaining, when a remaining duration exists."""
+    from org.mpxj import Duration, TimeUnit
+
+    if mpxj_task.getRemainingDuration() is not None:
+        actual_hr = _duration_hr(mpxj_task.getActualDuration(), mpxj_properties)
+        remaining_hr = _duration_hr(mpxj_task.getRemainingDuration(), mpxj_properties)
+        mpxj_task.setDuration(Duration.getInstance(actual_hr + remaining_hr, TimeUnit.HOURS))
+
+
+def _duration_hr(mpxj_duration, mpxj_properties) -> float:
+    """``mpxj_duration`` in hours, converted with the project's calendar settings; 0 when absent."""
+    from org.mpxj import TimeUnit
+
+    return (
+        0.0
+        if mpxj_duration is None
+        else float(mpxj_duration.convertUnits(TimeUnit.HOURS, mpxj_properties).getDuration())
+    )
+
+
+def _schedule_rows(mpxj_project, mpxj_properties) -> dict[str, dict]:
+    """Scheduled dates and floats by activity id; activities of type WBS Summary are left out.
+
+    A WBS node has a row too, under its WBS code: MPXJ gives it that code as activity id.
+    """
+    rows = {}
+    for mpxj_task in mpxj_project.getTasks():
+        if mpxj_task.getActivityID() is None or str(mpxj_task.getActivityType()) == "WBS_SUMMARY":
+            continue
+        rows[str(mpxj_task.getActivityID())] = _schedule_row(mpxj_task, mpxj_properties)
+    return rows
+
+
+def _schedule_row(mpxj_task, mpxj_properties) -> dict:
+    """Return the CPM_FIELDS of one scheduled task, and whether it is complete."""
+    total_slack, free_slack = mpxj_task.getTotalSlack(), mpxj_task.getFreeSlack()
+    return {
+        "es": _timestamp(mpxj_task.getEarlyStart()),
+        "ef": _timestamp(mpxj_task.getEarlyFinish()),
+        "ls": _timestamp(mpxj_task.getLateStart()),
+        "lf": _timestamp(mpxj_task.getLateFinish()),
+        "tf_hr": None if total_slack is None else round(_duration_hr(total_slack, mpxj_properties), 2),
+        "ff_hr": None if free_slack is None else round(_duration_hr(free_slack, mpxj_properties), 2),
+        "complete": mpxj_task.getActualFinish() is not None,
+    }
+
+
+def _timestamp(mpxj_datetime) -> pd.Timestamp | None:
+    return None if mpxj_datetime is None else pd.Timestamp(str(mpxj_datetime))
 
 
 def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.DataFrame:
@@ -255,12 +368,12 @@ def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.Data
     from ..analysis.cpm import _Axes, _date_range, schedule
 
     path = Path(path)
-    snap = build_snapshot(read_xer(path), project_code)
-    axes = _Axes(snap, *_date_range(snap))
-    ours = schedule(snap).frame
-    theirs = mpxj_schedule(path, snap.project_code)
-    t = snap.by_code
-    stored = {
+    snapshot = build_snapshot(read_xer(path), project_code)
+    axes = _Axes(snapshot, *_date_range(snapshot))
+    xerscope_schedule = schedule(snapshot).frame
+    mpxj_results = mpxj_schedule(path, snapshot.project_code)
+    tasks = snapshot.by_code
+    stored_columns = {
         "es": "early_start_date",
         "ef": "early_end_date",
         "ls": "late_start_date",
@@ -269,29 +382,30 @@ def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.Data
         "ff_hr": "free_float_hr_cnt",
     }
     rows = []
-    for code in ours.index:
-        if t.at[code, "is_complete"] or t.at[code, "is_loe"] or code not in theirs.index:
+    for task_code in xerscope_schedule.index:
+        if tasks.at[task_code, "is_complete"] or tasks.at[task_code, "is_loe"] or task_code not in mpxj_results.index:
             continue
-        ax = axes.of(t.at[code, "clndr_id"])
-        for f in CPM_FIELDS:
-            xs = ours.at[code, "remaining_start" if f == "es" else f]
-            mp = theirs.at[code, f]
-            p6 = t.at[code, stored[f]]
+        axis = axes.of(tasks.at[task_code, "clndr_id"])
+        for field in CPM_FIELDS:
+            xerscope_value = xerscope_schedule.at[task_code, "remaining_start" if field == "es" else field]
+            mpxj_value = mpxj_results.at[task_code, field]
+            p6_value = tasks.at[task_code, stored_columns[field]]
             rows.append(
                 {
-                    "task_code": code,
-                    "status": t.at[code, "status"],
-                    "field": f,
-                    "p6": p6,
-                    "xerscope": xs,
-                    "mpxj": mp,
+                    "task_code": task_code,
+                    "status": tasks.at[task_code, "status"],
+                    "field": field,
+                    "p6": p6_value,
+                    "xerscope": xerscope_value,
+                    "mpxj": mpxj_value,
                     # MPXJ leaves some values empty (no total float on an ALAP activity)
-                    "comparable": mp is not None and not pd.isna(mp),
-                    "xs_mpxj": same_value(xs, mp),
+                    "comparable": mpxj_value is not None and not pd.isna(mpxj_value),
+                    "xs_mpxj": same_value(xerscope_value, mpxj_value),
                     # same instant of work written differently (Friday 17:00 / Monday 08:00)
-                    "xs_mpxj_work": same_value(xs, mp) or _same_work(ax, xs, mp),
-                    "xs_p6": same_value(xs, p6),
-                    "mpxj_p6": same_value(mp, p6),
+                    "xs_mpxj_work": same_value(xerscope_value, mpxj_value)
+                    or _is_same_work(axis, xerscope_value, mpxj_value),
+                    "xs_p6": same_value(xerscope_value, p6_value),
+                    "mpxj_p6": same_value(mpxj_value, p6_value),
                 }
             )
     return pd.DataFrame(
@@ -312,15 +426,20 @@ def cpm_crosscheck(path: str | Path, project_code: str | None = None) -> pd.Data
     )
 
 
-def _same_work(ax, a, b) -> bool:
-    if not isinstance(a, pd.Timestamp) or not isinstance(b, pd.Timestamp) or pd.isna(a) or pd.isna(b):
+def _is_same_work(axis, value, other) -> bool:
+    """Return whether both are timestamps on the same instant of working time of ``axis``."""
+    if not isinstance(value, pd.Timestamp) or not isinstance(other, pd.Timestamp) or pd.isna(value) or pd.isna(other):
         return False
-    return ax.work(a) == ax.work(b)
+    return axis.work(value) == axis.work(other)
 
 
-def same_value(a, b) -> bool:
-    if a is None or b is None or pd.isna(a) or pd.isna(b):
+def same_value(value, other) -> bool:
+    """Return whether both are present and equal: timestamps to the instant, numbers within 0.01.
+
+    The tolerance is the two decimals to which float hours are kept.
+    """
+    if value is None or other is None or pd.isna(value) or pd.isna(other):
         return False
-    if isinstance(a, pd.Timestamp) or isinstance(b, pd.Timestamp):
-        return pd.Timestamp(a) == pd.Timestamp(b)
-    return abs(float(a) - float(b)) < 0.01
+    if isinstance(value, pd.Timestamp) or isinstance(other, pd.Timestamp):
+        return pd.Timestamp(value) == pd.Timestamp(other)
+    return abs(float(value) - float(other)) < 0.01
