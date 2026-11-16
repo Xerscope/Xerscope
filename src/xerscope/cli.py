@@ -604,6 +604,9 @@ def _crosscheck_cpm_file(path: Path, show: int):
 
     snapshot = load_snapshot(path)
     comparison = cpm_crosscheck(path).assign(file=path.name)
+    if comparison.empty:  # every activity is complete, a level of effort, or not placed by MPXJ
+        print(f"\n{path.name} · nothing to compare: no open activity both engines place")
+        return comparison, 0
     comparable = comparison[comparison["comparable"]]
     print(f"\n{path.name} · {comparable['task_code'].nunique()} open activities")
     agreement = comparable.groupby("field")[["xs_mpxj_work", "xs_p6", "mpxj_p6"]].mean().mul(100).round(2)
