@@ -84,8 +84,8 @@ MANDATORY = {"CS_MANDSTART": "start", "CS_MANDFIN": "finish"}
 PROGRESSED = ("retained_logic", "progress_override", "actual_dates")
 H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_data=False)
 LINK_TYPES = ("FS", "SS", "FF", "SF")
-# Longest remaining duration, lag or assignment duration the engine schedules, in hours (114 years
-# of 24 h days). Beyond it, or non-finite, the value is refused as a ScheduleError before the passes
+# Longest remaining duration, lag, assignment duration or asked delay the engine schedules, in hours
+# (114 years of 24 h days). Beyond it, or non-finite, the value is refused as a ScheduleError before the passes
 # run; a bounded value that still lands past year 2262 (pandas' limit) on a sparse calendar is
 # translated to the same error in _schedule. The model clamps such values on load with a warning.
 MAX_HOURS = 1e6
@@ -311,7 +311,8 @@ def schedule(
     (``dataclasses.replace``) with an empty cache.
 
     Raises ``CycleError`` on a logic loop and ``ScheduleError`` (its base) when a remaining
-    duration, a lag or an assignment duration is not finite or exceeds ``MAX_HOURS``.
+    duration, a lag, an assignment duration or a delay of ``extra_hours`` is not finite or exceeds
+    ``MAX_HOURS``.
 
     ``base``: the plain recalculation, given with ``extra_hours``. A delayed activity then drops
     its expected finish, which would absorb the delay, and runs its remaining duration in
@@ -338,9 +339,22 @@ class _Asg:
     driving: bool
 
 
+def _refuse_unbounded_delays(extra_hours: dict[str, float]) -> None:
+    """Refuse a delay that is not finite or beyond ``MAX_HOURS``, naming the activities to delay: the
+    rule of a remaining duration and of a lag, for the one value that does not come from the file."""
+    unbounded = sorted(task_code for task_code, delay_hr in extra_hours.items() if not _bounded(delay_hr))
+    if unbounded:
+        raise ScheduleError(
+            f"{len(unbounded)} activities are asked a delay that is not finite or beyond {MAX_HOURS:g} h: "
+            f"{unbounded[:8]}",
+            tuple(unbounded),
+        )
+
+
 def _schedule(
     snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None, base: Schedule | None = None
 ) -> Schedule:
+    _refuse_unbounded_delays(extra_hours or {})
     try:
         return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
     except ScheduleError:

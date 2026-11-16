@@ -10,7 +10,8 @@ past the repairs of the load: a delay asked of ``schedule`` that is out of range
 edited after loading with such a lag or remaining duration.
 A refusal names the activities at fault, except a date beyond the time axis (year 2262), which a
 chain of long durations reaches together: that one names the calendar.
-A delay that is not a number (NaN) is not drawn: it leaves ``schedule`` as a plain ValueError.
+A delay that is not a number (NaN) is not drawn here: its own test below holds that it is refused
+like a delay out of range.
 The dates of a valid network are held by tests/test_cpm_properties.py; here only the outcome is.
 """
 
