@@ -316,6 +316,28 @@ def test_demo_dates_are_confirmed_by_mpxj(xc, sample_dir):
         assert bad.empty or xc.mpxj_inconsistent(snap, cmp), (path.name, bad.head().to_string())
 
 
+# --- 4b. the command on a file where nothing is open ---------------------------------------------
+
+
+@pytest.mark.oracle("mpxj")
+def test_the_command_says_so_when_a_file_has_nothing_to_compare(xc, tmp_path, capsys):
+    """Every activity complete: neither engine places anything, the comparison has no row. The
+    command names the file, says there is nothing to compare and counts no difference; a file with
+    open work after it is still compared."""
+    from xerscope.cli import main
+
+    finished = tmp_path / "finished.xer"
+    finished.write_text(xer_text([done("A"), done("B")], [("A", "B", "FS", 0)]))
+    assert xc.cpm_crosscheck(finished).empty
+    open_work = tmp_path / "open.xer"
+    open_work.write_text(xer_text([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)]))
+    assert main(["crosscheck", "--cpm", str(finished), str(open_work)]) == 0
+    printed = capsys.readouterr().out
+    assert "finished.xer · nothing to compare" in printed
+    assert "open.xer · 2 open activities" in printed
+    assert "0 difference(s) no listed cause explains" in printed
+
+
 # --- 5. the self-consistency check, without Java ------------------------------------------------
 
 
