@@ -384,15 +384,21 @@ def test_base_images_pinned_by_digest():
     assert len(froms) == 3 and all(re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", f) for f in froms), froms
 
 
-def test_the_only_scan_exception_is_the_dated_tailscale_one():
-    """One Trivy exception in the repository: CVE-2026-78661 in the Tailscale image, for
-    golang.org/x/net v0.60.0 only (purls), with its reason and an expiry no later than 2026-12-09.
-    Only the Tailscale scan of the deploy job reads it; every other scan takes no exception."""
+SCAN_EXCEPTION_FILES = [
+    ROOT / ".github" / "trivy" / "self.trivyignore.yaml",
+    ROOT / "deploy" / "tailscale.trivyignore.yaml",
+]
+
+
+def test_the_tailscale_scan_exception_is_dated_and_read_by_its_scan_only():
+    """Two Trivy exception files in the repository, each read by one scan. This one: CVE-2026-78661
+    in the Tailscale image, for golang.org/x/net v0.60.0 only (purls), with its reason and an expiry
+    no later than 2026-12-09. Only the Tailscale scan of the deploy job reads it."""
     import datetime
 
     files = sorted({*ROOT.glob("**/*.trivyignore*"), *ROOT.glob("**/.trivyignore*")})
-    assert files == [ROOT / "deploy" / "tailscale.trivyignore.yaml"], files
-    entries = [x for x in files[0].read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
+    assert files == SCAN_EXCEPTION_FILES, files
+    entries = [x for x in files[1].read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
     assert entries[:2] == ["vulnerabilities:", "  - id: CVE-2026-78661"] and len(entries) == 5, entries
     fields = dict(x.strip().split(": ", 1) for x in entries[2:])
     assert set(fields) == {"statement", "expired_at", "purls"}, fields
@@ -400,7 +406,12 @@ def test_the_only_scan_exception_is_the_dated_tailscale_one():
     assert datetime.date.fromisoformat(fields["expired_at"]) <= datetime.date(2026, 12, 9)
     assert fields["purls"].split("#")[0].strip() == "[pkg:golang/golang.org/x/net@v0.60.0]"
     workflows = {p.name: p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml")}
-    uses = [(name, line.strip()) for name, w in workflows.items() for line in w.splitlines() if "trivyignore" in line]
+    uses = [
+        (name, line.strip())
+        for name, w in workflows.items()
+        for line in w.splitlines()
+        if "tailscale.trivyignore" in line
+    ]
     assert len(uses) == 1 and uses[0][0] == "tests.yml", uses
     assert uses[0][1].startswith('run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml'), uses
     wf = workflows["tests.yml"]
@@ -411,6 +422,45 @@ def test_the_only_scan_exception_is_the_dated_tailscale_one():
     assert "--exit-code 0" in script and script.index("--exit-code 0") < script.index("--exit-code 1")
     (listing,) = [x for x in script.splitlines() if "--exit-code 0" in x]
     assert "ignore" not in listing and script.count("--ignorefile") == 1  # the listing takes no exception
+
+
+GIT_CVES_IN_THE_TRIVY_IMAGE = ["CVE-2026-105437", "CVE-2026-111760", "CVE-2026-114466"]
+
+
+def test_the_trivy_self_scan_exception_covers_its_git_only_and_git_cannot_run():
+    """The pinned Trivy image holds git 2.54.0-r0 (three CVEs fixed in 2.54.1-r0) and no Trivy
+    release holds the fix yet. The exception names those three CVEs for the two apk packages of that
+    version only, ends no later than 2026-12-16, and is read by the scan of the Trivy image alone.
+    Its reason is that git is never run: scan.sh mounts /dev/null over the git binary of every
+    scanning container, so that holds whatever Trivy is asked to do."""
+    import datetime
+
+    lines = [
+        x for x in SCAN_EXCEPTION_FILES[0].read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")
+    ]
+    assert lines[0] == "vulnerabilities:" and len(lines) == 1 + 4 * len(GIT_CVES_IN_THE_TRIVY_IMAGE), lines
+    entries = [lines[first : first + 4] for first in range(1, len(lines), 4)]
+    assert [entry[0] for entry in entries] == [f"  - id: {cve}" for cve in GIT_CVES_IN_THE_TRIVY_IMAGE]
+    for entry in entries:
+        fields = dict(line.strip().split(": ", 1) for line in entry[1:])
+        assert set(fields) == {"statement", "expired_at", "purls"}, fields
+        assert fields["purls"] == "[pkg:apk/alpine/git@2.54.0-r0, pkg:apk/alpine/git-init-template@2.54.0-r0]"
+        assert datetime.date.fromisoformat(fields["expired_at"]) <= datetime.date(2026, 12, 16)
+        assert len(fields["statement"]) > 20
+    workflows = {p.name: p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml")}
+    uses = [
+        (name, line.strip())
+        for name, w in workflows.items()
+        for line in w.splitlines()
+        if "self.trivyignore" in line and not line.lstrip().startswith("#")
+    ]
+    assert len(uses) == 1 and uses[0][0] == "scanner.yml", uses
+    scanner = workflows["scanner.yml"]
+    self_scan = scanner[scanner.index("\n  trivy:") : scanner.index("\n  published:")]
+    assert uses[0][1] in self_scan and uses[0][1].endswith(".github/trivy/self.trivyignore.yaml")
+    script = (ROOT / ".github" / "trivy" / "scan.sh").read_text()
+    (container,) = [line for line in script.splitlines() if line.startswith("run() {")]
+    assert "-v /dev/null:/usr/bin/git:ro" in container, container
 
 
 @pytest.mark.parametrize(("listed", "code"), [("CVE-2026-78661 HIGH", 0), ("no finding", 1)])
@@ -490,12 +540,18 @@ def test_the_pinned_trivy_is_scanned_every_day():
 
 def test_the_published_images_are_scanned_every_day():
     """The images the NAS pulls are scanned by the daily scanner run with the same pinned Trivy, so a
-    CVE published after the last push is seen the next day."""
+    CVE published after the last push is seen the next day. The ghcr packages are private: the job
+    logs in with the workflow's token, which may read packages and nothing more."""
     wf = (ROOT / ".github" / "workflows" / "scanner.yml").read_text()
     job = wf[wf.index("\n  published:") :]
     assert "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in job
     assert "image: [ghcr.io/xerscope/xerscope:latest, ghcr.io/xerscope/xerscope-caddy:latest]" in job
     assert 'run: .github/trivy/scan.sh "$IMAGE"' in job and "IMAGE: ${{ matrix.image }}" in job
+    permissions = job[job.index("    permissions:") : job.index("    strategy:")]
+    assert re.findall(r"^      (\w[\w-]*): (\w+)", permissions, re.M) == [("contents", "read"), ("packages", "read")]
+    login = job[job.index("- uses: docker/login-action@") : job.index("- name: Known vulnerabilities")]
+    assert re.search(r"docker/login-action@[0-9a-f]{40} # v", login) and "registry: ghcr.io" in login
+    assert "password: ${{ secrets.GITHUB_TOKEN }}" in login
     compose = (ROOT / "deploy" / "compose.yaml").read_text()  # the tags scanned are the ones pulled
     assert "ghcr.io/xerscope/xerscope:latest}" in compose and "ghcr.io/xerscope/xerscope-caddy:latest}" in compose
 
