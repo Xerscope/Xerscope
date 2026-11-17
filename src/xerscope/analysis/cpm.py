@@ -1126,96 +1126,104 @@ class _Run:
     # --- backward pass -------------------------------------------------------------------------
     def successor_limits(self, code, late: bool) -> tuple[list, list]:
         """Latest start / finish ``c`` may have against its successors' late (or early) dates."""
-        inputs, status = self.inputs, self.status
-        late_start_bounds: list[pd.Timestamp]
-        late_finish_bounds: list[pd.Timestamp]
-        late_start_bounds, late_finish_bounds = [], []
-        progress_override = self.options.progressed == "progress_override"
-        for successor, link_type, link_lag in self.succs[code]:
-            lag = link_lag
-            if progress_override and status[successor] == "TK_Active" and link_type in ("FS", "SS"):
-                # Progress Override: a started successor's start is an actual, so a link to it
-                # binds no late date; links to its finish (FF, SF) still do (H5-06 A1030
-                # against H3-03 A1030)
-                continue
-            if (
-                not late
-                and progress_override
-                and status[code] == "TK_Active"
-                and (link_type in ("SS", "SF") or status[successor] == "TK_Complete")
-            ):
-                # Progress Override again: the free float of work under way runs past its own
-                # start-type links (its start is an actual too) and past finished successors,
-                # to whatever is left (H2-05 A1030, H2-04 A1110; counter-examples H4-08
-                # A1010, H12-07 A1120 are open, see docs/backlog.md)
-                continue
-            if (
-                late
-                and self.options.progressed == "actual_dates"
-                and status[successor] != "TK_NotStart"
-                and pd.notna(inputs[successor].get("act_start_date"))
-            ):
-                # Actual Dates: the backward pass uses the successor's actual dates
-                successor_start = inputs[successor].get("act_start_date")
-                successor_finish = (
-                    inputs[successor].get("act_end_date")
-                    if status[successor] == "TK_Complete"
-                    else self.late_finish[successor]
-                )
-            elif status[successor] == "TK_Complete" and not late and self.retain:
-                # free float against a finished successor: it sits at its carried date
-                successor_start = successor_finish = self.carry[successor]
-            elif status[successor] == "TK_Complete":
-                if late and self.retain:
-                    # Retained Logic: a finished successor passes back the late date its own
-                    # successors give it, less this link's lag: in full for FS / FF (it runs
-                    # from a finish still to come: H1-08 A1020), the part not yet expired
-                    # since the actual start for SS / SF (H6-07 A1030), a lead from started
-                    # work not at all; between two finished activities only the carried date
-                    # passes (H1-08 A1050). MPXJ drops the FS lag; P6 does not.
-                    carried_late = self.lcarry[successor]
-                    if status[code] == "TK_Complete":
-                        bound = carried_late
-                    else:
-                        link_axis = self.lag_axis(code, successor)
-                        lag_used = self.unexpired(code, link_axis, lag) if link_type in ("SS", "SF") else lag
-                        if link_type in ("SS", "SF") and lag < 0 and status[code] == "TK_Active":
-                            lag_used = 0.0
-                        bound = self.shift(link_axis, carried_late, -lag_used)
-                    (late_finish_bounds if link_type in ("FS", "FF") else late_start_bounds).append(bound)
-                continue
-            else:
-                successor_start, successor_finish = (
-                    (self.late_start[successor], self.late_finish[successor])
-                    if late
-                    else (self.remaining_start[successor], self.early_finish[successor])
-                )
-            link_axis = self.lag_axis(code, successor)
-            # SS / SF from a started activity: the forward pass only waits for the lag not
-            # yet expired, so the backward pass mirrors that, or a driving link would leave
-            # negative float on an unconstrained network.
-            successor_lag = self.unexpired(code, link_axis, lag) if link_type in ("SS", "SF") else lag
-            if link_type in ("SS", "SF") and lag < 0 and status[code] == "TK_Active":
-                successor_lag = 0.0  # a lead from work already started no longer pulls it earlier (MPXJ)
-            if status[code] == "TK_Complete":
-                # finished (Retained Logic, see lcarry): only the lag not yet expired since its
-                # actual finish (FS, FF) or start (SS, SF) still counts; a lead is dropped (MPXJ)
-                measured_from = inputs[code].get("act_end_date" if link_type in ("FS", "FF") else "act_start_date")
-                done_lag = (
-                    max(0, link_axis.between(measured_from, self.data_date))
-                    if measured_from is not None and pd.notna(measured_from)
-                    else 0
-                )
-                lag = successor_lag = max(0.0, lag - done_lag) if lag > 0 else 0.0
-            if link_type == "FS":
-                late_finish_bounds.append(self.shift(link_axis, successor_start, -lag))
-            elif link_type == "SS":
-                late_start_bounds.append(self.shift(link_axis, successor_start, -successor_lag))
-            elif link_type == "FF":
-                late_finish_bounds.append(self.shift(link_axis, successor_finish, -lag))
-            elif link_type == "SF":
-                late_start_bounds.append(self.shift(link_axis, successor_finish, -successor_lag))
+        late_start_bounds: list[pd.Timestamp] = []
+        late_finish_bounds: list[pd.Timestamp] = []
+        for successor, link_type, lag in self.succs[code]:
+            if self.is_binding_successor(code, successor, link_type, late):
+                bound = self.successor_limit(code, successor, link_type, lag, late)
+                (late_finish_bounds if link_type in ("FS", "FF") else late_start_bounds).append(bound)
         return late_start_bounds, late_finish_bounds
+
+    def is_binding_successor(self, code, successor, link_type: str, late: bool) -> bool:
+        """False for the links that give ``code`` no latest date: the ones Progress Override releases,
+        and a finished successor outside Retained Logic, unless its actual dates are read."""
+        status = self.status
+        progress_override = self.options.progressed == "progress_override"
+        if progress_override and status[successor] == "TK_Active" and link_type in ("FS", "SS"):
+            # Progress Override: a started successor's start is an actual, so a link to it
+            # binds no late date; links to its finish (FF, SF) still do (H5-06 A1030
+            # against H3-03 A1030)
+            return False
+        is_start_link_or_done = link_type in ("SS", "SF") or status[successor] == "TK_Complete"
+        if not late and progress_override and status[code] == "TK_Active" and is_start_link_or_done:
+            # Progress Override again: the free float of work under way runs past its own
+            # start-type links (its start is an actual too) and past finished successors,
+            # to whatever is left (H2-05 A1030, H2-04 A1110; counter-examples H4-08
+            # A1010, H12-07 A1120 are open, see docs/backlog.md)
+            return False
+        if status[successor] == "TK_Complete" and not self.retain:
+            return self.reads_actual_dates(successor, late)
+        return True
+
+    def reads_actual_dates(self, successor, late: bool) -> bool:
+        """Actual Dates: the backward pass uses the actual dates of a successor that has started."""
+        return (
+            late
+            and self.options.progressed == "actual_dates"
+            and self.status[successor] != "TK_NotStart"
+            and pd.notna(self.inputs[successor].get("act_start_date"))
+        )
+
+    def successor_limit(self, code, successor, link_type: str, lag: float, late: bool) -> pd.Timestamp:
+        """Latest date one binding link allows: the successor's date the link reads, less the lag."""
+        if late and self.retain and self.status[successor] == "TK_Complete":
+            return self.carried_late_limit(code, successor, link_type, lag)
+        successor_start, successor_finish = self.successor_dates(successor, late)
+        link_axis = self.lag_axis(code, successor)
+        read_date = successor_start if link_type in ("FS", "SS") else successor_finish
+        return self.shift(link_axis, read_date, -self.lag_to_take_back(code, link_type, lag, link_axis))
+
+    def carried_late_limit(self, code, successor, link_type: str, lag: float) -> pd.Timestamp:
+        """Late date a finished successor passes back under Retained Logic.
+
+        The late date its own successors give it, less this link's lag: in full for FS / FF (it
+        runs from a finish still to come: H1-08 A1020), the part not yet expired since the actual
+        start for SS / SF (H6-07 A1030), a lead from started work not at all; between two finished
+        activities only the carried date passes (H1-08 A1050). MPXJ drops the FS lag; P6 does not.
+        """
+        carried_late = self.lcarry[successor]
+        if self.status[code] == "TK_Complete":
+            return carried_late
+        link_axis = self.lag_axis(code, successor)
+        return self.shift(link_axis, carried_late, -self.lag_to_take_back(code, link_type, lag, link_axis))
+
+    def successor_dates(self, successor, late: bool) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Start and finish of a successor a link is measured from: its late dates in the backward
+        pass, its early ones for the free float."""
+        if self.reads_actual_dates(successor, late):
+            successor_finish = (
+                self.inputs[successor].get("act_end_date")
+                if self.status[successor] == "TK_Complete"
+                else self.late_finish[successor]
+            )
+            return self.inputs[successor].get("act_start_date"), successor_finish
+        if self.status[successor] == "TK_Complete" and not late and self.retain:
+            # free float against a finished successor: it sits at its carried date
+            return self.carry[successor], self.carry[successor]
+        if late:
+            return self.late_start[successor], self.late_finish[successor]
+        return self.remaining_start[successor], self.early_finish[successor]
+
+    def lag_to_take_back(self, code, link_type: str, lag: float, link_axis: TimeAxis) -> float:
+        """Lag of a link out of ``code`` that still separates it from its successor."""
+        if self.status[code] == "TK_Complete":
+            # finished (Retained Logic, see lcarry): only the lag not yet expired since its
+            # actual finish (FS, FF) or start (SS, SF) still counts; a lead is dropped (MPXJ)
+            measured_from = self.inputs[code].get("act_end_date" if link_type in ("FS", "FF") else "act_start_date")
+            done_lag = (
+                max(0, link_axis.between(measured_from, self.data_date))
+                if measured_from is not None and pd.notna(measured_from)
+                else 0
+            )
+            return max(0.0, lag - done_lag) if lag > 0 else 0.0
+        if link_type in ("FS", "FF"):
+            return lag
+        if lag < 0 and self.status[code] == "TK_Active":
+            return 0.0  # a lead from work already started no longer pulls it earlier (MPXJ)
+        # SS / SF from a started activity: the forward pass only waits for the lag not
+        # yet expired, so the backward pass mirrors that, or a driving link would leave
+        # negative float on an unconstrained network.
+        return self.unexpired(code, link_axis, lag)
 
     def place_late(
         self, code, axis, activity_kind, duration, late_start_bounds, late_finish_bounds, alap: bool = False
