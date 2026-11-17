@@ -137,6 +137,71 @@ def test_per_activity_pv_sums_to_the_headline_pv():
     assert earned(now, bl)["pv_hr"].sum() == pytest.approx(ev_point(now, bl).pv_hr, abs=1e-9)
 
 
+@pytest.mark.oracle("characterization")
+def test_ev_point_gives_the_variance_at_completion_and_the_actual_hours_of_baselined_work():
+    """BAC 100, EV 40, AC 60 of which 10 on a task the baseline does not have, ETC 70.
+    EAC = 60 + 70 = 130; VAC = 100 - 130 = -30 (overrun); actual hours of baselined work =
+    60 - 10 = 50; EV per hour of baselined work = 40 / 50 = 0.8. The row of the series carries
+    the same two values."""
+    from xerscope.analysis.evm import EvPoint
+
+    point = EvPoint(pd.Timestamp("2026-03-04 08:00"), 100.0, 50.0, 40.0, 60.0, 70.0, ["X"], ac_unbaselined_hr=10.0)
+    assert (point.eac_hr, point.vac_hr, point.ac_baselined_hr) == (130.0, -30.0, 50.0)
+    assert point.productivity == pytest.approx(0.8)
+    row = point.as_row()
+    assert (row["vac_hr"], row["ac_baselined_hr"]) == (-30.0, 50.0)
+    all_unbaselined = EvPoint(point.data_date, 100.0, 50.0, 40.0, 60.0, 70.0, ["X"], ac_unbaselined_hr=60.0)
+    assert all_unbaselined.ac_baselined_hr == 0.0 and all_unbaselined.productivity is None
+
+
+@pytest.mark.oracle("characterization")
+def test_update_and_previous_rows_and_the_change_between_them():
+    """A series of four rows: 03-02, then two updates on 03-09, then 03-16.
+    03-02: no update before it, so no change.
+    03-09: the row is the last of that date (ev_pct 12, spi 0.8); the one before is 03-02, never
+    the other row of 03-09: ev_pct 12 - 0 = 12; spi has no change, 03-02 has none.
+    03-16: the one before is the last row of 03-09: ev_pct 30 - 12 = 18, spi 1.1 - 0.8 = 0.3.
+    A value missing in the update itself gives no change."""
+    from xerscope.analysis.evm import change_since_previous, update_and_previous
+
+    dates = pd.to_datetime(["2026-03-02", "2026-03-09", "2026-03-09", "2026-03-16"])
+    series = pd.DataFrame({"data_date": dates, "ev_pct": [0.0, 10.0, 12.0, 30.0], "spi": [None, 0.5, 0.8, 1.1]})
+
+    first, before_first = update_and_previous(series, dates[0])
+    assert before_first is None and change_since_previous(first, before_first, "ev_pct") is None
+
+    second, before_second = update_and_previous(series, dates[1])
+    assert (second["ev_pct"], second["spi"]) == (12.0, 0.8) and before_second["data_date"] == dates[0]
+    assert change_since_previous(second, before_second, "ev_pct") == 12.0
+    assert change_since_previous(second, before_second, "spi") is None
+
+    third, before_third = update_and_previous(series, dates[3])
+    assert before_third["ev_pct"] == 12.0
+    assert change_since_previous(third, before_third, "ev_pct") == 18.0
+    assert change_since_previous(third, before_third, "spi") == pytest.approx(0.3)
+    assert change_since_previous(first, before_third, "spi") is None
+
+
+@pytest.mark.oracle("characterization")
+def test_priced_assignments_and_wbs_on_a_performance_factor():
+    """Three assignments: a cost of 5000, a cost of 0, no cost written: one carries a cost.
+    Five WBS elements: remaining units, PF = 1, PF = 1/CPI, nothing stored, a PF code with a
+    leading blank: the three PF ones use a performance factor."""
+    from xerscope.analysis.evm import priced_assignment_count, settings_using_pf
+
+    assign = [
+        dict(task_code="A", rsrc_id="R1", rsrc_type="RT_Labor", target_qty="40", target_cost="5000"),
+        dict(task_code="A", rsrc_id="R2", rsrc_type="RT_Labor", target_qty="10", target_cost="0"),
+        dict(task_code="A", rsrc_id="R3", rsrc_type="RT_Labor", target_qty="10", target_cost=""),
+    ]
+    update = snap([todo("A")], assign=assign)
+    assert len(update.assignments) == 3 and priced_assignment_count(update) == 1
+
+    codes = ["EE_Rem_hr", "EE_PF_1", "EE_PF_cpi", None, " EE_PF_user"]
+    settings = pd.DataFrame({"wbs_code": ["W1", "W2", "W3", "W4", "W5"], "ev_etc_compute_type": codes})
+    assert settings_using_pf(settings)["wbs_code"].tolist() == ["W2", "W3", "W5"]
+
+
 def test_pv_skips_calendar_holiday():
     bl = _bl(early_start_date="2026-03-30 08:00", early_end_date="2026-04-03 17:00")  # Mon-Fri, Fri = Good Friday
     curve = pv_curve(bl).set_index("date")

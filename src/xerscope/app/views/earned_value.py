@@ -7,14 +7,17 @@ from xerscope.analysis import builtin_standards
 from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import (
     bei_series,
+    change_since_previous,
     earned,
     etc_settings,
     etc_technique_counts,
     ev_point,
     evm_series,
     forecast_curve,
+    priced_assignment_count,
     pv_curve,
-    uses_pf,
+    settings_using_pf,
+    update_and_previous,
 )
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.app import ui
@@ -66,11 +69,10 @@ def format_number(value: float, template: str = "{:,.0f}") -> str:
     return "–" if pd.isna(value) else template.format(value)
 
 
-def change_since_previous(row: pd.Series, previous: pd.DataFrame, column: str, formatter) -> str | None:
+def formatted_change(row: pd.Series, previous: pd.Series | None, column: str, formatter) -> str | None:
     """Formatted change of ``column`` against the previous update, None when either side is missing."""
-    if previous.empty or pd.isna(previous[column].iloc[0]) or pd.isna(row[column]):
-        return None
-    return formatter(row[column] - previous[column].iloc[0])
+    change = change_since_previous(row, previous, column)
+    return None if change is None else formatter(change)
 
 
 def cost_spi_text(row: pd.Series, template: str = "{:.2f}") -> str:
@@ -80,11 +82,11 @@ def cost_spi_text(row: pd.Series, template: str = "{:.2f}") -> str:
     return "n/a — no cost in the baseline" if not row["bac_cost"] else "n/a — no planned value cost yet"
 
 
-def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
+def show_kpis(row: pd.Series, previous: pd.Series | None, costs: bool) -> None:
     cost_card = (
         "SPI",
         cost_spi_text(row),
-        change_since_previous(row, previous, "spi_cost", format_index_change),
+        formatted_change(row, previous, "spi_cost", format_index_change),
         "EV cost / PV cost; P6 column: Schedule Performance Index",
     )
     ui.kpis(
@@ -92,7 +94,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
             (
                 "Percent complete",
                 f"{row['ev_pct']:.1f} %",
-                change_since_previous(row, previous, "ev_pct", format_points),
+                formatted_change(row, previous, "ev_pct", format_points),
                 "EV / BAC (BCWP / BAC)",
             ),
             ("Percent scheduled", f"{row['pv_pct']:.1f} %", None, "PV / BAC (BCWS / BAC)"),
@@ -100,7 +102,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
             (
                 "SPI (labor units)",
                 format_number(row["spi"], "{:.2f}"),
-                change_since_previous(row, previous, "spi", format_index_change),
+                formatted_change(row, previous, "spi", format_index_change),
                 "EV / PV in labor hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
@@ -117,7 +119,7 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
                 "EAC",
                 f"{row['eac_hr']:,.0f} h",
                 # the signed number first: st.metric colours the delta by the sign it starts with
-                f"{row['bac_hr'] - row['eac_hr']:+,.0f} h",
+                f"{row['vac_hr']:+,.0f} h",
                 "AC + remaining hours. The delta is the VAC = BAC − EAC: negative = overrun",
             ),
         ],
@@ -127,11 +129,10 @@ def show_kpis(row: pd.Series, previous: pd.DataFrame, costs: bool) -> None:
 
 def show_costs_ignored(snapshot) -> None:
     """Costs off: say how many assignments of the file carry a cost, so the switch is findable."""
-    assignments = snapshot.assignments
-    priced = int((assignments["target_cost"].fillna(0.0) != 0).sum())
+    priced = priced_assignment_count(snapshot)
     if priced:
         st.caption(
-            f"Costs ignored: {priced} of {len(assignments)} assignments carry a cost in the file "
+            f"Costs ignored: {priced} of {len(snapshot.assignments)} assignments carry a cost in the file "
             "(resource prices). Turn on Costs in the sidebar to see P6's cost SPI."
         )
 
@@ -139,12 +140,12 @@ def show_costs_ignored(snapshot) -> None:
 def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> None:
     with st.expander("How it is calculated", icon=":material/calculate:"):
         bac, planned, earned_hours, actual = row["bac_hr"], row["pv_hr"], row["ev_hr"], row["ac_hr"]
-        baselined_actual = actual - row["ac_unbaselined_hr"]
+        baselined_actual = row["ac_baselined_hr"]
         # one decimal: a result and the operands shown beside it agree to 0.1 h
         settings = etc_settings(snapshot)
         counts = etc_technique_counts(settings)
         etc_counts = " · ".join(f"{item.etc_technique}: {item.wbs} WBS" for item in counts.itertuples())
-        with_pf = settings[settings["ev_etc_compute_type"].map(uses_pf)]
+        with_pf = settings_using_pf(settings)
         calculation = pd.DataFrame(
             [
                 (
@@ -243,6 +244,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
             calculation = calculation[~calculation["measure"].isin(COST_MEASURES)]
         ui.table(
             calculation,
+            key="ev_calculation",
             overrides={
                 "formula": st.column_config.TextColumn("Formula", width="large"),
                 "this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date)),
@@ -297,19 +299,20 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
             "update's PV and SPI above is measured against them. Showing another update measures the whole "
             "history against that update's planned dates."
         )
-    hidden = ["bac_hr"] + ([] if costs else COST_COLUMNS)
+    # VAC and the actual hours of baselined work are read above, for the update shown
+    hidden = ["bac_hr", "vac_hr", "ac_baselined_hr"] + ([] if costs else COST_COLUMNS)
     # the first update has no PV yet: its indices are missing, written as a dash
     shown, overrides = ui.numbers_as_text(series.drop(columns=hidden), INDEX_COLUMNS)
-    ui.table(shown, overrides=overrides)
+    ui.table(shown, overrides=overrides, key="ev_updates")
 
 
-def show_activity_detail(snapshot, baseline, point) -> None:
+def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame) -> None:
     with st.expander(f"Earned hours by task ({ui.stamp(snapshot.data_date)})"):
         # earned() names the EV basis values bl_*: here they carry their own name, apart from the BL columns
-        values = earned(snapshot, baseline).reset_index().rename(columns=EV_BASIS_COLUMNS)
+        values = earned_values.reset_index().rename(columns=EV_BASIS_COLUMNS)
         # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
         activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
-        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640)
+        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640, key="ev_tasks")
         st.caption(
             f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
             f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."
@@ -332,7 +335,7 @@ def show_activity_detail(snapshot, baseline, point) -> None:
             )
         if not gone.empty:
             st.caption(
-                f"In the baseline, no longer in the update ({gone['pv_hr'].sum():,.1f} h of PV): left out of "
+                f"In the baseline, no longer in the update ({point.pv_deleted_hr:,.1f} h of PV): left out of "
                 "this table, BAC, PV and EV, as P6 totals the tasks of the current project: "
                 f"{ui.md_text(', '.join(gone['task_code']))}"
             )
@@ -374,6 +377,7 @@ identity = (baseline.label, baseline.source, baseline.snapshot.source, baseline.
 cache_key = ("evm", *identity, baseline.ev_basis)
 # the update's lists (techniques not modelled, tasks not in the baseline, curves) as its KPIs computed them
 point = memo(cache_key + ("point", snapshot.source, str(snapshot.data_date)), ev_point, snapshot, baseline)
+earned_values = memo(cache_key + ("earned", snapshot.source, str(snapshot.data_date)), earned, snapshot, baseline)
 curve = memo(cache_key + ("pv", snapshot.source, str(snapshot.data_date)), pv_curve, baseline, snapshot)
 series = memo(
     cache_key + ("series",),
@@ -395,8 +399,7 @@ bei = memo(
     ev_basis=False,
 )
 series = series.merge(bei, on="data_date", how="left")
-row = series[series["data_date"] == snapshot.data_date].iloc[-1]
-previous = series[series["data_date"] < snapshot.data_date].tail(1)
+row, previous = update_and_previous(series, snapshot.data_date)
 
 costs = costs_shown()
 show_kpis(row, previous, costs)
@@ -404,4 +407,4 @@ if not costs:
     show_costs_ignored(snapshot)
 show_calculation(row, baseline, snapshot, point, costs)
 show_charts(series, curve, snapshot, baseline, costs)
-show_activity_detail(snapshot, baseline, point)
+show_activity_detail(snapshot, baseline, point, earned_values)
