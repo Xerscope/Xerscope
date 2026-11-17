@@ -192,6 +192,79 @@ def results_frame(results: list[CheckResult]) -> pd.DataFrame:
     return frame
 
 
+def status_counts(results: list[CheckResult]) -> dict[str, int]:
+    """How many results have each status (0 when none), and ``scored``: those with a target,
+    pass + fail."""
+    counts = dict.fromkeys(("pass", "fail", "info", "n/a", "error"), 0)
+    for result in results:
+        counts[result.status] += 1
+    counts["scored"] = counts["pass"] + counts["fail"]
+    return counts
+
+
+def summary_frame(results: list[CheckResult]) -> pd.DataFrame:
+    """`results_frame` for the summary and its export: with ``flagged``, the number of items each
+    check lists, and ``note`` naming the baseline the result was computed on."""
+    summary = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
+    summary["note"] = [result.note_with_baseline for result in results]
+    return summary
+
+
+TRAIL_FRONT = ["check_id", "check", "check_status"]
+
+
+def flagged_trail(results: list[CheckResult]) -> pd.DataFrame:
+    """Every item listed by every check, one after the other in the order of ``results``: the
+    audit trail behind the scores. Each row names its check (``TRAIL_FRONT``, first). Empty, without
+    columns, when no check lists anything."""
+    lists = [
+        result.flagged.assign(check_id=result.metric.id, check=result.metric.name, check_status=result.status)
+        for result in results
+        if not result.flagged.empty
+    ]
+    if not lists:
+        return pd.DataFrame()
+    trail = pd.concat(lists, ignore_index=True)
+    return trail[TRAIL_FRONT + [column for column in trail.columns if column not in TRAIL_FRONT]]
+
+
+def flagged_codes(flagged: pd.DataFrame) -> list[str]:
+    """The Activity IDs a check's list names, once each: its tasks, or both ends of its links. An
+    end outside the file ("[ext]…") is not an activity of this schedule."""
+    codes: list[str] = []
+    for column in ("task_code", "pred_code", "succ_code"):
+        if column in flagged.columns:
+            codes += [str(code) for code in flagged[column].dropna() if not str(code).startswith("[ext]")]
+    return list(dict.fromkeys(codes))
+
+
+def shown_by_group(results: list[CheckResult], only_failed: bool = False) -> dict[str, list[CheckResult]]:
+    """The results to show (all, or the failed ones), by group: the groups in order of first
+    appearance, each check in the order of ``results`` within its group (a standard may
+    interleave its groups)."""
+    groups: dict[str, list[CheckResult]] = {}
+    for result in results:
+        if not only_failed or result.status == "fail":
+            groups.setdefault(result.metric.group, []).append(result)
+    return groups
+
+
+def report_counts(got: pd.DataFrame, typed: pd.DataFrame | None = None) -> pd.DataFrame:
+    """The lines of a report to fill, one per check of ``got`` (`results_frame`): ``found`` and
+    ``total`` from ``typed`` (a report's ``id``, ``found``, ``total``) where it names the check,
+    blank elsewhere and when there is no report. A check ``typed`` names and ``got`` has not is
+    left out."""
+    checks = got[["id", "check"]]
+    if typed is None:
+        return checks.assign(found=pd.NA, total=pd.NA).astype({"found": "Int64", "total": "Int64"})
+    return checks.merge(typed[["id", "found", "total"]], on="id", how="left")
+
+
+def mismatch_count(compared: pd.DataFrame) -> int:
+    """How many lines of `compare_counts` differ from the report."""
+    return int((~compared["match"]).sum())
+
+
 def compare_counts(got: pd.DataFrame, expected: pd.DataFrame, keys: list[str] | None = None) -> pd.DataFrame:
     """found / total typed from a report (P6 Check Schedule summary) against ``results_frame``.
 

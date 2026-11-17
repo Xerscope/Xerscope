@@ -12,7 +12,17 @@ from xerscope.analysis import (
     template_text,
 )
 from xerscope.analysis.audit import by_check, sets_long
-from xerscope.analysis.checks import health_wide, standard_score
+from xerscope.analysis.checks import (
+    flagged_codes,
+    flagged_trail,
+    health_wide,
+    mismatch_count,
+    report_counts,
+    shown_by_group,
+    standard_score,
+    status_counts,
+    summary_frame,
+)
 from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
@@ -63,18 +73,17 @@ def culprits_first(frame: pd.DataFrame) -> pd.DataFrame:
 
 def show_kpis(results, standard) -> None:
     ui.score_cards({standard.name: standard_score(results)})
-    counts = pd.Series([result.status for result in results]).value_counts()
-    scored = int(counts.get("pass", 0) + counts.get("fail", 0))
+    counts = status_counts(results)
     ui.kpis(
         [
-            ("Checks passed", f"{int(counts.get('pass', 0))} / {scored}", None, "Checks with a target that meet it"),
-            ("Checks failed", int(counts.get("fail", 0)), None, "Checks with a target that miss it"),
-            ("For review", int(counts.get("info", 0)), None, "Reported without a pass/fail target"),
-            ("Not applicable", int(counts.get("n/a", 0)), None, "No population, or no baseline"),
+            ("Checks passed", f"{counts['pass']} / {counts['scored']}", None, "Checks with a target that meet it"),
+            ("Checks failed", counts["fail"], None, "Checks with a target that miss it"),
+            ("For review", counts["info"], None, "Reported without a pass/fail target"),
+            ("Not applicable", counts["n/a"], None, "No population, or no baseline"),
             # a rule that raised: a defect of the check, shown apart from n/a, only when there is one
             *(
-                [("Errors", int(counts["error"]), None, "Checks that could not be computed: see their note")]
-                if counts.get("error", 0)
+                [("Errors", counts["error"], None, "Checks that could not be computed: see their note")]
+                if counts["error"]
                 else []
             ),
         ]
@@ -82,8 +91,7 @@ def show_kpis(results, standard) -> None:
 
 
 def show_summary(results, standard, snapshot, sources: list[str]) -> None:
-    full = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
-    full["note"] = [result.note_with_baseline for result in results]  # the export names the baseline
+    full = summary_frame(results)  # its note names the baseline, for the export
     full["target"] = full["target"].map(typeset)
     columns = ["status", "id", "group", "check", "result", "count", "target", "flagged"]
     if not full["group"].astype(bool).any():
@@ -99,18 +107,11 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
         status="status",
         max_height=700,
         overrides={"flagged": st.column_config.NumberColumn("Items listed", format="%d")},
+        key="health_results",
     )
 
     # Every flagged item of every check in one file: the audit trail behind the scores.
-    trail = pd.concat(
-        [
-            result.flagged.assign(check_id=result.metric.id, check=result.metric.name, check_status=result.status)
-            for result in results
-            if not result.flagged.empty
-        ]
-        or [pd.DataFrame()],
-        ignore_index=True,
-    )
+    trail = flagged_trail(results)
     summary_column, trail_column, sets_column, _ = st.columns([1, 1.3, 1.6, 3])
     with sets_column:  # first, so that the Prepare click also readies the downloads beside it
         prepare_sets(results, standard, snapshot, sources)
@@ -126,9 +127,8 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     with trail_column:
         # the same files as the summary: its Prepare button readies this download too
         if not trail.empty and downloads_ready(sources):
-            front = ["check_id", "check", "check_status"]
             csv_download(
-                trail[front + [column for column in trail.columns if column not in front]],
+                trail,
                 f"{standard.id}_{ui.stamp(snapshot.data_date)}_flagged.csv",
                 "All flagged items (CSV)",
                 key="dl_trail",
@@ -192,15 +192,6 @@ def show_check_sets(results, standard, snapshot, sources: list[str]) -> None:
         show_sets(next(result for result in results if result.metric.id == chosen), snapshot, sources, f"{chosen}:")
 
 
-def flagged_codes(flagged: pd.DataFrame) -> list[str]:
-    """The Activity IDs a check's list names: its tasks, or both ends of its links."""
-    codes: list[str] = []
-    for column in ("task_code", "pred_code", "succ_code"):
-        if column in flagged.columns:
-            codes += [str(code) for code in flagged[column].dropna() if not str(code).startswith("[ext]")]
-    return list(dict.fromkeys(codes))
-
-
 def show_links(result, snapshot, standard) -> None:
     """Where to go next with this check: the Gantt on the tasks it lists, the Audit on its sets."""
     metric = result.metric
@@ -232,17 +223,64 @@ def show_links(result, snapshot, standard) -> None:
             )
 
 
-def show_check(result, explanation, snapshot, expanded: bool, sources: list[str], standard=None) -> None:
-    """One expander: what the check measures, its calculation, method and the flagged items."""
+def check_title(result) -> str:
+    """The expander's title: status mark, check, its result with the counts, its target."""
     metric = result.metric
     row = results_frame([result]).iloc[0]
     counts = f" ({row['count']})" if result.numerator is not None and result.denominator else ""
     value = result.status if result.status in ("n/a", "error") else row["result"]
-    label = (
+    return (
         f"{ui.STATUS_STYLE[result.status].mark}  {metric.id} · **{metric.name}** — {value}{counts}"
         f" · target {typeset(row['target'])}"
     )
-    with st.expander(label, expanded=expanded):
+
+
+def show_method(metric, explanation) -> None:
+    st.markdown("**Method**")
+    st.caption(explanation.method.replace("``", "`"))
+    if explanation.parameters:
+        st.markdown("**Parameters**")
+        ui.table(
+            pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]),
+            max_height=260,
+            key=f"params_{metric.id}",  # one table per check: filters keyed per check
+        )
+    if metric.source:
+        st.caption(
+            "Source: " + (f"[{metric.source}]({metric.source})" if metric.source.startswith("http") else metric.source)
+        )
+
+
+def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
+    """The items the check lists, and their download once the anonymized downloads are prepared."""
+    metric = result.metric
+    if result.flagged.empty:
+        st.caption("No item listed for this check.")
+        return
+    st.markdown(
+        f"**{explanation.flagged_label}** · {len(result.flagged)} {noun(explanation.subject, len(result.flagged))}"
+    )
+    ui.table(
+        culprits_first(result.flagged),
+        max_height=420,
+        key=f"flag_{metric.id}",
+        open_task=partial(open_in_gantt, snapshot=snapshot),
+    )
+    if not downloads_ready(sources):
+        st.caption("Download: prepare the anonymized downloads under Results.")
+        return
+    csv_download(
+        result.flagged,
+        f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
+        "Download list (CSV)",
+        key=f"dl_{metric.id}",
+        sources=sources,
+    )
+
+
+def show_check(result, explanation, snapshot, expanded: bool, sources: list[str], standard=None) -> None:
+    """One expander: what the check measures, its calculation, method and the flagged items."""
+    with st.expander(check_title(result), expanded=expanded):
         left, right = st.columns([3, 2], gap="large")
         with left:
             st.markdown(f"**What it measures** · {explanation.measured}")
@@ -258,61 +296,20 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
             if explanation.baseline:
                 st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
         with right:
-            st.markdown("**Method**")
-            st.caption(explanation.method.replace("``", "`"))
-            if explanation.parameters:
-                st.markdown("**Parameters**")
-                ui.table(
-                    pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]),
-                    max_height=260,
-                    key=f"params_{metric.id}",  # one table per check: filters keyed per check
-                )
-            if metric.source:
-                st.caption(
-                    "Source: "
-                    + (f"[{metric.source}]({metric.source})" if metric.source.startswith("http") else metric.source)
-                )
-
+            show_method(result.metric, explanation)
         if standard is not None:
             show_links(result, snapshot, standard)
-        if result.flagged.empty:
-            st.caption("No item listed for this check.")
-        else:
-            st.markdown(
-                f"**{explanation.flagged_label}** · {len(result.flagged)} "
-                f"{noun(explanation.subject, len(result.flagged))}"
-            )
-            ui.table(
-                culprits_first(result.flagged),
-                max_height=420,
-                key=f"flag_{metric.id}",
-                open_task=partial(open_in_gantt, snapshot=snapshot),
-            )
-            if not downloads_ready(sources):
-                st.caption("Download: prepare the anonymized downloads under Results.")
-            else:
-                csv_download(
-                    result.flagged,
-                    f"{metric.id}_{ui.stamp(snapshot.data_date)}.csv",
-                    "Download list (CSV)",
-                    key=f"dl_{metric.id}",
-                    sources=sources,
-                )
+        show_flagged(result, explanation, snapshot, sources)
 
 
 def show_details(results, snapshot, only_failed: bool, sources: list[str], standard) -> None:
     ui.section("Detail by check")
     expand_all = st.toggle("Expand all", value=False, key="health_expand")
-    shown = [result for result in results if not only_failed or result.status == "fail"]
-    # one title per group, the groups in order of first appearance, each check in the standard's
-    # order within its group (a standard may interleave its groups)
-    groups = list(dict.fromkeys(result.metric.group for result in shown))
-    for group in groups:
+    for group, shown in shown_by_group(results, only_failed).items():
         if group:
             st.markdown(f"##### {group}")
         for result in shown:
-            if result.metric.group == group:
-                show_check(result, explain(result), snapshot, expand_all, sources, standard)
+            show_check(result, explain(result), snapshot, expand_all, sources, standard)
 
 
 def show_trend(store, standard) -> None:
@@ -347,6 +344,7 @@ def show_trend(store, standard) -> None:
             max_height=640,
             # dates follow the id and check columns
             overrides={name: st.column_config.NumberColumn(name, format="%.2f") for name in by_update.columns[2:]},
+            key="health_trend",
         )
 
 
@@ -371,9 +369,9 @@ def show_report_comparison(results, standard) -> None:
             except (ValueError, UnicodeDecodeError) as exc:
                 st.error(f"Unreadable CSV: {ui.md_text(exc)}")
                 return
-            typed = got[["id", "check"]].merge(typed[["id", "found", "total"]], on="id", how="left")
+            typed = report_counts(got, typed)
         else:
-            typed = got[["id", "check"]].assign(found=pd.NA, total=pd.NA).astype({"found": "Int64", "total": "Int64"})
+            typed = report_counts(got)
         edited = st.data_editor(
             typed,
             disabled=["id", "check"],
@@ -387,7 +385,7 @@ def show_report_comparison(results, standard) -> None:
         compared = compare_counts(got, edited)
         if compared.empty:
             return
-        bad = int((~compared["match"]).sum())
+        bad = mismatch_count(compared)
         if bad:
             st.error(f"{bad} of {len(compared)} checks differ from the report", icon=":material/error:")
         else:
@@ -401,6 +399,7 @@ def show_report_comparison(results, standard) -> None:
                 "total": st.column_config.NumberColumn("Total (xerscope)", format="%d"),
                 "match": st.column_config.CheckboxColumn("Match"),
             },
+            key="health_report",
         )
 
 

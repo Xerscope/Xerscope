@@ -1995,6 +1995,33 @@ def test_ppc_tables_keep_their_filters_under_their_own_names(app):
     assert len(filter_keys) == len(set(filter_keys))
 
 
+def test_health_tables_keep_their_filters_under_their_own_names(app):
+    """Each table of the Schedule health page is drawn with a key: its column filters are kept in
+    the session under that name, not under the file and line of the call. On the demo with the P6
+    standard: the results (18 checks) and the lists of P6-12 (19 tasks) and P6-14 (13) are long
+    enough to carry filters, the other lists and the parameters are not; the trend table (18 checks)
+    comes with its button, the comparison (18 checks) with a report that types every check."""
+    from xerscope.analysis import builtin_standards
+
+    app.switch_page("views/health.py").run()
+    _ok(app)
+
+    def filter_names() -> set[str]:
+        inputs = [*app.text_input, *app.multiselect]
+        keys = [widget.key for widget in inputs if (widget.key or "").startswith("filter:")]
+        assert len(keys) == len(set(keys))
+        return {key.split(":")[1] for key in keys}
+
+    assert filter_names() == {"health_results", "flag_P6-12", "flag_P6-14"}
+    app.button(key="health_trend_btn").click().run()
+    assert filter_names() == {"health_results", "flag_P6-12", "flag_P6-14", "health_trend"}
+    lines = "".join(f"{metric.id},1,1\n" for metric in builtin_standards()["P6"].metrics)
+    report = next(u for u in app.file_uploader if u.key == "report_csv_P6")
+    report.set_value(("report.csv", f"id,found,total\n{lines}".encode(), "text/csv")).run()
+    _ok(app)
+    assert filter_names() == {"health_results", "flag_P6-12", "flag_P6-14", "health_trend", "health_report"}
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
