@@ -1,9 +1,21 @@
 """Score of a standard: checks in pass / checks evaluated (pass + fail), info, n/a and error left out."""
 
+import pandas as pd
 import pytest
 from xerkit import snap, todo
 
 from xerscope.analysis import AnalysisContext, CheckResult, Metric, loads_standard, run_standard, standard_score
+from xerscope.analysis.checks import (
+    compare_counts,
+    flagged_codes,
+    flagged_trail,
+    mismatch_count,
+    report_counts,
+    results_frame,
+    shown_by_group,
+    status_counts,
+    summary_frame,
+)
 
 # A -> B -> C, D alone. P6-01's rule flags A (no predecessor), C (no successor) and D (neither):
 # 3 of 4 open tasks = 75 %.
@@ -68,3 +80,95 @@ def _results(*statuses: str) -> list[CheckResult]:
 def test_info_na_and_error_are_in_neither_term(statuses, passed, evaluated, failed_ids):
     score = standard_score(_results(*statuses))
     assert (score.passed, score.evaluated, score.failed_ids) == (passed, evaluated, failed_ids)
+
+
+# --- what the Schedule health page shows of a list of results -----------------------------------
+
+
+def _check(metric_id: str, status: str, group: str = "", flagged: pd.DataFrame | None = None, **fields) -> CheckResult:
+    metric = Metric(id=metric_id, name=f"check {metric_id}", standard="T", rule="p6_01_logic", group=group)
+    return CheckResult(metric, status, flagged=pd.DataFrame() if flagged is None else flagged, **fields)
+
+
+def test_status_counts_give_each_status_and_the_checks_with_a_target():
+    """Eight results: 2 pass, 3 fail, 1 info, 1 n/a, 1 error. Scored: 2 + 3 = 5."""
+    counts = status_counts(_results("pass", "fail", "info", "fail", "n/a", "pass", "fail", "error"))
+    assert counts == {"pass": 2, "fail": 3, "info": 1, "n/a": 1, "error": 1, "scored": 5}
+    assert status_counts([])["scored"] == 0
+
+
+def test_summary_frame_counts_the_items_listed_and_names_the_baseline_in_the_note():
+    """A lists 2 tasks, computed on baseline "BL1" with the note "late"; B lists nothing, has no
+    baseline and no note."""
+    two_tasks = pd.DataFrame({"task_code": ["T1", "T2"]})
+    results = [_check("A", "fail", flagged=two_tasks, note="late", baseline="BL1"), _check("B", "pass")]
+    summary = summary_frame(results)
+    assert summary["id"].tolist() == ["A", "B"] and summary["flagged"].tolist() == [2, 0]
+    assert summary["note"].tolist() == ["late · baseline: BL1", ""]
+    assert results_frame(results)["note"].tolist() == ["late", ""]  # the plain frame keeps the plain note
+
+
+def test_flagged_trail_lists_every_item_under_its_check():
+    """A (fail) lists T1 and T2, B (pass) nothing, C (info) the link P1 -> S1: three rows, in the
+    order of the checks, each naming its check first; a task has no link columns and a link no
+    task column."""
+    results = [
+        _check("A", "fail", flagged=pd.DataFrame({"task_code": ["T1", "T2"]})),
+        _check("B", "pass"),
+        _check("C", "info", flagged=pd.DataFrame({"pred_code": ["P1"], "succ_code": ["S1"]})),
+    ]
+    trail = flagged_trail(results)
+    assert trail.columns.tolist() == ["check_id", "check", "check_status", "task_code", "pred_code", "succ_code"]
+    assert trail["check_id"].tolist() == ["A", "A", "C"] and trail["check_status"].tolist() == ["fail", "fail", "info"]
+    assert trail["task_code"].tolist()[:2] == ["T1", "T2"] and pd.isna(trail["task_code"].iloc[2])
+    assert trail["succ_code"].iloc[2] == "S1"
+    assert flagged_trail([_check("B", "pass")]).empty
+
+
+def test_flagged_codes_name_each_activity_once_and_no_end_outside_the_file():
+    """Tasks T1, T2, T1 again: T1, T2. Links A -> B, B -> [ext] X, blank -> C: A, B (once), C; the
+    external end and the blank are not activities of the file."""
+    assert flagged_codes(pd.DataFrame({"task_code": ["T1", "T2", "T1"]})) == ["T1", "T2"]
+    links = pd.DataFrame({"pred_code": ["A", "B", None], "succ_code": ["B", "[ext] X", "C"]})
+    assert flagged_codes(links) == ["A", "B", "C"]
+    assert flagged_codes(pd.DataFrame({"wbs_code": ["W"]})) == []
+
+
+def test_shown_by_group_keeps_the_groups_in_order_of_first_appearance():
+    """A standard that interleaves its groups: 1 (Logic, fail), 2 (Dates, pass), 3 (Logic, pass),
+    4 (Dates, fail). All: Logic [1, 3] then Dates [2, 4]. Failed only: Logic [1], Dates [4]."""
+    results = [
+        _check("1", "fail", "Logic"),
+        _check("2", "pass", "Dates"),
+        _check("3", "pass", "Logic"),
+        _check("4", "fail", "Dates"),
+    ]
+    ids = lambda groups: {group: [result.metric.id for result in shown] for group, shown in groups.items()}  # noqa: E731
+    assert ids(shown_by_group(results)) == {"Logic": ["1", "3"], "Dates": ["2", "4"]}
+    assert list(shown_by_group(results)) == ["Logic", "Dates"]
+    assert ids(shown_by_group(results, only_failed=True)) == {"Logic": ["1"], "Dates": ["4"]}
+    assert shown_by_group([_check("2", "pass", "Dates")], only_failed=True) == {}
+
+
+def test_report_counts_hold_one_line_per_check_filled_where_the_report_names_it():
+    """Checks A, B, C. No report: three blank lines. A report naming B (4 of 10) and Z (unknown):
+    B filled, A and C blank, Z left out."""
+    got = pd.DataFrame({"id": ["A", "B", "C"], "check": ["a", "b", "c"], "found": [1, 2, 3], "total": [9, 9, 9]})
+    blank = report_counts(got)
+    assert blank["id"].tolist() == ["A", "B", "C"] and blank["check"].tolist() == ["a", "b", "c"]
+    assert blank["found"].isna().all() and blank["total"].isna().all()
+    assert str(blank["found"].dtype) == "Int64"  # the editor takes whole numbers
+    typed = pd.DataFrame({"id": ["B", "Z"], "found": [4, 1], "total": [10, 1]})
+    lines = report_counts(got, typed).set_index("id")
+    assert lines.index.tolist() == ["A", "B", "C"]
+    assert (lines.loc["B", "found"], lines.loc["B", "total"]) == (4, 10)
+    assert lines.loc[["A", "C"], ["found", "total"]].isna().all().all()
+
+
+def test_mismatch_count_counts_the_checks_that_differ_from_the_report():
+    """xerscope: A 1 of 9, B 2 of 9. The report: A 1 of 9 (same), B 3 of 9 (found differs), D 0 of 5
+    (no such check). Two differ."""
+    got = pd.DataFrame({"id": ["A", "B"], "check": ["a", "b"], "found": [1, 2], "total": [9, 9]})
+    got[["found", "total"]] = got[["found", "total"]].astype("Int64")
+    typed = pd.DataFrame({"id": ["A", "B", "D"], "found": [1, 3, 0], "total": [9, 9, 5]})
+    assert mismatch_count(compare_counts(got, typed)) == 2
