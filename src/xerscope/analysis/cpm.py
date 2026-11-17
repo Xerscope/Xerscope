@@ -1258,72 +1258,81 @@ class _Run:
         Friday 17:00, late start Thursday 08:00; with B's early finish on Wednesday 17:00 its
         float is 2 days.
         """
-        options, status = self.options, self.status
-        end_anchor = options.must_finish_by if options.must_finish_by is not None else self.finish
+        end_anchor = self.options.must_finish_by if self.options.must_finish_by is not None else self.finish
         for code in reversed(self.order):
-            if status[code] == "TK_Complete":
+            if self.status[code] == "TK_Complete":
                 if self.retain:
                     late_start_bounds, late_finish_bounds = self.successor_limits(code, late=True)
                     self.lcarry[code] = min(late_start_bounds + late_finish_bounds + [end_anchor])
                 continue
-            axis = self.cal_ax[code]
-            activity_kind, duration = self.kind(code), self.dur_min(code)
-            late_start_bounds, late_finish_bounds = self.successor_limits(code, late=True)
-            if not late_start_bounds and not late_finish_bounds:
-                # "Make open-ended activities critical": the late finish of an activity
-                # without any successor link is its early finish, never past the project's
-                # Must Finish By (H25-05 A1380); one whose successors bind nothing (finished,
-                # a WBS summary) is not open-ended and ends at the project's end (H27-04 A1390)
-                open_end = code not in self.linked_on
-                late_finish_bounds.append(
-                    min(self.early_finish[code], end_anchor) if options.open_critical and open_end else end_anchor
-                )
-            else:
-                # No late finish after the project's: an activity whose successors only bound
-                # its start (SS, SF) would otherwise float past the end, and so would its
-                # predecessors. MPXJ's PrimaveraScheduler caps it the same way; no P6 file at
-                # hand covers the case (tests/test_crosscheck_mpxj.py).
-                late_finish_bounds.append(end_anchor)
-            external_date = self.inputs[code].get("external_late_end_date")
-            if options.honor_external and external_date is not None and pd.notna(external_date):
-                late_finish_bounds.append(pd.Timestamp(external_date))
-                self.external.add(code)
-            pinned = None
-            constraint_start_bounds, constraint_finish_bounds = [], []  # bounds the constraints themselves give
-            for constraint_type, date in self.constraints(code):
-                if constraint_type in MANDATORY:
-                    pinned = (MANDATORY[constraint_type], date)
-                elif LATE_LIKE.get(constraint_type) == "start" and status[code] != "TK_Active":
-                    constraint_start_bounds.append(date)
-                elif LATE_LIKE.get(constraint_type) == "finish":
-                    constraint_finish_bounds.append(date)
-            successor_start_bounds, successor_finish_bounds = (
-                list(late_start_bounds),
-                list(late_finish_bounds),
-            )  # the successors' bounds alone
-            late_start_bounds, late_finish_bounds = (
-                late_start_bounds + constraint_start_bounds,
-                late_finish_bounds + constraint_finish_bounds,
-            )
-            if pinned:
-                # a second constraint of the same end tighter than the mandatory date still
-                # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
-                # Finish is the late finish)
-                if pinned[0] == "start":
-                    late_start_bounds, late_finish_bounds = [min([pinned[1]] + constraint_start_bounds)], []
-                else:
-                    late_start_bounds, late_finish_bounds = [], [min([pinned[1]] + constraint_finish_bounds)]
-                if pinned[0] == "finish" and code in self.duration_override:
-                    # With an expected finish earlier than the Mandatory Finish the date no
-                    # longer pins: the successors' bounds drive the late dates, capped by the
-                    # expected finish on task-dependent work (H22-06 A1120, H23-03 A1210,
-                    # H23-07 A1110) and by the mandatory date itself on resource-dependent
-                    # work (H25-05 A1150; observed, not explained)
-                    cap = pinned[1] if code in self.rsrc_dep else min(pinned[1], self.early_finish[code])
-                    late_start_bounds, late_finish_bounds = successor_start_bounds, successor_finish_bounds + [cap]
+            late_start_bounds, late_finish_bounds = self.late_bounds(code, end_anchor)
             self.late_start[code], self.late_finish[code] = self.place_late(
-                code, axis, activity_kind, duration, late_start_bounds, late_finish_bounds
+                code, self.cal_ax[code], self.kind(code), self.dur_min(code), late_start_bounds, late_finish_bounds
             )
+
+    def late_bounds(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
+        """Latest dates an open activity may start at and finish at ("not after" bounds): what follows
+        it and the project end, then its constraints; a mandatory date replaces them."""
+        following_start_bounds, following_finish_bounds = self.bounds_of_what_follows(code, end_anchor)
+        pinned, constraint_start_bounds, constraint_finish_bounds = self.late_constraints(code)
+        if pinned is None:
+            return (
+                following_start_bounds + constraint_start_bounds,
+                following_finish_bounds + constraint_finish_bounds,
+            )
+        end, date = pinned
+        # a second constraint of the same end tighter than the mandatory date still
+        # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
+        # Finish is the late finish)
+        if end == "start":
+            return [min([date] + constraint_start_bounds)], []
+        if code in self.duration_override:
+            # With an expected finish earlier than the Mandatory Finish the date no
+            # longer pins: the successors' bounds drive the late dates, capped by the
+            # expected finish on task-dependent work (H22-06 A1120, H23-03 A1210,
+            # H23-07 A1110) and by the mandatory date itself on resource-dependent
+            # work (H25-05 A1150; observed, not explained)
+            cap = date if code in self.rsrc_dep else min(date, self.early_finish[code])
+            return following_start_bounds, following_finish_bounds + [cap]
+        return [], [min([date] + constraint_finish_bounds)]
+
+    def bounds_of_what_follows(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
+        """Bounds the successors give, the project end and the late date a link to another project gives."""
+        late_start_bounds, late_finish_bounds = self.successor_limits(code, late=True)
+        if not late_start_bounds and not late_finish_bounds:
+            # "Make open-ended activities critical": the late finish of an activity
+            # without any successor link is its early finish, never past the project's
+            # Must Finish By (H25-05 A1380); one whose successors bind nothing (finished,
+            # a WBS summary) is not open-ended and ends at the project's end (H27-04 A1390)
+            open_end = code not in self.linked_on
+            late_finish_bounds.append(
+                min(self.early_finish[code], end_anchor) if self.options.open_critical and open_end else end_anchor
+            )
+        else:
+            # No late finish after the project's: an activity whose successors only bound
+            # its start (SS, SF) would otherwise float past the end, and so would its
+            # predecessors. MPXJ's PrimaveraScheduler caps it the same way; no P6 file at
+            # hand covers the case (tests/test_crosscheck_mpxj.py).
+            late_finish_bounds.append(end_anchor)
+        external_date = self.inputs[code].get("external_late_end_date")
+        if self.options.honor_external and external_date is not None and pd.notna(external_date):
+            late_finish_bounds.append(pd.Timestamp(external_date))
+            self.external.add(code)
+        return late_start_bounds, late_finish_bounds
+
+    def late_constraints(self, code) -> tuple[tuple[str, pd.Timestamp] | None, list, list]:
+        """The mandatory date of the activity if any (its end, the date), and the bounds its other
+        constraints give to its late start and to its late finish."""
+        pinned = None
+        start_bounds, finish_bounds = [], []
+        for constraint_type, date in self.constraints(code):
+            if constraint_type in MANDATORY:
+                pinned = (MANDATORY[constraint_type], date)
+            elif LATE_LIKE.get(constraint_type) == "start" and self.status[code] != "TK_Active":
+                start_bounds.append(date)
+            elif LATE_LIKE.get(constraint_type) == "finish":
+                finish_bounds.append(date)
+        return pinned, start_bounds, finish_bounds
 
     # --- float, as late as possible ------------------------------------------------------------
     def floats(self) -> None:
