@@ -319,6 +319,17 @@ def table_height(rows: int, max_height: int) -> int:
     return min(ROW_HEIGHT * rows + HEADER_HEIGHT, max_height)
 
 
+_ADDRESS_IN_BRACKETS = re.compile(r"\s*\((?:https?://|www\.)[^\s)]*\)")
+_ADDRESS = re.compile(r"(?:https?://|www\.)\S+")
+
+
+def without_addresses(text: str) -> str:
+    """``text`` less its web addresses, an address in brackets going with its brackets: the app
+    shows no external link, and Streamlit turns a bare address into one. The addresses of the
+    sources are in docs/standards.md, Sources."""
+    return " ".join(_ADDRESS.sub("", _ADDRESS_IN_BRACKETS.sub("", text)).split())
+
+
 def md_text(value: object) -> str:
     """Text from a schedule file, shown literally inside Markdown: no link, image, emphasis
     or LaTeX ($...$) can come from an activity name or code."""

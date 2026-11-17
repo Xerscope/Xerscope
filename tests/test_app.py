@@ -2039,6 +2039,16 @@ def test_step_sources_read_the_same_under_the_ask_field_and_on_the_audit_page(ap
     assert "101248 · 46282" in [caption.value for caption in app.caption]
 
 
+def test_without_addresses_takes_the_web_addresses_out_of_a_source():
+    """An address in brackets goes with its brackets, a bare one alone, "www." as "http"; a source
+    that is only an address leaves nothing; a text without one is unchanged."""
+    cited = 'Schedule Log, Errors: "invalid loops" (https://docs.example.com/p6/99374.htm); Exceptions'
+    assert ui.without_addresses(cited) == 'Schedule Log, Errors: "invalid loops"; Exceptions'
+    assert ui.without_addresses("see www.example.com/page and PAM 200.1 §4.1") == "see and PAM 200.1 §4.1"
+    assert ui.without_addresses("https://docs.example.com/101393.htm") == ""
+    assert ui.without_addresses("DCMA-EA PAM 200.1 (Oct 2012), section 4") == "DCMA-EA PAM 200.1 (Oct 2012), section 4"
+
+
 WEB_ADDRESS = re.compile(r"https?://|www\.")
 
 

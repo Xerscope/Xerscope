@@ -23,9 +23,12 @@ from xerscope.app.state import csv_download
 
 
 def source_text(key: str) -> str:
-    """A step's source as the caption shows it: a link when it is a web page."""
+    """A step's source as the caption shows it: its key alone for a web page, with its text otherwise.
+
+    The app shows no external link: the address of a web page is in docs/standards.md, Sources.
+    """
     source = STEP_SOURCES[key]
-    return f"[{key}]({source})" if source.startswith("http") else f"{key}: {source}"
+    return key if source.startswith("http") else f"{key}: {source}"
 
 
 def source_caption(funnel) -> str:
