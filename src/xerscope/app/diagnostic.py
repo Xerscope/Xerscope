@@ -43,6 +43,7 @@ from xerscope.xer.model import (
     leveled,
     to_number,
 )
+from xerscope.xer.pmxml import XmlBaseline
 
 FROM_FILE, DEFAULTED, BLANK = "file", "default (blank in file)", "blank in file (no default)"
 
@@ -183,14 +184,17 @@ def projects_table(snapshot: Snapshot) -> pd.DataFrame:
 
 
 BASELINE_POINTER_COLUMNS = [
-    "file", "data_date", "proj_id", "add_date", "sum_base_proj_id", "baseline_in_file", "use_project_baseline_flag",
+    "file", "data_date", "proj_id", "add_date", "sum_base_proj_id", "baseline_in_file", "baseline_in_xml_file",
+    "use_project_baseline_flag",
 ]  # fmt: skip
 
 
-def baseline_pointers(snapshots: Iterable[Snapshot]) -> pd.DataFrame:
+def baseline_pointers(snapshots: Iterable[Snapshot], xml_baselines: list[XmlBaseline] | None = None) -> pd.DataFrame:
     """One row per update, in the order given (a SnapshotStore: data date order): the analysed
     project's proj_id, add_date and use_project_baseline_flag as stored, the Project Baseline it
-    names (sum_base_proj_id) and whether the same file holds that project."""
+    names (sum_base_proj_id), whether the same file holds that project and whether the P6 XML
+    baseline file does (``xml_baselines``, its baselines; blank without such a file)."""
+    xml_baseline_ids = None if xml_baselines is None else {baseline.object_id for baseline in xml_baselines}
     rows = []
     for snapshot in snapshots:
         projects = snapshot.file_projects.set_index("proj_id")
@@ -204,6 +208,7 @@ def baseline_pointers(snapshots: Iterable[Snapshot]) -> pd.DataFrame:
                 "add_date": project["add_date"],
                 "sum_base_proj_id": pointer,
                 "baseline_in_file": bool(pointer) and pointer in projects.index,
+                "baseline_in_xml_file": None if xml_baseline_ids is None else pointer in xml_baseline_ids,
                 "use_project_baseline_flag": project["use_project_baseline_flag"],
             }
         )
