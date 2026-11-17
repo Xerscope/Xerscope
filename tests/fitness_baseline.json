@@ -204,9 +204,9 @@
       "mi": 0.0,
       "mi_rank": "C",
       "cc_max": 46,
-      "cc_over_15": 8,
+      "cc_over_15": 7,
       "cognitive_max": 72,
-      "cognitive_over_15": 11,
+      "cognitive_over_15": 9,
       "clones": 0,
       "near_clones": 0
     },
