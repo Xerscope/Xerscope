@@ -248,16 +248,21 @@ ui.section("Percent plan complete by week")
 ui.chart(build_ppc(ppc, target))
 show_ppc_weeks(ppc)
 
-commitments = committed(previous, current, include_overdue)
+commitments = memo(
+    ("ppc_commitments", week, include_overdue), committed, previous, current, include_overdue, baseline=False
+)
+milestones = memo(
+    ("ppc_milestones", week, include_overdue), committed_milestones, previous, current, include_overdue, baseline=False
+)
+unplanned = memo(("ppc_unplanned", week), unplanned_work, previous, current, baseline=False)
+renumbered_tasks = memo(("ppc_renumbered", week), renumbered, previous, current, baseline=False)
 progress = progress_delta(previous, current, baseline_for(current))
 wbs_progress = rollup_delta(progress)
 week_ppc = ppc_of_week(ppc, week_index)
 show_kpis(week_ppc, project_progress(wbs_progress))
-show_renumbered(renumbered(previous, current))
+show_renumbered(renumbered_tasks)
 show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
-show_milestones_and_unplanned(
-    committed_milestones(previous, current, include_overdue), unplanned_work(previous, current)
-)
+show_milestones_and_unplanned(milestones, unplanned)
 show_progress_by_activity(progress, previous, current)
 variances = memo(("date_variances", week), date_variances, store, week_index, baseline=False)
 before_previous = store[week_index - 2] if week_index >= 2 else None
