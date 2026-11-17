@@ -3,55 +3,43 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis.changelog import category_totals, changelog, summary, weekly_change_counts, weekly_change_matrix
+from xerscope.analysis.changelog import (
+    category_totals,
+    changelog,
+    forecast_finish,
+    headline_counts,
+    summary,
+    weekly_change_counts,
+    weekly_change_matrix,
+)
 from xerscope.app import ui
 from xerscope.app.state import csv_download, memo, open_in_gantt, page_header, require_store, sources_of
 
-RETROACTIVE_ACTUALS = (
-    "actual start changed (retroactive)",
-    "actual finish changed (retroactive)",
-    "actual start removed",
-    "actual finish removed",
-)
 SEARCH_COLUMNS = ["task_code", "task_name", "wbs_code", "field"]
 
 
-def count_changes(counts: pd.DataFrame, category: str, *changes: str) -> int:
-    """Number of changes in a category, optionally only of the given kinds."""
-    in_category = counts["category"] == category
-    wanted = counts["change"].isin(changes) if changes else True
-    return int(counts[in_category & wanted]["count"].sum())
-
-
 def show_kpis(log: pd.DataFrame, counts: pd.DataFrame) -> None:
-    project = log[log["category"] == "Project"].set_index("change")
-    has_finish = "forecast finish" in project.index and bool(project.loc["forecast finish", "after"])
-    shift = project.loc["forecast finish", "delta"] if "forecast finish" in project.index else None
-    finish_text = ui.fmt_date(pd.Timestamp(project.loc["forecast finish", "after"])) if has_finish else "–"
+    finish, shift_wd = forecast_finish(log)
+    headline = headline_counts(counts)
     ui.kpis(
         [
             (
                 "Forecast finish",
-                finish_text,
-                None if shift is None or pd.isna(shift) else f"{shift:+.1f} wd",
+                ui.fmt_date(finish),
+                None if shift_wd is None else f"{shift_wd:+.1f} wd",
                 "Working days gained (+) or lost (−) on the forecast finish between the two updates "
                 "(project calendar): a later finish reads negative",
             ),
-            (
-                "Added / deleted",
-                f"{count_changes(counts, 'Scope', 'added')} / {count_changes(counts, 'Scope', 'deleted')}",
-                None,
-                "Tasks",
-            ),
-            ("Logic changes", count_changes(counts, "Relationships")),
-            ("Durations changed", count_changes(counts, "Durations")),
+            ("Added / deleted", f"{headline['added']} / {headline['deleted']}", None, "Tasks"),
+            ("Logic changes", headline["logic"]),
+            ("Durations changed", headline["durations"]),
             (
                 "Retroactive actuals",
-                count_changes(counts, "Progress", *RETROACTIVE_ACTUALS),
+                headline["retroactive_actuals"],
                 None,
                 "Actual dates edited or removed after being reported: should not happen",
             ),
-            ("Became critical", count_changes(counts, "Float", "became critical")),
+            ("Became critical", headline["became_critical"]),
         ]
     )
 
@@ -60,6 +48,7 @@ def show_categories(counts: pd.DataFrame) -> None:
     ui.section("Changes by category")
     ui.table(
         category_totals(counts),
+        key="changelog_categories",
         overrides={
             "total": st.column_config.NumberColumn("Changes", format="%d"),
             "kinds": st.column_config.TextColumn("Kinds of change", width="large"),
@@ -99,7 +88,7 @@ def show_weekly(store) -> None:
     with st.expander("Every week, side by side"):
         weekly = memo(("changelog_weekly",), weekly_change_counts, store, baseline=False)
         wide = weekly_change_matrix(weekly)
-        ui.table(wide, max_height=640)
+        ui.table(wide, max_height=640, key="changelog_weekly")
 
 
 store = require_store()

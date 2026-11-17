@@ -373,6 +373,47 @@ def category_totals(counts: pd.DataFrame) -> pd.DataFrame:
     return totals.merge(kinds.reset_index(), on="category")
 
 
+# the kinds _progress_changes writes for an actual date edited or removed after being reported
+RETROACTIVE_ACTUALS = (
+    "actual start changed (retroactive)",
+    "actual finish changed (retroactive)",
+    "actual start removed",
+    "actual finish removed",
+)
+
+
+def count_changes(counts: pd.DataFrame, category: str, *changes: str) -> int:
+    """Number of changes in a category, optionally only of the given kinds (from :func:`summary`)."""
+    in_category = counts["category"] == category
+    wanted = counts["change"].isin(changes) if changes else True
+    return int(counts[in_category & wanted]["count"].sum())
+
+
+def headline_counts(counts: pd.DataFrame) -> dict[str, int]:
+    """The counts the Changelog page shows above its tables (from :func:`summary`): tasks added
+    and deleted, relationship changes, duration changes, actual dates edited or removed after
+    being reported, tasks that became critical."""
+    return {
+        "added": count_changes(counts, "Scope", "added"),
+        "deleted": count_changes(counts, "Scope", "deleted"),
+        "logic": count_changes(counts, "Relationships"),
+        "durations": count_changes(counts, "Durations"),
+        "retroactive_actuals": count_changes(counts, "Progress", *RETROACTIVE_ACTUALS),
+        "became_critical": count_changes(counts, "Float", "became critical"),
+    }
+
+
+def forecast_finish(log: pd.DataFrame) -> tuple[pd.Timestamp | None, float | None]:
+    """The forecast finish of the newer update and its shift since the older one, read in the
+    project row every log has (:func:`_project_changes`). The finish is None when the newer
+    update has none. The shift is in working days of the project calendar, days lost negative;
+    None when the older update has no finish."""
+    row = log[(log["category"] == "Project") & (log["change"] == "forecast finish")].iloc[0]
+    finish = pd.Timestamp(row["after"]) if row["after"] else None
+    shift_wd = None if pd.isna(row["delta"]) else float(row["delta"])
+    return finish, shift_wd
+
+
 def weekly_change_counts(store: SnapshotStore) -> pd.DataFrame:
     """:func:`summary` of every consecutive pair of updates, tagged with the newer data date as ``week``."""
     frames = []

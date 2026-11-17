@@ -1145,6 +1145,94 @@ def test_category_totals_sums_counts_and_lists_kinds(store):
     ]
 
 
+@pytest.mark.oracle("characterization")
+def test_headline_counts_read_each_count_in_its_own_category_and_kinds():
+    """A summary written by hand, with a neighbour beside each count that must stay out of it.
+    added 2, deleted 3: tasks (Scope), not the relationships added (4) or deleted (1).
+    logic 4 + 1 + 6 + 5 = 16: every kind of the Relationships category.
+    durations 7 + 8 = 15: every kind of the Durations category.
+    retroactive actuals 1 + 2 + 3 + 4 = 10: actual dates changed or removed, not the 9 tasks
+    started nor the 11 changes of % complete.
+    became critical 2: not the 12 changes of total float nor the 13 tasks no longer critical."""
+    from xerscope.analysis.changelog import headline_counts
+
+    rows = [
+        ("Scope", "added", 2),
+        ("Scope", "deleted", 3),
+        ("Relationships", "added", 4),
+        ("Relationships", "deleted", 1),
+        ("Relationships", "type changed", 6),
+        ("Relationships", "lag changed", 5),
+        ("Durations", "original duration changed", 7),
+        ("Durations", "remaining duration increased", 8),
+        ("Progress", "actual start changed (retroactive)", 1),
+        ("Progress", "actual finish changed (retroactive)", 2),
+        ("Progress", "actual start removed", 3),
+        ("Progress", "actual finish removed", 4),
+        ("Progress", "started", 9),
+        ("Progress", "% complete", 11),
+        ("Float", "became critical", 2),
+        ("Float", "total float changed", 12),
+        ("Float", "no longer critical", 13),
+    ]
+    counts = pd.DataFrame(rows, columns=["category", "change", "count"])
+    assert headline_counts(counts) == {
+        "added": 2,
+        "deleted": 3,
+        "logic": 16,
+        "durations": 15,
+        "retroactive_actuals": 10,
+        "became_critical": 2,
+    }
+    nothing = headline_counts(counts.iloc[:0])
+    assert set(nothing.values()) == {0} and all(type(value) is int for value in nothing.values())
+
+
+@pytest.mark.oracle("characterization")
+def test_forecast_finish_reads_the_project_row_of_the_log(store):
+    """The finish and its shift come from the "forecast finish" project row: not from the status
+    date row above it, not from a task whose finish moved. An empty finish (the newer update has
+    none) reads None; a shift the log could not compute (no finish in the older update) reads None."""
+    from xerscope.analysis.changelog import COLS, forecast_finish
+
+    def log_with(after, delta):
+        rows = [
+            (
+                "Project",
+                "status date",
+                "",
+                None,
+                None,
+                "status date",
+                "2026-10-12 08:00",
+                "2026-10-19 08:00",
+                5.0,
+                "wd",
+            ),
+            ("Project", "forecast finish", "", None, None, "forecast finish", "2027-03-19 17:00", after, delta, "wd"),
+            (
+                "Dates",
+                "finish moved",
+                "A",
+                "Task A",
+                "W1",
+                "finish",
+                "2026-11-02 17:00",
+                "2026-11-06 17:00",
+                -4.0,
+                "wd",
+            ),
+        ]
+        return pd.DataFrame(rows, columns=COLS)
+
+    assert forecast_finish(log_with("2027-03-23 17:00", -2.0)) == (pd.Timestamp("2027-03-23 17:00"), -2.0)
+    assert forecast_finish(log_with("", float("nan"))) == (None, None)
+    assert forecast_finish(log_with("2027-03-23 17:00", float("nan"))) == (pd.Timestamp("2027-03-23 17:00"), None)
+    # the log of two real updates always carries that row, with the newer update's finish to the minute
+    finish, shift_wd = forecast_finish(changelog(store[0], store[1]))
+    assert finish == store[1].finish_date.floor("min") and isinstance(shift_wd, float)
+
+
 def test_weekly_change_matrix_counts_per_category_kind_and_week(store):
     from xerscope.analysis.changelog import weekly_change_counts, weekly_change_matrix
 
