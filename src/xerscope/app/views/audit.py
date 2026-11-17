@@ -111,9 +111,9 @@ def show_explanation(result) -> None:
     with right:
         st.markdown("**Method**")
         st.caption(explanation.method.replace("``", "`"))
-        if result.metric.source:
-            source = result.metric.source
-            st.caption("Source: " + (f"[{source}]({source})" if source.startswith("http") else source))
+        source = ui.without_addresses(result.metric.source)
+        if source:
+            st.caption(f"Source: {source}")
 
 
 def show_sheet(standard, metric) -> None:

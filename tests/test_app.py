@@ -2023,9 +2023,9 @@ def test_health_tables_keep_their_filters_under_their_own_names(app):
 
 
 def test_step_sources_read_the_same_under_the_ask_field_and_on_the_audit_page(app):
-    """The line under a population's steps names each source once: a link when the source is a web
-    page, its text otherwise. The Ask field's steps follow "ask" (a text); P6-04's on the Audit
-    page follow Oracle's page 101248 (a link)."""
+    """The line under a population's steps names each source once: its key alone when the source is
+    a web page (the address is in docs/standards.md, Sources), its text otherwise. The Ask field's
+    steps follow "ask" (a text); P6-04's on the Audit page follow Oracle's pages 101248 and 46282."""
     from xerscope.analysis.populations import STEP_SOURCES
 
     app.switch_page("views/gantt.py").run()
@@ -2036,8 +2036,41 @@ def test_step_sources_read_the_same_under_the_ask_field_and_on_the_audit_page(ap
     app.get("button_group")[0].set_value("P6").run()
     app.selectbox(key="audit_check:P6").set_value("P6-04").run()
     _ok(app)
-    link = f"[101248]({STEP_SOURCES['101248']})"
-    assert [caption.value for caption in app.caption if caption.value.startswith(link)]
+    assert "101248 · 46282" in [caption.value for caption in app.caption]
+
+
+def test_without_addresses_takes_the_web_addresses_out_of_a_source():
+    """An address in brackets goes with its brackets, a bare one alone, "www." as "http"; a source
+    that is only an address leaves nothing; a text without one is unchanged."""
+    cited = 'Schedule Log, Errors: "invalid loops" (https://docs.example.com/p6/99374.htm); Exceptions'
+    assert ui.without_addresses(cited) == 'Schedule Log, Errors: "invalid loops"; Exceptions'
+    assert ui.without_addresses("see www.example.com/page and PAM 200.1 §4.1") == "see and PAM 200.1 §4.1"
+    assert ui.without_addresses("https://docs.example.com/101393.htm") == ""
+    assert ui.without_addresses("DCMA-EA PAM 200.1 (Oct 2012), section 4") == "DCMA-EA PAM 200.1 (Oct 2012), section 4"
+
+
+WEB_ADDRESS = re.compile(r"https?://|www\.")
+
+
+def _texts(at) -> list[str]:
+    return [element.value for kind in (at.caption, at.markdown, at.info, at.warning) for element in kind]
+
+
+@pytest.mark.parametrize("standard_id", ["P6", "DCMA", "DECM", "INTEGRITY"])
+def test_health_and_audit_write_no_web_address(app, standard_id):
+    """The app shows no external link, and Streamlit turns a bare address into one: no text of the
+    Schedule health page (every check open) or of the Audit page (the standard's first check)
+    holds a web address. DECM and P6 name a web page as their reference, INTEGRITY's checks cite
+    Oracle's pages in their source, the steps of P6's checks follow Oracle's pages."""
+    app.switch_page("views/health.py").run()
+    app.get("button_group")[0].set_value(standard_id).run()
+    app.toggle(key="health_expand").set_value(True).run()
+    _ok(app)
+    assert not [text for text in _texts(app) if WEB_ADDRESS.search(text)]
+    app.switch_page("views/audit.py").run()
+    app.get("button_group")[0].set_value(standard_id).run()
+    _ok(app)
+    assert not [text for text in _texts(app) if WEB_ADDRESS.search(text)]
 
 
 def test_table_column_filters_keep_the_matching_rows(app):

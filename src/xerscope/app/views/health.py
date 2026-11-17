@@ -245,10 +245,9 @@ def show_method(metric, explanation) -> None:
             max_height=260,
             key=f"params_{metric.id}",  # one table per check: filters keyed per check
         )
-    if metric.source:
-        st.caption(
-            "Source: " + (f"[{metric.source}]({metric.source})" if metric.source.startswith("http") else metric.source)
-        )
+    source = ui.without_addresses(metric.source)
+    if source:
+        st.caption(f"Source: {source}")
 
 
 def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
@@ -460,8 +459,7 @@ baseline = baseline_for(snapshot)
 with top:
     page_header("Schedule health", store, snapshot)
     baseline_warnings(snapshot, baseline)
-reference = f" · [reference]({standard.source})" if standard.source.startswith("http") else ""
-st.caption((standard.description or standard.name) + reference)
+st.caption(standard.description or standard.name)
 if baseline is None:
     st.warning(
         "No baseline selected: checks against the baseline (late tasks, BEI, missed tasks) "
