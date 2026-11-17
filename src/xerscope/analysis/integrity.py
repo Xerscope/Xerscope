@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .cpm import CycleError, ScheduleError, compare_assignments, compare_with_stored, schedule
+from .cpm import ScheduleError, compare_assignments, compare_with_stored, loop_members, schedule
 from .populations import (
     Funnel,
     activity_funnel,
@@ -123,19 +123,11 @@ def int_04_relationship_loops(context) -> RuleOutput:
     Counts: in a loop / tasks
     Excludes: tasks downstream of a loop, level of effort (its links are not part of the network).
 
-    Mirrors the P6 log error 'Tasks that have invalid relationship loops'. The loop is found by the
-    CPM's topological pass (analysis/cpm.py), narrowed to the tasks that lie on a loop. When the
-    engine refuses the file before that pass (no date, a lag out of range), there is no count:
-    the note says why.
+    Mirrors the P6 log error 'Tasks that have invalid relationship loops'. The loops are read from
+    the links alone (analysis/cpm.py: loop_members), on the network the CPM schedules: a file the
+    engine refuses for another reason (no date, a lag out of range) has its loops counted all the same.
     """
-    try:
-        schedule(context.snapshot)
-    except CycleError as exc:
-        members = list(exc.members)
-    except ScheduleError as exc:  # refused before the loops were looked for: there is no count to give
-        return RuleOutput(note=f"cannot schedule: {exc}")
-    else:
-        members = []
+    members = loop_members(context.snapshot)
     funnel = activity_funnel(context.snapshot)
     activities = funnel.rows
     flagged = activities[activities["task_code"].isin(members)]
