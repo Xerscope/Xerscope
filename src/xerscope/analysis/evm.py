@@ -119,6 +119,11 @@ def etc_settings(snapshot: Snapshot) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
+def settings_using_pf(settings: pd.DataFrame) -> pd.DataFrame:
+    """The rows of ``etc_settings`` whose WBS element computes its ETC with a performance factor."""
+    return settings[settings["ev_etc_compute_type"].map(uses_pf)]
+
+
 def etc_technique_counts(settings: pd.DataFrame) -> pd.DataFrame:
     """WBS elements and activities per ETC technique, from ``etc_settings``."""
     return (
@@ -559,6 +564,16 @@ class EvPoint:
         return self.ac_hr + self.etc_hr
 
     @property
+    def vac_hr(self) -> float:
+        """Variance At Completion in labor hours, BAC - EAC: negative = overrun."""
+        return self.bac_hr - self.eac_hr
+
+    @property
+    def ac_baselined_hr(self) -> float:
+        """Actual hours spent on the activities the baseline has."""
+        return self.ac_hr - self.ac_unbaselined_hr
+
+    @property
     def spi(self) -> float | None:
         return self.ev_hr / self.pv_hr if self.pv_hr else None
 
@@ -571,8 +586,7 @@ class EvPoint:
     def productivity(self) -> float | None:
         """EV per hour spent on baselined work: EV only exists for baselined activities,
         so hours spent on the others would make the ratio look worse than the work is."""
-        baselined_actual_hr = self.ac_hr - self.ac_unbaselined_hr
-        return self.ev_hr / baselined_actual_hr if baselined_actual_hr else None
+        return self.ev_hr / self.ac_baselined_hr if self.ac_baselined_hr else None
 
     @property
     def cpi(self) -> float | None:
@@ -599,8 +613,10 @@ class EvPoint:
             "cpi": self.cpi,
             "unbaselined": len(self.unbaselined),
             "ac_unbaselined_hr": self.ac_unbaselined_hr,
+            "ac_baselined_hr": self.ac_baselined_hr,
             "deleted_since_bl": len(self.deleted),
             "pv_deleted_hr": self.pv_deleted_hr,
+            "vac_hr": self.vac_hr,
             "bac_cost": self.bac_cost,
             "pv_cost": self.pv_cost,
             "ev_cost": self.ev_cost,
@@ -697,6 +713,29 @@ def evm_series(store: SnapshotStore, baseline: Baseline, link_by_guid: bool = Fa
     return pd.DataFrame(
         [ev_point(snapshot, relinked(baseline, snapshot) if link_by_guid else baseline).as_row() for snapshot in store]
     )
+
+
+def update_and_previous(series: pd.DataFrame, data_date: pd.Timestamp) -> tuple[pd.Series, pd.Series | None]:
+    """From :func:`evm_series`: the row of the update at ``data_date`` (the last one when several
+    updates share the date) and the row of the update before it (the last one with an earlier
+    date), None for the first update."""
+    row = series[series["data_date"] == data_date].iloc[-1]
+    earlier = series[series["data_date"] < data_date]
+    return row, None if earlier.empty else earlier.iloc[-1]
+
+
+def change_since_previous(row: pd.Series, previous: pd.Series | None, column: str) -> float | None:
+    """``column`` of an update minus its value in the previous update (rows of
+    :func:`update_and_previous`); None without a previous update or when either value is missing
+    (an index of the first update, a cost SPI without planned value cost)."""
+    if previous is None or pd.isna(previous[column]) or pd.isna(row[column]):
+        return None
+    return row[column] - previous[column]
+
+
+def priced_assignment_count(snapshot: Snapshot) -> int:
+    """Number of resource assignments of the update that carry a budgeted cost (``target_cost``)."""
+    return int((snapshot.assignments["target_cost"].fillna(0.0) != 0).sum())
 
 
 def forecast_curve(snapshot: Snapshot) -> pd.DataFrame:

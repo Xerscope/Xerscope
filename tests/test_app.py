@@ -1968,6 +1968,19 @@ def test_changelog_tables_keep_their_filters_under_their_own_names(app):
     assert len(filter_keys) == len(set(filter_keys))
 
 
+def test_earned_value_tables_keep_their_filters_under_their_own_names(app):
+    """Each table of the Earned value page is drawn with a key: its column filters are kept in the
+    session under that name, not under the file and line of the call. On the demo, with costs off,
+    the calculation table (11 rows) and the tasks table (29) are long enough to carry filters; the
+    table of updates (8 rows) is not."""
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    inputs = [*app.text_input, *app.multiselect]
+    filter_keys = [widget.key for widget in inputs if (widget.key or "").startswith("filter:")]
+    assert {key.split(":")[1] for key in filter_keys} == {"ev_calculation", "ev_tasks"}
+    assert len(filter_keys) == len(set(filter_keys))
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
