@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from .checks import CheckResult
-from .populations import ACTIVITY_COLS, LINK_COLS
+from .populations import ACTIVITY_COLS, LINK_COLS, Funnel, Step, flagged_activities, flagged_relationships
 from .rules import ALLOWED, RULES, Names
 from .standards import Metric, parse_target
 
@@ -56,6 +56,47 @@ def _shown(frame: pd.DataFrame, subject: str) -> pd.DataFrame:
         return frame.copy()
     columns = LINK_COLS if subject == "relationships" else ACTIVITY_COLS
     return frame[[column for column in columns if column in frame.columns]].copy()
+
+
+def step_rows(funnel: Funnel) -> list[dict]:
+    """Start, then one row per population step (rows removed, rows left)."""
+    rows = [{"step": "start", "source": "", "removed": None, "left": funnel.start}]
+    rows += [
+        {"step": step.label, "source": step.source, "removed": len(step.removed), "left": step.left}
+        for step in funnel.steps
+    ]
+    return rows
+
+
+def funnel_table(funnel: Funnel, counted: int | None) -> pd.DataFrame:
+    """The steps of a check's population, then the items it counted (its numerator)."""
+    rows = step_rows(funnel)
+    rows.append({"step": "counted", "source": "", "removed": None, "left": counted})
+    return pd.DataFrame(rows)
+
+
+def step_sources(funnel: Funnel) -> list[str]:
+    """The sources the steps of a funnel follow (keys of ``STEP_SOURCES``), once each, sorted."""
+    return sorted({step.source for step in funnel.steps})
+
+
+def removing_steps(funnel: Funnel) -> list[Step]:
+    """The steps that took rows out, in the funnel's order."""
+    return [step for step in funnel.steps if not step.removed.empty]
+
+
+def removed_set(step: Step) -> tuple[str, pd.DataFrame]:
+    """What a step removed, in the standard columns of its subject: "relationships" when the rows
+    are links, "activities" otherwise."""
+    if "pred_code" in step.removed.columns:
+        return "relationships", flagged_relationships(step.removed)
+    return "activities", flagged_activities(step.removed)
+
+
+def counted_count(result: CheckResult, sets: AuditSets) -> int:
+    """How many items the check counts: its numerator, or the rows of the counted set for a check
+    without one."""
+    return result.numerator if result.numerator is not None else len(sets.counted)
 
 
 def split(result: CheckResult, snapshot) -> AuditSets | None:

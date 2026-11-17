@@ -2022,6 +2022,24 @@ def test_health_tables_keep_their_filters_under_their_own_names(app):
     assert filter_names() == {"health_results", "flag_P6-12", "flag_P6-14", "health_trend", "health_report"}
 
 
+def test_step_sources_read_the_same_under_the_ask_field_and_on_the_audit_page(app):
+    """The line under a population's steps names each source once: a link when the source is a web
+    page, its text otherwise. The Ask field's steps follow "ask" (a text); P6-04's on the Audit
+    page follow Oracle's page 101248 (a link)."""
+    from xerscope.analysis.populations import STEP_SOURCES
+
+    app.switch_page("views/gantt.py").run()
+    app.text_input(key="gantt_ask").set_value("critical").run()
+    _ok(app)
+    assert f"ask: {STEP_SOURCES['ask']}" in [caption.value for caption in app.caption]
+    app.switch_page("views/audit.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+    app.selectbox(key="audit_check:P6").set_value("P6-04").run()
+    _ok(app)
+    link = f"[101248]({STEP_SOURCES['101248']})"
+    assert [caption.value for caption in app.caption if caption.value.startswith(link)]
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
