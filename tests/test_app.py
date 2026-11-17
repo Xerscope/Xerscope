@@ -812,6 +812,98 @@ def test_locked_server_offers_the_baseline_file_it_names(sample_dir, monkeypatch
     assert isinstance(at.session_state["baseline"], Baseline)
 
 
+def _updates_and_a_p6_xml_export(folder):
+    """Two updates that budget 40 h on A, and export.xml, a P6 XML export whose baseline budgets 80 h on A."""
+    from pmxmlkit import activity, baseline, pmxml_bytes
+
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-06 17:00", "target_work_qty": "40"}
+    (folder / "w1.xer").write_text(xer_text([todo("A", **week)], data_date="2026-03-02 08:00"), encoding="utf-8")
+    (folder / "w2.xer").write_text(xer_text([todo("A", **week)], data_date="2026-03-09 08:00"), encoding="utf-8")
+    planned = activity("A", "1001", "2026-03-02T08:00:00", "2026-03-13T17:00:00", 80)
+    (folder / "export.xml").write_bytes(pmxml_bytes([baseline("370", "BL-1", [planned])], current_baseline="370"))
+
+
+def _pick_the_folder_baseline_file(at, name):
+    baseline_box(at).set_value(BL_FILE)
+    baseline_box(at, "bl_folder_file").set_value(name)
+    _ok(at)
+    return at
+
+
+def test_locked_server_offers_the_p6_xml_files_of_its_folder_as_the_baseline_file(tmp_path, monkeypatch):
+    """A P6 XML export placed next to the .xer files of a locked server is never listed as an update;
+    without XERSCOPE_BASELINE it is offered under the separate baseline file, and read once picked:
+    the baseline in force holds the 80 h of the export, not the 40 h of the updates."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    assert files_line(at) == "Files · 2 files · 1 project"
+    assert BL_FILE in baseline_box(at).options
+    baseline_box(at).set_value(BL_FILE)
+    assert baseline_box(at, "bl_folder_file").options == ["(none)", "export.xml"]
+    assert at.session_state["baseline"] is None  # nothing picked yet: no file is read
+    _pick_the_folder_baseline_file(at, "export.xml")
+    assert not at.get("file_uploader")
+    assert at.button(key="baseline_button").label == "Baseline · export.xml"
+    baseline = at.session_state["baseline"]
+    assert isinstance(baseline, Baseline) and baseline.bac_hours == 80.0
+
+
+def test_a_folder_baseline_file_is_the_same_baseline_as_the_file_named_by_the_server(tmp_path, monkeypatch):
+    """export.xml picked in the folder gives the baseline XERSCOPE_BASELINE gives for the same file."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    named = _run(tmp_path, monkeypatch, baseline=tmp_path / "export.xml")
+    _ok(named)
+    picked = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    expected, found = named.session_state["baseline"], picked.session_state["baseline"]
+    assert isinstance(expected, Baseline) and expected.bac_hours == 80.0
+    pd.testing.assert_frame_equal(found.frame, expected.frame)
+
+
+def test_a_folder_baseline_file_no_longer_in_the_folder_is_not_read(tmp_path, monkeypatch):
+    """The name kept from the window is only taken from the folder's own list: a file removed since,
+    or a name pointing outside the folder, reads nothing and the choice starts again from none."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    outside = tmp_path.parent / "outside.xml"
+    outside.write_bytes((tmp_path / "export.xml").read_bytes())
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    for name in ("../outside.xml", str(outside), "gone.xml"):
+        at.session_state["bl_folder_file"] = name
+        at.run()
+        _ok(at)
+        assert at.session_state["bl_folder_file"] == "" and at.session_state["baseline"] is None, name
+    (tmp_path / "export.xml").unlink()
+    at.run()
+    _ok(at)
+    assert BL_FILE not in baseline_box(at).options
+
+
+def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tmp_path, monkeypatch):
+    """What an anonymized download is built from (``baseline_items``): the export picked in the folder;
+    nothing for a name that is not one of the folder's files, whatever path it spells."""
+    from xerscope.app.state import baseline_items
+
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    _updates_and_a_p6_xml_export(tmp_path)
+    outside = tmp_path.parent / "outside.xml"
+    outside.write_bytes(b"<APIBusinessObjects/>")
+    session = {"bl_choice": BL_FILE, "files_source": ("folder", str(tmp_path), ("w1.xer",))}
+    assert baseline_items({**session, "bl_folder_file": "export.xml"}) == [
+        ("export.xml", (tmp_path / "export.xml").read_bytes())
+    ]
+    for name in ("", "../outside.xml", str(outside), "w1.xer"):
+        assert baseline_items({**session, "bl_folder_file": name}) == [], name
+
+
+def test_a_folder_without_a_p6_xml_export_offers_no_folder_baseline_file(sample_dir, monkeypatch):
+    at = _run(sample_dir, monkeypatch)
+    baseline_box(at).set_value(BL_FILE)
+    assert not [box for box in at.selectbox if box.key == "draft_bl_folder_file"]
+
+
 def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app):
     """The sidebar's Baseline line opens the same window, Baseline section first; a choice applied
     with Done stays once the window is closed, although its selectors are no longer drawn."""
