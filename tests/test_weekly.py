@@ -24,12 +24,17 @@ from xerscope.analysis.progress import (
     VARIANCE_COLUMNS,
     committed,
     date_variances,
+    kept_count,
     milestone_codes,
     milestone_slips,
     milestone_trend,
+    moved_variances,
     plotted_trend,
+    ppc_of_week,
     ppc_series,
     progress_delta,
+    progressed_tasks,
+    project_progress,
     renumbered,
     rollup_delta,
 )
@@ -1061,6 +1066,73 @@ def test_progress_delta_gives_back_the_hours_of_a_deleted_activity():
     assert d["earned_hr_week"].sum() == ev_point(w2, bl).ev_hr - ev_point(w1, bl).ev_hr == -50
     # without a baseline the same, on W1's budget hours
     assert progress_delta(w1, w2).set_index("task_code").loc["D", "earned_hr_week"] == -50
+
+
+def test_progress_delta_reads_a_baseline_without_hours_as_no_baseline():
+    """A is budgeted 100 h in both updates and gains 50 points of physical % complete. The
+    baseline holds A with no labour hours (BAC 0 h): weighted by it, the week would earn
+    0 h x 50 % = 0 h. Read as no baseline, it earns W's budget: 100 h x 50 % = 50 h."""
+    w1 = snap([todo("A", target_work_qty="100")], data_date="2026-03-02 08:00")
+    w2 = snap(
+        [active("A", target_work_qty="100", phys_complete_pct="50", complete_pct_type="CP_Phys")],
+        data_date="2026-03-09 08:00",
+    )
+    empty_baseline = Baseline.from_snapshot(snap([todo("A")]))
+    assert empty_baseline.bac_hours == 0
+    week = progress_delta(w1, w2, empty_baseline).set_index("task_code").loc["A"]
+    assert (week["labor_budget_hr"], week["earned_hr_week"]) == (100, 50)
+
+
+def test_progressed_tasks_are_those_with_a_change_of_percent_earned_or_actual_hours():
+    """Five rows: P gained 10 points only, E earned 5 h only, H booked 8 actual hours only, N gave
+    50 earned hours back (a deleted task), S moved nothing. Four moved: P, E, H, N."""
+    week = pd.DataFrame(
+        {
+            "task_code": ["P", "E", "H", "N", "S"],
+            "pct_delta": [10.0, 0.0, 0.0, 0.0, 0.0],
+            "earned_hr_week": [0.0, 5.0, 0.0, -50.0, 0.0],
+            "actual_hr_week": [0.0, 0.0, 8.0, 0.0, 0.0],
+        }
+    )
+    assert progressed_tasks(week)["task_code"].tolist() == ["P", "E", "H", "N"]
+
+
+def test_project_progress_is_the_total_row_of_the_rollup():
+    """W1 to W2: A earns 100 h of 100, B 150 h of 300; 250 h earned of 400 h budgeted = 62.5 points."""
+    project = project_progress(rollup_delta(progress_delta(W1, W2)))
+    assert (project["earned_hr_week"], project["budget_hr"], project["progress_pts"]) == (250, 400, 62.5)
+
+
+def test_moved_variances_leave_out_the_tasks_at_zero_and_those_without_a_reference():
+    """Four tasks: X at 0 against W-1 with no W-2, Y finishing 2 days later than W-1 (its start
+    blank: a finish milestone), Z with no reference date at all, T at 0 but for its finish
+    against W-2 (1 day earlier). Y and T moved; a blank is not a move."""
+    blank = float("nan")
+    variances = pd.DataFrame(
+        {
+            "task_code": ["X", "Y", "Z", "T"],
+            "start_var_w1": [0.0, blank, blank, 0.0],
+            "finish_var_w1": [0.0, -2.0, blank, 0.0],
+            "start_var_w2": [blank, blank, blank, 0.0],
+            "finish_var_w2": [blank, blank, blank, 1.0],
+        }
+    )
+    assert moved_variances(variances)["task_code"].tolist() == ["Y", "T"]
+
+
+def test_ppc_of_week_is_the_row_of_the_update_that_ends_it():
+    """Three weeks, ending at updates 1, 2 and 3 with a PPC of 50, none and 75: update 3 gives 75,
+    update 2 the week without commitment."""
+    ppc = pd.DataFrame({"snapshot_idx": [1, 2, 3], "committed": [4, 0, 8], "ppc_week": [50.0, None, 75.0]})
+    assert ppc_of_week(ppc, 3)["ppc_week"] == 75
+    assert ppc_of_week(ppc, 2)["committed"] == 0 and pd.isna(ppc_of_week(ppc, 2)["ppc_week"])
+
+
+def test_kept_count_counts_the_commitments_kept():
+    """Three commitments, the first and the last kept: 2. None committed: 0."""
+    commitments = pd.DataFrame({"task_code": ["A", "B", "C"], "kept": [True, False, True]})
+    assert kept_count(commitments) == 2
+    assert kept_count(commitments.iloc[0:0]) == 0
 
 
 @pytest.mark.parametrize(

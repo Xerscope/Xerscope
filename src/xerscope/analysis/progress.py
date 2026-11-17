@@ -324,6 +324,16 @@ def ppc_series(store: SnapshotStore, include_overdue: bool = True) -> pd.DataFra
     )
 
 
+def ppc_of_week(ppc: pd.DataFrame, index: int) -> pd.Series:
+    """Row of `ppc_series` for the week that ends at update ``index``."""
+    return ppc.set_index("snapshot_idx").loc[index]
+
+
+def kept_count(commitments: pd.DataFrame) -> int:
+    """How many rows of `committed` or `committed_milestones` were kept."""
+    return int(commitments["kept"].sum())
+
+
 def _share(kept: int, committed: int) -> float | None:
     """Percent kept, None when nothing was committed."""
     return 100 * kept / committed if committed else None
@@ -363,6 +373,13 @@ def date_variances(store: SnapshotStore, index: int) -> pd.DataFrame:
     return out.reset_index()
 
 
+def moved_variances(variances: pd.DataFrame) -> pd.DataFrame:
+    """Rows of `date_variances` with a date that moved: one of the four variances is not 0. A
+    blank variance (no reference date) is not a move."""
+    moved = (variances[VARIANCE_COLUMNS].fillna(0) != 0).any(axis=1)
+    return variances[moved]
+
+
 # --- progress delta --------------------------------------------------------------------------
 
 
@@ -372,7 +389,8 @@ def progress_delta(previous: Snapshot, current: Snapshot, baseline=None) -> pd.D
     With a ``baseline``, earned hours are the week's EV gain, as on the Earned value page:
     BL hours x change in Performance % Complete (WBS EV technique), so the weekly figures
     add up to EV. Without, budget hours of W (of W-1 for an activity deleted in W) x change
-    in % complete.
+    in % complete. A baseline without labour hours (``bac_hours`` 0) weighs nothing: read as no
+    baseline.
     """
     from .evm import performance_pct
 
@@ -390,7 +408,7 @@ def progress_delta(previous: Snapshot, current: Snapshot, baseline=None) -> pd.D
     delta["pct_prev"] = before["pct_complete"].reindex(codes).fillna(0.0)
     delta["pct_now"] = after["pct_complete"].reindex(codes).fillna(0.0)
     delta["pct_delta"] = (delta["pct_now"] - delta["pct_prev"]).round(2)
-    if baseline is None:
+    if baseline is None or baseline.bac_hours <= 0:
         delta["earned_hr_week"] = delta["labor_budget_hr"] * delta["pct_delta"] / 100
     else:
         baseline_hours = baseline.frame["ev_labor_hr"].reindex(codes).fillna(0.0)
@@ -403,6 +421,13 @@ def progress_delta(previous: Snapshot, current: Snapshot, baseline=None) -> pd.D
     delta["new"] = ~codes.isin(before.index)
     delta["deleted"] = deleted
     return delta.reset_index()
+
+
+def progressed_tasks(delta: pd.DataFrame) -> pd.DataFrame:
+    """Rows of `progress_delta` that moved this week: % complete, earned hours or actual hours
+    changed."""
+    moved = (delta["pct_delta"] != 0) | (delta["earned_hr_week"] != 0) | (delta["actual_hr_week"] != 0)
+    return delta[moved]
 
 
 def rollup_delta(delta: pd.DataFrame, by: str = "wbs_l1") -> pd.DataFrame:
@@ -422,6 +447,11 @@ def rollup_delta(delta: pd.DataFrame, by: str = "wbs_l1") -> pd.DataFrame:
     total["progress_pts"] = 100 * total["earned_hr_week"] / total["budget_hr"] if total["budget_hr"] else np.nan
     out.loc["Project"] = total
     return out.reset_index().rename(columns={"index": by})
+
+
+def project_progress(rollup: pd.DataFrame) -> pd.Series:
+    """Project row of `rollup_delta` by level-1 WBS: the total of every group."""
+    return rollup[rollup["wbs_l1"] == "Project"].iloc[0]
 
 
 def finish_shift_since_first(store: SnapshotStore) -> float | None:
