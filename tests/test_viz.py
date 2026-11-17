@@ -187,6 +187,33 @@ def test_ppc_week_without_commitment_is_a_gap_not_a_zero():
     assert [a.text for a in fig.layout.annotations] == ["target 80%"]
 
 
+def test_open_row_ids_open_the_focus_every_branch_under_a_filter_and_the_way_to_the_picked_task():
+    """Rows: Eng (W1) with Design (W11) under it, Civil (W2). Without a filter the node in focus
+    opens alone; a filter opens every WBS row. A task picked in Design opens Design and Eng, and
+    the top node only when the branch drawn holds it."""
+    from xerscope.viz.gantt import open_row_ids
+
+    rows = [
+        {"id": "w:W1", "kind": "wbs"},
+        {"id": "w:W11", "kind": "wbs"},
+        {"id": "a:A", "kind": "task"},
+        {"id": "w:W2", "kind": "wbs"},
+    ]
+    nodes = pd.DataFrame(
+        {
+            "wbs_id": ["TOP", "W1", "W11", "W2"],
+            "ancestors": [["TOP"], ["W1", "TOP"], ["W11", "W1", "TOP"], ["W2", "TOP"]],
+        }
+    )
+    eng = {"W1", "W11"}
+    assert open_row_ids(rows, nodes, eng, "W1") == {"w:W1"}
+    assert open_row_ids(rows, nodes, eng, "W1", filtering=True) == {"w:W1", "w:W11", "w:W2"}
+    assert open_row_ids(rows, nodes, eng, "W1", picked_wbs_id="W11") == {"w:W1", "w:W11"}
+    whole = {"TOP", "W1", "W11", "W2"}
+    assert open_row_ids(rows, nodes, whole, "TOP", picked_wbs_id="W11") == {"w:TOP", "w:W1", "w:W11"}
+    assert open_row_ids(rows, nodes, whole, "W2", picked_wbs_id="W9") == {"w:W2"}  # a node the update no longer has
+
+
 def test_activity_dates_axis_keeps_days_when_dates_never_move():
     day = pd.Timestamp("2026-08-31 08:00")
     history = pd.DataFrame(
