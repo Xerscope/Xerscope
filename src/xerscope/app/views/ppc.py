@@ -7,8 +7,13 @@ from xerscope.analysis.progress import (
     committed,
     committed_milestones,
     date_variances,
+    kept_count,
+    moved_variances,
+    ppc_of_week,
     ppc_series,
     progress_delta,
+    progressed_tasks,
+    project_progress,
     renumbered,
     rollup_delta,
     unplanned_work,
@@ -72,6 +77,7 @@ def show_ppc_weeks(ppc: pd.DataFrame) -> None:
         ui.table(
             ppc.sort_values("data_date", ascending=False),
             columns=PPC_COLUMNS,
+            key="ppc_weeks",
             overrides={
                 "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
                 "kept": count("Kept (starts + finishes)", format="%d"),
@@ -139,10 +145,10 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
         if commitments.empty:
             st.caption("Nothing was forecast to start or finish this week.")
         else:
-            ui.table(commitments.sort_values(["kept", "commitment"]), columns=COMMITMENT_COLUMNS)
+            ui.table(commitments.sort_values(["kept", "commitment"]), columns=COMMITMENT_COLUMNS, key="ppc_commitments")
     with right:
         ui.section("Progress by WBS", "Points of % complete gained this week, weighted by labor hours.")
-        ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS)
+        ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS, key="ppc_wbs")
 
 
 def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFrame) -> None:
@@ -150,13 +156,13 @@ def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFr
     with left:
         ui.section(
             "Milestones committed",
-            f"Read as the commitments above, out of the PPC counts: {int(milestones['kept'].sum())} kept "
+            f"Read as the commitments above, out of the PPC counts: {kept_count(milestones)} kept "
             f"of {len(milestones)}. A start milestone commits its start, a finish milestone its finish.",
         )
         if milestones.empty:
             st.caption("No milestone was forecast this week.")
         else:
-            ui.table(milestones.sort_values(["kept", "planned_date"]), columns=COMMITMENT_COLUMNS)
+            ui.table(milestones.sort_values(["kept", "planned_date"]), columns=COMMITMENT_COLUMNS, key="ppc_milestones")
     with right:
         ui.section(
             "Unplanned work",
@@ -166,7 +172,7 @@ def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFr
         if unplanned.empty:
             st.caption("No new task started this week.")
         else:
-            ui.table(unplanned.sort_values("act_start_date"), columns=UNPLANNED_COLUMNS)
+            ui.table(unplanned.sort_values("act_start_date"), columns=UNPLANNED_COLUMNS, key="ppc_unplanned")
 
 
 def show_renumbered(pairs: pd.DataFrame) -> None:
@@ -182,9 +188,8 @@ def show_renumbered(pairs: pd.DataFrame) -> None:
 
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
-    moved_mask = (progress["pct_delta"] != 0) | (progress["earned_hr_week"] != 0) | (progress["actual_hr_week"] != 0)
-    moved = progress[moved_mask].sort_values("earned_hr_week", ascending=False)
-    ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS)
+    moved = progressed_tasks(progress).sort_values("earned_hr_week", ascending=False)
+    ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS, key="ppc_progress")
     csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
@@ -195,8 +200,8 @@ def show_variances(variances: pd.DataFrame, sources: list[str], current) -> None
         "(reference − current): negative = later than W−1 / W−2. Blank when either date is missing; "
         "milestones have only their own end. Tasks that moved shown; the CSV has every task.",
     )
-    moved = variances[(variances[VARIANCE_COLUMNS].fillna(0) != 0).any(axis=1)]
-    ui.table(moved.sort_values(VARIANCE_COLUMNS), max_height=640, columns=VARIANCE_TABLE_COLUMNS)
+    moved = moved_variances(variances).sort_values(VARIANCE_COLUMNS)
+    ui.table(moved, max_height=640, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances")
     csv_download(
         variances,
         f"variances_{ui.stamp(current.data_date)}.csv",
@@ -243,18 +248,21 @@ ui.section("Percent plan complete by week")
 ui.chart(build_ppc(ppc, target))
 show_ppc_weeks(ppc)
 
-commitments = committed(previous, current, include_overdue)
-baseline = baseline_for(current)
-progress = progress_delta(previous, current, baseline if baseline is not None and baseline.bac_hours > 0 else None)
-wbs_progress = rollup_delta(progress)
-project_progress = wbs_progress[wbs_progress["wbs_l1"] == "Project"].iloc[0]
-week_ppc = ppc.set_index("snapshot_idx").loc[week_index]
-show_kpis(week_ppc, project_progress)
-show_renumbered(renumbered(previous, current))
-show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
-show_milestones_and_unplanned(
-    committed_milestones(previous, current, include_overdue), unplanned_work(previous, current)
+commitments = memo(
+    ("ppc_commitments", week, include_overdue), committed, previous, current, include_overdue, baseline=False
 )
+milestones = memo(
+    ("ppc_milestones", week, include_overdue), committed_milestones, previous, current, include_overdue, baseline=False
+)
+unplanned = memo(("ppc_unplanned", week), unplanned_work, previous, current, baseline=False)
+renumbered_tasks = memo(("ppc_renumbered", week), renumbered, previous, current, baseline=False)
+progress = progress_delta(previous, current, baseline_for(current))
+wbs_progress = rollup_delta(progress)
+week_ppc = ppc_of_week(ppc, week_index)
+show_kpis(week_ppc, project_progress(wbs_progress))
+show_renumbered(renumbered_tasks)
+show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
+show_milestones_and_unplanned(milestones, unplanned)
 show_progress_by_activity(progress, previous, current)
 variances = memo(("date_variances", week), date_variances, store, week_index, baseline=False)
 before_previous = store[week_index - 2] if week_index >= 2 else None

@@ -349,6 +349,42 @@ def test_pages_that_read_no_baseline_are_not_recomputed_for_another(app, store, 
     assert not app.exception and entries() == before
 
 
+def test_ppc_reads_the_week_once_and_again_for_the_other_reading_of_late_commitments(app, store, monkeypatch):
+    """The week's milestone commitments and unplanned work are computed once however often the page
+    is drawn; unticking "Include commitments late at W-1" recomputes the commitments, which read
+    it, and not the unplanned work, which does not. What is kept is what a fresh calculation gives."""
+    from xerscope.analysis import progress
+
+    calls = Counter()
+
+    def counting(name):
+        original = getattr(progress, name)
+
+        def counted(*arguments):
+            calls[name] += 1
+            return original(*arguments)
+
+        monkeypatch.setattr(progress, name, counted)
+        return original
+
+    milestones_of, unplanned_of = counting("committed_milestones"), counting("unplanned_work")
+    app.switch_page("views/ppc.py").run()
+    app.number_input[0].set_value(70).run()
+    assert not app.exception
+    assert calls == {"committed_milestones": 1, "unplanned_work": 1}
+    app.checkbox(key="ppc_overdue").set_value(False).run()
+    assert not app.exception
+    assert calls == {"committed_milestones": 2, "unplanned_work": 1}
+    previous, current = store[len(store) - 2], store[len(store) - 1]
+    kept = {key[-3:]: value for key, value in app.session_state["_memo"].items() if key[-3] == "ppc_milestones"}
+    assert sorted(key[-1] for key in kept) == [False, True]
+    for (_, _, include_overdue), value in kept.items():
+        pd.testing.assert_frame_equal(value, milestones_of(previous, current, include_overdue))
+    unplanned = [value for key, value in app.session_state["_memo"].items() if key[-2] == "ppc_unplanned"]
+    assert len(unplanned) == 1
+    pd.testing.assert_frame_equal(unplanned[0], unplanned_of(previous, current))
+
+
 def _offered(at, label: str) -> bool:
     return any(b.proto.label == label for b in at.get("download_button"))
 

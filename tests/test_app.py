@@ -1981,6 +1981,20 @@ def test_earned_value_tables_keep_their_filters_under_their_own_names(app):
     assert len(filter_keys) == len(set(filter_keys))
 
 
+def test_ppc_tables_keep_their_filters_under_their_own_names(app):
+    """Each table of the PPC page is drawn with a key: its column filters are kept in the session
+    under that name, not under the file and line of the call. On the demo's last week only the
+    table of variances (24 rows) is long enough to carry filters: the weeks (7 rows), the
+    commitments (4), the WBS (7) and the tasks that progressed (4) are not, and no milestone was
+    committed nor unplanned work started."""
+    app.switch_page("views/ppc.py").run()
+    _ok(app)
+    inputs = [*app.text_input, *app.multiselect]
+    filter_keys = [widget.key for widget in inputs if (widget.key or "").startswith("filter:")]
+    assert {key.split(":")[1] for key in filter_keys} == {"ppc_variances"}
+    assert len(filter_keys) == len(set(filter_keys))
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
