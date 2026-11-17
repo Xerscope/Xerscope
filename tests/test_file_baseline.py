@@ -92,16 +92,57 @@ def test_the_baseline_pointers_of_a_series_are_listed_in_data_date_order():
     table = baseline_pointers(store)
     assert table.columns.tolist() == [
         "file", "data_date", "proj_id", "add_date", "sum_base_proj_id", "baseline_in_file",
-        "use_project_baseline_flag",
+        "baseline_in_xml_file", "use_project_baseline_flag",
     ]  # fmt: skip
     assert table.drop(columns="data_date").values.tolist() == [
-        ["a.xer", "10", "2026-02-27 16:00", "7", False, "Y"],
-        ["b.xer", "20", "2026-03-06 16:00", "22", False, "N"],
-        ["c.xer", "30", "2026-03-13 16:00", "31", False, "Y"],
+        ["a.xer", "10", "2026-02-27 16:00", "7", False, None, "Y"],
+        ["b.xer", "20", "2026-03-06 16:00", "22", False, None, "N"],
+        ["c.xer", "30", "2026-03-13 16:00", "31", False, None, "Y"],
     ]
     assert table["data_date"].tolist() == [
         pd.Timestamp(f"{day} 08:00") for day in ("2026-03-02", "2026-03-09", "2026-03-16")
     ]
+
+
+def test_the_baselines_of_a_p6_xml_file_are_held_against_the_baseline_each_update_names():
+    # three updates name baselines 7, 22 and 31; the XML export holds 7, 22 and 99, which no update names
+    from pmxmlkit import activity, baseline, pmxml_bytes
+
+    from xerscope.app.xml_baselines import file_baselines, xml_baselines_table
+    from xerscope.store import SnapshotStore
+
+    store = SnapshotStore(
+        [
+            _update("a.xer", "10", "2026-03-02 08:00", "7", "2026-02-27 16:00", "Y"),
+            _update("b.xer", "20", "2026-03-09 08:00", "22", "2026-03-06 16:00", "Y"),
+            _update("c.xer", "30", "2026-03-16 08:00", "31", "2026-03-13 16:00", "Y"),
+        ]
+    )
+    planned = activity("A1", "11", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
+    later = activity("A2", "12", "2026-03-09T08:00:00", "2026-03-13T17:00:00", 40)
+    export = pmxml_bytes(
+        [baseline("7", "BL-7", [planned]), baseline("22", "BL-22", [planned, later]), baseline("99", "BL-99", [])]
+    )
+    xml_baselines = file_baselines([("export.xml", export)])
+
+    assert baseline_pointers(store, xml_baselines)["baseline_in_xml_file"].tolist() == [True, True, False]
+    assert xml_baselines_table(xml_baselines, ["7", "22", "31"]).values.tolist() == [
+        ["7", "BL-7", "BL-7 name", "2026-02-23 08:00", "1", 1, 1],
+        ["22", "BL-22", "BL-22 name", "2026-02-23 08:00", "1", 2, 1],
+        ["99", "BL-99", "BL-99 name", "2026-02-23 08:00", "1", 0, 0],
+    ]
+
+
+def test_only_a_readable_p6_xml_baseline_file_lists_its_baselines():
+    from pmxmlkit import pmxml_bytes
+
+    from xerscope.app.xml_baselines import file_baselines
+
+    export = pmxml_bytes([])
+    assert file_baselines([]) is None
+    assert file_baselines([("baseline.xer", b"ERMHDR\t24.12\n%T\tPROJECT\n")]) is None
+    assert file_baselines([("cut.xml", export[:-10])]) is None  # the sidebar reports it where the file is chosen
+    assert file_baselines([("export.xml", export)]) == []
 
 
 def test_a_baseline_held_by_the_file_is_marked_in_file():

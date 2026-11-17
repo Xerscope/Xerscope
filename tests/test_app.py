@@ -898,6 +898,41 @@ def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tm
         assert baseline_items({**session, "bl_folder_file": name}) == [], name
 
 
+def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_names(tmp_path, monkeypatch):
+    """w1 names no baseline, w2 names baseline 370; the export holds 370 and 371. The Debug page says,
+    update by update, whether the export holds the baseline named, and lists both baselines with the
+    number of updates that name each. Without a P6 XML baseline file, the list is not shown."""
+    from pmxmlkit import activity, baseline, pmxml_bytes
+
+    named = {"proj_id": "20", "sum_base_proj_id": "370"}
+    (tmp_path / "w1.xer").write_text(xer_text([todo("A")], data_date="2026-03-02 08:00"), encoding="utf-8")
+    (tmp_path / "w2.xer").write_text(
+        xer_text([todo("A", proj_id="20")], project=named, data_date="2026-03-09 08:00"), encoding="utf-8"
+    )
+    planned = activity("A", "1001", "2026-03-02T08:00:00", "2026-03-13T17:00:00", 80)
+    export = pmxml_bytes([baseline("370", "BL-1", [planned]), baseline("371", "BL-2", [])], current_baseline="370")
+    (tmp_path / "export.xml").write_bytes(export)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    monkeypatch.setenv("XERSCOPE_DEBUG_PAGE", "1")  # a locked server shows the page only when asked
+
+    def debug_tables(at):
+        at.switch_page("views/debug.py").run()
+        _ok(at)
+        pointers = next(d.value for d in at.dataframe if "baseline_in_file" in d.value.columns)
+        listed = [d.value for d in at.dataframe if "updates_naming_it" in d.value.columns]
+        return pointers, listed
+
+    pointers, listed = debug_tables(_run(tmp_path, monkeypatch))
+    assert pointers["baseline_in_xml_file"].tolist() == ["–", "–"] and not listed  # blank: no P6 XML file
+
+    pointers, (listed,) = debug_tables(_pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml"))
+    assert pointers[["file", "sum_base_proj_id", "baseline_in_xml_file"]].values.tolist() == [
+        ["w1.xer", "", False],
+        ["w2.xer", "370", True],
+    ]
+    assert listed[["object_id", "activities", "updates_naming_it"]].values.tolist() == [["370", 1, 1], ["371", 0, 0]]
+
+
 def test_a_folder_without_a_p6_xml_export_offers_no_folder_baseline_file(sample_dir, monkeypatch):
     at = _run(sample_dir, monkeypatch)
     baseline_box(at).set_value(BL_FILE)
@@ -2195,7 +2230,7 @@ def test_health_and_audit_write_no_web_address(app, standard_id):
 
 
 def test_every_table_of_the_debug_page_has_a_key_of_its_own():
-    """The Debug page draws 34 tables, most of them too short to carry filters on the demo: read in
+    """The Debug page draws 35 tables, most of them too short to carry filters on the demo: read in
     the page's source, every call of its ``table`` passes a ``key``, each one a different name, none
     the key of another widget of the page (a table's key is also its dataframe's)."""
     import ast
@@ -2209,7 +2244,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 34 and len(table_keys) == 34 and len(set(table_keys)) == 34
+    assert len(tables) == 35 and len(table_keys) == 35 and len(set(table_keys)) == 35
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)
