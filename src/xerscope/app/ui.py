@@ -13,7 +13,6 @@ from __future__ import annotations
 import base64
 import functools
 import re
-import sys
 import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -630,13 +629,6 @@ def filter_rows(frame: pd.DataFrame, filters: Mapping[str, str]) -> tuple[pd.Dat
     return frame[keep], errors
 
 
-def _caller_key() -> str:
-    """Where table() was called from (file:line): a table without a key keeps its filters per
-    call site. Call sites that draw several tables in a loop pass ``key``."""
-    caller = sys._getframe(2)
-    return f"{Path(caller.f_code.co_filename).stem}:{caller.f_lineno}"
-
-
 def _filtered(frame: pd.DataFrame, config: dict, key: str, status: str | None) -> pd.DataFrame:
     """A popover of column filters above the table; the rows they keep."""
     prefix = f"filter:{key}:"
@@ -680,6 +672,7 @@ def _filter_inputs(
 def table(
     frame: pd.DataFrame,
     *,
+    key: str,
     columns: Iterable[str] | None = None,
     max_height: int = 560,
     overrides: dict | None = None,
@@ -692,7 +685,7 @@ def table(
 
     ``status`` names a pass/fail column to show as coloured labels; ``raw_labels`` keeps the
     column names as headers (see ``column_config``). A table longer than
-    ``Settings.table_filter_min_rows`` gets column filters, kept per ``key`` (or per call site).
+    ``Settings.table_filter_min_rows`` gets column filters, kept under ``key``, the table's own name on its page.
     ``open_task`` (state.open_in_gantt) makes the rows selectable: a selected row's Task ID gets a
     button that opens the Gantt on it.
     """
@@ -700,7 +693,6 @@ def table(
         frame = frame[[column for column in columns if column in frame.columns]]
     frame = blank_missing(frame.drop(columns=[column for column in HIDDEN if column in frame.columns]))
     config = column_config(frame, overrides, raw_labels)
-    key = kwargs.get("key") or _caller_key()
     if len(frame) > DEFAULT_SETTINGS.table_filter_min_rows:
         frame = _filtered(frame, config, key, status)
     kwargs.setdefault("hide_index", True)
@@ -708,12 +700,11 @@ def table(
     kwargs.setdefault("width", "stretch")
     linked = open_task is not None and "task_code" in frame.columns and not frame.empty
     if linked:
-        kwargs.setdefault("key", f"table:{key}")
         kwargs.update(on_select="rerun", selection_mode="single-row")
     data = status_style(frame, status) if status else frame
-    event = st.dataframe(data, column_config=config, **kwargs)
+    event = st.dataframe(data, column_config=config, key=key, **kwargs)
     if open_task is not None and linked:
-        _open_in_gantt_button(event, frame, kwargs["key"], open_task)
+        _open_in_gantt_button(event, frame, key, open_task)
     return event
 
 

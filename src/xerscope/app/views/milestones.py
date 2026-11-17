@@ -95,4 +95,4 @@ ui.table(
     },
 )
 with st.expander("Data"):
-    ui.table(trend, max_height=640)
+    ui.table(trend, max_height=640, key="mta_trend")
