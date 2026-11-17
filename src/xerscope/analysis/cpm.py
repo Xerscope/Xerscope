@@ -149,6 +149,23 @@ def _loop_members(candidates: set[str], successors: dict[str, list]) -> list[str
     return sorted(members)
 
 
+def loop_members(snapshot: Snapshot) -> list[str]:
+    """Activities on a logic loop, read from the links alone: no date, duration or lag is needed.
+
+    The network is the one the passes schedule (`_Run._network`): the activities that are not level
+    of effort, and the relationships of a known type between two of them. The engine names the
+    same activities when it refuses a loop (``CycleError.members``).
+    """
+    activities = snapshot.by_code
+    nodes = {code for code, is_loe in activities["is_loe"].items() if not is_loe}
+    links = snapshot.relationships
+    links = links[links["type"].isin(LINK_TYPES) & links["pred_code"].isin(nodes) & links["succ_code"].isin(nodes)]
+    successors: dict[str, list] = defaultdict(list)
+    for predecessor, successor in zip(links["pred_code"], links["succ_code"], strict=True):
+        successors[predecessor].append((successor, None, None))  # the shape of `_Run.succs`: type and lag unread here
+    return _loop_members(nodes, successors)
+
+
 # SCHEDOPTIONS.sched_float_type -> which float "Compute Total Float as" reports, on the
 # activity's calendar. P6's dialog writes FT_FF (Finish Float = LF - EF), FT_SS (Start
 # Float = LS - ES) and FT_Min (the smaller). FT_Start and FT_Total only come from imported

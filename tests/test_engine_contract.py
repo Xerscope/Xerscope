@@ -176,28 +176,63 @@ def test_a_file_without_any_date_is_refused_as_a_schedule_error():
     assert not test.passed and "nothing to schedule from" in test.note
 
 
-@pytest.mark.parametrize("metric_id", ["INT-01", "INT-03", "INT-04", "INT-07", "INT-08"])
+@pytest.mark.parametrize("metric_id", ["INT-01", "INT-03", "INT-07", "INT-08"])
 @pytest.mark.parametrize(
     "links", [[("A", "B", "FS", 0)], [("A", "B", "FS", 0), ("B", "A", "FS", 0)]], ids=["chain", "loop"]
 )
 def test_an_integrity_check_on_a_file_without_any_date_says_it_cannot_schedule(metric_id, links):
     """Each integrity check that needs the recalculation answers "cannot schedule" and no verdict,
-    with or without a loop in the logic: the loops are looked for after the dates."""
+    with or without a loop in the logic. INT-04 needs the links only: see the tests below."""
     snapshot = _without_any_date([todo("A", **hours(40)), todo("B", **hours(40))], links)
     result = run(STANDARDS["INTEGRITY"], metric_id, snapshot)
     assert result.status == "n/a", (result.status, result.note)
     assert result.note.startswith("cannot schedule: ") and "nothing to schedule from" in result.note
 
 
-def test_a_loop_beside_another_refusal_is_not_counted_as_no_loop():
-    """INT-04 counts the activities on a loop. When the engine refuses for another reason first (a lag
-    beyond ``MAX_HOURS`` on a snapshot edited after the load), the loops were not looked for: the
-    check says it cannot schedule, it does not pass with a count of zero."""
+def test_a_loop_is_counted_beside_another_refusal():
+    """INT-04 counts the activities on a loop from the links alone. When the engine refuses the file
+    for another reason first (a lag beyond ``MAX_HOURS`` on a snapshot edited after the load), the
+    loop A <-> B is still there and still counted."""
     looped = snap([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0), ("B", "A", "FS", 0)])
     found = run(STANDARDS["INTEGRITY"], "INT-04", looped)
     assert found.status == "fail" and codes(found) == ["A", "B"]
     links = looped.relationships.astype({"lag_hr": float})
     links.loc[links.index[0], "lag_hr"] = MAX_HOURS + 1
-    refused = run(STANDARDS["INTEGRITY"], "INT-04", dataclasses.replace(looped, relationships=links))
-    assert refused.status == "n/a", (refused.status, refused.note)
-    assert refused.note.startswith("cannot schedule: ") and codes(refused) == []
+    unschedulable = dataclasses.replace(looped, relationships=links)
+    with pytest.raises(ScheduleError, match="lag") as refused:
+        schedule(unschedulable)
+    assert not isinstance(refused.value, CycleError)
+    still_found = run(STANDARDS["INTEGRITY"], "INT-04", unschedulable)
+    assert still_found.status == "fail" and codes(still_found) == ["A", "B"] and still_found.numerator == 2
+
+
+@pytest.mark.parametrize(
+    ("links", "status", "on_a_loop"),
+    [([("A", "B", "FS", 0)], "pass", []), ([("A", "B", "FS", 0), ("B", "A", "FS", 0)], "fail", ["A", "B"])],
+    ids=["chain", "loop"],
+)
+def test_int_04_reads_the_loops_of_a_file_without_any_date(links, status, on_a_loop):
+    """A file the engine cannot schedule (no date at all) has its loops counted all the same: a
+    loop is in the links. Without a loop the check passes with 0 of 2 tasks."""
+    snapshot = _without_any_date([todo("A", **hours(40)), todo("B", **hours(40))], links)
+    result = run(STANDARDS["INTEGRITY"], "INT-04", snapshot)
+    assert result.status == status and codes(result) == on_a_loop
+    assert (result.numerator, result.denominator) == (len(on_a_loop), 2)
+
+
+def test_loop_members_are_those_the_engine_names_and_none_when_it_schedules():
+    """A -> B -> C -> A with D after C and a level of effort L spanning A to B: the loop is A, B, C,
+    as the engine's refusal names it; D is downstream, L is not part of the network. A link of an
+    activity to itself is a loop of one. A chain has none."""
+    from xerscope.analysis.cpm import loop_members
+
+    tasks = [todo(code, **hours(8)) for code in "ABCD"] + [todo("L", task_type="TT_LOE")]
+    links = [("A", "B", "FS", 0), ("B", "C", "FS", 0), ("C", "A", "FS", 0), ("C", "D", "FS", 0)]
+    looped = snap(tasks, [*links, ("A", "L", "SS", 0), ("L", "B", "FF", 0), ("L", "A", "FS", 0)])
+    assert loop_members(looped) == ["A", "B", "C"]
+    with pytest.raises(CycleError) as refused:
+        schedule(looped)
+    assert list(refused.value.members) == ["A", "B", "C"]
+    assert loop_members(snap([todo("A", **hours(8))], [("A", "A", "FS", 0)])) == ["A"]
+    chain = snap([todo("A", **hours(8)), todo("B", **hours(8))], [("A", "B", "FS", 0)])
+    assert loop_members(chain) == [] and schedule(chain) is not None
