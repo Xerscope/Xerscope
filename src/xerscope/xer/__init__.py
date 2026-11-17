@@ -54,6 +54,12 @@ def xer_files(folder: str | Path) -> list[Path]:
     return sorted(p for p in Path(folder).iterdir() if p.is_file() and _is_xer(p))
 
 
+def pmxml_files(folder: str | Path) -> list[Path]:
+    """The .xml files of a folder, sorted by name: P6 XML exports, which hold a project's baselines
+    (an XER holds none). Never read as updates."""
+    return sorted(p for p in Path(folder).iterdir() if p.is_file() and p.suffix.lower() == ".xml")
+
+
 __all__ = [
     "is_pmxml",
     "list_baselines",
@@ -70,6 +76,7 @@ __all__ = [
     "parse_bytes",
     "parse_text",
     "percent_complete",
+    "pmxml_files",
     "read_xer",
     "xer_files",
 ]

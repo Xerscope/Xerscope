@@ -57,6 +57,17 @@ def test_folder_scan_accepts_upper_case_extension(tmp_path):
     assert [p.name for p in xer_files(tmp_path)] == ["a.xer", "b.XER"]
 
 
+def test_folder_scan_lists_the_p6_xml_exports_apart_from_the_updates(tmp_path):
+    """A P6 XML export next to the updates is a baseline file, never an update."""
+    from xerscope.xer import pmxml_files, xer_files
+
+    for name in ("b.XML", "a.xml", "w1.xer", "c.txt"):
+        (tmp_path / name).write_bytes(b"")
+    (tmp_path / "folder.xml").mkdir()
+    assert [p.name for p in pmxml_files(tmp_path)] == ["a.xml", "b.XML"]
+    assert [p.name for p in xer_files(tmp_path)] == ["w1.xer"]
+
+
 def test_load_snapshot_from_bytes_equals_from_path(sample_dir):
 
     path = xer_files(sample_dir)[0]
