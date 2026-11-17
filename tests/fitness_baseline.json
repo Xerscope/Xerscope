@@ -204,9 +204,9 @@
       "mi": 0.0,
       "mi_rank": "C",
       "cc_max": 46,
-      "cc_over_15": 11,
+      "cc_over_15": 8,
       "cognitive_max": 72,
-      "cognitive_over_15": 14,
+      "cognitive_over_15": 11,
       "clones": 0,
       "near_clones": 0
     },
@@ -271,7 +271,7 @@
       "near_clones": 0
     },
     "analysis/integrity.py": {
-      "mi": 52.5,
+      "mi": 53.3,
       "mi_rank": "A",
       "cc_max": 7,
       "cc_over_15": 0,
