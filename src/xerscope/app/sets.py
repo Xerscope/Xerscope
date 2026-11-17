@@ -22,6 +22,17 @@ from xerscope.app import ui
 from xerscope.app.state import csv_download
 
 
+def source_text(key: str) -> str:
+    """A step's source as the caption shows it: a link when it is a web page."""
+    source = STEP_SOURCES[key]
+    return f"[{key}]({source})" if source.startswith("http") else f"{key}: {source}"
+
+
+def source_caption(funnel) -> str:
+    """The sources a funnel's steps follow, on one line."""
+    return " · ".join(source_text(key) for key in step_sources(funnel))
+
+
 def show_set(frame: pd.DataFrame, title: str, filename: str, key: str, sources: list[str]) -> None:
     if frame.empty:
         st.caption(f"No {title.lower()}.")
@@ -39,13 +50,7 @@ def show_steps(funnel) -> None:
         key="ask_funnel",
         overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
     )
-    st.caption(" · ".join(f"{key}: {STEP_SOURCES[key]}" for key in step_sources(funnel)))
-
-
-def source_text(key: str) -> str:
-    """A step's source as the caption shows it: a link when it is a web page."""
-    source = STEP_SOURCES[key]
-    return f"[{key}]({source})" if source.startswith("http") else f"{key}: {source}"
+    st.caption(source_caption(funnel))
 
 
 def show_removed(result, snapshot, sources: list[str]) -> None:
@@ -79,9 +84,8 @@ def show_funnel(result, snapshot, sources: list[str]) -> None:
         key="funnel",
         overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
     )
-    used = step_sources(result.funnel)
-    if used:
-        st.caption(" · ".join(source_text(key) for key in used))
+    if result.funnel.steps:
+        st.caption(source_caption(result.funnel))
     show_removed(result, snapshot, sources)
 
 
