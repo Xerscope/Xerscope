@@ -242,6 +242,34 @@ def test_health_audit_and_earned_value_compute_each_result_once(app, store, runs
     assert kept_files == {store.latest.source}
 
 
+def test_audit_computes_a_check_with_other_settings_once(app, store, monkeypatch):
+    """P6-04 audited with the target < 3% instead of < 5%: computed when the target is typed, not
+    again when the page is redrawn for the rows a step removed. What is kept is what a fresh
+    calculation gives."""
+    from xerscope.analysis import checks
+
+    audited_runs = []
+    original = checks.run_metric
+
+    def counting(metric, context):
+        if (metric.id, metric.threshold_label) == ("P6-04", "< 3%"):
+            audited_runs.append(context.snapshot.source)
+        return original(metric, context)
+
+    monkeypatch.setattr(checks, "run_metric", counting)  # the name the Audit page imports
+    monkeypatch.setattr(state, "run_metric", counting)  # the name the session's cache calls
+    app.switch_page("views/audit.py").run()
+    app.get("button_group")[0].set_value("P6").run()
+    app.selectbox(key="audit_check:P6").set_value("P6-04").run()
+    app.text_input(key="audit:P6:P6-04:target").set_value("< 3%").run()
+    app.selectbox(key="funnel_step:P6-04").set_value("not milestone").run()
+    assert not app.exception
+    assert audited_runs == [store.latest.source]
+    kept = [result for result in _cached_metrics(app).values() if result.metric.threshold_label == "< 3%"]
+    assert len(kept) == 1
+    same_result(kept[0], _fresh(app, store, kept[0].metric, store.latest.source))
+
+
 def test_cached_results_are_left_as_a_fresh_calculation_gives_them(app, store):
     """Pages read the cached results (lists, sets, exports, explanations): none may alter them."""
     app.switch_page("views/health.py").run()
