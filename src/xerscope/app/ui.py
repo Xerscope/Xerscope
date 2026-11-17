@@ -330,10 +330,17 @@ def without_addresses(text: str) -> str:
     return " ".join(_ADDRESS.sub("", _ADDRESS_IN_BRACKETS.sub("", text)).split())
 
 
+# Streamlit's Markdown links a bare web or mail address by itself, escaped or not. A word joiner
+# (invisible, no line break) after "http", "https", "www" or "@" keeps it from reading one.
+NO_LINK = "\u2060"
+_LINKED_BY_ITSELF = re.compile(r"https?(?=://)|www(?=\.)|(?<=[\w.+-])@(?=[\w-])", re.IGNORECASE)
+
+
 def md_text(value: object) -> str:
     """Text from a schedule file, shown literally inside Markdown: no link, image, emphasis
-    or LaTeX ($...$) can come from an activity name or code."""
-    return str(value).translate(_MD_SPECIAL)
+    or LaTeX ($...$) can come from an activity name or code, an address in it included."""
+    unlinked = _LINKED_BY_ITSELF.sub(lambda found: found.group() + NO_LINK, str(value))
+    return unlinked.translate(_MD_SPECIAL)
 
 
 _ZERO = re.compile(r"^[+\-\u2212]?0(\.0+)?(?![\d.])")

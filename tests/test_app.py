@@ -1711,7 +1711,8 @@ def test_the_gantt_funnel_line_shows_a_wbs_name_literally(tmp_path, monkeypatch)
     at.text_input(key="gantt_ask").set_value("LNK").run()
     _ok(at)
     funnel = [c.value for c in at.caption if "LNK" in c.value]
-    assert funnel and all("\\[a\\]\\(http://x\\)" in line for line in funnel), funnel
+    literal = "\\[a\\]\\(http" + ui.NO_LINK + "://x\\)"  # escaped, and the address kept from linking by itself
+    assert funnel and all(literal in line for line in funnel), funnel
 
 
 def test_debug_lists_the_curated_load_errors_to_every_session_without_their_words(app, lexicon_root):
