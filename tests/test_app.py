@@ -2225,6 +2225,45 @@ def test_debug_tables_keep_their_filters_under_their_own_names(app):
     assert names and all(name.startswith("debug_") for name in names), names
 
 
+def test_every_table_of_the_app_has_a_key():
+    """Read in the app's source: every call of ui.table (and of the Debug page's ``table``, the same
+    function) passes a ``key``. A table's column filters are kept under that name; without one they
+    were kept under the file and line of the call, which a moved line changed."""
+    import ast
+
+    keyless = []
+    for path in sorted((Path(xerscope.__file__).parent / "app").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            called = node.func
+            is_ui_table = (
+                isinstance(called, ast.Attribute) and called.attr == "table" and ast.unparse(called.value) == "ui"
+            )
+            is_debug_table = isinstance(called, ast.Name) and called.id == "table"
+            if (is_ui_table or is_debug_table) and not any(keyword.arg == "key" for keyword in node.keywords):
+                keyless.append(f"{path.name}:{node.lineno}")
+    assert not keyless, keyless
+
+
+def test_a_table_without_a_key_is_refused():
+    with pytest.raises(TypeError, match="key"):
+        ui.table(pd.DataFrame({"a": [1]}))
+
+
+def test_export_milestones_and_overview_tables_keep_their_filters_under_their_own_names(app):
+    """The last tables drawn without a key. On the demo, long enough to carry filters: the preview
+    of fact_activity on the Export page (200 rows) and the trend data of the Milestones page; the
+    list of export tables and the updates of the Overview (8 rows) are not."""
+    names = {}
+    for page in ("export", "milestones", "overview"):
+        app.switch_page(f"views/{page}.py").run()
+        _ok(app)
+        inputs = [*app.text_input, *app.multiselect]
+        names[page] = {widget.key.split(":")[1] for widget in inputs if (widget.key or "").startswith("filter:")}
+    assert names == {"export": {"export_fact_activity"}, "milestones": {"mta_trend"}, "overview": set()}
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
