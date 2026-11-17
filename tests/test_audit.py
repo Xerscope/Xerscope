@@ -249,3 +249,73 @@ def test_by_check_cuts_the_long_table_without_losing_a_row(store):
         assert sum(len(part) for part in parts.values()) == len(table)
         for part in parts.values():
             assert list(part.columns[:3]) == ["check_id", "set", "note"] and not part.isna().all().any()
+
+
+# --- what the Audit page shows of a population built step by step ---------------------------------
+
+
+def _funnel():
+    """Five tasks A to E. "not complete" (Oracle 101248) removes A and B: 3 left. "has hours"
+    (model) removes none: 3 left. "in the report" (R1) removes C: 2 left."""
+    from xerscope.analysis.populations import Funnel
+
+    rows = pd.DataFrame({"task_code": list("ABCDE"), "task_name": list("abcde"), "scratch": range(5)})
+    funnel = Funnel(rows)
+    funnel.keep("not complete", "101248", lambda tasks: ~tasks["task_code"].isin(["A", "B"]))
+    funnel.keep("has hours", "model", lambda tasks: tasks["task_code"].notna())
+    funnel.keep("in the report", "R1", lambda tasks: tasks["task_code"] != "C")
+    return funnel
+
+
+def test_funnel_table_lists_the_start_each_step_and_the_counted_items():
+    from xerscope.analysis.audit import funnel_table, step_rows
+
+    steps = [(row["step"], row["source"], row["removed"], row["left"]) for row in step_rows(_funnel())]
+    assert steps == [
+        ("start", "", None, 5),
+        ("not complete", "101248", 2, 3),
+        ("has hours", "model", 0, 3),
+        ("in the report", "R1", 1, 2),
+    ]
+    table = funnel_table(_funnel(), 1)  # the check counts 1 of the 2 tasks left
+    assert table["step"].tolist() == ["start", "not complete", "has hours", "in the report", "counted"]
+    assert table["left"].tolist() == [5, 3, 3, 2, 1]
+    assert pd.isna(table["removed"].iloc[0]) and pd.isna(table["removed"].iloc[-1])
+
+
+def test_step_sources_name_each_source_once_and_removing_steps_those_that_took_rows_out():
+    from xerscope.analysis.audit import removing_steps, step_sources
+
+    funnel = _funnel()
+    funnel.keep("started", "101248", lambda tasks: tasks["task_code"] != "E")  # a source already used
+    assert step_sources(funnel) == ["101248", "R1", "model"]
+    assert [step.label for step in removing_steps(funnel)] == ["not complete", "in the report", "started"]
+
+
+def test_removed_set_shows_tasks_or_links_in_their_standard_columns():
+    """The first step removed tasks A and B: "activities", their ID and name, the scratch column
+    left out. A step that removed the link P -> S: "relationships", its two ends and type."""
+    from xerscope.analysis.audit import removed_set, removing_steps
+    from xerscope.analysis.populations import Step
+
+    subject, tasks = removed_set(removing_steps(_funnel())[0])
+    assert subject == "activities" and tasks.columns.tolist() == ["task_code", "task_name"]
+    assert tasks["task_code"].tolist() == ["A", "B"]
+    link = pd.DataFrame({"pred_code": ["P"], "succ_code": ["S"], "type": ["FS"], "scratch": [0]})
+    subject, links = removed_set(Step("driving", "model", link, 0))
+    assert subject == "relationships" and "scratch" not in links.columns
+    assert links[["pred_code", "succ_code", "type"]].iloc[0].tolist() == ["P", "S", "FS"]
+
+
+def test_counted_count_is_the_numerator_and_the_counted_rows_without_one():
+    """A numerator of 7: 7. A numerator of 0 with three rows listed: 0, the check's own count.
+    No numerator and three rows: 3."""
+    from xerscope.analysis import CheckResult, Metric
+    from xerscope.analysis.audit import AuditSets, counted_count
+
+    metric = Metric(id="T-01", name="check", standard="T", rule="p6_01_logic")
+    three_rows = pd.DataFrame({"task_code": ["A", "B", "C"]})
+    sets = AuditSets(counted=three_rows, not_counted=three_rows.iloc[0:0], excluded=None)
+    assert counted_count(CheckResult(metric, "fail", numerator=7), sets) == 7
+    assert counted_count(CheckResult(metric, "pass", numerator=0), sets) == 0
+    assert counted_count(CheckResult(metric, "info"), sets) == 3
