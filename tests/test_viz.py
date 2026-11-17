@@ -142,46 +142,49 @@ def test_charts_leave_text_grid_and_axes_to_the_theme(fig):
     assert all(a.font.color is None for a in fig.layout.annotations)
 
 
-def test_ppc_target_label_sits_outside_the_bars():
+def test_ppc_target_label_sits_outside_the_plot():
     label = build_ppc(_ppc_frame([100.0, 50, 100], [1, 1, 1], [1, 2, 1]), 80).layout.annotations[0]
-    assert label.xref == "paper" and label.x >= 1  # in the right margin, not over the last bar
+    assert label.xref == "paper" and label.x >= 1  # in the right margin, not over the last point
 
 
-def test_ppc_chart_has_bars_for_finishes_and_lines_for_start_and_all():
+def test_ppc_chart_has_a_line_for_finishes_one_for_starts_and_one_for_all():
     """Finishes 1/2 = 50 %, starts 2/3 = 66.7 %, all 3/5 = 60 % in week 1; nothing committed in week 2.
-    Each trace carries its own ratio and counts, so a swap between the start and the all series fails."""
+    Each trace carries its own ratio and counts, so a swap between two series fails. The week's
+    hover lists the three lines (x unified): equal values draw one line over another."""
     frame = _ppc_frame([50.0, None], [1, 0], [2, 0])
     frame["ppc_start"], frame["starts_kept"], frame["starts_committed"] = [200 / 3, None], [2, 0], [3, 0]
     frame["ppc_week"], frame["kept"], frame["committed"] = [60.0, None], [3, 0], [5, 0]
     fig = build_ppc(frame, 80)
-    assert [t.type for t in fig.data] == ["bar", "scatter", "scatter"]
+    assert [(t.type, t.mode) for t in fig.data] == [("scatter", "lines+markers")] * 3
     assert [t.name for t in fig.data] == ["PPC Finish", "PPC Start", "PPC W/W−1"]
-    assert list(fig.data[0].y) == [50.0, None] and fig.data[0].customdata[0] == "50% (1/2)"
+    assert fig.data[0].y[0] == 50.0 and fig.data[0].customdata[0] == "50% (1/2)"
     assert fig.data[1].y[0] == pytest.approx(200 / 3) and fig.data[1].customdata[0] == "67% (2/3)"
     assert fig.data[2].y[0] == 60.0 and fig.data[2].customdata[0] == "60% (3/5)"
     assert fig.data[0].customdata[1] == "no commitment"
+    assert fig.layout.hovermode == "x unified"
 
 
 def test_ppc_chart_marks_a_point_that_spans_more_than_a_week():
-    """The second point covers 14 days (an update missing): its bar is hatched and every
-    hover of that week carries the note, as the Commitments section does."""
+    """The second point covers 14 days (an update missing): its marker is open on the three lines
+    and the hover of that week carries the note once, under the last line."""
     frame = _ppc_frame([100.0, 50.0], [1, 1], [1, 2])
     note = "14 days since the previous update: this point covers more than one week"
     frame["note"] = [None, note]
     fig = build_ppc(frame, 80)
-    assert list(fig.data[0].marker.pattern.shape) == ["", "/"]
     for trace in fig.data:
-        assert note not in trace.customdata[0] and trace.customdata[1].endswith(note)
+        assert list(trace.marker.symbol) == ["circle", "circle-open"]
+        assert note not in trace.customdata[0]
+    assert [trace.customdata[1].endswith(note) for trace in fig.data] == [False, False, True]
 
 
-def test_ppc_week_without_commitment_is_not_a_zero_bar():
-    """Week 2 committed nothing: no PPC, so no bar (a 0 bar reads as 0 % kept) and an "n/a"
-    label on the axis at that week; week 3 kept 0 of 1: a real 0 bar."""
+def test_ppc_week_without_commitment_is_a_gap_not_a_zero():
+    """Week 2 committed nothing: no PPC, so no point and a gap in each line (a point at 0 reads as
+    0 % kept); week 3 kept 0 of 1: a real point at 0."""
     fig = build_ppc(_ppc_frame([50.0, None, 0.0], [1, 0, 0], [2, 0, 1]), 80)
-    assert list(fig.data[0].y) == [50.0, None, 0.0]
-    marks = [a for a in fig.layout.annotations if a.text == "n/a"]
-    assert [(a.x, a.y) for a in marks] == [("2026-03-09", 0)]
-    assert fig.layout.annotations[0].text == "target 80%"
+    for trace in fig.data:
+        assert trace.y[0] == 50.0 and pd.isna(trace.y[1]) and trace.y[2] == 0.0
+        assert trace.connectgaps is False
+    assert [a.text for a in fig.layout.annotations] == ["target 80%"]
 
 
 def test_activity_dates_axis_keeps_days_when_dates_never_move():

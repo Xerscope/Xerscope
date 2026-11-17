@@ -580,7 +580,7 @@
   "checkbox: Include commitments late at W−1 = True",
   "selectbox: Week ending = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
   "subheader: Percent plan complete by week",
-  "plotly_chart: bar, scatter, scatter",
+  "plotly_chart: scatter, scatter, scatter",
   "expander: Every week: counts behind the three PPC",
   "dataframe: 7 rows | data_date, starts_kept, starts_committed, ppc_start, finishes_kept, finishes_committed, ppc_finish, kept, committed, ppc_week, note",
   "metric: PPC Start = 50 %",
