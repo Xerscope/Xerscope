@@ -38,8 +38,6 @@ FONT = dict(size=13)
 TICK = dict(size=12)
 INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC)
 PPC_TARGET = 80  # default PPC target, in percent
-LABEL_FULL_MAX = 20  # PPC bars up to this many weeks carry "63% (5/8)"
-LABEL_SHORT_MAX = 40  # up to this many weeks they carry "63%", beyond none
 # Weekly updates are read to the day: no time in hovers, and zooming below one day keeps
 # day labels instead of Plotly's hour and minute ticks. For date axes only.
 DATE_AXIS = dict(hoverformat="%Y-%m-%d", tickformatstops=[dict(dtickrange=[None, 86_400_000], value="%d %b")])
@@ -483,45 +481,24 @@ def _with_note(texts: list[str], notes: pd.Series) -> list[str]:
 
 
 def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
-    """Bars: PPC Finish (finishes kept / committed, Last Planner). Lines: PPC Start and PPC W/W-1
-    (starts and finishes together).
+    """Three lines: PPC Finish (finishes kept / committed, Last Planner), PPC Start and PPC W/W-1
+    (starts and finishes together). The hover of a week gives the three with their counts: equal
+    values draw one line over another.
 
-    A point with a ``note`` (`ppc_series`: more than a week since the previous update, or
-    Activity IDs changed since it) has a hatched bar and the note in every hover of that week.
-    A week with no finish committed has no bar and an "n/a" label (a 0 bar would read as 0 %
-    kept)."""
+    A week with a ``note`` (`ppc_series`: more than a week since the previous update, or
+    Activity IDs changed since it) has open markers and the note at the end of its hover.
+    A week with nothing committed has no point, a gap in the line (a point at 0 would read as
+    0 % kept); its hover says "no commitment"."""
     weeks = ppc.copy()
     weeks["label"] = weeks["data_date"].dt.strftime("%Y-%m-%d")
-    full_labels = _ppc_text(weeks["ppc_finish"], weeks["finishes_kept"], weeks["finishes_committed"])
     has_note = [isinstance(note, str) for note in weeks["note"]]
-    # bar labels shrink with the number of weeks (full ones overlap past LABEL_FULL_MAX bars;
-    # the hover keeps the counts)
-    week_count = len(weeks)
-    short_labels = [
-        "" if week_count > LABEL_SHORT_MAX else f"{percent:.0f}%" if pd.notna(percent) else "-"
-        for percent in weeks["ppc_finish"]
-    ]
-    figure = go.Figure(
-        go.Bar(
-            x=weeks["label"],
-            # no commitment: no bar, not 0
-            y=weeks["ppc_finish"].astype(object).where(weeks["ppc_finish"].notna(), None),
-            text=full_labels if week_count <= LABEL_FULL_MAX else short_labels,
-            customdata=_with_note(full_labels, weeks["note"]),
-            textposition="outside",
-            cliponaxis=False,
-            marker=dict(
-                color=SERIES[0], cornerradius=4, pattern=dict(shape=["/" if noted else "" for noted in has_note])
-            ),
-            width=0.6,
-            name="PPC Finish",
-            hovertemplate="Week to %{x}: PPC Finish %{customdata}<extra></extra>",
-        )
-    )
+    figure = go.Figure()
     for column, kept, committed, name, colour in (
+        ("ppc_finish", "finishes_kept", "finishes_committed", "PPC Finish", SERIES[0]),
         ("ppc_start", "starts_kept", "starts_committed", "PPC Start", SERIES[2]),
         ("ppc_week", "kept", "committed", "PPC W/W−1", SERIES[1]),
     ):
+        texts = _ppc_text(weeks[column], weeks[kept], weeks[committed])
         figure.add_trace(
             go.Scatter(
                 x=weeks["label"],
@@ -529,15 +506,21 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
                 mode="lines+markers",
                 name=name,
                 line=dict(color=colour, width=2),
-                marker=dict(size=7),
+                marker=dict(
+                    symbol=["circle-open" if noted else "circle" for noted in has_note],
+                    size=[11 if noted else 7 for noted in has_note],  # an open marker reads smaller
+                    line=dict(width=2, color=colour),
+                ),
                 connectgaps=False,
-                customdata=_with_note(_ppc_text(weeks[column], weeks[kept], weeks[committed]), weeks["note"]),
-                hovertemplate="Week to %{x}: " + name + " %{customdata}<extra></extra>",
+                cliponaxis=False,  # a point at 0 % is drawn whole, not cut by the axis
+                # the week's hover lists the three lines: the note once, under the last
+                customdata=_with_note(texts, weeks["note"]) if column == "ppc_week" else texts,
+                hovertemplate=name + " %{customdata}<extra></extra>",
             )
         )
     critical = STATUS["critical"]
     figure.add_hline(y=target, line=dict(color=critical, width=1, dash="dot"))
-    # in the right margin: inside the plot it sits on the last bar
+    # in the right margin: inside the plot it sits on the last point
     figure.add_annotation(
         x=1,
         xref="paper",
@@ -548,11 +531,8 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         xshift=6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
-    for label in weeks.loc[weeks["ppc_finish"].isna(), "label"]:  # a week with nothing committed has no PPC
-        figure.add_annotation(x=label, y=0, text="n/a", showarrow=False, yanchor="bottom", hovertext="no commitment")
     figure = _with_house_style(figure, 400, "PPC (%)", legend=True)
-    figure.update_layout(hovermode="closest")
-    figure.update_yaxes(range=[0, 115])
+    figure.update_yaxes(range=[0, 105])
     figure.update_xaxes(title="Week ending (status date)", showspikes=False, type="category")
     return figure
 
