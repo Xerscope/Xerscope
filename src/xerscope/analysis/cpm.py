@@ -70,6 +70,7 @@ from __future__ import annotations
 import math
 import re
 from collections import defaultdict, deque
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
@@ -103,49 +104,79 @@ class CycleError(ScheduleError):
     """The logic has a loop; ``members`` are the activities on a loop (not the ones downstream of it)."""
 
 
-def _loop_members(candidates: set[str], successors: dict[str, list]) -> list[str]:
-    """Activities of ``candidates`` that lie on a loop: strongly connected components of more than
-    one activity, or an activity linked to itself (Tarjan, iterative)."""
-    index: dict[str, int] = {}
-    low: dict[str, int] = {}
-    on_stack: set[str] = set()
-    stack: list[str] = []
-    members: list[str] = []
-    for root in sorted(candidates):
-        if root in index:
-            continue
-        index[root] = low[root] = len(index)
-        stack.append(root)
-        on_stack.add(root)
-        work = [(root, iter(successors[root]))]
+class _Components:
+    """Strongly connected components of ``candidates``: the groups of activities that all reach each
+    other through the links (Tarjan's algorithm, with its own stack instead of recursion).
+
+    Each activity gets a number in the order it is first met (``index``) and the smallest number it
+    can reach back to (``low``). An activity whose two numbers are equal closes a component: the
+    activities met since it, still on ``stack``, all reach each other.
+    """
+
+    def __init__(self, candidates: set[str], successors: dict[str, list]):
+        self.candidates, self.successors = candidates, successors
+        self.index: dict[str, int] = {}
+        self.low: dict[str, int] = {}
+        self.stack: list[str] = []
+        self.on_stack: set[str] = set()
+        self.components: list[list[str]] = []
+        for root in sorted(candidates):
+            if root not in self.index:
+                self._walk_from(root)
+
+    def _open(self, code: str) -> tuple[str, Iterator]:
+        """Number the activity, put it on the stack; what the walk keeps: the code and its links left to follow."""
+        self.index[code] = self.low[code] = len(self.index)
+        self.stack.append(code)
+        self.on_stack.add(code)
+        return code, iter(self.successors[code])
+
+    def _next_unmet(self, code: str, remaining: Iterator) -> str | None:
+        """First successor not met yet among the links left; one met and still on the stack is a way back."""
+        for successor, _, _ in remaining:
+            if successor not in self.candidates:
+                continue
+            if successor not in self.index:
+                return successor
+            if successor in self.on_stack:
+                self.low[code] = min(self.low[code], self.index[successor])
+        return None
+
+    def _walk_from(self, root: str) -> None:
+        """Follow the links depth first from ``root``, closing each component as its first activity is left."""
+        work = [self._open(root)]
         while work:
             code, remaining = work[-1]
-            for successor, _, _ in remaining:
-                if successor not in candidates:
-                    continue
-                if successor not in index:
-                    index[successor] = low[successor] = len(index)
-                    stack.append(successor)
-                    on_stack.add(successor)
-                    work.append((successor, iter(successors[successor])))
-                    break
-                if successor in on_stack:
-                    low[code] = min(low[code], index[successor])
-            else:
-                work.pop()
-                if work:
-                    parent = work[-1][0]
-                    low[parent] = min(low[parent], low[code])
-                if low[code] == index[code]:
-                    component = []
-                    while True:
-                        member = stack.pop()
-                        on_stack.discard(member)
-                        component.append(member)
-                        if member == code:
-                            break
-                    if len(component) > 1 or any(succ == code for succ, _, _ in successors[code]):
-                        members.extend(component)
+            successor = self._next_unmet(code, remaining)
+            if successor is not None:
+                work.append(self._open(successor))
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                self.low[parent] = min(self.low[parent], self.low[code])
+            if self.low[code] == self.index[code]:
+                self.components.append(self._closed_by(code))
+
+    def _closed_by(self, code: str) -> list[str]:
+        """Activities taken off the stack down to ``code``: one component."""
+        component = []
+        while True:
+            member = self.stack.pop()
+            self.on_stack.discard(member)
+            component.append(member)
+            if member == code:
+                return component
+
+
+def _loop_members(candidates: set[str], successors: dict[str, list]) -> list[str]:
+    """Activities of ``candidates`` that lie on a loop: strongly connected components of more than
+    one activity, or an activity linked to itself."""
+    members: list[str] = []
+    for component in _Components(candidates, successors).components:
+        code = component[-1]
+        if len(component) > 1 or any(successor == code for successor, _, _ in successors[code]):
+            members.extend(component)
     return sorted(members)
 
 
@@ -460,16 +491,24 @@ class _Run:
         self.is_loe = activities["is_loe"].to_dict()
         self.nodes = [code for code in activities.index if not self.is_loe[code]]
         self.loe_codes = [code for code in activities.index if self.is_loe[code]]
-        node_set = set(self.nodes)
         self.preds: dict[str, list] = defaultdict(list)
         self.succs: dict[str, list] = defaultdict(list)
         self.loe_preds: dict[str, list] = defaultdict(list)
         self.loe_succs: dict[str, list] = defaultdict(list)
         links = self.snapshot.relationships[["pred_code", "succ_code", "type", "lag_hr"]]
         self.linked_on = set(links["pred_code"])  # has a successor of any kind (LOE, WBS summary included)
-        # Defensive reading of the link table (the model validates it too): a type the passes have
-        # no rule for is left out with a warning rather than read as SF by the FS/SS "else" branches;
-        # a lag the time axis cannot place is a typed error, never an OverflowError.
+        links = self._readable_links(links)
+        self._file_links(links)
+        self._warn_of_loe_to_loe(links)
+        self.order = self._topological_order()
+
+    def _readable_links(self, links: pd.DataFrame) -> pd.DataFrame:
+        """Links the passes have a rule for.
+
+        Defensive reading of the link table (the model validates it too): a type the passes have
+        no rule for is left out with a warning rather than read as SF by the FS/SS "else" branches;
+        a lag the time axis cannot place is a typed error, never an OverflowError.
+        """
         unknown = links[~links["type"].isin(LINK_TYPES)]
         if not unknown.empty:
             shown = unknown[["pred_code", "succ_code", "type"]].head(5).itertuples(index=False)
@@ -486,36 +525,50 @@ class _Run:
                 f"{[f'{p}->{s}' for p, s in unbounded[['pred_code', 'succ_code']].head(8).itertuples(index=False)]}",
                 tuple(sorted(set(unbounded["pred_code"]) | set(unbounded["succ_code"]))),
             )
+        return links
+
+    def _file_links(self, links: pd.DataFrame) -> None:
+        """Each link under its two ends, lag in minutes: between two scheduled activities (``preds``,
+        ``succs``), or between a level of effort and a scheduled activity (``loe_preds``, ``loe_succs``)."""
+        node_set = set(self.nodes)
+        loe_set = set(self.loe_codes)
         for predecessor, successor, link_type, lag in links.itertuples(index=False):
             lag_minutes = float(lag or 0) * 60
             if predecessor in node_set and successor in node_set:
                 self.preds[successor].append((predecessor, link_type, lag_minutes))
                 self.succs[predecessor].append((successor, link_type, lag_minutes))
-            elif successor in activities.index and self.is_loe.get(successor, False) and predecessor in node_set:
+            elif successor in loe_set and predecessor in node_set:
                 self.loe_preds[successor].append((predecessor, link_type, lag_minutes))
-            elif predecessor in activities.index and self.is_loe.get(predecessor, False) and successor in node_set:
+            elif predecessor in loe_set and successor in node_set:
                 self.loe_succs[predecessor].append((successor, link_type, lag_minutes))
-        # An LOE takes its dates from the work it spans; a link between two LOEs gives neither a
-        # date here. Whether P6 schedules one LOE from another is not documented: counted, not lost.
+
+    def _warn_of_loe_to_loe(self, links: pd.DataFrame) -> None:
+        """An LOE takes its dates from the work it spans; a link between two LOEs gives neither a
+        date here. Whether P6 schedules one LOE from another is not documented: counted, not lost."""
         loe_to_loe = [
-            (p, s)
-            for p, s in zip(links["pred_code"], links["succ_code"], strict=True)
-            if self.is_loe.get(p, False) and self.is_loe.get(s, False)
+            (predecessor, successor)
+            for predecessor, successor in zip(links["pred_code"], links["succ_code"], strict=True)
+            if self.is_loe.get(predecessor, False) and self.is_loe.get(successor, False)
         ]
         if loe_to_loe:
             self.warnings.append(
                 f"{len(loe_to_loe)} relationship(s) between two level-of-effort activities, ignored: {loe_to_loe[:5]}"
             )
-        # The network is a directed graph: activities are nodes, relationships are edges
-        # (predecessor -> successor). We need an order in which every activity comes after all
-        # its predecessors (a topological sort, Kahn's algorithm): the forward pass can then
-        # compute an activity from predecessors already computed, and the backward pass walks
-        # the same order reversed, so successors are computed first.
-        # in_degree[x] = number of predecessors of x not placed yet; x is ready at 0.
-        # Example, A -> B -> D and A -> C -> D:
-        #   start  A=0 B=1 C=1 D=2  -> place A
-        #          B=0 C=0 D=2      -> place B, then C
-        #          D=0              -> place D        order = [A, B, C, D]
+
+    def _topological_order(self) -> list[str]:
+        """Scheduled activities, each after all its predecessors; a logic loop is refused (``CycleError``).
+
+        The network is a directed graph: activities are nodes, relationships are edges
+        (predecessor -> successor). We need an order in which every activity comes after all
+        its predecessors (a topological sort, Kahn's algorithm): the forward pass can then
+        compute an activity from predecessors already computed, and the backward pass walks
+        the same order reversed, so successors are computed first.
+        in_degree[x] = number of predecessors of x not placed yet; x is ready at 0.
+        Example, A -> B -> D and A -> C -> D:
+          start  A=0 B=1 C=1 D=2  -> place A
+                 B=0 C=0 D=2      -> place B, then C
+                 D=0              -> place D        order = [A, B, C, D]
+        """
         in_degree = dict.fromkeys(self.nodes, 0)
         for successor, links in self.preds.items():
             in_degree[successor] = len(links)
@@ -533,7 +586,7 @@ class _Run:
         if len(order) != len(self.nodes):
             loop = _loop_members(set(self.nodes) - set(order), self.succs)
             raise CycleError(f"logic loop among {loop[:8]}{'…' if len(loop) > 8 else ''}", tuple(loop))
-        self.order = order
+        return order
 
     def _durations(self) -> None:
         """Remaining durations of the open activities the passes will place: finite and bounded (else a
