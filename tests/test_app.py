@@ -2049,6 +2049,34 @@ def test_without_addresses_takes_the_web_addresses_out_of_a_source():
     assert ui.without_addresses("DCMA-EA PAM 200.1 (Oct 2012), section 4") == "DCMA-EA PAM 200.1 (Oct 2012), section 4"
 
 
+# what Streamlit's Markdown turns into a link by itself (GFM autolink literals): a web address, a mail address
+AUTOLINK = re.compile(r"https?://|www\.|[\w.+-]+@[\w-]+\.[\w-]", re.IGNORECASE)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Pour slab, see https://example.com/pour_plan.htm",
+        "HTTP://EXAMPLE.COM/A",
+        "detail on www.example.com/a",
+        "ask a.b@example.com",
+        "(https://example.com) <https://example.com>",
+    ],
+)
+def test_md_text_leaves_nothing_streamlit_would_turn_into_a_link(name):
+    """A task or WBS name from a schedule file may hold an address: shown through ui.md_text it reads
+    the same (once Markdown has taken its escapes away, and but for an invisible character) and
+    holds nothing Streamlit links."""
+    shown = ui.md_text(name).replace("\\", "")
+    assert not AUTOLINK.search(shown), shown
+    assert shown.replace(ui.NO_LINK, "") == name
+
+
+def test_md_text_leaves_a_plain_name_as_it_was():
+    assert ui.md_text("Pour slab L2 at 8:30, zone A.1") == "Pour slab L2 at 8:30, zone A\\.1"
+    assert ui.NO_LINK not in ui.md_text("http is a protocol; www without a dot; 5 @ 3 bars")
+
+
 WEB_ADDRESS = re.compile(r"https?://|www\.")
 
 
