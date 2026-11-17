@@ -871,11 +871,7 @@ class _Run:
         axis = self.cal_ax[code]
         started = self.status[code] == "TK_Active"
         activity_kind, duration = self.kind(code), self.dur_min(code)
-        # Progress Override: the start of work under way is an actual, so FS / SS
-        # predecessors no longer bound it; FF / SF predecessors still bound its finish
-        # (H1-11 A1040). Mirrored in successor_limits.
-        use_logic = not (started and self.options.progressed == "progress_override")
-        start_bounds, finish_bounds = self.early_bounds(code, started, use_logic)
+        start_bounds, finish_bounds = self.early_bounds(code, started)
         pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
@@ -903,13 +899,19 @@ class _Run:
                 finish_bounds,
                 start,
                 finish_time,
-                use_logic,
+                self.is_start_bound_by_logic(started),
                 any(link_type in ("FF", "SF") for _, link_type, _ in self.preds[code]),
                 self.options.collapse_early_expected_finish,
             )
         self.record_early(code, started, activity_kind, start, finish_time)
 
-    def early_bounds(self, code, started: bool, use_logic: bool) -> tuple[list, list]:
+    def is_start_bound_by_logic(self, started: bool) -> bool:
+        """False for work under way under Progress Override: its start is an actual, so FS / SS
+        predecessors no longer bound it; FF / SF predecessors still bound its finish (H1-11 A1040).
+        Mirrored in successor_limits."""
+        return not (started and self.options.progressed == "progress_override")
+
+    def early_bounds(self, code, started: bool) -> tuple[list, list]:
         """Earliest dates the start and the finish may take ("not before" bounds), constraints apart: the
         data date, a resume date, the predecessors and the early date a link to another project gives."""
         finish_bounds: list[pd.Timestamp]
@@ -918,7 +920,9 @@ class _Run:
         if resume is not None and pd.notna(resume):
             # suspended work resumes on its resume date (H8-07 A1020)
             start_bounds.append(max(self.data_date, pd.Timestamp(resume)))
-        for bounded_end, bound in self.pred_bounds(code, started, finish_only=not use_logic):
+        for bounded_end, bound in self.pred_bounds(
+            code, started, finish_only=not self.is_start_bound_by_logic(started)
+        ):
             (start_bounds if bounded_end == "start" else finish_bounds).append(bound)
         external_date = self.inputs[code].get("external_early_start_date")
         if self.options.honor_external and external_date is not None and pd.notna(external_date):
