@@ -70,7 +70,7 @@ with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=Tru
             "Check the Schedule Options dialog in P6 before comparing dates.",
             icon=":material/warning:",
         )
-    table(options)
+    table(options, key="debug_01_options")
     if baseline is not None and not baseline.is_planned and baseline.snapshot is not snapshot:
         compared = diagnostic.options_comparison(snapshot, baseline.snapshot)
         differing = compared.loc[~compared["same"], "option"]
@@ -82,12 +82,12 @@ with st.expander("1 · Scheduling options (SCHEDOPTIONS, PROJECT)", expanded=Tru
                 "Dates and floats of two files scheduled with different options do not compare.",
                 icon=":material/warning:",
             )
-        table(compared)
+        table(compared, key="debug_01_options_vs_baseline")
     st.caption(
         "Projects in the file: sum_base_proj_id is the project's P6 Project Baseline, orig_proj_id the project "
         "a baseline copy was made from."
     )
-    table(frames["01b_projects"])
+    table(frames["01b_projects"], key="debug_01b_projects")
 
 # keyed blocks: a label holds a count that changes with the update, and Streamlit keys an
 # unkeyed expander on its label, so it would redraw closed
@@ -96,7 +96,7 @@ with st.expander(f"2 · Expected finish ({len(frames['02_expected_finish'])} tas
         "ef_recalc is the expected finish, or the early start when the expected finish falls before it "
         "(remaining_set_to_0). An FF / SF bound later than that wins instead (rem_override_hr blank)."
     )
-    table(frames["02_expected_finish"])
+    table(frames["02_expected_finish"], key="debug_02_expected_finish")
 
 int01, int03 = frames["03_int01_recalculation"], frames["03_int03_assignments"]
 with st.expander(
@@ -106,37 +106,40 @@ with st.expander(
     if int01.empty:
         st.caption("INT-01: every stored date and total float is reproduced.")
     else:
-        table(int01, max_height=480)
+        table(int01, max_height=480, key="debug_03_int01_recalculation")
     if int03.empty:
         st.caption("INT-03: every stored assignment date is reproduced.")
     else:
-        table(int03, max_height=480)
+        table(int03, max_height=480, key="debug_03_int03_assignments")
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
     st.caption("Targets, x and dialog options of standards/p6.toml, on the tab of the P6 dialog each check sits on.")
-    table(frames["04_check_parameters"])
+    table(frames["04_check_parameters"], key="debug_04_check_parameters")
 
 with st.expander("5 · Baseline and calendars", key="debug_baseline"):
-    table(frames["05_baseline"])
+    table(frames["05_baseline"], key="debug_05_baseline")
     st.caption(
         "Every update of the series, by status date: the analysed project (proj_id, add_date 'Date Added') and "
         "the Project Baseline it names (sum_base_proj_id), held by the file or not. use_project_baseline_flag "
         "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
         "baseline earned value uses (project baseline or each user's primary baseline), unverified."
     )
-    table(diagnostic.baseline_pointers(store))
+    table(diagnostic.baseline_pointers(store), key="debug_05_baseline_pointers")
     st.caption(
         "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
         "previous update under a new Task ID. P6 links a task to its baseline by Activity ID."
     )
-    table(diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)))
+    table(
+        diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)),
+        key="debug_05_renumbered",
+    )
     st.caption(
         "How this update's tasks match the baseline file and the previous update, by Activity ID and by GUID: "
         "counts only. renumbered = what 'Link renumbered tasks by GUID' links; gone_guid_absent = tasks gone "
         "whose GUID this update does not carry (deleted, or a copy of the project with new GUIDs)."
     )
-    table(guid_match)
-    table(frames["05_calendars"])
+    table(guid_match, key="debug_05_guid_match")
+    table(frames["05_calendars"], key="debug_05_calendars")
 
 with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled tasks)", key="debug_load_warnings"):
     st.caption(
@@ -147,16 +150,18 @@ with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled task
     for warning in snapshot.warnings:
         st.caption(warning)
     if not frames["06_leveling"].empty:
-        table(frames["06_leveling"], max_height=480)
-    table(frames["06_project_finish"])
-    table(frames["06_latest_finishes"])
+        table(frames["06_leveling"], max_height=480, key="debug_06_leveling")
+    table(frames["06_project_finish"], key="debug_06_project_finish")
+    table(frames["06_latest_finishes"], key="debug_06_latest_finishes")
 
 with st.expander("7 · Costs in the file (TASKRSRC, PROJCOST)", key="debug_costs"):
     st.caption(
         "Whether the file carries costs: P6 computes its cost-based Schedule Performance Index from them, "
         "xerscope's SPI (labor units) from hours. absent: the column is missing or blank on every row."
     )
-    table(frames["07_costs"].astype(str))  # numbers and "absent" in one column: Arrow needs one type
+    table(
+        frames["07_costs"].astype(str), key="debug_07_costs"
+    )  # numbers and "absent" in one column: Arrow needs one type
 
 with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_ev_settings"):
     st.caption(
@@ -164,8 +169,8 @@ with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_e
         "computes ETC as the remaining units whatever the technique. ev_etc_user_value is the performance "
         "factor P6 reads when it is entered; a code not identified is shown as stored."
     )
-    table(frames["08_etc_techniques"])
-    table(frames["08_ev_settings"], max_height=480)
+    table(frames["08_etc_techniques"], key="debug_08_etc_techniques")
+    table(frames["08_ev_settings"], max_height=480, key="debug_08_ev_settings")
 
 with st.expander("9 · XER tables and planned value labor units", key="debug_pv_labor"):
     st.caption(
@@ -174,17 +179,17 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         "target_qty x share of the assignment's own dates elapsed; tasks without labor assignment keep "
         "the task value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - task."
     )
-    table(frames["09_xer_tables"], max_height=480)
+    table(frames["09_xer_tables"], max_height=480, key="debug_09_xer_tables")
     if frames["09_pv_labor_check"].empty:
         st.caption("No baseline or no status date: nothing to compare.")
     else:
-        table(frames["09_pv_labor_check"])
-        table(frames["09_pv_labor_by_status"])
+        table(frames["09_pv_labor_check"], key="debug_09_pv_labor_check")
+        table(frames["09_pv_labor_by_status"], key="debug_09_pv_labor_by_status")
     st.caption(
         "Labor assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "
         "task's), and task dependent assignments on another calendar than their task's."
     )
-    table(frames["09_assignment_dates"])
+    table(frames["09_assignment_dates"], key="debug_09_assignment_dates")
 
 NONE = "(none)"
 p6_frames: dict = {}
@@ -256,15 +261,15 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                     "Totals by group (all = matched + only P6 + only xerscope; the next two cut across them). "
                     "P6 total - export rows: the total typed above less the PV of the export's rows."
                 )
-                table(comparison.totals)
+                table(comparison.totals, key="debug_10_totals")
                 st.caption("PV gap by Schedule % band, xerscope against P6 (absent: no value on that side)")
-                table(comparison.cross)
+                table(comparison.cross, key="debug_10_cross")
                 st.caption("Tasks in gap, by candidate cause (several can hold for one task)")
-                table(comparison.causes)
+                table(comparison.causes, key="debug_10_causes")
                 st.caption("Matched tasks by calendar (clndr_id)")
-                table(comparison.by_calendar)
+                table(comparison.by_calendar, key="debug_10_by_calendar")
                 st.caption("Tasks in gap (PV or EV), largest gap first. On screen only: not in the zip.")
-                table(comparison.activities, max_height=480)
+                table(comparison.activities, max_height=480, key="debug_10_activities")
 
 with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):
     st.caption(
@@ -273,8 +278,10 @@ with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key
         "baseline_names_to_export: number of names only. tasks_*: the project's tasks by % complete type. "
         "Below, what each field is in P6 and where that is written; unverified where no source settles it."
     )
-    table(frames["11_project_settings"].astype(str))  # flags, dates, counts and "absent": one type for Arrow
-    table(diagnostic.project_settings_meaning_table())
+    table(
+        frames["11_project_settings"].astype(str), key="debug_11_project_settings"
+    )  # flags, dates, counts and "absent": one type for Arrow
+    table(diagnostic.project_settings_meaning_table(), key="debug_11_project_settings_meaning")
 
 with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time period)", key="debug_calendars"):
     st.caption(
@@ -285,9 +292,11 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
         "weekday it replaces. 24:00 is the end of the day."
     )
     calendar_frames = {name: frame for name, frame in frames.items() if name.startswith("13_")}
-    table(calendar_frames["13_calendar_summary"].astype(str))  # numbers, flags and blanks: one type for Arrow
-    table(calendar_frames["13_calendar_week"])
-    table(calendar_frames["13_calendar_exceptions"], max_height=480)
+    table(
+        calendar_frames["13_calendar_summary"].astype(str), key="debug_13_calendar_summary"
+    )  # numbers, flags and blanks: one type for Arrow
+    table(calendar_frames["13_calendar_week"], key="debug_13_calendar_week")
+    table(calendar_frames["13_calendar_exceptions"], max_height=480, key="debug_13_calendar_exceptions")
 
     def calendar_zip_tag(anonymous: bool) -> tuple:
         """What the calendar zip is built from: files, projects, update and the anonymous switch."""
@@ -324,7 +333,7 @@ if not data_locked():
             "Config read: no means default theme and fonts, every interface listened on. Package: the copy that "
             "runs; after an update, reload the page with the cache bypassed (Ctrl+Shift+R) if it still looks old."
         )
-        table(ui.runtime_table())
+        table(ui.runtime_table(), key="debug_12_runtime")
 
 
 def zip_tag(anonymous: bool) -> tuple:
@@ -373,7 +382,8 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
         "Words of one XER column read as one by the Gantt Ask field (plural, an abbreviation with its dot), "
         "generated in memory from every loaded file; `xerscope lexicon build` writes them as a file."
     )
-    table(pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"]))
+    variant_counts = pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"])
+    table(variant_counts, key="debug_14_ask_variants")
     for error in lexicon_and_errors()[1]:  # curated/ files skipped, refusals that cannot apply
         st.warning(ui.md_text(_where(error)))
 

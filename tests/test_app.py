@@ -2194,6 +2194,37 @@ def test_health_and_audit_write_no_web_address(app, standard_id):
     assert not [text for text in _texts(app) if WEB_ADDRESS.search(text)]
 
 
+def test_every_table_of_the_debug_page_has_a_key_of_its_own():
+    """The Debug page draws 34 tables, most of them too short to carry filters on the demo: read in
+    the page's source, every call of its ``table`` passes a ``key``, each one a different name, none
+    the key of another widget of the page (a table's key is also its dataframe's)."""
+    import ast
+
+    source = (Path(xerscope.__file__).parent / "app" / "views" / "debug.py").read_text(encoding="utf-8")
+    calls = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call)]
+
+    def keys_of(nodes) -> list[str]:
+        keywords = [keyword for node in nodes for keyword in node.keywords if keyword.arg == "key"]
+        return [keyword.value.value for keyword in keywords if isinstance(keyword.value, ast.Constant)]
+
+    tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
+    table_keys = keys_of(tables)
+    assert len(tables) == 34 and len(table_keys) == 34 and len(set(table_keys)) == 34
+    assert all(key.startswith("debug_") for key in table_keys)
+    other_keys = keys_of(call for call in calls if call not in tables)
+    assert not set(table_keys) & set(other_keys)
+
+
+def test_debug_tables_keep_their_filters_under_their_own_names(app):
+    """On the demo the tables of the Debug page long enough to carry filters do so under their key,
+    none under the file and line of the call."""
+    app.switch_page("views/debug.py").run()
+    _ok(app)
+    inputs = [*app.text_input, *app.multiselect]
+    names = {widget.key.split(":")[1] for widget in inputs if (widget.key or "").startswith("filter:")}
+    assert names and all(name.startswith("debug_") for name in names), names
+
+
 def test_table_column_filters_keep_the_matching_rows(app):
     app.switch_page("views/gantt.py").run()
     _ok(app)
