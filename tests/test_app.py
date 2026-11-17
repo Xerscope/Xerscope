@@ -2110,8 +2110,8 @@ def test_table_column_filters_keep_the_matching_rows(app):
         return next(d.value for d in app.dataframe if "task_code" in d.value.columns)
 
     def task_filter():
-        # the Gantt task list is drawn without a key: its filters are keyed on the call site
-        keys = (t for t in app.text_input if (t.key or "").startswith("filter:gantt:"))
+        # the Gantt task list keeps its filters under its own name
+        keys = (t for t in app.text_input if (t.key or "").startswith("filter:gantt_tasks:"))
         return next(t for t in keys if t.key.endswith(":task_code"))
 
     everything = task_table()

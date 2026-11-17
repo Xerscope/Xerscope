@@ -23,6 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis.query import fold as _fold
+from xerscope.analysis.task_filters import search_mask as _search_mask
 from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
@@ -763,7 +764,6 @@ def fold(text) -> str:
 
 
 def search_mask(frame: pd.DataFrame, columns: Sequence[str], text: str) -> pd.Series:
-    """Rows where any of ``columns`` contains ``text``, ignoring case and accents."""
-    needle = fold(text)
-    hits = {column: frame[column].map(fold).str.contains(needle, regex=False) for column in columns}
-    return pd.DataFrame(hits).any(axis=1)
+    """Rows where any of ``columns`` contains ``text``, ignoring case and accents
+    (analysis.task_filters.search_mask)."""
+    return _search_mask(frame, columns, text)

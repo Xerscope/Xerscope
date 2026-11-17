@@ -50,6 +50,26 @@ def categorise(tasks: pd.DataFrame, settings: Settings = DEFAULT_SETTINGS) -> pd
     return pd.Series(cat, index=tasks.index)
 
 
+def open_row_ids(
+    rows: list[dict],
+    nodes: pd.DataFrame,
+    branch_ids: set[str],
+    focus: str,
+    picked_wbs_id: str | None = None,
+    filtering: bool = False,
+) -> set[str]:
+    """The WBS rows drawn open (``"w:<wbs_id>"``): every WBS row of ``rows`` when a filter is on,
+    so each match shows; otherwise the node in ``focus`` alone. With a picked activity, also the
+    nodes from its own (``picked_wbs_id``) up to the top, those of the branch drawn: its row shows
+    and is scrolled to."""
+    open_ids = {row["id"] for row in rows if row["kind"] == "wbs"} if filtering else {f"w:{focus}"}
+    if picked_wbs_id is not None:
+        chain = nodes.loc[nodes["wbs_id"] == picked_wbs_id, "ancestors"]
+        ancestors = chain.iloc[0] if len(chain) else []
+        open_ids |= {f"w:{ancestor}" for ancestor in ancestors if ancestor in branch_ids}
+    return open_ids
+
+
 def _iso(value) -> str | None:
     return None if value is None or pd.isna(value) else pd.Timestamp(value).strftime("%Y-%m-%dT%H:%M")
 

@@ -128,6 +128,12 @@ def rollup(snapshot: Snapshot, baseline: Baseline | None = None) -> pd.DataFrame
     return out
 
 
+def path_to(nodes: pd.DataFrame, wbs_id: str) -> list[str]:
+    """Nodes from the top of ``nodes`` (`rollup`) down to ``wbs_id``, itself last."""
+    ancestors = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"].iloc[0]  # itself first, then up
+    return [*(ancestor for ancestor in reversed(ancestors) if ancestor != wbs_id), wbs_id]
+
+
 def subtree_ids(nodes: pd.DataFrame, wbs_id: str) -> set[str]:
     """``wbs_id`` and every node below it."""
     return {

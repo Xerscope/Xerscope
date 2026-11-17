@@ -3,7 +3,8 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.explain import KPI_FORMULAS
-from xerscope.analysis.wbs import ROOT, rollup, subtree_ids
+from xerscope.analysis.task_filters import branch_tasks, filtered_tasks, matching_code_ids
+from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
 from xerscope.app.sets import show_steps
 from xerscope.app.state import (
@@ -22,7 +23,7 @@ from xerscope.app.state import (
 )
 from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
-from xerscope.viz.gantt import CATEGORY_ORDER
+from xerscope.viz.gantt import CATEGORY_ORDER, open_row_ids
 from xerscope.xer.model import STATUS
 
 NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
@@ -201,7 +202,7 @@ def _focus_node(wbs_id: str) -> None:
 
 # the path to the node, each step a button that moves the focus up ("Project › CIV › ZA");
 # nothing at the top node (ancestors list the node itself first)
-path = [*(a for a in reversed(node["ancestors"]) if a != current), current]
+path = path_to(nodes, current)  # type: ignore[arg-type]
 if len(path) > 1:
     with st.container(horizontal=True, gap="small", vertical_alignment="center", key="gantt_crumbs"):
         for step in path:
@@ -242,7 +243,7 @@ status_column, float_column, search_column = st.columns(3)
 status = status_column.multiselect("Status", list(STATUS.values()), placeholder="All")
 categories = float_column.multiselect("Float", CATEGORY_ORDER, placeholder="All")
 search = search_column.text_input("Search", placeholder="Task ID or name")
-code_type, code_ids, picks = None, set(), []
+code_type, code_ids = None, None
 if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has any
     type_column, value_column = st.columns([1, 2])
     code_type = type_column.selectbox(
@@ -266,14 +267,8 @@ if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has an
         disabled=code_type is None,
         key=f"gantt_code_values:{code_type}",  # another code type starts with nothing picked
     )
-    # a suggestion picked = that value exactly (P6 "equals"); text kept = every value whose code
-    # contains it, case and accents ignored (P6 "contains")
-    short = dict(zip(values["code_id"], values["value"], strict=True))
-    for pick in picks:
-        if pick in by_label:
-            code_ids.add(by_label[pick])
-        else:
-            code_ids |= {code_id for code_id, value in short.items() if ui.fold(pick) in ui.fold(value)}
+    if picks:  # nothing picked: no filter on the code
+        code_ids = matching_code_ids(values, by_label, picks)
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)
@@ -288,21 +283,12 @@ timescale = options.segmented_control(
 # st.selectbox types its value as None-able for an empty option list; nodes always holds the ROOT row
 branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)  # type: ignore[arg-type]
 branch = nodes[nodes["wbs_id"].isin(branch_ids)]
-tasks = snapshot.activities
-if current != ROOT:
-    tasks = tasks[tasks["wbs_id"].isin(branch_ids)]
-tasks = tasks.assign(category=categorise(tasks))
-if hide_loe and not (ask is not None and ask.loe):  # "LOE" in the sentence overrides the toggle
-    tasks = tasks[~tasks["is_loe"]]
-unfiltered = len(tasks)
-if status:
-    tasks = tasks[tasks["status"].isin(status)]
-if categories:
-    tasks = tasks[tasks["category"].isin(categories)]
-if search:
-    tasks = tasks[ui.search_mask(tasks, ["task_code", "task_name"], search)]  # accent-insensitive
-if code_type and picks:
-    tasks = tasks[tasks["task_code"].isin(snapshot.tasks_with_codes(code_type, code_ids))]
+# "LOE" in the sentence overrides the toggle
+in_branch = branch_tasks(
+    snapshot, None if current == ROOT else branch_ids, hide_loe=hide_loe and not (ask is not None and ask.loe)
+)
+in_branch = in_branch.assign(category=categorise(in_branch))
+tasks = filtered_tasks(in_branch, snapshot, status, categories, search, code_type, code_ids)
 ask_funnel = None
 if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
     ask_funnel = query.apply(ask, tasks, snapshot, nodes, baseline)  # "late" reads the page's baseline
@@ -334,7 +320,7 @@ if focus:
         if st.button("Show all", icon=":material/close:", key="gantt_focus_clear", type="tertiary"):
             st.session_state[FOCUS_KEY] = None
             st.rerun()
-filtering = len(tasks) < unfiltered  # every status ticked filters nothing: the outline stays closed
+filtering = len(tasks) < len(in_branch)  # every status ticked filters nothing: the outline stays closed
 
 
 def _clicked() -> None:
@@ -346,25 +332,22 @@ def _pick_from_list() -> None:
     st.session_state[TASK_KEY] = st.session_state[PICK_KEY]
 
 
-@st.fragment
-def chart_and_task() -> None:
-    """The chart, the Task list and the picked activity's card, on the rows the widgets above kept.
-    Picking an activity (a click in the chart, the list) runs this part alone: the page above and
-    the sidebar are not drawn again."""
-    rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
-    root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
+def picked_task() -> str | None:
+    """The activity picked in the chart or in the list, when the filters and the update still draw it."""
     drawn = set(tasks["task_code"])
     # the browser sends a row id only; it counts when it names an activity drawn in this chart
     clicked = st.session_state.pop(CLICK_KEY, None)
     if clicked in drawn:
         st.session_state[TASK_KEY] = clicked
     picked = st.session_state.get(TASK_KEY)
-    picked = picked if picked in drawn else None  # an activity the filters or the update leave out
-    open_ids = {r["id"] for r in rows if r["kind"] == "wbs"} if filtering else {f"w:{current}"}
-    if picked:  # keep the picked activity's branch open so its row shows and is scrolled to
-        wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0]
-        chain = nodes.loc[nodes["wbs_id"] == wbs_id, "ancestors"]
-        open_ids |= {f"w:{a}" for a in (chain.iloc[0] if len(chain) else []) if a in branch_ids}
+    return picked if picked in drawn else None
+
+
+def show_chart(picked: str | None) -> None:
+    """The chart on the rows the widgets above kept; a double click on a WBS row moves the page's focus there."""
+    rows = gantt_rows(tasks, branch, compare=compare, snapshot=snapshot, keep_empty=not filtering)
+    root_row = nodes[nodes["wbs_id"] == ROOT].iloc[0]
+    picked_wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0] if picked else None
     chart = ui.GANTT(
         data=gantt_data(
             rows,
@@ -372,8 +355,7 @@ def chart_and_task() -> None:
             data_date=snapshot.data_date,
             span=(root_row["start"], root_row["finish"]),
             timescale="week" if timescale == "Week" else "month",
-            # a filter opens every branch so each match shows; otherwise the chosen node opens
-            open_ids=open_ids,
+            open_ids=open_row_ids(rows, nodes, branch_ids, current, picked_wbs_id, filtering),  # type: ignore[arg-type]
             selected=f"a:{picked}" if picked else f"w:{current}",
             compare_label=compare_label or "",
             links=show_links,
@@ -388,12 +370,14 @@ def chart_and_task() -> None:
         st.session_state[NEXT_NODE_KEY] = focused[2:]
         st.rerun(scope="app")  # the WBS picker is above this part
 
-    codes = tasks["task_code"].tolist()
+
+def show_task_picker(picked: str | None) -> None:
+    """The Task list under the chart, on the picked activity."""
     names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
     st.session_state[PICK_KEY] = picked
     st.selectbox(
         "Task",
-        codes,
+        tasks["task_code"].tolist(),
         format_func=lambda code: f"{code} · {names.get(code, '')}",
         placeholder="Click a task in the chart, or pick one here",
         key=PICK_KEY,
@@ -401,6 +385,16 @@ def chart_and_task() -> None:
     )
     if st.session_state.get(TASK_KEY) and not picked:
         st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
+
+
+@st.fragment
+def chart_and_task() -> None:
+    """The chart, the Task list and the picked activity's card, on the rows the widgets above kept.
+    Picking an activity (a click in the chart, the list) runs this part alone: the page above and
+    the sidebar are not drawn again."""
+    picked = picked_task()
+    show_chart(picked)
+    show_task_picker(picked)
     if picked:
         with st.container(border=True):
             show_card(snapshot, picked)
@@ -430,5 +424,5 @@ with st.expander("Table view"):
     ]
     # a finished task has no float or remaining duration: a dash, not "None"
     shown, overrides = ui.numbers_as_text(tasks[table_columns], ["total_float_d", "remaining_d"])
-    ui.table(shown, overrides=overrides)
+    ui.table(shown, overrides=overrides, key="gantt_tasks")
     csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))
