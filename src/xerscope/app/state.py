@@ -797,7 +797,7 @@ def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
     """The P6 XML exports next to the updates read from a folder, by name; none when the updates
     were uploaded. A P6 XML export holds a project's baselines, which its XER does not."""
     session = st.session_state if session is None else session
-    source = session.get("files_source") or ("none",)
+    source: tuple = session.get("files_source") or ("none",)
     root = Path(source[1]).expanduser() if source[0] == "folder" else None
     return [path.name for path in pmxml_files(root)] if root is not None and root.is_dir() else []
 
