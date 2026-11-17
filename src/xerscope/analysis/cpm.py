@@ -1201,29 +1201,10 @@ class _Run:
         upper_start = axis.snap_start(min(late_start_bounds)) if late_start_bounds else None
         starts, finishes, driven = [], [], False
         for assignment in self.driving(code):
-            assignment_duration = self.assignment_minutes.get(
-                assignment.taskrsrc_id, self.base_minutes(code, assignment) + self.extra_hours.get(code, 0.0) * 60
+            assignment_start, assignment_finish, is_driven = self.assignment_late_dates(
+                code, assignment, upper_start, upper_finish
             )
-            assignment_finish = assignment.axis.snap_finish(upper_finish) if upper_finish is not None else None
-            assignment_start = (
-                (
-                    assignment.axis.add(assignment_finish, -assignment_duration, finish=False)
-                    if assignment_duration
-                    else assignment_finish
-                )
-                if assignment_finish is not None
-                else None
-            )
-            if upper_start is not None:
-                candidate = assignment.axis.snap_start(self.shift(assignment.axis, upper_start, assignment.lag_minutes))
-                if assignment_start is None or candidate < assignment_start:
-                    assignment_start, assignment_finish = (
-                        candidate,
-                        assignment.axis.add(candidate, assignment_duration, finish=True)
-                        if assignment_duration
-                        else candidate,
-                    )
-                    driven = driven or assignment.lag_minutes == 0
+            driven = driven or is_driven
             self.assignment_late[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
             starts.append(self.shift(assignment.axis, assignment_start, -assignment.lag_minutes))
             finishes.append(assignment_finish)
@@ -1233,6 +1214,30 @@ class _Run:
             # task-dependent work (H26-04 A1440: late start Wed 16:00, not Thu 08:00)
             start = axis.keep_or_previous(min(late_start_bounds))
         return start, max(finishes)
+
+    def assignment_late_dates(
+        self, code, assignment: _Asg, upper_start: pd.Timestamp | None, upper_finish: pd.Timestamp | None
+    ) -> tuple[pd.Timestamp | None, pd.Timestamp | None, bool]:
+        """Latest start and finish of one driving assignment on its resource calendar, and whether the
+        start bound placed it with no assignment lag (the activity's late start is then that bound).
+
+        The assignment runs back from the finish bound; the start bound, moved by the assignment
+        lag, takes over when it is earlier or when there is no finish bound.
+        """
+        duration = self.assignment_minutes.get(
+            assignment.taskrsrc_id, self.base_minutes(code, assignment) + self.extra_hours.get(code, 0.0) * 60
+        )
+        start = finish = None
+        if upper_finish is not None:
+            finish = assignment.axis.snap_finish(upper_finish)
+            start = assignment.axis.add(finish, -duration, finish=False) if duration else finish
+        if upper_start is None:
+            return start, finish, False
+        candidate = assignment.axis.snap_start(self.shift(assignment.axis, upper_start, assignment.lag_minutes))
+        if start is None or candidate < start:
+            finish = assignment.axis.add(candidate, duration, finish=True) if duration else candidate
+            return candidate, finish, assignment.lag_minutes == 0
+        return start, finish, False
 
     def backward(self) -> None:
         """Late dates: the latest each activity can start and finish without delaying the
@@ -1336,47 +1341,53 @@ class _Run:
         An "as late as possible" activity is moved right by its free float here. The walk is
         in reverse order, so such an activity sees its successors already moved, and free
         float is measured against the dates P6 finally shows."""
-        inputs, early_start, early_finish, remaining_start = (
-            self.inputs,
-            self.early_start,
-            self.early_finish,
-            self.remaining_start,
-        )
         for code in reversed(self.open_):
             axis = self.cal_ax[code]
-            activity_kind, duration = self.kind(code), self.dur_min(code)
-            # As Late As Possible moves the remaining work of started activities too
-            # (H27-05 A1170: in progress, remaining 3 h, placed at its late dates)
-            alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
             start_limits, finish_limits = self.successor_limits(code, late=False)
-            if alap:
+            if self.is_as_late_as_possible(code):
                 if not start_limits and not finish_limits:
                     finish_limits = [self.finish]
-                keep = dict(self.assignment_late)
-                placed_start, placed_finish = self.place_late(
-                    code, axis, activity_kind, duration, start_limits, finish_limits, alap=True
-                )
-                if placed_finish > early_finish[code]:
-                    early_finish[code], remaining_start[code] = placed_finish, placed_start
-                    if self.status[code] == "TK_NotStart":
-                        early_start[code] = placed_start
-                    for assignment in self.driving(code) if code in self.rsrc_dep else []:
-                        self.assignment_early[assignment.taskrsrc_id] = self.assignment_late[assignment.taskrsrc_id]
-                self.assignment_late.clear()
-                self.assignment_late.update(keep)
-            gaps = [axis.between(early_finish[code], limit) / 60 for limit in finish_limits] + [
-                axis.between(remaining_start[code], limit) / 60 for limit in start_limits
-            ]
-            # open end: free float runs to the project's early finish, not to "must finish by"
-            self.free_float_hr[code] = (
-                max(0.0, min(gaps)) if gaps else max(0.0, axis.between(early_finish[code], self.finish) / 60)
-            )
-            if code in self.duration_override:
-                # an activity whose expected finish applies has no free float in P6, whatever
-                # its successors' early dates (corpus: 265 of 265 such values; H1-08 A1090,
-                # H5-01 A1120). Observed, not explained.
-                self.free_float_hr[code] = 0.0
+                self.move_to_late_dates(code, axis, start_limits, finish_limits)
+            self.free_float_hr[code] = self.free_float(code, axis, start_limits, finish_limits)
             self.total_float_hr[code] = self.total_float(code, axis)
+
+    def is_as_late_as_possible(self, code) -> bool:
+        """As Late As Possible moves the remaining work of started activities too
+        (H27-05 A1170: in progress, remaining 3 h, placed at its late dates)."""
+        return "CS_ALAP" in (self.inputs[code].get("cstr_type"), self.inputs[code].get("cstr_type2"))
+
+    def move_to_late_dates(self, code, axis, start_limits: list, finish_limits: list) -> None:
+        """Early dates of an "as late as possible" activity, moved to the latest its successors' early
+        dates allow, when that is later; its driving assignments follow. The late dates of the backward
+        pass are left as they were."""
+        keep = dict(self.assignment_late)
+        placed_start, placed_finish = self.place_late(
+            code, axis, self.kind(code), self.dur_min(code), start_limits, finish_limits, alap=True
+        )
+        if placed_finish > self.early_finish[code]:
+            self.early_finish[code], self.remaining_start[code] = placed_finish, placed_start
+            if self.status[code] == "TK_NotStart":
+                self.early_start[code] = placed_start
+            for assignment in self.driving(code) if code in self.rsrc_dep else []:
+                self.assignment_early[assignment.taskrsrc_id] = self.assignment_late[assignment.taskrsrc_id]
+        self.assignment_late.clear()
+        self.assignment_late.update(keep)
+
+    def free_float(self, code, axis, start_limits: list, finish_limits: list) -> float:
+        """Hours the activity can slip before the first successor moves, on the activity's calendar."""
+        gaps = [axis.between(self.early_finish[code], limit) / 60 for limit in finish_limits] + [
+            axis.between(self.remaining_start[code], limit) / 60 for limit in start_limits
+        ]
+        # open end: free float runs to the project's early finish, not to "must finish by"
+        free_float_hr = (
+            max(0.0, min(gaps)) if gaps else max(0.0, axis.between(self.early_finish[code], self.finish) / 60)
+        )
+        if code in self.duration_override:
+            # an activity whose expected finish applies has no free float in P6, whatever
+            # its successors' early dates (corpus: 265 of 265 such values; H1-08 A1090,
+            # H5-01 A1120). Observed, not explained.
+            return 0.0
+        return free_float_hr
 
     def total_float(self, code, axis) -> float:
         """Total float in hours of the activity's calendar, read the way the project's float option says."""
