@@ -31,7 +31,7 @@
       "near_clones": 0
     },
     "analysis/ask/answer.py": {
-      "mi": 48.2,
+      "mi": 48.6,
       "mi_rank": "A",
       "cc_max": 12,
       "cc_over_15": 0,
@@ -71,7 +71,7 @@
       "near_clones": 0
     },
     "analysis/ask/funnel.py": {
-      "mi": 48.9,
+      "mi": 49.4,
       "mi_rank": "A",
       "cc_max": 15,
       "cc_over_15": 0,
@@ -81,7 +81,7 @@
       "near_clones": 0
     },
     "analysis/ask/generated.py": {
-      "mi": 44.8,
+      "mi": 44.7,
       "mi_rank": "A",
       "cc_max": 13,
       "cc_over_15": 0,
@@ -101,7 +101,7 @@
       "near_clones": 0
     },
     "analysis/ask/lexer.py": {
-      "mi": 24.7,
+      "mi": 25.5,
       "mi_rank": "A",
       "cc_max": 44,
       "cc_over_15": 1,
@@ -121,7 +121,7 @@
       "near_clones": 0
     },
     "analysis/ask/parser.py": {
-      "mi": 41.4,
+      "mi": 41.3,
       "mi_rank": "A",
       "cc_max": 13,
       "cc_over_15": 0,
@@ -161,7 +161,7 @@
       "near_clones": 0
     },
     "analysis/audit.py": {
-      "mi": 47.0,
+      "mi": 42.0,
       "mi_rank": "A",
       "cc_max": 10,
       "cc_over_15": 0,
@@ -181,7 +181,7 @@
       "near_clones": 2
     },
     "analysis/changelog.py": {
-      "mi": 33.0,
+      "mi": 33.3,
       "mi_rank": "A",
       "cc_max": 8,
       "cc_over_15": 0,
@@ -191,7 +191,7 @@
       "near_clones": 0
     },
     "analysis/checks.py": {
-      "mi": 47.3,
+      "mi": 43.3,
       "mi_rank": "A",
       "cc_max": 8,
       "cc_over_15": 0,
@@ -221,7 +221,7 @@
       "near_clones": 0
     },
     "analysis/dcma/fourteen_point.py": {
-      "mi": 53.8,
+      "mi": 53.7,
       "mi_rank": "A",
       "cc_max": 10,
       "cc_over_15": 0,
@@ -251,7 +251,7 @@
       "near_clones": 5
     },
     "analysis/evm.py": {
-      "mi": 37.6,
+      "mi": 36.1,
       "mi_rank": "A",
       "cc_max": 10,
       "cc_over_15": 0,
@@ -271,7 +271,7 @@
       "near_clones": 0
     },
     "analysis/integrity.py": {
-      "mi": 52.3,
+      "mi": 52.5,
       "mi_rank": "A",
       "cc_max": 7,
       "cc_over_15": 0,
@@ -291,7 +291,7 @@
       "near_clones": 0
     },
     "analysis/p6/check_schedule.py": {
-      "mi": 56.3,
+      "mi": 56.4,
       "mi_rank": "A",
       "cc_max": 4,
       "cc_over_15": 0,
@@ -301,7 +301,7 @@
       "near_clones": 27
     },
     "analysis/populations.py": {
-      "mi": 52.6,
+      "mi": 53.1,
       "mi_rank": "A",
       "cc_max": 4,
       "cc_over_15": 0,
@@ -311,7 +311,7 @@
       "near_clones": 2
     },
     "analysis/progress.py": {
-      "mi": 48.5,
+      "mi": 47.5,
       "mi_rank": "A",
       "cc_max": 5,
       "cc_over_15": 0,
@@ -331,7 +331,7 @@
       "near_clones": 0
     },
     "analysis/rules.py": {
-      "mi": 37.8,
+      "mi": 38.2,
       "mi_rank": "A",
       "cc_max": 13,
       "cc_over_15": 0,
@@ -341,7 +341,7 @@
       "near_clones": 0
     },
     "analysis/standards.py": {
-      "mi": 41.4,
+      "mi": 41.0,
       "mi_rank": "A",
       "cc_max": 15,
       "cc_over_15": 0,
@@ -350,8 +350,18 @@
       "clones": 0,
       "near_clones": 0
     },
+    "analysis/task_filters.py": {
+      "mi": 78.7,
+      "mi_rank": "A",
+      "cc_max": 6,
+      "cc_over_15": 0,
+      "cognitive_max": 8,
+      "cognitive_over_15": 0,
+      "clones": 0,
+      "near_clones": 0
+    },
     "analysis/wbs.py": {
-      "mi": 59.7,
+      "mi": 60.0,
       "mi_rank": "A",
       "cc_max": 7,
       "cc_over_15": 0,
@@ -401,7 +411,7 @@
       "near_clones": 0
     },
     "app/reading.py": {
-      "mi": 67.9,
+      "mi": 67.5,
       "mi_rank": "A",
       "cc_max": 10,
       "cc_over_15": 0,
@@ -411,12 +421,12 @@
       "near_clones": 0
     },
     "app/sets.py": {
-      "mi": 53.1,
+      "mi": 61.1,
       "mi_rank": "A",
-      "cc_max": 16,
-      "cc_over_15": 1,
-      "cognitive_max": 20,
-      "cognitive_over_15": 1,
+      "cc_max": 6,
+      "cc_over_15": 0,
+      "cognitive_max": 6,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
@@ -451,9 +461,9 @@
       "near_clones": 0
     },
     "app/ui.py": {
-      "mi": 25.4,
+      "mi": 26.1,
       "mi_rank": "A",
-      "cc_max": 14,
+      "cc_max": 13,
       "cc_over_15": 0,
       "cognitive_max": 10,
       "cognitive_over_15": 0,
@@ -471,17 +481,17 @@
       "near_clones": 0
     },
     "app/views/audit.py": {
-      "mi": 43.5,
+      "mi": 48.4,
       "mi_rank": "A",
-      "cc_max": 13,
+      "cc_max": 7,
       "cc_over_15": 0,
-      "cognitive_max": 16,
-      "cognitive_over_15": 1,
+      "cognitive_max": 7,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
     "app/views/changelog.py": {
-      "mi": 39.9,
+      "mi": 44.0,
       "mi_rank": "A",
       "cc_max": 6,
       "cc_over_15": 0,
@@ -491,7 +501,7 @@
       "near_clones": 0
     },
     "app/views/debug.py": {
-      "mi": 38.0,
+      "mi": 37.8,
       "mi_rank": "A",
       "cc_max": 2,
       "cc_over_15": 0,
@@ -501,7 +511,7 @@
       "near_clones": 0
     },
     "app/views/earned_value.py": {
-      "mi": 43.3,
+      "mi": 45.3,
       "mi_rank": "A",
       "cc_max": 7,
       "cc_over_15": 0,
@@ -511,7 +521,7 @@
       "near_clones": 0
     },
     "app/views/export.py": {
-      "mi": 55.1,
+      "mi": 54.6,
       "mi_rank": "A",
       "cc_max": 6,
       "cc_over_15": 0,
@@ -521,22 +531,22 @@
       "near_clones": 0
     },
     "app/views/gantt.py": {
-      "mi": 36.1,
+      "mi": 39.8,
       "mi_rank": "A",
-      "cc_max": 20,
-      "cc_over_15": 1,
-      "cognitive_max": 17,
-      "cognitive_over_15": 1,
+      "cc_max": 9,
+      "cc_over_15": 0,
+      "cognitive_max": 3,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
     "app/views/health.py": {
-      "mi": 29.7,
+      "mi": 33.3,
       "mi_rank": "A",
-      "cc_max": 15,
+      "cc_max": 7,
       "cc_over_15": 0,
-      "cognitive_max": 17,
-      "cognitive_over_15": 1,
+      "cognitive_max": 9,
+      "cognitive_over_15": 0,
       "clones": 0,
       "near_clones": 0
     },
@@ -551,7 +561,7 @@
       "near_clones": 0
     },
     "app/views/overview.py": {
-      "mi": 50.4,
+      "mi": 50.3,
       "mi_rank": "A",
       "cc_max": 17,
       "cc_over_15": 1,
@@ -561,7 +571,7 @@
       "near_clones": 0
     },
     "app/views/ppc.py": {
-      "mi": 37.5,
+      "mi": 42.0,
       "mi_rank": "A",
       "cc_max": 3,
       "cc_over_15": 0,
@@ -571,7 +581,7 @@
       "near_clones": 0
     },
     "cli.py": {
-      "mi": 5.2,
+      "mi": 5.1,
       "mi_rank": "C",
       "cc_max": 13,
       "cc_over_15": 0,
@@ -621,7 +631,7 @@
       "near_clones": 0
     },
     "sample.py": {
-      "mi": 21.1,
+      "mi": 21.0,
       "mi_rank": "A",
       "cc_max": 9,
       "cc_over_15": 0,
@@ -631,7 +641,7 @@
       "near_clones": 2
     },
     "store.py": {
-      "mi": 50.0,
+      "mi": 49.9,
       "mi_rank": "A",
       "cc_max": 15,
       "cc_over_15": 0,
@@ -701,7 +711,7 @@
       "near_clones": 0
     },
     "viz/charts.py": {
-      "mi": 42.5,
+      "mi": 43.3,
       "mi_rank": "A",
       "cc_max": 12,
       "cc_over_15": 0,
@@ -711,7 +721,7 @@
       "near_clones": 0
     },
     "viz/gantt.py": {
-      "mi": 52.1,
+      "mi": 50.7,
       "mi_rank": "A",
       "cc_max": 10,
       "cc_over_15": 0,
@@ -721,17 +731,17 @@
       "near_clones": 0
     },
     "xer/__init__.py": {
-      "mi": 77.1,
+      "mi": 75.6,
       "mi_rank": "A",
       "cc_max": 4,
       "cc_over_15": 0,
       "cognitive_max": 5,
       "cognitive_over_15": 0,
       "clones": 0,
-      "near_clones": 0
+      "near_clones": 2
     },
     "xer/calendar.py": {
-      "mi": 25.4,
+      "mi": 25.8,
       "mi_rank": "A",
       "cc_max": 13,
       "cc_over_15": 0,
@@ -761,7 +771,7 @@
       "near_clones": 0
     },
     "xer/pmxml.py": {
-      "mi": 39.8,
+      "mi": 39.6,
       "mi_rank": "A",
       "cc_max": 11,
       "cc_over_15": 0,
