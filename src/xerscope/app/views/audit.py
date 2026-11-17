@@ -7,7 +7,6 @@ this session: Schedule health keeps reporting the loaded standards. The block un
 
 import streamlit as st
 
-from xerscope.analysis import AnalysisContext
 from xerscope.analysis.audit import (
     choices,
     has_same_settings,
@@ -18,7 +17,7 @@ from xerscope.analysis.audit import (
     toml_block,
     with_settings,
 )
-from xerscope.analysis.checks import results_frame, run_metric
+from xerscope.analysis.checks import results_frame
 from xerscope.analysis.explain import explain
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
@@ -181,7 +180,6 @@ if metric_id is None:
 metric = standard[metric_id]
 prefix = f"audit:{standard_id}:{metric_id}"
 SOURCES = sources_of(snapshot, baseline=baseline)  # the files a download of this page comes from
-context = AnalysisContext(snapshot, store, baseline)
 
 ui.section("Settings for this audit", "Start from the standard's values; the check reruns on every change.")
 form_column, reset_column = st.columns([5, 1], vertical_alignment="bottom")
@@ -202,7 +200,8 @@ except ValueError as exc:
     st.stop()
 
 standard_result = metric_result(metric, snapshot, store)
-audit_result = standard_result if has_same_settings(audited, metric) else run_metric(audited, context)
+# through the session's cache, like the standard's: a redraw that changes no setting computes nothing
+audit_result = standard_result if has_same_settings(audited, metric) else metric_result(audited, snapshot, store)
 
 show_results(standard_result, audit_result)
 written = sheet(standard.id, metric)
