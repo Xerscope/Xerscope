@@ -80,8 +80,8 @@ def test_filtered_tasks_keep_every_task_without_a_filter_and_intersect_those_giv
     assert _codes(filtered_tasks(tasks, SCHEDULE, categories=["Critical", "Near critical"])) == ["C", "E"]
     # in the name, case and accents ignored: "Pour béton" and "Beton slab"
     assert _codes(filtered_tasks(tasks, SCHEDULE, search="BETON")) == ["A", "C"]
-    # in the Activity ID as well: "d" is D, and the "d" of "Site supervision" is the same task
-    assert _codes(filtered_tasks(tasks, SCHEDULE, search="d")) == ["D"]
+    # in the Activity ID as well: no name holds a "c", the Activity ID C does
+    assert _codes(filtered_tasks(tasks, SCHEDULE, search="c")) == ["C"]
     # three filters at once: not started, Normal float, "o" in the name: B (Formwork) and D (Site supervision)
     kept = filtered_tasks(tasks, SCHEDULE, statuses=["Not started"], categories=["Normal"], search="o")
     assert _codes(kept) == ["B", "D"]
