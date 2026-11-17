@@ -1863,6 +1863,189 @@ def _schedule_failure(error: ScheduleError, delayed: str | None = None) -> CptRe
     return CptResult(False, str(error), delayed)
 
 
+@dataclass
+class _DelayOutcome:
+    """What a delay on ``code`` did to the project's finish: the measures the verdict and its note read."""
+
+    code: str
+    delay_days: float
+    hours_per_day: float  # of the delayed activity's calendar
+    base_finish: pd.Timestamp  # latest early finish of the end points, plain schedule
+    delayed_finish: pd.Timestamp  # the same, delayed schedule
+    shift_hr: float  # from one finish to the other, working hours of the delayed activity's calendar
+    own_move: pd.Timedelta  # how far the delayed activity's own finish moved
+    end_move: pd.Timedelta  # how far the project's finish moved
+    is_reached: bool  # the end points that finish the plain schedule moved
+    shortened_hr: pd.Series  # task_code -> remaining hours an expected finish gave up (the delayed activity apart)
+
+    @property
+    def delay_hr(self) -> float:
+        return self.delay_days * self.hours_per_day
+
+    @property
+    def is_whole(self) -> bool:
+        """The finish moved by the whole delay.
+
+        Measured on the delayed activity's calendar. It can move further when the path crosses
+        calendars with other non-working days; it can also read less for the same reason (the
+        window of the move holds non-working days of that calendar the downstream path does not
+        observe), so the proportion is also read in calendar days: the finish must move at least
+        as much as the delayed activity's own finish did.
+        """
+        return self.shift_hr >= self.delay_hr - 1e-6 or self.end_move >= self.own_move
+
+    @property
+    def passed(self) -> bool:
+        """The whole delay arrived, or part of it did and nothing stopped the rest.
+
+        Less than the whole on both readings is not a failure by itself: PAM 200.1 §4.12 reads its
+        proportion "assuming zero float", and the delayed activity may have float on its own finish
+        (it can be on the longest path by its start alone), or the path may cross calendars. A
+        delay that stops on the way is: the end points that finish the plain schedule do not move,
+        or an expected finish downstream gives up remaining duration (to 0 once pushed past that
+        date: the shortening is the absorption).
+        """
+        return self.is_whole or (self.is_reached and self.shortened_hr.empty)
+
+
+def _first_open_on_longest_path(activities: pd.DataFrame, frame: pd.DataFrame) -> pd.Series | None:
+    """Open activity of the longest path that starts first (the lowest Activity ID among equals), or None.
+
+    The critical path = the longest path of the recalculated schedule (with negative float,
+    "total float <= 0" would also take in less critical paths). Milestones and level of effort
+    are not delayed.
+    """
+    open_ = activities[
+        ~activities["is_complete"] & ~activities["is_loe"] & ~activities["is_milestone"]
+    ].drop_duplicates("task_code")
+    critical_path = open_[open_["task_code"].map(frame["longest_path"]).fillna(False).astype(bool)]
+    if critical_path.empty:
+        return None
+    critical_path = critical_path.assign(_rs=critical_path["task_code"].map(frame["remaining_start"]))
+    return critical_path.sort_values(["_rs", "task_code"]).iloc[0]
+
+
+def _end_points(snapshot: Snapshot, frame: pd.DataFrame) -> list[str]:
+    """Activities no work follows.
+
+    A level of effort is never one (P6 computes its dates from the activities it is linked to, it
+    drives nothing), and a level-of-effort successor does not make its predecessor something
+    other than an end.
+    """
+    activities, links = snapshot.activities, snapshot.relationships
+    loe = set(activities.loc[activities["is_loe"].astype(bool), "task_code"])
+    # built once: per activity it took 33 s on Hotel
+    has_successor = set(links.loc[~links["succ_code"].isin(loe), "pred_code"])
+    return [code for code in frame.index if code not in has_successor and code not in loe]
+
+
+def _delay_outcome(
+    snapshot: Snapshot, target: pd.Series, delay_days: float, base: Schedule, late: Schedule
+) -> _DelayOutcome:
+    """Measures of the move from ``base`` (plain schedule) to ``late`` (``target`` delayed)."""
+    code = target["task_code"]
+    end_points = _end_points(snapshot, base.frame)
+    base_finish = base.frame.loc[end_points, "ef"].max()
+    delayed_finish = late.frame.loc[end_points, "ef"].max()
+    axis = TimeAxis(
+        snapshot.calendar(target["clndr_id"]), base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date()
+    )
+    ends = base.frame.loc[end_points, "ef"]
+    shortened = (base.frame["rem_override_hr"] - late.frame["rem_override_hr"].reindex(base.frame.index)).fillna(0)
+    return _DelayOutcome(
+        code=code,
+        delay_days=delay_days,
+        hours_per_day=float(target["hours_per_day"]),
+        base_finish=base_finish,
+        delayed_finish=delayed_finish,
+        shift_hr=axis.between(base_finish, delayed_finish) / 60,
+        own_move=late.frame.at[code, "ef"] - base.frame.at[code, "ef"],
+        end_move=delayed_finish - base_finish,
+        is_reached=late.frame.loc[ends.index[ends == base_finish], "ef"].max() > base_finish,
+        shortened_hr=shortened[(shortened > 1e-6) & (shortened.index != code)],
+    )
+
+
+def _move_note(outcome: _DelayOutcome) -> str:
+    """The delay asked, the finish before and after, and the move in working days."""
+    return (
+        f"+{outcome.delay_days:g} wd on {outcome.code}: forecast finish {outcome.base_finish:%Y-%m-%d} -> "
+        f"{outcome.delayed_finish:%Y-%m-%d}, moved {outcome.shift_hr / outcome.hours_per_day:+.1f} wd"
+        + ("" if outcome.passed else f" instead of {outcome.delay_days:+g}")
+        + (
+            " (more: the path crosses other calendars' non-working days)"
+            if outcome.shift_hr > outcome.delay_hr + 1e-6
+            else ""
+        )
+    )
+
+
+def _calendar_reading(snapshot: Snapshot, outcome: _DelayOutcome) -> str:
+    """What the project calendar and the calendar days read, when the finish moved fewer working days
+    than the delay on the delayed activity's calendar: a calendar effect is told from an absorbed delay."""
+    if not outcome.shift_hr < outcome.delay_hr - 1e-6:
+        return ""
+    project = snapshot.calendar()
+    project_axis = TimeAxis(project, outcome.base_finish.date(), (outcome.delayed_finish + pd.Timedelta(days=1)).date())
+    project_shift_wd = (
+        project_axis.between(outcome.base_finish, outcome.delayed_finish)
+        / 60
+        / (project.hours_per_day or outcome.hours_per_day)
+    )
+    reading = ""
+    if outcome.is_whole:
+        reading = ": a calendar effect, the whole delay reached the finish"
+    elif outcome.passed:
+        reading = f": the delay reaches the finish, less float on {outcome.code}'s own finish or a calendar effect"
+    return (
+        f" ({project_shift_wd:+.1f} wd on the project calendar; {outcome.end_move.days:+d} calendar days against "
+        f"{outcome.own_move.days:+d} for {outcome.code}'s own finish{reading})"
+    )
+
+
+def _pinned_by_a_mandatory_date(activities: pd.DataFrame) -> list[dict]:
+    """Open activities with a mandatory date: only open work can absorb a delay, a finished
+    activity's mandatory date is history."""
+    mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
+    pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
+    return [
+        {**row, "reason": "mandatory date", "absorbed_wd": None}
+        for row in pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
+    ]
+
+
+def _absorbing_expected_finishes(activities: pd.DataFrame, outcome: _DelayOutcome) -> list[dict]:
+    """Activities whose expected finish gave up remaining duration, the largest cut first, in working days."""
+    if outcome.shortened_hr.empty:
+        return []
+    names = activities.set_index("task_code")["task_name"]
+    hours = activities.set_index("task_code")["hours_per_day"].astype(float)
+    return [
+        {
+            "task_code": task, "task_name": names.get(task, ""), "cstr_type": "", "cstr_type2": "",
+            "reason": "expected finish",
+            "absorbed_wd": round(float(cut / hours.get(task, outcome.hours_per_day)), 1),
+        }
+        for task, cut in outcome.shortened_hr.sort_values(ascending=False).items()
+    ]  # fmt: skip
+
+
+def _what_stops_the_delay(snapshot: Snapshot, outcome: _DelayOutcome) -> tuple[list[dict], str]:
+    """The activities that may hold a failed delay back, and what the note says of them."""
+    links, code, note = snapshot.relationships, outcome.code, ""
+    follows_the_finish = links[(links["pred_code"] == code) & links["type"].isin(["FS", "FF"])]
+    if not outcome.is_reached and follows_the_finish.empty:
+        note += f"; {code} has no FS or FF successor: nothing follows its finish"
+    pinned = _pinned_by_a_mandatory_date(snapshot.activities)
+    if pinned:
+        note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in pinned[:5])}"
+    absorbing = _absorbing_expected_finishes(snapshot.activities, outcome)
+    if absorbing:
+        listed = ", ".join(f"{item['task_code']} ({item['absorbed_wd']:g} wd)" for item in absorbing[:5])
+        note += f"; expected finish dates absorb it (remaining duration cut when pushed past them): {listed}"
+    return pinned + absorbing, note
+
+
 def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     """Add ``delay_days`` to the first open activity of the critical path; the delay must reach the finish.
 
@@ -1877,109 +2060,23 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     or an expected finish absorbs part of it (its activity loses its remaining duration when the
     delay pushes it past that date); the note names what it can.
     """
-    activities = snapshot.activities
     try:
         base = schedule(snapshot)
     except ScheduleError as exc:  # a loop, or a duration / lag the engine cannot place
         return _schedule_failure(exc)
-    # The critical path = the longest path of the recalculated schedule (with negative
-    # float, "total float <= 0" would also take in less critical paths).
-    frame = base.frame
-    open_ = activities[
-        ~activities["is_complete"] & ~activities["is_loe"] & ~activities["is_milestone"]
-    ].drop_duplicates("task_code")
-    critical_path = open_[open_["task_code"].map(frame["longest_path"]).fillna(False).astype(bool)]
-    if critical_path.empty:
+    target = _first_open_on_longest_path(snapshot.activities, base.frame)
+    if target is None:
         return CptResult(False, "no open task on the longest path: the critical path is not defined")
-    critical_path = critical_path.assign(_rs=critical_path["task_code"].map(frame["remaining_start"]))
-    target = critical_path.sort_values(["_rs", "task_code"]).iloc[0]
     code = target["task_code"]
-    hours_per_day = float(target["hours_per_day"])
-    delay_hours = delay_days * hours_per_day
+    delay_hours = delay_days * float(target["hours_per_day"])
     try:
         late = schedule(snapshot, {code: delay_hours}, base=base)
     except ScheduleError as exc:
         return _schedule_failure(exc, code)
-    # End points: the activities no work follows. A level of effort is never one (P6 computes its
-    # dates from the activities it is linked to, it drives nothing), and a level-of-effort successor
-    # does not make its predecessor something other than an end.
-    links = snapshot.relationships
-    loe = set(activities.loc[activities["is_loe"].astype(bool), "task_code"])
-    # built once: per activity it took 33 s on Hotel
-    has_successor = set(links.loc[~links["succ_code"].isin(loe), "pred_code"])
-    end_points = [code for code in base.frame.index if code not in has_successor and code not in loe]
-    base_finish = base.frame.loc[end_points, "ef"].max()
-    delayed_finish = late.frame.loc[end_points, "ef"].max()
-    axis = TimeAxis(
-        snapshot.calendar(target["clndr_id"]), base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date()
-    )
-    shift = axis.between(base_finish, delayed_finish) / 60
-    # The finish must move by the whole delay, measured on the delayed activity's calendar. It
-    # can move further when the path crosses calendars with other non-working days; it can also
-    # read less for the same reason (the window of the move holds non-working days of that
-    # calendar the downstream path does not observe), so the proportion is also read in calendar
-    # days: the finish must move at least as much as the delayed activity's own finish did.
-    own_move = late.frame.at[code, "ef"] - base.frame.at[code, "ef"]
-    end_move = delayed_finish - base_finish
-    whole = shift >= delay_hours - 1e-6 or end_move >= own_move
-    # Less on both readings is not a failure by itself: PAM 200.1 §4.12 reads its proportion
-    # "assuming zero float", and the delayed activity may have float on its own finish (it can be
-    # on the longest path by its start alone), or the path may cross calendars. A delay that stops
-    # on the way is: the end points that finish the plain schedule do not move, or an expected
-    # finish downstream gives up remaining duration (to 0 once pushed past that date: the
-    # shortening is the absorption).
-    ends = base.frame.loc[end_points, "ef"]
-    reached = late.frame.loc[ends.index[ends == base_finish], "ef"].max() > base_finish
-    shortened = (base.frame["rem_override_hr"] - late.frame["rem_override_hr"].reindex(base.frame.index)).fillna(0)
-    shortened = shortened[(shortened > 1e-6) & (shortened.index != code)]
-    passed = whole or (reached and shortened.empty)
-    note = (
-        f"+{delay_days:g} wd on {code}: forecast finish {base_finish:%Y-%m-%d} -> {delayed_finish:%Y-%m-%d}, "
-        f"moved {shift / hours_per_day:+.1f} wd"
-        + ("" if passed else f" instead of {delay_days:+g}")
-        + (" (more: the path crosses other calendars' non-working days)" if shift > delay_hours + 1e-6 else "")
-    )
-    if shift < delay_hours - 1e-6:
-        # fewer working days than the delay on the delayed activity's calendar: say what the project
-        # calendar and the calendar days read, so a calendar effect is told from an absorbed delay
-        project = snapshot.calendar()
-        project_axis = TimeAxis(project, base_finish.date(), (delayed_finish + pd.Timedelta(days=1)).date())
-        project_shift_wd = (
-            project_axis.between(base_finish, delayed_finish) / 60 / (project.hours_per_day or hours_per_day)
-        )
-        reading = ""
-        if whole:
-            reading = ": a calendar effect, the whole delay reached the finish"
-        elif passed:
-            reading = f": the delay reaches the finish, less float on {code}'s own finish or a calendar effect"
-        note += (
-            f" ({project_shift_wd:+.1f} wd on the project calendar; {end_move.days:+d} calendar days against "
-            f"{own_move.days:+d} for {code}'s own finish{reading})"
-        )
-    blocking = []
-    if not passed:
-        if not reached and links[(links["pred_code"] == code) & links["type"].isin(["FS", "FF"])].empty:
-            note += f"; {code} has no FS or FF successor: nothing follows its finish"
-        # only open work can absorb a delay: a finished activity's mandatory date is history
-        mandatory = activities["cstr_type"].isin(MANDATORY) | activities["cstr_type2"].isin(MANDATORY)
-        pinned = activities[mandatory & ~activities["is_complete"].astype(bool)]
-        blocking = [
-            {**row, "reason": "mandatory date", "absorbed_wd": None}
-            for row in pinned[["task_code", "task_name", "cstr_type", "cstr_type2"]].to_dict("records")
-        ]
-        if blocking:
-            note += f"; mandatory constraints may absorb it: {', '.join(pin['task_code'] for pin in blocking[:5])}"
-        if not shortened.empty:
-            names = activities.set_index("task_code")["task_name"]
-            hours = activities.set_index("task_code")["hours_per_day"].astype(float)
-            absorbing = [
-                {
-                    "task_code": task, "task_name": names.get(task, ""), "cstr_type": "", "cstr_type2": "",
-                    "reason": "expected finish", "absorbed_wd": round(float(cut / hours.get(task, hours_per_day)), 1),
-                }
-                for task, cut in shortened.sort_values(ascending=False).items()
-            ]  # fmt: skip
-            blocking += absorbing
-            listed = ", ".join(f"{item['task_code']} ({item['absorbed_wd']:g} wd)" for item in absorbing[:5])
-            note += f"; expected finish dates absorb it (remaining duration cut when pushed past them): {listed}"
-    return CptResult(passed, note, code, shift, blocking)
+    outcome = _delay_outcome(snapshot, target, delay_days, base, late)
+    note = _move_note(outcome) + _calendar_reading(snapshot, outcome)
+    blocking: list[dict] = []
+    if not outcome.passed:
+        blocking, reasons = _what_stops_the_delay(snapshot, outcome)
+        note += reasons
+    return CptResult(outcome.passed, note, code, outcome.shift_hr, blocking)
