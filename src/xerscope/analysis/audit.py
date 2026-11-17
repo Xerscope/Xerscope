@@ -186,6 +186,62 @@ def with_settings(metric: Metric, target: str | None = None, params: dict | None
     return dataclasses.replace(metric, params=params, comparator=comparator, threshold=threshold)
 
 
+def kept_params(metric: Metric, values: dict) -> dict:
+    """The parameters an audited metric holds, of the ``values`` picked for every parameter of its
+    rule: those that differ from the rule's default and those the standard already sets, as a
+    standard file would hold them. A tuple is held as a list, as TOML reads it."""
+    defaults = RULES[metric.rule].params
+    kept = {}
+    for name, picked in values.items():
+        value = _as_toml_reads(picked)
+        if value != _as_toml_reads(defaults[name]) or name in metric.params:
+            kept[name] = value
+    return kept
+
+
+def _as_toml_reads(value):
+    """Several names as the list a standard file gives; any other value as it is."""
+    return list(value) if isinstance(value, (list, tuple)) else value
+
+
+def has_same_settings(audited: Metric, metric: Metric) -> bool:
+    """Whether ``audited`` asks what ``metric`` asks: same parameters, same target. Its result is
+    then the standard's own."""
+    return (audited.params, audited.comparator, audited.threshold) == (
+        metric.params,
+        metric.comparator,
+        metric.threshold,
+    )
+
+
+TARGET_FORMS = "< x%, <= x%, > x%, >= x% (unit %), <= n (count), >= r (ratio), pass, info"
+
+
+def settings_table(metric: Metric, standard_metric: Metric) -> pd.DataFrame:
+    """The target and every parameter of the rule, one row each: its value in ``metric`` (``now``),
+    in the standard for the target and in the rule for a parameter (``default``), and what it
+    accepts."""
+    rows = [
+        {
+            "setting": "target",
+            "now": metric.threshold_label,
+            "default": standard_metric.threshold_label,
+            "accepts": TARGET_FORMS,
+        }
+    ]
+    for name, default in RULES[metric.rule].params.items():
+        allowed = ", ".join(map(str, choices(metric.rule, name) or []))
+        rows.append(
+            {
+                "setting": name,
+                "now": str(metric.params.get(name, default)),
+                "default": str(default),
+                "accepts": allowed or ("true / false" if isinstance(default, bool) else "a number"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def choices(rule_name: str, parameter: str) -> list | None:
     """The values a parameter accepts when it is a closed list (Literal or vocabulary), else None."""
     rule = RULES[rule_name]
