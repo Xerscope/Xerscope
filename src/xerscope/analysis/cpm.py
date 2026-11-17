@@ -742,48 +742,50 @@ class _Run:
             bounded_end = "start" if link_type in ("FS", "SS") else "finish"
             if finish_only and bounded_end == "start":
                 continue
-            link_axis = self.lag_axis(predecessor, code)
-            if self.status[predecessor] == "TK_Complete":
-                if self.retain:
-                    if self.status[code] == "TK_Complete":
-                        out.append((bounded_end, self.carry[predecessor]))
-                        continue
-                    measured_from = self.inputs[predecessor].get(
-                        "act_end_date" if link_type in ("FS", "FF") else "act_start_date"
-                    )
-                    unexpired_lag = lag
-                    if lag <= 0:
-                        unexpired_lag = 0.0
-                    elif measured_from is not None and pd.notna(measured_from):
-                        unexpired_lag = max(0.0, lag - max(0, link_axis.between(measured_from, self.data_date)))
-                    if (
-                        link_type == "SS"
-                        and not self.options.lag_from_early_start
-                        and measured_from is not None
-                        and pd.notna(measured_from)
-                    ):
-                        # "Calculate start-to-start lag from Actual Start": from the finished
-                        # predecessor's actual start, whatever it still carries (H6-07 A1190)
-                        out.append((bounded_end, self.shift(link_axis, measured_from, lag)))
-                        continue
-                    out.append((bounded_end, self.shift(link_axis, self.carry[predecessor], unexpired_lag)))
-                    continue
-                if started and not finish_only:
-                    continue  # Progress Override: a finished FF / SF predecessor still bounds
-            if link_type in ("FS", "FF"):
-                out.append((bounded_end, self.shift(link_axis, self.early_finish[predecessor], lag)))
-            else:
-                if (
-                    link_type == "SF"
-                    and self.status[predecessor] == "TK_Active"
-                    and self.options.progressed == "progress_override"
-                ):
-                    # Progress Override: the predecessor's start is an actual, an SF from it
-                    # binds nothing (H10-02 A1250); an SS still does, through its unexpired lag
-                    continue
-                predecessor_start, predecessor_lag = self.start_link(predecessor, link_axis, lag)
-                out.append((bounded_end, self.shift(link_axis, predecessor_start, predecessor_lag)))
+            if self.is_binding(predecessor, link_type, started, finish_only):
+                out.append((bounded_end, self.pred_bound(code, predecessor, link_type, lag)))
         return out
+
+    def is_binding(self, predecessor: str, link_type: str, started: bool, finish_only: bool) -> bool:
+        """False for the two links Progress Override releases: from a finished predecessor to the start
+        of work under way, and an SF link from a predecessor under way."""
+        predecessor_status = self.status[predecessor]
+        if predecessor_status == "TK_Complete" and not self.retain and started and not finish_only:
+            return False  # Progress Override: a finished FF / SF predecessor still bounds
+        # Progress Override: the predecessor's start is an actual, an SF from it
+        # binds nothing (H10-02 A1250); an SS still does, through its unexpired lag
+        is_sf_from_work_under_way = link_type == "SF" and predecessor_status == "TK_Active"
+        return not (is_sf_from_work_under_way and self.options.progressed == "progress_override")
+
+    def pred_bound(self, code: str, predecessor: str, link_type: str, lag: float) -> pd.Timestamp:
+        """Earliest instant one binding link allows: the predecessor's date the link reads, plus the lag."""
+        link_axis = self.lag_axis(predecessor, code)
+        if self.status[predecessor] == "TK_Complete" and self.retain:
+            return self.retained_bound(code, predecessor, link_type, lag, link_axis)
+        if link_type in ("FS", "FF"):
+            return self.shift(link_axis, self.early_finish[predecessor], lag)
+        predecessor_start, predecessor_lag = self.start_link(predecessor, link_axis, lag)
+        return self.shift(link_axis, predecessor_start, predecessor_lag)
+
+    def retained_bound(
+        self, code: str, predecessor: str, link_type: str, lag: float, link_axis: TimeAxis
+    ) -> pd.Timestamp:
+        """Bound a finished predecessor gives under Retained Logic: the date it carries, plus the part of
+        a positive lag not yet expired since its actual finish (FS, FF) or start (SS, SF)."""
+        if self.status[code] == "TK_Complete":
+            return self.carry[predecessor]
+        measured_from = self.inputs[predecessor].get("act_end_date" if link_type in ("FS", "FF") else "act_start_date")
+        has_actual = measured_from is not None and pd.notna(measured_from)
+        unexpired_lag = lag
+        if lag <= 0:
+            unexpired_lag = 0.0
+        elif has_actual:
+            unexpired_lag = max(0.0, lag - max(0, link_axis.between(measured_from, self.data_date)))
+        if link_type == "SS" and not self.options.lag_from_early_start and has_actual:
+            # "Calculate start-to-start lag from Actual Start": from the finished
+            # predecessor's actual start, whatever it still carries (H6-07 A1190)
+            return self.shift(link_axis, measured_from, lag)
+        return self.shift(link_axis, self.carry[predecessor], unexpired_lag)
 
     def unexpired(self, predecessor: str, link_axis: TimeAxis, lag: float) -> float:
         """Lag of an SS/SF link from ``p`` still to run after the data date (whole lag if not started)."""
@@ -845,102 +847,126 @@ class _Run:
         on a Monday-to-Friday 08:00-17:00 calendar: B starts Tuesday 08:00 and finishes
         Wednesday 17:00.
         """
-        inputs, options, status, data_date = self.inputs, self.options, self.status, self.data_date
-        early_start, early_finish, remaining_start = self.early_start, self.early_finish, self.remaining_start
         for code in self.order:
-            if status[code] == "TK_Complete":
+            if self.status[code] == "TK_Complete":
                 self.forward_finished(code)
-                continue
-            axis = self.cal_ax[code]
-            started = status[code] == "TK_Active"
-            activity_kind, duration = self.kind(code), self.dur_min(code)
-            finish_bounds: list[pd.Timestamp]
-            start_bounds, finish_bounds = [data_date], []
-            resume = inputs[code].get("resume_date") if started else None
-            if resume is not None and pd.notna(resume):
-                # suspended work resumes on its resume date (H8-07 A1020)
-                start_bounds.append(max(data_date, pd.Timestamp(resume)))
-            # Progress Override: the start of work under way is an actual, so FS / SS
-            # predecessors no longer bound it; FF / SF predecessors still bound its finish
-            # (H1-11 A1040). Mirrored in successor_limits.
-            use_logic = not (started and options.progressed == "progress_override")
-            for bounded_end, bound in self.pred_bounds(code, started, finish_only=not use_logic):
-                (start_bounds if bounded_end == "start" else finish_bounds).append(bound)
-            external_date = inputs[code].get("external_early_start_date")
-            if options.honor_external and external_date is not None and pd.notna(external_date):
-                # a lost link to a project not in the database: not a link of this project, so Progress
-                # Override does not release work under way from it (H8-08 A1020, H10-12 A1130, H15-09 A1110)
-                start_bounds.append(pd.Timestamp(external_date))
-                self.external.add(code)
-            pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
-            # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
-            # that unstarted work never starts before the data date (H3-04 A1100, H2-06
-            # A1130: the early dates move to the data date, the late dates stay)
-            if pinned and pinned[0] == "start":
-                start_bounds, finish_bounds = [max(pinned[1], data_date)], []
-            if code in self.rsrc_dep and activity_kind == "task":
-                use_expected = options.use_expected_finish and not self.delayed(code)
-                expected_date = inputs[code].get("expect_end_date", pd.NaT) if use_expected else pd.NaT
-                alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
-                expected_date = (
-                    pd.Timestamp(expected_date)
-                    if pd.notna(expected_date) and not alap and expected_date >= data_date
-                    else None
-                )
-                start, finish_time = self.rsrc_early(
-                    code, start_bounds, finish_bounds, self.extra_hours.get(code, 0.0) * 60, expected_date
-                )
             else:
-                start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
-            if pinned and pinned[0] == "finish" and code not in self.duration_override:
-                finish_time = axis.keep_or_previous(pinned[1])
-                start = (
-                    axis.add(finish_time, -duration, finish=False)
-                    if (activity_kind == "task" and duration)
-                    else finish_time
-                )
-                if start < data_date:
-                    start = axis.snap_start(data_date)
-                    finish_time = (
-                        axis.add(start, duration, finish=True) if (activity_kind == "task" and duration) else start
-                    )
-            if activity_kind == "task" and options.use_expected_finish and not self.delayed(code):
-                expected_date = inputs[code].get("expect_end_date", pd.NaT)
-                alap = "CS_ALAP" in (inputs[code].get("cstr_type"), inputs[code].get("cstr_type2"))
-                finish_linked = any(link_type in ("FF", "SF") for _, link_type, _ in self.preds[code])
-                if pd.notna(expected_date) and not alap and code not in self.rsrc_dep:
-                    start, finish_time = self.expected_finish(
-                        code,
-                        axis,
-                        pd.Timestamp(expected_date),
-                        start_bounds,
-                        finish_bounds,
-                        start,
-                        finish_time,
-                        use_logic,
-                        finish_linked,
-                        options.collapse_early_expected_finish,
-                    )
-            actual_start = inputs[code].get("act_start_date") if started else None
-            if started and (actual_start is None or pd.isna(actual_start)):
-                # the mirror of "complete without actual dates": the early start is the remaining start
-                self.warnings.append(f"{code}: in progress without an actual start")
-                actual_start = None
-            early_start[code], early_finish[code], remaining_start[code] = (
-                (actual_start if actual_start is not None and activity_kind == "task" else start),
-                finish_time,
-                start,
-            )
-        self.open_ = [code for code in self.order if status[code] != "TK_Complete"]
+                self.forward_open(code)
+        self.open_ = [code for code in self.order if self.status[code] != "TK_Complete"]
         # Under Retained Logic a finished activity ends, for its successors, at its carried
         # date: an actual finish after the data date (invalid progress) no longer sets the end.
         self.finish = max(
             (
-                self.carry.get(code, early_finish[code]) if status[code] == "TK_Complete" else early_finish[code]
+                self.carry.get(code, self.early_finish[code])
+                if self.status[code] == "TK_Complete"
+                else self.early_finish[code]
                 for code in self.nodes
             ),
             default=None,
         )
+
+    def forward_open(self, code) -> None:
+        """Early dates of one open activity: its bounds, its constraints, the placement, then what a
+        Mandatory Finish and an expected finish change."""
+        axis = self.cal_ax[code]
+        started = self.status[code] == "TK_Active"
+        activity_kind, duration = self.kind(code), self.dur_min(code)
+        # Progress Override: the start of work under way is an actual, so FS / SS
+        # predecessors no longer bound it; FF / SF predecessors still bound its finish
+        # (H1-11 A1040). Mirrored in successor_limits.
+        use_logic = not (started and self.options.progressed == "progress_override")
+        start_bounds, finish_bounds = self.early_bounds(code, started, use_logic)
+        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
+        # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
+        # that unstarted work never starts before the data date (H3-04 A1100, H2-06
+        # A1130: the early dates move to the data date, the late dates stay)
+        if pinned and pinned[0] == "start":
+            start_bounds, finish_bounds = [max(pinned[1], self.data_date)], []
+        if code in self.rsrc_dep and activity_kind == "task":
+            start, finish_time = self.rsrc_early(
+                code,
+                start_bounds,
+                finish_bounds,
+                self.extra_hours.get(code, 0.0) * 60,
+                self.resource_expected_finish(code),
+            )
+        else:
+            start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
+        if pinned and pinned[0] == "finish" and code not in self.duration_override:
+            start, finish_time = self.mandatory_finish_dates(axis, activity_kind, duration, pinned[1])
+        if self.has_task_expected_finish(code, activity_kind):
+            start, finish_time = self.expected_finish(
+                code,
+                axis,
+                pd.Timestamp(self.inputs[code].get("expect_end_date", pd.NaT)),
+                start_bounds,
+                finish_bounds,
+                start,
+                finish_time,
+                use_logic,
+                any(link_type in ("FF", "SF") for _, link_type, _ in self.preds[code]),
+                self.options.collapse_early_expected_finish,
+            )
+        self.record_early(code, started, activity_kind, start, finish_time)
+
+    def early_bounds(self, code, started: bool, use_logic: bool) -> tuple[list, list]:
+        """Earliest dates the start and the finish may take ("not before" bounds), constraints apart: the
+        data date, a resume date, the predecessors and the early date a link to another project gives."""
+        finish_bounds: list[pd.Timestamp]
+        start_bounds, finish_bounds = [self.data_date], []
+        resume = self.inputs[code].get("resume_date") if started else None
+        if resume is not None and pd.notna(resume):
+            # suspended work resumes on its resume date (H8-07 A1020)
+            start_bounds.append(max(self.data_date, pd.Timestamp(resume)))
+        for bounded_end, bound in self.pred_bounds(code, started, finish_only=not use_logic):
+            (start_bounds if bounded_end == "start" else finish_bounds).append(bound)
+        external_date = self.inputs[code].get("external_early_start_date")
+        if self.options.honor_external and external_date is not None and pd.notna(external_date):
+            # a lost link to a project not in the database: not a link of this project, so Progress
+            # Override does not release work under way from it (H8-08 A1020, H10-12 A1130, H15-09 A1110)
+            start_bounds.append(pd.Timestamp(external_date))
+            self.external.add(code)
+        return start_bounds, finish_bounds
+
+    def resource_expected_finish(self, code) -> pd.Timestamp | None:
+        """Expected finish a resource-dependent activity is placed with: none when the option is off,
+        the activity is delayed or as late as possible, or the date is before the data date."""
+        use_expected = self.options.use_expected_finish and not self.delayed(code)
+        expected_date = self.inputs[code].get("expect_end_date", pd.NaT) if use_expected else pd.NaT
+        if pd.notna(expected_date) and not self.is_as_late_as_possible(code) and expected_date >= self.data_date:
+            return pd.Timestamp(expected_date)
+        return None
+
+    def has_task_expected_finish(self, code, activity_kind: str) -> bool:
+        """True when an expected finish sets the remaining duration of task-dependent work."""
+        if activity_kind != "task" or not self.options.use_expected_finish or self.delayed(code):
+            return False
+        expected_date = self.inputs[code].get("expect_end_date", pd.NaT)
+        return pd.notna(expected_date) and not self.is_as_late_as_possible(code) and code not in self.rsrc_dep
+
+    def mandatory_finish_dates(
+        self, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
+    ) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Early dates under a Mandatory Finish: the finish at the date and the start a duration before;
+        from the data date instead when that start would fall before it."""
+        has_duration = activity_kind == "task" and duration
+        finish_time = axis.keep_or_previous(date)
+        start = axis.add(finish_time, -duration, finish=False) if has_duration else finish_time
+        if start < self.data_date:
+            start = axis.snap_start(self.data_date)
+            finish_time = axis.add(start, duration, finish=True) if has_duration else start
+        return start, finish_time
+
+    def record_early(self, code, started: bool, activity_kind: str, start, finish_time) -> None:
+        """Keep the early dates: work under way shows its actual start, its remaining start apart."""
+        actual_start = self.inputs[code].get("act_start_date") if started else None
+        if started and (actual_start is None or pd.isna(actual_start)):
+            # the mirror of "complete without actual dates": the early start is the remaining start
+            self.warnings.append(f"{code}: in progress without an actual start")
+            actual_start = None
+        self.early_start[code] = actual_start if actual_start is not None and activity_kind == "task" else start
+        self.early_finish[code] = finish_time
+        self.remaining_start[code] = start
 
     def forward_finished(self, code) -> None:
         """A finished activity keeps its actuals; under Retained Logic it also passes on a date."""
