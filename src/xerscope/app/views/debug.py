@@ -7,10 +7,11 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.cpm import ScheduleError
-from xerscope.app import diagnostic, ui
+from xerscope.app import diagnostic, ui, xml_baselines
 from xerscope.app.state import (
     anonymous_exports,
     baseline_for,
+    baseline_items,
     data_identity,
     data_locked,
     fetch,
@@ -120,11 +121,26 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(frames["05_baseline"], key="debug_05_baseline")
     st.caption(
         "Every update of the series, by status date: the analysed project (proj_id, add_date 'Date Added') and "
-        "the Project Baseline it names (sum_base_proj_id), held by the file or not. use_project_baseline_flag "
+        "the Project Baseline it names (sum_base_proj_id), held by the file or not, and held or not by the "
+        "P6 XML baseline file when one is in use (baseline_in_xml_file). use_project_baseline_flag "
         "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
         "baseline earned value uses (project baseline or each user's primary baseline), unverified."
     )
-    table(diagnostic.baseline_pointers(store), key="debug_05_baseline_pointers")
+    held_baselines = memo(
+        ("debug_xml_baselines",), lambda: xml_baselines.file_baselines(baseline_items(st.session_state))
+    )
+    pointers = diagnostic.baseline_pointers(store, held_baselines)
+    table(pointers, key="debug_05_baseline_pointers")
+    if held_baselines is not None:
+        st.caption(
+            "The baselines of the P6 XML baseline file, in the order of the file: the id an update names "
+            "(object_id), the project each was taken from (original_project_id) and how many updates of the "
+            "series name it (updates_naming_it; 0: no update is measured against it)."
+        )
+        table(
+            xml_baselines.xml_baselines_table(held_baselines, pointers["sum_base_proj_id"]),
+            key="debug_05_xml_baselines",
+        )
     st.caption(
         "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
         "previous update under a new Task ID. P6 links a task to its baseline by Activity ID."

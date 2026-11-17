@@ -12,6 +12,11 @@ TASKPRED, TASKRSRC, PROJCOST, CALENDAR, RSRC), so a baseline read from XML is an
 read from XER. Conversions, as MPXJ's P6 XML reader makes them: durations and units in hours,
 percentages as fractions (x 100), names of types and statuses spelled out ("Task Dependent"). Calendar
 work periods end on their last working minute in XML ("11:59") and on the next minute in XER ("12:00").
+
+An export of several projects with all their baselines runs to gigabytes, so the file is never held
+as one tree. ``index_pmxml`` goes through it once and keeps, for each baseline, what lists it and
+where its bytes are; ``read_pmxml_baseline`` then reads those bytes alone, with the calendars and the
+resources of the file.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ import xml.etree.ElementTree as ET  # nosec B405 - parses an export the user cho
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import partial
+from xml.parsers import expat
 
 import pandas as pd
 
@@ -78,17 +84,6 @@ def is_pmxml(data: bytes) -> bool:
     return head.startswith(b"<") and b"APIBusinessObjects" in head
 
 
-def _root(data: bytes, source: str) -> tuple[ET.Element, str]:
-    try:
-        root = ET.fromstring(data)  # nosec B314 - a file the user chose; Python's parser expands no external entity
-    except (ET.ParseError, LookupError, ValueError) as exc:  # the last two: an encoding Python cannot read
-        raise XerError(f"{source}: not a readable P6 XML file ({exc})") from exc
-    namespace = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
-    if root.tag.removeprefix(namespace) != "APIBusinessObjects":
-        raise XerError(f"{source}: not a P6 XML export (root element {root.tag.removeprefix(namespace)})")
-    return root, namespace
-
-
 def _text(element: ET.Element, namespace: str, field: str) -> str:
     child = element.find(namespace + field)
     return (child.text or "").strip() if child is not None else ""
@@ -104,23 +99,190 @@ def _percent(value: str) -> str:
     return f"{float(value) * 100:g}" if value else ""
 
 
+PARSE_CHUNK_BYTES = 1 << 24  # the file goes to the parser 16 MB at a time: what it holds besides the file
+LISTED_FIELDS = ("ObjectId", "Id", "Name", "DataDate", "OriginalProjectObjectId", "CurrentBaselineProjectObjectId")
+
+
+@dataclass(frozen=True)
+class PmxmlIndex:
+    """What one pass through a P6 XML export keeps of it. A span is (first byte, byte after the last)
+    of an element, with the blanks or comments that follow it."""
+
+    namespace: str  # "{uri}" before each tag as ElementTree writes it, blank without a namespace
+    head_end: int  # the bytes before it: the XML declaration and the opening tag of the root element
+    tail_start: int  # the bytes from it: the closing tag of the root element
+    baselines: list[XmlBaseline]
+    baseline_spans: dict[str, tuple[int, int]]  # by baseline ObjectId
+    shared_spans: list[tuple[int, int]]  # each Calendar, wherever it is, and each Resource of the file
+    current_baseline_id: str  # the Project Baseline the file's first project names, blank when none
+
+
+class _IndexPass:
+    """The handlers of the pass ``index_pmxml`` makes. ``depth`` counts the elements open around
+    a tag: 0 for the root element, 1 for a project, a baseline, a calendar or a resource of the file,
+    2 for a field or an activity of a project.
+
+    The parser gives the byte where a tag starts, not where it ends: a span is closed by the next
+    tag that opens or closes after its element."""
+
+    def __init__(self, parser: expat.XMLParserType, source: str) -> None:
+        self.parser = parser
+        self.source = source
+        self.depth = 0
+        self.namespace = ""
+        self.head_end = -1
+        self.tail_start = -1
+        self.baselines: list[XmlBaseline] = []
+        self.baseline_spans: dict[str, tuple[int, int]] = {}
+        self.shared_spans: list[tuple[int, int]] = []
+        self.current_baseline_id: str | None = None  # None until the first project is closed
+        self.calendar_depth = 0  # depth of the calendar being read, 0 outside any
+        self.span_starts: dict[int, int] = {}  # by depth: first byte of the element whose span is kept
+        self.closing_spans: list[tuple[str, int]] = []  # (what it is, first byte) of spans the next tag ends
+        self.project_tag = ""  # Project or BaselineProject while one is read, blank outside
+        self.fields: dict[str, str] = {}  # of the project or baseline being read
+        self.activities = 0
+        self.field = ""  # the listed field being read, blank outside any
+        self.field_text: list[str] = []
+
+    def local_name(self, name: str) -> str:
+        return name.removeprefix(self.namespace)
+
+    def start_element(self, name: str, attributes: dict) -> None:
+        if self.depth == 0:  # the root element: its namespace is the one every tag is read in
+            self.namespace = name.split("}")[0] + "}" if "}" in name else ""
+        if self.depth < 3 or self.closing_spans or self.local_name(name) == "Calendar":
+            self._open(self.local_name(name), self.parser.CurrentByteIndex)
+        self.depth += 1
+
+    def end_element(self, name: str) -> None:
+        self.depth -= 1
+        if self.depth < 3 or self.closing_spans or self.depth == self.calendar_depth:
+            self._close(self.local_name(name), self.parser.CurrentByteIndex)
+
+    def _open(self, tag: str, position: int) -> None:
+        """A tag opens at ``position``, ``self.depth`` elements around it."""
+        self._end_closing_spans(position)
+        if self.depth == 0:
+            self._check_root(tag)
+        elif self.depth == 1 and self.head_end < 0:
+            self.head_end = position
+        self._keep_span_start(tag, position)
+        if self.depth == 1 and tag in ("Project", "BaselineProject"):
+            self.project_tag = tag
+        elif self.depth == 2 and self.project_tag:
+            self._open_project_child(tag)
+
+    def _check_root(self, tag: str) -> None:
+        if tag != "APIBusinessObjects":
+            raise XerError(f"{self.source}: not a P6 XML export (root element {tag})")
+
+    def _keep_span_start(self, tag: str, position: int) -> None:
+        """Note where a calendar that is not inside another, a baseline or a resource of the file starts."""
+        if tag == "Calendar" and not self.calendar_depth:
+            self.calendar_depth = self.depth
+        elif self.depth != 1 or tag not in ("BaselineProject", "Resource"):
+            return
+        self.span_starts[self.depth] = position
+
+    def _open_project_child(self, tag: str) -> None:
+        """A field or an activity of a project or baseline: the first of each listed field is read."""
+        if tag == "Activity":
+            self.activities += 1
+        elif tag in LISTED_FIELDS and tag not in self.fields:
+            self.field = tag
+            self.parser.CharacterDataHandler = self.field_text.append
+
+    def _close(self, tag: str, position: int) -> None:
+        """The tag that closes an element starts at ``position``, ``self.depth`` elements around it."""
+        self._end_closing_spans(position)
+        if self.depth == 0:
+            self.tail_start = position
+            if self.head_end < 0:  # a root element without a child
+                self.head_end = position
+        elif self.depth == 2 and self.field:
+            self._close_field()
+        elif self.depth == 1 and self.project_tag:
+            self._close_project()
+        if self.depth == self.calendar_depth:
+            self.calendar_depth = 0
+        if self.depth in self.span_starts:
+            self.closing_spans.append((tag, self.span_starts.pop(self.depth)))
+
+    def _close_field(self) -> None:
+        self.parser.CharacterDataHandler = None
+        self.fields[self.field] = "".join(self.field_text).strip()
+        self.field = ""
+        self.field_text.clear()
+
+    def _close_project(self) -> None:
+        if self.project_tag == "BaselineProject":
+            self.baselines.append(
+                XmlBaseline(
+                    object_id=self.fields.get("ObjectId", ""),
+                    code=self.fields.get("Id", ""),
+                    name=self.fields.get("Name", ""),
+                    data_date=_xer_date(self.fields.get("DataDate", "")),
+                    original_project_id=self.fields.get("OriginalProjectObjectId", ""),
+                    activities=self.activities,
+                )
+            )
+        elif self.current_baseline_id is None:
+            self.current_baseline_id = self.fields.get("CurrentBaselineProjectObjectId", "")
+        self.project_tag = ""
+        self.fields = {}
+        self.activities = 0
+
+    def _end_closing_spans(self, position: int) -> None:
+        """The elements closed just before ``position`` end there."""
+        for tag, first_byte in self.closing_spans:
+            if tag == "BaselineProject":  # two baselines of one id: the first is the one read, as it was listed
+                self.baseline_spans.setdefault(self.baselines[-1].object_id, (first_byte, position))
+            else:
+                self.shared_spans.append((first_byte, position))
+        self.closing_spans.clear()
+
+
+def index_pmxml(data: bytes, source: str) -> PmxmlIndex:
+    """The index of a P6 XML export, from one pass that keeps none of its activities."""
+    parser = expat.ParserCreate(namespace_separator="}")
+    index_pass = _IndexPass(parser, source)
+    parser.StartElementHandler = index_pass.start_element
+    parser.EndElementHandler = index_pass.end_element
+    try:
+        for first_byte in range(0, len(data), PARSE_CHUNK_BYTES):
+            parser.Parse(data[first_byte : first_byte + PARSE_CHUNK_BYTES], False)
+        parser.Parse(b"", True)
+    except (expat.ExpatError, LookupError, ValueError) as exc:  # the last two: an encoding Python cannot read
+        raise XerError(f"{source}: not a readable P6 XML file ({exc})") from exc
+    return PmxmlIndex(
+        namespace="{" + index_pass.namespace if index_pass.namespace else "",
+        head_end=index_pass.head_end,
+        tail_start=index_pass.tail_start,
+        baselines=index_pass.baselines,
+        baseline_spans=index_pass.baseline_spans,
+        shared_spans=index_pass.shared_spans,
+        current_baseline_id=index_pass.current_baseline_id or "",
+    )
+
+
 def list_baselines(data: bytes, source: str) -> tuple[list[XmlBaseline], str]:
     """The baselines of the file and the Project Baseline its project names (blank when none)."""
-    root, namespace = _root(data, source)
-    baselines = [
-        XmlBaseline(
-            object_id=_text(baseline, namespace, "ObjectId"),
-            code=_text(baseline, namespace, "Id"),
-            name=_text(baseline, namespace, "Name"),
-            data_date=_xer_date(_text(baseline, namespace, "DataDate")),
-            original_project_id=_text(baseline, namespace, "OriginalProjectObjectId"),
-            activities=len(baseline.findall(namespace + "Activity")),
-        )
-        for baseline in root.findall(namespace + "BaselineProject")
-    ]
-    project = root.find(namespace + "Project")
-    current = _text(project, namespace, "CurrentBaselineProjectObjectId") if project is not None else ""
-    return baselines, current
+    index = index_pmxml(data, source)
+    return index.baselines, index.current_baseline_id
+
+
+def _document_of(data: bytes, index: PmxmlIndex, baseline_span: tuple[int, int]) -> ET.Element:
+    """The root element of the file holding one baseline, the calendars and the resources, in the
+    order of the file: what the tables of that baseline are read from."""
+    first_byte, end_byte = baseline_span
+    outside = [span for span in index.shared_spans if not first_byte <= span[0] < end_byte]
+    parser = ET.XMLParser()  # nosec B314 - a file the user chose; Python's parser expands no external entity
+    parser.feed(data[: index.head_end])
+    for span_start, span_end in sorted([*outside, baseline_span]):
+        parser.feed(data[span_start:span_end])
+    parser.feed(data[index.tail_start :])
+    return parser.close()
 
 
 def choose_baseline(baselines: list[XmlBaseline], current: str, wanted: str | None, source: str) -> XmlBaseline:
@@ -347,14 +509,11 @@ def _assignment_rows(project: ET.Element, namespace: str, proj_id: str) -> list[
 
 def read_pmxml_baseline(data: bytes, source: str, baseline_id: str | None = None) -> RawXer:
     """The XER tables of one baseline of a P6 XML export (``choose_baseline`` decides which)."""
-    root, namespace = _root(data, source)
-    baselines, current = list_baselines(data, source)
-    chosen = choose_baseline(baselines, current, baseline_id, source)
-    project = next(
-        baseline
-        for baseline in root.findall(namespace + "BaselineProject")
-        if _text(baseline, namespace, "ObjectId") == chosen.object_id
-    )
+    index = index_pmxml(data, source)
+    chosen = choose_baseline(index.baselines, index.current_baseline_id, baseline_id, source)
+    namespace = index.namespace
+    root = _document_of(data, index, index.baseline_spans[chosen.object_id])
+    project = next(root.iter(namespace + "BaselineProject"))  # the only one of the document
     proj_id = chosen.object_id
     project_rows, wbs_rows = _project_rows(project, namespace, proj_id)
     project_node_id = wbs_rows[0]["wbs_id"]

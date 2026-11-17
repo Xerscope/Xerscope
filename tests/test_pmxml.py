@@ -11,7 +11,7 @@ from xerkit import snap, todo
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import ev_point
 from xerscope.xer import XerError, build_snapshot, is_pmxml, list_baselines, load_snapshot
-from xerscope.xer.pmxml import read_pmxml_baseline
+from xerscope.xer.pmxml import index_pmxml, read_pmxml_baseline
 
 # activity dates as P6 XML writes them: the true end of the last period (17:00), unlike calendar periods
 A1 = activity("A1", "1001", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
@@ -312,3 +312,105 @@ def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch)
     assert not at.exception, [e.value for e in at.exception]
     # left: the sidebar's own separate-file baseline (the fallback), built on each rerun as before
     assert calls == ["build"]
+
+
+# --- a baseline is read from its own bytes: the index of the file, then the bytes it points to -------
+
+
+def _export_of_two_projects() -> bytes:
+    """Calendar 8, resource 3, projects 1 and 2, baseline 500 of project 1 (activity A, and a calendar 21
+    of its own), resource 4, baseline 501 of project 2 (activities A and B), calendar 9."""
+    from pmxmlkit import NAMESPACE, _fields, calendar
+
+    first = activity("A", "11", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
+    second = activity("B", "12", "2026-03-09T08:00:00", "2026-03-13T17:00:00", 40)
+
+    def resource(object_id: str) -> str:
+        return "<Resource>" + _fields({"ObjectId": object_id, "Id": f"R{object_id}", "Name": "Crew"}) + "</Resource>"
+
+    def project(object_id: str, current_baseline: str) -> str:
+        fields = {"ObjectId": object_id, "Id": f"P{object_id}", "CurrentBaselineProjectObjectId": current_baseline}
+        return f"<Project>{_fields(fields)}{first}</Project>"
+
+    of_project_2 = baseline("501", "BL-P2", [first, second]).replace(
+        "<OriginalProjectObjectId>1<", "<OriginalProjectObjectId>2<"
+    )
+    body = (
+        calendar()
+        + resource("3")
+        + project("1", "500")
+        + project("2", "501")
+        + baseline("500", "BL-P1", [calendar("21", "Of baseline 500"), first])
+        + resource("4")
+        + of_project_2
+        + calendar("9", "Last of the file")
+    )
+    head = f'<?xml version="1.0" encoding="UTF-8"?><APIBusinessObjects xmlns="{NAMESPACE}">'
+    return f"{head}{body}</APIBusinessObjects>".encode()
+
+
+def test_the_index_lists_each_baseline_and_where_its_bytes_are():
+    data = _export_of_two_projects()
+    index = index_pmxml(data, "export.xml")
+
+    assert [(b.object_id, b.code, b.original_project_id, b.activities) for b in index.baselines] == [
+        ("500", "BL-P1", "1", 1),
+        ("501", "BL-P2", "2", 2),
+    ]
+    assert index.current_baseline_id == "500"  # of the first project of the file
+    for object_id, (first_byte, end_byte) in index.baseline_spans.items():
+        element = data[first_byte:end_byte]
+        assert element.startswith(b"<BaselineProject><ObjectId>" + object_id.encode() + b"<")
+        assert element.endswith(b"</BaselineProject>")
+    # calendars 8, 21 (inside baseline 500) and 9, resources 3 and 4: five elements, none inside another
+    assert len(index.shared_spans) == 5
+    assert data[index.head_end :].startswith(b"<Calendar>")
+    assert data[index.tail_start :] == b"</APIBusinessObjects>"
+
+
+def test_a_baseline_is_read_with_the_calendars_and_resources_of_the_file_and_no_other_baseline():
+    data = _export_of_two_projects()
+
+    of_project_1 = read_pmxml_baseline(data, "export.xml", "500").tables
+    assert of_project_1["TASK"]["task_code"].tolist() == ["A"]
+    assert of_project_1["CALENDAR"]["clndr_id"].tolist() == ["8", "21", "9"]  # in the order of the file, 21 once
+    assert of_project_1["RSRC"]["rsrc_id"].tolist() == ["3", "4"]
+
+    of_project_2 = read_pmxml_baseline(data, "export.xml", "501").tables
+    assert of_project_2["TASK"]["task_code"].tolist() == ["A", "B"]
+    assert of_project_2["PROJECT"]["orig_proj_id"].tolist() == ["2"]
+    assert of_project_2["CALENDAR"]["clndr_id"].tolist() == ["8", "21", "9"]  # every calendar of the file
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 7, 4096])
+def test_the_index_is_the_same_however_the_file_is_cut_for_the_parser(chunk_bytes, monkeypatch):
+    data = _export_of_two_projects()
+    whole = index_pmxml(data, "export.xml")
+    monkeypatch.setattr("xerscope.xer.pmxml.PARSE_CHUNK_BYTES", chunk_bytes)
+    assert index_pmxml(data, "export.xml") == whole
+
+
+def _same_tables(one, other) -> bool:
+    return one.keys() == other.keys() and all(one[name].equals(other[name]) for name in one)
+
+
+def test_the_layout_and_the_encoding_of_the_file_do_not_change_what_is_read():
+    """Blanks, a comment and a byte order mark between the elements, a prefix on every tag, UTF-16:
+    each baseline reads as from the plain file."""
+    plain = _export_of_two_projects()
+    text = plain.decode()
+    spaced = b"\xef\xbb\xbf" + text.replace("><", ">\r\n  <").replace("?>", "?>\r\n<!-- export -->", 1).encode()
+    body = text.split("?>", 1)[1].replace("</", "\0").replace("<", "<p:").replace("\0", "</p:")
+    prefixed = ('<?xml version="1.0"?>' + body.replace(" xmlns=", " xmlns:p=", 1)).encode()
+    utf_16 = text.replace("UTF-8", "UTF-16").encode("utf-16")
+    for other in (spaced, prefixed, utf_16):
+        for object_id in ("500", "501"):
+            expected = read_pmxml_baseline(plain, "export.xml", object_id).tables
+            assert _same_tables(read_pmxml_baseline(other, "export.xml", object_id).tables, expected)
+
+
+def test_a_file_cut_short_is_a_xer_error():
+    data = _export_of_two_projects()
+    for cut in (data[: len(data) // 2], data[:-1], b""):
+        with pytest.raises(XerError, match="not a readable P6 XML file"):
+            index_pmxml(cut, "export.xml")
