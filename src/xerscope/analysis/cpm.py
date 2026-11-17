@@ -85,6 +85,10 @@ MANDATORY = {"CS_MANDSTART": "start", "CS_MANDFIN": "finish"}
 PROGRESSED = ("retained_logic", "progress_override", "actual_dates")
 H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_data=False)
 LINK_TYPES = ("FS", "SS", "FF", "SF")
+# The end of a level of effort each relationship ties: its start through these, its finish through the others
+# (Boyle, "constructing LOE activities in P6").
+LOE_START_FROM_PREDECESSOR = ("SS", "FS")
+LOE_START_FROM_SUCCESSOR = ("SS", "SF")
 # Longest remaining duration, lag, assignment duration or asked delay the engine schedules, in hours
 # (114 years of 24 h days). Beyond it, or non-finite, the value is refused as a ScheduleError before the passes
 # run; a bounded value that still lands past year 2262 (pandas' limit) on a sparse calendar is
@@ -1468,87 +1472,124 @@ class _Run:
         left, or one later than the late finish, the late start is the late finish. Float as
         for any activity, free float 0 (H8-01 A1160, H10-11 A1210).
         """
-        inputs, data_date, early_start, early_finish, remaining_start = (
-            self.inputs,
-            self.data_date,
-            self.early_start,
-            self.early_finish,
-            self.remaining_start,
-        )
         for code in self.loe_codes:
             if self.status[code] == "TK_Complete":
-                early_start[code], early_finish[code] = (
-                    inputs[code].get("act_start_date"),
-                    inputs[code].get("act_end_date"),
+                actual_start = self.inputs[code].get("act_start_date")
+                actual_finish = self.inputs[code].get("act_end_date")
+                self.early_start[code], self.early_finish[code] = actual_start, actual_finish
+                continue
+            self.record_loe_early_dates(code)
+            self.record_loe_late_dates(code)
+
+    def record_loe_early_dates(self, code) -> None:
+        """Keep the early dates of an unfinished LOE: from the earliest start it is tied to, never before
+        the data date, to the latest finish it is tied to; under way, it shows its actual start and its
+        remaining start is the data date."""
+        axis = self.cal_ax[code]
+        tied_starts, tied_finishes = self.early_dates_tied_to(code)
+        is_active = self.status[code] == "TK_Active"
+        if is_active:
+            loe_start = self.inputs[code].get("act_start_date")
+        elif tied_starts:
+            loe_start = axis.snap_start(max(self.data_date, min(tied_starts)))
+        else:
+            loe_start = axis.snap_start(self.data_date)
+        loe_finish = self.loe_early_finish(axis, tied_finishes, loe_start)
+        earliest_finish = axis.snap_start(max(loe_start, self.data_date))
+        self.early_start[code], self.early_finish[code] = loe_start, max(loe_finish, earliest_finish)
+        self.remaining_start[code] = axis.snap_start(self.data_date) if is_active else loe_start
+
+    def loe_early_finish(
+        self, axis: TimeAxis, tied_finishes: list[pd.Timestamp], loe_start: pd.Timestamp
+    ) -> pd.Timestamp:
+        """Early finish of an LOE before the data date is applied: the latest finish it is tied to; tied
+        to none, the project finish; and its own start when the project has no finish."""
+        if tied_finishes:
+            return axis.snap_finish(max(tied_finishes))
+        if self.finish is not None:
+            return axis.snap_finish(self.finish)
+        return loe_start
+
+    def early_dates_tied_to(self, code) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
+        """Early dates the relationships of an LOE give to its start, and those they give to its finish."""
+        tied_starts: list[pd.Timestamp] = []
+        tied_finishes: list[pd.Timestamp] = []
+        for predecessor, link_type, lag in self.loe_preds[code]:
+            tied_date = self.early_date_through_predecessor(predecessor, code, link_type, lag)
+            (tied_starts if link_type in LOE_START_FROM_PREDECESSOR else tied_finishes).append(tied_date)
+        for successor, link_type, lag in self.loe_succs[code]:
+            tied_date = self.early_date_through_successor(code, successor, link_type, lag)
+            (tied_starts if link_type in LOE_START_FROM_SUCCESSOR else tied_finishes).append(tied_date)
+        return tied_starts, tied_finishes
+
+    def early_date_through_predecessor(self, predecessor: str, code: str, link_type: str, lag: float) -> pd.Timestamp:
+        """Early date a predecessor gives to the LOE ``code``: its remaining start (SS, SF) or its early
+        finish (FS, FF) plus the lag; from work under way, an SS or SF link runs from the data date."""
+        link_axis = self.lag_axis(predecessor, code)
+        if link_type in ("SS", "SF") and self.status[predecessor] == "TK_Active":
+            # from the data date plus the unexpired lag (H10-01 A1300, H12-08 A1290)
+            return self.shift(link_axis, self.data_date, self.unexpired(predecessor, link_axis, lag))
+        measured_from = (
+            self.remaining_start[predecessor] if link_type in ("SS", "SF") else self.early_finish[predecessor]
+        )
+        return self.shift(link_axis, measured_from, lag)
+
+    def early_date_through_successor(self, code: str, successor: str, link_type: str, lag: float) -> pd.Timestamp:
+        """Early date a successor gives to the LOE ``code``: its remaining start (SS, FS) or its early
+        finish (FF, SF), less the lag."""
+        measured_to = self.remaining_start[successor] if link_type in ("SS", "FS") else self.early_finish[successor]
+        return self.shift(self.lag_axis(code, successor), measured_to, -lag)
+
+    def record_loe_late_dates(self, code) -> None:
+        """Keep the late dates and the floats of an unfinished LOE: to the latest late finish it is tied
+        to, or the project finish; from the earliest late start it is tied to, or its late finish."""
+        axis = self.cal_ax[code]
+        tied_late_starts, tied_late_finishes = self.late_dates_tied_to(code)
+        open_end = axis.snap_finish(self.finish) if self.finish is not None else self.early_finish[code]
+        late_finish = axis.snap_finish(max(tied_late_finishes)) if tied_late_finishes else open_end
+        late_start = late_finish
+        if tied_late_starts:
+            # never after the late finish (H10-01 A1300)
+            late_start = min(axis.snap_start(min(tied_late_starts)), late_finish)
+        self.late_start[code], self.late_finish[code] = late_start, late_finish
+        self.total_float_hr[code] = self.total_float(code, axis)
+        self.free_float_hr[code] = 0.0
+
+    def late_dates_tied_to(self, code) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
+        """Late dates the relationships of an LOE give to its start, and those they give to its finish.
+        A finished successor gives none."""
+        tied_late_starts: list[pd.Timestamp] = []
+        tied_late_finishes: list[pd.Timestamp] = []
+        for predecessor, link_type, lag in self.loe_preds[code]:
+            if self.status[predecessor] == "TK_Complete":
+                tied_late_starts.extend(
+                    self.late_starts_through_finished_predecessor(predecessor, code, link_type, lag)
                 )
                 continue
-            axis = self.cal_ax[code]
-            starts: list[pd.Timestamp]
-            end_points: list[pd.Timestamp]
-            starts, end_points = [], []
-            for predecessor, link_type, lag in self.loe_preds[code]:
-                link_axis = self.lag_axis(predecessor, code)
-                if link_type in ("SS", "SF") and self.status[predecessor] == "TK_Active":
-                    # from the data date plus the unexpired lag (H10-01 A1300, H12-08 A1290)
-                    measured_from, run = data_date, self.unexpired(predecessor, link_axis, lag)
-                else:
-                    measured_from, run = (
-                        (remaining_start[predecessor] if link_type in ("SS", "SF") else early_finish[predecessor]),
-                        lag,
-                    )
-                (starts if link_type in ("SS", "FS") else end_points).append(self.shift(link_axis, measured_from, run))
-            for successor, link_type, lag in self.loe_succs[code]:
-                to = remaining_start[successor] if link_type in ("SS", "FS") else early_finish[successor]
-                (starts if link_type in ("SS", "SF") else end_points).append(
-                    self.shift(self.lag_axis(code, successor), to, -lag)
-                )
-            active = self.status[code] == "TK_Active"
-            loe_start = (
-                inputs[code].get("act_start_date")
-                if active
-                else axis.snap_start(max([data_date, min(starts)] if starts else [data_date]))
-            )
-            loe_finish = (
-                axis.snap_finish(max(end_points))
-                if end_points
-                else (axis.snap_finish(self.finish) if self.finish is not None else loe_start)
-            )
-            early_start[code], early_finish[code] = (
-                loe_start,
-                max(loe_finish, axis.snap_start(max(loe_start, data_date))),
-            )
-            remaining_start[code] = axis.snap_start(data_date) if active else loe_start
-            lends: list[pd.Timestamp]
-            lstarts, lends = [], []
-            for predecessor, link_type, lag in self.loe_preds[code]:
-                if self.status[predecessor] == "TK_Complete":
-                    if link_type == "SS" and predecessor in self.lcarry:  # the late date it passes back
-                        lstarts.append(self.shift(self.lag_axis(predecessor, code), self.lcarry[predecessor], lag))
-                    if link_type == "FS" and self.kind(predecessor) == "task":  # finished task: its actual finish holds
-                        actual_finish = inputs[predecessor].get("act_end_date")
-                        if actual_finish is not None and not pd.isna(actual_finish):
-                            lstarts.append(self.shift(self.lag_axis(predecessor, code), actual_finish, lag))
-                else:
-                    measured_from = (
-                        self.late_start[predecessor] if link_type in ("SS", "SF") else self.late_finish[predecessor]
-                    )
-                    (lstarts if link_type in ("SS", "FS") else lends).append(
-                        self.shift(self.lag_axis(predecessor, code), measured_from, lag)
-                    )
-            for successor, link_type, lag in self.loe_succs[code]:
-                if self.status[successor] != "TK_Complete":
-                    to = self.late_start[successor] if link_type in ("SS", "FS") else self.late_finish[successor]
-                    (lstarts if link_type in ("SS", "SF") else lends).append(
-                        self.shift(self.lag_axis(code, successor), to, -lag)
-                    )
-            open_end = axis.snap_finish(self.finish) if self.finish is not None else early_finish[code]
-            late_finish = axis.snap_finish(max(lends)) if lends else open_end
-            late_start = (
-                min(axis.snap_start(min(lstarts)), late_finish) if lstarts else late_finish
-            )  # never after the late finish (H10-01 A1300)
-            self.late_start[code], self.late_finish[code] = late_start, late_finish
-            self.total_float_hr[code] = self.total_float(code, axis)
-            self.free_float_hr[code] = 0.0
+            measured_from = self.late_start[predecessor] if link_type in ("SS", "SF") else self.late_finish[predecessor]
+            tied_date = self.shift(self.lag_axis(predecessor, code), measured_from, lag)
+            (tied_late_starts if link_type in LOE_START_FROM_PREDECESSOR else tied_late_finishes).append(tied_date)
+        for successor, link_type, lag in self.loe_succs[code]:
+            if self.status[successor] == "TK_Complete":
+                continue
+            measured_to = self.late_start[successor] if link_type in ("SS", "FS") else self.late_finish[successor]
+            tied_date = self.shift(self.lag_axis(code, successor), measured_to, -lag)
+            (tied_late_starts if link_type in LOE_START_FROM_SUCCESSOR else tied_late_finishes).append(tied_date)
+        return tied_late_starts, tied_late_finishes
+
+    def late_starts_through_finished_predecessor(
+        self, predecessor: str, code: str, link_type: str, lag: float
+    ) -> list[pd.Timestamp]:
+        """Late start a finished predecessor gives to the LOE ``code``, in a list, empty when it gives
+        none: through an SS link, the late date it passes back (``lcarry``) plus the lag; through an FS
+        link from a task, its actual finish plus the lag."""
+        if link_type == "SS" and predecessor in self.lcarry:
+            return [self.shift(self.lag_axis(predecessor, code), self.lcarry[predecessor], lag)]
+        if link_type == "FS" and self.kind(predecessor) == "task":
+            actual_finish = self.inputs[predecessor].get("act_end_date")
+            if actual_finish is not None and not pd.isna(actual_finish):
+                return [self.shift(self.lag_axis(predecessor, code), actual_finish, lag)]
+        return []
 
     # --- longest path ------------------------------------------------------------------------
     def _ends_project(self, code, enders: list[str]) -> bool:
