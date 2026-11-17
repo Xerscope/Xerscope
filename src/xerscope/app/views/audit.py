@@ -5,11 +5,19 @@ this session: Schedule health keeps reporting the loaded standards. The block un
 "Calculation sheet" is how a change becomes permanent, in a standard file.
 """
 
-import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext
-from xerscope.analysis.audit import choices, is_list, sheet, toml_block, with_settings
+from xerscope.analysis.audit import (
+    choices,
+    has_same_settings,
+    is_list,
+    kept_params,
+    settings_table,
+    sheet,
+    toml_block,
+    with_settings,
+)
 from xerscope.analysis.checks import results_frame, run_metric
 from xerscope.analysis.explain import explain
 from xerscope.analysis.rules import RULES
@@ -31,9 +39,20 @@ from xerscope.app.state import (
 SAVED = "audit_settings"
 
 
+def parameter_widget(rule_name: str, name: str, current, key: str):
+    """Draw one parameter by what it accepts (several names, one of a list, yes / no, a number); return its value."""
+    allowed = choices(rule_name, name)
+    if is_list(rule_name, name):
+        return st.multiselect(name, allowed or list(current), default=list(current), key=key)
+    if allowed is not None:
+        return st.selectbox(name, allowed, index=allowed.index(current), key=key)
+    if isinstance(current, bool):
+        return st.checkbox(name, value=current, key=key)
+    return st.number_input(name, value=float(current), key=key)
+
+
 def settings_form(metric, prefix: str) -> tuple[str, dict]:
     """Target and parameters as widgets, starting from the standard's values or this session's."""
-    rule = RULES[metric.rule]
     saved = st.session_state.setdefault(SAVED, {})
     target = st.text_input(
         "Target",
@@ -42,24 +61,13 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
         help="e.g. < 5%, <= 0, >= 0.95, pass, info",
     )
     saved[f"{prefix}:target"] = target
-    params: dict[str, object] = {}
-    for name, default in rule.params.items():
+    values: dict[str, object] = {}
+    for name, default in RULES[metric.rule].params.items():
         key = f"{prefix}:{name}"
         current = saved.get(key, metric.params.get(name, default))
-        allowed = choices(metric.rule, name)
-        if is_list(metric.rule, name):
-            params[name] = st.multiselect(name, allowed or list(current), default=list(current), key=key)
-        elif allowed is not None:
-            params[name] = st.selectbox(name, allowed, index=allowed.index(current), key=key)
-        elif isinstance(current, bool):
-            params[name] = st.checkbox(name, value=current, key=key)
-        else:
-            params[name] = st.number_input(name, value=float(current), key=key)
-        saved[key] = params[name]
-    # only what the standard sets or this page changes goes into the metric, as a standard file would hold it
-    params = {name: list(value) if isinstance(value, (list, tuple)) else value for name, value in params.items()}
-    defaults = {name: list(value) if isinstance(value, tuple) else value for name, value in rule.params.items()}
-    return target, {name: value for name, value in params.items() if value != defaults[name] or name in metric.params}
+        values[name] = parameter_widget(metric.rule, name, current, key)
+        saved[key] = values[name]
+    return target, kept_params(metric, values)
 
 
 def show_results(standard_result, audit_result) -> None:
@@ -118,26 +126,8 @@ def show_explanation(result) -> None:
 
 def show_sheet(standard, metric) -> None:
     """How the check is set and where to change it for good."""
-    rule = RULES[metric.rule]
     with st.expander("Settings: how to change this check for good"):
-        rows = [
-            {
-                "setting": "target",
-                "now": metric.threshold_label,
-                "default": standard[metric.id].threshold_label,
-                "accepts": "< x%, <= x%, > x%, >= x% (unit %), <= n (count), >= r (ratio), pass, info",
-            }
-        ] + [
-            {
-                "setting": name,
-                "now": str(metric.params.get(name, default)),
-                "default": str(default),
-                "accepts": ", ".join(map(str, choices(metric.rule, name) or []))
-                or ("true / false" if isinstance(default, bool) else "a number"),
-            }
-            for name, default in rule.params.items()
-        ]
-        ui.table(pd.DataFrame(rows), raw_labels=True, key="sheet_settings")
+        ui.table(settings_table(metric, standard[metric.id]), raw_labels=True, key="sheet_settings")
         where = standard.path or f"the built-in standards/{standard.id.lower()}.toml"
         st.markdown(
             f"Replace the `[[metric]]` table with id `{metric.id}` in **{ui.md_text(where)}**, or copy the whole "
@@ -212,8 +202,7 @@ except ValueError as exc:
     st.stop()
 
 standard_result = metric_result(metric, snapshot, store)
-same = (audited.params, audited.comparator, audited.threshold) == (metric.params, metric.comparator, metric.threshold)
-audit_result = standard_result if same else run_metric(audited, context)
+audit_result = standard_result if has_same_settings(audited, metric) else run_metric(audited, context)
 
 show_results(standard_result, audit_result)
 written = sheet(standard.id, metric)

@@ -319,3 +319,61 @@ def test_counted_count_is_the_numerator_and_the_counted_rows_without_one():
     assert counted_count(CheckResult(metric, "fail", numerator=7), sets) == 7
     assert counted_count(CheckResult(metric, "pass", numerator=0), sets) == 0
     assert counted_count(CheckResult(metric, "info"), sets) == 3
+
+
+# --- what the Audit page asks of the settings picked on it ------------------------------------------
+
+
+def _dangling(**params):
+    """A check on the rule "dangling", whose defaults are end = "finish" and exclude = ("complete",)."""
+    from xerscope.analysis import Metric
+
+    return Metric(id="T-01", name="check", standard="T", rule="dangling", params=params)
+
+
+def test_kept_params_are_those_that_differ_from_the_rule_or_that_the_standard_sets():
+    from xerscope.analysis.audit import kept_params
+
+    # the rule's own values picked again, the list as the page's widget returns it: nothing to hold
+    assert kept_params(_dangling(), {"end": "finish", "exclude": ["complete"]}) == {}
+    # both changed: both held, the names as a list
+    assert kept_params(_dangling(), {"end": "start", "exclude": ("complete", "loe")}) == {
+        "end": "start",
+        "exclude": ["complete", "loe"],
+    }
+    # the standard sets end to the rule's default: held although it equals the default
+    assert kept_params(_dangling(end="finish"), {"end": "finish", "exclude": ["complete"]}) == {"end": "finish"}
+    # nothing excluded any more: an empty list differs from ("complete",)
+    assert kept_params(_dangling(), {"end": "finish", "exclude": []}) == {"exclude": []}
+
+
+def test_has_same_settings_compares_the_parameters_and_the_target():
+    """P6-04 as the standard sets it: 352 hours, target < 5%. Typed again as it is: the same.
+    264 hours, or < 3%, or the target "info": another check."""
+    from xerscope.analysis.audit import has_same_settings, with_settings
+
+    metric = builtin_standards()["P6"]["P6-04"]
+    assert (metric.params, metric.threshold_label) == ({"limit_hours": 352}, "< 5%")
+    assert has_same_settings(with_settings(metric, "< 5%", {"limit_hours": 352}), metric)
+    assert not has_same_settings(with_settings(metric, "< 5%", {"limit_hours": 264}), metric)
+    assert not has_same_settings(with_settings(metric, "< 3%", {"limit_hours": 352}), metric)
+    assert not has_same_settings(with_settings(metric, "info", {"limit_hours": 352}), metric)
+
+
+def test_settings_table_gives_each_setting_now_by_default_and_what_it_accepts():
+    """P6-04 audited at 264 hours and < 3%: the target reads < 3% for a standard at < 5%, the limit
+    264 for a rule at 352. A closed list names its values, a yes / no parameter says so."""
+    from xerscope.analysis.audit import TARGET_FORMS, settings_table, with_settings
+
+    standard_metric = builtin_standards()["P6"]["P6-04"]
+    audited = with_settings(standard_metric, "< 3%", {"limit_hours": 264})
+    table = settings_table(audited, standard_metric).set_index("setting")
+    assert table.index.tolist() == ["target", "limit_hours"]
+    assert table.loc["target"].tolist() == ["< 3%", "< 5%", TARGET_FORMS]
+    assert table.loc["limit_hours"].tolist() == ["264", "352", "a number"]
+    dangling = settings_table(_dangling(), _dangling()).set_index("setting")
+    assert dangling.loc["end"].tolist() == ["finish", "finish", "start, finish"]
+    yes_no = builtin_standards()["P6"]["P6-17"]
+    assert (
+        settings_table(yes_no, yes_no).set_index("setting").loc["ignore_soft_constraints", "accepts"] == "true / false"
+    )
