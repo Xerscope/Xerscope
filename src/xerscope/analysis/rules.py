@@ -49,6 +49,7 @@ from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
     EXCLUSIONS,
     LINK_COLS,
     Funnel,
+    activity_funnel,
     actual_after,
     as_flag,
     at_grain,
@@ -205,6 +206,16 @@ ALLOWED: dict[str, set[str]] = {
 
 def activities(context: AnalysisContext, exclude: Names) -> pd.DataFrame:
     return without(context.snapshot.activities, context.snapshot.data_date, exclude)
+
+
+def activities_funnel(context: AnalysisContext, exclude: Names) -> Funnel:
+    """The tasks of the file less each ``exclude`` key, one step per key, in the order given: the
+    same rows as ``activities``, with what each step took out. The source of every step is xerscope's
+    (a custom rule has no Oracle or DCMA page of its own for its exclusions)."""
+    funnel = activity_funnel(context.snapshot)
+    for key in exclude:
+        funnel.exclude(key, "xerscope")
+    return funnel
 
 
 def link_population(
@@ -460,7 +471,8 @@ def duration(
     task absent from the baseline has no baseline duration, so it is never flagged but stays in the
     denominator. Without a baseline the rule has no value (n/a).
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     if field == "baseline":
         if context.baseline is None:
             return RuleOutput(note="needs a baseline")
@@ -475,7 +487,7 @@ def duration(
         }[(field, unit)]
         measured = population[column]
     flagged = population[as_flag(COMPARE[op](measured, value))]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
 
 # --- progress --------------------------------------------------------------------------

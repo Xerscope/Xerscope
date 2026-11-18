@@ -33,6 +33,7 @@ import pandas as pd
 
 from .calendar import clndr_data_node
 from .parser import RawXer, XerError
+from .pmxml_scan import NotPlain, Scan, scan_export
 
 EXCEL_EPOCH = date(1899, 12, 30)  # CALENDAR.clndr_data dates are Excel serial numbers
 
@@ -301,7 +302,53 @@ class _IndexPass:
 
 
 def index_pmxml(data: bytes | DiskFile, source: str) -> PmxmlIndex:
-    """The index of a P6 XML export, from one pass that keeps none of its activities."""
+    """The index of a P6 XML export, keeping none of its activities.
+
+    A file written as P6 writes one is searched, not parsed (``pmxml_scan``): its elements are found
+    without reading what they hold. Any other file is parsed whole, and gives the same index."""
+    try:
+        return _index_of(scan_export(data, LISTED_FIELDS))
+    except NotPlain:
+        return _index_by_parsing(data, source)
+    except OSError as exc:
+        raise _cannot_be_read(source, exc) from exc
+
+
+def _index_of(scan: Scan) -> PmxmlIndex:
+    """The index of a file whose elements were found by searching its bytes."""
+    baselines: list[XmlBaseline] = []
+    baseline_spans: dict[str, tuple[int, int]] = {}
+    projects: list[XmlProject] = []
+    for found in scan.projects:
+        read = found.fields.get
+        if found.tag == "BaselineProject":
+            baselines.append(
+                XmlBaseline(
+                    object_id=read("ObjectId", ""),
+                    code=read("Id", ""),
+                    name=read("Name", ""),
+                    data_date=_xer_date(read("DataDate", "")),
+                    original_project_id=read("OriginalProjectObjectId", ""),
+                    activities=found.activities,
+                )
+            )
+            baseline_spans.setdefault(read("ObjectId", ""), found.span)  # two baselines of one id: the first is read
+        else:
+            projects.append(
+                XmlProject(
+                    read("ObjectId", ""),
+                    read("CurrentBaselineProjectObjectId", ""),
+                    _xer_date(read("DataDate", "")),
+                    _xer_date(read("DateAdded", "")),
+                )
+            )
+    return PmxmlIndex(
+        scan.namespace, scan.head_end, scan.tail_start, baselines, baseline_spans, scan.shared_spans, projects
+    )
+
+
+def _index_by_parsing(data: bytes | DiskFile, source: str) -> PmxmlIndex:
+    """The index of a P6 XML export, from one pass through every tag of the file."""
     parser = expat.ParserCreate(namespace_separator="}")
     index_pass = _IndexPass(parser, source)
     parser.StartElementHandler = index_pass.start_element

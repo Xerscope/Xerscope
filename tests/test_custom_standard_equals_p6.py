@@ -404,3 +404,49 @@ def test_the_generic_rule_set_like_the_p6_check_gives_its_result(control, case, 
     expected = _read(run_metric(P6[control], context))
     got = _read(run_metric(CUSTOM[EQUIVALENT[control]], context))
     assert got == expected
+
+
+@pytest.mark.oracle("standard")
+def test_the_generic_duration_rule_shows_the_same_funnel_as_p6_large_durations():
+    """P6-04 "Large Durations" (Oracle P6 Check Schedule help, pages 101248 and 46282): "Tasks outside the
+    duration limit. Counts: flagged / checked. Excludes: completed tasks, level of effort, milestones."
+    The population is every task of the file, minus the completed, minus level of effort, minus milestones;
+    a task is flagged when its remaining duration is above the limit (352 h in CUSTOM).
+
+    By hand, five tasks (remaining duration in hours): DONE (completed, 0), LOE (level of effort, 400),
+    MS (start milestone, 0), LONG (400), SHORT (80).
+
+    - start: 5 tasks.
+    - exclude completed: removes DONE, 4 left.
+    - exclude level of effort: removes LOE (400 h would have been flagged), 3 left.
+    - exclude milestones: removes MS, 2 left (LONG, SHORT).
+    - flagged: LONG only (400 > 352; SHORT 80 is not): 1 / 2.
+
+    The generic rule must show the same funnel as the P6 check: same start, same steps in the same order
+    with the same labels, left and removed tasks. The ``source`` of a step is not compared: a generic rule
+    does not have the exact Oracle sources of P6.
+    """
+    tasks = [
+        done("DONE"),
+        todo("LOE", task_type="TT_LOE", **hours(400)),
+        todo("MS", **SM),
+        todo("LONG", **hours(400)),
+        todo("SHORT", **hours(80)),
+    ]
+    context = AnalysisContext(snap(tasks))
+    p6 = run_metric(P6["P6-04"], context)
+    generic = run_metric(CUSTOM["EQ-04"], context)
+
+    by_hand = (5, [(["DONE"], 4), (["LOE"], 3), (["MS"], 2)])
+    assert (p6.numerator, p6.denominator) == (1, 2)
+    assert (generic.numerator, generic.denominator) == (1, 2)
+
+    assert p6.funnel is not None
+    assert generic.funnel is not None, "the generic rule gives no funnel"
+
+    def read(funnel):
+        return funnel.start, [(sorted(step.removed["task_code"]), step.left) for step in funnel.steps]
+
+    assert read(p6.funnel) == by_hand
+    assert read(generic.funnel) == by_hand
+    assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]
