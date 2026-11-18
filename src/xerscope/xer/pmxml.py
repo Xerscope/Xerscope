@@ -507,9 +507,14 @@ def _assignment_rows(project: ET.Element, namespace: str, proj_id: str) -> list[
     return rows
 
 
-def read_pmxml_baseline(data: bytes, source: str, baseline_id: str | None = None) -> RawXer:
-    """The XER tables of one baseline of a P6 XML export (``choose_baseline`` decides which)."""
-    index = index_pmxml(data, source)
+def read_pmxml_baseline(
+    data: bytes, source: str, baseline_id: str | None = None, index: PmxmlIndex | None = None
+) -> RawXer:
+    """The XER tables of one baseline of a P6 XML export (``choose_baseline`` decides which).
+
+    ``index``: the index of these same bytes when the caller already holds it, so that reading
+    several baselines of one file goes through it once; made here otherwise."""
+    index = index or index_pmxml(data, source)
     chosen = choose_baseline(index.baselines, index.current_baseline_id, baseline_id, source)
     namespace = index.namespace
     root = _document_of(data, index, index.baseline_spans[chosen.object_id])

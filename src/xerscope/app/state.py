@@ -45,7 +45,6 @@ from xerscope.xer import (
     XerError,
     baseline_copies,
     is_pmxml,
-    list_baselines,
     load_header,
     load_snapshot,
     pmxml_files,
@@ -53,7 +52,7 @@ from xerscope.xer import (
 )
 from xerscope.xer.model import HEADER_TABLES, project_counts_text, read_header
 from xerscope.xer.parser import parse_bytes
-from xerscope.xer.pmxml import read_pmxml_baseline
+from xerscope.xer.pmxml import PmxmlIndex, index_pmxml, read_pmxml_baseline
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
@@ -69,7 +68,8 @@ def _parse(name: str, data: bytes, project_id: str | None = None) -> Snapshot:
     if key not in cache:
         if len(cache) > 64:
             cache.clear()
-        cache[key] = load_snapshot(data, name=name, project_id=project_id)
+        index = _pmxml_index(name, data) if is_pmxml(data) else None
+        cache[key] = load_snapshot(data, name=name, project_id=project_id, pmxml_index=index)
     return cache[key]
 
 
@@ -837,16 +837,18 @@ def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | No
     name, data = source
     if not pointer or not is_pmxml(data):
         return None
-    return pointer if pointer in _xml_baseline_ids(name, data) else None
+    return pointer if pointer in _pmxml_index(name, data).baseline_spans else None
 
 
-def _xml_baseline_ids(name: str, data: bytes) -> set[str]:
-    """The BaselineProject ids of a P6 XML file, listed once per content (the sidebar asks on every rerun)."""
-    cache = st.session_state.setdefault("_xml_baseline_ids", {})
+def _pmxml_index(name: str, data: bytes) -> PmxmlIndex:
+    """The index of a P6 XML file, made once per content: the sidebar asks which baselines the file
+    holds on every rerun, and each baseline read from it starts from the index. Keyed on the bytes it
+    was made from, since its positions are theirs alone."""
+    cache = st.session_state.setdefault("_pmxml_index", {})
     key = (name, hashlib.sha256(data).hexdigest())
     if key not in cache:
         cache.clear()  # one baseline file at a time
-        cache[key] = {b.object_id for b in list_baselines(data, name)[0]}
+        cache[key] = index_pmxml(data, name)
     return cache[key]
 
 
@@ -1684,7 +1686,8 @@ def baseline_files_tag(session: MutableMapping) -> tuple[tuple[str, str], ...]:
 def source_raws(name: str, data: bytes) -> list[RawXer]:
     """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
     if is_pmxml(data):
-        return [read_pmxml_baseline(data, name, b.object_id) for b in list_baselines(data, name)[0]]
+        index = index_pmxml(data, name)  # one pass through the file for all its baselines
+        return [read_pmxml_baseline(data, name, baseline.object_id, index) for baseline in index.baselines]
     return [parse_bytes(data, source=name)]
 
 

@@ -10,7 +10,7 @@ from xerkit import snap, todo
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import ev_point
-from xerscope.xer import XerError, build_snapshot, is_pmxml, list_baselines, load_snapshot
+from xerscope.xer import XerError, build_snapshot, is_pmxml, list_baselines, load_snapshot, pmxml
 from xerscope.xer.pmxml import index_pmxml, read_pmxml_baseline
 
 # activity dates as P6 XML writes them: the true end of the last period (17:00), unlike calendar periods
@@ -278,7 +278,7 @@ def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(
 
 def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch):
     """The P6 XML baseline of each update ("in each file", XML file as fallback) is listed and built once
-    per file content, EV basis and pointer: a rerun lists no baseline and builds none of them."""
+    per file content, EV basis and pointer: a rerun goes through the file for no index and builds none of them."""
     from pathlib import Path
 
     from conftest import baseline_box, read_folder
@@ -303,8 +303,9 @@ def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch)
     baseline_box(at, "bl_fallback").select(BL_FILE)
     at.switch_page("views/earned_value.py").run()
     calls = []
-    listed, built = state.list_baselines, Baseline.from_snapshot.__func__
-    monkeypatch.setattr(state, "list_baselines", lambda *a, **k: calls.append("list") or listed(*a, **k))
+    indexed, built = state.index_pmxml, Baseline.from_snapshot.__func__
+    monkeypatch.setattr(state, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
+    monkeypatch.setattr(pmxml, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
     monkeypatch.setattr(
         Baseline, "from_snapshot", classmethod(lambda c, *a, **k: calls.append("build") or built(c, *a, **k))
     )
@@ -414,3 +415,79 @@ def test_a_file_cut_short_is_a_xer_error():
     for cut in (data[: len(data) // 2], data[:-1], b""):
         with pytest.raises(XerError, match="not a readable P6 XML file"):
             index_pmxml(cut, "export.xml")
+
+
+# --- the index of the file is made once, then handed to each read ------------------------------------
+
+
+def _count_index_passes(monkeypatch) -> list[str]:
+    """Each pass ``index_pmxml`` makes through a file from now on adds the file's name to the list."""
+    from xerscope.app import state
+
+    passes: list[str] = []
+    indexed = pmxml.index_pmxml
+
+    def counted(data, source):
+        passes.append(source)
+        return indexed(data, source)
+
+    monkeypatch.setattr(pmxml, "index_pmxml", counted)
+    monkeypatch.setattr(state, "index_pmxml", counted)
+    return passes
+
+
+def test_a_baseline_is_read_from_an_index_made_before_without_another_pass(monkeypatch):
+    data = _export_of_two_projects()
+    index = index_pmxml(data, "export.xml")
+    expected = read_pmxml_baseline(data, "export.xml", "501").tables
+    passes = _count_index_passes(monkeypatch)
+
+    assert _same_tables(read_pmxml_baseline(data, "export.xml", "501", index).tables, expected)
+    snapshot = load_snapshot(data, name="export.xml", project_id="500", pmxml_index=index)
+    assert snapshot.activities["task_code"].tolist() == ["A"] and passes == []
+
+    load_snapshot(data, name="export.xml", project_id="500")  # without an index: the file is gone through
+    assert passes == ["export.xml"]
+
+
+def test_a_session_goes_through_the_p6_xml_baseline_file_once(tmp_path, monkeypatch):
+    """Two updates name baselines 370 and 380 of the export, the fallback of "in each file". Listing its
+    baselines and reading the two of them, over three pages and a rerun: one pass through the file."""
+    from pathlib import Path
+
+    from conftest import baseline_box, read_folder
+    from file_projects import two_projects
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app.state import BL_EACH, BL_FILE
+
+    data = tmp_path / "updates"
+    data.mkdir()
+    (data / "a.xer").write_text(two_projects(pointer="370", with_baseline=False, data_date="2026-03-02 08:00"))
+    (data / "b.xer").write_text(two_projects(pointer="380", with_baseline=False, data_date="2026-03-09 08:00"))
+    (tmp_path / "export.xml").write_bytes(TWO)
+    monkeypatch.setenv("XERSCOPE_DATA", str(data))
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(tmp_path / "export.xml"))
+    passes = _count_index_passes(monkeypatch)
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_fallback").select(BL_FILE)
+    for page in ("views/earned_value.py", "views/health.py", "views/overview.py"):
+        at.switch_page(page).run()
+        assert not at.exception, [e.value for e in at.exception]
+    at.run()
+    baselines = at.session_state["_xml_baselines"].values()
+    assert sorted(baseline.snapshot.project_code for baseline in baselines) == ["BL-1", "BL-2"]
+    assert passes == ["export.xml"]
+
+
+def test_the_anonymizer_reads_every_baseline_of_the_export_from_one_index(monkeypatch):
+    from xerscope.app.state import source_raws
+
+    passes = _count_index_passes(monkeypatch)
+    raws = source_raws("export.xml", TWO)
+    assert [raw.tables["PROJECT"]["proj_short_name"].iloc[0] for raw in raws] == ["BL-1", "BL-2"]
+    assert passes == ["export.xml"]
