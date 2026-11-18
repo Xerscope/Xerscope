@@ -1003,22 +1003,30 @@ class _Run:
 
     def forward_finished(self, code) -> None:
         """A finished activity keeps its actuals; under Retained Logic it also passes on a date."""
-        early_start, early_finish = self.early_start, self.early_finish
-        early_start[code], early_finish[code] = (
-            self.inputs[code].get("act_start_date"),
-            self.inputs[code].get("act_end_date"),
-        )
-        self.remaining_start[code] = early_start[code]
-        if pd.isna(early_start[code]) or pd.isna(early_finish[code]):
-            self.warnings.append(f"{code}: complete without actual dates")
-            if pd.notna(early_start[code]):
-                early_finish[code] = early_start[code]
-            elif pd.notna(early_finish[code]):
-                early_start[code] = early_finish[code]
-            else:
-                early_start[code] = early_finish[code] = self.data_date
+        self.early_start[code], self.early_finish[code] = self.finished_dates(code)
+        actual_start = self.inputs[code].get("act_start_date")
+        # An SS or SF link from a level of effort, or from a task not yet started under Progress Override
+        # or Actual Dates, reads this start; without an actual start it is the data date. A task under
+        # Retained Logic reads the carried date below instead (retained_bound). No Oracle page describes
+        # the case; not measured in P6.
+        self.remaining_start[code] = actual_start if pd.notna(actual_start) else self.data_date
         if self.retain:
             self.carry[code] = max([self.data_date] + [bound for _, bound in self.pred_bounds(code, started=False)])
+
+    def finished_dates(self, code) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Start and finish a finished activity is placed at: its actual dates. With one of them missing
+        it takes the other, with both missing the data date, and a warning says so: a status without its
+        dates, met in files other tools produce; no Oracle page describes it."""
+        actual_start = self.inputs[code].get("act_start_date")
+        actual_finish = self.inputs[code].get("act_end_date")
+        if pd.notna(actual_start) and pd.notna(actual_finish):
+            return actual_start, actual_finish
+        self.warnings.append(f"{code}: complete without actual dates")
+        if pd.notna(actual_start):
+            return actual_start, actual_start
+        if pd.notna(actual_finish):
+            return actual_finish, actual_finish
+        return self.data_date, self.data_date
 
     def forward_constraints(self, code, started: bool, start_bounds: list, finish_bounds: list):
         """Add the activity's dated constraints to the start / finish bounds (in place).
@@ -1247,10 +1255,10 @@ class _Run:
         """Start and finish of a successor a link is measured from: its late dates in the backward
         pass, its early ones for the free float."""
         if self.reads_actual_dates(successor, late):
+            # the finish of a finished successor as finished_dates placed it: its actual finish, or its
+            # actual start when the file gives no finish
             successor_finish = (
-                self.inputs[successor].get("act_end_date")
-                if self.status[successor] == "TK_Complete"
-                else self.late_finish[successor]
+                self.early_finish[successor] if self.status[successor] == "TK_Complete" else self.late_finish[successor]
             )
             return self.inputs[successor].get("act_start_date"), successor_finish
         if self.status[successor] == "TK_Complete" and not late and self.retain:
@@ -1526,22 +1534,24 @@ class _Run:
         """
         for code in self.loe_codes:
             if self.status[code] == "TK_Complete":
-                actual_start = self.inputs[code].get("act_start_date")
-                actual_finish = self.inputs[code].get("act_end_date")
-                self.early_start[code], self.early_finish[code] = actual_start, actual_finish
+                self.early_start[code], self.early_finish[code] = self.finished_dates(code)
                 continue
             self.record_loe_early_dates(code)
             self.record_loe_late_dates(code)
 
     def record_loe_early_dates(self, code) -> None:
         """Keep the early dates of an unfinished LOE: from the earliest start it is tied to, never before
-        the data date, to the latest finish it is tied to; under way, it shows its actual start and its
-        remaining start is the data date."""
+        the data date, to the latest finish it is tied to; under way, it shows its actual start, when the
+        file gives one, and its remaining start is the data date."""
         axis = self.cal_ax[code]
         tied_starts, tied_finishes = self.early_dates_tied_to(code)
         is_active = self.status[code] == "TK_Active"
-        if is_active:
-            loe_start = self.inputs[code].get("act_start_date")
+        actual_start = self.inputs[code].get("act_start_date") if is_active else None
+        if is_active and pd.isna(actual_start):
+            # as a task under way without an actual start (record_early): it starts with what it is tied to
+            self.warnings.append(f"{code}: in progress without an actual start")
+        if pd.notna(actual_start):
+            loe_start = actual_start
         elif tied_starts:
             loe_start = axis.snap_start(max(self.data_date, min(tied_starts)))
         else:
