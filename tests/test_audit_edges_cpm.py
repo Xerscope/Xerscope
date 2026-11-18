@@ -488,6 +488,77 @@ def test_started_without_actual_start_is_warned_and_dated_at_its_remaining_start
     assert sch.frame.at["A", "ef"] == T("2026-03-06 17:00") and sch.frame.at["B", "es"] == T("2026-03-09 08:00")
 
 
+PROGRESS_OPTIONS = {
+    "retained logic": {},
+    "progress override": {"sched_retained_logic": "N", "sched_progress_override": "Y"},
+    "actual dates": {"sched_retained_logic": "N", "sched_progress_override": "N"},
+}
+
+
+@pytest.mark.parametrize("progress", PROGRESS_OPTIONS)
+@pytest.mark.parametrize(
+    "link_type, lag_hr, start_of_b",
+    [("SS", 16, "2026-03-04 08:00"), ("SF", 16, "2026-03-03 08:00"), ("SS", 0, "2026-03-02 08:00")],
+)
+def test_a_lag_from_a_finished_activity_without_actual_start_runs_from_the_data_date(
+    progress, link_type, lag_hr, start_of_b
+):
+    """A finished without an actual start (its actual finish is 13 Feb), then B, 8 h. The link reads a
+    start the file does not give: the data date, Monday 2 March 08:00, under the three progress options.
+    SS + 16 h: B starts Wednesday 08:00. SF + 16 h: B may not finish before Tuesday 17:00, so it
+    starts Tuesday 08:00. MPXJ's scheduler gives these dates under Retained Logic; P6 does not write
+    the case and was not measured."""
+    tasks = [done("A", act_start_date=""), todo("B", **hours(8))]
+    sch = schedule(snap(tasks, [("A", "B", link_type, lag_hr)], sched=PROGRESS_OPTIONS[progress]))
+    assert sch.warnings == ["A: complete without actual dates"]
+    assert sch.frame.at["B", "es"] == T(start_of_b)
+
+
+def test_actual_dates_reads_a_finished_successor_without_actual_finish_at_the_date_it_has():
+    """Actual Dates, backward pass: B (8 h) must finish with A (FF), finished, started Monday 2 Feb
+    08:00, without an actual finish. A is placed at the one date it has, so B's late finish is the
+    working instant before it, Friday 30 Jan 17:00; with A's actual finish (13 Feb 17:00) it is that."""
+    actual_dates = PROGRESS_OPTIONS["actual dates"]
+    links = [("B", "A", "FF", 0)]
+    without = schedule(snap([todo("B", **hours(8)), done("A", act_end_date="")], links, sched=actual_dates))
+    with_finish = schedule(snap([todo("B", **hours(8)), done("A")], links, sched=actual_dates))
+    assert without.warnings == ["A: complete without actual dates"]
+    assert without.frame.at["B", "lf"] == T("2026-01-30 17:00")
+    assert with_finish.frame.at["B", "lf"] == T("2026-02-13 17:00")
+
+
+def test_retained_logic_runs_the_lag_in_full_from_the_date_an_open_predecessor_carries():
+    """P (8 h, from the data date Monday 2 March 08:00) is the open FS predecessor of X, finished
+    without an actual start; B (8 h) follows X by SS + 16 h. P ends Monday 17:00, so X is carried to
+    Tuesday 08:00 and the 16 h run Tuesday and Wednesday: B starts Thursday 5 March 08:00. With the
+    actual start of X (2 Feb) the lag has elapsed long ago and B starts right after P, Tuesday 08:00.
+    Hand calculation; neither MPXJ nor P6 was run on this case."""
+    links = [("P", "X", "FS", 0), ("X", "B", "SS", 16)]
+    tasks = [todo("P", **hours(8)), todo("B", **hours(8))]
+    without_start = schedule(snap([*tasks, done("X", act_start_date="")], links))
+    with_start = schedule(snap([*tasks, done("X")], links))
+    assert without_start.warnings == ["X: complete without actual dates"]
+    assert without_start.frame.at["B", "es"] == T("2026-03-05 08:00")
+    assert with_start.frame.at["B", "es"] == T("2026-03-03 08:00")
+
+
+@pytest.mark.parametrize("progress", PROGRESS_OPTIONS)
+def test_a_level_of_effort_without_its_actual_dates_is_warned_and_dated(progress):
+    """L spans A (SS) and B (FF), each 8 h from the data date. Under way without an actual start, it
+    starts with A, as a task under way does with its remaining start; finished without actual dates,
+    it sits at the data date, as a finished task does."""
+    links = [("A", "L", "SS", 0), ("L", "B", "FF", 0)]
+    work = [todo("A", **hours(8)), todo("B", **hours(8))]
+    under_way = active("L", task_type="TT_LOE", act_start_date="")
+    sch = schedule(snap([*work, under_way], links, sched=PROGRESS_OPTIONS[progress]))
+    assert sch.warnings == ["L: in progress without an actual start"]
+    assert sch.frame.at["L", "es"] == DD and sch.frame.at["L", "ef"] == T("2026-03-02 17:00")
+    finished = done("L", task_type="TT_LOE", act_start_date="", act_end_date="")
+    sch = schedule(snap([*work, finished], links, sched=PROGRESS_OPTIONS[progress]))
+    assert sch.warnings == ["L: complete without actual dates"]
+    assert sch.frame.at["L", "es"] == DD == sch.frame.at["L", "ef"]
+
+
 def test_duplicate_activity_id_first_row_wins():
     f = schedule(snap([todo("A"), todo("A", **hours(8)), todo("B")], [("A", "B", "FS", 0)])).frame
     assert list(f.index) == ["A", "B"] and f.at["A", "ef"] == T("2026-03-13 17:00")
