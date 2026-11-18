@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/Xerscope/xerscope/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Xerscope/xerscope/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13%20%7C%203.14-blue)](pyproject.toml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-all%20rights%20reserved-lightgrey)](LICENSE)
 
 Weekly Primavera P6 schedule analysis, aligned on P6 Professional 24. Point it at a folder
 of weekly `.xer` exports and a baseline XER, and get the numbers a planning engineer would
@@ -344,4 +344,5 @@ Trivy run in CI. Report a vulnerability privately: [SECURITY.md](SECURITY.md).
 
 ## Licence
 
-Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+All rights reserved, no licence granted: see [LICENSE](LICENSE). Third-party components:
+[NOTICE](NOTICE).
