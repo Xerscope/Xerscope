@@ -2,11 +2,15 @@
 the plan at which the planned value equals the earned value; SV(t) = ES - AT, SPI(t) = ES / AT.
 
 No P6 output exists: P6 does not compute ES (Alshaheen, The Measurable News 2018.02). Every value
-below is computed by hand in its docstring, on the calendar C8 (Monday to Friday, 08:00-12:00 and
-13:00-17:00, 8 h a day). Week 1 is 2026-03-02 to 03-06, week 2 03-09 to 03-13, week 3 03-16 to 03-20.
+below is computed by hand in its docstring. Durations are counted in plan time, the working time of at
+least one calendar of the tasks measured; with every task on C8 (Monday to Friday, 08:00-12:00 and
+13:00-17:00, 8 h a day) it is C8's working time. A plan day is 8 h, C8 being the project calendar.
+Week 1 is 2026-03-02 to 03-06, week 2 03-09 to 03-13, week 3 03-16 to 03-20.
 """
 
 from __future__ import annotations
+
+from datetime import date
 
 import pandas as pd
 import pytest
@@ -15,6 +19,7 @@ from xerkit import snap
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned_schedule, ev_point
+from xerscope.xer.calendar import WorkCalendar, union_of
 
 pytestmark = pytest.mark.oracle("standard")
 
@@ -164,18 +169,49 @@ def test_hours_that_do_not_add_up_exactly_in_floating_point_still_find_the_stret
     assert in_days(schedule.es_min) == 7.5
 
 
-def test_the_weekend_of_seven_day_tasks_holds_no_working_time_on_a_five_day_project_calendar():
+def test_the_weekend_worked_by_a_seven_day_task_is_plan_time_on_a_five_day_project():
     """A (56 h) on the 7-day calendar C7D (08:00-16:00), Monday 03-02 08:00 to Sunday 03-08 16:00, the project
-    on C8. Monday 03-09 08:00, A at 5/7: EV = 40 h, PV = 56 h. The plan holds 40 h from Friday 16:00 to
-    Saturday 08:00; on C8 these are 39 h and 40 h after Monday 03-02 08:00, and the status date is 40 h
-    (Saturday to Monday 08:00 is no working time on C8). The status date lies in that stretch: ES = AT = 5 wd,
-    SPI(t) = 1, PD = 5 wd. The 16 h the plan put on the weekend are behind in hours (SV = -16 h), not in
-    time: durations are read on the project calendar."""
+    on C8. Plan time is C7D's working time, A being the only task measured. Monday 03-09 08:00, A at 5/7:
+    EV = 40 h, PV = 56 h. The plan reached 40 h on Friday 03-06 at 16:00, 5 days of 8 h after the start: ES =
+    40 h = 5 plan days. AT = PD = 7 days of 8 h = 7 plan days. SV(t) = -2 plan days, the weekend's 16 h;
+    SPI(t) = 40 / 56."""
     a = {**planned("A", "2026-03-02 08:00", "2026-03-08 16:00", hours=56), "clndr_id": "C7D"}
     baseline = Baseline.from_snapshot(snap([a], data_date="2026-03-02 08:00"))
     update = snap([progressed(a, 0) | {"status_code": "TK_Active", "phys_complete_pct": str(500 / 7)}],
                   data_date="2026-03-09 08:00")  # fmt: skip
     schedule = earned_schedule(update, baseline)
     assert (schedule.ev_hr, schedule.pv_hr) == (pytest.approx(40.0), 56.0)
-    assert in_days(schedule.es_min) == in_days(schedule.at_min) == in_days(schedule.pd_min) == 5.0
-    assert schedule.spi_t == 1.0
+    assert in_days(schedule.es_min) == 5.0
+    assert in_days(schedule.at_min) == in_days(schedule.pd_min) == 7.0
+    assert in_days(schedule.sv_min) == -2.0
+    assert schedule.spi_t == pytest.approx(40 / 56)
+
+
+FIVE_DAYS = ((480, 720), (780, 1020))  # 08:00-12:00 and 13:00-17:00
+SEVEN_DAYS = ((480, 960),)  # 08:00-16:00
+NONE: tuple = ()
+GOOD_FRIDAY, MAY_DAY, CHRISTMAS = date(2026, 4, 3), date(2026, 5, 1), date(2026, 12, 25)
+
+
+def test_plan_time_works_when_one_calendar_works_and_stops_when_all_of_them_stop():
+    """A five-day calendar off on Good Friday and Christmas, a seven-day one off on Christmas and on Friday
+    05-01. Their union: Monday to Friday 08:00-17:00 (the two calendars' periods merged), the weekend
+    08:00-16:00 (the seven-day one), Good Friday 08:00-16:00 (worked by the seven-day one), 05-01 the five-day
+    calendar's day (08:00-12:00, 13:00-17:00), Christmas off (both off)."""
+    five_days = WorkCalendar(
+        "5", "five days", 8.0, (FIVE_DAYS,) * 5 + (NONE, NONE), {GOOD_FRIDAY: NONE, CHRISTMAS: NONE}
+    )
+    seven_days = WorkCalendar("7", "seven days", 8.0, (SEVEN_DAYS,) * 7, {CHRISTMAS: NONE, MAY_DAY: NONE})
+    plan_time = union_of([five_days, seven_days], 8.0)
+    assert plan_time.periods(date(2026, 3, 2)) == ((480, 1020),)  # a Monday
+    assert plan_time.periods(date(2026, 3, 7)) == SEVEN_DAYS  # a Saturday
+    assert plan_time.periods(GOOD_FRIDAY) == SEVEN_DAYS
+    assert plan_time.periods(MAY_DAY) == FIVE_DAYS
+    assert plan_time.periods(CHRISTMAS) == NONE
+    assert plan_time.hours_per_day == 8.0
+
+
+def test_the_union_of_one_calendar_is_that_calendar():
+    five_days = WorkCalendar("5", "five days", 8.0, (FIVE_DAYS,) * 5 + (NONE, NONE), {GOOD_FRIDAY: NONE})
+    plan_time = union_of([five_days], 8.0)
+    assert (plan_time.week, plan_time.exceptions) == (five_days.week, five_days.exceptions)
