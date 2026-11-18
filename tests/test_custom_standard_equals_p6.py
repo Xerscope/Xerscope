@@ -450,3 +450,192 @@ def test_the_generic_duration_rule_shows_the_same_funnel_as_p6_large_durations()
     assert read(p6.funnel) == by_hand
     assert read(generic.funnel) == by_hand
     assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("control", "numerator", "flagged"),
+    [("P6-06", 1, ["BIG"]), ("P6-14", 1, ["NEG"])],
+)
+def test_the_generic_float_rule_shows_the_same_funnel_as_p6_large_and_negative_float(control, numerator, flagged):
+    """P6-06 / EQ-06 (float > 352 h) and P6-14 / EQ-14 (float < 0): the same population steps, on 6 tasks.
+
+    Source: docs/formulas.md section 2.1, which cites the Oracle help for each line. P6-06 is 46284 and
+    P6-14 is 46283: "WBS summary, actual-finish and LOE removed", then the float is read against the
+    limit (strict ``>`` 352 h, strict ``<`` 0). The schedule has no WBS summary task, so only two removals
+    can show, completed first, then level of effort, in the order of that text.
+
+    | task    | what it is                  | float (h) | P6-06 (> 352) | P6-14 (< 0) |
+    |---------|-----------------------------|-----------|---------------|-------------|
+    | DONE    | completed (actual finish)   | -8        | removed       | removed     |
+    | LOE     | level of effort             | 400       | removed       | removed     |
+    | BIG     | ordinary                    | 400       | counted       | not counted |
+    | EDGE    | ordinary, exactly the limit | 352       | not counted   | not counted |
+    | NEG     | ordinary                    | -16       | not counted   | counted     |
+    | NOFLOAT | ordinary, no float          | none      | not counted   | not counted |
+
+    Hand count, for both checks: start 6; completed removes DONE, 5 left; LOE removes LOE, 4 left.
+    Denominator 4 (BIG, EDGE, NEG, NOFLOAT). Numerator 1: BIG for P6-06, NEG for P6-14. DONE and LOE carry a
+    float that would be counted by one of the two checks, so a population that keeps either changes a numerator.
+    """
+    tasks = [
+        done("DONE", total_float_hr_cnt="-8"),
+        todo("LOE", task_type="TT_LOE", total_float_hr_cnt="400"),
+        todo("BIG", total_float_hr_cnt="400"),
+        todo("EDGE", total_float_hr_cnt="352"),
+        todo("NEG", total_float_hr_cnt="-16"),
+        todo("NOFLOAT", total_float_hr_cnt=""),
+    ]
+    context = AnalysisContext(snap(tasks))
+    p6 = run_metric(P6[control], context)
+    generic = run_metric(CUSTOM[EQUIVALENT[control]], context)
+
+    # (1) the counts are the hand count, on both sides
+    assert (p6.numerator, p6.denominator) == (numerator, 4)
+    assert (generic.numerator, generic.denominator) == (numerator, 4)
+    assert codes(p6) == flagged
+    assert codes(generic) == flagged
+
+    # (2) both sides show a funnel
+    assert p6.funnel is not None, f"{control}: the P6 check shows no funnel"
+    assert generic.funnel is not None, f"{EQUIVALENT[control]}: the generic float rule shows no funnel (funnel is None)"
+
+    # (3) start, then per step the codes it removed (sorted) and the rows left
+    hand_count = (6, [(["DONE"], 5), (["LOE"], 4)])
+
+    def read(result):
+        steps = [(sorted(step.removed["task_code"]), step.left) for step in result.funnel.steps]
+        return result.funnel.start, steps
+
+    assert read(p6) == hand_count
+    assert read(generic) == hand_count
+
+    # (4) the steps carry the same labels (the source is not compared)
+    assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("control", "finish_constraint", "flagged"),
+    [("P6-02", "CS_MANDFIN", ["HARD"]), ("P6-03", "CS_MEOB", ["SOFT"])],
+)
+def test_the_generic_constraints_rule_shows_the_same_funnel_as_p6_hard_and_soft_constraints(
+    control, finish_constraint, flagged
+):
+    """P6-02 / EQ-02 (hard constraints) and P6-03 / EQ-03 (soft constraints): the same population steps, on 5 tasks.
+
+    Source: Oracle P6 help 46286 (Hard constraints) and 46285 (Soft constraints), same wording in both:
+    "WBS summary activities, activities with an actual finish date, and Level of Effort activities are removed
+    from the subset" and "The Actual percentage is calculated as the number of activities found that match the
+    check divided by the total number of subset activities checked". Hard: Mandatory Start and Mandatory
+    Finish (46286, and Start on / Finish on for 113176 in xerscope); soft: Start on or before / after, Finish
+    on or before / after, As Late As Possible. The schedule has no WBS summary task and no started task (the
+    rule that start constraints are ignored once started is not under test), so only two removals can show,
+    completed first, then level of effort, in the order of that text.
+
+    | task  | what it is                  | constraint                       | P6-02 (hard) | P6-03 (soft) |
+    |-------|-----------------------------|----------------------------------|--------------|--------------|
+    | DONE  | completed (actual finish)   | MANDFIN (P6-02) / MEOB (P6-03)   | removed      | removed      |
+    | LOE   | level of effort             | MANDFIN (P6-02) / MEOB (P6-03)   | removed      | removed      |
+    | HARD  | ordinary                    | CS_MANDSTART                     | counted      | not counted  |
+    | SOFT  | ordinary                    | CS_MSOA                          | not counted  | counted      |
+    | FREE  | ordinary                    | none                             | not counted  | not counted  |
+
+    Hand count, for both checks: start 5; completed removes DONE, 4 left; LOE removes LOE, 3 left.
+    Denominator 3 (HARD, SOFT, FREE). Numerator 1: HARD for P6-02, SOFT for P6-03. DONE and LOE carry a
+    constraint that the check would count, so a population that keeps either changes a numerator.
+    """
+    tasks = [
+        done("DONE", cstr_type=finish_constraint, cstr_date="2026-02-13 17:00"),
+        todo("LOE", task_type="TT_LOE", cstr_type=finish_constraint, cstr_date="2026-03-13 17:00"),
+        todo("HARD", cstr_type="CS_MANDSTART", cstr_date="2026-03-02 08:00"),
+        todo("SOFT", cstr_type="CS_MSOA", cstr_date="2026-03-02 08:00"),
+        todo("FREE"),
+    ]
+    context = AnalysisContext(snap(tasks))
+    p6 = run_metric(P6[control], context)
+    generic = run_metric(CUSTOM[EQUIVALENT[control]], context)
+
+    # (1) the counts are the hand count, on both sides
+    assert (p6.numerator, p6.denominator) == (1, 3)
+    assert (generic.numerator, generic.denominator) == (1, 3)
+    assert codes(p6) == flagged
+    assert codes(generic) == flagged
+
+    # (2) both sides show a funnel
+    assert p6.funnel is not None, f"{control}: the P6 check shows no funnel"
+    assert generic.funnel is not None, f"{EQUIVALENT[control]}: the generic constraints rule shows no funnel (None)"
+
+    # (3) start, then per step the codes it removed (sorted) and the rows left
+    hand_count = (5, [(["DONE"], 4), (["LOE"], 3)])
+
+    def read(result):
+        steps = [(sorted(step.removed["task_code"]), step.left) for step in result.funnel.steps]
+        return result.funnel.start, steps
+
+    assert read(p6) == hand_count
+    assert read(generic) == hand_count
+
+    # (4) the steps carry the same labels (the source is not compared)
+    assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]
+
+
+@pytest.mark.oracle("standard")
+def test_the_generic_no_resource_rule_shows_the_same_funnel_as_p6_resource_cost():
+    """P6-11 "Resource / Cost" / EQ-11: the same population steps, on 6 tasks.
+
+    Source: Oracle P6 help 46279: "Use this section to view activities that do not have an expense or resource
+    assigned ... WBS summary activities, milestones, and Level of Effort activities are removed from the subset
+    to create the list of activities checked for no resources or expense assignments. The Actual percentage is
+    calculated as the number of activities found that match the check divided by the total number of subset
+    activities checked." Completed activities are not in the list of removals: they stay in the population.
+    The schedule has no WBS summary task, so two removals can show, milestones first, then level of effort,
+    in the order of that text.
+
+    | task  | what it is                       | resource / expense | P6-11                  |
+    |-------|----------------------------------|--------------------|------------------------|
+    | DONE  | completed (actual finish)        | none               | stays in, counted      |
+    | MS    | start milestone                  | none               | removed                |
+    | LOE   | level of effort                  | none               | removed                |
+    | NORES | ordinary                         | none               | stays in, counted      |
+    | RES   | ordinary                         | one resource       | stays in, not counted  |
+    | COST  | ordinary                         | one expense only   | stays in, not counted  |
+
+    Hand count: start 6; milestones remove MS, 5 left; level of effort removes LOE, 4 left.
+    Denominator 4 (DONE, NORES, RES, COST). Numerator 2 (DONE, NORES). MS and LOE have no assignment, so a
+    population that keeps either raises the numerator; a population that removes DONE lowers both counts.
+    """
+    tasks = [
+        done("DONE"),
+        todo("MS", **SM),
+        todo("LOE", task_type="TT_LOE"),
+        todo("NORES"),
+        todo("RES"),
+        todo("COST"),
+    ]
+    context = AnalysisContext(snap(tasks, rsrc=["RES"], costs=["COST"]))
+    p6 = run_metric(P6["P6-11"], context)
+    generic = run_metric(CUSTOM["EQ-11"], context)
+
+    # (1) the counts are the hand count, on both sides
+    assert (p6.numerator, p6.denominator) == (2, 4)
+    assert (generic.numerator, generic.denominator) == (2, 4)
+    assert codes(p6) == ["DONE", "NORES"]
+    assert codes(generic) == ["DONE", "NORES"]
+
+    # (2) both sides show a funnel
+    assert p6.funnel is not None, "P6-11: the P6 check shows no funnel"
+    assert generic.funnel is not None, "EQ-11: the generic no_resource rule shows no funnel (None)"
+
+    # (3) start, then per step the codes it removed (sorted) and the rows left
+    hand_count = (6, [(["MS"], 5), (["LOE"], 4)])
+
+    def read(result):
+        steps = [(sorted(step.removed["task_code"]), step.left) for step in result.funnel.steps]
+        return result.funnel.start, steps
+
+    assert read(p6) == hand_count
+    assert read(generic) == hand_count
+
+    # (4) the steps carry the same labels (the source is not compared)
+    assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]

@@ -431,10 +431,13 @@ def constraints(
 
     Tasks with a primary or secondary constraint in ``types`` (P6 codes, e.g. CS_MANDSTART).
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     flagged = population[constrained_by(population, types, ignore_start_when_started)]
     extra = {"constraint2": flagged["cstr_type2"].map(CONSTRAINT)}
-    return RuleOutput(flagged_activities(flagged, **extra), len(flagged), len(population), checked=population)
+    return RuleOutput(
+        flagged_activities(flagged, **extra), len(flagged), len(population), checked=population, funnel=funnel
+    )
 
 
 @rule("float", "%")
@@ -446,10 +449,11 @@ def total_float(
 
     Tasks whose total float compares to ``value`` (hours as stored, or working days).
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
     flagged = population[as_flag(COMPARE[op](population[column], value))]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
 
 @rule("duration", "%")
@@ -542,10 +546,11 @@ def no_resource(context, exclude: Names = ("complete", "loe", "milestones"), exp
 
     Tasks with no resource assignment (and, if ``expenses_count``, no expense).
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     has_cost = population["has_resource"] | (population["has_expense"] if expenses_count else False)
     flagged = population[~has_cost]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
 
 # --- baseline ---------------------------------------------------------------------------------
