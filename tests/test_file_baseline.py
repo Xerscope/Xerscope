@@ -340,18 +340,17 @@ def test_each_baseline_of_the_export_is_read_once_for_the_pages_and_the_debug_ta
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    import xerscope.xer
     from xerscope.analysis.baseline_resolution import IN_EXPORT, SAME_GENERATION, UNDECIDED
     from xerscope.app.state import BL_EACH
+    from xerscope.xer.pmxml import read_pmxml_baseline
 
     reads: dict[str, int] = {}
-    read_one_baseline = xerscope.xer.read_pmxml_baseline
 
     def counted(data, source, baseline_id=None, index=None):
         reads[baseline_id] = reads.get(baseline_id, 0) + 1
-        return read_one_baseline(data, source, baseline_id, index)
+        return read_pmxml_baseline(data, source, baseline_id, index)
 
-    monkeypatch.setattr(xerscope.xer, "read_pmxml_baseline", counted)
+    monkeypatch.setattr("xerscope.xer.read_pmxml_baseline", counted)  # the name load_snapshot calls
     _series_and_export(tmp_path)
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
