@@ -20,10 +20,7 @@ import re
 import xml.etree.ElementTree as ET  # nosec B405 - reads the text of one field, no DOCTYPE reaches it
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NamedTuple
-
-if TYPE_CHECKING:
-    from .pmxml import DiskFile
+from typing import NamedTuple, Protocol
 
 CHUNK_BYTES = 1 << 24
 # a start tag: its name (no prefix), its attributes (a value may hold ">"), "/" when the element closes itself
@@ -43,6 +40,13 @@ AFTER_A_NAME = b" \t\r\n/>"  # the byte after the name in a start tag
 
 class NotPlain(Exception):
     """The file holds something the search does not read: the whole file is to be parsed."""
+
+
+class FileContents(Protocol):
+    """What a file is read through: ``data[first:end]`` gives those bytes (bytes, or ``pmxml.DiskFile``)."""
+
+    def __getitem__(self, span: slice) -> bytes:
+        """Return the bytes of a span of the file."""
 
 
 class Element(NamedTuple):
@@ -82,7 +86,7 @@ class _FileBytes:
     A position is a byte of the file. What was read stays until ``forget`` drops it.
     """
 
-    def __init__(self, data: bytes | DiskFile, first: int) -> None:
+    def __init__(self, data: FileContents, first: int) -> None:
         """Start at ``first``; nothing is read yet."""
         self.data, self.first = data, first
         self.buffer = bytearray()
@@ -221,7 +225,7 @@ def _scan_project(source: _FileBytes, project: Element, listed_fields: tuple[str
     return ScannedProject(project.name.decode(), (project.start, project.end), fields, activities)
 
 
-def _head(data: bytes | DiskFile) -> tuple[_FileBytes, Element, str]:
+def _head(data: FileContents) -> tuple[_FileBytes, Element, str]:
     """Read the declaration and the start tag of the root element: the bytes after it, the root, its namespace."""
     start = bytes(data[:4096])
     declaration = DECLARATION.match(start)
@@ -250,7 +254,7 @@ def _keep(scan: Scan, element: Element, project: ScannedProject | None, next_tag
         scan.shared_spans.append((element.start, next_tag))
 
 
-def scan_export(data: bytes | DiskFile, listed_fields: tuple[str, ...]) -> Scan:
+def scan_export(data: FileContents, listed_fields: tuple[str, ...]) -> Scan:
     """Find the projects, baselines, calendars and resources of a P6 XML export.
 
     ``listed_fields``: the fields to read of each project and baseline. Raises ``NotPlain`` when the
