@@ -540,5 +540,10 @@ def test_an_export_cut_or_gone_from_the_disk_since_its_index_is_a_xer_error(tmp_
     with pytest.raises(XerError, match="changed since it was listed"):
         read_pmxml_baseline(on_disk, "export.xml", "501", index)
     path.unlink()
-    with pytest.raises(XerError, match="cannot be read"):
-        read_pmxml_baseline(on_disk, "export.xml", "500", index)
+    for read in (
+        lambda: read_pmxml_baseline(on_disk, "export.xml", "500", index),
+        lambda: index_pmxml(on_disk, "export.xml"),
+    ):
+        with pytest.raises(XerError, match="export.xml: cannot be read") as refused:
+            read()
+        assert str(tmp_path) not in str(refused.value)  # the reason, never the path of the file

@@ -84,7 +84,9 @@ class DiskFile:
     """A file of the disk read where asked, never whole: ``file[first:end]`` reads those bytes alone.
 
     Its length is the one it had when it was opened here: a file cut since gives fewer bytes than
-    asked, and ``read_pmxml_baseline`` then says the file changed."""
+    asked, and ``read_pmxml_baseline`` then says the file changed. A file that cannot be read raises
+    ``OSError``, as any file does; ``index_pmxml`` and ``read_pmxml_baseline`` report it as a
+    ``XerError``."""
 
     def __init__(self, path: Path) -> None:
         """Note the length of the file; nothing of it is read yet."""
@@ -96,14 +98,16 @@ class DiskFile:
         return self.size
 
     def __getitem__(self, span: slice) -> bytes:
-        """Read the bytes of ``span`` from the disk; a file that cannot be read is a ``XerError``."""
+        """Read the bytes of ``span`` from the disk."""
         first_byte, end_byte, _ = span.indices(self.size)
-        try:
-            with self.path.open("rb") as file:
-                file.seek(first_byte)
-                return file.read(max(end_byte - first_byte, 0))
-        except OSError as exc:
-            raise XerError(f"{self.path.name}: cannot be read ({exc.strerror})") from exc
+        with self.path.open("rb") as file:
+            file.seek(first_byte)
+            return file.read(max(end_byte - first_byte, 0))
+
+
+def _cannot_be_read(source: str, error: OSError) -> XerError:
+    """The error of a file of the disk that could not be read: its reason, never its path."""
+    return XerError(f"{source}: cannot be read ({error.strerror})")
 
 
 def is_pmxml(data: bytes | DiskFile) -> bool:
@@ -283,6 +287,8 @@ def index_pmxml(data: bytes | DiskFile, source: str) -> PmxmlIndex:
         parser.Parse(b"", True)
     except (expat.ExpatError, LookupError, ValueError) as exc:  # the last two: an encoding Python cannot read
         raise XerError(f"{source}: not a readable P6 XML file ({exc})") from exc
+    except OSError as exc:
+        raise _cannot_be_read(source, exc) from exc
     return PmxmlIndex(
         namespace="{" + index_pass.namespace if index_pass.namespace else "",
         head_end=index_pass.head_end,
@@ -314,6 +320,8 @@ def _document_of(data: bytes | DiskFile, source: str, index: PmxmlIndex, baselin
         return parser.close()
     except ET.ParseError as exc:  # the positions of the index are no longer those of the file
         raise XerError(f"{source}: the file changed since it was listed ({exc})") from exc
+    except OSError as exc:
+        raise _cannot_be_read(source, exc) from exc
 
 
 def choose_baseline(baselines: list[XmlBaseline], current: str, wanted: str | None, source: str) -> XmlBaseline:
