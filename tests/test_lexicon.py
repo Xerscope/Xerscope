@@ -54,7 +54,7 @@ P6_NAMES = {
         "its activity list",  # Debug zip caption, changed on export/obfuscate-proj-id
     ],
     "task_panel.py": ["Activity codes"],  # P6 Activity Codes (ACTVCODE), not task_code
-    "views/gantt.py": ["P6 activity code"],
+    "code_picker.py": ["P6 activity code"],  # the Gantt and PPC pages' picker of a P6 activity code
 }
 
 

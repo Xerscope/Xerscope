@@ -3,9 +3,10 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.explain import KPI_FORMULAS
-from xerscope.analysis.task_filters import branch_tasks, filtered_tasks, matching_code_ids
+from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.code_picker import pick_activity_code
 from xerscope.app.sets import show_steps
 from xerscope.app.state import (
     baseline_for,
@@ -243,32 +244,7 @@ status_column, float_column, search_column = st.columns(3)
 status = status_column.multiselect("Status", list(STATUS.values()), placeholder="All")
 categories = float_column.multiselect("Float", CATEGORY_ORDER, placeholder="All")
 search = search_column.text_input("Search", placeholder="Task ID or name")
-code_type, code_ids = None, None
-if not snapshot.code_values.empty:  # the file's P6 activity codes, if it has any
-    type_column, value_column = st.columns([1, 2])
-    code_type = type_column.selectbox(
-        "Task code (P6 activity code)",
-        list(dict.fromkeys(snapshot.code_values["code_type"])),
-        index=None,
-        placeholder="None",
-    )
-    values = snapshot.code_values[snapshot.code_values["code_type"] == code_type]
-    paths = snapshot.code_paths(code_type) if code_type else {}
-    description = dict(zip(values["code_id"], values["name"], strict=True))
-    by_label = {f"{path} · {description[code_id]}": code_id for code_id, path in paths.items()}
-    picks = value_column.multiselect(
-        "Code values",
-        list(by_label),
-        placeholder="Type to search; pick a value, or press Enter to keep every value containing the text"
-        if code_type
-        else "Pick a task code first",
-        accept_new_options=True,
-        filter_mode="contains",
-        disabled=code_type is None,
-        key=f"gantt_code_values:{code_type}",  # another code type starts with nothing picked
-    )
-    if picks:  # nothing picked: no filter on the code
-        code_ids = matching_code_ids(values, by_label, picks)
+code_type, code_ids = pick_activity_code(snapshot, "gantt")
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
 show_links = options.toggle("Logic links", value=False)
 hide_loe = options.toggle("Hide LOE", value=True)

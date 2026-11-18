@@ -12,6 +12,7 @@ from xerscope.analysis.progress import (
     ppc_of_week,
     ppc_series,
     progress_delta,
+    progress_of_code,
     progressed_tasks,
     project_progress,
     renumbered,
@@ -19,6 +20,7 @@ from xerscope.analysis.progress import (
     unplanned_work,
 )
 from xerscope.app import ui
+from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
 from xerscope.viz.charts import PPC_TARGET, build_ppc
 
@@ -243,10 +245,22 @@ with top:
         "listed apart. Weekly progress = actual in W minus actual in W−1.",
     )
 
-ppc = memo(("ppc", include_overdue), ppc_series, store, include_overdue, baseline=False)
+code_filter = pick_code_filter(current, "ppc")
+if code_filter is not None:
+    st.caption(
+        f"Filtered on {ui.md_text(code_filter.type_name)}: every block below counts only the tasks of the "
+        "values picked, in the update that makes each figure (W−1 for the commitments, W for the rest). "
+        "A file without this code type holds no task."
+    )
+ppc = memo(("ppc", include_overdue, code_filter), ppc_series, store, include_overdue, code_filter, baseline=False)
 ui.section("Percent plan complete by week")
 ui.chart(build_ppc(ppc, target))
 show_ppc_weeks(ppc)
+
+
+def of_filter(rows: pd.DataFrame, snapshot) -> pd.DataFrame:
+    return rows if code_filter is None else code_filter.keep(rows, snapshot)
+
 
 commitments = memo(
     ("ppc_commitments", week, include_overdue), committed, previous, current, include_overdue, baseline=False
@@ -255,8 +269,12 @@ milestones = memo(
     ("ppc_milestones", week, include_overdue), committed_milestones, previous, current, include_overdue, baseline=False
 )
 unplanned = memo(("ppc_unplanned", week), unplanned_work, previous, current, baseline=False)
+commitments, milestones = of_filter(commitments, previous), of_filter(milestones, previous)
+unplanned = of_filter(unplanned, current)
 renumbered_tasks = memo(("ppc_renumbered", week), renumbered, previous, current, baseline=False)
 progress = progress_delta(previous, current, baseline_for(current))
+if code_filter is not None:
+    progress = progress_of_code(progress, code_filter, previous, current)
 wbs_progress = rollup_delta(progress)
 week_ppc = ppc_of_week(ppc, week_index)
 show_kpis(week_ppc, project_progress(wbs_progress))
@@ -265,5 +283,6 @@ show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
 show_milestones_and_unplanned(milestones, unplanned)
 show_progress_by_activity(progress, previous, current)
 variances = memo(("date_variances", week), date_variances, store, week_index, baseline=False)
+variances = of_filter(variances, current)
 before_previous = store[week_index - 2] if week_index >= 2 else None
 show_variances(variances, sources_of(before_previous, previous, current), current)

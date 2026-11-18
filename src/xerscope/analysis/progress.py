@@ -29,6 +29,7 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from .baseline import RENUMBERED_COLUMNS
 from .baseline import renumbered as renumbered_by_guid
+from .task_filters import CodeFilter
 
 # --- milestone trend -----------------------------------------------------------------------
 
@@ -277,11 +278,17 @@ def _notes(previous: Snapshot, current: Snapshot) -> str | None:
     return "; ".join(notes) or None
 
 
-def ppc_series(store: SnapshotStore, include_overdue: bool = True) -> pd.DataFrame:
-    """One row per week W (update 1 onward): the counts and the three PPC of `committed`."""
+def ppc_series(
+    store: SnapshotStore, include_overdue: bool = True, code_filter: CodeFilter | None = None
+) -> pd.DataFrame:
+    """One row per week W (update 1 onward): the counts and the three PPC of `committed`.
+
+    ``code_filter``: only the commitments of the tasks it holds in W-1's file, which made them."""
     rows = []
     for index in range(1, len(store)):
         commitments = committed(store[index - 1], store[index], include_overdue)
+        if code_filter is not None:
+            commitments = code_filter.keep(commitments, store[index - 1])
         commitments = commitments[commitments["in_update"]]  # deleted activities are scope changes, not misses
         finishes = commitments[commitments["commitment"] == "Finish"]
         starts = commitments[commitments["commitment"] == "Start"]
@@ -421,6 +428,16 @@ def progress_delta(previous: Snapshot, current: Snapshot, baseline=None) -> pd.D
     delta["new"] = ~codes.isin(before.index)
     delta["deleted"] = deleted
     return delta.reset_index()
+
+
+def progress_of_code(
+    delta: pd.DataFrame, code_filter: CodeFilter, previous: Snapshot, current: Snapshot
+) -> pd.DataFrame:
+    """Rows of `progress_delta` of the tasks ``code_filter`` holds: in W's file, in W-1's for a task
+    deleted since (it has no code in W)."""
+    held_before = delta["task_code"].isin(code_filter.tasks(previous))
+    held_now = delta["task_code"].isin(code_filter.tasks(current))
+    return delta[delta["deleted"] & held_before | ~delta["deleted"] & held_now]
 
 
 def progressed_tasks(delta: pd.DataFrame) -> pd.DataFrame:
