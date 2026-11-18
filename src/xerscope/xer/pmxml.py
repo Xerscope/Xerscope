@@ -82,10 +82,13 @@ class XmlBaseline:
 
 @dataclass(frozen=True)
 class XmlProject:
-    """One ``Project`` of the file and the baseline it names as its Project Baseline (blank when none)."""
+    """One ``Project`` of the file: the baseline it names as its Project Baseline, its status date and the
+    date it was added to the database (DateAdded), each blank when the file does not give it."""
 
     object_id: str
     current_baseline_id: str
+    data_date: str = ""  # as the XER writes a date: 2026-03-02 08:00
+    date_added: str = ""
 
 
 class DiskFile:
@@ -140,7 +143,9 @@ def _percent(value: str) -> str:
 
 
 PARSE_CHUNK_BYTES = 1 << 24  # the file goes to the parser 16 MB at a time: what it holds besides the file
-LISTED_FIELDS = ("ObjectId", "Id", "Name", "DataDate", "OriginalProjectObjectId", "CurrentBaselineProjectObjectId")
+LISTED_FIELDS = (
+    "ObjectId", "Id", "Name", "DataDate", "DateAdded", "OriginalProjectObjectId", "CurrentBaselineProjectObjectId",
+)  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -274,7 +279,12 @@ class _IndexPass:
             )
         else:
             self.projects.append(
-                XmlProject(self.fields.get("ObjectId", ""), self.fields.get("CurrentBaselineProjectObjectId", ""))
+                XmlProject(
+                    self.fields.get("ObjectId", ""),
+                    self.fields.get("CurrentBaselineProjectObjectId", ""),
+                    _xer_date(self.fields.get("DataDate", "")),
+                    _xer_date(self.fields.get("DateAdded", "")),
+                )
             )
         self.project_tag = ""
         self.fields = {}

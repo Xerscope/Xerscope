@@ -141,6 +141,14 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
             xml_baselines.xml_baselines_table(export[2], pointers["sum_base_proj_id"]),
             key="debug_05_xml_baselines",
         )
+        st.caption(
+            "The projects of the P6 XML baseline file, in the order of the file: the id an XER read from one "
+            "carries (object_id), its status date (data_date), the date it was added to the database "
+            "(date_added), the Project Baseline it names (current_baseline_id) and whether the file holds it, "
+            "how many updates of the series were read from it (updates_from_it) and how many have their status "
+            "date on the same day (updates_same_status_date)."
+        )
+        table(xml_baselines.xml_projects_table(export[2], store), key="debug_05_xml_projects")
     st.caption(
         "The baseline found for each update, and what finds it (found_by): in its file; in the "
         "export, under the id it names; a loaded update, when it names the project that update was read from; "

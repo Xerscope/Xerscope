@@ -37,6 +37,39 @@ def xml_baselines_table(index: PmxmlIndex, named_baseline_ids: Iterable[str]) ->
     )
 
 
+PROJECT_COLUMNS = [
+    "object_id", "data_date", "date_added", "current_baseline_id", "baseline_in_export", "updates_from_it",
+    "updates_same_status_date",
+]  # fmt: skip
+
+
+def xml_projects_table(index: PmxmlIndex, updates: Iterable[Snapshot]) -> pd.DataFrame:
+    """Return the projects of a P6 XML baseline file, in the order of the file, held against the updates.
+
+    ``object_id``: the id an XER exported from that project carries (PROJECT.proj_id). ``data_date`` and
+    ``date_added``: its status date and the date it was added to the database. ``current_baseline_id``: the
+    Project Baseline it names; ``baseline_in_export``: the file holds that baseline. ``updates_from_it``
+    counts the updates read from that project; ``updates_same_status_date`` those whose status date falls
+    on the same day, whatever project they were read from.
+    """
+    updates = list(updates)
+    status_days = [update.data_date.strftime("%Y-%m-%d") for update in updates if update.data_date is not None]
+    project_ids = [update.project_id for update in updates]
+    rows = [
+        {
+            "object_id": project.object_id,
+            "data_date": project.data_date,
+            "date_added": project.date_added,
+            "current_baseline_id": project.current_baseline_id,
+            "baseline_in_export": project.current_baseline_id in index.baseline_spans,
+            "updates_from_it": project_ids.count(project.object_id),
+            "updates_same_status_date": status_days.count(project.data_date[:10]) if project.data_date else 0,
+        }
+        for project in index.projects
+    ]
+    return pd.DataFrame(rows, columns=PROJECT_COLUMNS)
+
+
 class BaselineContents:
     """Whether two baselines of an export are copies of one baseline, each digested once at most.
 
