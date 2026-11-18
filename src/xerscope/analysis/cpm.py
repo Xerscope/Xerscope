@@ -392,6 +392,22 @@ class _Asg:
     driving: bool
 
 
+def _number_or_zero(value) -> float:
+    """A number of the assignment table as a float, 0 when the file gives none."""
+    return float(value) if pd.notna(value) else 0.0
+
+
+def _refuse_unbounded_assignments(unbounded: list[str]) -> None:
+    """Refuse the assignments, listed as "Activity ID/assignment id", whose lag or duration is not finite
+    or beyond ``MAX_HOURS``, naming their activities."""
+    if unbounded:
+        raise ScheduleError(
+            f"{len(unbounded)} assignments carry a lag or a duration (units / units per hour) that is not "
+            f"finite or beyond {MAX_HOURS:g} h: {unbounded[:8]}",
+            tuple(sorted({entry.split("/")[0] for entry in unbounded})),
+        )
+
+
 def _refuse_unbounded_delays(extra_hours: dict[str, float]) -> None:
     """Refuse a delay that is not finite or beyond ``MAX_HOURS``, naming the activities to delay: the
     rule of a remaining duration and of a lag, for the one value that does not come from the file."""
@@ -618,38 +634,47 @@ class _Run:
     def _assignments(self) -> None:
         """Open assignments. Resource-dependent activities are scheduled from their driving
         assignments, each on its resource's calendar; the others use the activity calendar."""
-        inputs, status = self.inputs, self.status
         self.assignments_by_task: dict[str, list[_Asg]] = defaultdict(list)
         assignment_table = self.snapshot.assignments
         unbounded: list[str] = []
         for row in assignment_table.itertuples(index=False) if not assignment_table.empty else []:
             code = row.task_code
-            if code not in inputs or status[code] == "TK_Complete" or self.is_loe[code]:
+            if code not in self.inputs or self.status[code] == "TK_Complete" or self.is_loe[code]:
                 continue
-            remaining_units = float(row.remain_qty) if pd.notna(row.remain_qty) else 0.0
-            rate = float(row.remain_qty_per_hr) if pd.notna(row.remain_qty_per_hr) else 0.0
-            on_rsrc_cal = inputs[code].get("task_type") == "TT_Rsrc" and bool(row.rsrc_clndr_id)
-            axis = self.axes.of(row.rsrc_clndr_id) if on_rsrc_cal else self.cal_ax[code]
-            remaining_minutes = remaining_units / rate * 60 if rate > 0 else None
-            lag_hours = float(row.relag_drtn_hr_cnt) if pd.notna(row.relag_drtn_hr_cnt) else 0.0
-            if not _bounded(lag_hours) or (remaining_minutes is not None and not _bounded(remaining_minutes / 60)):
+            assignment = self._assignment_from_row(code, row)
+            if assignment is None:
                 unbounded.append(f"{code}/{row.taskrsrc_id}")
                 continue
-            name = str(row.rsrc_short_name or row.rsrc_name or row.rsrc_id or "")
-            self.assignments_by_task[code].append(
-                _Asg(str(row.taskrsrc_id), name, axis, lag_hours * 60, remaining_minutes, bool(row.driving))
-            )
-        if unbounded:
-            raise ScheduleError(
-                f"{len(unbounded)} assignments carry a lag or a duration (units / units per hour) that is not "
-                f"finite or beyond {MAX_HOURS:g} h: {unbounded[:8]}",
-                tuple(sorted({entry.split("/")[0] for entry in unbounded})),
-            )
-        rsrc_type = {
-            code for code in self.nodes if inputs[code].get("task_type") == "TT_Rsrc" and status[code] != "TK_Complete"
+            self.assignments_by_task[code].append(assignment)
+        _refuse_unbounded_assignments(unbounded)
+        self._record_resource_dependent()
+
+    def _assignment_from_row(self, code: str, row) -> _Asg | None:
+        """One row of the assignment table as the engine schedules it: on the resource calendar when the
+        activity is of type Resource Dependent and the row names one, else on the activity calendar; its
+        duration is remaining units / units per hour, none without a rate above 0. None when its lag or its
+        duration is not finite or beyond ``MAX_HOURS``."""
+        remaining_units = _number_or_zero(row.remain_qty)
+        units_per_hour = _number_or_zero(row.remain_qty_per_hr)
+        is_on_resource_calendar = self.inputs[code].get("task_type") == "TT_Rsrc" and bool(row.rsrc_clndr_id)
+        axis = self.axes.of(row.rsrc_clndr_id) if is_on_resource_calendar else self.cal_ax[code]
+        remaining_minutes = remaining_units / units_per_hour * 60 if units_per_hour > 0 else None
+        lag_hours = _number_or_zero(row.relag_drtn_hr_cnt)
+        if not _bounded(lag_hours) or (remaining_minutes is not None and not _bounded(remaining_minutes / 60)):
+            return None
+        resource_name = str(row.rsrc_short_name or row.rsrc_name or row.rsrc_id or "")
+        return _Asg(str(row.taskrsrc_id), resource_name, axis, lag_hours * 60, remaining_minutes, bool(row.driving))
+
+    def _record_resource_dependent(self) -> None:
+        """Keep the activities scheduled from their resources (``rsrc_dep``): unfinished, of type Resource
+        Dependent, with a driving assignment that has a duration. Warn of those of that type without one."""
+        of_resource_type = {
+            code
+            for code in self.nodes
+            if self.inputs[code].get("task_type") == "TT_Rsrc" and self.status[code] != "TK_Complete"
         }
-        self.rsrc_dep = {code for code in rsrc_type if self.driving(code)}
-        lacking = [code for code in self.nodes if code in rsrc_type and code not in self.rsrc_dep]
+        self.rsrc_dep = {code for code in of_resource_type if self.driving(code)}
+        lacking = [code for code in self.nodes if code in of_resource_type and code not in self.rsrc_dep]
         if lacking:
             self.warnings.append(
                 f"{len(lacking)} resource-dependent tasks without a driving assignment with "
@@ -1087,45 +1112,72 @@ class _Run:
         finish_bound = max(finish_bounds) if finish_bounds else None
         starts, durations, expected_applies = [], {}, False
         for assignment in self.driving(code):
-            duration = self.base_minutes(code, assignment) + extra_minutes
-            assignment_start = assignment.axis.snap_start(
-                self.shift(assignment.axis, lower_start, assignment.lag_minutes)
-            )
-            if (
-                expected_date is not None
-                and expected_date > assignment_start
-                and (finish_bound is None or expected_date >= finish_bound)
-            ):
+            duration_minutes = self.base_minutes(code, assignment) + extra_minutes
+            assignment_start = self.lagged_start(assignment, lower_start)
+            if self.is_expected_finish_applied(expected_date, assignment_start, finish_bound):
                 # the expected finish sets the remaining work, measured on the resource
                 # calendar from this placement (H26-11 A1090: 35.5 h from Tue 06:00, then
                 # run from the activity's Tue 07:00 to Fri 06:30); an expected finish before
                 # the placement keeps the file's remaining duration (H14-05 A1040), and an
                 # FF / SF bound later than it wins, as for task-dependent work
-                duration = float(assignment.axis.between(assignment_start, expected_date))
+                duration_minutes = float(assignment.axis.between(assignment_start, expected_date))
                 expected_applies = True
-            durations[assignment.taskrsrc_id] = self.assignment_minutes[assignment.taskrsrc_id] = duration
-            assignment_finish = (
-                assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
-            )
-            if finish_bound is not None and assignment_finish < finish_bound:
-                assignment_finish = assignment.axis.keep_or_next(finish_bound)
-                assignment_start = (
-                    assignment.axis.add(assignment_finish, -duration, finish=False) if duration else assignment_finish
-                )
-            starts.append(self.shift(assignment.axis, assignment_start, -assignment.lag_minutes))
+            durations[assignment.taskrsrc_id] = duration_minutes
+            self.assignment_minutes[assignment.taskrsrc_id] = duration_minutes
+            starts.append(self.activity_start_given_by(assignment, assignment_start, duration_minutes, finish_bound))
         start = axis.snap_start(min(starts))
         finishes = []
         for assignment in self.driving(code):
-            duration = durations[assignment.taskrsrc_id]
-            assignment_start = assignment.axis.snap_start(self.shift(assignment.axis, start, assignment.lag_minutes))
-            assignment_finish = (
-                assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
-            )
+            assignment_start = self.lagged_start(assignment, start)
+            assignment_finish = self.finish_run_from(assignment, assignment_start, durations[assignment.taskrsrc_id])
             self.assignment_early[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
             finishes.append(assignment_finish)
         if expected_applies:
             self.duration_override[code] = float(axis.between(start, max(finishes)))  # the backward pass follows
         return start, max(finishes)
+
+    def lagged_start(self, assignment: _Asg, measured_from: pd.Timestamp) -> pd.Timestamp:
+        """Start of an assignment placed from an instant: shifted by its lag, on its calendar."""
+        return assignment.axis.snap_start(self.shift(assignment.axis, measured_from, assignment.lag_minutes))
+
+    @staticmethod
+    def finish_run_from(assignment: _Asg, assignment_start: pd.Timestamp, duration_minutes: float) -> pd.Timestamp:
+        """Finish of an assignment that works its duration from a start, on its calendar; the start itself
+        when no work is left."""
+        if not duration_minutes:
+            return assignment_start
+        return assignment.axis.add(assignment_start, duration_minutes, finish=True)
+
+    @staticmethod
+    def is_expected_finish_applied(
+        expected_date: pd.Timestamp | None, assignment_start: pd.Timestamp, finish_bound: pd.Timestamp | None
+    ) -> bool:
+        """True when the expected finish sets the remaining work of an assignment: there is one, after
+        the assignment's start and not before the finish bound."""
+        return (
+            expected_date is not None
+            and expected_date > assignment_start
+            and (finish_bound is None or expected_date >= finish_bound)
+        )
+
+    def activity_start_given_by(
+        self,
+        assignment: _Asg,
+        assignment_start: pd.Timestamp,
+        duration_minutes: float,
+        finish_bound: pd.Timestamp | None,
+    ) -> pd.Timestamp:
+        """Start one driving assignment gives the activity: the assignment's start less its lag. An
+        assignment that would finish before the finish bound is first moved to finish at the bound, or
+        at the next working time of its calendar, and starts its duration before; with no work left, it
+        starts at that finish."""
+        assignment_finish = self.finish_run_from(assignment, assignment_start, duration_minutes)
+        if finish_bound is not None and assignment_finish < finish_bound:
+            assignment_finish = assignment.axis.keep_or_next(finish_bound)
+            assignment_start = assignment_finish
+            if duration_minutes:
+                assignment_start = assignment.axis.add(assignment_finish, -duration_minutes, finish=False)
+        return self.shift(assignment.axis, assignment_start, -assignment.lag_minutes)
 
     # --- backward pass -------------------------------------------------------------------------
     def successor_limits(self, code, late: bool) -> tuple[list, list]:
@@ -1699,46 +1751,44 @@ class _Run:
         own duration (units / units per hour) on the activity calendar. Checked against every
         assignment P6 stored in Hotel and Terminal (tests/test_cpm.py)."""
         rows = []
-        for code, items in self.assignments_by_task.items():
+        for code, assignments in self.assignments_by_task.items():
             if code not in self.remaining_start or code not in self.late_start:
                 continue
-            for assignment in items:
-                if assignment.taskrsrc_id in self.assignment_early:
-                    (assignment_start, assignment_finish), (late_assignment_start, late_assignment_finish) = (
-                        self.assignment_early[assignment.taskrsrc_id],
-                        self.assignment_late.get(assignment.taskrsrc_id, (None, None)),
-                    )
-                else:
-                    duration = (
-                        assignment.duration_minutes if assignment.duration_minutes is not None else self.dur_min(code)
-                    )
-                    assignment_start = assignment.axis.snap_start(
-                        self.shift(assignment.axis, self.remaining_start[code], assignment.lag_minutes)
-                    )
-                    assignment_finish = (
-                        assignment.axis.add(assignment_start, duration, finish=True) if duration else assignment_start
-                    )
-                    late_shifted = self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
-                    # no work left: the late dates stay at the period end, as the task's (_late)
-                    late_assignment_start = late_shifted if not duration else assignment.axis.snap_start(late_shifted)
-                    late_assignment_finish = (
-                        assignment.axis.add(late_assignment_start, duration, finish=True)
-                        if duration
-                        else late_assignment_start
-                    )
-                rows.append(
-                    [
-                        assignment.taskrsrc_id,
-                        code,
-                        assignment.rsrc,
-                        assignment.driving,
-                        assignment_start,
-                        assignment_finish,
-                        late_assignment_start,
-                        late_assignment_finish,
-                    ]
-                )
+            for assignment in assignments:
+                dates = self.early_and_late_dates(code, assignment)
+                rows.append([assignment.taskrsrc_id, code, assignment.rsrc, assignment.driving, *dates])
         return pd.DataFrame(rows, columns=ASSIGNMENT_COLS)
+
+    def early_and_late_dates(
+        self, code: str, assignment: _Asg
+    ) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp | None, pd.Timestamp | None]:
+        """Remaining early start and finish, late start and finish of an assignment: those the forward
+        pass placed for a driving assignment of resource-dependent work, with the late dates of the
+        backward pass (none when it placed none), else those it takes from the activity."""
+        if assignment.taskrsrc_id not in self.assignment_early:
+            return self.dates_from_activity(code, assignment)
+        assignment_start, assignment_finish = self.assignment_early[assignment.taskrsrc_id]
+        late_assignment_start, late_assignment_finish = self.assignment_late.get(assignment.taskrsrc_id, (None, None))
+        return assignment_start, assignment_finish, late_assignment_start, late_assignment_finish
+
+    def dates_from_activity(
+        self, code: str, assignment: _Asg
+    ) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp | None, pd.Timestamp | None]:
+        """Remaining early start and finish, late start and finish of an assignment the passes did not
+        place: from the activity's remaining start and late start plus its lag, for its own duration, or
+        the activity's when it has none."""
+        duration_minutes = (
+            assignment.duration_minutes if assignment.duration_minutes is not None else self.dur_min(code)
+        )
+        assignment_start = self.lagged_start(assignment, self.remaining_start[code])
+        assignment_finish = self.finish_run_from(assignment, assignment_start, duration_minutes)
+        late_start_after_lag = self.shift(assignment.axis, self.late_start[code], assignment.lag_minutes)
+        # no work left: the late dates stay at the period end, as the task's (_late)
+        late_assignment_start = (
+            late_start_after_lag if not duration_minutes else assignment.axis.snap_start(late_start_after_lag)
+        )
+        late_assignment_finish = self.finish_run_from(assignment, late_assignment_start, duration_minutes)
+        return assignment_start, assignment_finish, late_assignment_start, late_assignment_finish
 
     # --- result ------------------------------------------------------------------------------
     def result(self) -> Schedule:
