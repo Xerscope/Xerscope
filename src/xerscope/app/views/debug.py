@@ -14,6 +14,7 @@ from xerscope.app.state import (
     baseline_for,
     data_identity,
     data_locked,
+    export_contents,
     fetch,
     held,
     hold,
@@ -141,18 +142,19 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
             key="debug_05_xml_baselines",
         )
     st.caption(
-        "The baseline each update would be measured against, and what finds it (found_by): in its file; in the "
+        "The baseline found for each update, and what finds it (found_by): in its file; in the "
         "export, under the id it names; a loaded update, when it names the project that update was read from; "
         "or, in the export, the baseline of the version created just before its project when the version "
         "created just after holds a copy of the same baseline (version_before, version_after: by ObjectId, "
         "an order of creation observed in P6 databases, which Oracle does not document). Only the first two "
-        "are the baseline P6 measured against. Shown, not applied: the pages use the baseline of the first "
-        "table of this block."
+        "are the baseline P6 measured against. With 'Baseline in each file' the pages measure each update "
+        "against the baseline found, the two others announced as probable; with another choice they use the "
+        "baseline of the first table of this block."
     )
     table(
         memo(
             ("debug_baseline_resolution",),
-            lambda: xml_baselines.resolution_table(store, None if export is None else xml_baselines.export_of(*export)),
+            lambda: xml_baselines.resolution_table(store, export_contents()),
         ),
         key="debug_05_baseline_resolution",
     )

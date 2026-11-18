@@ -34,6 +34,7 @@ from xerscope.analysis.baseline_resolution import (
     LOADED_UPDATE,
     SAME_GENERATION,
     UNDECIDED,
+    Export,
     Resolution,
     resolutions,
 )
@@ -1430,7 +1431,7 @@ def _resolution(snapshot: Snapshot) -> Resolution | None:
     key = (st.session_state.get("signature"), projects, None if export is None else _digest(export[1]))
     kept = st.session_state.get("_resolutions")
     if kept is None or kept[0] != key:
-        found = resolutions(store, None if export is None else export_of(*export))
+        found = resolutions(store, export_contents())
         kept = (key, {update.source: one for update, one in zip(store, found, strict=True)})
         st.session_state["_resolutions"] = kept
     return kept[1].get(snapshot.source)
@@ -1824,6 +1825,23 @@ def baseline_export() -> tuple[str, bytes | DiskFile, PmxmlIndex] | None:
     contents and the session's index of it. None for an XER, for no file, and for an export that cannot
     be read (the sidebar says so)."""
     return _export_in_use()[0]
+
+
+def export_contents() -> Export | None:
+    """What the resolution reads of the export in use (``xml_baselines.export_of``); None without one.
+    Kept for the session with the content digests found so far, and read through the session's own
+    reader: the pages and the Debug page compare and apply the baselines of the export from one read of
+    each."""
+    export = baseline_export()
+    if export is None:
+        return None
+    name, data, index = export
+    key = (name, _digest(data))
+    kept = st.session_state.get("_export_contents")
+    if kept is None or kept[0] != key:
+        kept = (key, export_of(name, data, index, functools.partial(_parse, name, data)))
+        st.session_state["_export_contents"] = kept
+    return kept[1]
 
 
 def _export_in_use() -> tuple[tuple[str, bytes | DiskFile, PmxmlIndex] | None, str]:
