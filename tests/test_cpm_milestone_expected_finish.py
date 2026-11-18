@@ -172,7 +172,13 @@ def test_task_finish_on_later_than_its_expected_finish_still_wins():
     Tue 10 Mar 08:00. Hand calculation: Tue 10 08:00 + 16 working hours (8 h + 8 h) = Wed 11 17:00."""
     tasks = [
         todo("P", **hours(8)),
-        todo("A", cstr_type="CS_MEO", cstr_date="2026-03-11 17:00", expect_end_date=EXPECTED_FINISH_THURSDAY, **hours(16)),
+        todo(
+            "A",
+            cstr_type="CS_MEO",
+            cstr_date="2026-03-11 17:00",
+            expect_end_date=EXPECTED_FINISH_THURSDAY,
+            **hours(16),
+        ),
     ]
     row = schedule(snap(tasks, [("P", "A", "FS", 0)], sched=OPTION_ON)).frame.loc["A"]
     assert row["es"] == T("2026-03-10 08:00")

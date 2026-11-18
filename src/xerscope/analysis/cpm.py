@@ -1048,7 +1048,12 @@ class _Run:
         return self.data_date, self.data_date
 
     def forward_constraints(
-        self, code, started: bool, start_bounds: list, finish_bounds: list, milestone_expected: pd.Timestamp | None = None
+        self,
+        code,
+        started: bool,
+        start_bounds: list,
+        finish_bounds: list,
+        milestone_expected: pd.Timestamp | None = None,
     ):
         """Add the activity's dated constraints to the start / finish bounds (in place).
 
