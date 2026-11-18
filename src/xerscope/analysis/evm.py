@@ -865,6 +865,38 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
     return replace(result, es_min=min(max(at_min, low), high))
 
 
+def schedule_gap_by_status(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
+    """EV - PV of the activities the Earned Schedule measures, by their status in ``snapshot``: count, BL
+    hours, PV, EV, hours ahead (the positive gaps summed) and behind (the negative ones).
+
+    ``planned_finish_passed``: activities whose EV finish is before the status date (their PV is whole).
+    ``started_on_planned_start``: activities started on the day of their EV start. P6 no longer moves the
+    planned dates of an activity once it has an actual start (Oracle, P6 EPPM User Guide, "Planned
+    Dates"): a baseline copied from a project under way carries the lead or lag of its started
+    activities, which the gaps of the started statuses and these two counts size.
+    """
+    values = earned(snapshot, baseline)
+    has_dates = values["bl_start"].notna() & values["bl_finish"].notna()
+    measured = values[values["in_snapshot"] & (values["bl_labor_hr"] != 0) & has_dates]
+    activities = snapshot.by_code.loc[measured.index]
+    gap_hr = measured["ev_hr"] - measured["pv_hr"]
+    started_on_planned_start = activities["act_start_date"].dt.normalize() == measured["bl_start"].dt.normalize()
+    per_activity = pd.DataFrame(
+        {
+            "status": activities["status"],
+            "tasks": 1,
+            "bl_labor_hr": measured["bl_labor_hr"],
+            "pv_hr": measured["pv_hr"],
+            "ev_hr": measured["ev_hr"],
+            "ahead_hr": gap_hr.clip(lower=0),
+            "behind_hr": gap_hr.clip(upper=0),
+            "planned_finish_passed": (measured["bl_finish"] < pd.Timestamp(snapshot.data_date)).astype(int),
+            "started_on_planned_start": started_on_planned_start.astype(int),
+        }
+    )
+    return per_activity.groupby("status").sum().reset_index()
+
+
 def priced_assignment_count(snapshot: Snapshot) -> int:
     """Number of resource assignments of the update that carry a budgeted cost (``target_cost``)."""
     return int((snapshot.assignments["target_cost"].fillna(0.0) != 0).sum())
