@@ -13,7 +13,16 @@ from collections.abc import Callable, Iterable
 import pandas as pd
 
 from xerscope.analysis.baseline import content_digest
-from xerscope.analysis.baseline_resolution import Export, resolutions
+from xerscope.analysis.baseline_resolution import (
+    IN_EXPORT,
+    LOADED_UPDATE,
+    SAME_GENERATION,
+    Export,
+    Resolution,
+    Version,
+    resolutions,
+    versions_of_the_same_date,
+)
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot, load_snapshot
 from xerscope.xer.parser import XerError
@@ -121,16 +130,67 @@ def export_of(
 
 RESOLUTION_COLUMNS = [
     "file", "data_date", "proj_id", "sum_base_proj_id", "found_by", "baseline", "version_before", "version_after",
-    "note",
+    "note", "version_same_date", "its_baseline", "listed_as_applied",
 ]  # fmt: skip
 
 
-def resolution_table(store: SnapshotStore, export: Export | None) -> pd.DataFrame:
+def _date_added(update: Snapshot) -> str:
+    """Return the date the project of an update was added to the database (PROJECT.add_date), blank when unknown."""
+    added = update.file_projects.set_index("proj_id").loc[update.project_id]["add_date"]
+    return added if isinstance(added, str) else ""
+
+
+def _listing_applied(store: SnapshotStore, found: Resolution, listings: dict) -> tuple[str, int] | None:
+    """Return the status day and the number of activities of the baseline found for an update.
+
+    None when none is applied, or when it is the baseline of the update's own file.
+    """
+    if found.found_by in (IN_EXPORT, SAME_GENERATION):
+        return listings[found.baseline_id]
+    if found.found_by == LOADED_UPDATE:
+        baseline = [update for update in store if update.project_id == found.baseline_id][-1]
+        if baseline.data_date is not None:
+            return f"{baseline.data_date:%Y-%m-%d}", len(baseline.activities)
+    return None
+
+
+def _same_date_columns(store: SnapshotStore, update: Snapshot, found: Resolution, index: PmxmlIndex | None) -> dict:
+    """Return what the export holds of an update's own status date (``versions_of_the_same_date``).
+
+    The versions, the baseline each names, and whether those baselines are listed as the one applied
+    (status day and number of activities; nothing is read to tell).
+    """
+    if index is None or update.data_date is None:
+        return {"version_same_date": "", "its_baseline": "", "listed_as_applied": ""}
+    versions = [
+        Version(
+            project.object_id,
+            project.data_date,
+            project.date_added,
+            project.current_baseline_id if project.current_baseline_id in index.baseline_spans else "",
+        )
+        for project in index.projects
+    ]
+    kept = versions_of_the_same_date(f"{update.data_date:%Y-%m-%d %H:%M}", _date_added(update), versions)
+    listings = {baseline.object_id: (baseline.data_date[:10], baseline.activities) for baseline in index.baselines}
+    applied = _listing_applied(store, found, listings)
+    listed_as_applied = ""
+    if kept and applied is not None:
+        listed_as_applied = "yes" if all(listings[version.baseline_id] == applied for version in kept) else "no"
+    return {
+        "version_same_date": ", ".join(version.object_id for version in kept),
+        "its_baseline": ", ".join(version.baseline_id for version in kept),
+        "listed_as_applied": listed_as_applied,
+    }
+
+
+def resolution_table(store: SnapshotStore, export: Export | None, index: PmxmlIndex | None = None) -> pd.DataFrame:
     """Return one row per update, by status date: the baseline it would be measured against.
 
     ``found_by``: what finds it (``analysis.baseline_resolution``). ``baseline``: its id in the file
     or in the export, or the project of a loaded update. ``version_before`` / ``version_after``: the
-    projects of the export created around the update's, when they were looked at.
+    projects of the export created around the update's, when they were looked at. With the ``index``
+    of the export, the versions of the update's own status date (``_same_date_columns``).
     """
     rows = [
         {
@@ -143,6 +203,7 @@ def resolution_table(store: SnapshotStore, export: Export | None) -> pd.DataFram
             "version_before": found.version_before,
             "version_after": found.version_after,
             "note": found.note,
+            **_same_date_columns(store, update, found, index),
         }
         for update, found in zip(store, resolutions(store, export), strict=True)
     ]
