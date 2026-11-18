@@ -487,9 +487,7 @@ def duration(
         }[(field, unit)]
         measured = population[column]
     flagged = population[as_flag(COMPARE[op](measured, value))]
-    return RuleOutput(
-        flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel
-    )
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
 
 # --- progress --------------------------------------------------------------------------
