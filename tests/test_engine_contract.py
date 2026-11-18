@@ -24,7 +24,7 @@ import re
 import pytest
 from rulekit import STANDARDS, codes, run
 from test_cpm_properties import random_network
-from xerkit import CONSTRAINT_TYPES, hours, snap, todo, xer_text
+from xerkit import CONSTRAINT_TYPES, active, done, hours, snap, todo, xer_text
 
 from xerscope.analysis.cpm import MAX_HOURS, CycleError, ScheduleError, critical_path_test, schedule
 from xerscope.xer import XerError, build_snapshot, parse_text
@@ -132,6 +132,63 @@ def test_a_damaged_network_is_scheduled_or_refused_by_name(seed, damage):
         return
     assert damage not in ("loop", "self link"), (seed, damage, "a logic loop was scheduled")
     assert len(result.frame) and result.frame["ef"].notna().all(), (seed, damage, "an activity without a date")
+
+
+PROGRESS_OPTIONS = {
+    "retained logic": {},
+    "progress override": {"sched_retained_logic": "N", "sched_progress_override": "Y"},
+    "actual dates": {"sched_retained_logic": "N", "sched_progress_override": "N"},
+}
+WITHOUT_ACTUAL_DATES = {
+    "finished without actual start": done("X", act_start_date=""),
+    "finished without actual finish": done("X", act_end_date=""),
+    "finished without actual dates": done("X", act_start_date="", act_end_date=""),
+    "under way without actual start": active("X", act_start_date=""),
+}
+
+
+def _assert_scheduled_or_refused_by_name(snapshot, case: tuple) -> None:
+    """The contract of this file on one snapshot: every activity dated, or a refusal that names activities."""
+    try:
+        result = schedule(snapshot)
+    except ScheduleError as refused:
+        assert refused.members, (case, "refused without naming an activity")
+        return
+    assert result.frame[["es", "ef"]].notna().all().all(), (case, "an activity without a date")
+
+
+@pytest.mark.parametrize("is_predecessor", [True, False])
+@pytest.mark.parametrize("lag_hr", [0, 8])
+@pytest.mark.parametrize("link_type", LINK_TYPES)
+@pytest.mark.parametrize("damage", WITHOUT_ACTUAL_DATES)
+@pytest.mark.parametrize("progress", PROGRESS_OPTIONS)
+def test_an_activity_without_its_actual_dates_is_scheduled_or_refused_by_name(
+    progress, damage, link_type, lag_hr, is_predecessor
+):
+    """A status without the actual dates P6 writes with it, under each progress option: the random
+    networks above run under Retained Logic only, where a finished activity is not read through its
+    remaining start."""
+    link = ("X", "B", link_type, lag_hr) if is_predecessor else ("B", "X", link_type, lag_hr)
+    tasks = [dict(WITHOUT_ACTUAL_DATES[damage]), todo("B", **hours(8))]
+    snapshot = snap(tasks, [link], sched=PROGRESS_OPTIONS[progress])
+    _assert_scheduled_or_refused_by_name(snapshot, (progress, damage, link))
+
+
+@pytest.mark.parametrize("lag_hr", [0, 8])
+@pytest.mark.parametrize("link_type", LINK_TYPES)
+@pytest.mark.parametrize("damage", WITHOUT_ACTUAL_DATES)
+@pytest.mark.parametrize("progress", PROGRESS_OPTIONS)
+def test_a_level_of_effort_is_dated_whatever_actual_date_is_missing(progress, damage, link_type, lag_hr):
+    """The level of effort itself without its actual dates, then tied on each side to an activity
+    without them: its dates are read from the dates of what it is tied to."""
+    level_of_effort = dict(WITHOUT_ACTUAL_DATES[damage], task_code="L", task_type="TT_LOE")
+    tasks = [todo("A", **hours(8)), level_of_effort, todo("B", **hours(8))]
+    snapshot = snap(tasks, [("A", "L", "SS", 0), ("L", "B", "FF", 0)], sched=PROGRESS_OPTIONS[progress])
+    _assert_scheduled_or_refused_by_name(snapshot, (progress, damage, "the level of effort itself"))
+    for link in (("X", "L", link_type, lag_hr), ("L", "X", link_type, lag_hr)):
+        tasks = [dict(WITHOUT_ACTUAL_DATES[damage]), todo("L", task_type="TT_LOE"), todo("B", **hours(8))]
+        snapshot = snap(tasks, [link, ("L", "B", "FF", 0)], sched=PROGRESS_OPTIONS[progress])
+        _assert_scheduled_or_refused_by_name(snapshot, (progress, damage, link))
 
 
 @pytest.mark.parametrize("delay_hr", [MAX_HOURS + 1, 1e30, float("inf"), float("-inf"), float("nan"), -MAX_HOURS - 1])
