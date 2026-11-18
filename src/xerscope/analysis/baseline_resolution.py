@@ -65,6 +65,37 @@ class Resolution:
         return self.found_by in (IN_FILE, IN_EXPORT)
 
 
+@dataclass(frozen=True)
+class Version:
+    """A project of the export, as ``versions_of_the_same_date`` reads it.
+
+    A date is written as the XER writes one ("2026-03-02 08:00"), blank when the export does not give it.
+    """
+
+    object_id: str
+    status_date: str
+    date_added: str
+    baseline_id: str  # its Project Baseline when the export holds it, blank otherwise
+
+
+def versions_of_the_same_date(status_date: str, project_added: str, versions: Iterable[Version]) -> list[Version]:
+    """Return the versions of the export that can be copies of an update's project made at its status date.
+
+    Where the planner keeps a copy of the project for each period, the copy carries a copy of the
+    baseline then in force (Oracle, "Copy Project Options dialog box", Baselines). Kept: a version of
+    the same status day, added to the database (DateAdded) once the update's project was
+    (PROJECT.add_date; a version added before it cannot be a copy of it), whose Project Baseline the
+    export holds. Shown by the Debug page; ``resolution`` does not read it.
+    """
+    if not status_date or not project_added:
+        return []
+    return [
+        version
+        for version in versions
+        if version.baseline_id and version.status_date[:10] == status_date[:10] and version.date_added >= project_added
+    ]
+
+
 def resolution(
     pointer: str, project_id: str, in_file: bool, loaded_project_ids: frozenset[str], export: Export | None
 ) -> Resolution:

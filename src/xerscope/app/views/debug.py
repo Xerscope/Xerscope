@@ -157,12 +157,16 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         "an order of creation observed in P6 databases, which Oracle does not document). Only the first two "
         "are the baseline P6 measured against. With 'Baseline in each file' the pages measure each update "
         "against the baseline found, the two others announced as probable; with another choice they use the "
-        "baseline of the first table of this block."
+        "baseline of the first table of this block. Shown beside it, not applied: the versions of the export "
+        "that have the status date of the update, were added to the database once its project was and name a "
+        "baseline the export holds (version_same_date) - a copy of the project made at that date carries a copy "
+        "of its baseline -, that baseline (its_baseline), and whether it is listed with the status date and the "
+        "number of tasks of the one applied (listed_as_applied)."
     )
     table(
         memo(
             ("debug_baseline_resolution",),
-            lambda: xml_baselines.resolution_table(store, export_contents()),
+            lambda: xml_baselines.resolution_table(store, export_contents(), None if export is None else export[2]),
         ),
         key="debug_05_baseline_resolution",
     )

@@ -236,6 +236,68 @@ def test_the_projects_of_the_export_are_listed_with_their_status_date_and_the_up
     ]
 
 
+def test_the_versions_of_the_status_date_of_each_update_are_shown_beside_the_baseline_found():
+    """Five versions, each added the day after its status date. Baselines 101 and 201 are copies of one
+    baseline (A1, 40 h); 401 and 501 of another (A1 and A2); 601, of 2 March, holds A1 alone.
+
+    a.xer (project 150, added 27 February, of 2 March): version 100 is of its date; its baseline is the one
+    applied. b.xer is version 200 itself. c.xer is version 400 itself but names 201: the baseline of its
+    version, 401, is listed otherwise. e.xer (of 23 March) comes from a project added on the 25th, after
+    version 500: no version can be a copy of it. d.xer (of 30 March) names the project of a.xer: version
+    600 names a baseline listed with the status date and the single task of a.xer."""
+    from pmxmlkit import NAMESPACE, _fields, activity, baseline, calendar
+
+    from xerscope.app.xml_baselines import export_of, resolution_table
+    from xerscope.store import SnapshotStore
+    from xerscope.xer.pmxml import index_pmxml
+
+    versions = {  # project: (status day, day added, baseline, tasks of the baseline, status date of the baseline)
+        "100": ("02", "03", "101", ["A1"], "2026-02-23"),
+        "200": ("09", "10", "201", ["A1"], "2026-02-23"),
+        "400": ("16", "17", "401", ["A1", "A2"], "2026-02-23"),
+        "500": ("23", "24", "501", ["A1", "A2"], "2026-02-23"),
+        "600": ("30", "31", "601", ["A1"], "2026-03-02"),
+    }
+    body = calendar()
+    for project_id, (day, added, baseline_id, codes, baseline_date) in versions.items():
+        fields = {
+            "ObjectId": project_id,
+            "DataDate": f"2026-03-{day}T08:00:00",
+            "DateAdded": f"2026-03-{added}T07:30:00",
+            "CurrentBaselineProjectObjectId": baseline_id,
+        }
+        planned = [
+            activity(code, f"{baseline_id}{number}", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
+            for number, code in enumerate(codes)
+        ]
+        body += f"<Project>{_fields(fields)}</Project>"
+        body += baseline(baseline_id, f"V{project_id} - B1", planned, data_date=f"{baseline_date}T08:00:00")
+    export = f'<?xml version="1.0"?><APIBusinessObjects xmlns="{NAMESPACE}">{body}</APIBusinessObjects>'.encode()
+    store = SnapshotStore(
+        [
+            _update("a.xer", "150", "2026-03-02 08:00", "151", "2026-02-27 16:00", "Y"),
+            _update("b.xer", "200", "2026-03-09 08:00", "201", "2026-03-10 07:30", "Y"),
+            _update("c.xer", "400", "2026-03-16 08:00", "201", "2026-03-17 07:30", "Y"),
+            _update("e.xer", "450", "2026-03-23 08:00", "451", "2026-03-25 16:00", "Y"),
+            _update("d.xer", "550", "2026-03-30 08:00", "150", "2026-03-27 16:00", "Y"),
+        ]
+    )
+    index = index_pmxml(export, "export.xml")
+
+    table = resolution_table(store, export_of("export.xml", export, index), index)
+
+    columns = ["file", "found_by", "baseline", "version_same_date", "its_baseline", "listed_as_applied"]
+    assert table[columns].values.tolist() == [
+        ["a.xer", "in the export, the same baseline before and after", "101", "100", "101", "yes"],
+        ["b.xer", "in the export, by id", "201", "200", "201", "yes"],
+        ["c.xer", "in the export, by id", "201", "400", "401", "no"],
+        ["e.xer", "in the export, the same baseline before and after", "401", "", "", ""],
+        ["d.xer", "a loaded update, by id", "150", "600", "601", "yes"],
+    ]
+    without_index = resolution_table(store, export_of("export.xml", export, index))
+    assert without_index[columns[3:]].values.tolist() == [["", "", ""]] * 5
+
+
 def _series_and_export(folder) -> None:
     """Four updates of 40 h on A1, none with its baseline in its file, next to an export of versions 100,
     200 and 400 of the project: baselines 101 and 201 are copies of one baseline (40 h), 401 is another (48 h).
