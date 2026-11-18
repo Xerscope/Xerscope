@@ -665,6 +665,12 @@ def xer_tables_table(snapshot: Snapshot) -> pd.DataFrame:
     )
 
 
+def udf_fields_table(snapshot: Snapshot, anonymous: bool = False) -> pd.DataFrame:
+    """Block 09: the user defined fields holding a value in the project read (``Snapshot.udf_fields``).
+    ``anonymous``: without the label, a text of the file."""
+    return snapshot.udf_fields.drop(columns="label") if anonymous else snapshot.udf_fields
+
+
 LABOR_KINDS = ("RT_Labor", "role", "")  # as xer.model._labor_hours
 
 
@@ -821,6 +827,7 @@ def diagnostic_frames(
         "08_ev_settings": ev_settings,
         "08_etc_techniques": etc_technique_counts(ev_settings),
         "09_xer_tables": xer_tables_table(snapshot),
+        "09_udf_fields": udf_fields_table(snapshot, anonymous),
         "09_pv_labor_check": pv_totals,
         "09_pv_labor_by_status": pv_by_status,
         "09_assignment_dates": assignment_dates_table(snapshot),

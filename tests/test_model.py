@@ -621,3 +621,54 @@ def test_blank_task_units_without_assignments_are_zero():
         "A": {"labor_budget_hr": 40, "labor_actual_hr": 0},
         "B": {"labor_budget_hr": 0, "labor_actual_hr": 5},
     }
+
+
+def _with_tables(text: str, extra: str) -> str:
+    """``text`` with more %T tables before its end line (nothing after %E is read)."""
+    return text.replace("%E", extra + "%E")
+
+
+UDF_TYPES = (
+    "%T\tUDFTYPE\n%F\tudf_type_id\ttable_name\tudf_type_label\tlogical_data_type\n"
+    "%R\t7\tTASK\tLocation\tFT_TEXT\n%R\t8\tTASK\tCrew size\tFT_INT\n%R\t9\tTASKRSRC\tSupplier\tFT_TEXT\n"
+)
+
+
+def test_user_defined_fields_are_listed_with_their_values_and_the_activities_that_carry_one():
+    """Three activities A, B, C (task_id 1, 2, 3). Location (text, on TASK): "Zone 1" on A and B, "Zone 2"
+    on C and on an activity the file no longer holds (id 99), and one row of another project, left out: 4
+    values, 2 different, 3 activities. Crew size (integer, on TASK): 4 on A, the row written twice: 2 values,
+    1 different, 1 activity. Supplier (text, on TASKRSRC): one row whose object id is 1, an assignment's
+    though it reads like A's: 1 value, 1 different, no activity."""
+    values = (
+        "%T\tUDFVALUE\n%F\tudf_type_id\tfk_id\tproj_id\tudf_date\tudf_number\tudf_text\tudf_code_id\n"
+        "%R\t7\t1\t1\t\t\tZone 1\t\n%R\t7\t2\t1\t\t\tZone 1\t\n%R\t7\t3\t1\t\t\tZone 2\t\n"
+        "%R\t7\t99\t1\t\t\tZone 2\t\n%R\t7\t1\t2\t\t\tZone 9\t\n"
+        "%R\t8\t1\t1\t\t4\t\t\n%R\t8\t1\t1\t\t4\t\t\n%R\t9\t1\t1\t\t\tACME\t\n"
+    )
+    text = _with_tables(xer_text([todo("A"), todo("B"), todo("C")]), UDF_TYPES + values)
+    fields = build_snapshot(parse_text(text, source="test.xer")).udf_fields
+    assert fields.columns.tolist() == [
+        "udf_type_id", "label", "table_name", "data_type", "values", "distinct_values", "tasks"
+    ]  # fmt: skip
+    assert fields.to_numpy().tolist() == [
+        ["7", "Location", "TASK", "FT_TEXT", 4, 2, 3],
+        ["8", "Crew size", "TASK", "FT_INT", 2, 1, 1],
+        ["9", "Supplier", "TASKRSRC", "FT_TEXT", 1, 1, 0],
+    ]
+
+
+def test_a_file_without_user_defined_field_values_lists_none():
+    """No UDFVALUE table, then UDFTYPE alone (fields defined, none filled): nothing to list either way."""
+    assert snap([todo("A")]).udf_fields.empty
+    text = _with_tables(xer_text([todo("A")]), UDF_TYPES)
+    assert build_snapshot(parse_text(text, source="test.xer")).udf_fields.empty
+
+
+def test_a_user_defined_field_value_whose_field_is_not_in_the_file_is_still_counted():
+    """UDFVALUE without UDFTYPE (a truncated export): the row is counted, its label, table and type blank,
+    and no activity is claimed since the table of its objects is unknown."""
+    values = "%T\tUDFVALUE\n%F\tudf_type_id\tfk_id\tproj_id\tudf_text\n%R\t7\t1\t1\tZone 1\n"
+    text = _with_tables(xer_text([todo("A")]), values)
+    fields = build_snapshot(parse_text(text, source="test.xer")).udf_fields
+    assert fields.to_numpy().tolist() == [["7", "", "", "", 1, 1, 0]]
