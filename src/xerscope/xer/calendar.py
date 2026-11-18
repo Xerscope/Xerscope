@@ -328,6 +328,18 @@ class WorkCalendar:
 _Block = tuple[np.ndarray, np.ndarray, np.ndarray]  # days of the window, start and end minute of a period on each
 
 
+def union_of(calendars: list[WorkCalendar], hours_per_day: float) -> WorkCalendar:
+    """The working time of at least one of ``calendars``: on each weekday and each exception date,
+    their periods merged. ``hours_per_day`` is the one durations are read in."""
+    week = tuple(_merge(period for calendar in calendars for period in calendar.week[weekday]) for weekday in range(7))
+    exception_dates = {day for calendar in calendars for day in calendar.exceptions}
+    exceptions = {
+        day: _merge(period for calendar in calendars for period in calendar.periods(day)) for day in exception_dates
+    }
+    name = "union of " + ", ".join(calendar.name for calendar in calendars)
+    return WorkCalendar("union", name, hours_per_day, week, exceptions)
+
+
 def _exception_blocks(dated: dict[int, Intervals]) -> list[_Block]:
     """One block per working period of each exception day (a day off has none)."""
     return [

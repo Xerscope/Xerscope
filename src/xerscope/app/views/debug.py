@@ -233,9 +233,10 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         table(frames["09_pv_labor_by_status"], key="debug_09_pv_labor_by_status")
         st.caption(
             "Earned Schedule (Lipke): the instant of the plan where PV = EV, on the tasks of the update that have "
-            "baseline hours and both EV dates (pv_hr is the update's PV). Working days of the project calendar "
-            "from plan_start, the first EV date: PD to plan_finish, AT to the status date, ES to that instant. "
-            "sv_t_wd = ES - AT (negative = behind), spi_t = ES / AT. ev_left_out_hr: earned on tasks without "
+            "baseline hours and both EV dates (pv_hr is the update's PV). Plan days from plan_start, the first EV "
+            "date: PD to plan_finish, AT to the status date, ES to that instant. Plan time is when at least one "
+            "of these tasks' baseline calendars works; a plan day is the project calendar's hours per day. "
+            "sv_t_plan_d = ES - AT (negative = behind), spi_t = ES / AT. ev_left_out_hr: earned on tasks without "
             "both EV dates, not in ev_hr. Where the plan asks for no hours, the status date is the ES."
         )
         schedule = memo(
