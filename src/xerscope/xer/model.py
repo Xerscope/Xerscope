@@ -472,6 +472,9 @@ def file_baseline(file_projects: pd.DataFrame, project_id: str) -> FileBaseline:
 
 CODE_VALUE_COLUMNS = ["code_type", "code_id", "parent_id", "value", "name", "seq", "type_name"]
 TASK_CODE_COLUMNS = ["task_code", "code_type", "code_id"]
+UDF_FIELD_COLUMNS = ["udf_type_id", "label", "table_name", "data_type", "values", "distinct_values", "tasks"]
+UDF_VALUE_COLUMNS = ["udf_text", "udf_number", "udf_date", "udf_code_id"]  # a value sits in one of them
+UDF_TYPE_COLUMNS = {"label": "udf_type_label", "table_name": "table_name", "data_type": "logical_data_type"}
 
 
 @dataclass(frozen=True)
@@ -512,6 +515,8 @@ class Snapshot:
     # value each activity is assigned (_activity_codes)
     code_values: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=CODE_VALUE_COLUMNS))
     task_codes: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=TASK_CODE_COLUMNS))
+    # user defined fields holding a value in the project read, one row per field (_udf_fields)
+    udf_fields: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=UDF_FIELD_COLUMNS))
     file_projects: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=FILE_PROJECT_COLUMNS))
     xer_tables: dict[str, tuple[int, int]] = field(default_factory=dict)  # every %T table: (rows, columns)
 
@@ -645,6 +650,35 @@ def _activity_codes(raw: RawXer, tasks: pd.DataFrame) -> tuple[pd.DataFrame, pd.
     )
     code_values = code_values.drop_duplicates("code_id").sort_values(["code_type", "seq", "value"])
     return code_values.reset_index(drop=True), task_codes
+
+
+def _udf_fields(raw: RawXer, tasks: pd.DataFrame, project_id: str) -> pd.DataFrame:
+    """User defined fields holding a value in the project read, one row per field. Oracle, "P6 EPPM XER
+    Import/Export Data Map Guide (Project)", v23, p. 47: UDFTYPE (``udf_type_label`` the Title,
+    ``table_name`` the table of the objects carrying the field, ``logical_data_type``) and UDFVALUE
+    (``udf_type_id``, ``fk_id`` the object, ``proj_id``, the value in one of ``UDF_VALUE_COLUMNS``).
+
+    ``values``: UDFVALUE rows of the project; ``distinct_values``: the different values among them;
+    ``tasks``: activities of the project carrying one, for a field of the TASK table only (the ids of
+    two tables can be equal). A field UDFTYPE does not hold keeps a blank label, table and type.
+    """
+    types, values = raw.table("UDFTYPE"), raw.table("UDFVALUE")
+    if values.empty or not {"udf_type_id", "fk_id"} <= set(values.columns):
+        return pd.DataFrame(columns=UDF_FIELD_COLUMNS)
+    if "proj_id" in values:
+        values = values[values["proj_id"] == project_id]
+    value_columns = [column for column in UDF_VALUE_COLUMNS if column in values]
+    different = values.drop_duplicates(["udf_type_id", *value_columns])
+    on_activities = values[values["fk_id"].isin(tasks["task_id"])]
+    fields = pd.DataFrame({"values": values.groupby("udf_type_id").size()})
+    fields["distinct_values"] = different.groupby("udf_type_id").size()
+    fields["tasks"] = on_activities.groupby("udf_type_id")["fk_id"].nunique()
+    has_id = "udf_type_id" in types
+    described = types.drop_duplicates("udf_type_id").set_index("udf_type_id") if has_id else pd.DataFrame()
+    for column, source in UDF_TYPE_COLUMNS.items():
+        fields[column] = described[source].reindex(fields.index).fillna("") if source in described else ""
+    fields["tasks"] = fields["tasks"].where(fields["table_name"] == "TASK", 0).fillna(0).astype(int)
+    return fields.rename_axis("udf_type_id").reset_index()[UDF_FIELD_COLUMNS]
 
 
 CODE_TYPE_SCOPES = {"AS_Global": "global", "AS_EPS": "EPS", "AS_Project": "project"}
@@ -1596,6 +1630,7 @@ def build_snapshot(
         expenses=expenses.reset_index(drop=True),
         code_values=code_values,
         task_codes=task_codes,
+        udf_fields=_udf_fields(raw, tasks, inputs.project_id),
         file_projects=_file_projects(projects, all_tasks),
         xer_tables={name: (len(table), len(table.columns)) for name, table in raw.tables.items()},
     )

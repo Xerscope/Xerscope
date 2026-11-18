@@ -189,6 +189,26 @@ def test_xer_tables_lists_every_table_of_the_file_with_rows_and_columns():
     )
 
 
+def test_the_anonymous_diagnostic_lists_user_defined_fields_without_their_label():
+    """One text field of TASK, "Location", set on A: the page's table carries the label, the anonymous
+    download keeps the field's id, table, type and counts, and writes the label nowhere."""
+    from xerkit import xer_text
+
+    from xerscope.xer import build_snapshot, parse_text
+
+    tables = (
+        "%T\tUDFTYPE\n%F\tudf_type_id\ttable_name\tudf_type_label\tlogical_data_type\n%R\t7\tTASK\tLocation\tFT_TEXT\n"
+        "%T\tUDFVALUE\n%F\tudf_type_id\tfk_id\tproj_id\tudf_text\n%R\t7\t1\t1\tZone 1\n"
+    )
+    s = build_snapshot(parse_text(xer_text([todo("A")]).replace("%E\n", tables + "%E\n"), source="test.xer"))
+    p6 = builtin_standards()["P6"]
+    shown = diagnostic_frames(s, None, p6)["09_udf_fields"]
+    assert shown.to_numpy().tolist() == [["7", "Location", "TASK", "FT_TEXT", 1, 1, 1]]
+    anonymous = diagnostic_frames(s, None, p6, anonymous=True)["09_udf_fields"]
+    assert anonymous.to_numpy().tolist() == [["7", "TASK", "FT_TEXT", 1, 1, 1]]
+    assert "label" not in anonymous.columns
+
+
 def test_pv_labor_check_by_assignment_against_by_activity():
     """Data date Wednesday 08:00 (2 of 5 working days of the baseline week = 0.4).
     A, 160 h: 100 h Mon-Fri -> 100 x 0.4 = 40; 60 h Tue-Fri (8 of 32 h elapsed = 0.25) -> 15.
