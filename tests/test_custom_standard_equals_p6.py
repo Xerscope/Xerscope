@@ -639,3 +639,247 @@ def test_the_generic_no_resource_rule_shows_the_same_funnel_as_p6_resource_cost(
 
     # (4) the steps carry the same labels (the source is not compared)
     assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("control", "numerator", "flagged"),
+    [
+        ("P6-05", 1, [("A", "C")]),
+        ("P6-07", 4, [("B", "C"), ("B", "E"), ("C", "E")]),
+        ("P6-08", 4, [("A", "B"), ("A", "C"), ("A", "D2"), ("B", "C")]),
+        ("P6-09", 1, [("C", "E")]),
+    ],
+)
+def test_the_generic_link_rules_show_the_same_funnel_as_p6_lags_and_relationship_types(control, numerator, flagged):
+    """P6-05 / EQ-05 (lag > 352 h), P6-07 / EQ-07 (FS share), P6-08 / EQ-08 (lag > 0) and P6-09 / EQ-09 (lag < 0):
+    the same population steps, on 9 links.
+
+    Source: docs/formulas.md section 2.1, which cites the Oracle help for each line: P6-05 is 46288, P6-07 is
+    46287, P6-08 is 46289, P6-09 is 46290: "links between two actual-finished tasks removed". The population is
+    the links whose predecessor and successor are not both completed; one task completed on either end stays in.
+    Thresholds: strict ``>`` 352 h, strict ``>`` 0 h, strict ``<`` 0 h; P6-07 counts the FS links of the
+    population (listed: the others).
+
+    | link   | type | lag (h) | population | P6-05 (> 352) | P6-07 | P6-08 (> 0) | P6-09 (< 0) |
+    |--------|------|---------|------------|---------------|-------|-------------|-------------|
+    | D1->D2 | FS   | 400     | removed    | removed       | -     | removed     | removed     |
+    | D1->D3 | SS   | -8      | removed    | removed       | -     | removed     | removed     |
+    | D1->A  | FS   | 0       | in         | no            | FS    | no          | no          |
+    | A->B   | FS   | 352     | in         | no (limit)    | FS    | yes         | no          |
+    | A->C   | FS   | 353     | in         | yes           | FS    | yes         | no          |
+    | B->C   | SS   | 351     | in         | no            | other | yes         | no          |
+    | B->E   | FF   | 0       | in         | no            | other | no          | no          |
+    | C->E   | SF   | -1      | in         | no            | other | no          | yes         |
+    | A->D2  | FS   | 8       | in         | no            | FS    | yes         | no          |
+
+    D1, D2 and D3 are completed; A, B, C and E are not. A->D2 has an open predecessor and a completed
+    successor, so it stays in.
+
+    Hand count, for the four checks: start 9 links; both ends complete removes D1->D2 and D1->D3, 7 left.
+    Denominator 7. Numerators: P6-05 1 (A->C); P6-07 4 FS of 7 (D1->A, A->B, A->C, A->D2); P6-08 4 (A->B, A->C,
+    B->C, A->D2); P6-09 1 (C->E). D1->D2 (400 h) and D1->D3 (-8 h) would be counted by P6-05 / P6-08 and by
+    P6-09, and D1->D2 is an FS, so a population that keeps them changes every numerator or denominator.
+
+    The first step of the P6 side, "into a task" (source "model", docs/formulas.md 1.1: a link counts when its
+    successor is a task of the file), removes nothing here and leaves 9; its place and label are not in the
+    Oracle text above, they were read from the P6 check's own funnel, not worked out by hand.
+    """
+    tasks = [done("D1"), done("D2"), done("D3"), todo("A"), todo("B"), todo("C"), todo("E")]
+    preds = [
+        ("D1", "D2", "FS", 400),
+        ("D1", "D3", "SS", -8),
+        ("D1", "A", "FS", 0),
+        ("A", "B", "FS", 352),
+        ("A", "C", "FS", 353),
+        ("B", "C", "SS", 351),
+        ("B", "E", "FF", 0),
+        ("C", "E", "SF", -1),
+        ("A", "D2", "FS", 8),
+    ]
+    context = AnalysisContext(snap(tasks, preds))
+    p6 = run_metric(P6[control], context)
+    generic = run_metric(CUSTOM[EQUIVALENT[control]], context)
+
+    # (1) the counts are the hand count, on both sides
+    assert (p6.numerator, p6.denominator) == (numerator, 7)
+    assert (generic.numerator, generic.denominator) == (numerator, 7)
+    assert links(p6) == flagged
+    assert links(generic) == flagged
+
+    # (2) both sides show a funnel
+    assert p6.funnel is not None, f"{control}: the P6 check shows no funnel"
+    assert generic.funnel is not None, f"{EQUIVALENT[control]}: the generic link rule shows no funnel (None)"
+
+    # (3) start, then per step the links it removed (sorted pairs) and the links left
+    hand_count = (9, [([], 9), ([("D1", "D2"), ("D1", "D3")], 7)])
+
+    def read(result):
+        steps = [
+            (sorted(zip(step.removed["pred_code"], step.removed["succ_code"], strict=True)), step.left)
+            for step in result.funnel.steps
+        ]
+        return result.funnel.start, steps
+
+    assert read(p6) == hand_count
+    assert read(generic) == hand_count
+
+    # (4) the steps carry the same labels (the source is not compared)
+    assert [step.label for step in generic.funnel.steps] == [step.label for step in p6.funnel.steps]
+
+
+# the first two steps of every link funnel in the test below, then the steps of the parameters
+INTO_A_TASK = ("into a task", [], 7)
+SUCCESSOR_NOT_COMPLETE = ("successor not complete", [("A", "DONE")], 6)
+SUCCESSOR_NOT_MILESTONE = "successor not milestone"
+SUCCESSOR_NOT_LOE = "successor not level of effort"
+NO_LOE_END = "no level-of-effort end"
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("params", "later_steps", "lag", "fs"),
+    [
+        pytest.param(
+            "exclude_loe = false\nexclude = []",
+            [],
+            (5, 6, [("A", "B"), ("A", "LOE"), ("A", "MS"), ("LOE", "B"), ("MS", "C")]),
+            (3, 6, [("A", "LOE"), ("B", "C"), ("MS", "C")]),
+            id="no-parameter",
+        ),
+        pytest.param(
+            'exclude_loe = false\nexclude = ["milestones"]',
+            [(SUCCESSOR_NOT_MILESTONE, [("A", "MS")], 5)],
+            (4, 5, [("A", "B"), ("A", "LOE"), ("LOE", "B"), ("MS", "C")]),
+            (2, 5, [("A", "LOE"), ("B", "C"), ("MS", "C")]),
+            id="exclude-milestones",
+        ),
+        pytest.param(
+            'exclude_loe = false\nexclude = ["loe"]',
+            [(SUCCESSOR_NOT_LOE, [("A", "LOE")], 5)],
+            (4, 5, [("A", "B"), ("A", "MS"), ("LOE", "B"), ("MS", "C")]),
+            (3, 5, [("B", "C"), ("MS", "C")]),
+            id="exclude-loe-key",
+        ),
+        pytest.param(
+            'exclude_loe = false\nexclude = ["loe", "milestones"]',
+            [(SUCCESSOR_NOT_LOE, [("A", "LOE")], 5), (SUCCESSOR_NOT_MILESTONE, [("A", "MS")], 4)],
+            (3, 4, [("A", "B"), ("LOE", "B"), ("MS", "C")]),
+            (2, 4, [("B", "C"), ("MS", "C")]),
+            id="exclude-in-the-order-given",
+        ),
+        pytest.param(
+            "exclude_loe = true\nexclude = []",
+            [(NO_LOE_END, [("A", "LOE"), ("LOE", "B")], 4)],
+            (3, 4, [("A", "B"), ("A", "MS"), ("MS", "C")]),
+            (2, 4, [("B", "C"), ("MS", "C")]),
+            id="exclude_loe",
+        ),
+        pytest.param(
+            'exclude_loe = true\nexclude = ["milestones", "loe"]',
+            [
+                (SUCCESSOR_NOT_MILESTONE, [("A", "MS")], 5),
+                (SUCCESSOR_NOT_LOE, [("A", "LOE")], 4),
+                (NO_LOE_END, [("LOE", "B")], 3),
+            ],
+            (2, 3, [("A", "B"), ("MS", "C")]),
+            (1, 3, [("B", "C"), ("MS", "C")]),
+            id="exclude-then-exclude_loe",
+        ),
+    ],
+)
+def test_the_generic_link_rules_apply_exclude_and_exclude_loe_to_the_count_and_the_funnel(params, later_steps, lag, fs):
+    """Rules ``lag`` (lag > 0 h) and ``relationship_type`` (FS) with ``links = "succ_incomplete"``, run with
+    ``exclude`` and ``exclude_loe``: the counts and the funnel move with each parameter.
+
+    Source: DCMA 14-Point Assessment, PAM 200.1 section 4.0, as docs/standards.md and docs/formulas.md
+    (DCMA-02/03/04) give it: a link counts when its SUCCESSOR is a retained task; a predecessor that is
+    itself excluded does not take the link out (MS->C stays when milestones are excluded). The key names
+    and the "level of effort" test are docs/formulas.md section 1.2. ``exclude`` takes out the links whose
+    successor is an excluded task, one step per key; ``exclude_loe`` takes out every link with a level of
+    effort at either end (it is not a P6 or DCMA text: the contract of the parameter).
+
+    Six tasks: DONE (completed), LOE (level of effort), MS (start milestone), A, B, C (ordinary).
+
+    | link    | type | lag (h) | lag > 0 | FS  | taken out by                                 |
+    |---------|------|---------|---------|-----|----------------------------------------------|
+    | A->B    | FS   | 8       | yes     | yes | nothing                                      |
+    | A->MS   | FS   | 16      | yes     | yes | "milestones" (successor MS)                  |
+    | A->LOE  | SS   | 24      | yes     | no  | "loe" (successor LOE); exclude_loe           |
+    | LOE->B  | FS   | 40      | yes     | yes | exclude_loe only (predecessor LOE, B kept)   |
+    | MS->C   | SS   | 32      | yes     | no  | nothing (predecessor MS, successor C kept)   |
+    | B->C    | FF   | 0       | no      | no  | nothing                                      |
+    | A->DONE | FS   | 80      | yes     | yes | links = "succ_incomplete" (successor done)   |
+
+    Hand count. Start 7 links; "succ_incomplete" removes A->DONE, 6 left. Then, by parameter (lag counted / links,
+    FS counted / links; the ``relationship_type`` rule flags the links that are not FS):
+
+    - no parameter: 6 links; lag 5 (all but B->C); FS 3 (A->B, A->MS, LOE->B).
+    - "milestones": removes A->MS, 5 left; lag 4 (A->B, A->LOE, LOE->B, MS->C); FS 2 (A->B, LOE->B).
+    - "loe": removes A->LOE, 5 left; lag 4 (all but B->C); FS 3 (A->B, A->MS, LOE->B).
+    - ["loe", "milestones"]: removes A->LOE then A->MS, 4 left; lag 3 (A->B, LOE->B, MS->C); FS 2 (A->B, LOE->B).
+    - exclude_loe: removes A->LOE and LOE->B, 4 left; lag 3 (A->B, A->MS, MS->C); FS 2 (A->B, A->MS).
+    - ["milestones", "loe"] and exclude_loe: removes A->MS, A->LOE, LOE->B, 3 left; lag 2 (A->B, MS->C); FS 1 (A->B).
+
+    A rule that ignores ``exclude`` or ``exclude_loe`` gives the "no parameter" count (6 links) in the other rows.
+
+    Not in the sources above, read from the rule's own funnel, not worked out by hand: the first step "into a
+    task" (removes nothing here), the labels of the steps, and the place of the ``exclude_loe`` step after those of
+    ``exclude``.
+    """
+    tasks = [done("DONE"), todo("LOE", task_type="TT_LOE"), todo("MS", **SM), todo("A"), todo("B"), todo("C")]
+    preds = [
+        ("A", "B", "FS", 8),
+        ("A", "MS", "FS", 16),
+        ("A", "LOE", "SS", 24),
+        ("LOE", "B", "FS", 40),
+        ("MS", "C", "SS", 32),
+        ("B", "C", "FF", 0),
+        ("A", "DONE", "FS", 80),
+    ]
+    standard = loads_standard(
+        f"""
+[standard]
+id = "LINKS"
+name = "Link rules with exclude and exclude_loe"
+
+[[metric]]
+id = "LINKS-LAG"
+name = "Positive lags"
+rule = "lag"
+target = "< 5%"
+[metric.params]
+op = ">"
+value = 0
+unit = "hours"
+links = "succ_incomplete"
+{params}
+
+[[metric]]
+id = "LINKS-FS"
+name = "Relationship types"
+rule = "relationship_type"
+target = "> 90%"
+[metric.params]
+type = "FS"
+links = "succ_incomplete"
+{params}
+""",
+        "links-exclude.toml",
+    )
+    context = AnalysisContext(snap(tasks, preds))
+    hand_count = (7, [INTO_A_TASK, SUCCESSOR_NOT_COMPLETE, *later_steps])
+
+    def read(result):
+        steps = [
+            (step.label, sorted(zip(step.removed["pred_code"], step.removed["succ_code"], strict=True)), step.left)
+            for step in result.funnel.steps
+        ]
+        return result.funnel.start, steps
+
+    for metric_id, (numerator, denominator, flagged) in [("LINKS-LAG", lag), ("LINKS-FS", fs)]:
+        result = run_metric(standard[metric_id], context)
+        assert (result.numerator, result.denominator) == (numerator, denominator), metric_id
+        assert links(result) == flagged, metric_id
+        assert result.funnel is not None, f"{metric_id}: the rule shows no funnel"
+        assert read(result) == hand_count, metric_id

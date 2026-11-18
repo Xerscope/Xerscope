@@ -218,17 +218,11 @@ def activities_funnel(context: AnalysisContext, exclude: Names) -> Funnel:
     return funnel
 
 
-def link_population(
-    context: AnalysisContext, links: str, exclude_loe: bool = False, exclude: Names = ()
-) -> pd.DataFrame:
-    """Relationships into a scheduled task, with both names, narrowed by ``links`` (see LinkPop)."""
-    return link_funnel(context, links, exclude_loe, exclude).rows
-
-
 def link_funnel(
     context: AnalysisContext, links: str, exclude_loe: bool = False, exclude: Names = (), source: str = "model"
 ) -> Funnel:
-    """``link_population`` step by step; ``source`` is the text the ``links`` step follows."""
+    """Relationships into a scheduled task, with both names, narrowed by ``links`` (see LinkPop), step by
+    step; ``source`` is the text the ``links`` step follows."""
     snapshot = context.snapshot
     tasks = snapshot.activities.set_index("task_code")
     funnel = Funnel(snapshot.relationships)
@@ -396,10 +390,13 @@ def lag(
     Negative = lead (``op = "<"``, value 0); positive lag (``">"``, 0); long lag
     (``">"``, 352 hours). ``unit``: hours, or days on the lag calendar.
     """
-    relationships = link_population(context, links, exclude_loe, exclude)
+    funnel = link_funnel(context, links, exclude_loe, exclude)
+    relationships = funnel.rows
     column = {"hours": "lag_hr", "days": "lag_d"}[unit]
     flagged = lag_flagged(relationships, COMPARE[op], value, column)
-    return RuleOutput(flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships)
+    return RuleOutput(
+        flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
+    )
 
 
 @rule("relationship_type", "%", links=True)
@@ -415,8 +412,10 @@ def relationship_type(
 
     Share of relationships of ``type`` (value), listing the others.
     """
-    relationships = link_population(context, links, exclude_loe, exclude)
-    return share_of_type(relationships, type)
+    funnel = link_funnel(context, links, exclude_loe, exclude)
+    out = share_of_type(funnel.rows, type)
+    out.funnel = funnel
+    return out
 
 
 # --- constraints, float, duration ----------------------------------------------------------
