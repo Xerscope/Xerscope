@@ -29,6 +29,8 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Changed
 
+- Licence: from this change on the project is proprietary, all rights reserved (`LICENSE`,
+  `NOTICE`, `pyproject.toml`); the revisions published before it were under Apache-2.0.
 - `deploy/compose.yaml`: `:latest` stays the default for a first start, the documented
   setting for a NAS is a release tag with its digest (AUDIT-DEP-01).
 - `deploy/caddy/Dockerfile`: the two `caddy:2.11.8` base images are pinned by digest, as the
