@@ -532,6 +532,10 @@ def _window(store: SnapshotStore | None) -> None:
             clash = choice is not None and choice[0] == "upload" and bool(_same_names(choice[1]))
             if st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter", disabled=clash):
                 _apply_drafts()
+                if choice != st.session_state.get("files_source"):  # other files: their baseline is asked once read
+                    st.session_state.update({BASELINE_ASKED: False, BASELINE_SET: False})
+                elif store is not None:  # the Baseline section was shown
+                    st.session_state[BASELINE_SET] = True
                 st.session_state.update(files_source=choice, files_open=False)
                 st.rerun()
 
@@ -732,6 +736,7 @@ def sidebar_loader() -> None:
         sidebar.error(ui.md_text(error))  # the file's text: a table or column name
     if store is not None:
         _baseline_picker(store)
+        _ask_for_the_baseline()
     if st.session_state.get("files_open"):
         _window(store)
     if store is not None:
@@ -751,6 +756,13 @@ def sidebar_loader() -> None:
         )
 
 
+def _ask_for_the_baseline() -> None:
+    """Open the window on its Baseline section, once per choice of files, until Done sets the baseline."""
+    if not st.session_state.get(BASELINE_SET) and not st.session_state.get(BASELINE_ASKED):
+        st.session_state[BASELINE_ASKED] = True
+        _open_window("baseline")
+
+
 def _project_labels(snapshot: Snapshot) -> dict[str, str]:
     """The projects of ``snapshot``'s file that own activities, by proj_id, in file order: code, data
     date, activities and, for a baseline copy, the project it is the baseline of."""
@@ -766,6 +778,10 @@ def _project_labels(snapshot: Snapshot) -> dict[str, str]:
     return labels
 
 
+# A series just read waits for its baseline: the window opens once on its Baseline section
+# (BASELINE_ASKED), and nothing is computed against a baseline before Done there (BASELINE_SET).
+BASELINE_ASKED = "baseline_asked"
+BASELINE_SET = "baseline_set"
 BL_NONE = "None"
 BL_EACH = "Baseline in each file (P6 Project Baseline)"
 BL_PLANNED = "Planned dates in each file (target_*)"
@@ -1240,8 +1256,11 @@ def _baseline_picker(store: SnapshotStore) -> None:
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
     # the window's values, checked against this store: a choice that names a file no longer loaded
     # goes back to the default
-    if st.session_state.get("bl_folder_file") not in _folder_baseline_names():
-        st.session_state["bl_folder_file"] = ""  # none picked, or a file no longer in the folder
+    exports = _folder_baseline_names()
+    if st.session_state.get("bl_folder_file") not in ["", *exports]:
+        # never picked, or a file no longer in the folder: the folder's only export, unless the server
+        # names its own baseline file (XERSCOPE_BASELINE)
+        st.session_state["bl_folder_file"] = exports[0] if len(exports) == 1 and not env_path else ""
     options, default = _baseline_options(store, env_path)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default
@@ -1253,11 +1272,26 @@ def _baseline_picker(store: SnapshotStore) -> None:
         st.session_state["guid_link"] = False
     choice, basis = st.session_state["bl_choice"], st.session_state["ev_basis"]
     st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
+    st.session_state["fallback"], st.session_state["fallback_choice"] = None, BL_NONE
+    _baseline_line(line, choice)
+    if not st.session_state.get(BASELINE_SET):
+        st.session_state["baseline"] = None  # no file read for it, no warning: the pages wait (require_store)
+        return
     baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
     st.session_state["baseline"] = baseline
-    st.session_state["fallback"], st.session_state["fallback_choice"] = None, BL_NONE
     if baseline == BL_EACH:
         _fallback_picker(sidebar, store, basis)
+    if isinstance(baseline, Baseline):
+        _describe_baseline(sidebar, store, baseline)
+    if baseline == BL_EACH:
+        _file_baseline_warnings(sidebar, store)
+    _absent_baseline_help(sidebar, store)
+    _other_baseline_warning(sidebar, store, choice, baseline)
+    _renumbered_notice(sidebar, store)
+
+
+def _baseline_line(line, choice: str) -> None:
+    """The sidebar's Baseline line: the choice in force; it opens the window on its Baseline section."""
     line.button(
         f"Baseline · {_baseline_short(choice)}",
         key="baseline_button",
@@ -1268,13 +1302,6 @@ def _baseline_picker(store: SnapshotStore) -> None:
         on_click=_open_window,
         args=("baseline",),
     )
-    if isinstance(baseline, Baseline):
-        _describe_baseline(sidebar, store, baseline)
-    if baseline == BL_EACH:
-        _file_baseline_warnings(sidebar, store)
-    _absent_baseline_help(sidebar, store)
-    _other_baseline_warning(sidebar, store, choice, baseline)
-    _renumbered_notice(sidebar, store)
 
 
 def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
@@ -1561,6 +1588,16 @@ def require_store() -> SnapshotStore:
             icon=":material/hourglass_top:",
         )
         st.stop()
+    if store is not None and not st.session_state.get(BASELINE_SET):
+        title = _page_title()
+        if title:
+            st.title(title)
+        st.info(
+            f"{_files_count(store)} read. Choose the baseline in the window (the sidebar's Baseline line "
+            "opens it again), then Done: the pages are computed once, against it.",
+            icon=":material/rule:",
+        )
+        st.stop()
     if store is None:
         title = _page_title()
         if title:
@@ -1741,12 +1778,13 @@ class ScoreJob:
     def run(self) -> None:
         context = AnalysisContext(self.snapshot, self.store, self.baseline)
         for key, standard in self.standards.items():
-            if self.cancelled:
-                break
             try:
-                self.results[key] = run_standard(standard, context)
+                results = run_standard(standard, context, stopped=lambda: self.cancelled)
             except Exception as exc:  # noqa: BLE001 - shown as an error on the Overview, not lost
-                self.results[key] = str(exc)  # type: ignore[assignment]
+                results = str(exc)  # type: ignore[assignment]
+            if self.cancelled:
+                break  # computed for another data set or baseline: not kept
+            self.results[key] = results
         self.done = True
 
 

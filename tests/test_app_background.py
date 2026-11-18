@@ -51,6 +51,7 @@ def test_the_pages_wait_for_the_whole_series_then_draw_once(sample_dir, monkeypa
     assert at.session_state["_load_job"] is None and not at.get("progress")
     assert not any(i.value.startswith("Reading") for i in at.info)
     assert at.session_state["bl_choice"] == at.session_state["store"].labels[0]
+    files_done(at)  # the window opened on its Baseline section: the pages wait for Done
     # the parse cache keeps the files of this series only
     assert {key[0] for key in at.session_state["_parsed"]} == {p.name for p in sample_dir.glob("*.xer")}
     # the Overview then computes the four scores in a thread and fills the cards as they come
@@ -107,9 +108,9 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
     monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
     gate = threading.Semaphore(0)  # one permit per standard allowed to finish
 
-    def gated(standard, context):
+    def gated(standard, context, **options):
         gate.acquire()
-        return run_standard(standard, context)
+        return run_standard(standard, context, **options)
 
     monkeypatch.setattr(state, "run_standard", gated)
     real_score_job = state.score_job
@@ -128,6 +129,7 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
     monkeypatch.setattr(state, "score_job", score_job)
     at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
     _joined(at, "_load_job")
+    files_done(at.run())  # the window opened on its Baseline section once the series was read
     reruns = []
     real_rerun = st.rerun
 
@@ -136,7 +138,7 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
         real_rerun(*args, **kwargs)
 
     monkeypatch.setattr(st, "rerun", rerun)
-    filled = []
+    filled = [sum(value.endswith("%") for value, _ in _cards(at).values())]  # the run Done made: the first poll
     for _ in range(6):
         at.run()
         _ok(at)
@@ -172,3 +174,28 @@ def test_both_load_paths_give_the_same_errors_for_the_same_bad_files(sample_dir,
         "junk.xer: not an XER file (no ERMHDR header, no tables)",
     ]
     assert len(at.session_state["store"]) == 2
+
+
+def test_a_score_job_cancelled_during_a_standard_runs_none_of_its_other_checks(monkeypatch):
+    """Another baseline replaced the data set while a standard's checks run: the job stops after the check
+    under way, keeps no result of that standard and starts no other."""
+    from xerkit import snap
+
+    from xerscope.analysis import builtin_standards
+    from xerscope.app import state
+    from xerscope.store import SnapshotStore
+
+    snapshot = snap([{"task_code": "A1"}])
+    standards = {key: builtin_standards()[key] for key in ("P6", "DCMA")}
+    job = state.ScoreJob((), snapshot, SnapshotStore([snapshot]), None, standards)
+    checks_run = []
+
+    def run_metric(metric, context):
+        checks_run.append(metric)
+        job.cancelled = True  # replaced while this check runs
+
+    monkeypatch.setattr("xerscope.analysis.checks.run_metric", run_metric)
+    job.run()
+    assert len(checks_run) == 1
+    assert job.results == {}
+    assert job.done

@@ -4,6 +4,7 @@ Uses Streamlit's headless AppTest, so it runs the same on Linux, Windows and mac
 without a browser. It checks that pages run; test_app_parity.py checks that they show the analyses' numbers.
 """
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -31,7 +32,7 @@ import xerscope
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
-from xerscope.app.state import BL_FILE, BL_PLANNED, anonymizers_built
+from xerscope.app.state import BL_FILE, BL_PLANNED, _picked_folder_baseline, anonymizers_built
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.xer import build_snapshot
@@ -842,7 +843,9 @@ def test_locked_server_offers_the_p6_xml_files_of_its_folder_as_the_baseline_fil
     assert BL_FILE in baseline_box(at).options
     baseline_box(at).set_value(BL_FILE)
     assert baseline_box(at, "bl_folder_file").options == ["(none)", "export.xml"]
-    assert at.session_state["baseline"] is None  # nothing picked yet: no file is read
+    assert baseline_box(at, "bl_folder_file").value == "export.xml"  # the folder's only export, by default
+    baseline_box(at, "bl_folder_file").set_value("")
+    assert at.session_state["baseline"] is None  # none picked: no file is read
     _pick_the_folder_baseline_file(at, "export.xml")
     assert not at.get("file_uploader")
     assert at.button(key="baseline_button").label == "Baseline · export.xml"
@@ -863,7 +866,8 @@ def test_a_folder_baseline_file_is_the_same_baseline_as_the_file_named_by_the_se
 
 def test_a_folder_baseline_file_no_longer_in_the_folder_is_not_read(tmp_path, monkeypatch):
     """The name kept from the window is only taken from the folder's own list: a file removed since,
-    or a name pointing outside the folder, reads nothing and the choice starts again from none."""
+    or a name pointing outside the folder, reads nothing and the choice starts again from the default,
+    the folder's only export."""
     _updates_and_a_p6_xml_export(tmp_path)
     outside = tmp_path.parent / "outside.xml"
     outside.write_bytes((tmp_path / "export.xml").read_bytes())
@@ -873,7 +877,8 @@ def test_a_folder_baseline_file_no_longer_in_the_folder_is_not_read(tmp_path, mo
         at.session_state["bl_folder_file"] = name
         at.run()
         _ok(at)
-        assert at.session_state["bl_folder_file"] == "" and at.session_state["baseline"] is None, name
+        assert at.session_state["bl_folder_file"] == "export.xml", name
+        assert _picked_folder_baseline(at.session_state) == tmp_path / "export.xml", name
     (tmp_path / "export.xml").unlink()
     at.run()
     _ok(at)
@@ -939,7 +944,8 @@ def test_an_export_that_cannot_be_read_is_said_in_the_sidebar_when_an_update_nam
     baseline_box(at).set_value(BL_EACH)
     _ok(at)
     assert any(error.value.startswith("Baselines export not read: export") for error in at.sidebar.error)
-    assert at.session_state.get("_xml_baselines", {}) == {}
+    damaged = hashlib.sha256((tmp_path / "export.xml").read_bytes()).hexdigest()
+    assert not [key for key in at.session_state.get("_xml_baselines", {}) if key[1] == damaged]
 
 
 def _updates_and_a_larger_p6_xml_export(folder, hours: int):
@@ -1038,7 +1044,9 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
         return pointers, listed, found
 
-    pointers, listed, found = debug_tables(_run(tmp_path, monkeypatch))
+    at = _run(tmp_path, monkeypatch)
+    baseline_box(at, "bl_folder_file").set_value("")  # the folder's only export is picked by default
+    pointers, listed, found = debug_tables(at)
     assert pointers["baseline_in_xml_file"].tolist() == ["–", "–"] and not listed  # blank: no P6 XML file
     assert found["found_by"].tolist() == ["not found", "not found"]
 

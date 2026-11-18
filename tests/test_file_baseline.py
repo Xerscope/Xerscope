@@ -1066,3 +1066,107 @@ def test_a_loaded_update_as_baseline_is_named_against_the_pointer(tmp_path, monk
     (warning,) = [w for w in _warnings(at) if "baseline (a loaded update) is" in w]
     assert "is UPD, status date" in warning and "a project no loaded file holds (2 updates)" in warning
     assert "370" not in warning
+
+
+def _app_on_series_and_export(tmp_path, monkeypatch, exports=("export.xml",), server_baseline=""):
+    """The app on the folder of ``_series_and_export``, its export under each name of ``exports``, the files
+    ticked and Done pressed once: the series is read. Returns the app and the resolutions it made, with the
+    reads of each baseline of an export."""
+    from pathlib import Path
+
+    from conftest import file_boxes, open_files
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app import state
+    from xerscope.xer.pmxml import read_pmxml_baseline
+
+    calls = {"resolutions": 0, "reads": {}}
+    real_resolutions = state.resolutions
+
+    def counted_resolutions(store, export):
+        calls["resolutions"] += 1
+        return real_resolutions(store, export)
+
+    def counted_read(data, source, baseline_id=None, index=None):
+        calls["reads"][baseline_id] = calls["reads"].get(baseline_id, 0) + 1
+        return read_pmxml_baseline(data, source, baseline_id, index)
+
+    monkeypatch.setattr(state, "resolutions", counted_resolutions)
+    monkeypatch.setattr("xerscope.xer.read_pmxml_baseline", counted_read)  # the name load_snapshot calls
+    _series_and_export(tmp_path)
+    for name in exports[1:]:
+        (tmp_path / name).write_bytes((tmp_path / "export.xml").read_bytes())
+    if exports[0] != "export.xml":
+        (tmp_path / "export.xml").rename(tmp_path / exports[0])
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    if server_baseline:
+        monkeypatch.setenv("XERSCOPE_BASELINE", server_baseline)
+    at = AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120)
+    open_files(at.run())
+    for box in file_boxes(at):
+        box.check()
+    at.button(key="files_done").click()
+    return at.run(), calls
+
+
+def test_once_the_series_is_read_the_window_asks_for_the_baseline_and_nothing_is_computed_before_done(
+    tmp_path, monkeypatch
+):
+    """The window opens on its Baseline section, "Baseline in each file" and the folder's only export offered;
+    the page says it waits, no baseline of the export is read and no update is looked for in it. Done: the
+    page draws, the updates are looked for once and each baseline they are measured against read once."""
+    from conftest import is_waiting_for_baseline
+
+    from xerscope.app.state import BL_EACH
+
+    at, calls = _app_on_series_and_export(tmp_path, monkeypatch)
+    assert not at.exception, [e.value for e in at.exception]
+    assert is_waiting_for_baseline(at)
+    assert at.selectbox(key="draft_bl_choice").value == BL_EACH
+    assert at.selectbox(key="draft_bl_folder_file").value == "export.xml"
+    assert any("Choose the baseline" in info.value for info in at.info)
+    assert calls == {"resolutions": 0, "reads": {}}
+    at.button(key="files_done").click()
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert not is_waiting_for_baseline(at)
+    assert not any("Choose the baseline" in info.value for info in at.info)
+    at = at.switch_page("views/health.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert calls == {"resolutions": 1, "reads": {"101": 1, "201": 1, "401": 1}}
+
+
+def test_a_window_closed_without_done_leaves_the_pages_waiting_and_the_baseline_line_opens_it_again(
+    tmp_path, monkeypatch
+):
+    from conftest import close_window, is_waiting_for_baseline
+
+    at, calls = _app_on_series_and_export(tmp_path, monkeypatch)
+    close_window(at)
+    assert not any(button.key == "files_done" for button in at.button)  # not opened again by itself
+    assert is_waiting_for_baseline(at)
+    assert any("Choose the baseline" in info.value for info in at.info)
+    at.button(key="baseline_button").click()
+    at.run()
+    at.button(key="files_done").click()
+    at.run()
+    assert not is_waiting_for_baseline(at)
+    assert calls["resolutions"] == 1
+
+
+def test_with_two_exports_in_the_folder_none_is_picked_by_default(tmp_path, monkeypatch):
+    at, _ = _app_on_series_and_export(tmp_path, monkeypatch, exports=("one.xml", "two.xml"))
+    assert at.session_state["bl_folder_file"] == ""
+
+
+def test_a_baseline_file_named_by_the_server_is_not_replaced_by_the_export_of_the_folder(tmp_path, monkeypatch):
+    """XERSCOPE_BASELINE names the server's baseline file: the folder's export is not picked in its place."""
+    server = tmp_path / "server"
+    server.mkdir()
+    folder = tmp_path / "updates"
+    folder.mkdir()
+    _series_and_export(server)
+    at, _ = _app_on_series_and_export(folder, monkeypatch, server_baseline=str(server / "export.xml"))
+    assert at.selectbox(key="draft_bl_folder_file").value == ""
