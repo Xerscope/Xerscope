@@ -12,13 +12,13 @@ from collections.abc import Iterable
 import pandas as pd
 
 from xerscope.xer.parser import XerError
-from xerscope.xer.pmxml import XmlBaseline, is_pmxml, list_baselines
+from xerscope.xer.pmxml import DiskFile, XmlBaseline, is_pmxml, list_baselines
 
 
-def file_baselines(baseline_files: Iterable[tuple[str, bytes]]) -> list[XmlBaseline] | None:
+def file_baselines(baseline_files: Iterable[tuple[str, bytes | DiskFile]]) -> list[XmlBaseline] | None:
     """Return the baselines of the baseline file in use when it is a P6 XML export.
 
-    ``baseline_files``: its name and bytes. None for an XER, for no file, and for an export that
+    ``baseline_files``: its name and contents. None for an XER, for no file, and for an export that
     cannot be read (the sidebar says so where the file is chosen).
     """
     exports = [(data, name) for name, data in baseline_files if is_pmxml(data)]

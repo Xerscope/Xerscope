@@ -891,11 +891,82 @@ def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tm
     outside = tmp_path.parent / "outside.xml"
     outside.write_bytes(b"<APIBusinessObjects/>")
     session = {"bl_choice": BL_FILE, "files_source": ("folder", str(tmp_path), ("w1.xer",))}
-    assert baseline_items({**session, "bl_folder_file": "export.xml"}) == [
-        ("export.xml", (tmp_path / "export.xml").read_bytes())
-    ]
+    # a P6 XML export of the disk is handed out to be read where asked, never whole: here, all of it
+    ((name, export),) = baseline_items({**session, "bl_folder_file": "export.xml"})
+    assert (name, export[:]) == ("export.xml", (tmp_path / "export.xml").read_bytes())
     for name in ("", "../outside.xml", str(outside), "w1.xer"):
         assert baseline_items({**session, "bl_folder_file": name}) == [], name
+
+
+def _updates_and_a_larger_p6_xml_export(folder, hours: int):
+    """``_updates_and_a_p6_xml_export`` with a baseline of ``hours`` on A and twenty activities without
+    hours after it: an export of more than the 4096 bytes that tell a P6 XML export from an XER."""
+    from pmxmlkit import activity, baseline, pmxml_bytes
+
+    _updates_and_a_p6_xml_export(folder)
+    planned = activity("A", "1001", "2026-03-02T08:00:00", "2026-03-13T17:00:00", hours)
+    others = [activity(f"Z{n}", str(2000 + n), "2026-03-02T08:00:00", "2026-03-02T17:00:00", 0) for n in range(20)]
+    export = pmxml_bytes([baseline("370", "BL-1", [planned, *others])], current_baseline="370")
+    assert len(export) > 2 * 4096
+    (folder / "export.xml").write_bytes(export)
+
+
+def test_a_p6_xml_baseline_file_of_the_folder_is_never_read_whole_and_a_rerun_reads_nothing_of_it(
+    tmp_path, monkeypatch
+):
+    """export.xml picked in the folder. Its index and its baseline are read by pieces and its digest is
+    computed once, from the file itself; nothing holds its bytes. A rerun of a page then reads its first
+    4096 bytes, which tell a P6 XML export from an XER, and no other."""
+    import hashlib
+
+    from xerscope.xer.pmxml import DiskFile
+
+    _updates_and_a_larger_p6_xml_export(tmp_path, hours=80)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    whole, digests, pieces = [], [], []
+    read_bytes, file_digest, read_piece = Path.read_bytes, hashlib.file_digest, DiskFile.__getitem__
+
+    def counted_read_bytes(path):
+        whole.extend([path.name] if path.name == "export.xml" else [])
+        return read_bytes(path)
+
+    def counted_file_digest(file, *arguments):
+        digests.extend([Path(file.name).name] if Path(file.name).name == "export.xml" else [])
+        return file_digest(file, *arguments)
+
+    def counted_read_piece(export, span):
+        pieces.append(span.indices(len(export))[:2])
+        return read_piece(export, span)
+
+    monkeypatch.setattr(Path, "read_bytes", counted_read_bytes)
+    monkeypatch.setattr(hashlib, "file_digest", counted_file_digest)
+    monkeypatch.setattr(DiskFile, "__getitem__", counted_read_piece)
+
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    at.switch_page("views/health.py").run()
+    _ok(at)
+    baseline = at.session_state["baseline"]
+    assert isinstance(baseline, Baseline) and baseline.bac_hours == 80.0
+    assert whole == [] and digests == ["export.xml"]
+
+    digests.clear()
+    pieces.clear()
+    at.run()
+    _ok(at)
+    assert whole == [] and digests == []
+    assert pieces and set(pieces) == {(0, 4096)}
+
+
+def test_a_p6_xml_baseline_file_replaced_in_the_folder_is_read_again(tmp_path, monkeypatch):
+    """The same name, another content: the next rerun measures against the new baseline."""
+    _updates_and_a_larger_p6_xml_export(tmp_path, hours=80)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    assert at.session_state["baseline"].bac_hours == 80.0
+    _updates_and_a_larger_p6_xml_export(tmp_path, hours=120)
+    at.run()
+    _ok(at)
+    assert at.session_state["baseline"].bac_hours == 120.0
 
 
 def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_names(tmp_path, monkeypatch):
