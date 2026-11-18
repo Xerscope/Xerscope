@@ -25,7 +25,9 @@ Forward pass (early dates), in topological order, for each open activity:
   Override its start is an actual, so FS / SS predecessors no longer bound it while FF / SF
   predecessors still bound its finish
 - expected finish (option on): the early finish, or the early start when it falls before
-  it (remaining 0); an FF / SF bound later than that wins; ALAP ignores it (``expected_finish``)
+  it (remaining 0); an FF / SF bound later than that wins; ALAP ignores it (``expected_finish``);
+  an unstarted milestone sits at the later of its logic and it, its remaining staying 0
+  (``milestone_expected_finish``)
 - finished, under Retained Logic: logic passes through it (out-of-sequence progress, see
   ``pred_bounds``)
 - finish = start + remaining duration (minutes of the activity's calendar)
@@ -901,7 +903,8 @@ class _Run:
         started = self.status[code] == "TK_Active"
         activity_kind, duration = self.kind(code), self.dur_min(code)
         start_bounds, finish_bounds = self.early_bounds(code, started)
-        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
+        milestone_expected = self.milestone_expected_finish(code, started, activity_kind, axis)
+        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds, milestone_expected)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
         # A1130: the early dates move to the data date, the late dates stay)
@@ -970,12 +973,28 @@ class _Run:
             return pd.Timestamp(expected_date)
         return None
 
+    def has_expected_finish(self, code) -> bool:
+        """True when the activity has an expected finish the option applies to: it is on, the activity
+        is not delayed and not as late as possible."""
+        if not self.options.use_expected_finish or self.delayed(code):
+            return False
+        return pd.notna(self.inputs[code].get("expect_end_date", pd.NaT)) and not self.is_as_late_as_possible(code)
+
     def has_task_expected_finish(self, code, activity_kind: str) -> bool:
         """True when an expected finish sets the remaining duration of task-dependent work."""
-        if activity_kind != "task" or not self.options.use_expected_finish or self.delayed(code):
-            return False
-        expected_date = self.inputs[code].get("expect_end_date", pd.NaT)
-        return pd.notna(expected_date) and not self.is_as_late_as_possible(code) and code not in self.rsrc_dep
+        return activity_kind == "task" and self.has_expected_finish(code) and code not in self.rsrc_dep
+
+    def milestone_expected_finish(self, code, started: bool, activity_kind: str, axis) -> pd.Timestamp | None:
+        """The expected finish an unstarted milestone is placed at, or None.
+
+        A bound on its early date: the milestone sits at the later of its logic and the expected finish,
+        written as a start or a finish like any milestone date. Its remaining duration stays 0, so the
+        late dates do not follow it. Corpus witnesses (engine-gaps.md, experiment 2): H23-09 A1200,
+        H26-08 A1390, H28-11 A1330, H26-11 A1370.
+        """
+        if started or activity_kind == "task" or not self.has_expected_finish(code):
+            return None
+        return axis.snap_finish(pd.Timestamp(self.inputs[code]["expect_end_date"]))
 
     def mandatory_finish_dates(
         self, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
@@ -1028,11 +1047,22 @@ class _Run:
             return actual_finish, actual_finish
         return self.data_date, self.data_date
 
-    def forward_constraints(self, code, started: bool, start_bounds: list, finish_bounds: list):
+    def forward_constraints(
+        self,
+        code,
+        started: bool,
+        start_bounds: list,
+        finish_bounds: list,
+        milestone_expected: pd.Timestamp | None = None,
+    ):
         """Add the activity's dated constraints to the start / finish bounds (in place).
 
         Returns the Mandatory Start / Finish as (side, date), else None. Work under way keeps
         its actual start, so its constraints are not applied here, only reported.
+
+        ``milestone_expected``: the expected finish of an unstarted milestone. It becomes a finish
+        bound and stands in for the early side of a Finish On, Finish On or After and Mandatory
+        Finish; their late side stays a cap in the backward pass.
         """
         pinned = None
         if started and self.constraints(code):
@@ -1042,9 +1072,12 @@ class _Run:
                 pinned = (MANDATORY[constraint_type], date)
             elif START_LIKE.get(constraint_type) == "start":
                 start_bounds.append(date)
-            elif START_LIKE.get(constraint_type) == "finish":
+            elif START_LIKE.get(constraint_type) == "finish" and milestone_expected is None:
                 finish_bounds.append(date)
-        return pinned
+        if milestone_expected is None:
+            return pinned
+        finish_bounds.append(milestone_expected)
+        return pinned if pinned and pinned[0] == "start" else None
 
     def expected_finish(
         self,
