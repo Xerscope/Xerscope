@@ -54,7 +54,7 @@ import pandas as pd
 
 from ..store import SnapshotStore
 from ..xer import Snapshot
-from ..xer.calendar import TimeAxis
+from ..xer.calendar import TimeAxis, WorkCalendar, union_of
 from .baseline import Baseline, relinked
 from .checks import AnalysisContext, CheckResult, run_metric
 from .standards import Metric
@@ -738,16 +738,16 @@ MINUTE_NS = 60_000_000_000
 
 @dataclass(frozen=True)
 class EarnedSchedule:
-    """Earned Schedule of an update against a baseline (Lipke, "Schedule is Different", The
-    Measurable News, 2003): ES is the instant of the plan at which the planned value equals the
-    earned value. Lipke computes it per period, ES = C + (EV - PV_C) / (PV_C+1 - PV_C); here the PV
-    curve is read to the minute, which is the same value wherever the PV is linear within a period.
+    """Earned Schedule (Lipke, "Schedule is Different", The Measurable News, 2003): the instant of the plan
+    at which the PV equals the EV. Lipke's ES = C + (EV - PV_C) / (PV_C+1 - PV_C) per period; here the PV
+    curve is read to the minute, the same value wherever the PV is linear within a period.
 
-    Durations are working minutes of the project calendar (PROJECT.clndr_id) from the plan start,
-    the first EV date of the activities measured: AT to the status date, PD to the last EV date, ES to
-    the instant where PV = EV. The activities measured are those of ``ev_point`` that have hours and
-    both EV dates, so the PV read here at the status date is ``ev_point``'s. ``note`` says why no ES
-    is computed (``es_min`` is then None).
+    Durations are minutes of plan time from the plan start (the first EV date): AT to the status date, PD
+    to the last EV date, ES to that instant. Plan time is when at least one of the baseline calendars of the
+    activities measured works (``union_of``): a weekend worked by one crew counts, a shutdown of every
+    calendar does not. A plan day is the project calendar's hours per day. The activities measured are
+    those of ``ev_point`` with hours and both EV dates: the PV read at the status date is ``ev_point``'s.
+    ``note`` says why no ES is computed (``es_min`` is then None).
     """
 
     plan_start: pd.Timestamp | None
@@ -759,10 +759,10 @@ class EarnedSchedule:
     pv_hr: float
     ev_hr: float
     ev_left_out_hr: float  # earned on baseline activities without both EV dates: no PV curve holds them
-    hours_per_day: float  # of the project calendar, for the working days shown
+    hours_per_day: float  # of the project calendar: the length of a plan day
     note: str = ""
 
-    def working_days(self, minutes: int | None) -> float | None:
+    def plan_days(self, minutes: int | None) -> float | None:
         return None if minutes is None else minutes / 60 / self.hours_per_day
 
     @property
@@ -783,10 +783,10 @@ class EarnedSchedule:
             "pv_hr": self.pv_hr,
             "ev_hr": self.ev_hr,
             "ev_left_out_hr": self.ev_left_out_hr,
-            "pd_wd": self.working_days(self.pd_min),
-            "at_wd": self.working_days(self.at_min),
-            "es_wd": self.working_days(self.es_min),
-            "sv_t_wd": self.working_days(self.sv_min),
+            "pd_plan_d": self.plan_days(self.pd_min),
+            "at_plan_d": self.plan_days(self.at_min),
+            "es_plan_d": self.plan_days(self.es_min),
+            "sv_t_plan_d": self.plan_days(self.sv_min),
             "spi_t": self.spi_t,
             "note": self.note,
         }
@@ -817,6 +817,13 @@ def _es_minutes(spread: _Spread, ev: float, first: int, last: int) -> tuple[int,
     return reached, passed - 1
 
 
+def _plan_time(baseline_snapshot: Snapshot, frame: pd.DataFrame, hours_per_day: float) -> WorkCalendar:
+    """The working time of at least one of the calendars the rows of ``frame`` are spread on, as
+    ``_Spread`` reads them (a blank id: the baseline's project calendar)."""
+    calendar_ids = frame["bl_clndr_id"].fillna("").unique()
+    return union_of([baseline_snapshot.calendar(calendar_id) for calendar_id in calendar_ids], hours_per_day)
+
+
 def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
     """ES, AT and PD of ``snapshot`` against ``baseline`` (see ``EarnedSchedule``).
 
@@ -831,14 +838,13 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
     current = values[values["in_snapshot"] & (values["bl_labor_hr"] != 0)]
     has_dates = current["bl_start"].notna() & current["bl_finish"].notna()
     measured = current[has_dates]
-    calendar = snapshot.calendar()
     result = EarnedSchedule(
         None, None, None, None, None,
         bac_hr=float(measured["bl_labor_hr"].sum()),
         pv_hr=float(measured["pv_hr"].sum()),
         ev_hr=float(measured["ev_hr"].sum()),
         ev_left_out_hr=float(current.loc[~has_dates, "ev_hr"].sum()),
-        hours_per_day=calendar.hours_per_day,
+        hours_per_day=snapshot.calendar().hours_per_day,
     )  # fmt: skip
     if snapshot.data_date is None:
         return replace(result, note="no status date")
@@ -846,13 +852,13 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
         return replace(result, note="no baseline activity of the update with hours and both EV dates")
     dates = pd.concat([measured["bl_start"], measured["bl_finish"]])  # a finish before its start: _Spread
     plan_start, plan_finish = dates.min(), dates.max()
-    axis = calendar.axis()
+    frame = baseline.frame.loc[measured.index]
+    axis = _plan_time(baseline.snapshot, frame, result.hours_per_day).axis()
     pd_min = axis.work(plan_finish) - axis.work(plan_start)
     at_min = axis.work(snapshot.data_date) - axis.work(plan_start)
     result = replace(result, plan_start=plan_start, plan_finish=plan_finish, pd_min=pd_min, at_min=at_min)
     if snapshot.data_date < plan_start:
         return replace(result, note="status date before the plan starts")
-    frame = baseline.frame.loc[measured.index]
     spread = _Spread.build(baseline.snapshot, frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
     minutes = _es_minutes(spread, result.ev_hr, plan_start.value // MINUTE_NS, plan_finish.value // MINUTE_NS)
     low, high = sorted(axis.work(pd.Timestamp(minute * MINUTE_NS)) - axis.work(plan_start) for minute in minutes)
