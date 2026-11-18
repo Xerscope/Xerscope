@@ -52,19 +52,19 @@ from xerscope.xer import (
 )
 from xerscope.xer.model import HEADER_TABLES, project_counts_text, read_header
 from xerscope.xer.parser import parse_bytes
-from xerscope.xer.pmxml import PmxmlIndex, index_pmxml, read_pmxml_baseline
+from xerscope.xer.pmxml import DiskFile, PmxmlIndex, index_pmxml, read_pmxml_baseline
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
 NBSP = "\u00a0"  # thousands separator that does not break a label across lines
 
 
-def _parse(name: str, data: bytes, project_id: str | None = None) -> Snapshot:
+def _parse(name: str, data: bytes | DiskFile, project_id: str | None = None) -> Snapshot:
     """Parse once per session, keyed on content. The cache lives in the session's state, never in a
     process-wide cache: when the session ends (server.disconnectedSessionTTL after the tab closes),
     nothing of the files it read stays in the server."""
     cache = st.session_state.setdefault("_parsed", {})
-    key = (name, hashlib.sha256(data).hexdigest(), project_id)
+    key = (name, _digest(data), project_id)
     if key not in cache:
         if len(cache) > 64:
             cache.clear()
@@ -109,8 +109,10 @@ def _build(
     return store_of(results)
 
 
-def _digest(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def _digest(data: bytes | DiskFile) -> str:
+    """sha256 of a file's contents; of a file read from the disk where asked, the one computed from
+    the file itself and kept until the file changes (``_file_digest``)."""
+    return _file_digest(data.path) if isinstance(data, DiskFile) else hashlib.sha256(data).hexdigest()
 
 
 def background_jobs() -> bool:
@@ -580,7 +582,8 @@ def _file_digest(path: Path) -> str:
     stamp = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
     kept = cache.get(str(path))
     if kept is None or kept[0] != stamp:
-        kept = (stamp, _digest(path.read_bytes()))
+        with path.open("rb") as file:  # in pieces: a P6 XML export runs to gigabytes
+            kept = (stamp, hashlib.file_digest(file, "sha256").hexdigest())
         cache[str(path)] = kept
     return kept[1]
 
@@ -776,7 +779,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         return Baseline.from_snapshot(store.by_label(choice), basis)
     source = _baseline_file_source(env_path)
     if source is not None:
-        st.session_state["baseline_digest"] = hashlib.sha256(source[1]).hexdigest()
+        st.session_state["baseline_digest"] = _digest(source[1])
     if source is None:
         how = "Pick a P6 XML file of the folder" if _data_locked() else "Upload the baseline XER (or P6 XML)"
         sidebar.caption(f"{how}, or pick one of the loaded snapshots.")
@@ -818,20 +821,28 @@ def _is_baseline_file_offered(env_path: str) -> bool:
     return not _data_locked() or Path(env_path).is_file() or bool(_folder_baseline_names())
 
 
-def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes] | None:
+def _disk_baseline_file(path: Path) -> tuple[str, bytes | DiskFile]:
+    """A baseline file of the disk as (name, contents). A P6 XML export is handed out to be read where
+    asked, never whole: it runs to gigabytes, and a rerun reads none of it once its baselines are
+    built. An XER, a few megabytes, is read as it always was."""
+    export = DiskFile(path)
+    return path.name, export if is_pmxml(export) else path.read_bytes()
+
+
+def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes | DiskFile] | None:
     """The separate baseline file: the one picked in the folder, else the one uploaded in the
     window, else XERSCOPE_BASELINE's."""
     picked = _picked_folder_baseline()
     if picked is not None:
-        return picked.name, picked.read_bytes()
+        return _disk_baseline_file(picked)
     source = None if _data_locked() else st.session_state.get("bl_file")
     env_path = os.environ.get("XERSCOPE_BASELINE", "") if env_path is None else env_path
     if source is None and env_path and Path(env_path).is_file():
-        source = (Path(env_path).name, Path(env_path).read_bytes())
+        source = _disk_baseline_file(Path(env_path))
     return source
 
 
-def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | None:
+def _xml_baseline_id(source: tuple[str, bytes | DiskFile], pointer: str | None) -> str | None:
     """For a P6 XML baseline file: ``pointer`` (an update's sum_base_proj_id) when the file holds that
     baseline, else None (the file's Project Baseline is read). None for an XER file."""
     name, data = source
@@ -840,12 +851,12 @@ def _xml_baseline_id(source: tuple[str, bytes], pointer: str | None) -> str | No
     return pointer if pointer in _pmxml_index(name, data).baseline_spans else None
 
 
-def _pmxml_index(name: str, data: bytes) -> PmxmlIndex:
+def _pmxml_index(name: str, data: bytes | DiskFile) -> PmxmlIndex:
     """The index of a P6 XML file, made once per content: the sidebar asks which baselines the file
     holds on every rerun, and each baseline read from it starts from the index. Keyed on the bytes it
     was made from, since its positions are theirs alone."""
     cache = st.session_state.setdefault("_pmxml_index", {})
-    key = (name, hashlib.sha256(data).hexdigest())
+    key = (name, _digest(data))
     if key not in cache:
         cache.clear()  # one baseline file at a time
         cache[key] = index_pmxml(data, name)
@@ -1344,7 +1355,7 @@ def _xml_baseline_of(snapshot: Snapshot) -> Baseline | None:
     basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
     # built once per file content, baseline and EV basis: baseline_for asks for it on every page and rerun
     cache = st.session_state.setdefault("_xml_baselines", {})
-    key = (source[0], hashlib.sha256(source[1]).hexdigest(), pointer, basis)
+    key = (source[0], _digest(source[1]), pointer, basis)
     if key not in cache:
         if len(cache) > 64:
             cache.clear()
@@ -1662,18 +1673,18 @@ def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) ->
     return found + ([baseline.snapshot.source] if baseline is not None else [])
 
 
-def baseline_items(session: MutableMapping) -> list[tuple[str, bytes]]:
+def baseline_items(session: MutableMapping) -> list[tuple[str, bytes | DiskFile]]:
     """The separate baseline file as (name, bytes), when one is in use (picked in the folder, uploaded
     or XERSCOPE_BASELINE)."""
     if session.get("bl_choice") != BL_FILE and session.get("bl_fallback") != BL_FILE:
         return []
     picked = _picked_folder_baseline(session)
     if picked is not None:
-        return [(picked.name, picked.read_bytes())]
+        return [_disk_baseline_file(picked)]
     held = None if _data_locked() else session.get("bl_file")
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
     if held is None and env_path and Path(env_path).is_file():
-        held = (Path(env_path).name, Path(env_path).read_bytes())
+        held = _disk_baseline_file(Path(env_path))
     return [held] if held is not None else []
 
 
@@ -1683,12 +1694,12 @@ def baseline_files_tag(session: MutableMapping) -> tuple[tuple[str, str], ...]:
     return tuple((name, _digest(data)) for name, data in baseline_items(session))
 
 
-def source_raws(name: str, data: bytes) -> list[RawXer]:
+def source_raws(name: str, data: bytes | DiskFile) -> list[RawXer]:
     """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
     if is_pmxml(data):
         index = index_pmxml(data, name)  # one pass through the file for all its baselines
         return [read_pmxml_baseline(data, name, baseline.object_id, index) for baseline in index.baselines]
-    return [parse_bytes(data, source=name)]
+    return [parse_bytes(data[:], source=name)]  # an XER is read whole
 
 
 def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[str], Anonymizer]:

@@ -13,7 +13,7 @@ from .model import (
     read_header,
 )
 from .parser import RawXer, XerError, parse_bytes, parse_text, read_xer
-from .pmxml import PmxmlIndex, is_pmxml, list_baselines, read_pmxml_baseline
+from .pmxml import DiskFile, PmxmlIndex, is_pmxml, list_baselines, read_pmxml_baseline
 
 XER_SUFFIXES = (".xer",)  # compared case-insensitively: P6 writes .XER on some setups
 
@@ -23,18 +23,18 @@ def _is_xer(path: str | Path) -> bool:
 
 
 def load_snapshot(
-    source: str | Path | bytes,
+    source: str | Path | bytes | DiskFile,
     project_code=None,
     name: str | None = None,
     project_id: str | None = None,
     pmxml_index: PmxmlIndex | None = None,
 ) -> Snapshot:
-    """Parse an XER file (a path, or its bytes plus the file ``name``) and build the snapshot.
+    """Parse an XER file (a path, or its contents plus the file ``name``) and build the snapshot.
 
     A P6 XML export is read for one of its baselines (``pmxml``): ``project_id`` then names the
     baseline (an update's PROJECT.sum_base_proj_id), else the file's Project Baseline is read.
     ``pmxml_index``: the index of that export when the caller holds it (``index_pmxml``)."""
-    if isinstance(source, bytes):
+    if isinstance(source, bytes | DiskFile):
         if not name:
             # The name becomes Snapshot.source, which keys caches and orders the series.
             raise ValueError("load_snapshot(bytes) needs the file name")
@@ -44,7 +44,7 @@ def load_snapshot(
     if is_pmxml(data):
         raw = read_pmxml_baseline(data, source_name, project_id, pmxml_index)
         return build_snapshot(raw, project_code=project_code)
-    raw = parse_bytes(data, source=source_name)
+    raw = parse_bytes(data[:], source=source_name)  # an XER is read whole
     return build_snapshot(raw, project_code=project_code, project_id=project_id)
 
 

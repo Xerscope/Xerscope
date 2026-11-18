@@ -11,7 +11,7 @@ from xerkit import snap, todo
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import ev_point
 from xerscope.xer import XerError, build_snapshot, is_pmxml, list_baselines, load_snapshot, pmxml
-from xerscope.xer.pmxml import index_pmxml, read_pmxml_baseline
+from xerscope.xer.pmxml import DiskFile, index_pmxml, read_pmxml_baseline
 
 # activity dates as P6 XML writes them: the true end of the last period (17:00), unlike calendar periods
 A1 = activity("A1", "1001", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
@@ -491,3 +491,59 @@ def test_the_anonymizer_reads_every_baseline_of_the_export_from_one_index(monkey
     raws = source_raws("export.xml", TWO)
     assert [raw.tables["PROJECT"]["proj_short_name"].iloc[0] for raw in raws] == ["BL-1", "BL-2"]
     assert passes == ["export.xml"]
+
+
+# --- a large export is read from the disk where asked, never whole ------------------------------------
+
+
+def _export_on_disk(tmp_path):
+    path = tmp_path / "export.xml"
+    path.write_bytes(_export_of_two_projects())
+    return path
+
+
+def test_an_export_read_from_the_disk_gives_what_its_bytes_give(tmp_path):
+    path = _export_on_disk(tmp_path)
+    data, on_disk = path.read_bytes(), DiskFile(path)
+    assert is_pmxml(on_disk) and len(on_disk) == len(data)
+    assert index_pmxml(on_disk, "export.xml") == index_pmxml(data, "export.xml")
+    for object_id in ("500", "501"):
+        expected = read_pmxml_baseline(data, "export.xml", object_id).tables
+        assert _same_tables(read_pmxml_baseline(on_disk, "export.xml", object_id).tables, expected)
+    snapshot = load_snapshot(on_disk, name="export.xml", project_id="501")
+    assert snapshot.activities["task_code"].tolist() == ["A", "B"]
+
+
+def test_a_baseline_read_with_its_index_reads_no_byte_of_another_baseline(tmp_path, monkeypatch):
+    on_disk = DiskFile(_export_on_disk(tmp_path))
+    index = index_pmxml(on_disk, "export.xml")
+    other_first, other_end = index.baseline_spans["501"]
+    reads = []
+    read = DiskFile.__getitem__
+
+    def recorded(self, span):
+        first, end, _ = span.indices(len(self))
+        reads.append((first, end))
+        return read(self, span)
+
+    monkeypatch.setattr(DiskFile, "__getitem__", recorded)
+    tables = read_pmxml_baseline(on_disk, "export.xml", "500", index).tables
+    assert tables["TASK"]["task_code"].tolist() == ["A"]
+    assert reads and not any(first < other_end and end > other_first for first, end in reads)
+
+
+def test_an_export_cut_or_gone_from_the_disk_since_its_index_is_a_xer_error(tmp_path):
+    path = _export_on_disk(tmp_path)
+    on_disk = DiskFile(path)
+    index = index_pmxml(on_disk, "export.xml")
+    path.write_bytes(path.read_bytes()[: index.baseline_spans["501"][0] + 40])  # cut inside baseline 501
+    with pytest.raises(XerError, match="changed since it was listed"):
+        read_pmxml_baseline(on_disk, "export.xml", "501", index)
+    path.unlink()
+    for read in (
+        lambda: read_pmxml_baseline(on_disk, "export.xml", "500", index),
+        lambda: index_pmxml(on_disk, "export.xml"),
+    ):
+        with pytest.raises(XerError, match="export.xml: cannot be read") as refused:
+            read()
+        assert str(tmp_path) not in str(refused.value)  # the reason, never the path of the file

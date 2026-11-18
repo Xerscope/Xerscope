@@ -16,7 +16,8 @@ work periods end on their last working minute in XML ("11:59") and on the next m
 An export of several projects with all their baselines runs to gigabytes, so the file is never held
 as one tree. ``index_pmxml`` goes through it once and keeps, for each baseline, what lists it and
 where its bytes are; ``read_pmxml_baseline`` then reads those bytes alone, with the calendars and the
-resources of the file.
+resources of the file. Both take the bytes of the export or, for one too large to hold, a ``DiskFile``:
+the file is then read from the disk piece by piece.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import xml.etree.ElementTree as ET  # nosec B405 - parses an export the user cho
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import partial
+from pathlib import Path
 from xml.parsers import expat
 
 import pandas as pd
@@ -78,7 +80,37 @@ class XmlBaseline:
     activities: int
 
 
-def is_pmxml(data: bytes) -> bool:
+class DiskFile:
+    """A file of the disk read where asked, never whole: ``file[first:end]`` reads those bytes alone.
+
+    Its length is the one it had when it was opened here: a file cut since gives fewer bytes than
+    asked, and ``read_pmxml_baseline`` then says the file changed. A file that cannot be read raises
+    ``OSError``, as any file does; ``index_pmxml`` and ``read_pmxml_baseline`` report it as a
+    ``XerError``."""
+
+    def __init__(self, path: Path) -> None:
+        """Note the length of the file; nothing of it is read yet."""
+        self.path = path
+        self.size = path.stat().st_size
+
+    def __len__(self) -> int:
+        """Return the length the file had when it was opened here."""
+        return self.size
+
+    def __getitem__(self, span: slice) -> bytes:
+        """Read the bytes of ``span`` from the disk."""
+        first_byte, end_byte, _ = span.indices(self.size)
+        with self.path.open("rb") as file:
+            file.seek(first_byte)
+            return file.read(max(end_byte - first_byte, 0))
+
+
+def _cannot_be_read(source: str, error: OSError) -> XerError:
+    """The error of a file of the disk that could not be read: its reason, never its path."""
+    return XerError(f"{source}: cannot be read ({error.strerror})")
+
+
+def is_pmxml(data: bytes | DiskFile) -> bool:
     """A P6 XML export: its root element is APIBusinessObjects (the first kilobytes say so)."""
     head = data[:4096].lstrip(b"\xef\xbb\xbf").lstrip()
     return head.startswith(b"<") and b"APIBusinessObjects" in head
@@ -243,7 +275,7 @@ class _IndexPass:
         self.closing_spans.clear()
 
 
-def index_pmxml(data: bytes, source: str) -> PmxmlIndex:
+def index_pmxml(data: bytes | DiskFile, source: str) -> PmxmlIndex:
     """The index of a P6 XML export, from one pass that keeps none of its activities."""
     parser = expat.ParserCreate(namespace_separator="}")
     index_pass = _IndexPass(parser, source)
@@ -255,6 +287,8 @@ def index_pmxml(data: bytes, source: str) -> PmxmlIndex:
         parser.Parse(b"", True)
     except (expat.ExpatError, LookupError, ValueError) as exc:  # the last two: an encoding Python cannot read
         raise XerError(f"{source}: not a readable P6 XML file ({exc})") from exc
+    except OSError as exc:
+        raise _cannot_be_read(source, exc) from exc
     return PmxmlIndex(
         namespace="{" + index_pass.namespace if index_pass.namespace else "",
         head_end=index_pass.head_end,
@@ -266,23 +300,28 @@ def index_pmxml(data: bytes, source: str) -> PmxmlIndex:
     )
 
 
-def list_baselines(data: bytes, source: str) -> tuple[list[XmlBaseline], str]:
+def list_baselines(data: bytes | DiskFile, source: str) -> tuple[list[XmlBaseline], str]:
     """The baselines of the file and the Project Baseline its project names (blank when none)."""
     index = index_pmxml(data, source)
     return index.baselines, index.current_baseline_id
 
 
-def _document_of(data: bytes, index: PmxmlIndex, baseline_span: tuple[int, int]) -> ET.Element:
+def _document_of(data: bytes | DiskFile, source: str, index: PmxmlIndex, baseline_span: tuple[int, int]) -> ET.Element:
     """The root element of the file holding one baseline, the calendars and the resources, in the
     order of the file: what the tables of that baseline are read from."""
     first_byte, end_byte = baseline_span
     outside = [span for span in index.shared_spans if not first_byte <= span[0] < end_byte]
     parser = ET.XMLParser()  # nosec B314 - a file the user chose; Python's parser expands no external entity
-    parser.feed(data[: index.head_end])
-    for span_start, span_end in sorted([*outside, baseline_span]):
-        parser.feed(data[span_start:span_end])
-    parser.feed(data[index.tail_start :])
-    return parser.close()
+    try:
+        parser.feed(data[: index.head_end])
+        for span_start, span_end in sorted([*outside, baseline_span]):
+            parser.feed(data[span_start:span_end])
+        parser.feed(data[index.tail_start :])
+        return parser.close()
+    except ET.ParseError as exc:  # the positions of the index are no longer those of the file
+        raise XerError(f"{source}: the file changed since it was listed ({exc})") from exc
+    except OSError as exc:
+        raise _cannot_be_read(source, exc) from exc
 
 
 def choose_baseline(baselines: list[XmlBaseline], current: str, wanted: str | None, source: str) -> XmlBaseline:
@@ -508,7 +547,7 @@ def _assignment_rows(project: ET.Element, namespace: str, proj_id: str) -> list[
 
 
 def read_pmxml_baseline(
-    data: bytes, source: str, baseline_id: str | None = None, index: PmxmlIndex | None = None
+    data: bytes | DiskFile, source: str, baseline_id: str | None = None, index: PmxmlIndex | None = None
 ) -> RawXer:
     """The XER tables of one baseline of a P6 XML export (``choose_baseline`` decides which).
 
@@ -517,7 +556,7 @@ def read_pmxml_baseline(
     index = index or index_pmxml(data, source)
     chosen = choose_baseline(index.baselines, index.current_baseline_id, baseline_id, source)
     namespace = index.namespace
-    root = _document_of(data, index, index.baseline_spans[chosen.object_id])
+    root = _document_of(data, source, index, index.baseline_spans[chosen.object_id])
     project = next(root.iter(namespace + "BaselineProject"))  # the only one of the document
     proj_id = chosen.object_id
     project_rows, wbs_rows = _project_rows(project, namespace, proj_id)
