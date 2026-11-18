@@ -289,6 +289,44 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
     assert len(other) == 1 and other[0].count(" update)") == 1, other  # one baseline named, by one update
 
 
+def test_each_baseline_of_the_export_is_read_once_for_the_pages_and_the_debug_table(tmp_path, monkeypatch):
+    """Baselines 101 and 201 are compared for a.xer, 201 and 401 for c.xer; 101, 201 and 401 are the ones
+    a, b and d are measured against; the Debug page lists what was found. One read of each serves all three."""
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    import xerscope.xer
+    from xerscope.analysis.baseline_resolution import IN_EXPORT, SAME_GENERATION, UNDECIDED
+    from xerscope.app.state import BL_EACH
+
+    reads: dict[str, int] = {}
+    read_one_baseline = xerscope.xer.read_pmxml_baseline
+
+    def counted(data, source, baseline_id=None, index=None):
+        reads[baseline_id] = reads.get(baseline_id, 0) + 1
+        return read_one_baseline(data, source, baseline_id, index)
+
+    monkeypatch.setattr(xerscope.xer, "read_pmxml_baseline", counted)
+    _series_and_export(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_folder_file").select("export.xml")
+    at.run()
+    at = at.switch_page("views/health.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    at = at.switch_page("views/debug.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    found = next(table.value for table in at.dataframe if "found_by" in table.value.columns)
+    assert found["found_by"].tolist() == [SAME_GENERATION, IN_EXPORT, UNDECIDED, IN_EXPORT]
+    assert reads == {"101": 1, "201": 1, "401": 1}
+
+
 def test_the_export_of_baselines_is_read_for_the_downloads_in_the_per_file_mode(tmp_path, monkeypatch):
     """What an anonymized download is built from (``baseline_items``): in "Baseline in each file", the
     export picked in the folder, whose baselines the updates are measured against; a separate XER only

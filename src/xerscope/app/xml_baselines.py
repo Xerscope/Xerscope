@@ -8,14 +8,14 @@ among them (``analysis.baseline_resolution``).
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import pandas as pd
 
 from xerscope.analysis.baseline import content_digest
 from xerscope.analysis.baseline_resolution import Export, resolutions
 from xerscope.store import SnapshotStore
-from xerscope.xer import load_snapshot
+from xerscope.xer import Snapshot, load_snapshot
 from xerscope.xer.parser import XerError
 from xerscope.xer.pmxml import DiskFile, PmxmlIndex, XmlBaseline
 
@@ -38,23 +38,22 @@ def xml_baselines_table(index: PmxmlIndex, named_baseline_ids: Iterable[str]) ->
 
 
 class BaselineContents:
-    """Whether two baselines of an export are copies of one baseline, each read once at most.
+    """Whether two baselines of an export are copies of one baseline, each digested once at most.
 
     Two baselines listed with different status dates or counts of activities are not copies: the
     index says so and neither is read. Otherwise each is read and their ``content_digest`` compared.
     """
 
-    def __init__(self, name: str, data: bytes | DiskFile, index: PmxmlIndex) -> None:
-        """Keep the export and what its index lists of each baseline; nothing is read yet."""
-        self.name, self.data, self.index = name, data, index
+    def __init__(self, index: PmxmlIndex, read: Callable[[str], Snapshot]) -> None:
+        """Keep what the index lists of each baseline and how one is read, by ObjectId; nothing is read yet."""
+        self.read = read
         self.listed = {baseline.object_id: (baseline.data_date, baseline.activities) for baseline in index.baselines}
         self.digests: dict[str, str] = {}
 
     def digest(self, object_id: str) -> str:
-        """Return the content digest of one baseline, reading it from the export the first time."""
+        """Return the content digest of one baseline, reading it the first time."""
         if object_id not in self.digests:
-            snapshot = load_snapshot(self.data, name=self.name, project_id=object_id, pmxml_index=self.index)
-            self.digests[object_id] = content_digest(snapshot)
+            self.digests[object_id] = content_digest(self.read(object_id))
         return self.digests[object_id]
 
     def same(self, one: str, other: str) -> bool:
@@ -67,17 +66,24 @@ class BaselineContents:
             return False
 
 
-def export_of(name: str, data: bytes | DiskFile, index: PmxmlIndex) -> Export:
+def export_of(
+    name: str, data: bytes | DiskFile, index: PmxmlIndex, read: Callable[[str], Snapshot] | None = None
+) -> Export:
     """Return what the resolution reads of an export.
 
     Its baselines and, for each project that names one of them as its Project Baseline, that baseline.
+    ``read``: how the caller reads one baseline, by ObjectId, when it keeps what it reads: a baseline
+    compared here and measured against afterwards is then read once. Read from ``data`` otherwise.
     """
     project_baselines = {
         project.object_id: project.current_baseline_id
         for project in index.projects
         if project.current_baseline_id in index.baseline_spans
     }
-    return Export(frozenset(index.baseline_spans), project_baselines, BaselineContents(name, data, index).same)
+    contents = BaselineContents(
+        index, read or (lambda object_id: load_snapshot(data, name=name, project_id=object_id, pmxml_index=index))
+    )
+    return Export(frozenset(index.baseline_spans), project_baselines, contents.same)
 
 
 RESOLUTION_COLUMNS = [
