@@ -193,6 +193,124 @@ def test_each_update_is_given_the_baseline_it_would_be_measured_against_and_what
     ]
 
 
+def _series_and_export(folder) -> None:
+    """Four updates of 40 h on A1, none with its baseline in its file, next to an export of versions 100,
+    200 and 400 of the project: baselines 101 and 201 are copies of one baseline (40 h), 401 is another (48 h).
+
+    a.xer, project 150, names 151: not exported; versions 100 and 200 around it hold the same baseline.
+    b.xer, project 200, names 201: exported. c.xer, project 300, names 301: not exported; versions 200 and
+    400 around it hold different baselines. d.xer, project 400, names 401: exported."""
+    from xerkit import todo, xer_text
+
+    updates = {
+        "a.xer": ("150", "151", "2026-03-02 08:00"),
+        "b.xer": ("200", "201", "2026-03-09 08:00"),
+        "c.xer": ("300", "301", "2026-03-16 08:00"),
+        "d.xer": ("400", "401", "2026-03-23 08:00"),
+    }
+    for name, (project_id, pointer, data_date) in updates.items():
+        project = {"proj_id": project_id, "sum_base_proj_id": pointer}
+        activity = todo("A1", proj_id=project_id, target_work_qty="40")
+        (folder / name).write_text(xer_text([activity], project=project, data_date=data_date), encoding="utf-8")
+    export = _export_of_versions({"100": ("101", 40), "200": ("201", 40), "400": ("401", 48)})
+    (folder / "export.xml").write_bytes(export)
+
+
+def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_announced(tmp_path, monkeypatch):
+    """ "Baseline in each file" with the export of the folder picked and no fallback. b and d are measured
+    against the baseline they name; a against the copy the versions around it hold, and the app says it is
+    a probable baseline in the sidebar and under the title of the page; c, undecided, is not measured."""
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app.state import BL_EACH, BL_FILE, BL_NONE
+
+    _series_and_export(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)  # offered: the folder holds an export of baselines
+    baseline_box(at, "bl_folder_file").select("export.xml")  # asked for without making it the fallback
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state["fallback_choice"] == BL_NONE
+
+    used, said_on_the_page = {}, {}
+    at = at.switch_page("views/health.py").run()
+    for stamp in ("2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"):
+        picker = next(box for box in at.selectbox if box.key == "health_snap")
+        picker.select(next(option for option in picker.options if option.startswith(stamp)))
+        at.run()
+        assert not at.exception, [e.value for e in at.exception]
+        help_lines = at.button(key="context_banner").help.replace("\\", "").split("  \n")
+        line = next(line for line in help_lines if line.startswith(f"Baseline used for {stamp}"))
+        used[stamp] = line.split(": ", 1)[1]
+        said_on_the_page[stamp] = [w.value.replace("\\", "") for w in at.main.warning if "probable" in w.value]
+
+    assert used["2026-03-02"] == (
+        "probable: baseline V100 - B1 of export.xml, held by the versions created before and after the "
+        "update's project (100 and 200); the one its file names (151) is not in the export"
+    )
+    assert used["2026-03-09"] == "P6 Project Baseline V200 - B1 from export.xml"
+    assert used["2026-03-16"] == "none"
+    assert used["2026-03-23"] == "P6 Project Baseline V400 - B1 from export.xml"
+    # under the title of the page of the update concerned, in full, and of no other
+    assert said_on_the_page["2026-03-02"] == [f"Baseline of this update: {used['2026-03-02']}."]
+    assert not any(said_on_the_page[stamp] for stamp in ("2026-03-09", "2026-03-16", "2026-03-23"))
+
+    # the three baselines read from the export, each with the hours of its A1
+    built = {key[2]: baseline.bac_hours for key, baseline in at.session_state["_xml_baselines"].items()}
+    assert built == {"101": 40.0, "201": 40.0, "401": 48.0}
+
+    sidebar = [w.value.replace("\\", "") for w in at.sidebar.warning]
+    assert any(
+        text.startswith("a.xer: measured against a probable baseline, not the one its file names.") for text in sidebar
+    ), sidebar
+    assert any(
+        text.startswith("c.xer: the baseline its file names is not in the export, and the versions around it")
+        for text in sidebar
+    ), sidebar
+    assert any("The series mixes baseline sources" in text and "a probable baseline" in text for text in sidebar)
+
+    # the baseline named is missing for a and c only: b and d are measured against the one they name
+    errors = [e.value.replace("\\", "") for e in at.sidebar.error]
+    assert any(text.startswith("P6 Project Baseline missing for 2 updates of 4") for text in errors), errors
+
+    # with the export as the fallback too, c alone falls back on it (baseline 401, named by the last update),
+    # and is the only update said to name another baseline than the one it is measured against
+    baseline_box(at, "bl_fallback").select(BL_FILE)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    other = [w.value.replace("\\", "") for w in at.sidebar.warning if "name another P6 Project Baseline" in w.value]
+    assert len(other) == 1 and other[0].count(" update)") == 1, other  # one baseline named, by one update
+
+
+def test_the_export_of_baselines_is_read_for_the_downloads_in_the_per_file_mode(tmp_path, monkeypatch):
+    """What an anonymized download is built from (``baseline_items``): in "Baseline in each file", the
+    export picked in the folder, whose baselines the updates are measured against; a separate XER only
+    when it is the fallback."""
+    from xerkit import todo, xer_text
+
+    from xerscope.app.state import BL_EACH, BL_FILE, baseline_items
+
+    _series_and_export(tmp_path)
+    session = {"bl_choice": BL_EACH, "files_source": ("folder", str(tmp_path), ("a.xer",))}
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    ((name, export),) = baseline_items({**session, "bl_folder_file": "export.xml"})
+    assert (name, export[:]) == ("export.xml", (tmp_path / "export.xml").read_bytes())
+    assert baseline_items(session) == []
+
+    separate = tmp_path.parent / "separate.xer"
+    separate.write_text(xer_text([todo("A1")]), encoding="utf-8")
+    monkeypatch.setenv("XERSCOPE_BASELINE", str(separate))
+    assert baseline_items(session) == []
+    assert [name for name, _ in baseline_items({**session, "bl_fallback": BL_FILE})] == ["separate.xer"]
+
+
 def test_a_baseline_held_by_the_file_is_marked_in_file():
     from xerscope.store import SnapshotStore
 

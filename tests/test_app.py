@@ -915,6 +915,33 @@ def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_
     assert found["found_by"].tolist() == ["not found", "not found"]
 
 
+def test_an_export_that_cannot_be_read_is_said_in_the_sidebar_when_an_update_names_a_baseline(tmp_path, monkeypatch):
+    """w2 names baseline 370; export.xml, picked as the baseline file, is cut short afterwards. The sidebar
+    says the baseline was not read; the page still draws. In "Baseline in each file" the same export is
+    said not read, and no update is measured against it."""
+    from xerscope.app.state import BL_EACH
+
+    _updates_and_a_p6_xml_export(tmp_path)
+    named = {"proj_id": "20", "sum_base_proj_id": "370"}
+    (tmp_path / "w2.xer").write_text(
+        xer_text([todo("A", proj_id="20")], project=named, data_date="2026-03-09 08:00"), encoding="utf-8"
+    )
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    assert isinstance(at.session_state["baseline"], Baseline)
+    whole = (tmp_path / "export.xml").read_bytes()
+    (tmp_path / "export.xml").write_bytes(whole[: len(whole) // 2])
+    at.run()
+    _ok(at)
+    assert at.session_state["baseline"] is None
+    assert any(error.value.startswith("Baseline not read: export") for error in at.sidebar.error)
+
+    baseline_box(at).set_value(BL_EACH)
+    _ok(at)
+    assert any(error.value.startswith("Baselines export not read: export") for error in at.sidebar.error)
+    assert at.session_state.get("_xml_baselines", {}) == {}
+
+
 def _updates_and_a_larger_p6_xml_export(folder, hours: int):
     """``_updates_and_a_p6_xml_export`` with a baseline of ``hours`` on A and twenty activities without
     hours after it: an export of more than the 4096 bytes that tell a P6 XML export from an XER."""
