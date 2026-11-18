@@ -106,9 +106,20 @@ def open_files(at):
 
 
 def files_done(at):
-    """Press Done in the Files… window."""
+    """Press Done in the Files… window. Once a new series is read, the window opens on its Baseline
+    section and the pages wait: Done there too, which keeps the baseline offered by default."""
     at.button(key="files_done").click()
-    return at.run()
+    at.run()
+    if is_waiting_for_baseline(at):
+        at.button(key="files_done").click()
+        at.run()
+    return at
+
+
+def is_waiting_for_baseline(at) -> bool:
+    """A series is read and its baseline not yet set by Done on the window's Baseline section."""
+    state = at.session_state
+    return "baseline_set" in state and not state["baseline_set"] and state["store"] is not None
 
 
 def read_folder(at, count=None):

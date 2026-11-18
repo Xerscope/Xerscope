@@ -108,8 +108,16 @@ def _value(metric: Metric, out) -> float | None:
     return out.value
 
 
-def run_standard(standard: Standard, context: AnalysisContext) -> list[CheckResult]:
-    return [run_metric(metric, context) for metric in standard.metrics]
+def run_standard(
+    standard: Standard, context: AnalysisContext, stopped: Callable[[], bool] = lambda: False
+) -> list[CheckResult]:
+    """Every check of ``standard``, in its order; once ``stopped()``, the checks left are not run."""
+    results = []
+    for metric in standard.metrics:
+        if stopped():
+            break
+        results.append(run_metric(metric, context))
+    return results
 
 
 @dataclass(frozen=True)

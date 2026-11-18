@@ -264,11 +264,14 @@ Outside `analysis/`:
   `app/reading.py`, which reads them on up to two worker processes (`spawn`, no Streamlit imported;
   `XERSCOPE_LOAD_WORKERS`, 1 reads in the thread; a pool that fails falls back to that). The pages
   wait and draw once on the complete series: `_poll_load`, a fragment, redraws only the progress bar
-  each second and reruns the app once when the reading is done. Once the series is complete the
-  Overview computes the built-in standards on the latest update in `ScoreJob` and writes the results
+  each second and reruns the app once when the reading is done. A new choice of files then waits for
+  its baseline: the window opens once on its Baseline section (`_ask_for_the_baseline`; with a
+  single P6 XML export in the folder and no `XERSCOPE_BASELINE`, that export is picked), nothing is
+  read for the baseline and the pages stop (`require_store`) until Done there (`baseline_set`).
+  Once the baseline is set the Overview computes the built-in standards on the latest update in `ScoreJob` and writes the results
   where `metric_result` reads them. Neither thread touches the session state: the script run
   collects what they produced. A new choice of files cancels both jobs (files not started are not
-  read, standards not started are not computed), drops the memo and the baselines read from the
+  read, checks not started are not computed), drops the memo and the baselines read from the
   files, and keeps in the parse cache only the files of the new series. The cache (`memo`) keys every entry on the files, the
   project read from each and the baseline in use, then on what the analysis reads; it keeps the
   `MEMO_SIZE` most recently used entries. An analysis that reads no baseline (change log, PPC,
