@@ -1,7 +1,8 @@
 """The baselines a P6 XML baseline file holds, as the Debug page lists them.
 
-They are held against the baseline each update names: PROJECT.sum_base_proj_id is the ObjectId of
-a BaselineProject of the export.
+They are held against the baseline each update names (PROJECT.sum_base_proj_id is the ObjectId of a
+BaselineProject of the export), and the baseline each update would be measured against is looked for
+among them (``analysis.baseline_resolution``).
 """
 
 from __future__ import annotations
@@ -11,30 +12,99 @@ from collections.abc import Iterable
 
 import pandas as pd
 
+from xerscope.analysis.baseline import content_digest
+from xerscope.analysis.baseline_resolution import Export, resolutions
+from xerscope.store import SnapshotStore
+from xerscope.xer import load_snapshot
 from xerscope.xer.parser import XerError
-from xerscope.xer.pmxml import DiskFile, XmlBaseline, is_pmxml, list_baselines
+from xerscope.xer.pmxml import DiskFile, PmxmlIndex, XmlBaseline
 
 
-def file_baselines(baseline_files: Iterable[tuple[str, bytes | DiskFile]]) -> list[XmlBaseline] | None:
-    """Return the baselines of the baseline file in use when it is a P6 XML export.
-
-    ``baseline_files``: its name and contents. None for an XER, for no file, and for an export that
-    cannot be read (the sidebar says so where the file is chosen).
-    """
-    exports = [(data, name) for name, data in baseline_files if is_pmxml(data)]
-    try:
-        return list_baselines(*exports[0])[0] if exports else None
-    except XerError:
-        return None
-
-
-def xml_baselines_table(xml_baselines: list[XmlBaseline], named_baseline_ids: Iterable[str]) -> pd.DataFrame:
+def xml_baselines_table(index: PmxmlIndex, named_baseline_ids: Iterable[str]) -> pd.DataFrame:
     """Return one row per baseline of the file, in the order of the file.
 
     Under the names of ``XmlBaseline``: its ObjectId, code, name and data date, the project it was
-    taken from and its activities. ``updates_naming_it`` counts it in ``named_baseline_ids``, the
-    sum_base_proj_id of each update of the series (0: a baseline no update is measured against).
+    taken from and its activities. ``project_baseline``: that project names it as its Project
+    Baseline. ``updates_naming_it`` counts it in ``named_baseline_ids``, the sum_base_proj_id of
+    each update of the series (0: a baseline no update names).
     """
     named = list(named_baseline_ids)
-    table = pd.DataFrame(xml_baselines, columns=[field.name for field in dataclasses.fields(XmlBaseline)])
-    return table.assign(updates_naming_it=[named.count(object_id) for object_id in table["object_id"]])
+    project_baselines = {project.current_baseline_id for project in index.projects}
+    table = pd.DataFrame(index.baselines, columns=[field.name for field in dataclasses.fields(XmlBaseline)])
+    return table.assign(
+        project_baseline=[object_id in project_baselines for object_id in table["object_id"]],
+        updates_naming_it=[named.count(object_id) for object_id in table["object_id"]],
+    )
+
+
+class BaselineContents:
+    """Whether two baselines of an export are copies of one baseline, each read once at most.
+
+    Two baselines listed with different status dates or counts of activities are not copies: the
+    index says so and neither is read. Otherwise each is read and their ``content_digest`` compared.
+    """
+
+    def __init__(self, name: str, data: bytes | DiskFile, index: PmxmlIndex) -> None:
+        """Keep the export and what its index lists of each baseline; nothing is read yet."""
+        self.name, self.data, self.index = name, data, index
+        self.listed = {baseline.object_id: (baseline.data_date, baseline.activities) for baseline in index.baselines}
+        self.digests: dict[str, str] = {}
+
+    def digest(self, object_id: str) -> str:
+        """Return the content digest of one baseline, reading it from the export the first time."""
+        if object_id not in self.digests:
+            snapshot = load_snapshot(self.data, name=self.name, project_id=object_id, pmxml_index=self.index)
+            self.digests[object_id] = content_digest(snapshot)
+        return self.digests[object_id]
+
+    def same(self, one: str, other: str) -> bool:
+        """Tell whether two baselines have the same content; one that cannot be read proves no copy."""
+        if self.listed[one] != self.listed[other]:
+            return False
+        try:
+            return self.digest(one) == self.digest(other)
+        except XerError:
+            return False
+
+
+def export_of(name: str, data: bytes | DiskFile, index: PmxmlIndex) -> Export:
+    """Return what the resolution reads of an export.
+
+    Its baselines and, for each project that names one of them as its Project Baseline, that baseline.
+    """
+    project_baselines = {
+        project.object_id: project.current_baseline_id
+        for project in index.projects
+        if project.current_baseline_id in index.baseline_spans
+    }
+    return Export(frozenset(index.baseline_spans), project_baselines, BaselineContents(name, data, index).same)
+
+
+RESOLUTION_COLUMNS = [
+    "file", "data_date", "proj_id", "sum_base_proj_id", "found_by", "baseline", "version_before", "version_after",
+    "note",
+]  # fmt: skip
+
+
+def resolution_table(store: SnapshotStore, export: Export | None) -> pd.DataFrame:
+    """Return one row per update, by status date: the baseline it would be measured against.
+
+    ``found_by``: what finds it (``analysis.baseline_resolution``). ``baseline``: its id in the file
+    or in the export, or the project of a loaded update. ``version_before`` / ``version_after``: the
+    projects of the export created around the update's, when they were looked at.
+    """
+    rows = [
+        {
+            "file": update.source,
+            "data_date": update.data_date,
+            "proj_id": update.project_id,
+            "sum_base_proj_id": update.file_baseline.proj_id,
+            "found_by": found.found_by,
+            "baseline": found.baseline_id,
+            "version_before": found.version_before,
+            "version_after": found.version_after,
+            "note": found.note,
+        }
+        for update, found in zip(store, resolutions(store, export), strict=True)
+    ]
+    return pd.DataFrame(rows, columns=RESOLUTION_COLUMNS)

@@ -19,6 +19,7 @@ Two sets of baseline dates, as in P6:
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
@@ -223,6 +224,43 @@ def other_project_baselines(baseline: Snapshot, snapshots) -> dict[str, list[Sna
         if pointer and pointer != baseline.project_id and uses_project_baseline(snapshot) is not False:
             others.setdefault(pointer, []).append(snapshot)
     return others
+
+
+# Left out of ``content_digest``: the ids a P6 database gives anew to each copy of a project. An
+# activity is known by its Activity ID (task_code), its place in the WBS by the codes below the project.
+COPY_COLUMNS = ["task_id", "proj_id", "wbs_id", "taskrsrc_id"]
+FIELD_SEPARATOR = "\x1f"  # between the fields of a row in the text digested: the ASCII unit separator
+
+
+def content_digest(snapshot: Snapshot) -> str:
+    """sha256 of what the analyses read from a baseline project: its status date, every field of its
+    activities and of their assignments, its expenses, and the working time of each calendar they name
+    in place of the calendar's id. Two copies of one baseline, which P6 stores under different ids,
+    have the same digest; any other difference in those tables gives another one."""
+
+    def working_time(clndr_id: str) -> str:
+        calendar = snapshot.calendar(clndr_id)
+        return repr((calendar.name, calendar.hours_per_day, calendar.week, sorted(calendar.exceptions.items())))
+
+    def text_of(table: pd.DataFrame, calendar_column: str) -> str:
+        """The rows of ``table`` as text, in an order that does not depend on the copy read."""
+        rows = table.drop(columns=[column for column in COPY_COLUMNS if column in table.columns]).map(str)
+        if calendar_column in rows.columns:
+            named = rows[calendar_column] != ""
+            rows.loc[named, calendar_column] = rows.loc[named, calendar_column].map(working_time)
+        rows = rows.sort_values(list(rows.columns))
+        lines = [FIELD_SEPARATOR.join(row) for row in rows.itertuples(index=False, name=None)]
+        return "\n".join([FIELD_SEPARATOR.join(rows.columns), *lines])
+
+    task_codes = snapshot.tasks.drop_duplicates("task_id").set_index("task_id")["task_code"]
+    expenses = snapshot.expenses.assign(task_code=snapshot.expenses["task_id"].map(task_codes))
+    parts = [
+        str(snapshot.data_date),
+        text_of(snapshot.activities, "clndr_id"),
+        text_of(snapshot.assignments, "rsrc_clndr_id"),
+        text_of(expenses.drop(columns=[column for column in ("cost_item_id",) if column in expenses.columns]), ""),
+    ]
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
 RENUMBERED_COLUMNS = ["old_code", "new_code"]

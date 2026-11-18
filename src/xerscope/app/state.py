@@ -1688,6 +1688,19 @@ def baseline_items(session: MutableMapping) -> list[tuple[str, bytes | DiskFile]
     return [held] if held is not None else []
 
 
+def baseline_export() -> tuple[str, bytes | DiskFile, PmxmlIndex] | None:
+    """The separate baseline file in use when it is a P6 XML export that can be read: its name, its
+    contents and the session's index of it. None for an XER, for no file, and for an export that cannot
+    be read (the sidebar says so where the file is chosen)."""
+    for name, data in baseline_items(st.session_state):
+        if is_pmxml(data):
+            try:
+                return name, data, _pmxml_index(name, data)
+            except XerError:
+                return None
+    return None
+
+
 def baseline_files_tag(session: MutableMapping) -> tuple[tuple[str, str], ...]:
     """(name, digest) of each ``baseline_items`` file: with the signature, which files an anonymizer
     or an extract was built from."""
