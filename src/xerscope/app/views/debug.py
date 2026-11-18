@@ -7,6 +7,7 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.cpm import ScheduleError
+from xerscope.analysis.evm import earned_schedule
 from xerscope.app import diagnostic, ui, xml_baselines
 from xerscope.app.state import (
     anonymous_exports,
@@ -230,6 +231,17 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
     else:
         table(frames["09_pv_labor_check"], key="debug_09_pv_labor_check")
         table(frames["09_pv_labor_by_status"], key="debug_09_pv_labor_by_status")
+        st.caption(
+            "Earned Schedule (Lipke): the instant of the plan where PV = EV, on the tasks of the update that have "
+            "baseline hours and both EV dates (pv_hr is the update's PV). Working days of the project calendar "
+            "from plan_start, the first EV date: PD to plan_finish, AT to the status date, ES to that instant. "
+            "sv_t_wd = ES - AT (negative = behind), spi_t = ES / AT. ev_left_out_hr: earned on tasks without "
+            "both EV dates, not in ev_hr. Where the plan asks for no hours, the status date is the ES."
+        )
+        schedule = memo(
+            ("earned_schedule", snapshot.source, str(snapshot.data_date)), earned_schedule, snapshot, baseline
+        )
+        table(pd.DataFrame([schedule.as_row()]), key="debug_09_earned_schedule")
     st.caption(
         "Labor assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "
         "task's), and task dependent assignments on another calendar than their task's."
