@@ -193,6 +193,49 @@ def test_each_update_is_given_the_baseline_it_would_be_measured_against_and_what
     ]
 
 
+def test_the_projects_of_the_export_are_listed_with_their_status_date_and_the_updates_that_share_it():
+    """An export of three projects. 100: status date 2 March, added 27 February, names baseline 101, which the
+    export holds. 200: status date 9 March, names 999, which it does not hold. 300: no date, no baseline.
+    Three updates: a.xer read from project 150 on 2 March; b.xer and c.xer read from project 200, on 9 March
+    at another hour and on 16 March."""
+    from pmxmlkit import NAMESPACE, _fields, activity, baseline, calendar
+
+    from xerscope.app.xml_baselines import xml_projects_table
+    from xerscope.store import SnapshotStore
+    from xerscope.xer.pmxml import index_pmxml
+
+    projects = [
+        {"ObjectId": "100", "DataDate": "2026-03-02T08:00:00", "DateAdded": "2026-02-27T10:15:00",
+         "CurrentBaselineProjectObjectId": "101"},
+        {"ObjectId": "200", "DataDate": "2026-03-09T08:00:00", "DateAdded": "2026-03-06T10:15:00",
+         "CurrentBaselineProjectObjectId": "999"},
+        {"ObjectId": "300"},
+    ]  # fmt: skip
+    planned = activity("A1", "1011", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
+    body = calendar() + "".join(f"<Project>{_fields(fields)}</Project>" for fields in projects)
+    body += baseline("101", "V100 - B1", [planned])
+    export = f'<?xml version="1.0"?><APIBusinessObjects xmlns="{NAMESPACE}">{body}</APIBusinessObjects>'.encode()
+    store = SnapshotStore(
+        [
+            _update("a.xer", "150", "2026-03-02 08:00", "151", "2026-02-27 16:00", "Y"),
+            _update("b.xer", "200", "2026-03-09 17:00", "201", "2026-03-06 16:00", "Y"),
+            _update("c.xer", "200", "2026-03-16 08:00", "201", "2026-03-06 16:00", "Y"),
+        ]
+    )
+
+    table = xml_projects_table(index_pmxml(export, "export.xml"), store)
+
+    assert list(table.columns) == [
+        "object_id", "data_date", "date_added", "current_baseline_id", "baseline_in_export", "updates_from_it",
+        "updates_same_status_date",
+    ]  # fmt: skip
+    assert table.values.tolist() == [
+        ["100", "2026-03-02 08:00", "2026-02-27 10:15", "101", True, 0, 1],
+        ["200", "2026-03-09 08:00", "2026-03-06 10:15", "999", False, 2, 1],
+        ["300", "", "", "", False, 0, 0],
+    ]
+
+
 def _series_and_export(folder) -> None:
     """Four updates of 40 h on A1, none with its baseline in its file, next to an export of versions 100,
     200 and 400 of the project: baselines 101 and 201 are copies of one baseline (40 h), 401 is another (48 h).
@@ -325,6 +368,31 @@ def test_each_baseline_of_the_export_is_read_once_for_the_pages_and_the_debug_ta
     found = next(table.value for table in at.dataframe if "found_by" in table.value.columns)
     assert found["found_by"].tolist() == [SAME_GENERATION, IN_EXPORT, UNDECIDED, IN_EXPORT]
     assert reads == {"101": 1, "201": 1, "401": 1}
+
+
+def test_the_debug_page_lists_the_projects_of_the_export_in_use(tmp_path, monkeypatch):
+    """The export of the folder holds versions 100, 200 and 400; b.xer was read from 200, d.xer from 400."""
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app.state import BL_EACH
+
+    _series_and_export(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_folder_file").select("export.xml")
+    at.run()
+    at = at.switch_page("views/debug.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    projects = next(table.value for table in at.dataframe if "updates_from_it" in table.value.columns)
+    listed = projects[["object_id", "current_baseline_id", "baseline_in_export", "updates_from_it"]]
+    assert listed.values.tolist() == [["100", "101", True, 0], ["200", "201", True, 1], ["400", "401", True, 1]]
 
 
 def test_the_export_of_baselines_is_read_for_the_downloads_in_the_per_file_mode(tmp_path, monkeypatch):
