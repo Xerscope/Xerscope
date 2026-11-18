@@ -871,6 +871,8 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
     )  # fmt: skip
     if snapshot.data_date is None:
         return replace(result, note="no status date")
+    if baseline.is_planned:
+        return replace(result, note="baseline = the planned dates of the update: a late start does not show in them")
     if measured.empty:
         return replace(result, note="no baseline activity of the update with hours and both EV dates")
     dates = pd.concat([measured["bl_start"], measured["bl_finish"]])  # a finish before its start: _Spread

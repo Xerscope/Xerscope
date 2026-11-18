@@ -266,3 +266,13 @@ def test_on_random_schedules_the_gaps_by_status_add_up_to_the_earned_schedule_s_
     assert gaps["ev_hr"].sum() == pytest.approx(schedule.ev_hr, abs=1e-6)
     assert gaps["bl_labor_hr"].sum() == pytest.approx(schedule.bac_hr, abs=1e-6)
     assert (gaps["ahead_hr"] + gaps["behind_hr"]).sum() == pytest.approx(schedule.ev_hr - schedule.pv_hr, abs=1e-6)
+
+
+def test_the_planned_dates_of_the_update_are_no_baseline_to_read_an_earned_schedule_on():
+    """Baseline "Planned dates in each file": B, not started on Wednesday 03-11, has the planned dates P6 keeps
+    equal to its early dates until it starts (Oracle, P6 EPPM User Guide, "Planned Dates"), so they move with
+    every scheduling and its late start never shows. No ES: the reason is given."""
+    update = snap([progressed(A, 100), B], data_date="2026-03-11 12:00")
+    schedule = earned_schedule(update, Baseline.planned(update))
+    assert schedule.es_min is None and schedule.spi_t is None
+    assert schedule.note == "baseline = the planned dates of the update: a late start does not show in them"
