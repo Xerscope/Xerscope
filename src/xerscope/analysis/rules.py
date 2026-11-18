@@ -446,10 +446,11 @@ def total_float(
 
     Tasks whose total float compares to ``value`` (hours as stored, or working days).
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
     flagged = population[as_flag(COMPARE[op](population[column], value))]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
 
 @rule("duration", "%")
