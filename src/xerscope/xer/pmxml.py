@@ -80,6 +80,14 @@ class XmlBaseline:
     activities: int
 
 
+@dataclass(frozen=True)
+class XmlProject:
+    """One ``Project`` of the file and the baseline it names as its Project Baseline (blank when none)."""
+
+    object_id: str
+    current_baseline_id: str
+
+
 class DiskFile:
     """A file of the disk read where asked, never whole: ``file[first:end]`` reads those bytes alone.
 
@@ -146,7 +154,12 @@ class PmxmlIndex:
     baselines: list[XmlBaseline]
     baseline_spans: dict[str, tuple[int, int]]  # by baseline ObjectId
     shared_spans: list[tuple[int, int]]  # each Calendar, wherever it is, and each Resource of the file
-    current_baseline_id: str  # the Project Baseline the file's first project names, blank when none
+    projects: list[XmlProject]  # in the order of the file
+
+    @property
+    def current_baseline_id(self) -> str:
+        """The Project Baseline the file's first project names, blank when none."""
+        return self.projects[0].current_baseline_id if self.projects else ""
 
 
 class _IndexPass:
@@ -167,7 +180,7 @@ class _IndexPass:
         self.baselines: list[XmlBaseline] = []
         self.baseline_spans: dict[str, tuple[int, int]] = {}
         self.shared_spans: list[tuple[int, int]] = []
-        self.current_baseline_id: str | None = None  # None until the first project is closed
+        self.projects: list[XmlProject] = []
         self.calendar_depth = 0  # depth of the calendar being read, 0 outside any
         self.span_starts: dict[int, int] = {}  # by depth: first byte of the element whose span is kept
         self.closing_spans: list[tuple[str, int]] = []  # (what it is, first byte) of spans the next tag ends
@@ -259,8 +272,10 @@ class _IndexPass:
                     activities=self.activities,
                 )
             )
-        elif self.current_baseline_id is None:
-            self.current_baseline_id = self.fields.get("CurrentBaselineProjectObjectId", "")
+        else:
+            self.projects.append(
+                XmlProject(self.fields.get("ObjectId", ""), self.fields.get("CurrentBaselineProjectObjectId", ""))
+            )
         self.project_tag = ""
         self.fields = {}
         self.activities = 0
@@ -296,7 +311,7 @@ def index_pmxml(data: bytes | DiskFile, source: str) -> PmxmlIndex:
         baselines=index_pass.baselines,
         baseline_spans=index_pass.baseline_spans,
         shared_spans=index_pass.shared_spans,
-        current_baseline_id=index_pass.current_baseline_id or "",
+        projects=index_pass.projects,
     )
 
 

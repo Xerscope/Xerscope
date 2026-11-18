@@ -359,6 +359,11 @@ def test_the_index_lists_each_baseline_and_where_its_bytes_are():
         ("501", "BL-P2", "2", 2),
     ]
     assert index.current_baseline_id == "500"  # of the first project of the file
+    # each project with the baseline it names as its Project Baseline
+    assert [(project.object_id, project.current_baseline_id) for project in index.projects] == [
+        ("1", "500"),
+        ("2", "501"),
+    ]
     for object_id, (first_byte, end_byte) in index.baseline_spans.items():
         element = data[first_byte:end_byte]
         assert element.startswith(b"<BaselineProject><ObjectId>" + object_id.encode() + b"<")

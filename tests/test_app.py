@@ -898,6 +898,23 @@ def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tm
         assert baseline_items({**session, "bl_folder_file": name}) == [], name
 
 
+def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_path, monkeypatch):
+    """export.xml cut short, picked as the baseline file of two updates that name no baseline: the sidebar
+    says it was not read, and the Debug page draws without the list of its baselines."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    whole = (tmp_path / "export.xml").read_bytes()
+    (tmp_path / "export.xml").write_bytes(whole[: len(whole) // 2])
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    monkeypatch.setenv("XERSCOPE_DEBUG_PAGE", "1")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+    assert any(error.value.startswith("Baseline not read: export") for error in at.sidebar.error)
+    assert not [d for d in at.dataframe if "updates_naming_it" in d.value.columns]
+    found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+    assert found["found_by"].tolist() == ["not found", "not found"]
+
+
 def _updates_and_a_larger_p6_xml_export(folder, hours: int):
     """``_updates_and_a_p6_xml_export`` with a baseline of ``hours`` on A and twenty activities without
     hours after it: an export of more than the 4096 bytes that tell a P6 XML export from an XER."""
@@ -991,17 +1008,28 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         _ok(at)
         pointers = next(d.value for d in at.dataframe if "baseline_in_file" in d.value.columns)
         listed = [d.value for d in at.dataframe if "updates_naming_it" in d.value.columns]
-        return pointers, listed
+        found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+        return pointers, listed, found
 
-    pointers, listed = debug_tables(_run(tmp_path, monkeypatch))
+    pointers, listed, found = debug_tables(_run(tmp_path, monkeypatch))
     assert pointers["baseline_in_xml_file"].tolist() == ["–", "–"] and not listed  # blank: no P6 XML file
+    assert found["found_by"].tolist() == ["not found", "not found"]
 
-    pointers, (listed,) = debug_tables(_pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml"))
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
+    pointers, (listed,), found = debug_tables(at)
     assert pointers[["file", "sum_base_proj_id", "baseline_in_xml_file"]].values.tolist() == [
         ["w1.xer", "", False],
         ["w2.xer", "370", True],
     ]
-    assert listed[["object_id", "activities", "updates_naming_it"]].values.tolist() == [["370", 1, 1], ["371", 0, 0]]
+    assert listed[["object_id", "activities", "project_baseline", "updates_naming_it"]].values.tolist() == [
+        ["370", 1, True, 1],
+        ["371", 0, False, 0],
+    ]
+    # the baseline each update would be measured against: w1 names none, w2 names one the export holds
+    assert found[["file", "found_by", "baseline"]].values.tolist() == [
+        ["w1.xer", "not found", ""],
+        ["w2.xer", "in the export, by id", "370"],
+    ]
 
 
 def test_a_folder_without_a_p6_xml_export_offers_no_folder_baseline_file(sample_dir, monkeypatch):
@@ -2301,7 +2329,7 @@ def test_health_and_audit_write_no_web_address(app, standard_id):
 
 
 def test_every_table_of_the_debug_page_has_a_key_of_its_own():
-    """The Debug page draws 35 tables, most of them too short to carry filters on the demo: read in
+    """The Debug page draws 36 tables, most of them too short to carry filters on the demo: read in
     the page's source, every call of its ``table`` passes a ``key``, each one a different name, none
     the key of another widget of the page (a table's key is also its dataframe's)."""
     import ast
@@ -2315,7 +2343,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 35 and len(table_keys) == 35 and len(set(table_keys)) == 35
+    assert len(tables) == 36 and len(table_keys) == 36 and len(set(table_keys)) == 36
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)

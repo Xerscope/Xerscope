@@ -105,11 +105,13 @@ def test_the_baseline_pointers_of_a_series_are_listed_in_data_date_order():
 
 
 def test_the_baselines_of_a_p6_xml_file_are_held_against_the_baseline_each_update_names():
-    # three updates name baselines 7, 22 and 31; the XML export holds 7, 22 and 99, which no update names
+    # three updates name baselines 7, 22 and 31; the XML export holds 7, 22 and 99, which no update names;
+    # its project names 22 as its Project Baseline
     from pmxmlkit import activity, baseline, pmxml_bytes
 
-    from xerscope.app.xml_baselines import file_baselines, xml_baselines_table
+    from xerscope.app.xml_baselines import xml_baselines_table
     from xerscope.store import SnapshotStore
+    from xerscope.xer.pmxml import index_pmxml
 
     store = SnapshotStore(
         [
@@ -121,28 +123,74 @@ def test_the_baselines_of_a_p6_xml_file_are_held_against_the_baseline_each_updat
     planned = activity("A1", "11", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40)
     later = activity("A2", "12", "2026-03-09T08:00:00", "2026-03-13T17:00:00", 40)
     export = pmxml_bytes(
-        [baseline("7", "BL-7", [planned]), baseline("22", "BL-22", [planned, later]), baseline("99", "BL-99", [])]
+        [baseline("7", "BL-7", [planned]), baseline("22", "BL-22", [planned, later]), baseline("99", "BL-99", [])],
+        current_baseline="22",
     )
-    xml_baselines = file_baselines([("export.xml", export)])
+    index = index_pmxml(export, "export.xml")
 
-    assert baseline_pointers(store, xml_baselines)["baseline_in_xml_file"].tolist() == [True, True, False]
-    assert xml_baselines_table(xml_baselines, ["7", "22", "31"]).values.tolist() == [
-        ["7", "BL-7", "BL-7 name", "2026-02-23 08:00", "1", 1, 1],
-        ["22", "BL-22", "BL-22 name", "2026-02-23 08:00", "1", 2, 1],
-        ["99", "BL-99", "BL-99 name", "2026-02-23 08:00", "1", 0, 0],
+    assert baseline_pointers(store, index.baselines)["baseline_in_xml_file"].tolist() == [True, True, False]
+    assert xml_baselines_table(index, ["7", "22", "31"]).values.tolist() == [
+        ["7", "BL-7", "BL-7 name", "2026-02-23 08:00", "1", 1, False, 1],
+        ["22", "BL-22", "BL-22 name", "2026-02-23 08:00", "1", 2, True, 1],
+        ["99", "BL-99", "BL-99 name", "2026-02-23 08:00", "1", 0, False, 0],
     ]
 
 
-def test_only_a_readable_p6_xml_baseline_file_lists_its_baselines():
-    from pmxmlkit import pmxml_bytes
+def _export_of_versions(versions: dict[str, tuple[str, int]]) -> bytes:
+    """A P6 XML export of several versions of one project: ``{project id: (baseline id, hours)}``. Each
+    version names its baseline as its Project Baseline; each baseline holds A1 with ``hours``, under ids of
+    its own."""
+    from pmxmlkit import NAMESPACE, _fields, activity, baseline, calendar
 
-    from xerscope.app.xml_baselines import file_baselines
+    body = calendar()
+    for project_id, (baseline_id, hours) in versions.items():
+        fields = {"ObjectId": project_id, "Id": f"V{project_id}", "CurrentBaselineProjectObjectId": baseline_id}
+        planned = activity("A1", f"{baseline_id}1", "2026-03-02T08:00:00", "2026-03-06T17:00:00", hours)
+        copy = baseline(baseline_id, f"V{project_id} - B1", [planned])
+        body += f"<Project>{_fields(fields)}</Project>"
+        body += copy.replace("<OriginalProjectObjectId>1<", f"<OriginalProjectObjectId>{project_id}<")
+    return f'<?xml version="1.0"?><APIBusinessObjects xmlns="{NAMESPACE}">{body}</APIBusinessObjects>'.encode()
 
-    export = pmxml_bytes([])
-    assert file_baselines([]) is None
-    assert file_baselines([("baseline.xer", b"ERMHDR\t24.12\n%T\tPROJECT\n")]) is None
-    assert file_baselines([("cut.xml", export[:-10])]) is None  # the sidebar reports it where the file is chosen
-    assert file_baselines([("export.xml", export)]) == []
+
+def test_each_update_is_given_the_baseline_it_would_be_measured_against_and_what_found_it():
+    """The export holds versions 100, 200 and 400 of the project. Baselines 101 and 201 are copies of one
+    baseline (40 h on A1); 401 is another one (48 h). Five updates, none with its baseline in its file."""
+    from xerscope.app.xml_baselines import export_of, resolution_table
+    from xerscope.store import SnapshotStore
+    from xerscope.xer.pmxml import index_pmxml
+
+    store = SnapshotStore(
+        [
+            _update("a.xer", "150", "2026-03-02 08:00", "151", "2026-02-27 16:00", "Y"),  # between 100 and 200
+            _update("b.xer", "200", "2026-03-09 08:00", "201", "2026-03-06 16:00", "Y"),  # its baseline is exported
+            _update("c.xer", "300", "2026-03-16 08:00", "301", "2026-03-13 16:00", "Y"),  # between 200 and 400
+            _update("d.xer", "350", "2026-03-23 08:00", "150", "2026-03-20 16:00", "Y"),  # names the project of a.xer
+            _update("e.xer", "450", "2026-03-30 08:00", "451", "2026-03-27 16:00", "Y"),  # later than every version
+        ]
+    )
+    export = _export_of_versions({"100": ("101", 40), "200": ("201", 40), "400": ("401", 48)})
+    table = resolution_table(store, export_of("export.xml", export, index_pmxml(export, "export.xml")))
+
+    found = table[["file", "found_by", "baseline", "version_before", "version_after", "note"]].values.tolist()
+    assert found == [
+        ["a.xer", "in the export, the same baseline before and after", "101", "100", "200", ""],
+        ["b.xer", "in the export, by id", "201", "", "", ""],
+        ["c.xer", "undecided", "", "200", "400", "the versions around it hold different baselines"],
+        ["d.xer", "a loaded update, by id", "150", "", "", ""],
+        ["e.xer", "undecided", "", "400", "", "no version of the export after it"],
+    ]
+    assert table[["proj_id", "sum_base_proj_id"]].values.tolist() == [
+        ["150", "151"], ["200", "201"], ["300", "301"], ["350", "150"], ["450", "451"],
+    ]  # fmt: skip
+
+    without_export = resolution_table(store, None)
+    assert without_export["found_by"].tolist() == [
+        "not found",
+        "not found",
+        "not found",
+        "a loaded update, by id",
+        "not found",
+    ]
 
 
 def test_a_baseline_held_by_the_file_is_marked_in_file():

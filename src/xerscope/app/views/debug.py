@@ -10,8 +10,8 @@ from xerscope.analysis.cpm import ScheduleError
 from xerscope.app import diagnostic, ui, xml_baselines
 from xerscope.app.state import (
     anonymous_exports,
+    baseline_export,
     baseline_for,
-    baseline_items,
     data_identity,
     data_locked,
     fetch,
@@ -126,21 +126,36 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
         "baseline earned value uses (project baseline or each user's primary baseline), unverified."
     )
-    held_baselines = memo(
-        ("debug_xml_baselines",), lambda: xml_baselines.file_baselines(baseline_items(st.session_state))
-    )
-    pointers = diagnostic.baseline_pointers(store, held_baselines)
+    export = baseline_export()
+    pointers = diagnostic.baseline_pointers(store, None if export is None else export[2].baselines)
     table(pointers, key="debug_05_baseline_pointers")
-    if held_baselines is not None:
+    if export is not None:
         st.caption(
             "The baselines of the P6 XML baseline file, in the order of the file: the id an update names "
-            "(object_id), the project each was taken from (original_project_id) and how many updates of the "
-            "series name it (updates_naming_it; 0: no update is measured against it)."
+            "(object_id), the project each was taken from (original_project_id), whether that project names "
+            "it as its Project Baseline (project_baseline) and how many updates of the series name it "
+            "(updates_naming_it; 0: no update names it)."
         )
         table(
-            xml_baselines.xml_baselines_table(held_baselines, pointers["sum_base_proj_id"]),
+            xml_baselines.xml_baselines_table(export[2], pointers["sum_base_proj_id"]),
             key="debug_05_xml_baselines",
         )
+    st.caption(
+        "The baseline each update would be measured against, and what finds it (found_by): in its file; in the "
+        "export, under the id it names; a loaded update, when it names the project that update was read from; "
+        "or, in the export, the baseline of the version created just before its project when the version "
+        "created just after holds a copy of the same baseline (version_before, version_after: by ObjectId, "
+        "an order of creation observed in P6 databases, which Oracle does not document). Only the first two "
+        "are the baseline P6 measured against. Shown, not applied: the pages use the baseline of the first "
+        "table of this block."
+    )
+    table(
+        memo(
+            ("debug_baseline_resolution",),
+            lambda: xml_baselines.resolution_table(store, None if export is None else xml_baselines.export_of(*export)),
+        ),
+        key="debug_05_baseline_resolution",
+    )
     st.caption(
         "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
         "previous update under a new Task ID. P6 links a task to its baseline by Activity ID."
