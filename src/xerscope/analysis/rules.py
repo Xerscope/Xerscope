@@ -311,7 +311,8 @@ def missing_logic(
     other projects. ``dangling`` also flags a start not driven by any FS/SS predecessor
     or a finish that drives no FS/FF successor.
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     relationships = context.snapshot.relationships
     own = relationships[~relationships["is_external"].astype(bool)]  # links within the project; the others are optional
     has_predecessor = population["task_code"].isin(own["succ_code"])
@@ -344,7 +345,11 @@ def missing_logic(
         reason = reason.mask((reason == "") & dangling_finish, "dangling finish (no FS/FF successor)")
     flagged = population[reason != ""]
     return RuleOutput(
-        flagged_activities(flagged, reason=reason[reason != ""]), len(flagged), len(population), checked=population
+        flagged_activities(flagged, reason=reason[reason != ""]),
+        len(flagged),
+        len(population),
+        checked=population,
+        funnel=funnel,
     )
 
 
@@ -359,17 +364,19 @@ def dangling(context, end: Literal["start", "finish"] = "finish", exclude: Names
     ``end = "finish"``: has successors but none FS or FF (the finish drives nothing).
     Tasks with no logic at all on that end are left to ``missing_logic``.
     """
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    if end == "start":
+        funnel.exclude("started", "xerscope")
+    population = funnel.rows
     relationships = context.snapshot.relationships
     if end == "start":
-        population = population[~population["is_started"]]
         has_logic = population["task_code"].isin(relationships["succ_code"])
         driving = has_driving_predecessor(population["task_code"], relationships)
     else:
         has_logic = population["task_code"].isin(relationships["pred_code"])
         driving = has_driving_successor(population["task_code"], relationships)
     flagged = population[has_logic & ~driving]
-    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population)
+    return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
 
 @rule("lag", "%", links=True)
