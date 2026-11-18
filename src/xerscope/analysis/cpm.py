@@ -1627,49 +1627,71 @@ class _Run:
         "activities that have an early finish equal to the latest calculated early finish
         for the project", then "all driving relationships for those activities")."""
         longest: set[str] = set()
-        # the activities whose early finish is the project finish, found once per trace
-        enders = [c for c in self.nodes if self.early_finish[c] == self.finish]
-        pending = [code for code in self.open_ if self._ends_project(code, enders)]
+        pending = self.longest_path_ends()
         while pending:
             code = pending.pop()
             if code in longest:
                 continue
             longest.add(code)
-            axis = self.cal_ax[code]
-            for predecessor, link_type, lag in self.preds[code]:
-                if self.status[predecessor] == "TK_Complete" or (
-                    self.status[code] == "TK_Active" and self.options.progressed == "progress_override"
-                ):
-                    continue
-                link_axis = self.lag_axis(predecessor, code)
-                if link_type in ("FS", "FF"):
-                    bound = self.shift(link_axis, self.early_finish[predecessor], lag)
-                else:
-                    predecessor_start, predecessor_lag = self.start_link(predecessor, link_axis, lag)
-                    bound = self.shift(link_axis, predecessor_start, predecessor_lag)
-                own_instant = self.remaining_start[code] if link_type in ("FS", "SS") else self.early_finish[code]
-                if axis.work(bound) >= axis.work(own_instant):
-                    pending.append(predecessor)
+            pending.extend(self.driving_predecessors(code))
         # A level-of-effort activity is on the path when one of its links into a longest-path
         # activity drives that activity's date (P6 20.12 export: LOE spanning two activities
         # of the path, SS from the first, FF into the second, flagged). Its own dates come from
         # its links, so the trace stops there.
         for loe in self.loe_codes:
-            if self.status[loe] == "TK_Complete" or loe not in self.early_finish:
-                continue
-            for successor, link_type, lag in self.loe_succs[loe]:
-                if successor not in longest:
-                    continue
-                link_axis = self.lag_axis(loe, successor)
-                measured_from = self.early_finish[loe] if link_type in ("FS", "FF") else self.remaining_start[loe]
-                bound = self.shift(link_axis, measured_from, lag)
-                own_instant = (
-                    self.remaining_start[successor] if link_type in ("FS", "SS") else self.early_finish[successor]
-                )
-                if self.cal_ax[successor].work(bound) >= self.cal_ax[successor].work(own_instant):
-                    longest.add(loe)
-                    break
+            if self.is_loe_driving_one_of(loe, longest):
+                longest.add(loe)
         return longest
+
+    def longest_path_ends(self) -> list[str]:
+        """Unfinished activities that finish at the project finish: where the trace starts."""
+        # the activities whose early finish is the project finish, found once per trace
+        enders = [code for code in self.nodes if self.early_finish[code] == self.finish]
+        return [code for code in self.open_ if self._ends_project(code, enders)]
+
+    def driving_predecessors(self, code) -> list[str]:
+        """Unfinished predecessors whose link drives a date of ``code``. Work under way has none under
+        Progress Override: its logic is ignored."""
+        if self.status[code] == "TK_Active" and self.options.progressed == "progress_override":
+            return []
+        driving = []
+        for predecessor, link_type, lag in self.preds[code]:
+            if self.status[predecessor] == "TK_Complete":
+                continue
+            bound = self.early_bound_through(predecessor, code, link_type, lag)
+            if self.is_driven_by(code, link_type, bound):
+                driving.append(predecessor)
+        return driving
+
+    def early_bound_through(self, predecessor: str, code: str, link_type: str, lag: float) -> pd.Timestamp:
+        """Earliest date a link from an unfinished predecessor allows ``code``: the predecessor's early
+        finish (FS, FF) or the start an SS or SF link is measured from, plus the lag."""
+        link_axis = self.lag_axis(predecessor, code)
+        if link_type in ("FS", "FF"):
+            return self.shift(link_axis, self.early_finish[predecessor], lag)
+        predecessor_start, predecessor_lag = self.start_link(predecessor, link_axis, lag)
+        return self.shift(link_axis, predecessor_start, predecessor_lag)
+
+    def is_driven_by(self, code, link_type: str, bound: pd.Timestamp) -> bool:
+        """True when the date a link allows is not before the date of ``code`` it bounds, its remaining
+        start (FS, SS) or its early finish (FF, SF), in working time of its calendar."""
+        own_instant = self.remaining_start[code] if link_type in ("FS", "SS") else self.early_finish[code]
+        axis = self.cal_ax[code]
+        return axis.work(bound) >= axis.work(own_instant)
+
+    def is_loe_driving_one_of(self, loe, longest: set[str]) -> bool:
+        """True when a link from the unfinished LOE drives a date of one of the ``longest`` activities."""
+        if self.status[loe] == "TK_Complete" or loe not in self.early_finish:
+            return False
+        for successor, link_type, lag in self.loe_succs[loe]:
+            if successor not in longest:
+                continue
+            link_axis = self.lag_axis(loe, successor)
+            measured_from = self.early_finish[loe] if link_type in ("FS", "FF") else self.remaining_start[loe]
+            bound = self.shift(link_axis, measured_from, lag)
+            if self.is_driven_by(successor, link_type, bound):
+                return True
+        return False
 
     # --- assignment dates --------------------------------------------------------------------
     def assignment_dates(self) -> pd.DataFrame:
