@@ -10,8 +10,10 @@ whole file.
 
 A wrong end is always met again: the tag that really ends the element comes later, where the search
 expects a child or the end of the parent, and it gives up there. What the search does not do is check
-the elements it skips: a file damaged inside an activity is indexed all the same. Every element a table
-is read from is parsed in full when it is read (``pmxml._document_of``), and refused there.
+what it does not read: the elements it skips, the XML declaration, the attributes of the root element
+other than its namespace. A file damaged there is indexed all the same. Every element a table is read
+from is parsed in full, after the head of the file, when it is read (``pmxml._document_of``), and
+refused there.
 """
 
 from __future__ import annotations
@@ -225,6 +227,22 @@ def _scan_project(source: _FileBytes, project: Element, listed_fields: tuple[str
     return ScannedProject(project.name.decode(), (project.start, project.end), fields, activities)
 
 
+def _namespace_of(attributes: bytes) -> str:
+    """Return the namespace the root element declares, as a parser writes it before a tag; blank without one.
+
+    A parser reads the entities of the value, turns its tabs and line ends into spaces and refuses bytes
+    that are not UTF-8. A value of printable ASCII characters without ``&`` is the one it gives; any other
+    is left to it.
+    """
+    declared = DEFAULT_NAMESPACE.search(attributes)
+    if declared is None:
+        return ""
+    uri = declared.group(1) or declared.group(2) or b""
+    if b"&" in uri or not all(0x20 <= byte <= 0x7E for byte in uri):
+        raise NotPlain
+    return "{" + uri.decode("ascii") + "}" if uri else ""
+
+
 def _head(data: FileContents) -> tuple[_FileBytes, Element, str]:
     """Read the declaration and the start tag of the root element: the bytes after it, the root, its namespace."""
     start = bytes(data[:4096])
@@ -239,10 +257,8 @@ def _head(data: FileContents) -> tuple[_FileBytes, Element, str]:
         raise NotPlain
     if set(NAMESPACES_DECLARED.findall(found.group(2))) - {b"xmlns", b"xmlns:xsi"}:
         raise NotPlain  # a prefix an element of the file may carry
-    namespace = DEFAULT_NAMESPACE.search(found.group(2))
-    uri = (namespace.group(1) or namespace.group(2) or b"").decode() if namespace else ""
     root = Element(ROOT, first, found.end(), -1, -1)
-    return _FileBytes(data, found.end()), root, "{" + uri + "}" if uri else ""
+    return _FileBytes(data, found.end()), root, _namespace_of(found.group(2))
 
 
 def _keep(scan: Scan, element: Element, project: ScannedProject | None, next_tag: int) -> None:

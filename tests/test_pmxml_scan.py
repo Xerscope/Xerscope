@@ -108,6 +108,13 @@ NOT_PLAIN = {
     "a DOCTYPE": export(project("1"), head='<?xml version="1.0"?><!DOCTYPE APIBusinessObjects>'),
     "a prefix declared on the root element": export(project("1")).replace(b"xmlns:xsi", b"xmlns:p6"),
     "a namespace declared below the root element": export('<Calendar xmlns="urn:another"/>'),
+    "a namespace that is not UTF-8": b'<APIBusinessObjects xmlns="\x80">',
+    "a namespace written with an entity": export(baseline("101", "B1", [PLANNED])).replace(
+        NAMESPACE.encode(), b"urn:p6&amp;api"
+    ),
+    "a namespace written with a tab": export(baseline("101", "B1", [PLANNED])).replace(
+        NAMESPACE.encode(), b"urn:p6\tapi"
+    ),
     "another encoding": export(project("1"), head='<?xml version="1.0" encoding="ISO-8859-1"?>'),
     "UTF-16": export(project("1"), head='<?xml version="1.0" encoding="UTF-16"?>').decode().encode("utf-16"),
     "an activity inside an activity": one_baseline(PLANNED.replace("</Activity>", PLANNED + "</Activity>")),
