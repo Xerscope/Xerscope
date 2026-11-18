@@ -232,8 +232,8 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         st.caption(
             "User defined fields holding a value in the project read (UDFTYPE, UDFVALUE): the table of the "
             "objects that carry the field, its data type, its values, how many of them differ, and the tasks "
-            "that carry one. A text field of TASK with few different values splits the project as an activity "
-            "code does. The anonymous download leaves the label out."
+            "that carry one. A text field of TASK with few different values splits the project as a task code "
+            "does. The anonymous download leaves the label out."
         )
         table(frames["09_udf_fields"], key="debug_09_udf_fields")
     if frames["09_pv_labor_check"].empty:
