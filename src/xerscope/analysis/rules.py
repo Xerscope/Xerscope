@@ -526,7 +526,8 @@ def invalid_dates(
     reads "on or before the status date", the status date being the data date.
     """
     data_date = context.snapshot.data_date
-    population = activities(context, exclude)
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
     if data_date is None:
         return RuleOutput(note="no status date")
     before = operator.le if include_data_date else operator.lt
@@ -542,7 +543,13 @@ def invalid_dates(
     flagged = population[hit]
     checked = population[population["act_start_date"].notna()] if denominator == "started" else population
     reasons = invalid_date_reason(forecast, actual)[hit]
-    return RuleOutput(flagged_activities(flagged, reason=reasons), len(flagged), len(checked), checked=checked)
+    return RuleOutput(
+        flagged_activities(flagged, reason=reasons),
+        len(flagged),
+        len(checked),
+        checked=checked,
+        funnel=funnel if denominator == "population" else None,  # "started" cuts the denominator outside the funnel
+    )
 
 
 @rule("no_resource", "%")
@@ -579,10 +586,13 @@ def late_vs_baseline(
     ``no_baseline``: a task with no baseline finish passes, or (``"planned"``, P6
     Professional) is late when its finish is later than its planned finish.
     """
-    population = with_baseline(context.baseline, activities(context, exclude))
+    funnel = activities_funnel(context, exclude)
+    population = with_baseline(context.baseline, funnel.rows)
     if no_baseline == "planned":
         population["bl_finish"] = population["bl_finish"].combine_first(population["target_end_date"])
-    return late_output(context, population, tolerance_hours)
+    output = late_output(context, population, tolerance_hours)
+    output.funnel = funnel
+    return output
 
 
 @rule("bei", "ratio", needs_baseline=True)
@@ -605,11 +615,16 @@ def bei(
     data_date = context.snapshot.data_date
     if data_date is None:
         return RuleOutput(note="no status date")
-    population = with_baseline(context.baseline, activities(context, exclude))
-    if due_from == "baseline":
+    funnel = activities_funnel(context, exclude)
+    population = with_baseline(context.baseline, funnel.rows)
+    if due_from == "baseline":  # its due tasks are counted in the baseline, outside the file's funnel
         baseline_population = without(context.baseline.snapshot.activities, data_date, exclude)
         return bei_from_baseline(context, population, baseline_population)
-    return bei_from_snapshot(population, data_date, missing_baseline == "due")
+    output = bei_from_snapshot(population, data_date, missing_baseline == "due")
+    due_codes = output.checked["task_code"]  # type: ignore[index]  # bei_from_snapshot always sets it
+    funnel.keep("due by the status date", "xerscope", lambda rows: rows["task_code"].isin(due_codes))
+    output.funnel = funnel
+    return output
 
 
 # --- shared with the explicit checks -------------------------------------------------------------
