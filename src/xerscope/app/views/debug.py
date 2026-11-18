@@ -7,7 +7,7 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.cpm import ScheduleError
-from xerscope.analysis.evm import earned_schedule
+from xerscope.analysis.evm import earned_schedule, schedule_gap_by_status
 from xerscope.app import diagnostic, ui, xml_baselines
 from xerscope.app.state import (
     anonymous_exports,
@@ -243,6 +243,21 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
             ("earned_schedule", snapshot.source, str(snapshot.data_date)), earned_schedule, snapshot, baseline
         )
         table(pd.DataFrame([schedule.as_row()]), key="debug_09_earned_schedule")
+        st.caption(
+            "The same tasks by their status in the update: ahead_hr and behind_hr are the positive and the "
+            "negative EV - PV of the tasks, summed apart (their sum is ev_hr - pv_hr). planned_finish_passed: "
+            "tasks whose EV finish is before the status date. started_on_planned_start: tasks started on the "
+            "day of their EV start. P6 stops moving the planned dates of a task once it has started (P6 EPPM "
+            "User Guide, Planned Dates): a baseline copied from a project under way keeps the lead or lag of "
+            "its started tasks, which these rows size."
+        )
+        gaps = memo(
+            ("schedule_gap_by_status", snapshot.source, str(snapshot.data_date)),
+            schedule_gap_by_status,
+            snapshot,
+            baseline,
+        )
+        table(gaps, key="debug_09_schedule_gap_by_status")
     st.caption(
         "Labor assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "
         "task's), and task dependent assignments on another calendar than their task's."

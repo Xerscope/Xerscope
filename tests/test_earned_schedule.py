@@ -18,7 +18,7 @@ from test_ev_contracts import SHAPES, random_update
 from xerkit import snap
 
 from xerscope.analysis import Baseline
-from xerscope.analysis.evm import earned_schedule, ev_point
+from xerscope.analysis.evm import earned_schedule, ev_point, schedule_gap_by_status
 from xerscope.xer.calendar import WorkCalendar, union_of
 
 pytestmark = pytest.mark.oracle("standard")
@@ -215,3 +215,54 @@ def test_the_union_of_one_calendar_is_that_calendar():
     five_days = WorkCalendar("5", "five days", 8.0, (FIVE_DAYS,) * 5 + (NONE, NONE), {GOOD_FRIDAY: NONE})
     plan_time = union_of([five_days], 8.0)
     assert (plan_time.week, plan_time.exceptions) == (five_days.week, five_days.exceptions)
+
+
+def test_the_gap_between_earned_and_planned_hours_is_split_by_status_of_the_update():
+    """Six tasks of 40 h read on Wednesday 03-11 at 08:00, two days into week 2 (PV of a week 2 task: 16 h).
+    Not started: E (week 1, PV 40, EV 0: -40 h, planned finish passed) and F (week 3, nothing). In progress:
+    B (week 2, 25 %: EV 10, -6 h, started on its planned day, two hours in) and C (week 2, 75 %: EV 30,
+    +14 h, started a day late). Complete: A (week 1, PV 40 = EV 40, planned finish passed, started on its
+    planned start) and D (week 3, done early: PV 0, EV 40, +40 h). G, complete without hours, and H, half
+    done without planned dates, are not measured. Total: EV 120 - PV 112 = +54 - 46 = +8 h."""
+    tasks = {code: planned(code, "2026-03-09 08:00", "2026-03-13 17:00") for code in "BC"}
+    tasks |= {code: planned(code, "2026-03-02 08:00", "2026-03-06 17:00") for code in "AE"}
+    tasks |= {code: planned(code, "2026-03-16 08:00", "2026-03-20 17:00") for code in "DF"}
+    tasks["G"] = planned("G", "2026-03-02 08:00", "2026-03-06 17:00", hours=0)
+    tasks["H"] = {**planned("H", "", "", hours=16), "early_start_date": "", "early_end_date": ""}
+    baseline = Baseline.from_snapshot(snap(list(tasks.values()), data_date="2026-03-02 08:00"))
+    two_hours_in = {"act_start_date": "2026-03-09 10:00"}
+    late_start = {"act_start_date": "2026-03-10 08:00"}
+    done_early = {"act_start_date": "2026-03-09 08:00", "act_end_date": "2026-03-10 17:00"}
+    update = snap(
+        [
+            progressed(tasks["A"], 100),
+            {**progressed(tasks["B"], 25), **two_hours_in},
+            {**progressed(tasks["C"], 75), **late_start},
+            {**progressed(tasks["D"], 100), **done_early},
+            tasks["E"],
+            tasks["F"],
+            progressed(tasks["G"], 100),
+            progressed(tasks["H"], 50),
+        ],
+        data_date="2026-03-11 08:00",
+    )
+    gaps = schedule_gap_by_status(update, baseline).set_index("status")
+    columns = ["tasks", "bl_labor_hr", "pv_hr", "ev_hr", "ahead_hr", "behind_hr"]
+    assert gaps.loc["Not started", columns].tolist() == [2, 80.0, 40.0, 0.0, 0.0, -40.0]
+    assert gaps.loc["In progress", columns].tolist() == [2, 80.0, 32.0, 40.0, 14.0, -6.0]
+    assert gaps.loc["Complete", columns].tolist() == [2, 80.0, 40.0, 80.0, 40.0, 0.0]
+    assert gaps["planned_finish_passed"].to_dict() == {"Not started": 1, "In progress": 0, "Complete": 1}
+    assert gaps["started_on_planned_start"].to_dict() == {"Not started": 0, "In progress": 1, "Complete": 1}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("seed", range(25))
+def test_on_random_schedules_the_gaps_by_status_add_up_to_the_earned_schedule_s_hours(seed, shape):
+    """Same tasks as the Earned Schedule: the PV, the EV and the BL hours of the statuses sum to its own."""
+    update, other = random_update(seed, shape)
+    baseline = Baseline.from_snapshot(other) if other is not None else Baseline.planned(update)
+    schedule, gaps = earned_schedule(update, baseline), schedule_gap_by_status(update, baseline)
+    assert gaps["pv_hr"].sum() == pytest.approx(schedule.pv_hr, abs=1e-6)
+    assert gaps["ev_hr"].sum() == pytest.approx(schedule.ev_hr, abs=1e-6)
+    assert gaps["bl_labor_hr"].sum() == pytest.approx(schedule.bac_hr, abs=1e-6)
+    assert (gaps["ahead_hr"] + gaps["behind_hr"]).sum() == pytest.approx(schedule.ev_hr - schedule.pv_hr, abs=1e-6)
