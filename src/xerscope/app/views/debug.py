@@ -226,6 +226,16 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         "the task value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - task."
     )
     table(frames["09_xer_tables"], max_height=480, key="debug_09_xer_tables")
+    if frames["09_udf_fields"].empty:
+        st.caption("No user defined field (UDFVALUE) holds a value in the project read.")
+    else:
+        st.caption(
+            "User defined fields holding a value in the project read (UDFTYPE, UDFVALUE): the table of the "
+            "objects that carry the field, its data type, its values, how many of them differ, and the tasks "
+            "that carry one. A text field of TASK with few different values splits the project as a task code "
+            "does. The anonymous download leaves the label out."
+        )
+        table(frames["09_udf_fields"], key="debug_09_udf_fields")
     if frames["09_pv_labor_check"].empty:
         st.caption("No baseline or no status date: nothing to compare.")
     else:
