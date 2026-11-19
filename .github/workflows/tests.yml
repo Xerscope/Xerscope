@@ -299,6 +299,16 @@ jobs:
             out=$(get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/$route"); echo "$out"
             echo "$out" | grep -q " 404 "
           done
+          out=$(get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/auth/login"); echo "$out"
+          echo "$out" | grep -q " 404 "   # Streamlit's sign-in routes: not configured, not served
+          # the app's WebSocket from a page of another origin, with the password: refused by Caddy; from this
+          # site's origin: let through (502 here, no app). The XSRF header of an upload must not reach the log.
+          socket() { docker compose exec -T caddy wget -S -q -O /dev/null --header "Origin: $1" --header "X-Xsrftoken: ci-token-marker" \
+            "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/_stcore/stream" 2>&1 || true; }
+          out=$(socket "http://localhost:3000"); echo "$out"
+          echo "$out" | grep -q " 403 "
+          out=$(socket "https://127.0.0.1:8080"); echo "$out"
+          echo "$out" | grep -q " 502 "
           out=$(get "http://127.0.0.1:8080/"); echo "$out"
           echo "$out" | grep -q " 404 "
           out=$(get "http://127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"
@@ -313,10 +323,12 @@ jobs:
             line=$(grep "\"status\": $code," caddy.log | tail -n 1)
             echo "$line" | grep -q '"Referrer-Policy": \["no-referrer"\]'
             echo "$line" | grep -q '"X-Content-Type-Options": \["nosniff"\]'
-            echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]"
+            echo "$line" | grep -q "\"Content-Security-Policy\": \[\"default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: 'sha256-THxz9J9+wf7rhwR2YkXJoSZ13UCmYyC+3lNDv2+8ugA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]"
             echo "$line" | grep -q '"Strict-Transport-Security": \["max-age=31536000; includeSubDomains"\]'
             echo "$line" | grep -q '"Permissions-Policy": \["camera=(), microphone=(), geolocation=()"\]'
             echo "$line" | grep -q '"Connection": \["close"\]'   # no connection kept for the next visitor
+            echo "$line" | grep -q '"Cross-Origin-Opener-Policy": \["same-origin"\]'
+            echo "$line" | grep -q '"Cross-Origin-Resource-Policy": \["same-origin"\]'
           done
           # the handshake keeps its own Connection header (502 here: no app to upgrade with)
           line=$(grep '"uri": "/<prefix>/_stcore/stream"' caddy.log | tail -n 1)
@@ -324,6 +336,7 @@ jobs:
           if echo "$line" | grep -q '"Connection": \["close"\]'; then echo "Connection: close on a WebSocket handshake"; exit 1; fi
           # not "! grep": bash -e ignores the status of a command inverted with "!" unless it is the last one
           if grep -q "$XERSCOPE_PATH" caddy.log; then echo "the secret prefix is in Caddy's log"; exit 1; fi
+          if grep -q "ci-token-marker" caddy.log; then echo "an XSRF token is in Caddy's log"; exit 1; fi
           grep -q '"uri": "/<prefix>/"' caddy.log   # the prefix is masked, the rest of the path kept
       - name: Rate limit, last (it blocks the runner's address for a minute)
         run: |  # 300 requests a minute per visitor, counted before the password check

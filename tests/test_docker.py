@@ -388,13 +388,72 @@ def test_caddy_policy_forbids_plug_ins_and_base_and_hsts_covers_sub_domains():
     Streamlit keeps the XSRF token of the cookie a visitor arrives with."""
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
-    assert '''Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"''' in block
+    policy = re.search(r'Content-Security-Policy "([^"]+)"', block).group(1)  # its exact value: the next test
+    assert "object-src 'none'" in policy.split("; ") and "base-uri 'none'" in policy.split("; ")
     assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains"' in block
     # one value each: a second header line would add a policy or replace the first
     assert caddy.count("Content-Security-Policy") == 1 and caddy.count("Strict-Transport-Security") == 1
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads the exact values
-    assert r"""\[\"frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]""" in wf
+    assert """object-src 'none'; base-uri 'none'\\"\\]""" in wf
     assert r"""'"Strict-Transport-Security": \["max-age=31536000; includeSubDomains"\]'""" in wf
+
+
+def test_caddy_policy_loads_from_this_site_only_and_names_streamlit_inline_script():
+    """OWASP ASVS 5.0.0, 3.4.3: the policy is an allow-list. Text of a schedule file shown as a Markdown
+    image, the page's icon and Streamlit's ?staticAppId= loader reach no other host. Streamlit's page
+    holds one inline script, allowed by its hash: a Streamlit update that changes it fails here, before
+    the page stops loading on the NAS. 3.4.8 and 3.5.8: the two cross-origin isolation headers."""
+    import base64
+    import hashlib
+
+    import streamlit
+
+    page = (Path(streamlit.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    inline_scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", page, re.S)
+    assert len(inline_scripts) == 1, inline_scripts
+    script_hash = "sha256-" + base64.b64encode(hashlib.sha256(inline_scripts[0].encode("utf-8")).digest()).decode()
+    policy = (
+        f"default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: '{script_hash}'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
+        "worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+    )
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
+    assert f'Content-Security-Policy "{policy}"' in block
+    assert "Cross-Origin-Opener-Policy same-origin" in block and "Cross-Origin-Resource-Policy same-origin" in block
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads the exact values
+    assert f'\\[\\"{policy}\\"\\]' in wf
+    assert r"""'"Cross-Origin-Opener-Policy": \["same-origin"\]'""" in wf
+    assert r"""'"Cross-Origin-Resource-Policy": \["same-origin"\]'""" in wf
+
+
+def test_caddy_refuses_the_app_websocket_from_another_origin():
+    """Streamlit's check of the WebSocket's origin also admits localhost, 127.0.0.1 and 0.0.0.0
+    (ASVS 4.4.2): Caddy lets only this site's pages open it. A client without Origin is not a browser."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    protected = caddy[caddy.index("handle_path /{$XERSCOPE_PATH}/*") : caddy.index("    handle {")]
+    matcher = protected[protected.index("@foreign_socket {") : protected.index("respond @foreign_socket 403")]
+    assert "path /_stcore/stream" in matcher and "header Origin *" in matcher
+    assert "not header Origin https://{http.request.hostport}" in matcher
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job tries both origins
+    assert 'out=$(socket "http://localhost:3000"); echo "$out"\n          echo "$out" | grep -q " 403 "' in wf
+    assert 'out=$(socket "https://127.0.0.1:8080"); echo "$out"\n          echo "$out" | grep -q " 502 "' in wf
+
+
+def test_caddy_speaks_http1_only_names_no_server_and_logs_no_xsrf_token():
+    """tailscaled speaks HTTP/1.1 to Caddy: HTTP/2 in clear is not offered on that port. The XSRF token
+    of an upload (X-Xsrftoken) is dropped from both logs, like the WebSocket's (ASVS 16.2.5). "Via" is
+    removed like "Server". Streamlit's sign-in routes, not configured, answer 404."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    global_block = caddy[caddy.index("{") : caddy.index(":8080")]
+    assert "protocols h1" in global_block[global_block.index("servers {") :]
+    assert caddy.count("request>headers>X-Xsrftoken delete") == 2  # error log and access log
+    assert re.search(r"^    header -Via\b", caddy, re.M)
+    assert "@unused path /_stcore/metrics /_stcore/agent/* /auth/* /oauth2callback" in caddy
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'if grep -q "ci-token-marker" caddy.log; then echo "an XSRF token is in Caddy\'s log"; exit 1; fi' in wf
+    assert '--header "X-Xsrftoken: ci-token-marker"' in wf
+    assert 'get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/auth/login"' in wf
 
 
 def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():

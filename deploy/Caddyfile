@@ -19,9 +19,11 @@
             request>uri regexp {$XERSCOPE_PATH} <prefix>
             request>headers>Referer regexp {$XERSCOPE_PATH} <prefix>
             request>headers>Sec-Websocket-Protocol delete
+            request>headers>X-Xsrftoken delete
         }
     }
     servers {
+        protocols h1                            # tailscaled speaks HTTP/1.1 to Caddy: no HTTP/2 in clear on this port
         trusted_proxies static 127.0.0.1/32     # tailscaled proxies from loopback: log the visitor's IP
     }
 }
@@ -30,9 +32,15 @@
     header {                             # every response, 404 and 401 included
         Referrer-Policy no-referrer      # a link the page opens never carries the URL, i.e. the secret prefix
         X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
-        # no other site can frame the app (clickjacking); no plug-in content, and no <base> to move the
-        # page's relative URLs elsewhere (the page uses neither)
-        Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+        # The page loads from this site only: text of a schedule file shown as an image or a link, the
+        # page's icon and Streamlit's ?staticAppId= loader reach no other host. Exceptions the page needs:
+        # the one inline script of Streamlit's index.html, by its hash (tests/test_docker.py recomputes it
+        # from the installed package); scripts and workers from blob: (the Gantt, the tables), WebAssembly,
+        # inline styles, data: and blob: images and fonts. No other site can frame the app (clickjacking);
+        # no plug-in content, no <base> to move the page's relative URLs elsewhere.
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: 'sha256-THxz9J9+wf7rhwR2YkXJoSZ13UCmYyC+3lNDv2+8ugA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+        Cross-Origin-Opener-Policy same-origin     # a window opened from another site holds no handle on this one
+        Cross-Origin-Resource-Policy same-origin   # no other site embeds a file of this one (image, script, export)
         # the browser never tries the name over plain HTTP, nor a sub-domain of it: one answered in clear
         # by someone on the network could set a cookie for this name before the visit
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -40,6 +48,7 @@
     }
     header -Server   # neither Caddy nor uvicorn names itself; a deletion is deferred, so it stays out of
                      # the block above, which must also reach the 401 (an error, where deferred ops do not run)
+    header -Via      # nor does the "Via: 1.1 Caddy" that reverse_proxy adds to what the app answers
     @not_upgrade not header_regexp Connection (?i)upgrade   # tailscaled keeps its connections to Caddy open
     header @not_upgrade Connection close   # and reuses them for the next visitor: closed after each response,
                      # none is left for a smuggled request to land on. A WebSocket handshake (Streamlit's
@@ -63,9 +72,15 @@
         header @page >Cache-Control no-cache   # revalidated: after an update a plain reload gets the new chunk names
         header >Set-Cookie (.*) "$1; Secure"   # Streamlit marks its XSRF cookie Secure only when it holds the
                                                # certificate itself; here tailscaled does, so Caddy adds it
-        @unused path /_stcore/metrics /_stcore/agent/*   # the app's session counters and the description of its
-        respond @unused 404                              # agent API (off): the page asks for neither. respond
-                                                         # runs after basic_auth: 401 without the password
+        @unused path /_stcore/metrics /_stcore/agent/* /auth/* /oauth2callback   # the app's session counters, the
+        respond @unused 404   # description of its agent API (off) and Streamlit's sign-in routes (not configured):
+                              # the page asks for none. respond runs after basic_auth: 401 without the password
+        @foreign_socket {     # Streamlit's own check of the WebSocket's origin also admits localhost, 127.0.0.1
+            path /_stcore/stream   # and 0.0.0.0: a page served on the visitor's own machine could open the
+            header Origin *        # session with the visitor's password. Only this site's pages may; a client
+            not header Origin https://{http.request.hostport}   # that sends no Origin is not a browser
+        }
+        respond @foreign_socket 403
         reverse_proxy app:8501    # network alias: "xerscope" is tailscale's hostname here
     }
     handle {
@@ -79,6 +94,7 @@
             request>headers>Referer regexp {$XERSCOPE_PATH} <prefix>   # so does the Referer
             resp_headers>Location regexp {$XERSCOPE_PATH} <prefix>     # and the redirect to the trailing slash
             request>headers>Sec-Websocket-Protocol delete   # Streamlit's XSRF token and session id
+            request>headers>X-Xsrftoken delete              # the same token, on an upload
             resp_headers>Content-Disposition delete         # the export's file name carries the project code
         }
     }
