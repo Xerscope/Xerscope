@@ -357,6 +357,10 @@ with `single_project_start` / `single_project_finish`, `relationship_type` with 
 [formulas.md](formulas.md) §2.5; the source is the maintainer's reading of the requirement
 (`docs/testing.md` §1), named in each docstring.
 
+A standard read from the `--standards` folder (or uploaded on the Schedule health page) is listed
+on the Schedule health and Audit pages and gets its score card on the Overview, like the built-in
+ones.
+
 To try a target or a threshold before writing it down, open the check on the Audit page:
 it re-runs the check with the values set there, shows the sets behind the count, and gives
 the `[[metric]]` table to paste here.

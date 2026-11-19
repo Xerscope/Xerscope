@@ -2725,6 +2725,21 @@ def test_score_cards_not_computed_show_a_short_value(app):
     assert all(m.value == "–" and m.delta == "not computed yet" for m in cards)
 
 
+def test_score_cards_include_a_standard_of_the_standards_folder(sample_dir, tmp_path, monkeypatch):
+    """A standard read from XERSCOPE_STANDARDS gets its score card beside the four built-in ones,
+    with the standard's name; the Schedule health and Audit pages already list it."""
+    from xerscope.analysis.standards import template_text
+
+    (tmp_path / "mine.toml").write_text(template_text(), encoding="utf-8")  # id CUSTOM, "My standard"
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_STANDARDS", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    cards = [m.label for m in at.metric if m.label.endswith(" score")]
+    assert len(cards) == 5 and cards[-1] == "My standard score"
+
+
 def test_runtime_block_names_what_the_app_read(app):
     """Debug block 12: the fonts, the config and the package that runs, for a page that looks old."""
     app.switch_page("views/debug.py").run()
