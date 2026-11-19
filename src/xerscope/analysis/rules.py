@@ -69,6 +69,7 @@ from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
 Unit = Literal["%", "ratio", "count", "days", "pass/fail"]
 Names = Sequence[str]  # TOML gives lists, defaults are tuples
 Op = Literal["<", "<=", ">", ">="]
+BandOp = Literal["<", "<=", ">", ">=", "between"]  # "between": value <= measured <= value_max
 LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
 
 
@@ -126,6 +127,7 @@ class Rule:
         for key, value in params.items():
             _check_value(f"{self.name}.{key}", hints.get(key), value)
         self._check_vocabulary(params)
+        _check_band(self.name, {**self.params, **params})
 
     def _check_vocabulary(self, params: dict) -> None:
         for key in sorted(set(params) & set(ALLOWED)):
@@ -133,6 +135,14 @@ class Rule:
             if bad:
                 what = "unknown" if key == "types" else "unknown value(s)"
                 raise ValueError(f"{self.name}.{key}: {what} {sorted(bad)}; allowed {sorted(ALLOWED[key])}")
+
+
+def _check_band(rule_name: str, params: dict) -> None:
+    """``op = "between"`` needs ``value_max`` at or above ``value``: reversed bounds flag nothing and
+    would pass silently."""
+    if params.get("op") == "between" and params["value_max"] < params["value"]:
+        low, high = params["value"], params["value_max"]
+        raise ValueError(f"{rule_name}: op 'between' needs value_max ({high}) >= value ({low})")
 
 
 def _check_value(where: str, hint, value) -> None:
@@ -195,6 +205,8 @@ EXEMPT: dict[str, str] = {
     "finish_milestone": "finish milestones",
     "project_start": "the project's first task",
     "project_finish": "the project's last task",
+    "single_project_start": "the project's first task, when it is the only one on the earliest start",
+    "single_project_finish": "the project's last task, when it is the only one on the latest finish",
 }
 ALLOWED: dict[str, set[str]] = {
     "exclude": set(EXCLUSIONS),
@@ -285,6 +297,8 @@ def _exempt_masks(population: pd.DataFrame, start_ids: set[str], finish_ids: set
         "finish_milestone": population["is_milestone"] & ~population["is_start_milestone"],
         "project_start": population["task_code"].isin(start_ids),
         "project_finish": population["task_code"].isin(finish_ids),
+        "single_project_start": population["task_code"].isin(start_ids) & (len(start_ids) == 1),
+        "single_project_finish": population["task_code"].isin(finish_ids) & (len(finish_ids) == 1),
     }
     return {key: masks[key] for key in EXEMPT}
 
@@ -307,7 +321,9 @@ def missing_logic(
     Tasks without a predecessor or a successor (open ends).
 
     ``pred_exempt`` / ``succ_exempt`` pass one side for: started, start_milestone,
-    finish_milestone, project_start, project_finish. ``external_passes`` counts links to
+    finish_milestone, project_start, project_finish (every task on the earliest start or the
+    latest finish), single_project_start, single_project_finish (that task only when it is
+    alone there: two tasks sharing the date are both flagged). ``external_passes`` counts links to
     other projects. ``dangling`` also flags a start not driven by any FS/SS predecessor
     or a finish that drives no FS/FF successor.
     """
@@ -448,18 +464,31 @@ def constraints(
 
 @rule("float", "%")
 def total_float(
-    context, op: Op = ">", value: float = 44, unit: Literal["hours", "days"] = "days", exclude: Names = ("complete",)
+    context,
+    op: BandOp = ">",
+    value: float = 44,
+    unit: Literal["hours", "days"] = "days",
+    exclude: Names = ("complete",),
+    value_max: float = 0,
 ) -> RuleOutput:
     """Tasks outside the float limit.
     Counts: flagged / checked
 
     Tasks whose total float compares to ``value`` (hours as stored, or working days).
+    ``op = "between"`` flags a float from ``value`` to ``value_max``, both included.
     """
     funnel = activities_funnel(context, exclude)
     population = funnel.rows
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
-    flagged = population[as_flag(COMPARE[op](population[column], value))]
+    flagged = population[as_flag(_within(population[column], op, value, value_max))]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
+
+
+def _within(measured: pd.Series, op: str, value: float, value_max: float) -> pd.Series:
+    """``measured`` compared with ``op`` to ``value``; for "between", inside [value, value_max]."""
+    if op == "between":
+        return measured.between(value, value_max, inclusive="both")
+    return COMPARE[op](measured, value)
 
 
 @rule("duration", "%")

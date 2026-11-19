@@ -98,6 +98,9 @@ def _flag_line(rule: Rule, params: dict) -> list[str]:
         return []
     what = MEASURE_TEXT.get(rule.name, "value").format(**params)
     unit = params.get("unit", "")
+    if params["op"] == "between":
+        band = f"Flagged when {what} is from {params['value']:g} to {params['value_max']:g} {unit}".rstrip()
+        return [band + " (both included)."]
     comparison = OP_TEXT.get(params["op"], params["op"])
     return [f"Flagged when {what} {comparison} {params['value']:g} {unit}".rstrip() + "."]
 

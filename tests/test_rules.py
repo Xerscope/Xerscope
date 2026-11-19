@@ -1885,3 +1885,109 @@ def test_dcma_14_counts_a_finish_on_the_status_date_as_completed():
     r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
     assert (r.numerator, r.denominator) == (1, 2)
     assert "1 completed after the status date" in r.note
+
+
+# --- rules for a company standard: one project start, one project finish; float between two bounds
+
+
+@pytest.mark.oracle("standard")
+def test_single_project_start_and_finish_pass_one_task_only():
+    """A standard that allows exactly one task without a predecessor and one without a successor
+    (requirement "the first activity is the only activity permitted to not have a predecessor").
+    Hand count: S1 and S2 both start on the earliest date with no predecessor, so neither is the
+    single first task and both are flagged; F1 finishes last alone and passes. ``project_start``
+    (the lenient exemption) passes both S1 and S2."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("S1", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("S2", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("S3", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+            todo("F1", early_start_date="2026-03-23 08:00", early_end_date="2026-03-27 17:00"),
+        ],
+        [("S1", "F1", "FS", 0), ("S2", "F1", "FS", 0), ("S3", "F1", "FS", 0)],
+    )
+    strict = RULES["missing_logic"].fn(
+        AnalysisContext(s), exclude=[], pred_exempt=["single_project_start"], succ_exempt=["single_project_finish"]
+    )
+    assert dict(zip(strict.flagged["task_code"], strict.flagged["reason"], strict=True)) == {
+        "S1": "no predecessor",
+        "S2": "no predecessor",
+        "S3": "no predecessor",
+    }
+    assert (strict.numerator, strict.denominator) == (3, 4)
+    lenient = RULES["missing_logic"].fn(
+        AnalysisContext(s), exclude=[], pred_exempt=["project_start"], succ_exempt=["project_finish"]
+    )
+    assert codes(lenient) == ["S3"]
+
+
+@pytest.mark.oracle("standard")
+def test_single_project_start_passes_the_only_earliest_task():
+    """One task alone on the earliest start: it is the single first task and passes; the later
+    open start is flagged. Symmetric for the finish: F1 and F2 both end last, both flagged."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("S1", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("S3", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+            todo("F1", early_start_date="2026-03-23 08:00", early_end_date="2026-03-27 17:00"),
+            todo("F2", early_start_date="2026-03-23 08:00", early_end_date="2026-03-27 17:00"),
+        ],
+        [("S1", "F1", "FS", 0), ("S3", "F2", "FS", 0)],
+    )
+    r = RULES["missing_logic"].fn(
+        AnalysisContext(s), exclude=[], pred_exempt=["single_project_start"], succ_exempt=["single_project_finish"]
+    )
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
+        "S3": "no predecessor",
+        "F1": "no successor",
+        "F2": "no successor",
+    }
+
+
+@pytest.mark.oracle("standard")
+def test_float_between_two_bounds_includes_both_bounds():
+    """Requirement "between 5 % and 15 % of the remaining activities have 0d-20d total float":
+    ``op = "between"`` flags a float within [value, value_max], bounds included (ISO 29119-4
+    boundary values: -1, 0, 20, 21 working days of an 8 h day, so -8, 0, 160, 168 hours).
+    Hand count: 0 and 20 d in, -1 and 21 d out -> 2 / 4."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("N", total_float_hr_cnt="-8"),
+            todo("Z", total_float_hr_cnt="0"),
+            todo("T", total_float_hr_cnt="160"),
+            todo("O", total_float_hr_cnt="168"),
+        ]
+    )
+    r = RULES["float"].fn(AnalysisContext(s), op="between", value=0, value_max=20, unit="days", exclude=[])
+    assert (codes(r), r.numerator, r.denominator) == (["T", "Z"], 2, 4)
+    in_hours = RULES["float"].fn(AnalysisContext(s), op="between", value=0, value_max=160, unit="hours", exclude=[])
+    assert codes(in_hours) == ["T", "Z"]
+
+
+@pytest.mark.oracle("standard")
+def test_float_between_with_bounds_reversed_is_refused_on_load():
+    """``value_max`` below ``value`` would flag nothing and pass silently: refused when the standard
+    is read, with the metric named."""
+    from xerscope.analysis.standards import loads_standard
+
+    text = """
+[standard]
+id = "T"
+name = "t"
+[[metric]]
+id = "T-1"
+name = "float band"
+rule = "float"
+target = ">= 5%"
+params = { op = "between", value = 20, value_max = 0, unit = "days" }
+"""
+    with pytest.raises(ValueError, match=r"T-1.*value_max"):
+        loads_standard(text, "t.toml")
+    accepted = loads_standard(text.replace("value_max = 0", "value_max = 20"), "t.toml")
+    assert accepted.metrics[0].params["value_max"] == 20

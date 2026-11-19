@@ -10,7 +10,8 @@
 # Populations (params.exclude), WBS summary rows are always excluded:
 #   complete, complete_before_data_date, started, loe, milestones, no_duration
 # Logic exemptions (pred_exempt / succ_exempt):
-#   started, start_milestone, finish_milestone, project_start, project_finish
+#   started, start_milestone, finish_milestone, project_start, project_finish,
+#   single_project_start, single_project_finish (strict: one task only, a shared date passes none)
 # Relationship populations (links): all, not_both_complete (P6), succ_incomplete (DCMA)
 # Constraint codes (types): CS_MSO, CS_MSOA, CS_MSOB, CS_MEO, CS_MEOA, CS_MEOB,
 #   CS_MANDSTART, CS_MANDFIN, CS_ALAP
@@ -116,6 +117,14 @@ id = "CUS-13"
 name = "Critical path test"
 rule = "dcma_12_critical_path_test"   # the built-in test, 600 working days
 target = "pass"
+
+# [[metric]]
+# id = "CUS-15"
+# group = "Float"
+# name = "Near-critical float (0 to 20 working days)"
+# rule = "float"
+# target = ">= 5%"                  # a band is one metric per bound: add CUS-16 with "<= 15%"
+# params = { op = "between", value = 0, value_max = 20, unit = "days", exclude = ["complete"] }
 
 # --- more rules (uncomment to use) -------------------------------------------------------
 # [[metric]]
