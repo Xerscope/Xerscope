@@ -754,6 +754,8 @@
   "expander: 2 · Expected finish (0 tasks)",
   "caption: ef_recalc is the expected finish, or the early start when the expected finish falls before it (remaining_set_to_0). An FF / SF bound later than that wins instead (rem_override_hr blank).",
   "dataframe: 0 rows | task_code, status_code, early_start_date, early_end_date, remain_drtn_hr_cnt, expect_end_date, es_recalc, remaining_start_recalc, ef_recalc, rem_override_hr, remaining_set_to_0",
+  "caption: Counts only (no Task ID, no date): the unfinished tasks above by status, type, constraints, expected finish after the primary constraint date, expected finish off the working time of the task's calendar, and an FF / SF predecessor. stored_identical: every date and float P6 stored is the recalculated one; stored_different: at least one is not.",
+  "dataframe: 0 rows | status, type, constraint, after_constraint_date, off_working_time, ff_sf_predecessor, tasks, stored_identical, stored_different",
   "expander: 3 · INT-01 / INT-03 differences (0 tasks, 0 assignments)",
   "caption: Stored vs recalculated, and the inputs the recalculation read. Facts only.",
   "caption: INT-01: every stored date and total float is reproduced.",

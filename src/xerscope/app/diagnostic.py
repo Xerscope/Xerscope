@@ -32,6 +32,7 @@ from xerscope.analysis.evm import (
 )
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard, builtin_standards
+from xerscope.app.expected_finish_forms import expected_finish_forms
 from xerscope.app.ui import as_dates
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.calendar import Intervals
@@ -815,6 +816,7 @@ def diagnostic_frames(
         "01_options": options_table(snapshot),
         "01b_projects": projects_table(snapshot),
         "02_expected_finish": expected_finish_table(snapshot),
+        "02b_expected_finish_forms": expected_finish_forms(snapshot),
         "03_int01_recalculation": recalculation_table(snapshot),
         "03_int03_assignments": assignments_table(snapshot),
         "04_check_parameters": check_parameters(standard),
