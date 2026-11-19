@@ -297,6 +297,8 @@ jobs:
           echo "$out" | grep -q " 401 "
           out=$(get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"
           echo "$out" | grep -q " 502 "
+          docker compose exec -T caddy wget -q -O /dev/null --header "Connection: Upgrade" --header "Upgrade: websocket" \
+            "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/_stcore/stream" 2>&1 || true   # a WebSocket handshake
           docker compose logs --no-color caddy > caddy.log
           # busybox wget prints no header of an error answer: Caddy's access log records what it sent
           for code in 404 401; do
@@ -306,7 +308,12 @@ jobs:
             echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'\"\]"
             echo "$line" | grep -q '"Strict-Transport-Security": \["max-age=31536000"\]'
             echo "$line" | grep -q '"Permissions-Policy": \["camera=(), microphone=(), geolocation=()"\]'
+            echo "$line" | grep -q '"Connection": \["close"\]'   # no connection kept for the next visitor
           done
+          # the handshake keeps its own Connection header (502 here: no app to upgrade with)
+          line=$(grep '"uri": "/<prefix>/_stcore/stream"' caddy.log | tail -n 1)
+          echo "$line" | grep -q '"status": 502,'
+          if echo "$line" | grep -q '"Connection": \["close"\]'; then echo "Connection: close on a WebSocket handshake"; exit 1; fi
           ! grep -q "$XERSCOPE_PATH" caddy.log
           grep -q '"uri": "/<prefix>/"' caddy.log   # the prefix is masked, the rest of the path kept
       - name: Rate limit, last (it blocks the runner's address for a minute)
