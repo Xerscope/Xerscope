@@ -810,6 +810,30 @@ class EarnedSchedule:
             return None
         return (self.es_date - self.status_date) / pd.Timedelta(days=1)
 
+    @property
+    def has_time_left(self) -> bool:
+        """An ES short of the plan's end, read before the planned finish: there is a finish to hold."""
+        if self.es_min is None or self.at_min is None or self.pd_min is None:
+            return False
+        return self.es_min < self.pd_min and self.at_min < self.pd_min
+
+    @property
+    def tspi(self) -> float | None:
+        """To Complete Schedule Performance Index for the planned finish, (PD - ES) / (PD - AT): the pace
+        needed from now on to end on the plan's last date (Lipke, "Earned Schedule - Ten Years After").
+        None once every hour is earned or once the planned finish is passed."""
+        if not self.has_time_left or self.es_min is None or self.at_min is None or self.pd_min is None:
+            return None
+        return (self.pd_min - self.es_min) / (self.pd_min - self.at_min)
+
+    @property
+    def hours_per_week_needed(self) -> float | None:
+        """(BAC - EV) / calendar weeks from the status date to the planned finish: the hours to earn each
+        week to end on the plan's last date. None as ``tspi``."""
+        if not self.has_time_left or self.plan_finish is None or self.status_date is None:
+            return None
+        return (self.bac_hr - self.ev_hr) / ((self.plan_finish - self.status_date) / pd.Timedelta(weeks=1))
+
     def finish_at(self, pace: float | None) -> pd.Timestamp | None:
         """The date the plan ends when what is left of it (PD - ES) is done at ``pace``, plan time gained
         per plan time elapsed, from the status date on (Lipke: IEAC(t) = AT + (PD - ES) / pace). None
@@ -1000,7 +1024,7 @@ def weekly_gains(
 def moving_window(gains: pd.DataFrame, data_date: pd.Timestamp, days: int = 28) -> pd.Series | None:
     """The weeks of ``weekly_gains`` summed from the last update dated at least ``days`` before
     ``data_date`` up to it: the four gains (missing when one week misses it), ``window_start``,
-    ``weeks`` and ``baseline_changes``. None without such an update.
+    ``weeks``, ``days`` (its length) and ``baseline_changes``. None without such an update.
 
     A ratio of these sums weighs each week by what the plan asked: earned / planned hours is the SPI of
     the window, ES gained / time elapsed its pace (Lipke). The mean of the weekly ratios would not.
@@ -1011,7 +1035,8 @@ def moving_window(gains: pd.DataFrame, data_date: pd.Timestamp, days: int = 28) 
         return None
     window = upto[upto["week_start"] >= starts.max()]
     sums = window[GAIN_COLUMNS].astype(float).sum(skipna=False)
-    counts = {"window_start": starts.max(), "weeks": len(window)}
+    days = (upto["data_date"].max() - starts.max()) / pd.Timedelta(days=1)
+    counts = {"window_start": starts.max(), "weeks": len(window), "days": days}
     return pd.Series({**sums, **counts, "baseline_changes": int(window["baseline_changed"].fillna(False).sum())})
 
 

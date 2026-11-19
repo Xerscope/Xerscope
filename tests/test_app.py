@@ -164,7 +164,7 @@ def test_pages_comparing_updates_ask_for_two_and_show_nothing_else(one_file_app,
 
 def test_earned_value_renders_with_a_single_update(one_file_app):
     """Earned value measures one update against its baseline: one file is enough, the page shows its
-    six indicators, the eight of the Earned Schedule and its two charts, and does not ask for a second
+    six indicators, the eleven of the Earned Schedule and its two charts, and does not ask for a second
     update."""
     one_file_app.switch_page("views/earned_value.py").run()
     _ok(one_file_app)
@@ -183,6 +183,9 @@ def test_earned_value_renders_with_a_single_update(one_file_app):
         "Planned finish",
         "Forecast finish (4 weeks)",
         "Forecast finish (all updates)",
+        "TSPI (planned finish)",
+        "Hours per week needed",
+        "Hours per week earned (4 weeks)",
     ]
     assert len(one_file_app.get("plotly_chart")) == 2
     assert not any("at least two" in i.value for i in one_file_app.info)
@@ -766,6 +769,16 @@ def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_fini
         text.startswith("Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since.")
         for text in _caption_texts(at)
     )
+    # the planned finish, 03-20, is passed: no pace holds it; 120 h earned in the four weeks: 30 h a week
+    assert (card("TSPI (planned finish)"), card("Hours per week needed")) == ("–", "–")
+    assert card("Hours per week earned (4 weeks)") == "30 h"
+    # the update of 03-06: 7.5 of the plan's 20 days reached in 10, 12.5 left for 10: TSPI 1.25; 100 h
+    # left for the two weeks to 03-20: 50 h a week; no update 28 days before it: no window
+    third = at.selectbox(key="ev_snap").options[2]
+    at.selectbox(key="ev_snap").set_value(third).run()
+    _ok(at)
+    assert (card("TSPI (planned finish)"), card("Hours per week needed")) == ("1.25", "50 h")
+    assert (card("SPI (4 weeks)"), card("Hours per week earned (4 weeks)")) == ("–", "–")
 
 
 def test_debug_reads_the_earned_schedule_on_a_task_code(tmp_path, monkeypatch):

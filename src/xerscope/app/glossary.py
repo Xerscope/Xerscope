@@ -96,6 +96,12 @@ GLOSSARY: dict[str, tuple[str, str, str]] = {
     "SS": ("Start to Start", "Relationship: the successor starts after the predecessor starts.", "P6"),
     "SV": ("Schedule Variance", "EV − PV; negative means behind plan.", "DoD EVM terms"),
     "TF": ("Total Float", "How long a task can slip without moving the project finish.", "P6"),
+    "TSPI": (
+        "To Complete Schedule Performance Index",
+        "(PD − ES) / (PD − AT): the pace needed from now on to end on the planned finish; above 1.10 the "
+        "date is rarely held.",
+        "Lipke, Earned Schedule",
+    ),
     "VAC": ("Variance at Completion", "BAC − EAC; negative means an overrun.", "DoD EVM terms"),
     "WBS": ("Work Breakdown Structure", "The tree the tasks are filed under.", "P6"),
     "XER": ("Primavera XER", "P6's tab-separated export file.", "Oracle"),

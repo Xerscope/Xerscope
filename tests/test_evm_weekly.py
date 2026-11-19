@@ -100,6 +100,7 @@ def test_the_four_weeks_window_starts_at_the_last_update_at_least_28_days_before
     assert (at_u5["ev_gain_hr"], at_u5["pv_gain_hr"]) == (120.0, 160.0)
     assert at_u5["es_gain_min"] / at_u5["at_gain_min"] == 0.75
     assert (at_u5["window_start"], at_u5["weeks"], at_u5["baseline_changes"]) == (pd.Timestamp(FRIDAYS[1]), 4, 1)
+    assert at_u5["days"] == 28.0 and at_u5["ev_gain_hr"] / (at_u5["days"] / 7) == 30.0  # hours earned per week
     at_u4 = moving_window(gains, pd.Timestamp(FRIDAYS[4]))
     assert at_u4["ev_gain_hr"] / at_u4["pv_gain_hr"] == 0.625 and pd.isna(at_u4["es_gain_min"])
     assert moving_window(gains, pd.Timestamp(FRIDAYS[3])) is None

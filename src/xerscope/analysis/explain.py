@@ -308,6 +308,9 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
     "Planned finish": {LIPKE: "The last planned finish of the baseline tasks measured (PD from the plan's start)"},
     "Forecast finish (4 weeks)": {LIPKE: "Status date + (PD − ES) / pace of the window, in the tasks' working time"},
     "Forecast finish (all updates)": {LIPKE: "Status date + (PD − ES) / pace of every week read (IEAC(t))"},
+    "TSPI (planned finish)": {LIPKE: "(PD − ES) / (PD − AT): plan time left / time left to the planned finish"},
+    "Hours per week needed": {XS: "(BAC − EV) / calendar weeks from the status date to the planned finish"},
+    "Hours per week earned (4 weeks)": {XS: "Σ hours earned over the window / its length in weeks"},
     "PPC Start": {
         XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
         "kept = actual start in W on or before that date (milestones and LOE left out)"

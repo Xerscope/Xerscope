@@ -141,6 +141,10 @@ def ratio_text(ratio: float | None) -> str:
     return "–" if ratio is None else f"{ratio:.2f}"
 
 
+def hours_text(hours: float | None) -> str:
+    return "–" if hours is None else f"{hours:,.0f} h"
+
+
 def window_text(window: pd.Series | None) -> str:
     """The four weeks' window in words, or why there is none."""
     if window is None:
@@ -167,6 +171,7 @@ def show_earned_schedule(schedule: EarnedSchedule, window: pd.Series | None, sin
     spi_4w = gain_ratio(window, "ev_gain_hr", "pv_gain_hr")
     pace_4w = gain_ratio(window, "es_gain_min", "at_gain_min")
     pace_all = gain_ratio(since_first, "es_gain_min", "at_gain_min")
+    earned_per_week = None if window is None else float(window["ev_gain_hr"] / (window["days"] / 7))
     ui.kpis(
         [
             (
@@ -219,6 +224,27 @@ def show_earned_schedule(schedule: EarnedSchedule, window: pd.Series | None, sin
                 None,
                 "The same at the pace of every week read since the first update loaded: steadier, slower to "
                 "show a change.",
+            ),
+            (
+                "TSPI (planned finish)",
+                ratio_text(schedule.tspi),
+                None,
+                "The pace needed from now on to end on the planned finish. Compare it with the pace of the "
+                "last four weeks. Up to 1.00 the date holds; from 1.00 to 1.10 it can be caught up; above "
+                "1.10 it rarely is (Lipke). Empty once the planned finish is passed.",
+            ),
+            (
+                "Hours per week needed",
+                hours_text(schedule.hours_per_week_needed),
+                None,
+                "The hours left to earn, spread over the weeks left to the planned finish: the workload "
+                "that holds the date.",
+            ),
+            (
+                "Hours per week earned (4 weeks)",
+                hours_text(earned_per_week),
+                None,
+                "What the last four weeks earned each week, to set against the hours needed.",
             ),
         ],
         formulas=KPI_FORMULAS,
