@@ -656,18 +656,36 @@ class _Run:
     def _assignment_from_row(self, code: str, row) -> _Asg | None:
         """One row of the assignment table as the engine schedules it: on the resource calendar when the
         activity is of type Resource Dependent and the row names one, else on the activity calendar; its
-        duration is remaining units / units per hour, none without a rate above 0. None when its lag or its
-        duration is not finite or beyond ``MAX_HOURS``."""
+        duration is remaining units / units per hour. None when its lag or its duration is not finite or
+        beyond ``MAX_HOURS``.
+
+        Without a rate above 0, an assignment on a resource calendar lasts the working time of its own
+        window, and on work under way its lag runs for the part not yet used up (P6 23.12.1: held-out
+        corpus, 185 such assignments after P6's import, e.g. H25-09 A1480; rules ZW and ZU of the public
+        probes; 26.8 not measured). On the activity calendar it has no duration, as before.
+        """
         remaining_units = _number_or_zero(row.remain_qty)
         units_per_hour = _number_or_zero(row.remain_qty_per_hr)
         is_on_resource_calendar = self.inputs[code].get("task_type") == "TT_Rsrc" and bool(row.rsrc_clndr_id)
         axis = self.axes.of(row.rsrc_clndr_id) if is_on_resource_calendar else self.cal_ax[code]
         remaining_minutes = remaining_units / units_per_hour * 60 if units_per_hour > 0 else None
         lag_hours = _number_or_zero(row.relag_drtn_hr_cnt)
+        if units_per_hour <= 0 and is_on_resource_calendar:
+            remaining_minutes = _window_minutes(row, axis)
+            lag_hours = self.lag_not_yet_used_up(code, axis, lag_hours)
         if not _bounded(lag_hours) or (remaining_minutes is not None and not _bounded(remaining_minutes / 60)):
             return None
         resource_name = str(row.rsrc_short_name or row.rsrc_name or row.rsrc_id or "")
         return _Asg(str(row.taskrsrc_id), resource_name, axis, lag_hours * 60, remaining_minutes, bool(row.driving))
+
+    def lag_not_yet_used_up(self, code: str, axis: TimeAxis, lag_hours: float) -> float:
+        """Hours of an assignment's lag still to run: on work that has started, the lag less the working
+        time of the assignment's calendar from the actual start to the data date; the whole lag otherwise."""
+        actual_start = self.inputs[code].get("act_start_date")
+        if actual_start is None or pd.isna(actual_start):
+            return lag_hours
+        used_hours = max(0.0, axis.between(pd.Timestamp(actual_start), self.data_date) / 60)
+        return max(0.0, lag_hours - used_hours)
 
     def _record_resource_dependent(self) -> None:
         """Keep the activities scheduled from their resources (``rsrc_dep``): unfinished, of type Resource
@@ -1945,6 +1963,17 @@ def _bounded(hours) -> bool:
     if isinstance(hours, pd.Series):
         return hours.map(_bounded).astype(bool)
     return math.isfinite(hours) and abs(hours) <= MAX_HOURS
+
+
+def _window_minutes(row, axis: TimeAxis) -> float | None:
+    """Working minutes, on the assignment's calendar, of the window its row gives: remaining start to
+    remaining finish, else its planned dates; None when it has neither pair."""
+    windows = (("restart_date", "reend_date"), ("target_start_date", "target_end_date"))
+    for start_field, finish_field in windows:
+        start, finish = getattr(row, start_field, None), getattr(row, finish_field, None)
+        if start is not None and finish is not None and pd.notna(start) and pd.notna(finish):
+            return float(max(0, axis.between(pd.Timestamp(start), pd.Timestamp(finish))))
+    return None
 
 
 def _early(

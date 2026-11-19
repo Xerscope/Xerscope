@@ -47,12 +47,12 @@ FLOORS = {
     "H22": 0.994,
     "H23": 0.987,
     "H24": 0.960,
-    "H25": 0.875,
-    "H26": 0.940,
-    "H27": 0.938,
-    "H28": 0.933,
-    "H29": 0.896,
-    "H30": 0.914,
+    "H25": 0.893,
+    "H26": 0.958,
+    "H27": 0.967,
+    "H28": 0.944,
+    "H29": 0.916,
+    "H30": 0.929,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -314,6 +314,11 @@ PINNED = {
         ("H23", "H23-04", "A1220", "early_finish"),
         ("H23", "H23-05", "A1240", "early_finish"),
         ("H28", "H28-04", "A1170", "early_finish"),
+    ],
+    "resource dependent: an assignment without units per hour lasts its own window": [
+        ("H25", "H25-09", "A1480", "early_finish"),
+        ("H25", "H25-03", "A1320", "early_finish"),
+        ("H25", "H25-01", "A1460", "early_finish"),
     ],
     "resource dependent: a late start from an SS bound is written at the bound's instant": [
         ("H26", "H26-04", "A1440", "late_start")
