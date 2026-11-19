@@ -289,6 +289,7 @@ EVMS = "DCMA EVMS (EIA-748)"
 LPS = "Last Planner (PPC)"
 LIPKE = "Earned Schedule (Lipke)"
 XS = "xerscope"
+AACE = "AACE RP 29R-03 MIP 3.4"
 
 
 # The help of the "SPI (4 weeks)" figure: what it says, how it is calculated, why this way, and the
@@ -335,6 +336,19 @@ SPI_WINDOW_READING = (
 
 
 KPI_FORMULAS: dict[str, dict[str, str]] = {
+    "Finish before replanning": {
+        AACE: "Finish of the half-step schedule: the previous update with this update's progress data "
+        "(actual start, actual finish, percent complete, decreased remaining duration), recalculated at this "
+        "update's status date (3.4.K.4.b, c); its shift is the slip due to progress (3.4.K.4.d)"
+    },
+    "Finish shown": {
+        AACE: "Recalculated finish of this update; its shift from the half-step schedule is the slip or gain due "
+        "to the non-progress revisions (3.4.K.4.e)"
+    },
+    "Longest path float": {
+        XS: "Lowest total float on the recalculated longest path / hours per day of the project calendar"
+    },
+    "Tasks matched": {XS: "Tasks of both updates, by Task ID; added and deleted ones enter at the scope step"},
     "Forecast finish": {P6: "Latest Finish of the project's activities (actual, else remaining, else early finish)"},
     "Shift since first update": {
         XS: "working_days(forecast finish in the first update, forecast finish now), project calendar"

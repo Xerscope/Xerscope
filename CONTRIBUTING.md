@@ -44,9 +44,14 @@ before touching `analysis/cpm.py` or `xer/calendar.py`, and
    `has_…` helpers), so its steps and what each removed can be shown and debugged; a table
    of activities takes `flagged_activities` and its standard columns; a column is labelled
    and formatted once in `app/ui.py` (`COLUMNS`), never renamed in a page; a funnel is shown
-   with `app/sets.py`; a P6 name comes from `xer/model.py`. A filter written by hand where
-   a named step exists, or a second copy of a helper, is a defect of the change even when
-   its numbers are right. The pull request lists what was reused.
+   with `app/sets.py`; a P6 name comes from `xer/model.py`. On a page: the update is picked
+   with `state.snapshot_picker` (one choice for the session), figures go through `ui.kpis`
+   with their formulas in `analysis/explain.py` (`KPI_FORMULAS`), tables through `ui.table`,
+   downloads through `state.csv_download`; a chart is built from the helpers of
+   `viz/charts.py` (`_line`, `_with_house_style`, `_widen_dates`, `SERIES`, `STATUS`). A
+   filter written by hand where a named step exists, or a second copy of a helper, is a
+   defect of the change even when its numbers are right; so is a chart or a table that
+   repeats what the one beside it shows. The pull request lists what was reused.
 
 Units: durations and floats are stored in hours; `_d` columns are working days of the
 activity's own calendar; activities are identified by `task_code` (Activity ID), never
