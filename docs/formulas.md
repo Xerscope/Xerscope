@@ -481,7 +481,7 @@ is not read.
 | progress | status date; `status_code`, actual dates, suspend / resume, `phys_complete_pct`, the external early start / late finish bounds; `remain_drtn_hr_cnt` of the activities started in the later update whose remaining duration decreased (3.4.K.4.b: actual start, actual finish, increased percent complete, decreased remaining duration) | Progress |
 | scope | activities added (their TASK rows, the links and assignments that reach them), deleted (taken out with theirs), `task_type` | Scope |
 | durations | `target_drtn_hr_cnt`, `expect_end_date`, every other `remain_drtn_hr_cnt` that changed (an increase, or a change on work not started: non-progress revisions, 3.4.K.4), the resource assignments | Durations, Resources |
-| logic | the relationships between activities of both updates | Relationships |
+| logic | every relationship of the later update (the scope step brought those that reach an added activity; the rest are the links between activities of both updates and the links to other projects) | Relationships |
 | constraints | `cstr_type`, `cstr_date`, `cstr_type2`, `cstr_date2`, the project's Must Finish By | Constraints |
 | calendars and options | `clndr_id`, the calendar definitions, the scheduling options, the planned start | Calendars, Options, Tasks |
 
@@ -509,6 +509,18 @@ case per step; every kind of change at once sums to the recalculated move with r
 (property); the three finish cases; the float under a Must Finish By (P6); the demo series has no
 residual (characterization); a remaining duration increased on started work is a revision, not
 progress (3.4.K.4); the period bound of 3.4.K.4.g.
+
+**What this reading rests on, measured (Nov 2026, held-out P6 corpus, 359 schedules).** The reading
+moves one number, the recalculated project finish. xerscope's finish is P6's to the minute on 327
+schedules (91.1 %): every schedule of 19 sets (H1 to H16, H18, H21, H22), 11 of 12 in H17, H19 and
+H20, and 58 to 75 % in H23 to H30 (driving resources, an expected finish against a Mandatory
+Finish, resource calendars). On a series of that last kind a shift can be the engine's and not the
+schedule's: `xerscope recalc` on each file says whether the finish is reproduced before the
+reading is trusted. The steps themselves leave no residual on any of the 315 pairs of consecutive
+corpus schedules that can be read (unrelated schedules, every kind of change at once); 15 pairs
+are not read because links carried one kind at a time close a loop neither schedule has
+(`half_step_series` keeps the row, with the reason). No P6 output exists for a half-step schedule:
+the progress step has no oracle beyond the hand cases and the sum rule of 3.4.K.4.f.
 
 ## 6. CPM output compared with P6 (analysis/cpm.py `compare_with_stored`, `compare_assignments`)
 

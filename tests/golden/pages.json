@@ -513,7 +513,7 @@
   "subheader: Every update",
   "caption: Each update read against the one before it. A finish shown that holds still while the finish before replanning keeps slipping is a delay absorbed by replanning.",
   "plotly_chart: scatter, scatter",
-  "dataframe: 7 rows | Status date, Finish held by, Date, Finish shown, Finish before replanning, Slip (wd), Replanning (wd), Residual (wd), Period (wd), Longest path float (d), Matched, Added, Deleted",
+  "dataframe: 7 rows | Status date, Finish held by, Date, Finish shown, Finish before replanning, Slip (wd), Replanning (wd), Residual (wd), Period (wd), Longest path float (d), Matched, Added, Deleted, Note",
   "button: Prepare anonymized downloads"
  ],
  "earned_value": [

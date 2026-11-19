@@ -43,6 +43,7 @@ SERIES_LABELS = {
     "matched": "Matched",
     "added": "Added",
     "deleted": "Deleted",
+    "note": "Note",
 }
 
 
@@ -125,11 +126,7 @@ def show_series(store) -> None:
         "Each update read against the one before it. A finish shown that holds still while the finish before "
         "replanning keeps slipping is a delay absorbed by replanning.",
     )
-    try:
-        series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
-    except ScheduleError as error:
-        st.warning(f"The series cannot be read: {ui.without_addresses(str(error))}")
-        return
+    series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
     ui.chart(build_slip_trend(series))
     shown = series.rename(columns=SERIES_LABELS)
     ui.table(shown, key="forensics_series", max_height=480)

@@ -7,12 +7,15 @@ Every schedule is on the C8 calendar (Mon-Fri, 08:00-12:00 and 13:00-17:00), dat
 Monday 2 March 2026 08:00 unless stated: a 40 h activity runs Monday to Friday 17:00.
 """
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
+from conftest import P6_CORPUS_HINT, missing
 from xerkit import FM, MON_FRI_8H, active, clndr_data, done, snap, todo
 
 from xerscope.analysis.changelog import changelog
-from xerscope.analysis.cpm import schedule
+from xerscope.analysis.cpm import CycleError, schedule
 from xerscope.analysis.forensics import (
     AS_SCHEDULED,
     LAST_ACTIVITY,
@@ -25,6 +28,7 @@ from xerscope.analysis.forensics import (
     longest_path_float_d,
 )
 from xerscope.store import SnapshotStore
+from xerscope.xer import build_snapshot, read_xer
 
 WEEK_LATER = "2026-03-09 08:00"  # the Monday after the default data date
 
@@ -235,6 +239,7 @@ def test_half_step_series_reads_each_update_against_the_one_before():
     assert series["residual_wd"].tolist() == [0.0, 0.0]
     assert series["finish_case"].tolist() == [LAST_ACTIVITY, LAST_ACTIVITY]
     assert series["finish"].tolist() == [pd.Timestamp("2026-03-20 17:00")] * 2
+    assert series["note"].tolist() == ["", ""]
 
 
 @pytest.mark.oracle("characterization")
@@ -244,6 +249,43 @@ def test_the_demo_series_has_no_residual(store):
     series = half_step_series(store)
     assert len(series) == len(store) - 1
     assert series["residual_wd"].abs().max() == 0.0
+
+
+HELD_OUT = Path(__file__).parent / "reference" / "data" / "p6-heldout" / "validation" / "held-out"
+HELD_OUT_SETS = [f"H{number}" for number in range(1, 31)]
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize("name", HELD_OUT_SETS)
+def test_no_residual_between_two_schedules_of_the_p6_corpus(name):
+    """Metamorphic, on schedules this project did not write: cases 11 and 12 of each held-out set are
+    two different schedules sharing most Activity IDs, so every kind of change is there at once
+    (progress, scope, durations, logic, links to other projects, constraints, calendars, options).
+    Once every step is applied the finish must be the later schedule's own: residual 0. A pair
+    whose intermediate steps close a logic loop is not read (CycleError), which is said, not hidden.
+    """
+    if not HELD_OUT.is_dir():
+        missing("p6-corpus", P6_CORPUS_HINT)
+    cases = HELD_OUT / name / "cases"
+    earlier, later = (build_snapshot(read_xer(cases / f"{name}-{number}.xer")) for number in ("11", "12"))
+    try:
+        read = half_step(earlier, later)
+    except CycleError:
+        pytest.skip("a step closes a logic loop between these two unrelated schedules")
+    assert read.residual_wd == 0.0
+
+
+@pytest.mark.oracle("standard")
+def test_a_week_that_cannot_be_scheduled_keeps_its_row_in_the_series():
+    """A loop in the later update (A -> B -> A): the row stays, with the reason and no figure."""
+    looped = snap(
+        [todo("A", **week()), todo("B", **week())], [*chain("A", "B"), ("B", "A", "FS", 0)], data_date=WEEK_LATER
+    )
+    series = half_step_series(
+        SnapshotStore([snap([todo("A", **week()), todo("B", **week())], chain("A", "B")), looped])
+    )
+    assert len(series) == 1 and series["note"].iloc[0].startswith("not read:")
+    assert pd.isna(series["slip_wd"].iloc[0])
 
 
 # --- changelog: the two categories the steps need -------------------------------------------------

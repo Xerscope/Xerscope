@@ -44,7 +44,7 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from .changelog import changelog
-from .cpm import Schedule, schedule
+from .cpm import Schedule, ScheduleError, schedule
 
 PROGRESS_COLUMNS = [
     "status_code",
@@ -161,15 +161,13 @@ def _apply_durations(derivation: _Derivation, before: Snapshot) -> Snapshot:
 
 
 def _apply_logic(derivation: _Derivation, before: Snapshot) -> Snapshot:
-    """Carry the later update's relationships between the activities both updates hold."""
-    common = set(derivation.common)
+    """Carry every relationship of the later update.
 
-    def is_between_common(links: pd.DataFrame) -> pd.Series:
-        return links["pred_code"].isin(common) & links["succ_code"].isin(common)
-
-    kept = before.relationships[~is_between_common(before.relationships)]
-    replanned = derivation.new.relationships[is_between_common(derivation.new.relationships)]
-    return replace(before, relationships=pd.concat([kept, replanned], ignore_index=True))
+    The scope step already brought the links that reach an added activity; the rest are the links
+    between activities of both updates and the links to other projects, whose far end is no
+    activity of either update.
+    """
+    return replace(before, relationships=derivation.new.relationships)
 
 
 def _apply_constraints(derivation: _Derivation, before: Snapshot) -> Snapshot:
@@ -372,6 +370,7 @@ SERIES_COLUMNS = [
     "matched",
     "added",
     "deleted",
+    "note",
 ]
 
 
@@ -382,28 +381,36 @@ def half_step_series(store: SnapshotStore) -> pd.DataFrame:
     the finish is held, the longest path's float, the activities matched, added and deleted. A
     finish held still week after week while ``slip_wd`` stays negative is a delay absorbed by
     replanning. The sum of the moves over the series equals the move between the first and the
-    last update (3.4.E.16), the residuals apart.
+    last update (3.4.E.16), the residuals apart. A week that cannot be scheduled (the update
+    itself, or a step: links carried one kind at a time can close a loop the two updates do not
+    have) keeps its row, with the reason in ``note`` and no figure.
     """
     rows = []
     for index in range(1, len(store)):
         old, new = store[index - 1], store[index]
-        read = half_step(old, new)
-        case, held_by = finish_case(new)
-        rows.append(
-            {
-                "data_date": new.data_date,
-                "finish_case": case,
-                "held_by": held_by,
-                "finish": read.new_finish,
-                "finish_before_replanning": read.finish_before_replanning,
-                "slip_wd": read.slip_wd,
-                "replanning_wd": read.replanning_wd,
-                "residual_wd": read.residual_wd,
-                "period_wd": read.period_wd,
-                "longest_path_float_d": longest_path_float_d(new),
-                "matched": read.matched,
-                "added": read.added,
-                "deleted": read.deleted,
-            }
-        )
+        try:
+            rows.append(_series_row(old, new))
+        except ScheduleError as error:
+            rows.append({"data_date": new.data_date, "note": f"not read: {error}"})
     return pd.DataFrame(rows, columns=SERIES_COLUMNS)
+
+
+def _series_row(old: Snapshot, new: Snapshot) -> dict:
+    read = half_step(old, new)
+    case, held_by = finish_case(new)
+    return {
+        "data_date": new.data_date,
+        "finish_case": case,
+        "held_by": held_by,
+        "finish": read.new_finish,
+        "finish_before_replanning": read.finish_before_replanning,
+        "slip_wd": read.slip_wd,
+        "replanning_wd": read.replanning_wd,
+        "residual_wd": read.residual_wd,
+        "period_wd": read.period_wd,
+        "longest_path_float_d": longest_path_float_d(new),
+        "matched": read.matched,
+        "added": read.added,
+        "deleted": read.deleted,
+        "note": "",
+    }
