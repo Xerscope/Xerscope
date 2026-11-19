@@ -281,6 +281,9 @@ def test_remote_app_settings_reach_streamlit():
 
     c = (ROOT / "deploy" / "compose.yaml").read_text()
     assert 'XERSCOPE_DATA_LOCKED: "true"' in c
+    # a company standard (.toml) sits beside the exports: the folder is read-only and mounted already,
+    # the XER reader keeps .xer files only and the standards loader .toml files only
+    assert "XERSCOPE_STANDARDS: /data" in c
     env = dict(re.findall(r"^\s+(STREAMLIT_[A-Z_]+): \"?([^\"\s#]+)", c, re.M))
     assert env == {
         "STREAMLIT_SERVER_MAX_UPLOAD_SIZE": "1",
