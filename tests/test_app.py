@@ -2511,7 +2511,7 @@ def test_health_and_audit_write_no_web_address(app, standard_id):
 
 
 def test_every_table_of_the_debug_page_has_a_key_of_its_own():
-    """The Debug page draws 40 tables, most of them too short to carry filters on the demo: read in
+    """The Debug page draws 41 tables, most of them too short to carry filters on the demo: read in
     the page's source, every call of its ``table`` passes a ``key``, each one a different name, none
     the key of another widget of the page (a table's key is also its dataframe's)."""
     import ast
@@ -2525,7 +2525,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 40 and len(table_keys) == 40 and len(set(table_keys)) == 40
+    assert len(tables) == 41 and len(table_keys) == 41 and len(set(table_keys)) == 41
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)

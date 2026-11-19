@@ -101,6 +101,13 @@ with st.expander(f"2 · Expected finish ({len(frames['02_expected_finish'])} tas
         "(remaining_set_to_0). An FF / SF bound later than that wins instead (rem_override_hr blank)."
     )
     table(frames["02_expected_finish"], key="debug_02_expected_finish")
+    st.caption(
+        "Counts only (no Activity ID, no date): the unfinished activities above by status, type, constraints, "
+        "expected finish after the primary constraint date, expected finish off the working time of the "
+        "activity's calendar, and an FF / SF predecessor. stored_identical: every date and float P6 stored "
+        "is the recalculated one; stored_different: at least one is not."
+    )
+    table(frames["02b_expected_finish_forms"], key="debug_02b_expected_finish_forms")
 
 int01, int03 = frames["03_int01_recalculation"], frames["03_int03_assignments"]
 with st.expander(
