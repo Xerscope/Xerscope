@@ -313,8 +313,8 @@ jobs:
             line=$(grep "\"status\": $code," caddy.log | tail -n 1)
             echo "$line" | grep -q '"Referrer-Policy": \["no-referrer"\]'
             echo "$line" | grep -q '"X-Content-Type-Options": \["nosniff"\]'
-            echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'\"\]"
-            echo "$line" | grep -q '"Strict-Transport-Security": \["max-age=31536000"\]'
+            echo "$line" | grep -q "\"Content-Security-Policy\": \[\"frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]"
+            echo "$line" | grep -q '"Strict-Transport-Security": \["max-age=31536000; includeSubDomains"\]'
             echo "$line" | grep -q '"Permissions-Policy": \["camera=(), microphone=(), geolocation=()"\]'
             echo "$line" | grep -q '"Connection": \["close"\]'   # no connection kept for the next visitor
           done
