@@ -126,7 +126,8 @@ def show_explanation(result) -> None:
 def show_sheet(standard, metric) -> None:
     """How the check is set and where to change it for good."""
     with st.expander("Settings: how to change this check for good"):
-        ui.table(settings_table(metric, standard[metric.id]), raw_labels=True, key="sheet_settings")
+        as_text = {"now": st.column_config.TextColumn("now")}  # ui.COLUMNS has a "now" that is a date
+        ui.table(settings_table(metric, standard[metric.id]), raw_labels=True, overrides=as_text, key="sheet_settings")
         where = standard.path or f"the built-in standards/{standard.id.lower()}.toml"
         st.markdown(
             f"Replace the `[[metric]]` table with id `{metric.id}` in **{ui.md_text(where)}**, or copy the whole "

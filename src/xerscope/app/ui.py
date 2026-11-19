@@ -698,6 +698,7 @@ def table(
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
+    kwargs.setdefault("placeholder", "–")  # a missing number or date, as blank_missing writes a missing text
     linked = open_task is not None and "task_code" in frame.columns and not frame.empty
     if linked:
         kwargs.update(on_select="rerun", selection_mode="single-row")
