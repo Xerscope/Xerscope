@@ -7,8 +7,9 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.cpm import ScheduleError
-from xerscope.analysis.evm import earned_schedule, schedule_gap_by_status
+from xerscope.analysis.evm import earned_schedule, schedule_gap_by_status, update_and_baseline_of_code
 from xerscope.app import diagnostic, ui, xml_baselines
+from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.state import (
     anonymous_exports,
     baseline_export,
@@ -236,7 +237,7 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
             "does. The anonymous download leaves the label out."
         )
         table(frames["09_udf_fields"], key="debug_09_udf_fields")
-    if frames["09_pv_labor_check"].empty:
+    if baseline is None or frames["09_pv_labor_check"].empty:
         st.caption("No baseline or no status date: nothing to compare.")
     else:
         table(frames["09_pv_labor_check"], key="debug_09_pv_labor_check")
@@ -247,11 +248,13 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
             "date: PD to plan_finish, AT to the status date, ES to that instant. Plan time is when at least one "
             "of these tasks' baseline calendars works; a plan day is the project calendar's hours per day. "
             "sv_t_plan_d = ES - AT (negative = behind), spi_t = ES / AT. ev_left_out_hr: earned on tasks without "
-            "both EV dates, not in ev_hr. Where the plan asks for no hours, the status date is the ES."
+            "both EV dates, not in ev_hr. Where the plan asks for no hours, the status date is the ES. "
+            "With a task code picked, both tables below hold the tasks of its values only."
         )
-        schedule = memo(
-            ("earned_schedule", snapshot.source, str(snapshot.data_date)), earned_schedule, snapshot, baseline
-        )
+        code_filter = pick_code_filter(snapshot, "debug_es")
+        part, part_baseline = update_and_baseline_of_code(snapshot, baseline, code_filter)
+        part_key = (snapshot.source, str(snapshot.data_date), code_filter)
+        schedule = memo(("earned_schedule", *part_key), earned_schedule, part, part_baseline)
         table(pd.DataFrame([schedule.as_row()]), key="debug_09_earned_schedule")
         st.caption(
             "The same tasks by their status in the update: ahead_hr and behind_hr are the positive and the "
@@ -261,12 +264,7 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
             "User Guide, Planned Dates): a baseline copied from a project under way keeps the lead or lag of "
             "its started tasks, which these rows size."
         )
-        gaps = memo(
-            ("schedule_gap_by_status", snapshot.source, str(snapshot.data_date)),
-            schedule_gap_by_status,
-            snapshot,
-            baseline,
-        )
+        gaps = memo(("schedule_gap_by_status", *part_key), schedule_gap_by_status, part, part_baseline)
         table(gaps, key="debug_09_schedule_gap_by_status")
     st.caption(
         "Labor assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "

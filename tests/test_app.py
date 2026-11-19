@@ -26,6 +26,7 @@ from conftest import (
     selection,
 )
 from streamlit.testing.v1 import AppTest
+from test_earned_schedule import planned, progressed
 from xerkit import active, hours, todo, with_second_project, xer_text
 
 import xerscope
@@ -666,6 +667,65 @@ def test_gantt_filters_by_p6_activity_code_values_or_text(app, tmp_path, monkeyp
     b1 = next(label for label in labels if label.split(" · ")[0] == "B1")  # path · description
     assert shown([b1]) == {"D"}  # picked value: exactly B1, not its sub-values L1, L2
     assert shown(["l"]) == {"A", "B"}  # typed text: values L1, L2 (case ignored)
+
+
+def _app_on_two_disciplines(tmp_path, monkeypatch):
+    """The update of ``test_evm_code_filter`` (Friday 03-13 17:00) against its plan, given as the baseline
+    file. Whole project: BAC 200, PV 200, EV 120. CIV (A, B): BAC 80, PV 80, EV 60."""
+    from test_evm_code_filter import DISCIPLINE, PLAN, WEEK_1, WEEK_2
+
+    done_or_not = {"A": 100, "B": 50, "C": 50, "E": 100}
+    plan = [planned(code, *dates) for code, dates in PLAN.items()]
+    update = [
+        progressed(task, done_or_not[task["task_code"]]) if task["task_code"] in done_or_not else task for task in plan
+    ]
+    codes = [(code, "Discipline", value) for code, value in DISCIPLINE.items()]
+    data, other = tmp_path / "data", tmp_path / "baseline"
+    data.mkdir()
+    other.mkdir()
+    (other / "plan.xer").write_text(xer_text(plan, data_date=WEEK_1[0]), encoding="utf-8")
+    (data / "w2.xer").write_text(xer_text(update, codes=codes, data_date=WEEK_2[1]), encoding="utf-8")
+    return _run(data, monkeypatch, baseline=other / "plan.xer")
+
+
+def _pick_discipline(at, key_prefix: str, text: str) -> None:
+    next(box for box in at.selectbox if box.label == "Task code (P6 activity code)").set_value("Discipline").run()
+    at.multiselect(key=f"{key_prefix}_code_values:Discipline").set_value([text]).run()
+    _ok(at)
+
+
+def test_earned_value_on_a_task_code_counts_the_tasks_of_its_values(tmp_path, monkeypatch):
+    """Whole project: 120 / 200 = 60.0 % complete, SPI 120 / 200 = 0.60. On CIV: 60 / 80 = 75.0 %, SPI
+    60 / 80 = 0.75, the page says what it is filtered on and shows no BEI."""
+    at = _app_on_two_disciplines(tmp_path, monkeypatch)
+    at.switch_page("views/earned_value.py").run()
+    _ok(at)
+
+    def card(label: str) -> str:
+        return next(metric.value for metric in at.metric if metric.label == label)
+
+    assert (card("Percent complete"), card("SPI (labor units)")) == ("60.0 %", "0.60")
+    assert card("BEI (P6 / DCMA)") != "– / –"
+    _pick_discipline(at, "ev", "CIV")
+    assert (card("Percent complete"), card("SPI (labor units)")) == ("75.0 %", "0.75")
+    assert card("BEI (P6 / DCMA)") == "– / –"
+    assert any(text.startswith("Filtered on Discipline") for text in _caption_texts(at))
+
+
+def test_debug_reads_the_earned_schedule_on_a_task_code(tmp_path, monkeypatch):
+    """EV of the Earned Schedule row: 120 h on the whole project, 60 h on CIV; the table by status then
+    holds CIV's two tasks."""
+    at = _app_on_two_disciplines(tmp_path, monkeypatch)
+    at.switch_page("views/debug.py").run()
+    _ok(at)
+
+    def table_with(column: str) -> pd.DataFrame:
+        return next(frame.value for frame in at.dataframe if column in frame.value.columns)
+
+    assert table_with("es_plan_d")["ev_hr"].tolist() == [120.0]
+    _pick_discipline(at, "debug_es", "CIV")
+    assert table_with("es_plan_d")["ev_hr"].tolist() == [60.0]
+    assert table_with("behind_hr")["tasks"].sum() == 2
 
 
 def test_gantt_ask_asks_which_code_value_then_filters_on_the_one_clicked(tmp_path, monkeypatch):
