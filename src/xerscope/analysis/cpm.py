@@ -1425,13 +1425,13 @@ class _Run:
         if end == "start":
             return [min([date] + constraint_start_bounds)], []
         if code in self.duration_override:
-            # With an expected finish earlier than the Mandatory Finish the date no
-            # longer pins: the successors' bounds drive the late dates, capped by the
-            # expected finish on task-dependent work (H22-06 A1120, H23-03 A1210,
-            # H23-07 A1110) and by the mandatory date itself on resource-dependent
-            # work (H25-05 A1150; observed, not explained)
-            cap = date if code in self.rsrc_dep else min(date, self.early_finish[code])
-            return following_start_bounds, following_finish_bounds + [cap]
+            # With an expected finish applied the Mandatory Finish date no longer pins:
+            # the late finish is the lesser of what the successors allow and the date.
+            # P6 23.12.1 on the held-out corpus, unstarted work: H29-02 A1160, H29-05
+            # A1110, H29-11 A1230 (a cap at the early finish gets them wrong),
+            # H29-12 A1240, and H25-05 A1150 on resource-dependent work. Work under way
+            # is not measured: H28-11 A1180 is wrong under either rule
+            return following_start_bounds, following_finish_bounds + [date]
         return [], [min([date] + constraint_finish_bounds)]
 
     def bounds_of_what_follows(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
