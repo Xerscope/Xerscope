@@ -1066,9 +1066,12 @@ class _Run:
         Returns the Mandatory Start / Finish as (side, date), else None. Work under way keeps
         its actual start, so its constraints are not applied here, only reported.
 
+        An expected finish in force on work not started drops the early side of a Finish On and a
+        Finish On or After: the work finishes at its expected finish (P6 23.12.1: probes oc-edges-xc
+        N5, N7, xf-mandatory M7; 26.8 not measured). Their late side stays in the backward pass.
+
         ``milestone_expected``: the expected finish of an unstarted milestone. It becomes a finish
-        bound and stands in for the early side of a Finish On, Finish On or After and Mandatory
-        Finish; their late side stays a cap in the backward pass.
+        bound and stands in for the early side of a Mandatory Finish too.
         """
         pinned = None
         if started and self.constraints(code):
@@ -1078,7 +1081,7 @@ class _Run:
                 pinned = (MANDATORY[constraint_type], date)
             elif START_LIKE.get(constraint_type) == "start":
                 start_bounds.append(date)
-            elif START_LIKE.get(constraint_type) == "finish" and milestone_expected is None:
+            elif START_LIKE.get(constraint_type) == "finish" and not self.has_expected_finish(code):
                 finish_bounds.append(date)
         if milestone_expected is None:
             return pinned

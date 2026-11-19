@@ -46,7 +46,7 @@ FLOORS = {
     "H21": 0.999,
     "H22": 0.994,
     "H23": 0.807,
-    "H24": 0.784,
+    "H24": 0.789,
     "H25": 0.761,
     "H26": 0.811,
     "H27": 0.842,
@@ -188,6 +188,9 @@ PINNED = {
         ("H3", "H3-02", "A1050", "late_finish"),
         ("H8", "H8-06", "A1010", "late_finish"),
         ("H14", "H14-02", "A1130", "late_finish"),
+    ],
+    "an expected finish drops the early side of a Finish On or After on work not started": [
+        ("H24", "H24-08", "A1100", "early_finish"),
     ],
     "FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
     "SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],

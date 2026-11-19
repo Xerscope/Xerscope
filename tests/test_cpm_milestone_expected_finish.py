@@ -200,25 +200,3 @@ def test_task_with_an_expected_finish_is_unchanged():
     row = schedule(snap(tasks, [("P", "A", "FS", 0)], sched=OPTION_ON)).frame.loc["A"]
     assert row["es"] == T("2026-03-03 08:00")
     assert row["ef"] == T("2026-03-05 17:00")
-
-
-@pytest.mark.oracle("characterization")
-def test_task_finish_on_later_than_its_expected_finish_still_wins():
-    """Characterization of the engine as it was before milestones were handled: a task is not
-    placed like a milestone. Task A (16 h, FS after P) has a Finish On Wed 11 Mar 17:00 later than
-    its expected finish Thu 5 Mar 17:00; the later finish bound wins (cpm.py, expected_finish: "an
-    FF / SF bound later than that finish wins"): early finish Wed 11 Mar 17:00, start 16 h before,
-    Tue 10 Mar 08:00. Hand calculation: Tue 10 08:00 + 16 working hours (8 h + 8 h) = Wed 11 17:00."""
-    tasks = [
-        todo("P", **hours(8)),
-        todo(
-            "A",
-            cstr_type="CS_MEO",
-            cstr_date="2026-03-11 17:00",
-            expect_end_date=EXPECTED_FINISH_THURSDAY,
-            **hours(16),
-        ),
-    ]
-    row = schedule(snap(tasks, [("P", "A", "FS", 0)], sched=OPTION_ON)).frame.loc["A"]
-    assert row["es"] == T("2026-03-10 08:00")
-    assert row["ef"] == T("2026-03-11 17:00")
