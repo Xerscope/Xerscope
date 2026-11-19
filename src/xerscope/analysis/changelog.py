@@ -31,6 +31,22 @@ CATEGORIES = [
     "Float",
     "Constraints",
     "Resources",
+    "Calendars",
+    "Options",
+]
+# Scheduling options compared between two updates: key in ``Snapshot.options``, label shown.
+# The nested keys read the raw SCHEDOPTIONS row (``options["sched"]``), as analysis.cpm.Options does.
+SCHEDULING_OPTIONS = [
+    (("progressed",), "progressed activities"),
+    (("lag_calendar",), "lag calendar"),
+    (("sched", "sched_float_type"), "total float type"),
+    (("sched", "sched_open_critical_flag"), "open ends critical"),
+    (("sched", "sched_lag_early_start_flag"), "SS lag from early start"),
+    (("sched", "sched_use_expect_end_flag"), "use expected finish"),
+    (("sched", "sched_outer_depend_type"), "external relationships"),
+    (("critical_path_type",), "critical path definition"),
+    (("critical_float_hr",), "critical float (h)"),
+    (("must_finish_by",), "must finish by"),
 ]
 COLS = ["category", "change", "task_code", "task_name", "wbs_code", "field", "before", "after", "delta", "unit"]
 
@@ -98,6 +114,8 @@ def changelog(old: Snapshot, new: Snapshot) -> pd.DataFrame:
         + _budget_changes(previous, current)
         + _assignment_changes(old, new, previous_all, current_all)
         + _relationship_changes(old, new)
+        + _calendar_definition_changes(old, new)
+        + _option_changes(old, new)
     )
     frame = _to_frame(changes, previous_all, current_all)
     frame["category"] = pd.Categorical(frame["category"], CATEGORIES, ordered=True)
@@ -168,6 +186,14 @@ def _duration_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
         delta = after - old_in_new_days.loc[code, "remain_drtn_hr_cnt"]
         changes.append(
             _change("Durations", "remaining duration increased", code, "remaining duration", before, after, delta, "wd")
+        )
+    # work under way loses remaining duration as it progresses; on work not started a cut is a plan change
+    cut = (current["remain_drtn_hr_cnt"] < previous["remain_drtn_hr_cnt"] - 1e-9) & ~current["is_started"]
+    for code in previous.index[cut]:
+        before, after = previous.loc[code, "remaining_d"], current.loc[code, "remaining_d"]
+        delta = after - old_in_new_days.loc[code, "remain_drtn_hr_cnt"]
+        changes.append(
+            _change("Durations", "remaining duration cut", code, "remaining duration", before, after, delta, "wd")
         )
     return changes
 
@@ -358,6 +384,46 @@ def _what_changed(old_links: set[Link], new_links: set[Link]) -> str:
 def _relationship_change(change: str, pair: tuple[str, str], before: str, after: str):
     predecessor, successor = pair
     return _change("Relationships", change, successor, f"{predecessor} → {successor}", before, after)
+
+
+def _calendar_definition(calendar) -> tuple:
+    """What makes a calendar's working time: hours per day, the week, the dated exceptions.
+    ``WorkCalendar`` compares without its exceptions (they are a cache-friendly dict); a holiday
+    added or removed moves dates all the same, so they are compared here."""
+    return (calendar.hours_per_day, calendar.week, tuple(sorted(calendar.exceptions.items())))
+
+
+def _calendar_definition_changes(old: Snapshot, new: Snapshot) -> list:
+    """One row per calendar of both updates whose working time differs: a calendar edited in P6
+    moves every date on it without any activity row changing."""
+    changes = []
+    for clndr_id in sorted(set(old.work_calendars) & set(new.work_calendars)):
+        before, after = old.work_calendars[clndr_id], new.work_calendars[clndr_id]
+        if _calendar_definition(before) != _calendar_definition(after):
+            changes.append(_change("Calendars", "working time changed", "", after.name, before.name, after.name))
+    return changes
+
+
+def _option_value(options: dict, keys: tuple[str, ...]):
+    """Value at ``keys`` in ``Snapshot.options`` (``options["sched"][...]`` for the raw row); None when absent
+    or blank, so a blank and an absent option read equal."""
+    value: object = options
+    for key in keys:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return None if value in ("", None) else value
+
+
+def _option_changes(old: Snapshot, new: Snapshot) -> list:
+    """One row per scheduling option of ``SCHEDULING_OPTIONS`` that differs: the same file scheduled
+    under another option gives other dates, so a half-step reading must know of it."""
+    changes = []
+    for keys, label in SCHEDULING_OPTIONS:
+        before, after = _option_value(old.options, keys), _option_value(new.options, keys)
+        if before != after:
+            changes.append(_change("Options", "scheduling option changed", "", label, before, after))
+    return changes
 
 
 def summary(log: pd.DataFrame) -> pd.DataFrame:

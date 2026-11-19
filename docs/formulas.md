@@ -442,6 +442,7 @@ Two updates of one project, activities matched by `task_code` (first row per cod
 | Activities | renamed, moved to another WBS, type changed, calendar changed | `task_name`, `wbs_code`, `type`, `clndr_id` differ (NaN = NaN) | — |
 | Durations | original duration changed | `target_drtn_hr_cnt` differs (hours, as P6 stores them: Oracle P6 EPPM 23 Application Administration Guide, "Using Calendars to Define Hours Per Time Period Settings"; a calendar change alone is not a duration change) | `original_d(new)` − the old hours / `hours_per_day` of the new calendar (wd) |
 | Durations | remaining duration increased | `remain_drtn_hr_cnt(new) > remain_drtn_hr_cnt(old) + 1e-9` and not complete in new | same, on remaining (wd) |
+| Durations | remaining duration cut | `remain_drtn_hr_cnt(new) < remain_drtn_hr_cnt(old) - 1e-9` and not started in new (work under way loses remaining duration as it progresses; on work not started a cut is a plan change) | same, on remaining (wd) |
 | Progress | started / finished / status reverted | `status` differs; reverted when the order Not started < In progress < Complete goes down | — |
 | Progress | actual start / finish changed (retroactive) | both present and different | — |
 | Progress | actual start / finish removed | present in old, blank in new | — |
@@ -454,11 +455,73 @@ Two updates of one project, activities matched by `task_code` (first row per cod
 | Resources | resource assigned / removed / budgeted units changed | per (activity in both updates, resource label): `TASKRSRC.target_qty` summed per resource appears / disappears / `round(new − old, 2) != 0` | units difference (units) |
 | Relationships | added / deleted | (pred, succ) pair only in new / only in old | — |
 | Relationships | type changed / lag changed | pair in both with a different set of (type, `lag_hr`): type changed when the set of types differs, else lag changed | — |
+| Calendars | working time changed | a calendar id in both updates whose hours per day, week or dated exceptions differ (`_calendar_definition`); `field` = the calendar's name | — |
+| Options | scheduling option changed | one of `SCHEDULING_OPTIONS` differs: progressed activities, lag calendar, total float type, open ends critical, SS lag from early start, use expected finish, external relationships, critical path definition, critical float, must finish by (blank and absent are equal) | — |
 
 `summary(log)` counts rows per (category, change), Project rows excluded. Pinned by
 test_changelog_finds_each_kind_of_change, test_changelog_relationships,
 test_changelog_project_rows_and_summary, test_identical_files_have_no_changes,
-test_changelog_lists_assignment_changes.
+test_changelog_lists_assignment_changes, test_changelog_lists_a_scheduling_option_and_a_must_finish_by_that_changed,
+test_changelog_lists_a_calendar_whose_working_time_changed.
+
+### 5.1 Half-step reading of a week (analysis/forensics.py)
+
+AACE RP 29R-03, Forensic Schedule Analysis (rev. April 25, 2011), MIP 3.4 "Observational / Dynamic /
+Contemporaneous Split", the bifurcated or half-stepped update analysis (3.4.K.4): the earlier update is
+updated with the later update's progress data and recalculated at the later status date (the half-step
+schedule); its move from the earlier update is the slip due to progress, the move from it to the later
+update is due to the non-progress revisions, and the two add up to the move between the updates
+(3.4.K.4.d to f). The SCL Delay and Disruption Protocol, 2nd ed. (February 2017), 11.6(c), describes
+the same reading as the time slice windows analysis. Here the revisions are also applied one `Step` at
+a time (`cpm.schedule` on a derived snapshot each), so the replanning is read by kind. The baseline
+is not read.
+
+| Step | Carries from the later update (activities in both updates unless stated) | Changelog categories counted |
+|---|---|---|
+| progress | status date; `status_code`, actual dates, suspend / resume, `phys_complete_pct`, the external early start / late finish bounds; `remain_drtn_hr_cnt` of the activities started in the later update whose remaining duration decreased (3.4.K.4.b: actual start, actual finish, increased percent complete, decreased remaining duration) | Progress |
+| scope | activities added (their TASK rows, the links and assignments that reach them), deleted (taken out with theirs), `task_type` | Scope |
+| durations | `target_drtn_hr_cnt`, `expect_end_date`, every other `remain_drtn_hr_cnt` that changed (an increase, or a change on work not started: non-progress revisions, 3.4.K.4), the resource assignments | Durations, Resources |
+| logic | every relationship of the later update (the scope step brought those that reach an added activity; the rest are the links between activities of both updates and the links to other projects) | Relationships |
+| constraints | `cstr_type`, `cstr_date`, `cstr_type2`, `cstr_date2`, the project's Must Finish By | Constraints |
+| calendars and options | `clndr_id`, the calendar definitions, the scheduling options, the planned start | Calendars, Options, Tasks |
+
+| Quantity | Definition |
+|---|---|
+| `shift_wd` of a step | `0.0 − project_working_days(finish before the step, finish after it)` on the later update's project calendar, rounded to 0.01: days lost negative, as the changelog and the finish variances |
+| finish before replanning | the finish after the progress step: where the earlier plan lands with the later update's status, nothing replanned |
+| `slip_wd` | the progress step's shift: the delay of the week |
+| `replanning_wd` | the shifts of the other steps, summed: what the replanning absorbed (positive) or added (negative) |
+| `residual_wd` | the later update's recalculated finish against the last step's: 0 when the steps account for every change the engine reads; otherwise a change the changelog does not list |
+| `period_wd` | `project_working_days(status date of the earlier update, status date of the later one)` on the later update's project calendar; `is_slip_beyond_period` when `slip_wd < -period_wd`: 3.4.K.4.g, a revision in the half-step or work pushed into a non-working stretch |
+| `engine_gap_wd` | `0.0 − project_working_days(Snapshot.finish_date, recalculated finish)` of an update: the recalculated finish against the latest activity finish P6 stored in the file, 0 when reproduced to the minute. `is_finish_reproduced` when it is 0 for both updates of the week; otherwise the page warns that the shifts may be the recalculation's |
+| `finish_case` | `must finish by` when `PROJECT.plan_end_date` is set (it bounds the late dates only: the early finish still moves, float turns negative past it); else `mandatory finish` when an end point (no successor, not LOE) carries `CS_MANDFIN` (its date cannot move); else `last task` |
+| `longest_path_float_d` | lowest `tf_hr` of the recalculated longest path / hours per day of the project calendar: under a Must Finish By or a Mandatory Finish, where the delay the finish cannot show goes |
+
+What is progress and what is a revision follows 3.4.K.4 (the list of non-progress revisions:
+activities added or deleted, logic links and lags, constraints, original durations, a remaining
+duration increased or changed without a change in percent complete, calendar and holiday
+assignments). Conventions no source settles (stated on the page): the order in which the kinds of
+revision are applied, and the scheduling options, which the RP does not list, read with the
+calendars.
+
+Pinned by tests/test_forensics.py: a week without change moves nothing (property); a 2 wd delay
+absorbed by a 2 wd cut reads −2 at progress and +2 at durations with the finish unmoved; one hand
+case per step; every kind of change at once sums to the recalculated move with residual 0
+(property); the three finish cases; the float under a Must Finish By (P6); the demo series has no
+residual (characterization); a remaining duration increased on started work is a revision, not
+progress (3.4.K.4); the period bound of 3.4.K.4.g.
+
+**What this reading rests on, measured (Nov 2026, held-out P6 corpus, 359 schedules).** The reading
+moves one number, the recalculated project finish. xerscope's finish is P6's to the minute on 327
+schedules (91.1 %): every schedule of 19 sets (H1 to H16, H18, H21, H22), 11 of 12 in H17, H19 and
+H20, and 58 to 75 % in H23 to H30 (driving resources, an expected finish against a Mandatory
+Finish, resource calendars). On a series of that last kind a shift can be the engine's and not the
+schedule's: `engine_gap_wd` flags each such week on the page and in the series, and `xerscope
+recalc` on the file lists the dates that differ. The steps themselves leave no residual on any of the 315 pairs of consecutive
+corpus schedules that can be read (unrelated schedules, every kind of change at once); 15 pairs
+are not read because links carried one kind at a time close a loop neither schedule has
+(`half_step_series` keeps the row, with the reason). No P6 output exists for a half-step schedule:
+the progress step has no oracle beyond the hand cases and the sum rule of 3.4.K.4.f.
 
 ## 6. CPM output compared with P6 (analysis/cpm.py `compare_with_stored`, `compare_assignments`)
 
