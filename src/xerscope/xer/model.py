@@ -565,8 +565,9 @@ class Snapshot:
         the id is blank or unknown): for one activity's dates. ``working_days`` does it row by row."""
         return self.calendar(clndr_id).working_days(start, end)
 
-    @property
+    @cached_property
     def file_baseline(self) -> FileBaseline:
+        """The baseline the file names for this project, resolved once: a snapshot is read-only."""
         return file_baseline(self.file_projects, self.project_id)
 
     @property

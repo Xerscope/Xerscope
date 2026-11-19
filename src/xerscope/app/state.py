@@ -509,17 +509,28 @@ def _projects_fields(store: SnapshotStore) -> None:
         )
 
 
+def _window_sections(has_series: bool) -> list[str]:
+    """The sections the window draws, the one its opener names first. Opened by itself for the
+    baseline of a series just read (``BASELINE_ALONE``), the Baseline section alone: the boxes of
+    the Files section came back unticked in a browser, and Done then read no file."""
+    opened_on = st.session_state.get("window_section")
+    if opened_on == BASELINE_ALONE:
+        return ["baseline"]
+    if not has_series:
+        return ["files"]
+    return ["baseline", "files"] if opened_on == "baseline" else ["files", "baseline"]
+
+
 @st.dialog("Files and baseline", width="large", on_dismiss=_close_window)
 def _window(store: SnapshotStore | None) -> None:
     """The window of the sidebar's Files and Baseline lines. A widget inside it reruns this function
     only (st.dialog is a fragment): nothing applies before Done, which reads the files and sets the
-    baseline choice; closing it otherwise changes nothing. The section the line names comes first."""
+    baseline choice; closing it otherwise changes nothing. The section the line names comes first;
+    without the Files section (``_window_sections``) Done keeps the files already read."""
     source = st.session_state.get("files_source") or ("none",)
     with st.container(key="files_sheet"):
-        sections = ["files", "baseline"] if store is not None else ["files"]
-        if st.session_state.get("window_section") == "baseline":
-            sections.reverse()
-        choice = None
+        sections = _window_sections(has_series=store is not None)
+        choice = None if "files" in sections else st.session_state.get("files_source")
         for index, section in enumerate(sections):
             if index:
                 st.html('<hr class="xd-rule">')
@@ -760,7 +771,7 @@ def _ask_for_the_baseline() -> None:
     """Open the window on its Baseline section, once per choice of files, until Done sets the baseline."""
     if not st.session_state.get(BASELINE_SET) and not st.session_state.get(BASELINE_ASKED):
         st.session_state[BASELINE_ASKED] = True
-        _open_window("baseline")
+        _open_window(BASELINE_ALONE)
 
 
 def _project_labels(snapshot: Snapshot) -> dict[str, str]:
@@ -782,6 +793,7 @@ def _project_labels(snapshot: Snapshot) -> dict[str, str]:
 # (BASELINE_ASKED), and nothing is computed against a baseline before Done there (BASELINE_SET).
 BASELINE_ASKED = "baseline_asked"
 BASELINE_SET = "baseline_set"
+BASELINE_ALONE = "baseline alone"  # the window's section when it opens by itself: no Files section
 BL_NONE = "None"
 BL_EACH = "Baseline in each file (P6 Project Baseline)"
 BL_PLANNED = "Planned dates in each file (target_*)"

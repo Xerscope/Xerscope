@@ -259,12 +259,13 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "note": ("Note", "wide"),
 }
 HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not shown
+MISSING = "–"  # written for a value that is not there: a date, a number, a cell of a table
 
 
 _MD_SPECIAL = str.maketrans({c: "\\" + c for c in "\\`*_{}[]()#+-.!|<>~$"})
 
 
-def fmt_date(timestamp, missing: str = "–") -> str:
+def fmt_date(timestamp, missing: str = MISSING) -> str:
     """A date for display ("02 Nov 2026"); ``missing`` stands for NaT / None."""
     return missing if pd.isna(timestamp) else f"{timestamp:%d %b %Y}"
 
@@ -274,12 +275,12 @@ def stamp(timestamp) -> str:
     return f"{timestamp:%Y-%m-%d}"
 
 
-def fmt_number(value, template: str = "{:.1f}", missing: str = "–") -> str:
+def fmt_number(value, template: str = "{:.1f}", missing: str = MISSING) -> str:
     """A number for display; ``missing`` stands for NaN / None."""
     return missing if value is None or pd.isna(value) else template.format(value)
 
 
-def numbers_as_text(frame: pd.DataFrame, columns: Iterable[str], missing: str = "–") -> tuple[pd.DataFrame, dict]:
+def numbers_as_text(frame: pd.DataFrame, columns: Iterable[str], missing: str = MISSING) -> tuple[pd.DataFrame, dict]:
     """``columns`` written as text in their usual format, ``missing`` for NaN: st.dataframe writes
     "None" for a missing number. Returns the frame and the column_config overrides for ``table``
     (right-aligned text under the usual label)."""
@@ -295,7 +296,7 @@ def numbers_as_text(frame: pd.DataFrame, columns: Iterable[str], missing: str = 
     return frame, overrides
 
 
-def blank_missing(frame: pd.DataFrame, missing: str = "–") -> pd.DataFrame:
+def blank_missing(frame: pd.DataFrame, missing: str = MISSING) -> pd.DataFrame:
     """None / NaN in the text columns written as ``missing``: st.dataframe would write "None"."""
     out = None
     for column in frame.columns:
@@ -414,7 +415,7 @@ def score_cards(scores: dict) -> None:
         if score is None:
             # a short value: a long one is cut with an ellipsis in a card
             col.metric(
-                label, "–", delta="not computed yet", delta_color="off", delta_arrow="off", help=help_, border=True
+                label, MISSING, delta="not computed yet", delta_color="off", delta_arrow="off", help=help_, border=True
             )
         else:
             col.metric(
@@ -699,6 +700,7 @@ def table(
     kwargs.setdefault("hide_index", True)
     kwargs.setdefault("height", table_height(len(frame), max_height))
     kwargs.setdefault("width", "stretch")
+    kwargs.setdefault("placeholder", MISSING)  # st.dataframe writes "None" for a missing number or date
     linked = open_task is not None and "task_code" in frame.columns and not frame.empty
     if linked:
         kwargs.update(on_select="rerun", selection_mode="single-row")
