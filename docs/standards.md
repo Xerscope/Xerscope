@@ -350,6 +350,17 @@ under the standard picker, the CLI prints `xerscope: <message>` and exits 2. `gr
 (optional) gives a section title. The formula behind every metric is in
 [formulas.md](formulas.md).
 
+Some rules and parameters exist for a company standard alone, no built-in standard uses them:
+`on_data_date` (start or finish on the data date), `float` with `op = "between"`, `missing_logic`
+with `single_project_start` / `single_project_finish`, `relationship_type` with `zero_lag` and
+`listed`, `no_resource` with `kind = "labour_units"`. Their formulas and the test of each are in
+[formulas.md](formulas.md) §2.5; the source is the maintainer's reading of the requirement
+(`docs/testing.md` §1), named in each docstring.
+
+A standard read from the `--standards` folder (or uploaded on the Schedule health page) is listed
+on the Schedule health and Audit pages and gets its score card on the Overview, like the built-in
+ones.
+
 To try a target or a threshold before writing it down, open the check on the Audit page:
 it re-runs the check with the values set there, shows the sets behind the count, and gives
 the `[[metric]]` table to paste here.

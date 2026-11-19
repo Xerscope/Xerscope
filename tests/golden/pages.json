@@ -22,7 +22,7 @@
   "markdown: **Tasks complete**\n- *P6 Professional* · Activities with status Complete / activities (WBS summaries left out)",
   "markdown: **Critical tasks**\n- *P6 Professional* · Open activities critical as the project's critical path type says (float ≤ threshold, or driving path)",
   "subheader: Score by standard",
-  "caption: Checks in pass over checks evaluated, on the latest update and the baseline picked in the sidebar. Shown once Schedule health or the button has computed them: the four standards take several seconds on a large file.",
+  "caption: Checks in pass over checks evaluated, on the latest update and the baseline picked in the sidebar. Shown once Schedule health or the button has computed them: the standards take several seconds on a large file.",
   "button: Compute scores",
   "metric: DCMA 14-Point score = – (not computed yet)",
   "metric: DCMA DECM v8.0 (schedule) score = – (not computed yet)",

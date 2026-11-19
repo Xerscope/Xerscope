@@ -98,12 +98,27 @@ def _flag_line(rule: Rule, params: dict) -> list[str]:
         return []
     what = MEASURE_TEXT.get(rule.name, "value").format(**params)
     unit = params.get("unit", "")
+    if params["op"] == "between":
+        band = f"Flagged when {what} is from {params['value']:g} to {params['value_max']:g} {unit}".rstrip()
+        return [band + " (both included)."]
     comparison = OP_TEXT.get(params["op"], params["op"])
+    if unit == "project_pct":
+        return [f"Flagged when {what} {comparison} {params['value']:g} % of the project's working hours."]
     return [f"Flagged when {what} {comparison} {params['value']:g} {unit}".rstrip() + "."]
 
 
+def _no_resource_notes(params: dict) -> list[str]:
+    if params.get("kind") == "labour_units":
+        return ["Loaded means budgeted labour units above zero, not any assignment."]
+    return []
+
+
 def _relationship_type_notes(params: dict) -> list[str]:
-    return [f"Counts relationships of type {params.get('type', 'FS')}; the list shows the others."]
+    counted = f"relationships of type {params.get('type', 'FS')}"
+    if params.get("zero_lag"):
+        counted += " with a zero lag"
+    shown = "those counted" if params.get("listed") == "of_type" else "the others"
+    return [f"Counts {counted}; the list shows {shown}."]
 
 
 def _invalid_dates_notes(params: dict) -> list[str]:
@@ -179,6 +194,8 @@ NOTES: dict[str, Callable[[dict], list[str]]] = {
     "decm_06a504b_actual_finishes_changed": _status_period_notes,
     "decm_06a506c_riding_status_date": _riding_notes,
     "relationship_type": _relationship_type_notes,
+    "no_resource": _no_resource_notes,
+    "on_data_date": _date_grain_notes,
     "invalid_dates": _invalid_dates_notes,
     "late_vs_baseline": _late_vs_baseline_notes,
     "bei": _bei_notes,

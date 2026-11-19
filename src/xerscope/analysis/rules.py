@@ -69,7 +69,9 @@ from .populations import (  # noqa: F401 - ACTIVITY_COLS, LINK_COLS re-exported
 Unit = Literal["%", "ratio", "count", "days", "pass/fail"]
 Names = Sequence[str]  # TOML gives lists, defaults are tuples
 Op = Literal["<", "<=", ">", ">="]
+BandOp = Literal["<", "<=", ">", ">=", "between"]  # "between": value <= measured <= value_max
 LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
+Listed = Literal["others", "of_type"]  # which relationships a type rule lists: the others, or those of the type
 
 
 @dataclass
@@ -126,6 +128,7 @@ class Rule:
         for key, value in params.items():
             _check_value(f"{self.name}.{key}", hints.get(key), value)
         self._check_vocabulary(params)
+        _check_band(self.name, {**self.params, **params})
 
     def _check_vocabulary(self, params: dict) -> None:
         for key in sorted(set(params) & set(ALLOWED)):
@@ -133,6 +136,14 @@ class Rule:
             if bad:
                 what = "unknown" if key == "types" else "unknown value(s)"
                 raise ValueError(f"{self.name}.{key}: {what} {sorted(bad)}; allowed {sorted(ALLOWED[key])}")
+
+
+def _check_band(rule_name: str, params: dict) -> None:
+    """``op = "between"`` needs ``value_max`` at or above ``value``: reversed bounds flag nothing and
+    would pass silently."""
+    if params.get("op") == "between" and params["value_max"] < params["value"]:
+        low, high = params["value"], params["value_max"]
+        raise ValueError(f"{rule_name}: op 'between' needs value_max ({high}) >= value ({low})")
 
 
 def _check_value(where: str, hint, value) -> None:
@@ -195,6 +206,8 @@ EXEMPT: dict[str, str] = {
     "finish_milestone": "finish milestones",
     "project_start": "the project's first task",
     "project_finish": "the project's last task",
+    "single_project_start": "the project's first task, when it is the only one on the earliest start",
+    "single_project_finish": "the project's last task, when it is the only one on the latest finish",
 }
 ALLOWED: dict[str, set[str]] = {
     "exclude": set(EXCLUSIONS),
@@ -285,6 +298,8 @@ def _exempt_masks(population: pd.DataFrame, start_ids: set[str], finish_ids: set
         "finish_milestone": population["is_milestone"] & ~population["is_start_milestone"],
         "project_start": population["task_code"].isin(start_ids),
         "project_finish": population["task_code"].isin(finish_ids),
+        "single_project_start": population["task_code"].isin(start_ids) & (len(start_ids) == 1),
+        "single_project_finish": population["task_code"].isin(finish_ids) & (len(finish_ids) == 1),
     }
     return {key: masks[key] for key in EXEMPT}
 
@@ -307,7 +322,9 @@ def missing_logic(
     Tasks without a predecessor or a successor (open ends).
 
     ``pred_exempt`` / ``succ_exempt`` pass one side for: started, start_milestone,
-    finish_milestone, project_start, project_finish. ``external_passes`` counts links to
+    finish_milestone, project_start, project_finish (every task on the earliest start or the
+    latest finish), single_project_start, single_project_finish (that task only when it is
+    alone there: two tasks sharing the date are both flagged). ``external_passes`` counts links to
     other projects. ``dangling`` also flags a start not driven by any FS/SS predecessor
     or a finish that drives no FS/FF successor.
     """
@@ -384,7 +401,7 @@ def lag(
     context,
     op: Op = ">",
     value: float = 0,
-    unit: Literal["hours", "days"] = "hours",
+    unit: Literal["hours", "days", "project_pct"] = "hours",
     links: LinkPop = "succ_incomplete",
     exclude_loe: bool = False,
     exclude: Names = (),
@@ -395,15 +412,28 @@ def lag(
     Relationships whose lag compares to ``value`` with ``op`` (<, >, <=, >=).
 
     Negative = lead (``op = "<"``, value 0); positive lag (``">"``, 0); long lag
-    (``">"``, 352 hours). ``unit``: hours, or days on the lag calendar.
+    (``">"``, 352 hours). ``unit``: hours, or days on the lag calendar, or ``project_pct``:
+    ``value`` is a percentage of the project's working hours (planned start to forecast finish
+    on the project's default calendar) and the lag is compared in hours; a project without
+    those dates gives no value.
     """
     funnel = link_funnel(context, links, exclude_loe, exclude)
     relationships = funnel.rows
-    column = {"hours": "lag_hr", "days": "lag_d"}[unit]
-    flagged = lag_flagged(relationships, COMPARE[op], value, column)
+    column, limit = _lag_limit(context.snapshot, unit, value)
+    if math.isnan(limit):
+        return RuleOutput(note="no planned start or forecast finish: the project's working hours are unknown")
+    flagged = lag_flagged(relationships, COMPARE[op], limit, column)
     return RuleOutput(
         flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
     )
+
+
+def _lag_limit(snapshot: Snapshot, unit: str, value: float) -> tuple[str, float]:
+    """The lag column to read and the limit to compare it with, in that column's unit: ``value``
+    itself in hours or days, or ``value`` % of the project's working hours (NaN without dates)."""
+    if unit == "project_pct":
+        return "lag_hr", value / 100 * snapshot.project_work_hours()
+    return {"hours": "lag_hr", "days": "lag_d"}[unit], value
 
 
 @rule("relationship_type", "%", links=True)
@@ -413,14 +443,19 @@ def relationship_type(
     links: LinkPop = "succ_incomplete",
     exclude_loe: bool = False,
     exclude: Names = (),
+    zero_lag: bool = False,
+    listed: Listed = "others",
 ) -> RuleOutput:
     """Relationships of another type.
     Counts: of the required type / relationships checked
 
-    Share of relationships of ``type`` (value), listing the others.
+    Share of relationships of ``type`` (value), listing the others. ``zero_lag`` counts a
+    relationship only when its lag is zero as well (blank = 0): "Finish-Start with 0d lag".
+    ``listed = "of_type"`` lists the relationships of the type instead, for a type that is
+    forbidden ("no Start-Finish").
     """
     funnel = link_funnel(context, links, exclude_loe, exclude)
-    out = share_of_type(funnel.rows, type)
+    out = share_of_type(funnel.rows, type, zero_lag, listed)
     out.funnel = funnel
     return out
 
@@ -448,18 +483,31 @@ def constraints(
 
 @rule("float", "%")
 def total_float(
-    context, op: Op = ">", value: float = 44, unit: Literal["hours", "days"] = "days", exclude: Names = ("complete",)
+    context,
+    op: BandOp = ">",
+    value: float = 44,
+    unit: Literal["hours", "days"] = "days",
+    exclude: Names = ("complete",),
+    value_max: float = 0,
 ) -> RuleOutput:
     """Tasks outside the float limit.
     Counts: flagged / checked
 
     Tasks whose total float compares to ``value`` (hours as stored, or working days).
+    ``op = "between"`` flags a float from ``value`` to ``value_max``, both included.
     """
     funnel = activities_funnel(context, exclude)
     population = funnel.rows
     column = {"hours": "total_float_hr_cnt", "days": "total_float_d"}[unit]
-    flagged = population[as_flag(COMPARE[op](population[column], value))]
+    flagged = population[as_flag(_within(population[column], op, value, value_max))]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
+
+
+def _within(measured: pd.Series, op: str, value: float, value_max: float) -> pd.Series:
+    """``measured`` compared with ``op`` to ``value``; for "between", inside [value, value_max]."""
+    if op == "between":
+        return measured.between(value, value_max, inclusive="both")
+    return COMPARE[op](measured, value)
 
 
 @rule("duration", "%")
@@ -552,16 +600,56 @@ def invalid_dates(
     )
 
 
+@rule("on_data_date", "%")
+def on_data_date(
+    context, exclude: Names = ("complete",), date_grain: Literal["day", "timestamp"] = "day"
+) -> RuleOutput:
+    """Starting or finishing on the data date.
+    Counts: on the data date / checked
+
+    Tasks whose start (actual, else forecast) or finish (actual, else forecast) falls on the
+    data date: the model's Start and Finish. ``date_grain = "day"`` compares calendar days, as a
+    reader of the Gantt does; ``"timestamp"`` the stored date and time.
+    """
+    data_date = context.snapshot.data_date
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
+    if data_date is None:
+        return RuleOutput(note="no status date")
+    status_day = at_grain(data_date, date_grain)
+    starts = as_flag(at_grain(population["start"], date_grain) == status_day)
+    finishes = as_flag(at_grain(population["finish"], date_grain) == status_day)
+    reason = pd.Series("", index=population.index).mask(finishes, "finishes on the data date")
+    reason = reason.mask(starts, "starts on the data date")
+    flagged = population[starts | finishes]
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason[starts | finishes]),
+        len(flagged),
+        len(population),
+        checked=population,
+        funnel=funnel,
+    )
+
+
 @rule("no_resource", "%")
-def no_resource(context, exclude: Names = ("complete", "loe", "milestones"), expenses_count: bool = True) -> RuleOutput:
+def no_resource(
+    context,
+    exclude: Names = ("complete", "loe", "milestones"),
+    expenses_count: bool = True,
+    kind: Literal["any", "labour_units"] = "any",
+) -> RuleOutput:
     """Tasks with no resource assignment.
     Counts: without resources / checked
 
     Tasks with no resource assignment (and, if ``expenses_count``, no expense).
+    ``kind = "labour_units"`` asks for budgeted labour units above zero instead (P6's Budgeted
+    Labor Units: TASK target_work_qty, else the labour and role assignments' target_qty): a
+    material-only or a zero-hour assignment does not count.
     """
     funnel = activities_funnel(context, exclude)
     population = funnel.rows
-    has_cost = population["has_resource"] | (population["has_expense"] if expenses_count else False)
+    loaded = population["labor_budget_hr"].fillna(0) > 0 if kind == "labour_units" else population["has_resource"]
+    has_cost = loaded | (population["has_expense"] if expenses_count else False)
     flagged = population[~has_cost]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 
@@ -630,14 +718,19 @@ def bei(
 # --- shared with the explicit checks -------------------------------------------------------------
 
 
-def share_of_type(relationships: pd.DataFrame, link_type: str) -> RuleOutput:
-    """Share of relationships of ``link_type`` (value), listing the others; the note is the type mix."""
+def share_of_type(
+    relationships: pd.DataFrame, link_type: str, zero_lag: bool = False, listed: Listed = "others"
+) -> RuleOutput:
+    """Share of relationships of ``link_type`` (value), and with a zero lag when ``zero_lag``;
+    the flagged list holds the others, or those of the type (``listed``); the note is the type mix."""
     of_type = relationships["type"] == link_type
+    if zero_lag:
+        of_type &= relationships["lag_hr"].fillna(0) == 0
     share = 100.0 * of_type.sum() / len(relationships) if len(relationships) else None
     mix = ", ".join(f"{kind} {count}" for kind, count in relationships["type"].value_counts().items())
-    others = flagged_relationships(relationships[~of_type])
+    shown = flagged_relationships(relationships[of_type if listed == "of_type" else ~of_type])
     return RuleOutput(
-        others,
+        shown,
         int(of_type.sum()),
         len(relationships),
         share,
