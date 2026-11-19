@@ -138,6 +138,12 @@ class Rule:
                 raise ValueError(f"{self.name}.{key}: {what} {sorted(bad)}; allowed {sorted(ALLOWED[key])}")
 
 
+def is_read(name: str, params: dict) -> bool:
+    """Whether a rule reads its parameter ``name`` with these ``params``: ``value_max`` bounds a band
+    and nothing else (``_within``)."""
+    return name != "value_max" or params.get("op") == "between"
+
+
 def _check_band(rule_name: str, params: dict) -> None:
     """``op = "between"`` needs ``value_max`` at or above ``value``: reversed bounds flag nothing and
     would pass silently."""

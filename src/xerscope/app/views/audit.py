@@ -8,7 +8,9 @@ this session: Schedule health keeps reporting the loaded standards. The block un
 import streamlit as st
 
 from xerscope.analysis.audit import (
+    TARGET_FORMS,
     choices,
+    form_rows,
     has_same_settings,
     is_list,
     kept_params,
@@ -18,8 +20,8 @@ from xerscope.analysis.audit import (
     with_settings,
 )
 from xerscope.analysis.checks import results_frame
-from xerscope.analysis.explain import explain
-from xerscope.analysis.rules import RULES
+from xerscope.analysis.explain import explain, settings_lines
+from xerscope.analysis.rules import RULES, is_read
 from xerscope.app import ui
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
@@ -36,6 +38,7 @@ from xerscope.app.state import (
 # Streamlit drops a widget's value once its page is left: the audit settings are kept here,
 # in the session only, so they survive a visit to another page until Reset.
 SAVED = "audit_settings"
+PARAMETERS_BLOCK, TARGET_BLOCK = "Rule parameters", "Target"
 
 
 def parameter_widget(rule_name: str, name: str, current, key: str):
@@ -47,26 +50,66 @@ def parameter_widget(rule_name: str, name: str, current, key: str):
         return st.selectbox(name, allowed, index=allowed.index(current), key=key)
     if isinstance(current, bool):
         return st.checkbox(name, value=current, key=key)
-    return st.number_input(name, value=float(current), key=key)
+    return st.number_input(name, value=float(current), format="%g", key=key)  # %g: 44, not 44.00
+
+
+def draw_row(metric, prefix: str, row: tuple[str, ...], values: dict, saved: dict) -> None:
+    """Draw the parameters of one row that the rule reads with the ``values`` picked so far, and add theirs.
+
+    A parameter the rule does not read (``value_max`` without a band) is not drawn and gets no value.
+    """
+    columns = iter(st.columns(len(row)))
+    for name in (name for name in row if is_read(name, values)):  # read one at a time: the operator decides
+        key = f"{prefix}:{name}"
+        current = saved.get(key, metric.params.get(name, RULES[metric.rule].params[name]))
+        with next(columns):
+            values[name] = saved[key] = parameter_widget(metric.rule, name, current, key)
+
+
+def parameters_form(metric, prefix: str, saved: dict) -> dict:
+    """Draw the parameters of the rule row by row; return the value of each one the rule reads.
+
+    The check and its TOML block then never hold a value that is ignored.
+    """
+    values: dict[str, object] = {}
+    for row in form_rows(metric.rule):
+        draw_row(metric, prefix, row, values, saved)
+    return values
 
 
 def settings_form(metric, prefix: str) -> tuple[str, dict]:
-    """Target and parameters as widgets, starting from the standard's values or this session's."""
+    """Draw the parameters of the rule, then the target: two blocks, because they are two questions.
+
+    The widgets start from the standard's values, or from those this session picked.
+    """
     saved = st.session_state.setdefault(SAVED, {})
+    values = {}
+    if RULES[metric.rule].params:
+        ui.block(PARAMETERS_BLOCK, "Which items the rule checks and which it counts.")
+        values = parameters_form(metric, prefix, saved)
+    ui.block(TARGET_BLOCK, f"The result that passes. Written as: {TARGET_FORMS}.")
     target = st.text_input(
-        "Target",
+        TARGET_BLOCK,  # named by the block's title: the label is not drawn twice
         saved.get(f"{prefix}:target", metric.threshold_label),
         key=f"{prefix}:target",
-        help="e.g. < 5%, <= 0, >= 0.95, pass, info",
+        label_visibility="collapsed",
     )
     saved[f"{prefix}:target"] = target
-    values: dict[str, object] = {}
-    for name, default in RULES[metric.rule].params.items():
-        key = f"{prefix}:{name}"
-        current = saved.get(key, metric.params.get(name, default))
-        values[name] = parameter_widget(metric.rule, name, current, key)
-        saved[key] = values[name]
     return target, kept_params(metric, values)
+
+
+def forget_settings(prefix: str) -> None:
+    """Drop what the widgets of this check hold and what the session kept of them."""
+    for held in (st.session_state, st.session_state.get(SAVED, {})):
+        for key in [key for key in held if str(key).startswith(f"{prefix}:")]:
+            del held[key]
+
+
+def reset_button(prefix: str) -> None:
+    """Put every setting of this check back to the standard's."""
+    if st.button("Reset", icon=":material/restart_alt:", key=f"{prefix}:reset", help="Back to the standard's values"):
+        forget_settings(prefix)
+        st.rerun()
 
 
 def show_results(standard_result, audit_result) -> None:
@@ -184,23 +227,18 @@ metric = standard[metric_id]
 prefix = f"audit:{standard_id}:{metric_id}"
 SOURCES = sources_of(snapshot, baseline=baseline)  # the files a download of this page comes from
 
-ui.section("Settings for this audit", "Start from the standard's values; the check reruns on every change.")
-form_column, reset_column = st.columns([5, 1], vertical_alignment="bottom")
-with form_column:
-    target, params = settings_form(metric, prefix)
+title_column, reset_column = st.columns([5, 1], vertical_alignment="bottom")
+with title_column:
+    ui.section("Settings for this audit", "Start from the standard's values; the check reruns on every change.")
 with reset_column:
-    if st.button("Reset", icon=":material/restart_alt:", key=f"{prefix}:reset"):
-        for key in [key for key in st.session_state if str(key).startswith(f"{prefix}:")]:
-            del st.session_state[key]
-        saved = st.session_state.get(SAVED, {})
-        for key in [key for key in saved if key.startswith(f"{prefix}:")]:
-            del saved[key]
-        st.rerun()
+    reset_button(prefix)
+target, params = settings_form(metric, prefix)
 try:
     audited = with_settings(metric, target, params)
 except ValueError as exc:
     st.error(str(exc), icon=":material/block:")
     st.stop()
+st.info("  \n".join(settings_lines(audited)), icon=":material/rule:")
 
 standard_result = metric_result(metric, snapshot, store)
 # through the session's cache, like the standard's: a redraw that changes no setting computes nothing
