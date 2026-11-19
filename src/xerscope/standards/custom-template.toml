@@ -46,6 +46,8 @@ name = "Lags over 10 days"
 rule = "lag"
 target = "<= 1%"
 params = { op = ">", value = 10, unit = "days", links = "succ_incomplete" }
+# unit = "project_pct": value is a share of the project's working hours (planned start to
+# forecast finish on its default calendar), e.g. value = 10 for lags over 10 % of the project
 
 [[metric]]
 id = "CUS-04"

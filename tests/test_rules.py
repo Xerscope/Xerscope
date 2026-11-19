@@ -2128,3 +2128,44 @@ def test_on_data_date_without_a_status_date_is_not_applicable():
     s = snap([todo("A")], data_date="")
     r = RULES["on_data_date"].fn(AnalysisContext(s))
     assert r.value is None and r.numerator is None and "no status date" in r.note
+
+
+# --- rules for a company standard: a lag limit relative to the project's working hours
+
+
+@pytest.mark.oracle("standard")
+def test_lag_limit_as_a_share_of_the_project_working_hours():
+    """Requirement "less than 5 % of relationships have a lag that exceeds 10 % of the project's
+    total duration": the limit is a share of the project's working hours, from its planned start
+    to its forecast finish on its default calendar (maintainer's decision, 2026-11-19), and the lag
+    is compared in hours as stored, whatever the lag calendar.
+    Hand count: project 2026-03-02 08:00 to 2026-03-13 17:00 on the 8 h Monday-Friday calendar =
+    10 days x 8 h = 80 h; 10 % = 8 h. Links: A->B lag 9 h flagged, A->C lag 8 h not (op >),
+    A->D lead -5 h not. 1 / 3. Lag 8.5 h on A->C instead: 2 / 3 (boundary just above).
+    The data date is a week after the planned start: the hours run from the planned start, not
+    from the data date (which would give 40 h)."""
+    from xerscope.analysis.rules import RULES
+
+    tasks = [todo("A"), todo("B"), todo("C"), todo("D")]
+    a_week_in = {"data_date": "2026-03-09 08:00", "project": {"plan_start_date": "2026-03-02 08:00"}}
+    s = snap(tasks, [("A", "B", "FS", 9), ("A", "C", "FS", 8), ("A", "D", "FS", -5)], **a_week_in)
+    assert s.planned_start != s.data_date and s.project_work_hours() == 80
+    r = RULES["lag"].fn(AnalysisContext(s), op=">", value=10, unit="project_pct", links="all")
+    assert (links(r), counts(r)) == ([("A", "B")], (1, 3))
+    edge = snap(tasks, [("A", "B", "FS", 9), ("A", "C", "FS", 8.5), ("A", "D", "FS", -5)], **a_week_in)
+    assert links(RULES["lag"].fn(AnalysisContext(edge), op=">", value=10, unit="project_pct", links="all")) == [
+        ("A", "B"),
+        ("A", "C"),
+    ]
+
+
+@pytest.mark.oracle("standard")
+def test_lag_share_of_the_project_without_dates_is_not_applicable():
+    """No planned start (no PROJECT dates at all): the project has no working hours, the metric is
+    n/a with a note, never a comparison against NaN."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", 9)], data_date="")
+    assert s.project_work_hours() != s.project_work_hours()  # NaN
+    r = RULES["lag"].fn(AnalysisContext(s), op=">", value=10, unit="project_pct", links="all")
+    assert r.value is None and r.numerator is None and "planned start" in r.note

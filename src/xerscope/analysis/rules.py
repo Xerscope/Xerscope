@@ -401,7 +401,7 @@ def lag(
     context,
     op: Op = ">",
     value: float = 0,
-    unit: Literal["hours", "days"] = "hours",
+    unit: Literal["hours", "days", "project_pct"] = "hours",
     links: LinkPop = "succ_incomplete",
     exclude_loe: bool = False,
     exclude: Names = (),
@@ -412,15 +412,28 @@ def lag(
     Relationships whose lag compares to ``value`` with ``op`` (<, >, <=, >=).
 
     Negative = lead (``op = "<"``, value 0); positive lag (``">"``, 0); long lag
-    (``">"``, 352 hours). ``unit``: hours, or days on the lag calendar.
+    (``">"``, 352 hours). ``unit``: hours, or days on the lag calendar, or ``project_pct``:
+    ``value`` is a percentage of the project's working hours (planned start to forecast finish
+    on the project's default calendar) and the lag is compared in hours; a project without
+    those dates gives no value.
     """
     funnel = link_funnel(context, links, exclude_loe, exclude)
     relationships = funnel.rows
-    column = {"hours": "lag_hr", "days": "lag_d"}[unit]
-    flagged = lag_flagged(relationships, COMPARE[op], value, column)
+    column, limit = _lag_limit(context.snapshot, unit, value)
+    if math.isnan(limit):
+        return RuleOutput(note="no planned start or forecast finish: the project's working hours are unknown")
+    flagged = lag_flagged(relationships, COMPARE[op], limit, column)
     return RuleOutput(
         flagged_relationships(flagged), len(flagged), len(relationships), checked=relationships, funnel=funnel
     )
+
+
+def _lag_limit(snapshot: Snapshot, unit: str, value: float) -> tuple[str, float]:
+    """The lag column to read and the limit to compare it with, in that column's unit: ``value``
+    itself in hours or days, or ``value`` % of the project's working hours (NaN without dates)."""
+    if unit == "project_pct":
+        return "lag_hr", value / 100 * snapshot.project_work_hours()
+    return {"hours": "lag_hr", "days": "lag_d"}[unit], value
 
 
 @rule("relationship_type", "%", links=True)

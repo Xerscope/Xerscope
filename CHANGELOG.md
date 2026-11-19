@@ -22,7 +22,8 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
   exemptions `single_project_start` / `single_project_finish` (one task only, a shared date
   passes none); `relationship_type` with `zero_lag` (type and zero lag together) and `listed`
   (the links of the type instead of the others); `no_resource` with `kind = "labour_units"`
-  (budgeted labour units above zero). Built-in standards unchanged.
+  (budgeted labour units above zero); `lag` with `unit = "project_pct"` (a limit as a share of
+  the project's working hours, `Snapshot.project_work_hours`). Built-in standards unchanged.
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance
   (`mode=max`), an SPDX SBOM and a GitHub build-provenance attestation of their digest
   (AUDIT-DEP-02); CodeQL on the Python sources and the OpenSSF Scorecard run on `main`,
