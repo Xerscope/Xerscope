@@ -1435,9 +1435,9 @@ class _Run:
             # P6 23.12.1 on the held-out corpus, unstarted tasks: H29-02 A1160, H29-05
             # A1110, H29-11 A1230 (a cap at the early finish gets them wrong),
             # H29-12 A1240, and H25-05 A1150 on resource-dependent work; finish
-            # milestones: 14, e.g. H23-07 A1250. Not measured: work under way (H28-11
-            # A1180 is wrong under either rule), an expected finish after the date for a
-            # milestone, a start milestone
+            # milestones: 14, e.g. H23-07 A1250. Not measured: an expected finish after the
+            # date for a milestone, a start milestone. Work under way never gets here
+            # (late_constraints)
             return following_start_bounds, following_finish_bounds + [date]
         return [], [min([date] + constraint_finish_bounds)]
 
@@ -1471,13 +1471,19 @@ class _Run:
 
     def late_constraints(self, code) -> tuple[tuple[str, pd.Timestamp] | None, list, list]:
         """The mandatory date of the activity if any (its end, the date), and the bounds its other
-        constraints give to its late start and to its late finish."""
+        constraints give to its late start and to its late finish.
+
+        Work under way has no mandatory date in the backward pass: P6 23.12.1 gives it the late dates
+        of the network (probes oc-edges-xc U3, U6; held-out corpus H3-02 A1050, H8-06 A1010). 26.8
+        not measured.
+        """
         pinned = None
         start_bounds, finish_bounds = [], []
+        started = self.status[code] == "TK_Active"
         for constraint_type, date in self.constraints(code):
-            if constraint_type in MANDATORY:
+            if constraint_type in MANDATORY and not started:
                 pinned = (MANDATORY[constraint_type], date)
-            elif LATE_LIKE.get(constraint_type) == "start" and self.status[code] != "TK_Active":
+            elif LATE_LIKE.get(constraint_type) == "start" and not started:
                 start_bounds.append(date)
             elif LATE_LIKE.get(constraint_type) == "finish":
                 finish_bounds.append(date)
