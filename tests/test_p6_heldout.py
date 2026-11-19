@@ -45,14 +45,14 @@ FLOORS = {
     "H20": 0.945,
     "H21": 0.999,
     "H22": 0.994,
-    "H23": 0.894,
-    "H24": 0.956,
-    "H25": 0.821,
-    "H26": 0.901,
-    "H27": 0.928,
-    "H28": 0.906,
-    "H29": 0.889,
-    "H30": 0.911,
+    "H23": 0.987,
+    "H24": 0.960,
+    "H25": 0.875,
+    "H26": 0.940,
+    "H27": 0.938,
+    "H28": 0.933,
+    "H29": 0.896,
+    "H30": 0.914,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -307,6 +307,13 @@ PINNED = {
     "work under way: a Mandatory Finish in the second slot caps no late date": [
         ("H28", "H28-03", "A1410", "late_finish"),
         ("H28", "H28-04", "A1510", "late_finish"),
+    ],
+    "resource dependent under a Mandatory Finish: the assignments run on from the pinned start": [
+        ("H28", "H28-04", "A1100", "early_start"),
+        ("H28", "H28-04", "A1100", "early_finish"),
+        ("H23", "H23-04", "A1220", "early_finish"),
+        ("H23", "H23-05", "A1240", "early_finish"),
+        ("H28", "H28-04", "A1170", "early_finish"),
     ],
     "resource dependent: a late start from an SS bound is written at the bound's instant": [
         ("H26", "H26-04", "A1440", "late_start")

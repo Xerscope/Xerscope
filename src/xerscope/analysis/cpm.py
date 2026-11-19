@@ -953,7 +953,7 @@ class _Run:
         else:
             start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
         if pinned and pinned[0] == "finish" and not self.has_expected_finish(code):
-            start, finish_time = self.mandatory_finish_dates(axis, activity_kind, duration, pinned[1])
+            start, finish_time = self.mandatory_finish_dates(code, axis, activity_kind, duration, pinned[1])
         if self.has_task_expected_finish(code, activity_kind):
             start, finish_time = self.expected_finish(
                 code,
@@ -1032,16 +1032,23 @@ class _Run:
         return pd.Timestamp(self.inputs[code]["expect_end_date"])
 
     def mandatory_finish_dates(
-        self, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
+        self, code, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
     ) -> tuple[pd.Timestamp, pd.Timestamp]:
         """Early dates under a Mandatory Finish: the finish at the date and the start a duration before;
-        from the data date instead when that start would fall before it."""
+        from the data date instead when that start would fall before it.
+
+        Resource-dependent work takes that start only: its driving assignments run on from it on their
+        own calendars and the early finish is theirs, before or after the date (P6 23.12.1: probes
+        xf-mandatory, rule MR, M10, R1 to R3, Q1 to Q4; held-out corpus H28-04 A1100; 26.8 not measured).
+        """
         has_duration = activity_kind == "task" and duration
         finish_time = axis.keep_or_previous(date)
         start = axis.add(finish_time, -duration, finish=False) if has_duration else finish_time
         if start < self.data_date:
             start = axis.snap_start(self.data_date)
             finish_time = axis.add(start, duration, finish=True) if has_duration else start
+        if code in self.rsrc_dep and activity_kind == "task":
+            return self.rsrc_early(code, [start], [], self.extra_hours.get(code, 0.0) * 60)
         return start, finish_time
 
     def record_early(self, code, started: bool, activity_kind: str, start, finish_time) -> None:
