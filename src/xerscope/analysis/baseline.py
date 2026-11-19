@@ -292,13 +292,15 @@ def renumbered(old: Snapshot, new: Snapshot) -> pd.DataFrame:
 
 
 def restricted(baseline: Baseline, task_codes: Collection[str]) -> Baseline:
-    """``baseline`` with only the tasks ``task_codes`` names, and their assignment costs: what a part
-    of the project (the tasks of an activity code) is measured against."""
-    costs = baseline.assignment_costs
+    """``baseline`` with only the tasks ``task_codes`` names: its frame, their assignment costs and the
+    tasks of its own file, which the checks that count the baseline's tasks read (BEI of P6
+    Professional). What a part of the project (the tasks of an activity code) is measured against."""
+    costs, tasks = baseline.assignment_costs, baseline.snapshot.tasks
     return replace(
         baseline,
         frame=baseline.frame[baseline.frame.index.isin(task_codes)],
         assignment_costs=costs[costs["task_code"].isin(task_codes)],
+        snapshot=replace(baseline.snapshot, tasks=tasks[tasks["task_code"].isin(task_codes)]),
     )
 
 
