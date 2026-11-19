@@ -699,8 +699,8 @@ def _pick_discipline(at, key_prefix: str, text: str) -> None:
 
 
 def test_earned_value_on_a_task_code_counts_the_tasks_of_its_values(tmp_path, monkeypatch):
-    """Whole project: 120 / 200 = 60.0 % complete, SPI 120 / 200 = 0.60. On CIV: 60 / 80 = 75.0 %, SPI
-    60 / 80 = 0.75, the page says what it is filtered on and shows no BEI."""
+    """Whole project: 120 / 200 = 60.0 % complete, SPI 120 / 200 = 0.60, BEI 2 complete / 5 due = 0.40.
+    On CIV: 60 / 80 = 75.0 %, SPI 60 / 80 = 0.75, BEI 1 / 2 = 0.50, and the page says what it is filtered on."""
     at = _app_on_two_disciplines(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
     _ok(at)
@@ -709,10 +709,10 @@ def test_earned_value_on_a_task_code_counts_the_tasks_of_its_values(tmp_path, mo
         return next(metric.value for metric in at.metric if metric.label == label)
 
     assert (card("Percent complete"), card("SPI (labor units)")) == ("60.0 %", "0.60")
-    assert card("BEI (P6 / DCMA)") != "– / –"
+    assert card("BEI (P6 / DCMA)") == "0.40 / 0.40"
     _pick_discipline(at, "ev", "CIV")
     assert (card("Percent complete"), card("SPI (labor units)")) == ("75.0 %", "0.75")
-    assert card("BEI (P6 / DCMA)") == "– / –"
+    assert card("BEI (P6 / DCMA)") == "0.50 / 0.50"
     assert any(text.startswith("Filtered on Discipline") for text in _caption_texts(at))
 
 

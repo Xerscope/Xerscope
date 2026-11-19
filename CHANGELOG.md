@@ -29,6 +29,10 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Changed
 
+- Funnel stack, CVE-2026-97054 (Go `net/http`, fixed in Go 1.27.4): `tailscale/tailscale`
+  v1.104.4 → v1.104.7 (Go 1.27.4); `deploy/caddy/Dockerfile` on Caddy 2.11.9 (its builder holds
+  Go 1.27.4, the build checks it), x/net replaced by v0.63.0, the go-jose/v4 replace dropped (2.11.9 requires the
+  fixed v4.1.6).
 - Licence: from this change on the project is proprietary, all rights reserved (`LICENSE`,
   `NOTICE`, `pyproject.toml`); the revisions published before it were under Apache-2.0.
 - `deploy/compose.yaml`: `:latest` stays the default for a first start, the documented

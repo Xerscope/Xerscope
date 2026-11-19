@@ -418,9 +418,8 @@ code_filter = pick_code_filter(snapshot, "ev")
 part, part_baseline = update_and_baseline_of_code(snapshot, baseline, code_filter)
 if code_filter is not None:
     st.caption(
-        f"Filtered on {ui.md_text(code_filter.type_name)}: BAC, PV, EV, AC, ETC and the curves count only the "
-        "tasks of the values picked, read in each update. BEI counts tasks over the whole project: it is "
-        "not shown on a part of it."
+        f"Filtered on {ui.md_text(code_filter.type_name)}: BAC, PV, EV, AC, ETC, BEI and the curves count only "
+        "the tasks of the values picked, read in each update."
     )
     if part_baseline.bac_hours <= 0:
         st.info("The tasks of the values picked hold no budgeted labor hours in the baseline: nothing to earn.")
@@ -444,22 +443,21 @@ series = memo(
     st.session_state.get("guid_link", False),
     code_filter,
 )
-if code_filter is None:
-    standards = builtin_standards()
-    bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
-    # each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise
-    bei = memo(
-        ("bei", repr(bei_metrics)),
-        bei_series,
-        store,
-        bei_metrics,
-        baseline_for,
-        partial(metric_result, store=store, keep=False),
-        ev_basis=False,
-    )
-    series = series.merge(bei, on="data_date", how="left")
-else:  # the BEI is a check of the whole project
-    series = series.assign(bei_p6=float("nan"), bei_dcma=float("nan"))
+standards = builtin_standards()
+bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
+# each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise; on a
+# task code, computed on its tasks (the cache holds the whole project's)
+bei = memo(
+    ("bei", repr(bei_metrics), code_filter),
+    bei_series,
+    store,
+    bei_metrics,
+    baseline_for,
+    partial(metric_result, store=store, keep=False),
+    code_filter,
+    ev_basis=False,
+)
+series = series.merge(bei, on="data_date", how="left")
 row, previous = update_and_previous(series, snapshot.data_date)
 
 costs = costs_shown()
