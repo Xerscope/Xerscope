@@ -2915,3 +2915,31 @@ def test_overview_lists_a_period_across_midnight_under_limits(tmp_path, monkeypa
         w.value for w in at.warning
     ]
     assert "Limits" in [s.value for s in at.subheader]
+
+
+# --- a standard of your own: the funnel names its source, the picker lists it on the run it loads
+
+
+def test_funnel_caption_names_the_standard_source_behind_an_exclusion_of_your_own():
+    """An exclusion set in a company standard's TOML follows no Oracle or DCMA page: its step is sourced
+    "xerscope", and the caption then names the standard's own ``source`` text, when it has one."""
+    from xerscope.analysis.populations import Funnel, Step
+    from xerscope.app.sets import source_caption
+
+    funnel = Funnel(pd.DataFrame(), steps=[Step("not complete", "xerscope", pd.DataFrame(), 0)])
+    assert source_caption(funnel, "Internal procedure XYZ rev. A") == "xerscope: Internal procedure XYZ rev. A"
+    assert source_caption(funnel).startswith("xerscope: docs/standards.md")
+    oracle = Funnel(pd.DataFrame(), steps=[Step("not complete", "101248", pd.DataFrame(), 0)])
+    assert source_caption(oracle, "Internal procedure XYZ rev. A") == "101248"
+
+
+def test_uploaded_standard_is_in_the_picker_on_the_run_that_loads_it(app):
+    """The picker sits above the upload box: the standard just uploaded is read before the picker is
+    drawn, so it is listed at once, not on the next rerun."""
+    from xerscope.analysis.standards import template_text
+
+    app.switch_page("views/health.py").run()
+    app.file_uploader(key="std_upload").set_value(("mine.toml", template_text().encode(), "application/toml")).run()
+    _ok(app)
+    assert any(s.value.startswith("Loaded") for s in app.success)
+    assert "My standard" in app.segmented_control(key="health_std").options
