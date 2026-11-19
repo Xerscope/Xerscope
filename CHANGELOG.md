@@ -42,6 +42,12 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
   Must Finish By, Mandatory Finish), the longest path's float, the series over every update
   (formulas.md §5.1). The baseline is not read. A week whose recalculated finish is not the one P6
   stored in the file is flagged: its shifts may be the recalculation's.
+- Delay analysis: the longest path of each update against the one before (`analysis/longest_path.py`,
+  AACE RP 29R-03 3.4.E.9 and SVP 2.3.B.6): the tasks that stayed, entered, were finished, or are
+  still open and left the path, per week and over the series (formulas.md §5.2).
+- Debug, block 3: the recalculated finish against the file's, the tasks where the recalculated early
+  dates first differ from the stored ones, and the same tasks counted by form with no Task ID and no
+  date (formulas.md §5.3). The Delay analysis warning points to it.
 - Changelog: categories Calendars (working time changed) and Options (scheduling option changed,
   Must Finish By included); "remaining duration cut" on work not started (formulas.md §5).
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance
