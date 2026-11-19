@@ -291,6 +291,14 @@ jobs:
       - name: Caddy outside and inside the prefix
         run: |  # one check per line: bash -e does not stop on a failure inside an && list
           get() { docker compose exec -T caddy wget -S -q -O /dev/null "$1" 2>&1 || true; }
+          # two routes of the app the page never asks for: the password prompt first, then 404 (the app
+          # is not running here: reaching it would be the 502 below)
+          out=$(get "http://127.0.0.1:8080/$XERSCOPE_PATH/_stcore/metrics"); echo "$out"
+          echo "$out" | grep -q " 401 "
+          for route in _stcore/metrics _stcore/agent/openapi.json; do
+            out=$(get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/$route"); echo "$out"
+            echo "$out" | grep -q " 404 "
+          done
           out=$(get "http://127.0.0.1:8080/"); echo "$out"
           echo "$out" | grep -q " 404 "
           out=$(get "http://127.0.0.1:8080/$XERSCOPE_PATH/"); echo "$out"

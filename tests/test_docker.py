@@ -356,6 +356,28 @@ def test_ci_fails_when_the_secret_prefix_reaches_the_log():
     assert '! grep -q "$XERSCOPE_PATH" caddy.log' not in wf
 
 
+def test_caddy_marks_the_app_cookie_secure():
+    """Streamlit marks its XSRF cookie Secure only when it serves TLS itself (server.sslCertFile).
+    Behind Funnel the certificate is tailscaled's: Caddy adds the attribute to the cookies the app sets."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    protected = caddy[caddy.index("handle_path /{$XERSCOPE_PATH}/*") : caddy.index("    handle {")]
+    assert 'header >Set-Cookie (.*) "$1; Secure"' in protected  # ">": after the upstream's own headers
+
+
+def test_caddy_answers_404_on_the_app_routes_the_page_never_asks_for():
+    """/_stcore/metrics (session counters) and /_stcore/agent/* (the description of the agent API,
+    which is off) are Streamlit routes the page does not call: a signed-in visitor gets 404, anyone
+    else the password prompt first."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    protected = caddy[caddy.index("handle_path /{$XERSCOPE_PATH}/*") : caddy.index("    handle {")]
+    assert "@unused path /_stcore/metrics /_stcore/agent/*" in protected
+    assert "respond @unused 404" in protected
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job asks Caddy for both
+    assert 'get "http://127.0.0.1:8080/$XERSCOPE_PATH/_stcore/metrics"' in wf  # without the password: 401
+    assert "for route in _stcore/metrics _stcore/agent/openapi.json; do" in wf
+    assert 'get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/$route"' in wf  # with it: 404, not the app
+
+
 def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     """The stock caddy image has no rate_limit: deploy/ runs Caddy built from deploy/caddy/Dockerfile,
     published by image.yml next to the app (ghcr and the Docker Hub copy), at one Caddy release
