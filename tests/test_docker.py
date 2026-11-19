@@ -334,6 +334,20 @@ def test_caddy_logs_keep_no_token_and_no_project_code():
     assert "resp_headers>Content-Disposition delete" in caddy
 
 
+def test_caddy_closes_each_connection_except_a_websocket_handshake():
+    """tailscaled reuses its connections to Caddy from one visitor to the next: Caddy closes each
+    one after its response. The handshake of Streamlit's WebSocket must answer "Connection: Upgrade";
+    with "Connection: close" on it, the proxy in front answers 502 and the app never loads."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    assert "@not_upgrade not header_regexp Connection (?i)upgrade" in caddy  # any spelling a client sends
+    assert "header @not_upgrade Connection close" in caddy
+    assert not re.search(r"^\s*header Connection close", caddy, re.M)  # never on every response
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads both in Caddy's log
+    assert r"""grep -q '"Connection": \["close"\]'   # no connection kept""" in wf
+    assert '--header "Connection: Upgrade" --header "Upgrade: websocket"' in wf
+    assert "Connection: close on a WebSocket handshake" in wf
+
+
 def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     """The stock caddy image has no rate_limit: deploy/ runs Caddy built from deploy/caddy/Dockerfile,
     published by image.yml next to the app (ghcr and the Docker Hub copy), at one Caddy release
