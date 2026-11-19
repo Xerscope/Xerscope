@@ -903,7 +903,7 @@ class _Run:
         started = self.status[code] == "TK_Active"
         activity_kind, duration = self.kind(code), self.dur_min(code)
         start_bounds, finish_bounds = self.early_bounds(code, started)
-        milestone_expected = self.milestone_expected_finish(code, started, activity_kind, axis)
+        milestone_expected = self.milestone_expected_finish(code)
         pinned = self.forward_constraints(code, started, start_bounds, finish_bounds, milestone_expected)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
@@ -987,17 +987,20 @@ class _Run:
         """True when an expected finish sets the remaining duration of task-dependent work."""
         return activity_kind == "task" and self.has_expected_finish(code) and code not in self.rsrc_dep
 
-    def milestone_expected_finish(self, code, started: bool, activity_kind: str, axis) -> pd.Timestamp | None:
+    def milestone_expected_finish(self, code) -> pd.Timestamp | None:
         """The expected finish an unstarted milestone is placed at, or None.
 
-        A bound on its early date: the milestone sits at the later of its logic and the expected finish,
-        written as a start or a finish like any milestone date. Its remaining duration stays 0, so the
-        late dates do not follow it. Corpus witnesses (engine-gaps.md, experiment 2): H23-09 A1200,
-        H26-08 A1390, H28-11 A1330, H26-11 A1370.
+        A bound on its early date: the milestone sits at the later of its logic and the expected finish.
+        The date is passed as entered and written like any milestone date (``_early``): a finish
+        milestone keeps a working instant and moves to the next opening otherwise, a start milestone
+        takes the next opening. P6 23.12.1 (26.8 not measured): held-out corpus H23-09 A1200, H26-08
+        A1390, H28-11 A1330, H26-11 A1370; probes h3-situations X8, X9 (Sunday 17:00 -> Monday 08:00),
+        X11 (08:00 kept).
         """
-        if started or activity_kind == "task" or not self.has_expected_finish(code):
+        is_unstarted_milestone = self.status[code] == "TK_NotStart" and self.kind(code) != "task"
+        if not is_unstarted_milestone or not self.has_expected_finish(code):
             return None
-        return axis.snap_finish(pd.Timestamp(self.inputs[code]["expect_end_date"]))
+        return pd.Timestamp(self.inputs[code]["expect_end_date"])
 
     def mandatory_finish_dates(
         self, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
@@ -1440,8 +1443,7 @@ class _Run:
 
     def is_milestone_placed_by_expected_finish(self, code) -> bool:
         """True for an unstarted milestone that an expected finish places (see milestone_expected_finish)."""
-        started = self.status[code] == "TK_Active"
-        return self.milestone_expected_finish(code, started, self.kind(code), self.cal_ax[code]) is not None
+        return self.milestone_expected_finish(code) is not None
 
     def bounds_of_what_follows(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
         """Bounds the successors give, the project end and the late date a link to another project gives."""
