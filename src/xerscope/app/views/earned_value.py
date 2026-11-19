@@ -6,9 +6,11 @@ import streamlit as st
 from xerscope.analysis import builtin_standards
 from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import (
+    EarnedSchedule,
     bei_series,
     change_since_previous,
     earned,
+    earned_schedule,
     etc_settings,
     etc_technique_counts,
     ev_point,
@@ -123,6 +125,45 @@ def show_kpis(row: pd.Series, previous: pd.Series | None, costs: bool) -> None:
                 # the signed number first: st.metric colours the delta by the sign it starts with
                 f"{row['vac_hr']:+,.0f} h",
                 "AC + remaining hours. The delta is the VAC = BAC − EAC: negative = overrun",
+            ),
+        ],
+        formulas=KPI_FORMULAS,
+    )
+
+
+def show_earned_schedule(schedule: EarnedSchedule) -> None:
+    """Where the update stands on its baseline, in time: the date reached, the gap in days, SPI(t)."""
+    ui.section(
+        "Earned Schedule",
+        "The schedule read in time: the date at which the baseline planned the hours earned now.",
+    )
+    if schedule.es_date is None:
+        st.caption(f"Not computed: {schedule.note}.")
+        return
+    gap = schedule.gap_calendar_d
+    ui.kpis(
+        [
+            (
+                "Plan reached",
+                ui.fmt_date(schedule.es_date),
+                None,
+                "The date at which the baseline held the hours earned now. Before the status date: behind "
+                "the plan; after it: ahead.",
+            ),
+            (
+                "Time gap",
+                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} d",
+                None,
+                "Plan reached − status date, in calendar days, weekends included; negative = behind. Compare "
+                "updates measured against the same baseline: a baseline made again starts near zero. SV is "
+                "the same gap in hours.",
+            ),
+            (
+                "SPI(t)",
+                "–" if schedule.spi_t is None else f"{schedule.spi_t:.3f}",
+                None,
+                "Earned schedule / actual time; 1.00 = on plan. Unlike SPI it does not come back to 1 at the "
+                "end of a late project.",
             ),
         ],
         formulas=KPI_FORMULAS,
@@ -393,6 +434,7 @@ update_key = (snapshot.source, str(snapshot.data_date))
 point = memo(cache_key + ("point", *update_key), ev_point, part, part_baseline)
 earned_values = memo(cache_key + ("earned", *update_key), earned, part, part_baseline)
 curve = memo(cache_key + ("pv", *update_key), pv_curve, part_baseline, part)
+schedule = memo(cache_key + ("schedule", *update_key), earned_schedule, part, part_baseline)
 series = memo(
     cache_key + ("series",),
     evm_series,
@@ -423,5 +465,6 @@ show_kpis(row, previous, costs)
 if not costs:
     show_costs_ignored(snapshot)
 show_calculation(row, baseline, snapshot, point, costs)
+show_earned_schedule(schedule)
 show_charts(series, curve, part, part_baseline, costs, code_filter)
 show_activity_detail(snapshot, baseline, point, earned_values)

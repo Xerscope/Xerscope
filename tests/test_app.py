@@ -164,7 +164,8 @@ def test_pages_comparing_updates_ask_for_two_and_show_nothing_else(one_file_app,
 
 def test_earned_value_renders_with_a_single_update(one_file_app):
     """Earned value measures one update against its baseline: one file is enough, the page shows its
-    six indicators and its two charts, and does not ask for a second update."""
+    six indicators, the three of the Earned Schedule and its two charts, and does not ask for a second
+    update."""
     one_file_app.switch_page("views/earned_value.py").run()
     _ok(one_file_app)
     assert [m.label for m in one_file_app.metric] == [
@@ -174,6 +175,9 @@ def test_earned_value_renders_with_a_single_update(one_file_app):
         "SV",
         "BEI (P6 / DCMA)",
         "EAC",
+        "Plan reached",
+        "Time gap",
+        "SPI(t)",
     ]
     assert len(one_file_app.get("plotly_chart")) == 2
     assert not any("at least two" in i.value for i in one_file_app.info)
@@ -710,6 +714,23 @@ def test_earned_value_on_a_task_code_counts_the_tasks_of_its_values(tmp_path, mo
     assert (card("Percent complete"), card("SPI (labor units)")) == ("75.0 %", "0.75")
     assert card("BEI (P6 / DCMA)") == "0.50 / 0.50"
     assert any(text.startswith("Filtered on Discipline") for text in _caption_texts(at))
+
+
+def test_earned_value_shows_the_date_the_plan_is_reached_and_the_gap_in_days(tmp_path, monkeypatch):
+    """Friday 03-13 17:00. Whole project, EV 120 h: the plan held them from Friday 03-06 17:00 to Monday
+    03-09 08:00, the end of that stretch is the date reached: 09 Mar, 4 d 9 h before the status date,
+    shown -4 d. On CIV, EV 60 h, reached on Wednesday 03-11 at 13:00: 11 Mar, 2 d 4 h before, shown -2 d,
+    SPI(t) 7.5 / 10 = 0.750."""
+    at = _app_on_two_disciplines(tmp_path, monkeypatch)
+    at.switch_page("views/earned_value.py").run()
+    _ok(at)
+
+    def card(label: str) -> str:
+        return next(metric.value for metric in at.metric if metric.label == label)
+
+    assert (card("Plan reached"), card("Time gap")) == ("09 Mar 2026", "-4 d")
+    _pick_discipline(at, "ev", "CIV")
+    assert (card("Plan reached"), card("Time gap"), card("SPI(t)")) == ("11 Mar 2026", "-2 d", "0.750")
 
 
 def test_debug_reads_the_earned_schedule_on_a_task_code(tmp_path, monkeypatch):

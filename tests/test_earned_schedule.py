@@ -266,3 +266,56 @@ def test_on_random_schedules_the_gaps_by_status_add_up_to_the_earned_schedule_s_
     assert gaps["ev_hr"].sum() == pytest.approx(schedule.ev_hr, abs=1e-6)
     assert gaps["bl_labor_hr"].sum() == pytest.approx(schedule.bac_hr, abs=1e-6)
     assert (gaps["ahead_hr"] + gaps["behind_hr"]).sum() == pytest.approx(schedule.ev_hr - schedule.pv_hr, abs=1e-6)
+
+
+def test_the_planned_dates_of_the_update_are_no_baseline_to_read_an_earned_schedule_on():
+    """Baseline "Planned dates in each file": B, not started on Wednesday 03-11, has the planned dates P6 keeps
+    equal to its early dates until it starts (Oracle, P6 EPPM User Guide, "Planned Dates"), so they move with
+    every scheduling and its late start never shows. No ES: the reason is given."""
+    update = snap([progressed(A, 100), B], data_date="2026-03-11 12:00")
+    schedule = earned_schedule(update, Baseline.planned(update))
+    assert schedule.es_min is None and schedule.spi_t is None
+    assert schedule.note == "baseline = the planned dates of the update: a late start does not show in them"
+
+
+def test_the_date_the_plan_is_reached_and_the_gap_in_calendar_days():
+    """A done, B at 50 % on Friday 03-13 17:00: the plan reached these 60 h on Wednesday 03-11 at 12:00 and
+    asked for no more until 13:00, the end of the lunch break. As after any stretch without planned
+    hours, the gap runs from its end: -2 d 4 h = -52 h / 24 = -2.1667 calendar days."""
+    schedule = schedule_of([A, B], {"A": 100, "B": 50}, "2026-03-13 17:00")
+    assert schedule.es_date == pd.Timestamp("2026-03-11 13:00")
+    assert schedule.gap_calendar_d == pytest.approx(-52 / 24)
+
+
+def test_the_gap_in_calendar_days_counts_the_weekend_between_the_two_dates():
+    """A done, B at 50 % on Monday 03-16 08:00, after a weekend: the date reached is Wednesday 03-11 at
+    13:00 (as above), 4 days and 19 hours earlier, Saturday and Sunday included: -115 h / 24."""
+    schedule = schedule_of([A, B], {"A": 100, "B": 50}, "2026-03-16 08:00")
+    assert schedule.es_date == pd.Timestamp("2026-03-11 13:00")
+    assert schedule.gap_calendar_d == pytest.approx(-115 / 24)
+
+
+def test_where_the_plan_asks_for_no_hours_the_date_reached_is_the_status_date():
+    """A in week 1, B in week 3, Wednesday 03-11 12:00, A done: the plan holds 40 h from Friday 03-06 17:00
+    to Monday 03-16 08:00 and the status date lies in between: it is the date reached, no gap. A week
+    later, Wednesday 03-18 12:00, B not started: the date reached is the end of that stretch, Monday
+    03-16 08:00, 2 d 4 h earlier: -52 h / 24."""
+    in_the_stretch = schedule_of([A, B_WEEK_3], {"A": 100}, "2026-03-11 12:00")
+    assert in_the_stretch.es_date == pd.Timestamp("2026-03-11 12:00") and in_the_stretch.gap_calendar_d == 0.0
+    past_it = schedule_of([A, B_WEEK_3], {"A": 100}, "2026-03-18 12:00")
+    assert past_it.es_date == pd.Timestamp("2026-03-16 08:00")
+    assert past_it.gap_calendar_d == pytest.approx(-52 / 24)
+
+
+def test_once_every_hour_is_earned_no_gap_in_days_is_read():
+    """A and B done, read on Friday 03-20 17:00, a week after the plan's end: the date reached is that end,
+    Friday 03-13 17:00, and stays there whatever the status date. The gap of finished work is its finish
+    against the plan's, which the status date does not give: none is read."""
+    schedule = schedule_of([A, B], {"A": 100, "B": 100}, "2026-03-20 17:00")
+    assert schedule.es_date == pd.Timestamp("2026-03-13 17:00")
+    assert schedule.gap_calendar_d is None
+
+
+def test_without_an_earned_schedule_there_is_no_date_reached():
+    schedule = schedule_of([A, B], {}, "2026-02-27 08:00")
+    assert schedule.es_date is None and schedule.gap_calendar_d is None

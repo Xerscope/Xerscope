@@ -784,6 +784,8 @@ class EarnedSchedule:
     ev_left_out_hr: float  # earned on baseline activities without both EV dates: no PV curve holds them
     hours_per_day: float  # of the project calendar: the length of a plan day
     note: str = ""
+    status_date: pd.Timestamp | None = None
+    es_date: pd.Timestamp | None = None  # the instant of the plan reached: the ES as a date
 
     def plan_days(self, minutes: int | None) -> float | None:
         return None if minutes is None else minutes / 60 / self.hours_per_day
@@ -797,6 +799,15 @@ class EarnedSchedule:
     def spi_t(self) -> float | None:
         """SPI(t) = ES / AT."""
         return self.es_min / self.at_min if self.es_min is not None and self.at_min else None
+
+    @property
+    def gap_calendar_d(self) -> float | None:
+        """Date reached - status date in calendar days, weekends included: negative = behind the plan.
+        None without an ES, and once every hour is earned (ES = PD): the gap of finished work is its
+        finish against the plan's, which the status date does not give."""
+        if self.es_date is None or self.status_date is None or self.es_min == self.pd_min:
+            return None
+        return (self.es_date - self.status_date) / pd.Timedelta(days=1)
 
     def as_row(self) -> dict:
         return {
@@ -868,9 +879,12 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
         ev_hr=float(measured["ev_hr"].sum()),
         ev_left_out_hr=float(current.loc[~has_dates, "ev_hr"].sum()),
         hours_per_day=snapshot.calendar().hours_per_day,
+        status_date=snapshot.data_date,
     )  # fmt: skip
     if snapshot.data_date is None:
         return replace(result, note="no status date")
+    if baseline.is_planned:
+        return replace(result, note="baseline = the planned dates of the update: a late start does not show in them")
     if measured.empty:
         return replace(result, note="no baseline activity of the update with hours and both EV dates")
     dates = pd.concat([measured["bl_start"], measured["bl_finish"]])  # a finish before its start: _Spread
@@ -884,8 +898,10 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
         return replace(result, note="status date before the plan starts")
     spread = _Spread.build(baseline.snapshot, frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
     minutes = _es_minutes(spread, result.ev_hr, plan_start.value // MINUTE_NS, plan_finish.value // MINUTE_NS)
-    low, high = sorted(axis.work(pd.Timestamp(minute * MINUTE_NS)) - axis.work(plan_start) for minute in minutes)
-    return replace(result, es_min=min(max(at_min, low), high))
+    reached, last_held = sorted(pd.Timestamp(minute * MINUTE_NS) for minute in minutes)
+    low, high = axis.work(reached) - axis.work(plan_start), axis.work(last_held) - axis.work(plan_start)
+    es_date = min(max(snapshot.data_date, reached), last_held)
+    return replace(result, es_min=min(max(at_min, low), high), es_date=es_date)
 
 
 def schedule_gap_by_status(snapshot: Snapshot, baseline: Baseline) -> pd.DataFrame:
