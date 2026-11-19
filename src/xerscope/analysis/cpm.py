@@ -904,7 +904,9 @@ class _Run:
         activity_kind, duration = self.kind(code), self.dur_min(code)
         start_bounds, finish_bounds = self.early_bounds(code, started)
         milestone_expected = self.milestone_expected_finish(code)
-        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds, milestone_expected)
+        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
+        if milestone_expected is not None:
+            finish_bounds.append(milestone_expected)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
         # A1130: the early dates move to the data date, the late dates stay). A milestone's
@@ -923,7 +925,7 @@ class _Run:
             )
         else:
             start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
-        if pinned and pinned[0] == "finish" and code not in self.duration_override:
+        if pinned and pinned[0] == "finish" and not self.has_expected_finish(code):
             start, finish_time = self.mandatory_finish_dates(axis, activity_kind, duration, pinned[1])
         if self.has_task_expected_finish(code, activity_kind):
             start, finish_time = self.expected_finish(
@@ -1053,14 +1055,7 @@ class _Run:
             return actual_finish, actual_finish
         return self.data_date, self.data_date
 
-    def forward_constraints(
-        self,
-        code,
-        started: bool,
-        start_bounds: list,
-        finish_bounds: list,
-        milestone_expected: pd.Timestamp | None = None,
-    ):
+    def forward_constraints(self, code, started: bool, start_bounds: list, finish_bounds: list):
         """Add the activity's dated constraints to the start / finish bounds (in place).
 
         Returns the Mandatory Start / Finish as (side, date), else None. Work under way keeps
@@ -1069,9 +1064,6 @@ class _Run:
         An expected finish in force on work not started drops the early side of a Finish On and a
         Finish On or After: the work finishes at its expected finish (P6 23.12.1: probes oc-edges-xc
         N5, N7, xf-mandatory M7; 26.8 not measured). Their late side stays in the backward pass.
-
-        ``milestone_expected``: the expected finish of an unstarted milestone. It becomes a finish
-        bound and stands in for the early side of a Mandatory Finish too.
         """
         pinned = None
         if started and self.constraints(code):
@@ -1083,10 +1075,7 @@ class _Run:
                 start_bounds.append(date)
             elif START_LIKE.get(constraint_type) == "finish" and not self.has_expected_finish(code):
                 finish_bounds.append(date)
-        if milestone_expected is None:
-            return pinned
-        finish_bounds.append(milestone_expected)
-        return pinned if pinned and pinned[0] == "start" else None
+        return pinned
 
     def expected_finish(
         self,
@@ -1416,9 +1405,9 @@ class _Run:
 
     def late_bounds(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
         """Latest dates an open activity may start at and finish at ("not after" bounds): what follows
-        it and the project end, then its constraints; a mandatory date replaces them, except for work
-        an expected finish places (a task with a duration override, an unstarted milestone): its late
-        finish is the lesser of the successors' bound and the date."""
+        it and the project end, then its constraints; a mandatory date replaces them, except under a
+        Mandatory Finish with an expected finish in force: the late finish is then the lesser of the
+        successors' bound and the date."""
         following_start_bounds, following_finish_bounds = self.bounds_of_what_follows(code, end_anchor)
         pinned, constraint_start_bounds, constraint_finish_bounds = self.late_constraints(code)
         if pinned is None:
@@ -1432,21 +1421,17 @@ class _Run:
         # Finish is the late finish)
         if end == "start":
             return [min([date] + constraint_start_bounds)], []
-        if code in self.duration_override or self.is_milestone_placed_by_expected_finish(code):
-            # With an expected finish applied the Mandatory Finish date no longer pins:
-            # the late finish is the lesser of what the successors allow and the date.
-            # P6 23.12.1 on the held-out corpus, unstarted tasks: H29-02 A1160, H29-05
-            # A1110, H29-11 A1230 (a cap at the early finish gets them wrong),
-            # H29-12 A1240, and H25-05 A1150 on resource-dependent work; finish
-            # milestones: 14, e.g. H23-07 A1250. Not measured: an expected finish after the
-            # date for a milestone, a start milestone. Work under way never gets here
-            # (late_constraints)
+        if self.has_expected_finish(code):
+            # With an expected finish in force the Mandatory Finish date no longer pins work not
+            # started, whether or not the expected finish sets the duration: the late finish is
+            # the lesser of what the successors allow and the date. P6 23.12.1 (26.8 not
+            # measured): probes xf-mandatory M1, M3, M9, M11, F3; held-out corpus H29-02 A1160,
+            # H29-05 A1110, H29-11 A1230, H25-05 A1150 (resource-dependent), H23-07 A1250 (finish
+            # milestone), H25-02 A1240 (an FF bound later than the expected finish). Not
+            # measured: an expected finish after the date for a milestone, a start milestone, a
+            # secondary constraint. Work under way never gets here (late_constraints)
             return following_start_bounds, following_finish_bounds + [date]
         return [], [min([date] + constraint_finish_bounds)]
-
-    def is_milestone_placed_by_expected_finish(self, code) -> bool:
-        """True for an unstarted milestone that an expected finish places (see milestone_expected_finish)."""
-        return self.milestone_expected_finish(code) is not None
 
     def bounds_of_what_follows(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
         """Bounds the successors give, the project end and the late date a link to another project gives."""

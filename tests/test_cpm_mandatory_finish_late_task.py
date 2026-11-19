@@ -35,6 +35,11 @@ Hand calculation, one line per case:
 - c one working hour before the bound: c = Wed 4 Mar 16:00. min = Wed 4 Mar 16:00. 16 h back: Wed
   16:00 minus 7 h (Wed 08:00) minus 1 h = Tue 16:00; Tue 16:00 minus 7 h (Tue 08:00) minus 1 h =
   Mon 16:00. Late start = Mon 2 Mar 16:00. Float = Mon 2 Mar 08:00 to Mon 2 Mar 16:00 = 7 h.
+- a start-to-start successor: T -> S (SS, lag 0), S (8 h) under Finish On or Before Wed 4 Mar 17:00,
+  so S starts Wed 4 Mar 08:00 at the latest and so does T. c = Fri 6 Mar 17:00, a = Tue 3 Mar 17:00
+  (16 h). Late start = Wed 4 Mar 08:00, late finish 16 h later = Thu 5 Mar 17:00, earlier than c.
+  Float = Tue 3 17:00 to Thu 5 17:00 = 16 h. Standard backward pass through the link; the
+  combination with a Mandatory Finish is not a P6 reading.
 """
 
 import pandas as pd
@@ -125,3 +130,20 @@ def test_boundary_between_the_successor_bound_and_the_mandatory_finish(
     assert row["lf"] == T(expected_late_finish)
     assert row["ls"] == T(expected_late_start)
     assert row["tf_hr"] == expected_total_float_hr
+
+
+# --- a successor linked start-to-start bounds the late start ----------------------------------------
+
+
+def test_start_to_start_successor_bounds_the_late_start_under_the_cap():
+    """S (SS after T) must start by Wed 4 Mar 08:00, so must T: late start Wed 4 Mar 08:00, late finish
+    16 h later = Thu 5 Mar 17:00 (earlier than c = Fri 6 Mar 17:00), float 16 h."""
+    task = todo(
+        "T", cstr_type="CS_MANDFIN", cstr_date="2026-03-06 17:00", expect_end_date="2026-03-03 17:00", **hours(8)
+    )
+    successor = todo("S", cstr_type="CS_MEOB", cstr_date="2026-03-04 17:00", **hours(8))
+    tasks = [task, successor, todo("Z", **hours(80))]
+    row = schedule(snap(tasks, [("T", "S", "SS", 0)], sched=OPTION_ON)).frame.loc["T"]
+    assert row["ls"] == T("2026-03-04 08:00")
+    assert row["lf"] == T("2026-03-05 17:00")
+    assert row["tf_hr"] == 16

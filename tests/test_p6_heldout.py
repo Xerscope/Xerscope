@@ -45,14 +45,14 @@ FLOORS = {
     "H20": 0.945,
     "H21": 0.999,
     "H22": 0.994,
-    "H23": 0.807,
-    "H24": 0.789,
-    "H25": 0.761,
+    "H23": 0.872,
+    "H24": 0.864,
+    "H25": 0.794,
     "H26": 0.811,
-    "H27": 0.842,
-    "H28": 0.855,
-    "H29": 0.804,
-    "H30": 0.873,
+    "H27": 0.875,
+    "H28": 0.860,
+    "H29": 0.826,
+    "H30": 0.874,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -191,6 +191,11 @@ PINNED = {
     ],
     "an expected finish drops the early side of a Finish On or After on work not started": [
         ("H24", "H24-08", "A1100", "early_finish"),
+    ],
+    "an expected finish in force lifts the Mandatory Finish pin even when an FF or SF bound overtakes it": [
+        ("H23", "H23-10", "A1070", "early_finish"),
+        ("H25", "H25-02", "A1240", "early_finish"),
+        ("H27", "H27-08", "A1150", "early_finish"),
     ],
     "FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
     "SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
