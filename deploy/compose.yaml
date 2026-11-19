@@ -136,6 +136,7 @@ services:
                                                     # not maxMessageSize, which also caps what the app sends (the Gantt)
       STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
       # XERSCOPE_BASELINE: /data/BL.xer
+      XERSCOPE_STANDARDS: /data                     # your own standards (.toml) beside the exports (docs/deploy.md §5)
       XERSCOPE_LEXICON: /lexicon                    # the Ask field reads curated/ and generated/ (docs/deploy.md §10)
     volumes:
       - ${XERSCOPE_EXPORTS:-../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only

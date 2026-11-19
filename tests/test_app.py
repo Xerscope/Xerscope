@@ -47,6 +47,7 @@ PAGES = [
     "views/health.py",
     "views/audit.py",
     "views/changelog.py",
+    "views/forensics.py",
     "views/earned_value.py",
     "views/milestones.py",
     "views/ppc.py",
@@ -147,6 +148,7 @@ def one_file_app(sample_dir, monkeypatch):
     "page, message",
     [
         ("views/changelog.py", "Load at least two XER files to compare them."),
+        ("views/forensics.py", "The half-step reading compares consecutive updates: load at least two."),
         ("views/milestones.py", "The trend needs at least two updates."),
         ("views/ppc.py", "PPC compares consecutive updates: load at least two."),
     ],

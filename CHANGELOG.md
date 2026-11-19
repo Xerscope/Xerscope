@@ -28,6 +28,19 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
   session's uploads), not only the four built-in ones.
 - Schedule health: a standard uploaded on the page is in the picker on the run that loads it; the
   population steps of a standard of your own name its `source` text.
+- Remote deployment: `XERSCOPE_STANDARDS` points at the exports folder, so a standard of your
+  own (.toml) dropped beside the exports is read at each start (`deploy/compose.yaml`,
+  docs/deploy.md §5).
+- Delay analysis page and `analysis/forensics.py`: the half-step reading of each week (AACE RP
+  29R-03 MIP 3.4, contemporaneous split: the bifurcated, half-stepped update). The previous update
+  is rescheduled with the update's changes applied one step at a time (progress as 3.4.K.4.b
+  defines it, then scope, durations, logic, constraints, calendars and options): the finish before
+  replanning and the week's slip, then what the replanning did; how the finish is held (last task,
+  Must Finish By, Mandatory Finish), the longest path's float, the series over every update
+  (formulas.md §5.1). The baseline is not read. A week whose recalculated finish is not the one P6
+  stored in the file is flagged: its shifts may be the recalculation's.
+- Changelog: categories Calendars (working time changed) and Options (scheduling option changed,
+  Must Finish By included); "remaining duration cut" on work not started (formulas.md §5).
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance
   (`mode=max`), an SPDX SBOM and a GitHub build-provenance attestation of their digest
   (AUDIT-DEP-02); CodeQL on the Python sources and the OpenSSF Scorecard run on `main`,
