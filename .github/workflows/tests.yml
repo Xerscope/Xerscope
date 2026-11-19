@@ -314,7 +314,8 @@ jobs:
           line=$(grep '"uri": "/<prefix>/_stcore/stream"' caddy.log | tail -n 1)
           echo "$line" | grep -q '"status": 502,'
           if echo "$line" | grep -q '"Connection": \["close"\]'; then echo "Connection: close on a WebSocket handshake"; exit 1; fi
-          ! grep -q "$XERSCOPE_PATH" caddy.log
+          # not "! grep": bash -e ignores the status of a command inverted with "!" unless it is the last one
+          if grep -q "$XERSCOPE_PATH" caddy.log; then echo "the secret prefix is in Caddy's log"; exit 1; fi
           grep -q '"uri": "/<prefix>/"' caddy.log   # the prefix is masked, the rest of the path kept
       - name: Rate limit, last (it blocks the runner's address for a minute)
         run: |  # 300 requests a minute per visitor, counted before the password check
