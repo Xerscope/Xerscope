@@ -10,7 +10,8 @@
 # Populations (params.exclude), WBS summary rows are always excluded:
 #   complete, complete_before_data_date, started, loe, milestones, no_duration
 # Logic exemptions (pred_exempt / succ_exempt):
-#   started, start_milestone, finish_milestone, project_start, project_finish
+#   started, start_milestone, finish_milestone, project_start, project_finish,
+#   single_project_start, single_project_finish (strict: one task only, a shared date passes none)
 # Relationship populations (links): all, not_both_complete (P6), succ_incomplete (DCMA)
 # Constraint codes (types): CS_MSO, CS_MSOA, CS_MSOB, CS_MEO, CS_MEOA, CS_MEOB,
 #   CS_MANDSTART, CS_MANDFIN, CS_ALAP
@@ -45,13 +46,23 @@ name = "Lags over 10 days"
 rule = "lag"
 target = "<= 1%"
 params = { op = ">", value = 10, unit = "days", links = "succ_incomplete" }
+# unit = "project_pct": value is a share of the project's working hours (planned start to
+# forecast finish on its default calendar), e.g. value = 10 for lags over 10 % of the project
 
 [[metric]]
 id = "CUS-04"
 name = "Finish-to-start share"
 rule = "relationship_type"
 target = ">= 85%"
-params = { type = "FS", links = "succ_incomplete" }
+params = { type = "FS", links = "succ_incomplete" }   # zero_lag = true: FS with a 0d lag only
+
+[[metric]]
+id = "CUS-04b"
+name = "Start-to-finish relationships"
+rule = "relationship_type"
+unit = "count"
+target = "<= 0"
+params = { type = "SF", links = "all", listed = "of_type" }   # a forbidden type: list the SF links
 
 [[metric]]
 id = "CUS-05"
@@ -95,7 +106,7 @@ id = "CUS-10"
 name = "Unresourced activities"
 rule = "no_resource"
 target = "<= 0%"
-params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = false }
+params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = false }   # kind = "labour_units": budgeted labour hours > 0
 
 [[metric]]
 id = "CUS-11"
@@ -116,6 +127,22 @@ id = "CUS-13"
 name = "Critical path test"
 rule = "dcma_12_critical_path_test"   # the built-in test, 600 working days
 target = "pass"
+
+# [[metric]]
+# id = "CUS-15"
+# group = "Float"
+# name = "Near-critical float (0 to 20 working days)"
+# rule = "float"
+# target = ">= 5%"                  # a band is one metric per bound: add CUS-16 with "<= 15%"
+# params = { op = "between", value = 0, value_max = 20, unit = "days", exclude = ["complete"] }
+
+# [[metric]]
+# id = "CUS-17"
+# group = "Status"
+# name = "Activities riding the data date"
+# rule = "on_data_date"             # start or finish (actual, else forecast) on the data date's day
+# target = "< 10%"
+# params = { exclude = [], date_grain = "day" }
 
 # --- more rules (uncomment to use) -------------------------------------------------------
 # [[metric]]
