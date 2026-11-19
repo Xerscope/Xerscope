@@ -196,6 +196,7 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "pv_pct": ("Percent scheduled", "pct"),
     "ev_pct": ("Percent complete", "pct"),
     "spi": ("SPI (labor units)", "d2"),
+    "spi_4w": ("SPI (4 weeks)", "d2"),
     "productivity": ("EV / AC (baselined work)", "d2"),
     "cpi": ("CPI (labor units)", "d2"),
     "ac_unbaselined_hr": ("AC outside BL (h)", "h0"),

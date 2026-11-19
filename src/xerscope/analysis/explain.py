@@ -274,6 +274,49 @@ LIPKE = "Earned Schedule (Lipke)"
 XS = "xerscope"
 
 
+# The help of the "SPI (4 weeks)" figure: what it says, how it is calculated, why this way, and the
+# settings of the Baseline window it is meant for (their labels are those of app/state.py).
+SPI_WINDOW_READING = (
+    "**What it says.** Hours earned / hours planned over the last four weeks: 0.80 means 80 % of what the "
+    "plan asked for was earned. It describes the month that ended; it does not forecast the next one.\n\n"
+    "**How it is calculated.**\n"
+    "1. The window runs from the last update dated at least 28 days before this one, to this one; the line "
+    "under these figures gives its start.\n"
+    "2. Each week, from one update to the next, is read on the baseline of the update that opens it: the "
+    "hours earned in the week (ΔEV) and the hours the plan asked for in the week (ΔPV).\n"
+    "3. SPI = Σ ΔEV / Σ ΔPV over these weeks.\n\n"
+    "**Why each week on its own baseline.** A baseline made again takes in the delay to date: read on it "
+    "alone, the weeks before it look better than they were on the plan of the time; read on an old "
+    "baseline, the work planned again since is missed. Week by week, each one is judged on the plan in "
+    "force when it started, and a new baseline adds no jump.\n\n"
+    "**Why a ratio of sums, not the mean of the weekly SPI.** A week weighs what the plan asked of it. "
+    "Weeks planned 500, 500, 500 and 20 h and earned 400, 400, 400 and 60 h have SPI of 0.80, 0.80, 0.80 "
+    "and 3.00, mean 1.35; yet 1,260 h were earned for 1,520 planned: 0.83.\n\n"
+    "**Why the last weeks do not weigh more.** Weighing the recent weeks more (weights 1-2-3-4, or an "
+    "exponential smoothing) is a known way to make such a figure react faster. It is not done here, for "
+    "three reasons. One week's figure follows the way progress was reported that week more than the pace "
+    "of the work: a week at 0.30 and a week at 1.40 can follow each other, and one says little about the "
+    "next. The last week is the least sure of the four: progress reported late lands in a later update. "
+    "And over four weeks, a heavier last week comes close to reading that week alone. Weeks planned 400 h "
+    "each and earned 120, 260, 228 and 560 h give 0.73 here and 0.89 with the weights 1-2-3-4; one more "
+    "week, at 168 h, gives 0.76 here and 0.77 with the weights: the figure moves by 0.03 here, by 0.12 "
+    "with the weights, for the same work.\n\n"
+    "**Settings it is meant for** (sidebar, Baseline).\n"
+    "- Baseline (BL): *Baseline in each file (P6 Project Baseline)*, so that each update is measured against "
+    "the baseline its file names. With one baseline for every update, all the weeks are read on it: the "
+    "figure then says how the month went against that plan only.\n"
+    "- Earned value basis: the one set in P6, *Budgeted · planned dates* unless it was changed there. The "
+    "current-dates bases move the planned value with the schedule, and a delay partly disappears.\n"
+    "- When a file has no baseline: *None*. A week without a baseline then leaves the figure empty; with "
+    "the planned dates as fallback it is read on the update's own dates, where a late start does not show.\n"
+    "- Link renumbered tasks by GUID: on. A task renumbered during a week otherwise leaves the count with "
+    "its hours.\n"
+    "- Every update loaded: a missing one makes a week longer and hides what happened in it.\n\n"
+    "**Empty.** No update dated at least 28 days before this one, a week without a baseline, or no hours "
+    "planned over the window."
+)
+
+
 KPI_FORMULAS: dict[str, dict[str, str]] = {
     "Forecast finish": {P6: "Latest Finish of the project's activities (actual, else remaining, else early finish)"},
     "Shift since first update": {

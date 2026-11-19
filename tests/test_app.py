@@ -777,6 +777,28 @@ def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_fini
     assert (card("TSPI (planned finish)"), card("SPI (4 weeks)")) == ("1.25", "–")
 
 
+def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_window_does(app):
+    """The help says how the figure is calculated and which settings it is meant for; the settings carry
+    the labels of the Baseline window."""
+    from xerscope.analysis.baseline import DEFAULT_EV_BASIS
+    from xerscope.app import state
+
+    app.switch_page("views/earned_value.py").run()
+    _ok(app)
+    card = next(metric for metric in app.metric if metric.label == "SPI (4 weeks)")
+    assert "Σ ΔEV / Σ ΔPV" in card.help and "1,260 h were earned for 1,520 planned: 0.83" in card.help
+    for label in (state.BL_EACH, state.EV_BASIS_LABEL[DEFAULT_EV_BASIS], state.BL_NONE):
+        assert f"*{label}*" in card.help
+    window_source = Path(state.__file__).read_text(encoding="utf-8")
+    for field in (
+        "Baseline (BL)",
+        "Earned value basis",
+        "When a file has no baseline",
+        "Link renumbered tasks by GUID",
+    ):
+        assert f"{field}: " in card.help and f'"{field}"' in window_source
+
+
 def test_debug_reads_the_earned_schedule_on_a_task_code(tmp_path, monkeypatch):
     """EV of the Earned Schedule row: 120 h on the whole project, 60 h on CIV; the table by status then
     holds CIV's two tasks."""
