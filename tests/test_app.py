@@ -164,7 +164,7 @@ def test_pages_comparing_updates_ask_for_two_and_show_nothing_else(one_file_app,
 
 def test_earned_value_renders_with_a_single_update(one_file_app):
     """Earned value measures one update against its baseline: one file is enough, the page shows its
-    six indicators, the three of the Earned Schedule and its two charts, and does not ask for a second
+    six indicators, the eleven of the Earned Schedule and its two charts, and does not ask for a second
     update."""
     one_file_app.switch_page("views/earned_value.py").run()
     _ok(one_file_app)
@@ -178,6 +178,11 @@ def test_earned_value_renders_with_a_single_update(one_file_app):
         "Plan reached",
         "Time gap",
         "SPI(t)",
+        "SPI (4 weeks)",
+        "Planned finish",
+        "Forecast finish (4 weeks)",
+        "Forecast finish (all updates)",
+        "TSPI (planned finish)",
     ]
     assert len(one_file_app.get("plotly_chart")) == 2
     assert not any("at least two" in i.value for i in one_file_app.info)
@@ -731,6 +736,45 @@ def test_earned_value_shows_the_date_the_plan_is_reached_and_the_gap_in_days(tmp
     assert (card("Plan reached"), card("Time gap")) == ("09 Mar 2026", "-4 d")
     _pick_discipline(at, "ev", "CIV")
     assert (card("Plan reached"), card("Time gap"), card("SPI(t)")) == ("11 Mar 2026", "-2 d", "0.750")
+
+
+def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_finish(tmp_path, monkeypatch):
+    """The six weekly updates of ``test_evm_weekly``, all against plan 1 (four weeks of 40 h, ending Friday
+    03-20). At the last one, Friday 03-27: 140 h earned of 160, SPI 0.88 since the start. Over the four
+    weeks from the update of 02-27: 120 h earned for 120 planned, SPI 1.00; 15 working days of plan gained
+    (2.5 to 17.5) in 20: pace 0.75. 2.5 days are left: 3.33 at that pace, Thursday 04-02. Every week read
+    is in the window: the forecast at the pace of all updates is the same date."""
+    from test_evm_weekly import FRIDAYS, PLAN_1, PROGRESS, WEEKS, tasks_at
+
+    data, other = tmp_path / "data", tmp_path / "baseline"
+    data.mkdir()
+    other.mkdir()
+    (other / "plan.xer").write_text(xer_text(tasks_at(PLAN_1, {}), data_date=WEEKS[0][0]), encoding="utf-8")
+    for index, (friday, percents) in enumerate(zip(FRIDAYS, PROGRESS, strict=True)):
+        (data / f"w{index}.xer").write_text(xer_text(tasks_at(PLAN_1, percents), data_date=friday), encoding="utf-8")
+    at = _run(data, monkeypatch, baseline=other / "plan.xer")
+    at.switch_page("views/earned_value.py").run()
+    _ok(at)
+
+    def card(label: str) -> str:
+        return next(metric.value for metric in at.metric if metric.label == label)
+
+    assert (card("SPI (labor units)"), card("SPI (4 weeks)")) == ("0.88", "1.00")
+    assert card("Planned finish") == "20 Mar 2026"
+    assert (card("Forecast finish (4 weeks)"), card("Forecast finish (all updates)")) == ("02 Apr 2026", "02 Apr 2026")
+    # 15 days of plan gained in the 20 of the four weeks, the same since the first update: pace 0.75
+    assert (
+        "Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since. Pace, plan time gained / time "
+        "elapsed: 0.75 over the last 4 weeks, 0.75 since the first update loaded."
+    ) in _caption_texts(at)
+    # the planned finish, 03-20, is passed: no pace holds it
+    assert card("TSPI (planned finish)") == "–"
+    # the update of 03-06: 7.5 of the plan's 20 days reached in 10, 12.5 left for 10: TSPI 1.25; no update
+    # 28 days before it: no window
+    third = at.selectbox(key="ev_snap").options[2]
+    at.selectbox(key="ev_snap").set_value(third).run()
+    _ok(at)
+    assert (card("TSPI (planned finish)"), card("SPI (4 weeks)")) == ("1.25", "–")
 
 
 def test_debug_reads_the_earned_schedule_on_a_task_code(tmp_path, monkeypatch):

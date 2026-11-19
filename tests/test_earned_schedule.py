@@ -319,3 +319,25 @@ def test_once_every_hour_is_earned_no_gap_in_days_is_read():
 def test_without_an_earned_schedule_there_is_no_date_reached():
     schedule = schedule_of([A, B], {}, "2026-02-27 08:00")
     assert schedule.es_date is None and schedule.gap_calendar_d is None
+
+
+def test_the_pace_needed_to_end_on_the_planned_finish():
+    """A done, B at 50 % on Wednesday 03-11 12:00, on plan: 2.5 working days of plan are left (PD 10, ES
+    7.5) for 2.5 of time (AT 7.5): TSPI = 1. A week late (ES 2.5 on Wednesday 03-11 12:00, A at 50 %): 7.5
+    days of plan in 2.5 of time, TSPI = 3."""
+    assert schedule_of([A, B], {"A": 100, "B": 50}, "2026-03-11 12:00").tspi == 1.0
+    assert schedule_of([A, B], {"A": 50}, "2026-03-11 12:00").tspi == 3.0
+
+
+def test_no_pace_is_needed_once_the_planned_finish_is_passed_or_every_hour_earned():
+    """Friday 03-20 17:00, a week after the planned finish, B at 50 %: no time is left to the planned
+    finish, no pace holds it; nor on the planned finish itself, Friday 03-13 17:00 (AT = PD). A and B done
+    on the planned finish, or two days before it: nothing is left to earn."""
+    past = schedule_of([A, B], {"A": 100, "B": 50}, "2026-03-20 17:00")
+    assert past.tspi is None
+    on_the_finish = schedule_of([A, B], {"A": 100, "B": 50}, "2026-03-13 17:00")
+    assert on_the_finish.tspi is None
+    done = schedule_of([A, B], {"A": 100, "B": 100}, "2026-03-13 17:00")
+    assert done.tspi is None
+    early = schedule_of([A, B], {"A": 100, "B": 100}, "2026-03-11 12:00")
+    assert early.tspi is None

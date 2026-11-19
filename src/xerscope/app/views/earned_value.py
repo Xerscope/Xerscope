@@ -16,11 +16,16 @@ from xerscope.analysis.evm import (
     ev_point,
     evm_series,
     forecast_curve,
+    gain_ratio,
+    gains_since_first,
+    moving_window,
     priced_assignment_count,
     pv_curve,
     settings_using_pf,
+    spi_by_window,
     update_and_baseline_of_code,
     update_and_previous,
+    weekly_gains,
 )
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.app import ui
@@ -42,7 +47,8 @@ from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 COST_COLUMNS = ["bac_cost", "pv_cost", "ev_cost", "spi_cost"]
 COST_MEASURES = ["BAC cost", "PV cost", "EV cost", "SPI"]  # the rows of the calculation table that read costs
 BEI_METRIC_IDS = {"P6": "P6-13", "DCMA": "DCMA-14"}  # the BEI check of each built-in standard
-INDEX_COLUMNS = ["spi", "spi_cost", "productivity", "cpi", "bei_p6", "bei_dcma"]  # ratios, missing on the first update
+# ratios, missing on the first update (spi_4w: until an update is 28 days old)
+INDEX_COLUMNS = ["spi", "spi_4w", "spi_cost", "productivity", "cpi", "bei_p6", "bei_dcma"]
 ACTIVITY_COLUMNS = [
     "task_code",
     "bl_name",
@@ -131,16 +137,36 @@ def show_kpis(row: pd.Series, previous: pd.Series | None, costs: bool) -> None:
     )
 
 
-def show_earned_schedule(schedule: EarnedSchedule) -> None:
-    """Where the update stands on its baseline, in time: the date reached, the gap in days, SPI(t)."""
+def ratio_text(ratio: float | None) -> str:
+    return "–" if ratio is None else f"{ratio:.2f}"
+
+
+def window_text(window: pd.Series | None) -> str:
+    """The four weeks' window in words, or why there is none."""
+    if window is None:
+        return "Last 4 weeks: no update dated at least 28 days before this one, nothing to read."
+    text = (
+        f"Last 4 weeks: read from the update of {ui.fmt_date(window['window_start'])}, {window['weeks']} updates since"
+    )
+    if window["baseline_changes"]:
+        text += "; the baseline changed in between, each week is read on the plan in force that week"
+    return text + "."
+
+
+def show_earned_schedule(schedule: EarnedSchedule, window: pd.Series | None, since_first: pd.Series) -> None:
+    """Where the update stands on its plan in time, how the last four weeks went, when the plan ends."""
     ui.section(
         "Earned Schedule",
-        "The schedule read in time: the date at which the baseline planned the hours earned now.",
+        "The schedule read in time: the date at which the baseline planned the hours earned now, then the "
+        "finish at the pace of the last weeks.",
     )
     if schedule.es_date is None:
         st.caption(f"Not computed: {schedule.note}.")
         return
     gap = schedule.gap_calendar_d
+    spi_4w = gain_ratio(window, "ev_gain_hr", "pv_gain_hr")
+    pace_4w = gain_ratio(window, "es_gain_min", "at_gain_min")
+    pace_all = gain_ratio(since_first, "es_gain_min", "at_gain_min")
     ui.kpis(
         [
             (
@@ -165,8 +191,43 @@ def show_earned_schedule(schedule: EarnedSchedule) -> None:
                 "Earned schedule / actual time; 1.00 = on plan. Unlike SPI it does not come back to 1 at the "
                 "end of a late project.",
             ),
+            (
+                "SPI (4 weeks)",
+                ratio_text(spi_4w),
+                None,
+                "Hours earned / hours planned over the last four weeks, each week read on the plan in force "
+                "that week: the weekly SPI weighted by the planned hours. The SPI above is since the start "
+                "and moves little; this one says how the last month went.",
+            ),
+            ("Planned finish", ui.fmt_date(schedule.plan_finish), None, "The last planned finish of the baseline."),
+            (
+                "Forecast finish (4 weeks)",
+                ui.fmt_date(schedule.finish_at(pace_4w), "n/a"),
+                None,
+                "When the plan ends if what is left of it is done at the pace of the last four weeks, given "
+                "under these figures. It moves a lot from week to week: read it with the one below.",
+            ),
+            (
+                "Forecast finish (all updates)",
+                ui.fmt_date(schedule.finish_at(pace_all), "n/a"),
+                None,
+                "The same at the pace of every week read since the first update loaded: steadier, slower to "
+                "show a change.",
+            ),
+            (
+                "TSPI (planned finish)",
+                ratio_text(schedule.tspi),
+                None,
+                "The pace needed from now on to end on the planned finish, to set against the paces given "
+                "under these figures. Up to 1.00 the date holds; from 1.00 to 1.10 it can be caught up; "
+                "above 1.10 it rarely is (Lipke). Empty once the planned finish is passed.",
+            ),
         ],
         formulas=KPI_FORMULAS,
+    )
+    st.caption(
+        f"{window_text(window)} Pace, plan time gained / time elapsed: {ratio_text(pace_4w)} over the last 4 weeks, "
+        f"{ratio_text(pace_all)} since the first update loaded."
     )
 
 
@@ -332,7 +393,12 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
         "Performance indices by update",
         f"1.00 = on plan; the dotted line marks {INDEX_ALERT:g}, the usual alert threshold.",
     )
-    indices = {"spi": "SPI (labor units)", "bei_dcma": "BEI (DCMA)", "productivity": "EV / AC (baselined work)"}
+    indices = {
+        "spi": "SPI (labor units)",
+        "spi_4w": "SPI (4 weeks)",
+        "bei_dcma": "BEI (DCMA)",
+        "productivity": "EV / AC (baselined work)",
+    }
     if costs and series["spi_cost"].notna().any():
         indices = {"spi_cost": "SPI", **indices}
     ui.chart(build_index_trend(series, indices))
@@ -435,6 +501,15 @@ point = memo(cache_key + ("point", *update_key), ev_point, part, part_baseline)
 earned_values = memo(cache_key + ("earned", *update_key), earned, part, part_baseline)
 curve = memo(cache_key + ("pv", *update_key), pv_curve, part_baseline, part)
 schedule = memo(cache_key + ("schedule", *update_key), earned_schedule, part, part_baseline)
+# every week on the plan in force that week: the same for whichever update is shown
+gains = memo(
+    ("evm_weekly", code_filter),
+    weekly_gains,
+    store,
+    partial(baseline_for, link=False),
+    st.session_state.get("guid_link", False),
+    code_filter,
+)
 series = memo(
     cache_key + ("series",),
     evm_series,
@@ -458,6 +533,7 @@ bei = memo(
     ev_basis=False,
 )
 series = series.merge(bei, on="data_date", how="left")
+series = series.merge(spi_by_window(gains), on="data_date", how="left")
 row, previous = update_and_previous(series, snapshot.data_date)
 
 costs = costs_shown()
@@ -465,6 +541,6 @@ show_kpis(row, previous, costs)
 if not costs:
     show_costs_ignored(snapshot)
 show_calculation(row, baseline, snapshot, point, costs)
-show_earned_schedule(schedule)
+show_earned_schedule(schedule, moving_window(gains, snapshot.data_date), gains_since_first(gains, snapshot.data_date))
 show_charts(series, curve, part, part_baseline, costs, code_filter)
 show_activity_detail(snapshot, baseline, point, earned_values)
