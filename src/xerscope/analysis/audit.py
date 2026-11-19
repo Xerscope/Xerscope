@@ -278,7 +278,7 @@ def _toml_value(value) -> str:
         return f"{value:g}"
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    return json.dumps(str(value))  # a JSON string is a TOML basic string
+    return json.dumps(str(value), ensure_ascii=False)  # a JSON string is a TOML basic string; the file is UTF-8
 
 
 def toml_block(metric: Metric) -> str:
