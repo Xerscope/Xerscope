@@ -1,6 +1,6 @@
 # Task A — Redesign where two things do the same thing, and sourced tooltips
 
-Scope: `src/xerscope/app/**`, `src/xerscope/viz/**`. Inputs: `scratchpad/audit/findings_voted.json`
+Scope: `src/xerscope/app/**`, `src/xerscope/viz/**`. Inputs: `docs/refactor-front/findings.json`
 (94 findings, 4 votes each), `critic.json`, `widgets_without_help.txt` (70 call sites),
 `docs/refactor-front-plan.md` (P1–P12). Every line number below was read in this session with
 `sed -n` or `grep -n` on the current tree unless marked *(not reopened: location from the finding)*.
@@ -215,7 +215,7 @@ loading 65 small `xerkit` files and counting `load_snapshot` calls across a reru
 ## A2. Widgets without a help tooltip
 
 Method: each of the 70 call sites of `widgets_without_help.txt` was opened with its surrounding lines
-(`scratchpad/widgets_ctx.txt`, 7 lines before, 4 after). The text proposed for `help=` is two
+(each call site read with 7 lines before, 4 after). The text proposed for `help=` is two
 sentences: what the widget does, when to use it. Markdown is accepted by Streamlit's `help`.
 
 Sites skipped because a wrapper should carry the help once (4 + 5 generic):

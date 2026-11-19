@@ -92,7 +92,7 @@ for: the old module loaded from the package base beside the new one, the same de
 (`uv run xerscope sample`) through both, whole outputs compared (figure JSON digest for
 `viz/`, `AppTest` element list for `app/`), then one planted defect per rewritten function,
 each of which must fail the comparison. The script
-`scratchpad/audit/ld/time_pages.py` (LD-13) is kept as the perf smoke reference; it takes the
+`docs/refactor-front/time_pages.py` (LD-13) is kept as the perf smoke reference; it takes the
 output folder as its first argument (`time_pages.py:12`), and its counters (`baseline_for`,
 `Baseline.from_snapshot`, `run_metric` per rerun) become assertions in `tests/test_app_cache.py`
 in P7. Note that `pages.json` lists labels, values, texts, table columns and trace types
@@ -308,7 +308,7 @@ auditor had the two ranges swapped, and `fitness.json` gives `viz/charts.py` cog
 after. The `ROW_PX` token (AR-10) is **not** in this package: it turns `gantt.css`/`gantt.js` into
 templates, a rendering change (P4b).
 
-**Verification.** Digest script (scratchpad): build every figure of `viz/charts.py` and
+**Verification.** Digest script (to write beside the package): build every figure of `viz/charts.py` and
 `gantt_data()` on the demo series from the package base and from the branch, compare
 `figure.to_json()` and the Gantt rows JSON byte for byte; plant one defect
 (`digits` off by one in `_rounded_number`) and see it fail.
@@ -372,7 +372,7 @@ only the "column present or typed empty" guard becomes one function with explici
 
 **Verification.** `uv run pytest tests/test_app.py -q -k debug`; Debug tables on the demo
 series: `diagnostic_frames` output frames compared `pd.testing.assert_frame_equal` against
-the package base (script in scratchpad), one planted defect (swap `stored`/`computed` in the
+the package base (script to write beside the package), one planted defect (swap `stored`/`computed` in the
 pivot) fails it. `duplication.py --threshold 0.8` diff: the 0.87 and 0.85/0.84 pairs gone.
 
 **Findings.** DF-08, DF-09 (`692-700`, corrected), DF-07 (`debug.py:389-391, 427-429`,
@@ -482,7 +482,7 @@ bounded `join(timeout=0)` poll. `tests/test_app_cache.py` gains the counters of 
 tests/test_app_parity.py -q`: new assertions "0 `Baseline.from_snapshot`, 0
 `Baseline.planned`, 0 `renumbered` on a rerun with nothing changed" on Health, Debug,
 Gantt, Overview. `pages.json` and `standards.json` identical.
-`scratchpad/audit/ld/time_pages.py <folder>`: Health rerun under 0.10 s on the demo series
+`docs/refactor-front/time_pages.py <folder>`: Health rerun under 0.10 s on the demo series
 (was 0.22 to 0.24 s; 0.50 s with `BL_PLANNED + guid_link`), reported in the PR, not asserted.
 
 **Findings.** LD-01, LD-02, LD-03, LD-05, LD-06, LD-07 (known family), LD-11, LD-12, LD-13
@@ -871,7 +871,7 @@ new dataclass. Data privacy: readings are static project text; no schedule value
 
 ### P14 — Widget help texts (effort M, executor: mechanical executor for the texts, senior for the wrapper slots; visible, `pages.json` unchanged)
 
-**Problem.** 70 widget call sites have no `help=` (`scratchpad/audit/widgets_without_help.txt`;
+**Problem.** 70 widget call sites have no `help=` (`docs/refactor-front/widgets-without-help.txt`;
 every one opened with its context). `_column_for` (`ui.py:501-515`) gives `help=spelled_out(label)`,
 an acronym gloss only: 46 of the 130 `COLUMNS` get one, 84 get none.
 
@@ -1840,7 +1840,7 @@ again (`sed -n`, `grep -n`) before being written.
 | `uvx bandit -r src -ll` | pass ("No issues identified", second pass) |
 | `uv run pytest tests/test_app_robustness.py tests/test_fuzz_parser.py -q` | pass (second pass) |
 | `uv run python scripts/same_code.py origin/main` | exit 1: 81 ADDED, 47 CHANGED, 2 REMOVED, the branch being 36 commits ahead of `origin/main`: section 2 now says "the base of the package branch" |
-| `scratchpad/audit/ld/time_pages.py <folder>` | runs with an output folder (`time_pages.py:12`): Health rerun 0.22 s, in line with the 0.24 s quoted in P7 |
+| `docs/refactor-front/time_pages.py <folder>` | runs with an output folder (`time_pages.py:12`): Health rerun 0.22 s, in line with the 0.24 s quoted in P7 |
 | `XERSCOPE_UPDATE_GOLDEN=1 ...` (P9a) | not run: it rewrites `tests/golden/pages.json` |
 
 Everything else in section 2 is runnable as written.

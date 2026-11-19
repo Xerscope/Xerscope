@@ -39,7 +39,7 @@
   "uvx ruff check src tests scripts → PASS",
   "uvx ruff format --check src tests scripts → PASS (226 files)",
   "uv run python scripts/same_code.py origin/main → exit 1 (81 ADDED, 47 CHANGED, 2 REMOVED): branch is 36 commits ahead of origin/main; command works, 'pure move reports none' holds only against the package's own base",
-  "scratchpad/audit/ld/time_pages.py → FAILS without argv[1] output folder (time_pages.py:12, IndexError); with a folder RUNS: Health rerun 0.22 s (plan quotes 0.24 s)",
+  "docs/refactor-front/time_pages.py → FAILS without argv[1] output folder (time_pages.py:12, IndexError); with a folder RUNS: Health rerun 0.22 s (plan quotes 0.24 s)",
   "XERSCOPE_UPDATE_GOLDEN=1 pytest tests/test_page_golden.py → NOT RUN (rewrites tests/golden/pages.json)",
   "Review section appended to /home/user/Xerscope/docs/refactor-front-plan.md as '## Review of this plan'"
  ]

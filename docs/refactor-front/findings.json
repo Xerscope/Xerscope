@@ -2928,7 +2928,7 @@
    "src/xerscope/app/views/changelog.py:130",
    "src/xerscope/app/views/debug.py:51-62"
   ],
-  "evidence": "AppTest, XERSCOPE_SYNC_LOAD=1, startup 0.14 s, read 8 files + Done 1.42 s. first / rerun / rerun2 (s): overview 0.05/0.05/0.05; gantt 0.14/0.07/0.07; health 0.45/0.24/0.25; audit 0.04/0.03/0.03; changelog 0.36/0.06/0.07; forensics 1.91/0.10/0.07; earned_value 1.64/0.14/0.22; milestones 0.10/0.08/0.12; ppc 0.33/0.08/0.08; export 0.07/0.06/0.07; activity 0.06/0.05/0.06; debug 0.38/0.20/0.21. The memo works: forensics and earned_value drop 10-20x on rerun. Health (0.24 s) and debug (0.20 s) stay the slowest reruns because of LD-02/LD-06; with BL_PLANNED + guid_link health rerun rises to 0.50 s. Script: /tmp/claude-0/-home-user/48ffb350-b082-5472-a3fb-e608dcedce77/scratchpad/audit/ld/time_pages.py.",
+  "evidence": "AppTest, XERSCOPE_SYNC_LOAD=1, startup 0.14 s, read 8 files + Done 1.42 s. first / rerun / rerun2 (s): overview 0.05/0.05/0.05; gantt 0.14/0.07/0.07; health 0.45/0.24/0.25; audit 0.04/0.03/0.03; changelog 0.36/0.06/0.07; forensics 1.91/0.10/0.07; earned_value 1.64/0.14/0.22; milestones 0.10/0.08/0.12; ppc 0.33/0.08/0.08; export 0.07/0.06/0.07; activity 0.06/0.05/0.06; debug 0.38/0.20/0.21. The memo works: forensics and earned_value drop 10-20x on rerun. Health (0.24 s) and debug (0.20 s) stay the slowest reruns because of LD-02/LD-06; with BL_PLANNED + guid_link health rerun rises to 0.50 s. Script: docs/refactor-front/time_pages.py.",
   "already_known": false,
   "proposed_fix": "Keep this script as a perf smoke test (tests/test_app_cache.py already counts run_metric calls: add a 'no baseline rebuilt on rerun' counter for Baseline.planned/from_snapshot and renumbered).",
   "impact": "low",
@@ -2936,12 +2936,12 @@
   "votes": [
    {
     "verdict": "partly",
-    "reason": "The script exists at /tmp/claude-0/-home-user/48ffb350-b082-5472-a3fb-e608dcedce77/scratchpad/audit/ld/time_pages.py (ls); the timings were not reproduced in this review and are unverified. Cited code sites (forensics.py:181-184 memo, ev 504-534, health 491, debug 51-62) are consistent with the explanation.",
+    "reason": "The script exists at docs/refactor-front/time_pages.py (ls); the timings were not reproduced in this review and are unverified. Cited code sites (forensics.py:181-184 memo, ev 504-534, health 491, debug 51-62) are consistent with the explanation.",
     "corrected": null
    },
    {
     "verdict": "confirmed",
-    "reason": "Script exists at /tmp/claude-0/-home-user/48ffb350-b082-5472-a3fb-e608dcedce77/scratchpad/audit/ld/time_pages.py; cited hot spots (health.py:491 standard_results, debug.py:51-62) match LD-02/LD-06. Timings are the author's run, not reproduced here; a measurement record, not a defect.",
+    "reason": "Script exists at docs/refactor-front/time_pages.py; cited hot spots (health.py:491 standard_results, debug.py:51-62) match LD-02/LD-06. Timings are the author's run, not reproduced here; a measurement record, not a defect.",
     "corrected": null
    },
    {
@@ -2951,7 +2951,7 @@
    },
    {
     "verdict": "confirmed",
-    "reason": "Script exists at /tmp/claude-0/-home-user/48ffb350-b082-5472-a3fb-e608dcedce77/scratchpad/audit/ld/time_pages.py (read lines 1-60: AppTest with XERSCOPE_SYNC_LOAD=1, wraps baseline_for/from_snapshot/run_metric). I re-ran the counts, not the timings: health 20 baseline_for and 1 from_snapshot per rerun agree with LD-02/LD-03. Timings themselves unverified by me.",
+    "reason": "Script exists at docs/refactor-front/time_pages.py (read lines 1-60: AppTest with XERSCOPE_SYNC_LOAD=1, wraps baseline_for/from_snapshot/run_metric). I re-ran the counts, not the timings: health 20 baseline_for and 1 from_snapshot per rerun agree with LD-02/LD-03. Timings themselves unverified by me.",
     "corrected": null
    }
   ]
