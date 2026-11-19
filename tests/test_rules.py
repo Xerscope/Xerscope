@@ -1885,3 +1885,287 @@ def test_dcma_14_counts_a_finish_on_the_status_date_as_completed():
     r = run(DCMA, "DCMA-14", s, Baseline.planned(s))
     assert (r.numerator, r.denominator) == (1, 2)
     assert "1 completed after the status date" in r.note
+
+
+# --- rules for a company standard: one project start, one project finish; float between two bounds
+
+
+@pytest.mark.oracle("standard")
+def test_single_project_start_and_finish_pass_one_task_only():
+    """A standard that allows exactly one task without a predecessor and one without a successor
+    (requirement "the first activity is the only activity permitted to not have a predecessor").
+    Hand count: S1 and S2 both start on the earliest date with no predecessor, so neither is the
+    single first task and both are flagged; F1 finishes last alone and passes. ``project_start``
+    (the lenient exemption) passes both S1 and S2."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("S1", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("S2", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("S3", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+            todo("F1", early_start_date="2026-03-23 08:00", early_end_date="2026-03-27 17:00"),
+        ],
+        [("S1", "F1", "FS", 0), ("S2", "F1", "FS", 0), ("S3", "F1", "FS", 0)],
+    )
+    strict = RULES["missing_logic"].fn(
+        AnalysisContext(s), exclude=[], pred_exempt=["single_project_start"], succ_exempt=["single_project_finish"]
+    )
+    assert dict(zip(strict.flagged["task_code"], strict.flagged["reason"], strict=True)) == {
+        "S1": "no predecessor",
+        "S2": "no predecessor",
+        "S3": "no predecessor",
+    }
+    assert (strict.numerator, strict.denominator) == (3, 4)
+    lenient = RULES["missing_logic"].fn(
+        AnalysisContext(s), exclude=[], pred_exempt=["project_start"], succ_exempt=["project_finish"]
+    )
+    assert codes(lenient) == ["S3"]
+
+
+@pytest.mark.oracle("standard")
+def test_single_project_start_passes_the_only_earliest_task():
+    """One task alone on the earliest start: it is the single first task and passes; the later
+    open start is flagged. Symmetric for the finish: F1 and F2 both end last, both flagged."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("S1", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("S3", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00"),
+            todo("F1", early_start_date="2026-03-23 08:00", early_end_date="2026-03-27 17:00"),
+            todo("F2", early_start_date="2026-03-23 08:00", early_end_date="2026-03-27 17:00"),
+        ],
+        [("S1", "F1", "FS", 0), ("S3", "F2", "FS", 0)],
+    )
+    r = RULES["missing_logic"].fn(
+        AnalysisContext(s), exclude=[], pred_exempt=["single_project_start"], succ_exempt=["single_project_finish"]
+    )
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
+        "S3": "no predecessor",
+        "F1": "no successor",
+        "F2": "no successor",
+    }
+
+
+@pytest.mark.oracle("standard")
+def test_float_between_two_bounds_includes_both_bounds():
+    """Requirement "between 5 % and 15 % of the remaining activities have 0d-20d total float":
+    ``op = "between"`` flags a float within [value, value_max], bounds included (ISO 29119-4
+    boundary values: -1, 0, 20, 21 working days of an 8 h day, so -8, 0, 160, 168 hours).
+    Hand count: 0 and 20 d in, -1 and 21 d out -> 2 / 4."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("N", total_float_hr_cnt="-8"),
+            todo("Z", total_float_hr_cnt="0"),
+            todo("T", total_float_hr_cnt="160"),
+            todo("O", total_float_hr_cnt="168"),
+        ]
+    )
+    r = RULES["float"].fn(AnalysisContext(s), op="between", value=0, value_max=20, unit="days", exclude=[])
+    assert (codes(r), r.numerator, r.denominator) == (["T", "Z"], 2, 4)
+    in_hours = RULES["float"].fn(AnalysisContext(s), op="between", value=0, value_max=160, unit="hours", exclude=[])
+    assert codes(in_hours) == ["T", "Z"]
+
+
+@pytest.mark.oracle("standard")
+def test_float_between_with_bounds_reversed_is_refused_on_load():
+    """``value_max`` below ``value`` would flag nothing and pass silently: refused when the standard
+    is read, with the metric named."""
+    from xerscope.analysis.standards import loads_standard
+
+    text = """
+[standard]
+id = "T"
+name = "t"
+[[metric]]
+id = "T-1"
+name = "float band"
+rule = "float"
+target = ">= 5%"
+params = { op = "between", value = 20, value_max = 0, unit = "days" }
+"""
+    with pytest.raises(ValueError, match=r"T-1.*value_max"):
+        loads_standard(text, "t.toml")
+    accepted = loads_standard(text.replace("value_max = 0", "value_max = 20"), "t.toml")
+    assert accepted.metrics[0].params["value_max"] == 20
+
+
+# --- rules for a company standard: relationships of a type with no lag, and which links are listed
+
+
+@pytest.mark.oracle("standard")
+def test_relationship_type_with_zero_lag_counts_the_type_and_the_lag_together():
+    """Requirement "90 % of relationships are Finish-Start with 0d lag": a link counts when it is
+    of the type and its lag is zero (blank = 0; a lead is not zero). Hand count on 6 links: A->B FS 0,
+    B->C FS 0, C->D FS blank, D->E FS 8 h, B->E FS -4 h, A->E SS 0. Type alone: 5 / 6; type and zero
+    lag: 3 / 6."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [todo("A"), todo("B"), todo("C"), todo("D"), todo("E")],
+        [
+            ("A", "B", "FS", 0),
+            ("B", "C", "FS", 0),
+            ("C", "D", "FS", ""),
+            ("D", "E", "FS", 8),
+            ("B", "E", "FS", -4),
+            ("A", "E", "SS", 0),
+        ],
+    )
+    plain = RULES["relationship_type"].fn(AnalysisContext(s), type="FS", links="all")
+    assert counts(plain) == (5, 6) and plain.value == pytest.approx(500 / 6)
+    strict = RULES["relationship_type"].fn(AnalysisContext(s), type="FS", links="all", zero_lag=True)
+    assert counts(strict) == (3, 6) and strict.value == pytest.approx(50.0)
+    assert links(strict) == [("A", "E"), ("B", "E"), ("D", "E")]  # the others, as before
+
+
+@pytest.mark.oracle("standard")
+def test_relationship_type_can_list_the_links_of_the_type():
+    """For a forbidden type ("no Start-Finish"), the list to read is the links of that type, not
+    the others: ``listed = "of_type"`` lists them; the counts do not change."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "SF", 0), ("B", "C", "FS", 0)])
+    of_type = RULES["relationship_type"].fn(AnalysisContext(s), type="SF", links="all", listed="of_type")
+    assert links(of_type) == [("A", "B")] and counts(of_type) == (1, 2)
+    others = RULES["relationship_type"].fn(AnalysisContext(s), type="SF", links="all")
+    assert links(others) == [("B", "C")] and counts(others) == (1, 2)
+
+
+@pytest.mark.oracle("standard")
+def test_relationship_type_refuses_an_unknown_listed_value_on_load():
+    from xerscope.analysis.standards import loads_standard
+
+    text = """
+[standard]
+id = "T"
+name = "t"
+[[metric]]
+id = "T-1"
+name = "FS share"
+rule = "relationship_type"
+target = ">= 90%"
+params = { type = "FS", links = "all", zero_lag = true, listed = "both" }
+"""
+    with pytest.raises(ValueError, match=r"T-1.*listed.*'both'"):
+        loads_standard(text, "t.toml")
+
+
+# --- rules for a company standard: resource loaded = budgeted labour units
+
+
+@pytest.mark.oracle("standard")
+def test_no_resource_can_require_budgeted_labour_units():
+    """Requirement "over 90 % of activities have resource labour units (excluding milestones)":
+    ``kind = "labour_units"`` reads the budgeted labour units (TASK target_work_qty, else the sum
+    of the labour and role assignments' target_qty, as P6 shows them), not the presence of an
+    assignment. Hand count on 4 tasks: L labour 80 h, M material only (5 units), Z labour
+    assignment of 0 h, N nothing; milestone MS excluded. Any assignment: N without -> 1 / 4.
+    Labour units: M, N, Z without -> 3 / 4. An expense does not count as labour."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [todo("L"), todo("M"), todo("Z"), todo("N"), todo("MS", task_type="TT_FinMile", target_drtn_hr_cnt="0")],
+        assign=[
+            {"task_code": "L", "rsrc_id": "R1", "rsrc_type": "RT_Labor", "target_qty": "80"},
+            {"task_code": "M", "rsrc_id": "R2", "rsrc_type": "RT_Mat", "target_qty": "5"},
+            {"task_code": "Z", "rsrc_id": "R1", "rsrc_type": "RT_Labor", "target_qty": "0"},
+        ],
+        costs=["N"],
+    )
+    any_kind = RULES["no_resource"].fn(AnalysisContext(s), exclude=["milestones"], expenses_count=False)
+    assert (codes(any_kind), counts(any_kind)) == (["N"], (1, 4))
+    labour = RULES["no_resource"].fn(
+        AnalysisContext(s), exclude=["milestones"], expenses_count=False, kind="labour_units"
+    )
+    assert (codes(labour), counts(labour)) == (["M", "N", "Z"], (3, 4))
+    with_expenses = RULES["no_resource"].fn(AnalysisContext(s), exclude=["milestones"], kind="labour_units")
+    assert codes(with_expenses) == ["M", "Z"]  # N has an expense and expenses_count defaults to true
+
+
+# --- rules for a company standard: activities starting or finishing on the data date
+
+
+@pytest.mark.oracle("standard")
+def test_on_data_date_flags_a_start_or_finish_on_the_status_date_day():
+    """Requirement "less than 10 % of activities start or finish on the data date": the activity's
+    start (actual, else forecast) or finish (actual, else forecast) falls on the data date, read by
+    calendar day by default. Data date 2026-03-02 08:00. Hand count on 5 tasks: S forecast start
+    02/03 08:00; F forecast finish 02/03 17:00; A actual finish 02/03 12:00 (complete); O starts
+    03/03; B started 23/02, finishes 13/03. By day: S, F, A -> 3 / 5; completed excluded: S, F -> 2 / 4.
+    By timestamp (08:00 exactly): S alone."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("S", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("F", early_start_date="2026-02-23 08:00", early_end_date="2026-03-02 17:00"),
+            done("A", act_start_date="2026-02-23 08:00", act_end_date="2026-03-02 12:00"),
+            todo("O", early_start_date="2026-03-03 08:00", early_end_date="2026-03-06 17:00"),
+            active("B", early_start_date="2026-02-23 08:00", early_end_date="2026-03-13 17:00"),
+        ]
+    )
+    by_day = RULES["on_data_date"].fn(AnalysisContext(s), exclude=[])
+    assert (codes(by_day), counts(by_day)) == (["A", "F", "S"], (3, 5))
+    assert dict(zip(by_day.flagged["task_code"], by_day.flagged["reason"], strict=True)) == {
+        "S": "starts on the data date",
+        "F": "finishes on the data date",
+        "A": "finishes on the data date",
+    }
+    open_only = RULES["on_data_date"].fn(AnalysisContext(s), exclude=["complete"])
+    assert (codes(open_only), counts(open_only)) == (["F", "S"], (2, 4))
+    exact = RULES["on_data_date"].fn(AnalysisContext(s), exclude=[], date_grain="timestamp")
+    assert codes(exact) == ["S"]
+
+
+@pytest.mark.oracle("standard")
+def test_on_data_date_without_a_status_date_is_not_applicable():
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A")], data_date="")
+    r = RULES["on_data_date"].fn(AnalysisContext(s))
+    assert r.value is None and r.numerator is None and "no status date" in r.note
+
+
+# --- rules for a company standard: a lag limit relative to the project's working hours
+
+
+@pytest.mark.oracle("standard")
+def test_lag_limit_as_a_share_of_the_project_working_hours():
+    """Requirement "less than 5 % of relationships have a lag that exceeds 10 % of the project's
+    total duration": the limit is a share of the project's working hours, from its planned start
+    to its forecast finish on its default calendar (maintainer's decision, 2026-11-19), and the lag
+    is compared in hours as stored, whatever the lag calendar.
+    Hand count: project 2026-03-02 08:00 to 2026-03-13 17:00 on the 8 h Monday-Friday calendar =
+    10 days x 8 h = 80 h; 10 % = 8 h. Links: A->B lag 9 h flagged, A->C lag 8 h not (op >),
+    A->D lead -5 h not. 1 / 3. Lag 8.5 h on A->C instead: 2 / 3 (boundary just above).
+    The data date is a week after the planned start: the hours run from the planned start, not
+    from the data date (which would give 40 h)."""
+    from xerscope.analysis.rules import RULES
+
+    tasks = [todo("A"), todo("B"), todo("C"), todo("D")]
+    a_week_in = {"data_date": "2026-03-09 08:00", "project": {"plan_start_date": "2026-03-02 08:00"}}
+    s = snap(tasks, [("A", "B", "FS", 9), ("A", "C", "FS", 8), ("A", "D", "FS", -5)], **a_week_in)
+    assert s.planned_start != s.data_date and s.project_work_hours() == 80
+    r = RULES["lag"].fn(AnalysisContext(s), op=">", value=10, unit="project_pct", links="all")
+    assert (links(r), counts(r)) == ([("A", "B")], (1, 3))
+    edge = snap(tasks, [("A", "B", "FS", 9), ("A", "C", "FS", 8.5), ("A", "D", "FS", -5)], **a_week_in)
+    assert links(RULES["lag"].fn(AnalysisContext(edge), op=">", value=10, unit="project_pct", links="all")) == [
+        ("A", "B"),
+        ("A", "C"),
+    ]
+
+
+@pytest.mark.oracle("standard")
+def test_lag_share_of_the_project_without_dates_is_not_applicable():
+    """No planned start (no PROJECT dates at all): the project has no working hours, the metric is
+    n/a with a note, never a comparison against NaN."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A"), todo("B")], [("A", "B", "FS", 9)], data_date="")
+    assert s.project_work_hours() != s.project_work_hours()  # NaN
+    r = RULES["lag"].fn(AnalysisContext(s), op=">", value=10, unit="project_pct", links="all")
+    assert r.value is None and r.numerator is None and "planned start" in r.note

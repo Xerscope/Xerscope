@@ -540,6 +540,27 @@ def test_project_id_selects_exactly_when_two_projects_share_a_code():
     assert build_snapshot(raw).file_baseline.code == "UPD"
 
 
+@pytest.mark.oracle("property")
+def test_the_baseline_a_file_names_is_resolved_once_per_snapshot(monkeypatch):
+    """The app's cache key reads ``file_baseline`` of every update on every call (state.py,
+    ``_baseline_identity``): a snapshot is read-only, so the PROJECT rows are searched once.
+    A snapshot made by ``dataclasses.replace`` is another one and resolves its own."""
+    import dataclasses
+
+    from xerscope.xer import model
+
+    resolutions = []
+    resolve = model.file_baseline
+    monkeypatch.setattr(model, "file_baseline", lambda *arguments: resolutions.append(1) or resolve(*arguments))
+    analysed = _snapshot()
+    first, second = analysed.file_baseline, analysed.file_baseline
+    assert (first.proj_id, first.usable) == ("2", True)  # the pointer of two_projects(), as the tests above
+    assert second is first and len(resolutions) == 1
+    other_project = dataclasses.replace(analysed, project_id="2")
+    assert other_project.file_baseline.proj_id == ""  # project 2 names no baseline of its own
+    assert len(resolutions) == 2
+
+
 def test_p6_12_and_p6_13_take_the_baseline_they_are_given():
     # P6-12 / P6-13 read context.baseline and nothing else: the file's baseline gives, by hand,
     # A1 and A2 forecast Fri 03-13 against a baseline finish Fri 03-06 (2 late of 2), and none completed

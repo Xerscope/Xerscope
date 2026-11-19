@@ -1222,6 +1222,39 @@ def test_a_folder_without_a_p6_xml_export_offers_no_folder_baseline_file(sample_
     assert not [box for box in at.selectbox if box.key == "draft_bl_folder_file"]
 
 
+@pytest.mark.oracle("property")
+def test_the_window_that_asks_for_the_baseline_shows_no_file_and_done_keeps_the_series(sample_dir, monkeypatch):
+    """Once a series is read the window opens by itself for the baseline. It showed the Files section
+    too: in a browser its boxes came back unticked under "8 of 8 ticked", and Done there read no file
+    at all. Asked for the baseline, the window holds the Baseline section alone and Done keeps the
+    files read: the same series, not read again. From the sidebar's lines it keeps both sections."""
+    from conftest import is_waiting_for_baseline
+
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    for box in file_boxes(at):
+        box.check()
+    at.button(key="files_done").click()
+    at.run()
+    _ok(at)
+    assert is_waiting_for_baseline(at) and at.session_state["files_open"]
+    titles = [html.body for html in at.get("html") if html.body.startswith('<div class="xd-title">')]
+    assert len(titles) == 1 and "Baseline" in titles[0]
+    assert file_boxes(at) == []
+    series, source = at.session_state["store"], at.session_state["files_source"]
+    assert len(series) == 8  # the demo: eight weekly updates
+
+    at.button(key="files_done").click()
+    at.run()
+    _ok(at)
+    assert not is_waiting_for_baseline(at) and not at.session_state["files_open"]
+    assert at.session_state["store"] is series and at.session_state["files_source"] == source
+    assert files_line(at) == "Files · 8 files · 1 project"
+    open_files(at)
+    assert len(file_boxes(at)) == 8 and all(box.value for box in file_boxes(at))
+
+
 def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app):
     """The sidebar's Baseline line opens the same window, Baseline section first; a choice applied
     with Done stays once the window is closed, although its selectors are no longer drawn."""
@@ -2727,6 +2760,21 @@ def test_score_cards_not_computed_show_a_short_value(app):
     assert all(m.value == "–" and m.delta == "not computed yet" for m in cards)
 
 
+def test_score_cards_include_a_standard_of_the_standards_folder(sample_dir, tmp_path, monkeypatch):
+    """A standard read from XERSCOPE_STANDARDS gets its score card beside the four built-in ones,
+    with the standard's name; the Schedule health and Audit pages already list it."""
+    from xerscope.analysis.standards import template_text
+
+    (tmp_path / "mine.toml").write_text(template_text(), encoding="utf-8")  # id CUSTOM, "My standard"
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_STANDARDS", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    _ok(at)
+    cards = [m.label for m in at.metric if m.label.endswith(" score")]
+    assert len(cards) == 5 and cards[-1] == "My standard score"
+
+
 def test_runtime_block_names_what_the_app_read(app):
     """Debug block 12: the fonts, the config and the package that runs, for a page that looks old."""
     app.switch_page("views/debug.py").run()
@@ -2851,6 +2899,33 @@ def test_gantt_table_view_writes_a_dash_for_a_missing_float_and_shrinks_to_its_r
     assert len(opened) < 20 and data["height"] < 680  # a short tree takes less than the cap
 
 
+@pytest.mark.oracle("property")
+def test_a_missing_number_reads_as_a_dash_in_a_table(app):
+    """st.dataframe writes "None" for a missing number unless told what to write. The Changelog of
+    the demo holds changes without a Δ (a status, an actual date): every table writes the dash the
+    text columns already take (``ui.blank_missing``)."""
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    changes = next(d for d in app.dataframe if "delta" in d.value.columns)
+    assert changes.value["delta"].isna().any()  # numbers, some missing: not a text column
+    assert {d.proto.placeholder for d in app.dataframe} == {"–"}
+
+
+@pytest.mark.oracle("property")
+def test_the_audit_settings_are_read_as_text_not_as_dates(app):
+    """The sheet's "now" column holds a target ("<= 0") or a parameter. ``ui.COLUMNS`` knows a
+    "now" that is a date (the Changelog's), and the target was drawn as 2000-01-01."""
+    app.switch_page("views/audit.py").run()
+    app.get("button_group")[0].set_value("DCMA").run()
+    app.selectbox(key="audit_check:DCMA").set_value("DCMA-02").run()
+    _ok(app)
+    sheet = next(d for d in app.dataframe if list(d.value.columns) == ["setting", "now", "default", "accepts"])
+    assert sheet.value.loc[0, ["now", "default"]].tolist() == ["<= 0", "<= 0"]  # dcma.toml, DCMA-02
+    drawn_as = json.loads(sheet.proto.columns)
+    kinds = {name: drawn_as[name]["type_config"]["type"] for name in sheet.value.columns}
+    assert kinds == {"setting": "text", "now": "text", "default": "text", "accepts": "text"}
+
+
 def test_charts_hide_the_plotly_mode_bar(app):
     for page in ("views/overview.py", "views/earned_value.py", "views/ppc.py"):
         app.switch_page(page).run()
@@ -2902,3 +2977,31 @@ def test_overview_lists_a_period_across_midnight_under_limits(tmp_path, monkeypa
         w.value for w in at.warning
     ]
     assert "Limits" in [s.value for s in at.subheader]
+
+
+# --- a standard of your own: the funnel names its source, the picker lists it on the run it loads
+
+
+def test_funnel_caption_names_the_standard_source_behind_an_exclusion_of_your_own():
+    """An exclusion set in a company standard's TOML follows no Oracle or DCMA page: its step is sourced
+    "xerscope", and the caption then names the standard's own ``source`` text, when it has one."""
+    from xerscope.analysis.populations import Funnel, Step
+    from xerscope.app.sets import source_caption
+
+    funnel = Funnel(pd.DataFrame(), steps=[Step("not complete", "xerscope", pd.DataFrame(), 0)])
+    assert source_caption(funnel, "Internal procedure XYZ rev. A") == "xerscope: Internal procedure XYZ rev. A"
+    assert source_caption(funnel).startswith("xerscope: docs/standards.md")
+    oracle = Funnel(pd.DataFrame(), steps=[Step("not complete", "101248", pd.DataFrame(), 0)])
+    assert source_caption(oracle, "Internal procedure XYZ rev. A") == "101248"
+
+
+def test_uploaded_standard_is_in_the_picker_on_the_run_that_loads_it(app):
+    """The picker sits above the upload box: the standard just uploaded is read before the picker is
+    drawn, so it is listed at once, not on the next rerun."""
+    from xerscope.analysis.standards import template_text
+
+    app.switch_page("views/health.py").run()
+    app.file_uploader(key="std_upload").set_value(("mine.toml", template_text().encode(), "application/toml")).run()
+    _ok(app)
+    assert any(s.value.startswith("Loaded") for s in app.success)
+    assert "My standard" in app.segmented_control(key="health_std").options

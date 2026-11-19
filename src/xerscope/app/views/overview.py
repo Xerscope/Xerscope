@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import builtin_standards, standard_score
+from xerscope.analysis import standard_score
 from xerscope.analysis.explain import KPI_FORMULAS, critical_definition
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
@@ -69,41 +69,51 @@ ui.kpis(
 ui.section(
     "Score by standard",
     "Checks in pass over checks evaluated, on the latest update and the baseline picked in the sidebar. "
-    "Shown once Schedule health or the button has computed them: the four standards take several seconds "
+    "Shown once Schedule health or the button has computed them: the standards take several seconds "
     "on a large file.",
 )
-built_in = {key: standard for key, standard in standards().items() if key in builtin_standards()}
+available = standards()  # the built-in ones, the XERSCOPE_STANDARDS folder and this session's uploads
 loading = st.session_state.get("_load_job") is not None  # the series is still being read
 
 
 def score_section(polling: bool) -> None:
     """The score cards. ``polling``: the scores are computed in a thread (``score_job``); this runs
     as a fragment every second and fills each card as its standard finishes, the rest of the page
-    not drawn again. The timer goes with the next full run of the page, which no longer polls."""
-    held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
+    not drawn again (``poll_scores``)."""
+    held = {key: standard_results_held(standard, latest) for key, standard in available.items()}
     missing = [key for key, results in held.items() if results is None]
     if missing and polling:
-        job = score_job(latest, store, built_in)
-        held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
+        job = score_job(latest, store, available)
+        held = {key: standard_results_held(standard, latest) for key, standard in available.items()}
         failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
         for message in failed:
             st.error(message, icon=":material/error:")
         if not job.done:
-            st.caption(f"Computing the scores · {len(job.held)}/{len(built_in)} standards")
+            st.caption(f"Computing the scores · {len(job.held)}/{len(available)} standards")
     elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
-        held = {key: standard_results(standard, latest, store) for key, standard in built_in.items()}
+        held = {key: standard_results(standard, latest, store) for key, standard in available.items()}
     ui.score_cards(
-        {built_in[key].name: None if results is None else standard_score(results) for key, results in held.items()}
+        {available[key].name: None if results is None else standard_score(results) for key, results in held.items()}
     )
 
 
-polling = (
-    background_jobs()
-    and not loading
-    and any(standard_results_held(standard, latest) is None for standard in built_in.values())
-)
-if polling:
-    st.fragment(score_section, run_every=1.0)(polling=True)
+def is_a_score_missing() -> bool:
+    """Whether a listed standard has a check that is not computed yet."""
+    return any(standard_results_held(standard, latest) is None for standard in available.values())
+
+
+def poll_scores() -> None:
+    """Draw the score cards, as the fragment does every second, or end the polling. The timer of a
+    fragment only goes with a full run of the page: a poll that finds every score asks for one, and
+    the page then draws the cards without a fragment. Left to its timer, it read every check again
+    each second for as long as the page stayed open."""
+    if not is_a_score_missing():
+        st.rerun(scope="app")
+    score_section(polling=True)
+
+
+if background_jobs() and not loading and is_a_score_missing():
+    st.fragment(poll_scores, run_every=1.0)()
 else:
     score_section(polling=False)
 

@@ -22,18 +22,21 @@ from xerscope.app import ui
 from xerscope.app.state import csv_download
 
 
-def source_text(key: str) -> str:
+def source_text(key: str, own_source: str = "") -> str:
     """A step's source as the caption shows it: its key alone for a web page, with its text otherwise.
 
+    An "xerscope" step (an exclusion a standard of your own sets) names that standard's ``source``.
     The app shows no external link: the address of a web page is in docs/standards.md, Sources.
     """
+    if key == "xerscope" and own_source:
+        return f"{key}: {own_source}"
     source = STEP_SOURCES[key]
     return key if source.startswith("http") else f"{key}: {source}"
 
 
-def source_caption(funnel) -> str:
-    """The sources a funnel's steps follow, on one line."""
-    return " · ".join(source_text(key) for key in step_sources(funnel))
+def source_caption(funnel, own_source: str = "") -> str:
+    """The sources a funnel's steps follow, on one line; ``own_source`` is the standard's own text."""
+    return " · ".join(source_text(key, own_source) for key in step_sources(funnel))
 
 
 def show_set(frame: pd.DataFrame, title: str, filename: str, key: str, sources: list[str]) -> None:
@@ -88,7 +91,7 @@ def show_funnel(result, snapshot, sources: list[str]) -> None:
         overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
     )
     if result.funnel.steps:
-        st.caption(source_caption(result.funnel))
+        st.caption(source_caption(result.funnel, result.metric.source))
     show_removed(result, snapshot, sources)
 
 

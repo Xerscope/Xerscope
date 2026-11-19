@@ -309,7 +309,7 @@ def test_caddy_security_headers_and_their_ci_check():
         "Referrer-Policy no-referrer",
         "X-Content-Type-Options nosniff",
         "frame-ancestors 'self'",
-        'Strict-Transport-Security "max-age=31536000"',
+        'Strict-Transport-Security "max-age=31536000; includeSubDomains"',
         'Permissions-Policy "camera=(), microphone=(), geolocation=()"',
     )
     for line in headers:
@@ -332,6 +332,66 @@ def test_caddy_logs_keep_no_token_and_no_project_code():
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     assert caddy.count("request>headers>Sec-Websocket-Protocol delete") == 2  # error log and access log
     assert "resp_headers>Content-Disposition delete" in caddy
+
+
+def test_caddy_closes_each_connection_except_a_websocket_handshake():
+    """tailscaled reuses its connections to Caddy from one visitor to the next: Caddy closes each
+    one after its response. The handshake of Streamlit's WebSocket must answer "Connection: Upgrade";
+    with "Connection: close" on it, the proxy in front answers 502 and the app never loads."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    assert "@not_upgrade not header_regexp Connection (?i)upgrade" in caddy  # any spelling a client sends
+    assert "header @not_upgrade Connection close" in caddy
+    assert not re.search(r"^\s*header Connection close", caddy, re.M)  # never on every response
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads both in Caddy's log
+    assert r"""grep -q '"Connection": \["close"\]'   # no connection kept""" in wf
+    assert '--header "Connection: Upgrade" --header "Upgrade: websocket"' in wf
+    assert "Connection: close on a WebSocket handshake" in wf
+
+
+def test_ci_fails_when_the_secret_prefix_reaches_the_log():
+    """In the deploy job's script, bash -e ignores a command inverted with "!" unless it is the
+    last one: the prefix check stops the step itself."""
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'if grep -q "$XERSCOPE_PATH" caddy.log; then echo "the secret prefix is in Caddy\'s log"; exit 1; fi' in wf
+    assert '! grep -q "$XERSCOPE_PATH" caddy.log' not in wf
+
+
+def test_caddy_marks_the_app_cookie_secure():
+    """Streamlit marks its XSRF cookie Secure only when it serves TLS itself (server.sslCertFile).
+    Behind Funnel the certificate is tailscaled's: Caddy adds the attribute to the cookies the app sets."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    protected = caddy[caddy.index("handle_path /{$XERSCOPE_PATH}/*") : caddy.index("    handle {")]
+    assert 'header >Set-Cookie (.*) "$1; Secure"' in protected  # ">": after the upstream's own headers
+
+
+def test_caddy_answers_404_on_the_app_routes_the_page_never_asks_for():
+    """/_stcore/metrics (session counters) and /_stcore/agent/* (the description of the agent API,
+    which is off) are Streamlit routes the page does not call: a signed-in visitor gets 404, anyone
+    else the password prompt first."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    protected = caddy[caddy.index("handle_path /{$XERSCOPE_PATH}/*") : caddy.index("    handle {")]
+    assert "@unused path /_stcore/metrics /_stcore/agent/*" in protected
+    assert "respond @unused 404" in protected
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job asks Caddy for both
+    assert 'get "http://127.0.0.1:8080/$XERSCOPE_PATH/_stcore/metrics"' in wf  # without the password: 401
+    assert "for route in _stcore/metrics _stcore/agent/openapi.json; do" in wf
+    assert 'get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/$route"' in wf  # with it: 404, not the app
+
+
+def test_caddy_policy_forbids_plug_ins_and_base_and_hsts_covers_sub_domains():
+    """OWASP ASVS 5.0.0, 3.4.3: the policy holds at least object-src 'none' and base-uri 'none'.
+    3.4.1: from level 2 the HSTS policy covers the sub-domains too; without it, a sub-domain answered
+    in clear by someone on the network sets a cookie for the app's name before the visit, and
+    Streamlit keeps the XSRF token of the cookie a visitor arrives with."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
+    assert '''Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"''' in block
+    assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains"' in block
+    # one value each: a second header line would add a policy or replace the first
+    assert caddy.count("Content-Security-Policy") == 1 and caddy.count("Strict-Transport-Security") == 1
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads the exact values
+    assert r"""\[\"frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]""" in wf
+    assert r"""'"Strict-Transport-Security": \["max-age=31536000; includeSubDomains"\]'""" in wf
 
 
 def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():

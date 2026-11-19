@@ -528,6 +528,11 @@ class Snapshot:
         default = next(iter(self.work_calendars.values()), None)
         return default or WorkCalendar.standard()
 
+    def project_work_hours(self) -> float:
+        """Working hours from the planned start to the forecast finish on the project's default
+        calendar (P6's project duration in hours); NaN when either date is missing (``work_hours``)."""
+        return self.calendar().work_hours(self.planned_start, self.finish_date)
+
     def _calendar_of(self, clndr_id: object) -> WorkCalendar:
         """``calendar`` for a cell value: anything but a string (NaN, None) means the default."""
         return self.calendar(clndr_id if isinstance(clndr_id, str) else None)
@@ -565,8 +570,9 @@ class Snapshot:
         the id is blank or unknown): for one activity's dates. ``working_days`` does it row by row."""
         return self.calendar(clndr_id).working_days(start, end)
 
-    @property
+    @cached_property
     def file_baseline(self) -> FileBaseline:
+        """The baseline the file names for this project, resolved once: a snapshot is read-only."""
         return file_baseline(self.file_projects, self.project_id)
 
     @property

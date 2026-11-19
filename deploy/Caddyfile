@@ -30,12 +30,20 @@
     header {                             # every response, 404 and 401 included
         Referrer-Policy no-referrer      # a link the page opens never carries the URL, i.e. the secret prefix
         X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
-        Content-Security-Policy "frame-ancestors 'self'"   # no other site can frame the app (clickjacking)
-        Strict-Transport-Security "max-age=31536000"   # the browser never tries the name over plain HTTP
+        # no other site can frame the app (clickjacking); no plug-in content, and no <base> to move the
+        # page's relative URLs elsewhere (the page uses neither)
+        Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+        # the browser never tries the name over plain HTTP, nor a sub-domain of it: one answered in clear
+        # by someone on the network could set a cookie for this name before the visit
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"   # the app uses none of them
     }
     header -Server   # neither Caddy nor uvicorn names itself; a deletion is deferred, so it stays out of
                      # the block above, which must also reach the 401 (an error, where deferred ops do not run)
+    @not_upgrade not header_regexp Connection (?i)upgrade   # tailscaled keeps its connections to Caddy open
+    header @not_upgrade Connection close   # and reuses them for the next visitor: closed after each response,
+                     # none is left for a smuggled request to land on. A WebSocket handshake (Streamlit's
+                     # /_stcore/stream) must answer "Connection: Upgrade", so it is left alone
     redir /{$XERSCOPE_PATH} /{$XERSCOPE_PATH}/ 308   # the page's relative asset URLs need the trailing slash
     handle_path /{$XERSCOPE_PATH}/* {              # strips the prefix: Streamlit keeps serving "/"
         rate_limit {                     # runs before basic_auth (the module's directive order): a client over
@@ -53,6 +61,11 @@
         header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
         @page path / /index.html         # the page names the hashed JS chunks of the running image
         header @page >Cache-Control no-cache   # revalidated: after an update a plain reload gets the new chunk names
+        header >Set-Cookie (.*) "$1; Secure"   # Streamlit marks its XSRF cookie Secure only when it holds the
+                                               # certificate itself; here tailscaled does, so Caddy adds it
+        @unused path /_stcore/metrics /_stcore/agent/*   # the app's session counters and the description of its
+        respond @unused 404                              # agent API (off): the page asks for neither. respond
+                                                         # runs after basic_auth: 401 without the password
         reverse_proxy app:8501    # network alias: "xerscope" is tailscale's hostname here
     }
     handle {

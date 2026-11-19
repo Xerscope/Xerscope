@@ -1,3 +1,4 @@
+import contextlib
 from functools import partial
 
 import pandas as pd
@@ -402,6 +403,25 @@ def show_report_comparison(results, standard) -> None:
         )
 
 
+def load_uploaded_standard(upload) -> str:
+    """The uploaded TOML registered for the session; returns the message to show, "" for no upload.
+    Raises ValueError for a bad file or a built-in id."""
+    if upload is None:
+        return ""
+    custom = loads_standard(upload.getvalue(), upload.name)
+    if custom.id in builtin_standards():
+        raise ValueError(f"{upload.name}: id {custom.id!r} is a built-in standard's; give yours another id")
+    st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
+    return f"Loaded {ui.md_text(custom.name)} ({len(custom.metrics)} checks): pick it above."
+
+
+def read_upload_before_the_picker() -> None:
+    """The file in the upload box (drawn lower on the page) is registered before the picker is drawn,
+    so the standard just uploaded is listed at once; its message and errors are shown by the box."""
+    with contextlib.suppress(ValueError, UnicodeDecodeError):
+        load_uploaded_standard(st.session_state.get("std_upload"))
+
+
 def show_own_standard() -> None:
     with st.expander("Use your own standard"):
         st.markdown(
@@ -417,20 +437,19 @@ def show_own_standard() -> None:
             icon=":material/download:",
         )
         upload = st.file_uploader("Upload a standard (.toml)", type=["toml"], key="std_upload")
-        if upload is not None:
-            try:
-                custom = loads_standard(upload.getvalue(), upload.name)
-                if custom.id in builtin_standards():
-                    raise ValueError(f"{upload.name}: id {custom.id!r} is a built-in standard's; give yours another id")
-                st.session_state.setdefault("uploaded_standards", {})[custom.id] = custom
-                st.success(f"Loaded {ui.md_text(custom.name)} ({len(custom.metrics)} checks): pick it above.")
-            except (ValueError, UnicodeDecodeError) as exc:
-                st.error(ui.md_text(exc))
+        try:
+            message = load_uploaded_standard(upload)
+        except (ValueError, UnicodeDecodeError) as exc:
+            st.error(ui.md_text(exc))
+        else:
+            if message:
+                st.success(message)
         for error in st.session_state.get("standard_errors", []):
             st.error(ui.md_text(error))
 
 
 store = require_store()
+read_upload_before_the_picker()
 available = standards()
 
 
