@@ -45,14 +45,14 @@ FLOORS = {
     "H20": 0.945,
     "H21": 0.999,
     "H22": 0.994,
-    "H23": 0.872,
-    "H24": 0.864,
-    "H25": 0.794,
-    "H26": 0.811,
-    "H27": 0.875,
-    "H28": 0.860,
-    "H29": 0.826,
-    "H30": 0.874,
+    "H23": 0.894,
+    "H24": 0.956,
+    "H25": 0.821,
+    "H26": 0.901,
+    "H27": 0.928,
+    "H28": 0.906,
+    "H29": 0.889,
+    "H30": 0.911,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -284,6 +284,29 @@ PINNED = {
         ("H18", "H18-09", "A1340", "late_start"),
         ("H25", "H25-01", "A1380", "late_start"),
         ("H9", "H9-04", "A1390", "late_start"),
+    ],
+    "a mandatory date in the second slot pins nothing: early dates from the logic, late dates capped": [
+        ("H28", "H28-07", "A1210", "early_finish"),
+        ("H28", "H28-07", "A1210", "late_finish"),
+        ("H29", "H29-12", "A1110", "early_start"),
+        ("H29", "H29-12", "A1110", "late_finish"),
+        ("H27", "H27-11", "A1060", "early_finish"),
+        ("H27", "H27-11", "A1060", "late_finish"),
+        ("H27", "H27-08", "A1250", "early_start"),
+        ("H27", "H27-08", "A1250", "late_start"),
+    ],
+    "the second constraint bounds on top of a primary Mandatory Start: later early dates, earlier late dates": [
+        ("H26", "H26-08", "A1280", "early_start"),
+        ("H26", "H26-08", "A1280", "late_finish"),
+        ("H23", "H23-02", "A1230", "early_start"),
+        ("H23", "H23-02", "A1230", "late_start"),
+        ("H24", "H24-05", "A1350", "early_start"),
+        ("H24", "H24-05", "A1350", "late_start"),
+        ("H24", "H24-04", "A1210", "early_start"),
+    ],
+    "work under way: a Mandatory Finish in the second slot caps no late date": [
+        ("H28", "H28-03", "A1410", "late_finish"),
+        ("H28", "H28-04", "A1510", "late_finish"),
     ],
     "resource dependent: a late start from an SS bound is written at the bound's instant": [
         ("H26", "H26-04", "A1440", "late_start")

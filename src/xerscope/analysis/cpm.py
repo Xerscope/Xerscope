@@ -84,6 +84,8 @@ from ..xer.calendar import TimeAxis, WorkCalendar
 START_LIKE = {"CS_MSO": "start", "CS_MSOA": "start", "CS_MEO": "finish", "CS_MEOA": "finish"}  # forward
 LATE_LIKE = {"CS_MSO": "start", "CS_MSOB": "start", "CS_MEO": "finish", "CS_MEOB": "finish"}  # backward
 MANDATORY = {"CS_MANDSTART": "start", "CS_MANDFIN": "finish"}
+# What a mandatory date in the second slot is scheduled as: it bounds both passes and pins nothing
+AS_SECOND_CONSTRAINT = {"CS_MANDSTART": "CS_MSO", "CS_MANDFIN": "CS_MEO"}
 PROGRESSED = ("retained_logic", "progress_override", "actual_dates")
 H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_data=False)
 LINK_TYPES = ("FS", "SS", "FF", "SF")
@@ -737,11 +739,19 @@ class _Run:
     def constraints(self, code) -> list[tuple[str, pd.Timestamp]]:
         """Dated constraints of ``c`` P6 schedules with. A finish constraint on a start
         milestone, or a start constraint on a finish milestone (P6's own dialog refuses
-        them; an import keeps them), is ignored (P6 23.12 corpus, H6-03 A1130)."""
+        them; an import keeps them), is ignored (P6 23.12 corpus, H6-03 A1130).
+
+        Only the primary constraint pins: the second one is given as it is scheduled
+        (``second_constraint_type``).
+        """
         dated = []
         activity_kind = self.kind(code)
-        for type_field, date_field in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
-            constraint_type, date = self.inputs[code].get(type_field), self.inputs[code].get(date_field)
+        written = self.inputs[code]
+        slots = (
+            (written.get("cstr_type"), written.get("cstr_date")),
+            (self.second_constraint_type(code), written.get("cstr_date2")),
+        )
+        for constraint_type, date in slots:
             if constraint_type and isinstance(constraint_type, str) and constraint_type != "CS_ALAP" and pd.notna(date):
                 side = (
                     START_LIKE.get(constraint_type) or LATE_LIKE.get(constraint_type) or MANDATORY.get(constraint_type)
@@ -752,6 +762,20 @@ class _Run:
                     continue
                 dated.append((constraint_type, pd.Timestamp(date)))
         return dated
+
+    def second_constraint_type(self, code):
+        """The type of the second constraint as P6 schedules it.
+
+        On work not started, a Mandatory Start / Finish in the second slot is a Start On / Finish On:
+        it bounds both passes and pins nothing (P6 23.12.1: probes xf-mandatory Q9, Q10, rule PC;
+        held-out corpus H28-07 A1210, H29-12 A1110; 26.8 not measured). Work under way keeps the
+        type as written: no mandatory date bounds its late dates (``late_constraints``; corpus
+        H28-03 A1410, H28-04 A1510).
+        """
+        written = self.inputs[code].get("cstr_type2")
+        if self.status[code] == "TK_NotStart":
+            return AS_SECOND_CONSTRAINT.get(written, written)
+        return written
 
     def pred_bounds(self, code: str, started: bool, finish_only: bool = False) -> list[tuple[str, pd.Timestamp]]:
         """Lower bounds the predecessors of ``c`` put on its start or its finish.
@@ -904,17 +928,20 @@ class _Run:
         activity_kind, duration = self.kind(code), self.dur_min(code)
         start_bounds, finish_bounds = self.early_bounds(code, started)
         milestone_expected = self.milestone_expected_finish(code)
-        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
-        if milestone_expected is not None:
-            finish_bounds.append(milestone_expected)
+        pinned, constraint_start_bounds, constraint_finish_bounds = self.forward_constraints(code, started)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
         # A1130: the early dates move to the data date, the late dates stay). A milestone's
         # expected finish still counts: it sits at the later of that date and the Mandatory Start
-        # (P6 23.12.1 on the held-out corpus: 17 milestones; tests/test_cpm_milestone_mandatory_start.py)
+        # (P6 23.12.1 on the held-out corpus: 17 milestones; tests/test_cpm_milestone_mandatory_start.py).
+        # So does the second constraint: the early dates take the later of the pin and its date
+        # (H24-05 A1350, H24-04 A1210, H23-02 A1230; tests/test_cpm_second_constraint.py)
         if pinned and pinned[0] == "start":
-            start_bounds = [max(pinned[1], self.data_date)]
-            finish_bounds = [] if milestone_expected is None else [milestone_expected]
+            start_bounds, finish_bounds = [max(pinned[1], self.data_date)], []
+        start_bounds += constraint_start_bounds
+        finish_bounds += constraint_finish_bounds
+        if milestone_expected is not None:
+            finish_bounds.append(milestone_expected)
         if code in self.rsrc_dep and activity_kind == "task":
             start, finish_time = self.rsrc_early(
                 code,
@@ -1055,17 +1082,18 @@ class _Run:
             return actual_finish, actual_finish
         return self.data_date, self.data_date
 
-    def forward_constraints(self, code, started: bool, start_bounds: list, finish_bounds: list):
-        """Add the activity's dated constraints to the start / finish bounds (in place).
+    def forward_constraints(self, code, started: bool) -> tuple[tuple[str, pd.Timestamp] | None, list, list]:
+        """The mandatory date of the activity if any (its end, the date), and the bounds its other
+        constraints give to its early start and to its early finish.
 
-        Returns the Mandatory Start / Finish as (side, date), else None. Work under way keeps
-        its actual start, so its constraints are not applied here, only reported.
+        Work under way keeps its actual start, so its constraints are not applied here, only reported.
 
         An expected finish in force on work not started drops the early side of a Finish On and a
         Finish On or After: the work finishes at its expected finish (P6 23.12.1: probes oc-edges-xc
         N5, N7, xf-mandatory M7; 26.8 not measured). Their late side stays in the backward pass.
         """
         pinned = None
+        start_bounds, finish_bounds = [], []
         if started and self.constraints(code):
             self.unapplied.append(code)
         for constraint_type, date in [] if started else self.constraints(code):
@@ -1075,7 +1103,7 @@ class _Run:
                 start_bounds.append(date)
             elif START_LIKE.get(constraint_type) == "finish" and not self.has_expected_finish(code):
                 finish_bounds.append(date)
-        return pinned
+        return pinned, start_bounds, finish_bounds
 
     def expected_finish(
         self,
@@ -1418,9 +1446,10 @@ class _Run:
         end, date = pinned
         # a second constraint of the same end tighter than the mandatory date still
         # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
-        # Finish is the late finish)
+        # Finish is the late finish); under a Mandatory Start, so does a finish date in the
+        # second slot (H26-08 A1280: the late finish is the second date, the late start follows)
         if end == "start":
-            return [min([date] + constraint_start_bounds)], []
+            return [min([date] + constraint_start_bounds)], constraint_finish_bounds
         if self.has_expected_finish(code):
             # With an expected finish in force the Mandatory Finish date no longer pins work not
             # started, whether or not the expected finish sets the duration: the late finish is
