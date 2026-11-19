@@ -16,6 +16,9 @@
 # Constraint codes (types): CS_MSO, CS_MSOA, CS_MSOB, CS_MEO, CS_MEOA, CS_MEOB,
 #   CS_MANDSTART, CS_MANDFIN, CS_ALAP
 # group (optional): a section title, shown in the results table.
+# item (optional): the criterion of your source this metric belongs to. Two metrics with the same
+#   item are one criterion of the score (it fails when one of them fails): a requirement written as
+#   two bounds (CUS-15 / CUS-16) or two counts stays one line of the checklist.
 # The built-in P6 / DCMA / DECM / INTEGRITY files give each check its own function (no params);
 # the rules here are the parameterised ones for your own standard (see every rule below).
 
@@ -130,10 +133,20 @@ target = "pass"
 
 # [[metric]]
 # id = "CUS-15"
+# item = "9"                        # with CUS-16: one criterion of the score
 # group = "Float"
-# name = "Near-critical float (0 to 20 working days)"
+# name = "Near-critical float (0 to 20 working days), at least 5 %"
 # rule = "float"
-# target = ">= 5%"                  # a band is one metric per bound: add CUS-16 with "<= 15%"
+# target = ">= 5%"
+# params = { op = "between", value = 0, value_max = 20, unit = "days", exclude = ["complete"] }
+#
+# [[metric]]
+# id = "CUS-16"
+# item = "9"
+# group = "Float"
+# name = "Near-critical float (0 to 20 working days), at most 15 %"
+# rule = "float"
+# target = "<= 15%"
 # params = { op = "between", value = 0, value_max = 20, unit = "days", exclude = ["complete"] }
 
 # [[metric]]

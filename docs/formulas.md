@@ -137,9 +137,16 @@ only when the numerator is 0.
 
 ### 1.6 Standard score (analysis/checks.py `standard_score`)
 
-`score = checks in pass / (checks in pass + checks in fail)`, with the number of fail and their ids:
-`67 % · 3 evaluated · 1 fail: T-02`. Checks in `info`, `n/a` or `error` are not evaluated and appear
-in neither term; a standard with no evaluated check has no score (`–`, n/a). The function reads the
+`score = criteria in pass / (criteria in pass + criteria in fail)`, with the number of fail and their
+ids: `67 % · 3 evaluated · 1 fail: T-02`. A criterion is one metric, or the metrics that share an
+`item` (one line of the source written as several metrics, e.g. a band as two bounds): it fails when
+one of them fails, passes when none fails and one passes, and is not evaluated otherwise; a failed
+item is listed with the metrics that failed it (`9 (CA-09b)`). Checks in `info`, `n/a` or `error`
+are not evaluated and appear in neither term; a standard with no evaluated criterion has no score
+(`–`, n/a). Built-in: P6-10a and P6-10b share `item = "P6-10"`, one check of the Check Schedule
+dialog (101248, Invalid Progress Dates) that P6 Professional 26.8 prints on two lines, so the P6
+score counts 17 criteria for 18 metrics; the other built-in standards have one metric per item of
+their source. The function reads the
 `status` of results already computed (§1.5) and recomputes no check: the app takes them from
 `state.metric_result`, the per-session entry Schedule health, Audit and Earned value share, so a
 score shown on Overview or Schedule health costs no calculation once Schedule health has run.
@@ -159,7 +166,8 @@ several seconds on a ~4,000-activity export (CPM recalculation, critical path te
 on every opening of the page.
 
 Tests: `tests/test_scores.py` (hand-made schedule: 2 pass, 1 fail, 1 n/a gives 2/3 and the failed id;
-a standard with no evaluated check has no score); `tests/test_app_cache.py` (Overview cards = score of a
+a standard with no evaluated check has no score; items: pass + fail is one fail naming the metric,
+pass + n/a is one pass, info alone is not evaluated; P6-10a/b are one item); `tests/test_app_cache.py` (Overview cards = score of a
 fresh calculation = Schedule health card; each metric computed once whichever page asks first).
 
 ## 2. Standards

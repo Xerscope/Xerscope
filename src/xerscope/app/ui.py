@@ -423,7 +423,8 @@ def _formulas_popover(labels: Sequence[str], formulas: Mapping[str, Mapping[str,
 
 
 SCORE_HELP = (
-    "Checks in pass / checks evaluated (pass + fail); info and n/a checks are not evaluated. "
+    "Criteria in pass / criteria evaluated (pass + fail); info and n/a checks are not evaluated; a criterion "
+    "written as several metrics (the same item) fails when one of them fails. "
     "A xerscope convention: no source defines a global score, and a failed check is a flag to read, "
     "not a verdict on the schedule."
 )

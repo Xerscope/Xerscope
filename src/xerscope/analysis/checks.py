@@ -122,7 +122,9 @@ def run_standard(
 
 @dataclass(frozen=True)
 class StandardScore:
-    """Checks in pass over checks evaluated (pass + fail); info, n/a and error are not evaluated."""
+    """Criteria in pass over criteria evaluated (pass + fail); info, n/a and error are not evaluated.
+    A criterion is a metric, or the metrics sharing an ``item`` (one line of the source written as
+    several metrics): it fails when one of them fails."""
 
     passed: int
     evaluated: int
@@ -147,9 +149,29 @@ class StandardScore:
 
 def standard_score(results: list[CheckResult]) -> StandardScore:
     """The score of one standard from its results (xerscope convention, docs/formulas.md §1.6)."""
-    failed = tuple(result.metric.id for result in results if result.status == "fail")
-    passed = sum(result.status == "pass" for result in results)
+    criteria = _results_by_criterion(results)
+    failed = tuple(_failed_label(label, members) for label, members in criteria.items() if _has_status(members, "fail"))
+    passed = sum(not _has_status(members, "fail") and _has_status(members, "pass") for members in criteria.values())
     return StandardScore(passed, passed + len(failed), failed)
+
+
+def _results_by_criterion(results: list[CheckResult]) -> dict[str, list[CheckResult]]:
+    """The results grouped by criterion, in the order met: the metric's ``item``, else its id."""
+    criteria: dict[str, list[CheckResult]] = {}
+    for result in results:
+        criteria.setdefault(result.metric.item or result.metric.id, []).append(result)
+    return criteria
+
+
+def _has_status(members: list[CheckResult], status: str) -> bool:
+    return any(result.status == status for result in members)
+
+
+def _failed_label(label: str, members: list[CheckResult]) -> str:
+    """The failed criterion as the card names it: an item names the metrics that failed it."""
+    if not members[0].metric.item:
+        return label
+    return f"{label} ({', '.join(result.metric.id for result in members if result.status == 'fail')})"
 
 
 def fmt_value(value: float | None, unit: str) -> str:
