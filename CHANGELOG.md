@@ -28,6 +28,9 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
   session's uploads), not only the four built-in ones.
 - Schedule health: a standard uploaded on the page is in the picker on the run that loads it; the
   population steps of a standard of your own name its `source` text.
+- Remote deployment: `XERSCOPE_STANDARDS` points at the exports folder, so a standard of your
+  own (.toml) dropped beside the exports is read at each start (`deploy/compose.yaml`,
+  docs/deploy.md §5).
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance
   (`mode=max`), an SPDX SBOM and a GitHub build-provenance attestation of their digest
   (AUDIT-DEP-02); CodeQL on the Python sources and the OpenSSF Scorecard run on `main`,
