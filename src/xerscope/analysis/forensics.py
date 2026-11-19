@@ -1,24 +1,34 @@
 """Half-step reading of one week: what moved the project finish between two updates.
 
-AACE RP 29R-03 (Forensic Schedule Analysis, 2011) MIP 3.2, contemporaneous period analysis,
-as Hegazy & Zhang ("Daily Windows Delay Analysis", 2005) run it: the earlier update is
-rescheduled with the later update's changes applied one kind at a time, and the move of the
-finish at each step is what that kind of change did. Here the kinds are the categories of the
-changelog, applied in ``STEPS`` order, each step a derived snapshot the CPM engine
-(``analysis.cpm.schedule``) recalculates. The baseline is not read: the two updates are.
+AACE RP 29R-03, Forensic Schedule Analysis (rev. April 25, 2011), MIP 3.4 "Observational /
+Dynamic / Contemporaneous Split", the bifurcated or half-stepped update analysis (3.4.K.4): the
+earlier update is updated with the progress data of the later one and recalculated at the later
+status date (the half-step schedule, H1); the move of its finish from the earlier update is the
+slip due to progress, the move from H1 to the later update is due to the non-progress revisions,
+and the two add up to the move between the updates (3.4.K.4.d to f). The SCL Delay and Disruption
+Protocol, 2nd edition (February 2017), describes the same reading as the time slice windows
+analysis (11.6(c)). Here the non-progress revisions are applied one kind at a time as well, in
+``STEPS`` order, each step a derived snapshot the CPM engine (``analysis.cpm.schedule``)
+recalculates, so the replanning is read by kind. The baseline is not read: the two updates are.
 
-The first step, progress, gives the finish the project would show had nothing been
-replanned since the earlier update: the delay of the week. The steps after it are the
-replanning that absorbed it or added to it. When every step is applied the derived snapshot
-holds all the later update's inputs, so its finish is the later update's recalculated finish;
-``residual_wd`` records any difference (a change the changelog does not see).
+What is progress and what is a revision follows 3.4.K.4: progress is the actual start, the actual
+finish, an increased percent complete and a decreased remaining duration (3.4.K.4.b); the
+revisions are activities added or deleted, logic links and lags, constraints, original durations,
+a remaining duration increased or changed without a change in percent complete, calendar and
+holiday assignments. Hence the remaining duration of an activity started in the later update
+belongs to progress when it decreased, and to the durations step otherwise.
 
-Conventions no source settles, set here and stated on the page:
+Conventions no source settles, set here and stated on the page: the order in which the kinds of
+revision are applied (scope, durations, logic, constraints, calendars and options); and where the
+P6 fields the RP does not name go: suspend and resume dates and the external bounds of links to
+other projects with progress, the expected finish and the resource assignments with durations, the
+scheduling options with the calendars. The percent complete is carried with progress but is not
+an input of the recalculation.
 
-- the order of the steps: progress first, because it is the only change P6 itself imposes on a
-  recalculation; then scope, durations, logic, constraints, calendars and options;
-- the remaining duration of work under way belongs to progress (P6 updates it with the
-  status); that of work not started is a plan change and belongs to durations.
+``residual_wd`` records the move the steps do not account for (a change the changelog does not
+see): 0 when every step is applied. 3.4.K.4.g: a progress variance larger than the period itself
+is suspect (a revision in the half-step, or work pushed into a non-working stretch);
+``period_wd`` gives the period for that check.
 
 Shifts are working days of the later update's project calendar, days lost negative, as the
 changelog and the finish variances read them.
@@ -90,14 +100,27 @@ def _with_columns_of_new(tasks: pd.DataFrame, derivation: _Derivation, codes, co
     return out
 
 
-def _apply_progress(derivation: _Derivation, before: Snapshot) -> Snapshot:
-    """Carry the later status date, statuses and actual dates onto the earlier plan.
+def _remaining_decreased_on_started(derivation: _Derivation) -> pd.Index:
+    """Codes of both updates started in the later one whose remaining duration decreased.
 
-    The remaining duration of the work under way comes along: P6 updates it with the status.
+    Progress data under 3.4.K.4.b (iv); any other change of a remaining duration is a revision
+    (3.4.K.4).
+    """
+    old, new = derivation.old.by_code, derivation.new.by_code
+    common = new.index.intersection(old.index)
+    started = new.loc[common, "is_started"].astype(bool)
+    decreased = new.loc[common, "remain_drtn_hr_cnt"] < old.loc[common, "remain_drtn_hr_cnt"] - 1e-9
+    return common[started & decreased]
+
+
+def _apply_progress(derivation: _Derivation, before: Snapshot) -> Snapshot:
+    """Carry the progress data of the later update onto the earlier plan, at the later status date.
+
+    3.4.K.4.b: actual start, actual finish, percent complete, decreased remaining duration.
     """
     tasks = _with_columns_of_new(before.tasks, derivation, derivation.common, PROGRESS_COLUMNS)
-    started = derivation.new.by_code.index[derivation.new.by_code["is_started"].astype(bool)]
-    tasks = _with_columns_of_new(tasks, derivation, started.intersection(derivation.common), ["remain_drtn_hr_cnt"])
+    progressed = _remaining_decreased_on_started(derivation)
+    tasks = _with_columns_of_new(tasks, derivation, progressed, ["remain_drtn_hr_cnt"])
     return replace(before, tasks=tasks, data_date=derivation.new.data_date)
 
 
@@ -125,12 +148,13 @@ def _apply_scope(derivation: _Derivation, before: Snapshot) -> Snapshot:
 def _apply_durations(derivation: _Derivation, before: Snapshot) -> Snapshot:
     """Carry the replanned effort.
 
-    Original durations, expected finishes, the remaining duration of work not started, and the
-    resource assignments (their remaining units drive resource-dependent work).
+    Original durations, expected finishes, every remaining duration the progress step left (an
+    increase, or a change on work not started: revisions under 3.4.K.4), and the resource
+    assignments (their remaining units drive resource-dependent work).
     """
     tasks = _with_columns_of_new(before.tasks, derivation, derivation.common, DURATION_COLUMNS)
-    not_started = derivation.new.by_code.index[~derivation.new.by_code["is_started"].astype(bool)]
-    tasks = _with_columns_of_new(tasks, derivation, not_started.intersection(derivation.common), ["remain_drtn_hr_cnt"])
+    revised = pd.Index(derivation.common).difference(_remaining_decreased_on_started(derivation))
+    tasks = _with_columns_of_new(tasks, derivation, revised, ["remain_drtn_hr_cnt"])
     kept = before.assignments[~before.assignments["task_code"].isin(derivation.common)]
     replanned = derivation.new.assignments[derivation.new.assignments["task_code"].isin(derivation.common)]
     return replace(before, tasks=tasks, assignments=pd.concat([kept, replanned], ignore_index=True))
@@ -206,13 +230,15 @@ class HalfStep:
     once the step is applied, ``shift_wd`` its move from the row before (project calendar of the
     later update, days lost negative), ``changes`` the changelog rows of the step's categories.
     ``residual_wd``: the later update's recalculated finish against the last step's, 0 when the
-    steps account for every change.
+    steps account for every change. ``period_wd``: working days between the two status dates on
+    the later update's project calendar, the bound of 3.4.K.4.g (a slip beyond it is suspect).
     """
 
     steps: pd.DataFrame
     old_finish: pd.Timestamp | None
     new_finish: pd.Timestamp | None
     residual_wd: float
+    period_wd: float
     matched: int
     added: int
     deleted: int
@@ -234,6 +260,15 @@ class HalfStep:
     def replanning_wd(self) -> float:
         """What the replanning did: the shifts of every step after progress, summed."""
         return float(self.steps.set_index("step").loc[STEP_NAMES[1:], "shift_wd"].sum())
+
+    @property
+    def is_slip_beyond_period(self) -> bool:
+        """3.4.K.4.g: the progress step lost more than the period holds.
+
+        A revision slipped into the half-step, or the lack of progress pushed work into a
+        non-working stretch of a calendar.
+        """
+        return pd.notna(self.period_wd) and self.slip_wd < -self.period_wd - 0.005
 
 
 def _shift_wd(new: Snapshot, before: pd.Timestamp | None, after: pd.Timestamp | None) -> float:
@@ -258,6 +293,7 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
     derivation = _Derivation(old, new, sorted(set(old.by_code.index) & set(new.by_code.index)))
     log = changelog(old, new)
     old_finish, new_finish = schedule(old).finish, schedule(new).finish
+    period_wd = float("nan") if old.data_date is None else new.project_working_days(old.data_date, new.data_date)
     rows = [{"step": AS_SCHEDULED, "finish": old_finish, "shift_wd": float("nan"), "changes": 0}]
     derived, finish = old, old_finish
     for step in STEPS:
@@ -271,6 +307,7 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
         old_finish=old_finish,
         new_finish=new_finish,
         residual_wd=_shift_wd(new, finish, new_finish),
+        period_wd=period_wd,
         matched=len(derivation.common),
         added=len(derivation.added),
         deleted=len(derivation.deleted),
@@ -330,6 +367,7 @@ SERIES_COLUMNS = [
     "slip_wd",
     "replanning_wd",
     "residual_wd",
+    "period_wd",
     "longest_path_float_d",
     "matched",
     "added",
@@ -343,7 +381,8 @@ def half_step_series(store: SnapshotStore) -> pd.DataFrame:
     Its finish, the finish before replanning, the week's slip and replanning, the residual, how
     the finish is held, the longest path's float, the activities matched, added and deleted. A
     finish held still week after week while ``slip_wd`` stays negative is a delay absorbed by
-    replanning.
+    replanning. The sum of the moves over the series equals the move between the first and the
+    last update (3.4.E.16), the residuals apart.
     """
     rows = []
     for index in range(1, len(store)):
@@ -360,6 +399,7 @@ def half_step_series(store: SnapshotStore) -> pd.DataFrame:
                 "slip_wd": read.slip_wd,
                 "replanning_wd": read.replanning_wd,
                 "residual_wd": read.residual_wd,
+                "period_wd": read.period_wd,
                 "longest_path_float_d": longest_path_float_d(new),
                 "matched": read.matched,
                 "added": read.added,

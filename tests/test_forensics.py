@@ -1,5 +1,8 @@
 """Half-step reading of one week (analysis/forensics.py): hand-checked shifts, invariants.
 
+Source: AACE RP 29R-03 (rev. April 25, 2011) MIP 3.4, Observational / Dynamic / Contemporaneous
+Split, 3.4.K.4 (bifurcation: the progress-only half-step update).
+
 Every schedule is on the C8 calendar (Mon-Fri, 08:00-12:00 and 13:00-17:00), data date
 Monday 2 March 2026 08:00 unless stated: a 40 h activity runs Monday to Friday 17:00.
 """
@@ -55,7 +58,7 @@ def test_a_week_without_change_moves_nothing():
 
 @pytest.mark.oracle("standard")
 def test_a_delay_absorbed_by_compression_reads_as_slip_then_replanning():
-    """AACE 29R-03 MIP 3.2: the delay of the week and its absorption, read apart.
+    """AACE 29R-03 MIP 3.4 (3.4.K.4.d to f): the slip due to progress and the one due to revisions, read apart.
 
     Hand calculation. Earlier: A Mon 2 - Fri 6, B Mon 9 - Fri 13, C Mon 16 - Fri 20 17:00. Later,
     data date Mon 9: A still has 16 h, so finishes Tue 10 17:00; B Wed 11 - Tue 17; C Wed 18 - Tue
@@ -120,10 +123,40 @@ def test_a_calendar_change_moves_the_finish_at_the_last_step():
     assert shifts(read)["calendars and options"] == 1.0 and read.residual_wd == 0.0
 
 
+@pytest.mark.oracle("standard")
+def test_a_remaining_duration_increased_on_started_work_is_a_revision_not_progress():
+    """3.4.K.4: a decreased remaining duration is progress data (b.iv), an increase is a non-progress revision.
+
+    A started Mon 2 with 40 h left; a week later still 48 h left. Progress alone: the 40 h run from Mon 9,
+    finish Fri 13 (5 wd lost). Durations: 48 h = 6 days, Mon 9 to Mon 16 17:00 (1 wd more).
+    """
+    earlier = snap([active("A", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="40", target_drtn_hr_cnt="40")])
+    later = snap(
+        [active("A", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="48", target_drtn_hr_cnt="40")],
+        data_date=WEEK_LATER,
+    )
+    read = half_step(earlier, later)
+    assert shifts(read)["progress"] == -5.0 and shifts(read)["durations"] == -1.0
+    assert read.period_wd == 5.0 and read.is_slip_beyond_period is False
+
+
+@pytest.mark.oracle("standard")
+def test_a_slip_beyond_the_period_is_flagged():
+    """3.4.K.4.g: a progress variance larger than the update period is suspect. A not started, 40 h,
+    no actual start a week later: the 40 h run from Mon 9 instead of Mon 2, 5 wd lost in a 5 wd
+    period, not flagged; the same with a Start On Mon 9 in the earlier file is not a progress loss.
+    An 11-day period on a 7-day calendar project would be the flagged case; here the bound is read."""
+    earlier = snap([todo("A", **week())])
+    later = snap([todo("A", **week())], data_date=WEEK_LATER)
+    read = half_step(earlier, later)
+    assert shifts(read)["progress"] == -5.0 and read.period_wd == 5.0
+    assert read.is_slip_beyond_period is False
+
+
 @pytest.mark.oracle("property")
 def test_the_steps_add_up_to_the_recalculated_move_of_the_finish():
-    """Metamorphic: every kind of change at once, the shifts sum to the move between the two recalculated
-    finishes (on the later update's project calendar) and the residual is 0."""
+    """Metamorphic (3.4.K.4.f, 3.4.E.13): every kind of change at once, the shifts sum to the move between
+    the two recalculated finishes (on the later update's project calendar) and the residual is 0."""
     earlier = snap(
         [todo("A", **week()), todo("B", **week()), todo("C", **week()), todo("GONE", **week())], chain("A", "B", "C")
     )

@@ -38,6 +38,7 @@ SERIES_LABELS = {
     "slip_wd": "Slip (wd)",
     "replanning_wd": "Replanning (wd)",
     "residual_wd": "Residual (wd)",
+    "period_wd": "Period (wd)",
     "longest_path_float_d": "Longest path float (d)",
     "matched": "Matched",
     "added": "Added",
@@ -98,6 +99,12 @@ def show_steps(read, old, new) -> None:
     ui.chart(build_half_step(read.steps))
     steps = read.steps.rename(columns=STEP_LABELS)
     ui.table(steps, key="forensics_steps")
+    if read.is_slip_beyond_period:
+        st.warning(
+            f"The progress step lost {abs(read.slip_wd):.1f} wd in a period of {read.period_wd:.1f} wd. "
+            "AACE 29R-03 3.4.K.4.g: a revision may sit in the half-step, or the lack of progress pushed work "
+            "into a non-working stretch of a calendar."
+        )
     if abs(read.residual_wd) > 0.005:
         st.warning(
             f"Residual {read.residual_wd:+.1f} wd: the steps do not account for every change between the two "
@@ -150,8 +157,9 @@ with top:
         store,
         new,
         lead="What moved the project finish since the previous update, kind of change by kind of change: "
-        "the previous plan is rescheduled with this update's progress first, then its replanning. "
-        "AACE RP 29R-03 MIP 3.2 (contemporaneous period analysis); the baseline is not read.",
+        "the previous plan is rescheduled with this update's progress first (the half-step schedule), then "
+        "its revisions. AACE RP 29R-03 MIP 3.4, contemporaneous split (half-stepped update analysis); the "
+        "baseline is not read.",
     )
 
 try:

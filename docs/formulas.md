@@ -466,17 +466,21 @@ test_changelog_lists_a_calendar_whose_working_time_changed.
 
 ### 5.1 Half-step reading of a week (analysis/forensics.py)
 
-AACE RP 29R-03 (2011) MIP 3.2, contemporaneous period analysis, run as Hegazy & Zhang (2005) do
-with daily windows, here with the week between two updates as the window and the changelog's
-categories as the kinds of change. The earlier update is rescheduled (`cpm.schedule`) with the
-later update's changes applied one `Step` at a time; the move of the recalculated finish at each
-step is what that kind of change did. The baseline is not read.
+AACE RP 29R-03, Forensic Schedule Analysis (rev. April 25, 2011), MIP 3.4 "Observational / Dynamic /
+Contemporaneous Split", the bifurcated or half-stepped update analysis (3.4.K.4): the earlier update is
+updated with the later update's progress data and recalculated at the later status date (the half-step
+schedule); its move from the earlier update is the slip due to progress, the move from it to the later
+update is due to the non-progress revisions, and the two add up to the move between the updates
+(3.4.K.4.d to f). The SCL Delay and Disruption Protocol, 2nd ed. (February 2017), 11.6(c), describes
+the same reading as the time slice windows analysis. Here the revisions are also applied one `Step` at
+a time (`cpm.schedule` on a derived snapshot each), so the replanning is read by kind. The baseline
+is not read.
 
 | Step | Carries from the later update (activities in both updates unless stated) | Changelog categories counted |
 |---|---|---|
-| progress | status date; `status_code`, actual dates, suspend / resume, `phys_complete_pct`, the external early start / late finish bounds; `remain_drtn_hr_cnt` of the activities started in the later update | Progress |
+| progress | status date; `status_code`, actual dates, suspend / resume, `phys_complete_pct`, the external early start / late finish bounds; `remain_drtn_hr_cnt` of the activities started in the later update whose remaining duration decreased (3.4.K.4.b: actual start, actual finish, increased percent complete, decreased remaining duration) | Progress |
 | scope | activities added (their TASK rows, the links and assignments that reach them), deleted (taken out with theirs), `task_type` | Scope |
-| durations | `target_drtn_hr_cnt`, `expect_end_date`, `remain_drtn_hr_cnt` of the activities not started in the later update, the resource assignments | Durations, Resources |
+| durations | `target_drtn_hr_cnt`, `expect_end_date`, every other `remain_drtn_hr_cnt` that changed (an increase, or a change on work not started: non-progress revisions, 3.4.K.4), the resource assignments | Durations, Resources |
 | logic | the relationships between activities of both updates | Relationships |
 | constraints | `cstr_type`, `cstr_date`, `cstr_type2`, `cstr_date2`, the project's Must Finish By | Constraints |
 | calendars and options | `clndr_id`, the calendar definitions, the scheduling options, the planned start | Calendars, Options, Tasks |
@@ -488,18 +492,23 @@ step is what that kind of change did. The baseline is not read.
 | `slip_wd` | the progress step's shift: the delay of the week |
 | `replanning_wd` | the shifts of the other steps, summed: what the replanning absorbed (positive) or added (negative) |
 | `residual_wd` | the later update's recalculated finish against the last step's: 0 when the steps account for every change the engine reads; otherwise a change the changelog does not list |
+| `period_wd` | `project_working_days(status date of the earlier update, status date of the later one)` on the later update's project calendar; `is_slip_beyond_period` when `slip_wd < -period_wd`: 3.4.K.4.g, a revision in the half-step or work pushed into a non-working stretch |
 | `finish_case` | `must finish by` when `PROJECT.plan_end_date` is set (it bounds the late dates only: the early finish still moves, float turns negative past it); else `mandatory finish` when an end point (no successor, not LOE) carries `CS_MANDFIN` (its date cannot move); else `last task` |
 | `longest_path_float_d` | lowest `tf_hr` of the recalculated longest path / hours per day of the project calendar: under a Must Finish By or a Mandatory Finish, where the delay the finish cannot show goes |
 
-Conventions no source settles (stated on the page): the order of the steps, progress first
-because it is the only change P6 itself imposes on a recalculation; the remaining duration of work
-under way belongs to progress, that of work not started to durations.
+What is progress and what is a revision follows 3.4.K.4 (the list of non-progress revisions:
+activities added or deleted, logic links and lags, constraints, original durations, a remaining
+duration increased or changed without a change in percent complete, calendar and holiday
+assignments). Conventions no source settles (stated on the page): the order in which the kinds of
+revision are applied, and the scheduling options, which the RP does not list, read with the
+calendars.
 
 Pinned by tests/test_forensics.py: a week without change moves nothing (property); a 2 wd delay
 absorbed by a 2 wd cut reads −2 at progress and +2 at durations with the finish unmoved; one hand
 case per step; every kind of change at once sums to the recalculated move with residual 0
 (property); the three finish cases; the float under a Must Finish By (P6); the demo series has no
-residual (characterization).
+residual (characterization); a remaining duration increased on started work is a revision, not
+progress (3.4.K.4); the period bound of 3.4.K.4.g.
 
 ## 6. CPM output compared with P6 (analysis/cpm.py `compare_with_stored`, `compare_assignments`)
 

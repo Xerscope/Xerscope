@@ -498,7 +498,7 @@
  "forensics": [
   "title: Delay analysis",
   "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
-  "caption: What moved the project finish since the previous update, kind of change by kind of change: the previous plan is rescheduled with this update's progress first, then its replanning. AACE RP 29R-03 MIP 3.2 (contemporaneous period analysis); the baseline is not read.",
+  "caption: What moved the project finish since the previous update, kind of change by kind of change: the previous plan is rescheduled with this update's progress first (the half-step schedule), then its revisions. AACE RP 29R-03 MIP 3.4, contemporaneous split (half-stepped update analysis); the baseline is not read.",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
   "caption: Finish held by: **last task** (23 Mar 2027). In this case the finish is the latest early finish of the project and moves freely.",
   "metric: Finish before replanning = 23 Mar 2027 (-2.0 wd)",
@@ -513,7 +513,7 @@
   "subheader: Every update",
   "caption: Each update read against the one before it. A finish shown that holds still while the finish before replanning keeps slipping is a delay absorbed by replanning.",
   "plotly_chart: scatter, scatter",
-  "dataframe: 7 rows | Status date, Finish held by, Date, Finish shown, Finish before replanning, Slip (wd), Replanning (wd), Residual (wd), Longest path float (d), Matched, Added, Deleted",
+  "dataframe: 7 rows | Status date, Finish held by, Date, Finish shown, Finish before replanning, Slip (wd), Replanning (wd), Residual (wd), Period (wd), Longest path float (d), Matched, Added, Deleted",
   "button: Prepare anonymized downloads"
  ],
  "earned_value": [

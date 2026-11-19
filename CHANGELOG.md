@@ -29,9 +29,9 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 - Schedule health: a standard uploaded on the page is in the picker on the run that loads it; the
   population steps of a standard of your own name its `source` text.
 - Delay analysis page and `analysis/forensics.py`: the half-step reading of each week (AACE RP
-  29R-03 MIP 3.2, contemporaneous period analysis). The previous update is rescheduled with the
-  update's changes applied one step at a time (progress, scope, durations, logic, constraints,
-  calendars and options): the finish before replanning and the week's slip, then what the
+  29R-03 MIP 3.4, contemporaneous split: the bifurcated, half-stepped update). The previous update
+  is rescheduled with the update's changes applied one step at a time (progress as 3.4.K.4.b
+  defines it, then scope, durations, logic, constraints, calendars and options): the finish before replanning and the week's slip, then what the
   replanning did; how the finish is held (last task, Must Finish By, Mandatory Finish), the
   longest path's float, the series over every update (formulas.md §5.1). The baseline is not read.
 - Changelog: categories Calendars (working time changed) and Options (scheduling option changed,
