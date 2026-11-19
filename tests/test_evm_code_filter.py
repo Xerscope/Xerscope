@@ -13,9 +13,10 @@ import pytest
 from test_earned_schedule import DAY_MIN, planned, progressed
 from xerkit import snap
 
-from xerscope.analysis import Baseline
+from xerscope.analysis import Baseline, builtin_standards
 from xerscope.analysis.baseline import restricted
 from xerscope.analysis.evm import (
+    bei_series,
     earned_schedule,
     ev_point,
     evm_series,
@@ -107,7 +108,7 @@ def test_without_a_filter_the_update_and_its_baseline_are_the_ones_given():
 
 def test_a_restricted_baseline_keeps_the_tasks_named_and_their_assignment_costs():
     """A and B each carry a priced assignment (40 h; 1 000 and 500). Restricted to B and to Z, a task the
-    baseline does not hold: one row, 40 h, B's assignment alone, cost 500."""
+    baseline does not hold: one row, 40 h, B's assignment alone, cost 500, and B alone in its own file."""
     assignments = [
         {"task_code": code, "rsrc_id": "R1", "rsrc_type": "RT_Labor", "target_qty": "40", "target_cost": cost}
         for code, cost in (("A", "1000"), ("B", "500"))
@@ -115,6 +116,7 @@ def test_a_restricted_baseline_keeps_the_tasks_named_and_their_assignment_costs(
     tasks = [planned("A", *WEEK_1), planned("B", *WEEK_2)]
     kept = restricted(Baseline.from_snapshot(snap(tasks, assign=assignments, data_date=WEEK_1[0])), {"B", "Z"})
     assert kept.frame.index.tolist() == ["B"] and kept.bac_hours == 40.0
+    assert kept.snapshot.activities["task_code"].tolist() == ["B"]
     assert kept.assignment_costs["task_code"].tolist() == ["B"] and kept.assignment_costs["cost"].tolist() == [500.0]
 
 
@@ -140,3 +142,35 @@ def test_the_disciplines_and_the_tasks_without_one_add_up_to_the_project(data_da
     assert whole.ac_hr == pytest.approx(sum(part.ac_hr for part in parts) + neither[1]["labor_actual_hr"].sum())
     pv_of_e = 40.0  # week 1 is over at each of the three dates
     assert whole.pv_hr == pytest.approx(sum(part.pv_hr for part in parts) + pv_of_e)
+
+
+def bei_of(code_filter: CodeFilter | None, result_of=None) -> tuple[float, float]:
+    """BEI (P6-13, DCMA-14) of the update at the end of week 2 against its plan, on ``code_filter``."""
+    standards = builtin_standards()
+    metrics = {"P6": standards["P6"]["P6-13"], "DCMA": standards["DCMA"]["DCMA-14"]}
+    baseline = the_plan()
+    series = bei_series(SnapshotStore([end_of_week_2()]), metrics, lambda update: baseline, result_of, code_filter)
+    return tuple(series.loc[0, ["bei_p6", "bei_dcma"]])
+
+
+def test_the_bei_of_a_discipline_is_evaluated_on_its_tasks():
+    """Friday 03-13 17:00: the five tasks are due, A and E complete: 2 / 5 = 0.40 under both definitions.
+    CIV is A (complete) and B: 1 / 2 = 0.50. MEC is C and D, neither complete: 0 / 2 = 0."""
+    assert bei_of(None) == (0.4, 0.4)
+    assert bei_of(CIV) == (0.5, 0.5)
+    assert bei_of(MEC) == (0.0, 0.0)
+
+
+def test_results_held_for_the_whole_project_are_not_read_for_a_part_of_it():
+    """``result_of`` hands out results computed on every task of an update (the app's cache): it serves
+    the whole project and is left aside for a discipline, which is computed on its own tasks."""
+    asked = []
+
+    def held(metric, update):
+        asked.append(metric.id)
+        raise LookupError("a result of the whole project")
+
+    with pytest.raises(LookupError):
+        bei_of(None, held)
+    assert asked == ["P6-13"]
+    assert bei_of(CIV, held) == (0.5, 0.5) and asked == ["P6-13"]

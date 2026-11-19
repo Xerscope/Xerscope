@@ -971,18 +971,26 @@ def bei_series(
     bei_metrics: Mapping[str, Metric],
     baseline_for: Callable[[Snapshot], Baseline | None],
     result_of: Callable[[Metric, Snapshot], CheckResult] | None = None,
+    code_filter: CodeFilter | None = None,
 ) -> pd.DataFrame:
     """Baseline Execution Index of every update under the P6 and DCMA definitions.
 
     ``bei_metrics`` holds the ``bei`` metric of the "P6" and "DCMA" standards; ``baseline_for``
     gives each snapshot its own baseline. ``result_of(metric, snapshot)``, when given, supplies
-    each result instead (the app's per-session cache). Columns: data_date, bei_p6, bei_dcma.
+    each result instead (the app's per-session cache). ``code_filter``: the index of each update's
+    tasks of that code against their own baseline tasks (``update_and_baseline_of_code``); the results
+    of ``result_of`` are those of the whole project, so each one is then computed here.
+    Columns: data_date, bei_p6, bei_dcma.
     """
 
     def run(metric: Metric, snapshot: Snapshot) -> CheckResult:
-        if result_of is not None:
+        if result_of is not None and code_filter is None:
             return result_of(metric, snapshot)
-        return run_metric(metric, AnalysisContext(snapshot, baseline=baseline_for(snapshot)))
+        baseline = baseline_for(snapshot)
+        if baseline is None:
+            return run_metric(metric, AnalysisContext(snapshot, baseline=None))
+        update, its_baseline = update_and_baseline_of_code(snapshot, baseline, code_filter)
+        return run_metric(metric, AnalysisContext(update, baseline=its_baseline))
 
     rows = [
         {

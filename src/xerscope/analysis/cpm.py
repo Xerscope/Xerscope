@@ -907,9 +907,12 @@ class _Run:
         pinned = self.forward_constraints(code, started, start_bounds, finish_bounds, milestone_expected)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
-        # A1130: the early dates move to the data date, the late dates stay)
+        # A1130: the early dates move to the data date, the late dates stay). A milestone's
+        # expected finish still counts: it sits at the later of that date and the Mandatory Start
+        # (P6 23.12.1 on the held-out corpus: 17 milestones; tests/test_cpm_milestone_mandatory_start.py)
         if pinned and pinned[0] == "start":
-            start_bounds, finish_bounds = [max(pinned[1], self.data_date)], []
+            start_bounds = [max(pinned[1], self.data_date)]
+            finish_bounds = [] if milestone_expected is None else [milestone_expected]
         if code in self.rsrc_dep and activity_kind == "task":
             start, finish_time = self.rsrc_early(
                 code,
