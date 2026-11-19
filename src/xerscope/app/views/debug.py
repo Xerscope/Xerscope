@@ -8,6 +8,7 @@ import streamlit as st
 from xerscope.analysis import query
 from xerscope.analysis.cpm import ScheduleError
 from xerscope.analysis.evm import earned_schedule, schedule_gap_by_status, update_and_baseline_of_code
+from xerscope.analysis.forensics import engine_gap_wd
 from xerscope.app import diagnostic, ui, xml_baselines
 from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.state import (
@@ -122,6 +123,21 @@ with st.expander(
         st.caption("INT-03: every stored assignment date is reproduced.")
     else:
         table(int03, max_height=480, key="debug_03_int03_assignments")
+    gap_wd = engine_gap_wd(snapshot)
+    st.caption(
+        "Delay analysis reads the recalculated finish. Recalculated finish against the latest finish stored "
+        f"in the file: {'not known' if pd.isna(gap_wd) else f'{gap_wd:+.1f} wd'} (0 = reproduced, negative = "
+        "recalculated later). Below, the unfinished tasks where the recalculated early dates first differ from "
+        "the stored ones (none of their predecessors differs: what differs downstream follows from them): "
+        "the steps that lead to them and what each removed, the tasks, then the same tasks counted by form, "
+        "with no Task ID and no date."
+    )
+    table(frames["03a_departure_steps"], key="debug_03a_departure_steps")
+    if frames["03b_departures"].empty:
+        st.caption("Every stored early date is reproduced.")
+    else:
+        table(frames["03b_departures"], max_height=480, key="debug_03b_departures")
+        table(frames["03c_departure_forms"], key="debug_03c_departure_forms")
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
     st.caption("Targets, x and dialog options of standards/p6.toml, on the tab of the P6 dialog each check sits on.")

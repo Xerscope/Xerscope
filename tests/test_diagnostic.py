@@ -21,6 +21,7 @@ from xerscope.app.diagnostic import (
     options_table,
 )
 from xerscope.app.expected_finish_forms import expected_finish_forms
+from xerscope.app.recalculation_departures import departure_forms, departure_funnel, departures
 
 
 def test_options_comparison_puts_the_baseline_next_to_the_update_and_says_what_differs():
@@ -672,5 +673,47 @@ def test_expected_finish_forms_are_in_the_anonymous_diagnostic_without_codes_or_
     tasks = [todo("ZQ7", task_type="TT_FinMile", expect_end_date="2026-03-07 17:00")]
     frames = diagnostic_frames(snap(tasks), None, builtin_standards()["P6"], anonymous=True)
     forms = frames["02b_expected_finish_forms"]
+    assert forms["tasks"].tolist() == [1]
+    assert "ZQ7" not in forms.to_csv() and "2026" not in forms.to_csv()
+
+
+def test_departures_keep_the_activities_where_the_recalculation_first_differs():
+    """Data date Monday 2 March 2026 08:00, calendar Mon-Fri 8 h, A -> B -> C, 40 h each. Recalculated:
+    A Mon 2 to Fri 6, B Mon 9 to Fri 13, C Mon 16 to Fri 20. A's stored dates are those; B stores a finish
+    on Thu 12 17:00 (recalculated 8 h later) and C a finish on Thu 19: C differs too but follows B, so B
+    alone is where the difference starts."""
+    week = {"target_drtn_hr_cnt": "40", "remain_drtn_hr_cnt": "40", "total_float_hr_cnt": ""}
+    tasks = [
+        todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00", **week),
+        todo("B", early_start_date="2026-03-09 08:00", early_end_date="2026-03-12 17:00", **week),
+        todo("C", early_start_date="2026-03-16 08:00", early_end_date="2026-03-19 17:00", **week),
+    ]
+    s = snap(tasks, [("A", "B", "FS", 0), ("B", "C", "FS", 0)])
+    roots = departures(s)
+    assert roots["task_code"].tolist() == ["B"]
+    row = roots.iloc[0]
+    assert row["early_end_date_recalc"] == pd.Timestamp("2026-03-13 17:00") and row["gap_hr"] == 8
+    assert (row["status"], row["type"], row["constraint"]) == ("Not started", "Task dependent", "")
+    assert not row["expected_finish"] and not row["resource_dependent"]
+    forms = departure_forms(s)
+    assert forms["tasks"].tolist() == [1] and "task_code" not in forms.columns
+    steps = [(step.label, len(step.removed), step.left) for step in departure_funnel(s).steps]
+    assert steps == [
+        ("not complete", 0, 3),
+        ("not level of effort", 0, 3),
+        ("with a stored early date", 0, 3),
+        ("a stored early date is not the recalculated one", 1, 2),  # A is reproduced
+        ("no predecessor in the same case", 1, 1),  # C follows B
+    ]
+    reproduced = snap([todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00", **week)])
+    assert departures(reproduced).empty and departure_forms(reproduced).empty
+
+
+def test_departure_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates():
+    """Activity ID "ZQ7" stores a finish the recalculation does not give: the anonymous forms table
+    counts it and shows neither the ID nor a year."""
+    tasks = [todo("ZQ7", target_drtn_hr_cnt="40", remain_drtn_hr_cnt="40", early_end_date="2026-03-12 17:00")]
+    frames = diagnostic_frames(snap(tasks), None, builtin_standards()["P6"], anonymous=True)
+    forms = frames["03c_departure_forms"]
     assert forms["tasks"].tolist() == [1]
     assert "ZQ7" not in forms.to_csv() and "2026" not in forms.to_csv()

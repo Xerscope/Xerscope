@@ -523,6 +523,40 @@ are not read because links carried one kind at a time close a loop neither sched
 (`half_step_series` keeps the row, with the reason). No P6 output exists for a half-step schedule:
 the progress step has no oracle beyond the hand cases and the sum rule of 3.4.K.4.f.
 
+### 5.2 Longest path of each update (analysis/longest_path.py)
+
+AACE RP 29R-03 (rev. April 25, 2011) 3.4.E.9 ("use both the longest path and the least float criteria
+to identify the controlling chain of activities") and SVP 2.3.B.6 ("for each update, identify all
+changes made that extend, reduce, or change the longest path"); SCL Protocol 2nd ed. 11.6(c), the
+contemporaneous critical path of each time slice.
+
+| Quantity | Definition |
+|---|---|
+| longest path of an update | the activities P6 flagged (`TASK.driving_path_flag`, P6's Longest Path column) that are not complete; when the file flags none, the recalculated longest path (`cpm.schedule`), not complete; `source` = `P6 longest path` / `recalculated` / `none` (no flag and the file cannot be scheduled) |
+| `change` of an activity on the path of either update | `stayed` (on both), `entered` (on the later only), `left: finished` (complete in the later), `left: still open` (in the later update, not complete, off its path: the path switched away from it), `left: deleted` (not in the later update) |
+| `path_changes` row | `change`, `float_before_d` (P6's `total_float_d` in the earlier update), then the standard activity columns (`populations.ACTIVITY_COLS`, `total_float_d` the later update's); a deleted activity shows the earlier update's, without a float after |
+| `path_churn` row | per update after the first: `on_path` = stayed + entered, `stayed`, `entered`, `left_finished`, `left_open`, `left_deleted`, `stability = stayed / (stayed + left_open)` (finished and deleted work could not stay; blank when nothing could), `path_source` of the later update, both sources when they differ |
+| population (`longest_path_funnel`) | a funnel of `analysis/populations.py`: every activity, `not complete`, `on the longest path (<source>)`; the page shows its steps and what each removed |
+
+Pinned by tests/test_longest_path.py: the flagged path, open work only (P6); the recalculated path
+when nothing is flagged; one change per activity, in reading order, with its floats; the churn of
+three updates and its stability (0.5, then 1.0); two sources named; an update against itself.
+
+### 5.3 Where the recalculation departs from the file (app/recalculation_departures.py, Debug block 3)
+
+For the reading of 5.1, whose shifts are the recalculation's when `engine_gap_wd` is not 0.
+The population is a funnel of `analysis/populations.py` (`departure_funnel`: not complete, not level
+of effort, with a stored early date, one not the recalculated one, no predecessor in the same case),
+and Debug shows its steps and what each removed.
+`departures`: the unfinished activities with a stored early start or early finish the recalculation
+does not give (`compare_with_stored`, exact clock time) and no predecessor in the same case: what
+differs downstream follows from them. Per activity: stored and recalculated early finish, `gap_hr`
+(recalculated minus stored, working hours of its calendar), status, type, constraints, an expected
+finish, resource dependent, on the recalculated longest path. `departure_forms`: the same rows
+counted by form, with no Activity ID and no date, for a diagnostic that can be shared. Pinned by
+tests/test_diagnostic.py: test_departures_keep_the_activities_where_the_recalculation_first_differs,
+test_departure_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates.
+
 ## 6. CPM output compared with P6 (analysis/cpm.py `compare_with_stored`, `compare_assignments`)
 
 The engine recalculates early/late dates and floats as described in the module

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pandas as pd
 
 from xerscope.analysis.cpm import compare_with_stored
-from xerscope.xer.model import CONSTRAINT, Snapshot
+from xerscope.xer.model import Snapshot, constraints_label
 
 EXPECTED_FINISH_FORM = [
     "status", "type", "constraint", "after_constraint_date", "off_working_time", "ff_sf_predecessor",
@@ -39,7 +39,6 @@ def expected_finish_forms(snapshot: Snapshot) -> pd.DataFrame:
     identical, different = _reproduction(snapshot)
     rows = []
     for code, task in unfinished.iterrows():
-        constraints = [task.get(column) for column in ("cstr_type", "cstr_type2")]
         constraint_date = task.get("cstr_date")
         after_constraint_date = pd.NA
         if pd.notna(constraint_date):
@@ -48,7 +47,7 @@ def expected_finish_forms(snapshot: Snapshot) -> pd.DataFrame:
             {
                 "status": task["status"],
                 "type": task["type"],
-                "constraint": " + ".join(CONSTRAINT.get(c, c) for c in constraints if isinstance(c, str) and c),
+                "constraint": constraints_label(task),
                 "after_constraint_date": after_constraint_date,
                 "off_working_time": not snapshot.calendar(task["clndr_id"]).axis().is_working(task["expect_end_date"]),
                 "ff_sf_predecessor": code in bound_at_finish,

@@ -1,5 +1,7 @@
 """Delay analysis page: the half-step reading of one week and its series (analysis/forensics.py)."""
 
+from functools import partial
+
 import streamlit as st
 
 from xerscope.analysis.cpm import ScheduleError
@@ -12,9 +14,18 @@ from xerscope.analysis.forensics import (
     half_step_series,
     longest_path_float_d,
 )
+from xerscope.analysis.longest_path import (
+    SWITCHED,
+    change_counts,
+    longest_path,
+    longest_path_funnel,
+    path_changes,
+    path_churn,
+)
 from xerscope.app import ui
-from xerscope.app.state import csv_download, memo, page_header, require_store, sources_of
-from xerscope.viz.charts import build_half_step, build_slip_trend
+from xerscope.app.sets import show_steps as show_funnel_steps
+from xerscope.app.state import csv_download, memo, open_in_gantt, page_header, require_store, sources_of
+from xerscope.viz.charts import build_half_step, build_path_churn, build_slip_trend
 
 CASE_TEXT = {
     LAST_ACTIVITY: "the finish is the latest early finish of the project and moves freely",
@@ -22,29 +33,6 @@ CASE_TEXT = {
     "the longest path turns negative past the date",
     MANDATORY_FINISH: "a Mandatory Finish holds the last task's date: the delay shows in the float of "
     "the longest path, not in the finish",
-}
-STEP_LABELS = {
-    "step": "Step",
-    "finish": "Finish once applied",
-    "shift_wd": "Shift (wd)",
-    "changes": "Changes applied",
-}
-SERIES_LABELS = {
-    "data_date": "Status date",
-    "finish_case": "Finish held by",
-    "held_by": "Date",
-    "finish": "Finish shown",
-    "finish_before_replanning": "Finish before replanning",
-    "slip_wd": "Slip (wd)",
-    "replanning_wd": "Replanning (wd)",
-    "residual_wd": "Residual (wd)",
-    "period_wd": "Period (wd)",
-    "engine_gap_wd": "Recalculated vs file (wd)",
-    "longest_path_float_d": "Longest path float (d)",
-    "matched": "Matched",
-    "added": "Added",
-    "deleted": "Deleted",
-    "note": "Note",
 }
 
 
@@ -70,7 +58,8 @@ def show_engine_gap(read, old, new) -> None:
     st.warning(
         "xerscope does not recalculate the finish P6 stored in the file (" + "; ".join(gaps) + "). The shifts "
         "below may come from the recalculation and not from the schedule: read them as indications only. "
-        "The Schedule health page, Integrity standard, lists the dates that differ."
+        "The Schedule health page, Integrity standard, lists the dates that differ; the Debug page, block 3, "
+        "the tasks where the difference starts and their form."
     )
 
 
@@ -119,8 +108,7 @@ def show_steps(read, old, new) -> None:
         "each bar is what that kind did to the finish.",
     )
     ui.chart(build_half_step(read.steps))
-    steps = read.steps.rename(columns=STEP_LABELS)
-    ui.table(steps, key="forensics_steps")
+    ui.table(read.steps, key="forensics_steps")
     if read.is_slip_beyond_period:
         st.warning(
             f"The progress step lost {abs(read.slip_wd):.1f} wd in a period of {read.period_wd:.1f} wd. "
@@ -140,6 +128,33 @@ def show_steps(read, old, new) -> None:
     )
 
 
+def show_longest_path(old, new) -> None:
+    """Tasks that entered or left the longest path since the previous update, then the table."""
+    changes = path_changes(old, new)
+    counts = change_counts(changes)
+    ui.section(
+        "Longest path",
+        f"Open tasks on the longest path of this update ({longest_path(new)[1]}) against the previous one "
+        f"({longest_path(old)[1]}). {counts[SWITCHED]} still open left the path: it switched away from them. "
+        "AACE RP 29R-03 3.4.E.9 and SVP 2.3.B.6.",
+    )
+    show_funnel_steps(longest_path_funnel(new)[0], key="forensics_path_funnel")
+    ui.table(
+        changes,
+        key="forensics_path",
+        max_height=420,
+        open_task=partial(open_in_gantt, snapshot=new),
+    )
+
+
+def show_path_series(store) -> None:
+    """Longest path of every update against the one before it: chart, table, CSV."""
+    churn = memo(("forensics_path_churn",), path_churn, store, baseline=False, ev_basis=False)
+    ui.chart(build_path_churn(churn))
+    ui.table(churn, key="forensics_path_churn", max_height=360)
+    csv_download(churn, "longest_path_churn.csv", "Download longest path (CSV)", sources=sources_of(*list(store)))
+
+
 def show_series(store) -> None:
     """Every update read against the one before it: chart, table, CSV."""
     ui.section(
@@ -149,8 +164,7 @@ def show_series(store) -> None:
     )
     series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
     ui.chart(build_slip_trend(series))
-    shown = series.rename(columns=SERIES_LABELS)
-    ui.table(shown, key="forensics_series", max_height=480)
+    ui.table(series, key="forensics_series", max_height=480)
     csv_download(series, "half_step_series.csv", "Download series (CSV)", sources=sources_of(*list(store)))
 
 
@@ -189,4 +203,6 @@ show_case(new)
 show_engine_gap(read, old, new)
 show_kpis(read, new)
 show_steps(read, old, new)
+show_longest_path(old, new)
 show_series(store)
+show_path_series(store)

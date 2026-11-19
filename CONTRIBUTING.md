@@ -38,6 +38,15 @@ before touching `analysis/cpm.py` or `xer/calendar.py`, and
    the test.
 4. **Simple over clever.** One function per check, one place per P6 concept, no new
    dependency without a reason stated in the pull request.
+5. **Read what exists before writing.** Before the first line of a change, read the modules
+   it will sit beside and search the code base for what it needs: a population is built
+   with `analysis/populations.py` (`activity_funnel`, `EXCLUSIONS`, `Funnel.keep`, the
+   `has_…` helpers), so its steps and what each removed can be shown and debugged; a table
+   of activities takes `flagged_activities` and its standard columns; a column is labelled
+   and formatted once in `app/ui.py` (`COLUMNS`), never renamed in a page; a funnel is shown
+   with `app/sets.py`; a P6 name comes from `xer/model.py`. A filter written by hand where
+   a named step exists, or a second copy of a helper, is a defect of the change even when
+   its numbers are right. The pull request lists what was reused.
 
 Units: durations and floats are stored in hours; `_d` columns are working days of the
 activity's own calendar; activities are identified by `task_code` (Activity ID), never

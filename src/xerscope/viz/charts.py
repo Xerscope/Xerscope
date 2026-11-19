@@ -595,6 +595,36 @@ def build_half_step(steps: pd.DataFrame) -> go.Figure:
     return figure
 
 
+def build_path_churn(churn: pd.DataFrame) -> go.Figure:
+    """Longest path of each update against the one before (analysis/longest_path.py ``path_churn``).
+
+    Stacked bars per update: the tasks that stayed on the path and those that entered it above the
+    axis, those that left it below (finished, or still open: the path switched away from them).
+    """
+    figure = go.Figure()
+    for column, name, colour, sign in (
+        ("stayed", "Stayed", SERIES[0], 1),
+        ("entered", "Entered", SERIES[1], 1),
+        ("left_finished", "Left: finished", STATUS["complete"], -1),
+        ("left_open", "Left: still open", STATUS["warning"], -1),
+    ):
+        figure.add_trace(
+            go.Bar(
+                x=churn["data_date"],
+                y=sign * churn[column],
+                name=name,
+                marker_color=colour,
+                customdata=churn[column],
+                hovertemplate=f"Update %{{x|%Y-%m-%d}}<br>{name}: %{{customdata}}<extra></extra>",
+            )
+        )
+    figure.update_xaxes(title="Status date")
+    figure = _with_house_style(figure, 340, "Tasks on the longest path")
+    figure.update_layout(barmode="relative", margin=dict(l=10, r=20, t=20, b=10))
+    figure.add_hline(y=0, line_color=NEUTRAL, line_width=1)
+    return figure
+
+
 def build_slip_trend(series: pd.DataFrame) -> go.Figure:
     """Finish shown and finish before replanning per update (analysis/forensics.py ``half_step_series``).
 

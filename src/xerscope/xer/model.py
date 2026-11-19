@@ -136,6 +136,12 @@ CONSTRAINT = {
 }
 
 
+def constraints_label(task: Mapping) -> str:
+    """Primary and secondary constraint of ``task`` by their P6 names, "A + B"; "" without any."""
+    codes = [task.get(column) for column in ("cstr_type", "cstr_type2")]
+    return " + ".join(CONSTRAINT.get(code, code) for code in codes if isinstance(code, str) and code)
+
+
 def _blank_to_na(values: pd.Series) -> pd.Series:
     return values.where(values.astype(str).str.strip() != "", None)
 
