@@ -1540,12 +1540,19 @@ class _Run:
         free_float_hr = (
             max(0.0, min(gaps)) if gaps else max(0.0, axis.between(self.early_finish[code], self.finish) / 60)
         )
-        if code in self.duration_override:
-            # an activity whose expected finish applies has no free float in P6, whatever
-            # its successors' early dates (corpus: 265 of 265 such values; H1-08 A1090,
-            # H5-01 A1120). Observed, not explained.
+        if self.has_expected_finish(code) or self.is_unstarted_under_mandatory(code):
+            # P6 23.12.1 gives no free float to an activity with an expected finish in force,
+            # whether or not it sets the duration (held-out corpus: 707 of 707; H1-08 A1090,
+            # H5-01 A1120), nor to unstarted work under a primary Mandatory Start / Finish
+            # (508 of 508; probes: 76 of 76, e.g. oc-edges-xc E14). Observed, not explained;
+            # 26.8 not measured.
             return 0.0
         return free_float_hr
+
+    def is_unstarted_under_mandatory(self, code) -> bool:
+        """True for work not started whose primary constraint is a dated Mandatory Start / Finish."""
+        primary_type, primary_date = self.inputs[code].get("cstr_type"), self.inputs[code].get("cstr_date")
+        return self.status[code] == "TK_NotStart" and primary_type in MANDATORY and pd.notna(primary_date)
 
     def total_float(self, code, axis) -> float:
         """Total float in hours of the activity's calendar, read the way the project's float option says."""
