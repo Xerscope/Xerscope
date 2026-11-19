@@ -27,7 +27,7 @@ from xerscope.analysis.evm import (
     update_and_previous,
     weekly_gains,
 )
-from xerscope.analysis.explain import KPI_FORMULAS
+from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING
 from xerscope.app import ui
 from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.state import (
@@ -195,9 +195,7 @@ def show_earned_schedule(schedule: EarnedSchedule, window: pd.Series | None, sin
                 "SPI (4 weeks)",
                 ratio_text(spi_4w),
                 None,
-                "Hours earned / hours planned over the last four weeks, each week read on the plan in force "
-                "that week: the weekly SPI weighted by the planned hours. The SPI above is since the start "
-                "and moves little; this one says how the last month went.",
+                SPI_WINDOW_READING,
             ),
             ("Planned finish", ui.fmt_date(schedule.plan_finish), None, "The last planned finish of the baseline."),
             (
