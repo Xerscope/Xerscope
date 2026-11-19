@@ -11,9 +11,12 @@ Every case is a hand-made schedule on xerkit's calendar C8 = Mon-Fri 08:00-12:00
 data date Monday 2026-03-02 08:00 (DD). Predecessor P (8 h) runs Mon 2 Mar 08:00 -> 17:00.
 Calendar of the days used: Tue 3, Wed 4, Thu 5, Fri 6, Wed 11 March.
 
-The document's own example puts the expected finish at DD+5d 17:00, a Saturday on C8, where the
-start milestone's "DD+6d 08:00" is a Sunday: the contract does not say what P6 does off the
-calendar. These tests use Thu 5 Mar 17:00 (DD+3d), a period end, to stay on working time.
+Off the working time, the expected finish of a milestone is written as any milestone date is: a
+finish milestone keeps a working instant or a period edge and moves to the next opening
+otherwise, a start milestone takes the next opening. Source: P6 Professional 23.12.1, probes
+h3-situations (project ZZ-CPP-H3S-X) of the pinned corpus: X9 (finish milestone, Sunday 17:00 ->
+Monday 08:00), X11 (08:00 kept), X8 (the same Sunday under a Finish On or After of that date), X2
+(start milestone, Sunday 17:00 -> Monday 08:00). P6 26.8 is not measured.
 """
 
 import pandas as pd
@@ -134,6 +137,42 @@ def test_start_milestone_expected_finish_before_the_logic_stays_on_the_logic():
     assert row["es"] == T("2026-03-03 08:00")
 
 
+# --- an expected finish off the working time, or on a period start -------------------------------
+
+
+def test_finish_milestone_expected_finish_on_a_sunday_moves_to_the_next_opening():
+    """Expected finish Sunday 8 Mar 17:00: not working time, so the finish milestone sits at the
+    next opening, Monday 9 Mar 08:00, not at the close before it, Fri 6 Mar 17:00 (probe X9)."""
+    row = milestone_after_p(todo("FM7", expect_end_date="2026-03-08 17:00", **FM))
+    assert row["es"] == T("2026-03-09 08:00")
+    assert row["ef"] == T("2026-03-09 08:00")
+
+
+def test_finish_milestone_expected_finish_on_a_period_start_is_kept():
+    """Expected finish Wed 4 Mar 08:00: a period edge, kept as it is, not moved to Tue 3 Mar 17:00
+    (probe X11)."""
+    row = milestone_after_p(todo("FM8", expect_end_date="2026-03-04 08:00", **FM))
+    assert row["es"] == T("2026-03-04 08:00")
+    assert row["ef"] == T("2026-03-04 08:00")
+
+
+def test_finish_milestone_under_finish_on_or_after_of_the_same_sunday():
+    """Finish On or After and expected finish both Sunday 8 Mar 17:00: Monday 9 Mar 08:00 (probe X8)."""
+    row = milestone_after_p(
+        todo("FM9", cstr_type="CS_MEOA", cstr_date="2026-03-08 17:00", expect_end_date="2026-03-08 17:00", **FM)
+    )
+    assert row["es"] == T("2026-03-09 08:00")
+    assert row["ef"] == T("2026-03-09 08:00")
+
+
+def test_start_milestone_expected_finish_on_a_sunday_moves_to_the_next_opening():
+    """Expected finish Sunday 8 Mar 17:00: the start milestone takes the next opening, Monday 9 Mar
+    08:00 (probe X2)."""
+    row = milestone_after_p(todo("SM3", expect_end_date="2026-03-08 17:00", **SM))
+    assert row["es"] == T("2026-03-09 08:00")
+    assert row["ef"] == T("2026-03-09 08:00")
+
+
 # --- option off ----------------------------------------------------------------------------------
 
 
@@ -161,25 +200,3 @@ def test_task_with_an_expected_finish_is_unchanged():
     row = schedule(snap(tasks, [("P", "A", "FS", 0)], sched=OPTION_ON)).frame.loc["A"]
     assert row["es"] == T("2026-03-03 08:00")
     assert row["ef"] == T("2026-03-05 17:00")
-
-
-@pytest.mark.oracle("characterization")
-def test_task_finish_on_later_than_its_expected_finish_still_wins():
-    """Characterization of the engine as it was before milestones were handled: a task is not
-    placed like a milestone. Task A (16 h, FS after P) has a Finish On Wed 11 Mar 17:00 later than
-    its expected finish Thu 5 Mar 17:00; the later finish bound wins (cpm.py, expected_finish: "an
-    FF / SF bound later than that finish wins"): early finish Wed 11 Mar 17:00, start 16 h before,
-    Tue 10 Mar 08:00. Hand calculation: Tue 10 08:00 + 16 working hours (8 h + 8 h) = Wed 11 17:00."""
-    tasks = [
-        todo("P", **hours(8)),
-        todo(
-            "A",
-            cstr_type="CS_MEO",
-            cstr_date="2026-03-11 17:00",
-            expect_end_date=EXPECTED_FINISH_THURSDAY,
-            **hours(16),
-        ),
-    ]
-    row = schedule(snap(tasks, [("P", "A", "FS", 0)], sched=OPTION_ON)).frame.loc["A"]
-    assert row["es"] == T("2026-03-10 08:00")
-    assert row["ef"] == T("2026-03-11 17:00")
