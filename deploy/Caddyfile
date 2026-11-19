@@ -30,8 +30,12 @@
     header {                             # every response, 404 and 401 included
         Referrer-Policy no-referrer      # a link the page opens never carries the URL, i.e. the secret prefix
         X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
-        Content-Security-Policy "frame-ancestors 'self'"   # no other site can frame the app (clickjacking)
-        Strict-Transport-Security "max-age=31536000"   # the browser never tries the name over plain HTTP
+        # no other site can frame the app (clickjacking); no plug-in content, and no <base> to move the
+        # page's relative URLs elsewhere (the page uses neither)
+        Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+        # the browser never tries the name over plain HTTP, nor a sub-domain of it: one answered in clear
+        # by someone on the network could set a cookie for this name before the visit
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"   # the app uses none of them
     }
     header -Server   # neither Caddy nor uvicorn names itself; a deletion is deferred, so it stays out of
