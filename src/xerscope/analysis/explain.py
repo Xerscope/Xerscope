@@ -193,6 +193,7 @@ NOTES: dict[str, Callable[[dict], list[str]]] = {
     "decm_06a506c_riding_status_date": _riding_notes,
     "relationship_type": _relationship_type_notes,
     "no_resource": _no_resource_notes,
+    "on_data_date": _date_grain_notes,
     "invalid_dates": _invalid_dates_notes,
     "late_vs_baseline": _late_vs_baseline_notes,
     "bei": _bei_notes,

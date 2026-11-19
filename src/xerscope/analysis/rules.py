@@ -587,6 +587,37 @@ def invalid_dates(
     )
 
 
+@rule("on_data_date", "%")
+def on_data_date(
+    context, exclude: Names = ("complete",), date_grain: Literal["day", "timestamp"] = "day"
+) -> RuleOutput:
+    """Starting or finishing on the data date.
+    Counts: on the data date / checked
+
+    Tasks whose start (actual, else forecast) or finish (actual, else forecast) falls on the
+    data date: the model's Start and Finish. ``date_grain = "day"`` compares calendar days, as a
+    reader of the Gantt does; ``"timestamp"`` the stored date and time.
+    """
+    data_date = context.snapshot.data_date
+    funnel = activities_funnel(context, exclude)
+    population = funnel.rows
+    if data_date is None:
+        return RuleOutput(note="no status date")
+    status_day = at_grain(data_date, date_grain)
+    starts = as_flag(at_grain(population["start"], date_grain) == status_day)
+    finishes = as_flag(at_grain(population["finish"], date_grain) == status_day)
+    reason = pd.Series("", index=population.index).mask(finishes, "finishes on the data date")
+    reason = reason.mask(starts, "starts on the data date")
+    flagged = population[starts | finishes]
+    return RuleOutput(
+        flagged_activities(flagged, reason=reason[starts | finishes]),
+        len(flagged),
+        len(population),
+        checked=population,
+        funnel=funnel,
+    )
+
+
 @rule("no_resource", "%")
 def no_resource(
     context,

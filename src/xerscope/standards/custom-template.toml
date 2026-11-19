@@ -134,6 +134,14 @@ target = "pass"
 # target = ">= 5%"                  # a band is one metric per bound: add CUS-16 with "<= 15%"
 # params = { op = "between", value = 0, value_max = 20, unit = "days", exclude = ["complete"] }
 
+# [[metric]]
+# id = "CUS-17"
+# group = "Status"
+# name = "Activities riding the data date"
+# rule = "on_data_date"             # start or finish (actual, else forecast) on the data date's day
+# target = "< 10%"
+# params = { exclude = [], date_grain = "day" }
+
 # --- more rules (uncomment to use) -------------------------------------------------------
 # [[metric]]
 # id = "CUS-14"

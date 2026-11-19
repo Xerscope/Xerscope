@@ -2035,6 +2035,7 @@ def test_relationship_type_can_list_the_links_of_the_type():
     assert links(others) == [("B", "C")] and counts(others) == (1, 2)
 
 
+@pytest.mark.oracle("standard")
 def test_relationship_type_refuses_an_unknown_listed_value_on_load():
     from xerscope.analysis.standards import loads_standard
 
@@ -2083,3 +2084,47 @@ def test_no_resource_can_require_budgeted_labour_units():
     assert (codes(labour), counts(labour)) == (["M", "N", "Z"], (3, 4))
     with_expenses = RULES["no_resource"].fn(AnalysisContext(s), exclude=["milestones"], kind="labour_units")
     assert codes(with_expenses) == ["M", "Z"]  # N has an expense and expenses_count defaults to true
+
+
+# --- rules for a company standard: activities starting or finishing on the data date
+
+
+@pytest.mark.oracle("standard")
+def test_on_data_date_flags_a_start_or_finish_on_the_status_date_day():
+    """Requirement "less than 10 % of activities start or finish on the data date": the activity's
+    start (actual, else forecast) or finish (actual, else forecast) falls on the data date, read by
+    calendar day by default. Data date 2026-03-02 08:00. Hand count on 5 tasks: S forecast start
+    02/03 08:00; F forecast finish 02/03 17:00; A actual finish 02/03 12:00 (complete); O starts
+    03/03; B started 23/02, finishes 13/03. By day: S, F, A -> 3 / 5; completed excluded: S, F -> 2 / 4.
+    By timestamp (08:00 exactly): S alone."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [
+            todo("S", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            todo("F", early_start_date="2026-02-23 08:00", early_end_date="2026-03-02 17:00"),
+            done("A", act_start_date="2026-02-23 08:00", act_end_date="2026-03-02 12:00"),
+            todo("O", early_start_date="2026-03-03 08:00", early_end_date="2026-03-06 17:00"),
+            active("B", early_start_date="2026-02-23 08:00", early_end_date="2026-03-13 17:00"),
+        ]
+    )
+    by_day = RULES["on_data_date"].fn(AnalysisContext(s), exclude=[])
+    assert (codes(by_day), counts(by_day)) == (["A", "F", "S"], (3, 5))
+    assert dict(zip(by_day.flagged["task_code"], by_day.flagged["reason"], strict=True)) == {
+        "S": "starts on the data date",
+        "F": "finishes on the data date",
+        "A": "finishes on the data date",
+    }
+    open_only = RULES["on_data_date"].fn(AnalysisContext(s), exclude=["complete"])
+    assert (codes(open_only), counts(open_only)) == (["F", "S"], (2, 4))
+    exact = RULES["on_data_date"].fn(AnalysisContext(s), exclude=[], date_grain="timestamp")
+    assert codes(exact) == ["S"]
+
+
+@pytest.mark.oracle("standard")
+def test_on_data_date_without_a_status_date_is_not_applicable():
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A")], data_date="")
+    r = RULES["on_data_date"].fn(AnalysisContext(s))
+    assert r.value is None and r.numerator is None and "no status date" in r.note
