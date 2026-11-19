@@ -367,15 +367,15 @@ def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
 def test_caddy_build_forces_the_fixed_x_net_and_proves_it():
     """Caddy 2.11.8 and 2.11.9 pin golang.org/x/net v0.60.0 (CVE-2026-78661, fixed in 0.62.0). The
     image is ours, so the build replaces the module rather than excepting the finding, and fails
-    unless the built binary records x/net v0.62.0 (go version -m reads the binary's build info)."""
+    unless the built binary records the replacing x/net (go version -m reads the binary's build info)."""
     df = (ROOT / "deploy" / "caddy" / "Dockerfile").read_text()
     fixed = re.search(r"--replace golang\.org/x/net=golang\.org/x/net@(v\d+\.\d+\.\d+)", df)
     assert fixed and tuple(map(int, fixed.group(1)[1:].split("."))) >= (0, 62, 0), fixed
     pattern = "golang\\.org/x/net[[:space:]]+" + fixed.group(1).replace(".", "\\.")  # as the grep spells it
     assert f"go version -m /usr/bin/caddy | grep -Eq '{pattern}'" in df
-    jose = re.search(r"--replace github\.com/go-jose/go-jose/v4=github\.com/go-jose/go-jose/v4@(v\d+\.\d+\.\d+)", df)
-    assert jose and tuple(map(int, jose.group(1)[1:].split("."))) >= (4, 1, 6), jose  # CVE-2026-116587
+    assert "go-jose/v4=" not in df  # Caddy 2.11.9 requires v4.1.6 (CVE-2026-116587 fixed): no replace
     assert "grep -Eq 'github\\.com/go-jose/go-jose/v4[[:space:]]+v4\\.1\\.6'" in df
+    assert "go version /usr/bin/caddy | grep -q ' go1\\.27\\.4$'" in df  # CVE-2026-97054, fixed in Go 1.27.4
 
 
 def test_base_images_pinned_by_digest():
