@@ -269,10 +269,9 @@ def test_no_residual_between_two_schedules_of_the_p6_corpus(name):
     cases = HELD_OUT / name / "cases"
     earlier, later = (build_snapshot(read_xer(cases / f"{name}-{number}.xer")) for number in ("11", "12"))
     try:
-        read = half_step(earlier, later)
+        assert half_step(earlier, later).residual_wd == 0.0
     except CycleError:
         pytest.skip("a step closes a logic loop between these two unrelated schedules")
-    assert read.residual_wd == 0.0
 
 
 @pytest.mark.oracle("standard")
