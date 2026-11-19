@@ -89,6 +89,16 @@ def _p6_results(set_dir: Path) -> pd.DataFrame:
     return res
 
 
+def _float_type_p6_held(set_dir: Path, case: str) -> str | None:
+    """The float type the corpus recorded P6 as holding for a case, None when it recorded none."""
+    import json
+
+    from xerscope.verify.p6_corpus import float_type_p6_held
+
+    record = set_dir / "p6-imported" / f"{case}.json"
+    return float_type_p6_held(json.loads(record.read_text(encoding="utf-8"))) if record.exists() else None
+
+
 def test_float_type_codes_read_as_p6_does(corpus):
     """Which float P6 reports under each ``sched_float_type`` code, measured on P6's own
     dates (nothing of xerscope's CPM is involved), on the resource-dependent work of
@@ -104,7 +114,8 @@ def test_float_type_codes_read_as_p6_does(corpus):
         set_dir = corpus / f"H{i}"
         for case, g in _p6_results(set_dir).groupby("case"):
             snap = load_snapshot(set_dir / "cases" / f"{case}.xer")
-            code = (snap.options.get("sched") or {}).get("sched_float_type") or "FT_FF"
+            code = _float_type_p6_held(set_dir, case) or (snap.options.get("sched") or {}).get("sched_float_type")
+            code = code or "FT_FF"
             axes = _Axes(snap, *_date_range(snap))
             t = snap.activities.drop_duplicates("task_code").set_index("task_code")
             for r in g.itertuples():
