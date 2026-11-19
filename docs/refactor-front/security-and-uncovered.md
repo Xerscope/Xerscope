@@ -1,7 +1,7 @@
 # Task B — security of the front, files the lenses never opened, B12 / U1 / picker framing
 
 Every line number below was read in this session (`sed -n`, `cat -n`, `grep -n`) on the working tree at
-`/home/user/Xerscope` (not a git checkout in this container). Nothing was modified in the repository.
+the repository checkout. Nothing was modified in the repository.
 Where a claim could not be verified it says so. Sources are named, never linked, as the repo does
 (`standards/*.toml` `source =`, `analysis/explain.py`, `docs/formulas.md`).
 
