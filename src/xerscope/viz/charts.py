@@ -567,3 +567,65 @@ def build_metric_trend(
     figure = _with_house_style(figure, 360, unit, legend=False)
     figure.update_layout(hovermode="closest")
     return figure
+
+
+def build_half_step(steps: pd.DataFrame) -> go.Figure:
+    """Shift of the project finish at each step of a half-step reading (analysis/forensics.py).
+
+    One bar per step after the as-scheduled row: working days lost (negative, critical colour) or
+    gained (positive, good colour), the finish once the step is applied in the hover.
+    """
+    stepped = steps.iloc[1:]
+    colours = [STATUS["critical"] if shift < 0 else STATUS["good"] for shift in stepped["shift_wd"].fillna(0)]
+    finishes = stepped["finish"].map(lambda stamp: "–" if pd.isna(stamp) else f"{stamp:%Y-%m-%d}")
+    figure = go.Figure(
+        go.Bar(
+            x=stepped["step"],
+            y=stepped["shift_wd"],
+            marker_color=colours,
+            text=stepped["shift_wd"].map(format_shift),
+            textposition="outside",
+            customdata=np.stack([finishes, stepped["changes"]], axis=-1) if len(stepped) else None,
+            hovertemplate="%{x}<br>Finish once applied %{customdata[0]}<br>%{customdata[1]} change(s)<extra></extra>",
+        )
+    )
+    figure = _with_house_style(figure, 320, "Finish shift (wd)", legend=False)
+    figure.add_hline(y=0, line_color=NEUTRAL, line_width=1)
+    figure.update_layout(margin=dict(l=10, r=20, t=30, b=10))
+    return figure
+
+
+def build_slip_trend(series: pd.DataFrame) -> go.Figure:
+    """Finish shown and finish before replanning per update (analysis/forensics.py ``half_step_series``).
+
+    Two lines: the recalculated finish of each update, and where the previous update's plan lands
+    with that update's progress alone. A gap between them, week after week, is the delay the
+    replanning absorbs.
+    """
+    rows = series.dropna(subset=["data_date"])
+    figure = go.Figure()
+    for column, name, colour in (
+        ("finish_before_replanning", "Finish before replanning", SERIES[1]),
+        ("finish", "Finish shown", SERIES[0]),
+    ):
+        figure.add_trace(
+            go.Scatter(
+                x=rows["data_date"],
+                y=rows[column],
+                name=name,
+                mode="lines+markers",
+                line=dict(color=colour, width=LINE),
+                marker=dict(size=8, color=colour),
+                hovertemplate=f"Update %{{x|%Y-%m-%d}}<br>{name} %{{y|%Y-%m-%d}}<extra></extra>",
+            )
+        )
+    figure.update_xaxes(title="Status date")
+    figure = _with_house_style(figure, 380, "Finish")
+    figure.update_yaxes(**DATE_AXIS)
+    figure.update_layout(hovermode="x unified", margin=dict(l=10, r=20, t=20, b=10))
+    if len(rows):
+        _widen_dates(figure.update_xaxes, rows["data_date"].min(), rows["data_date"].max())
+        both = pd.concat([rows["finish"], rows["finish_before_replanning"]]).dropna()
+        if len(both):
+            _widen_dates(figure.update_yaxes, both.min(), both.max())
+    return figure
