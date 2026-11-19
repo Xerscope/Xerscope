@@ -171,6 +171,7 @@ update (actuals changed, riding the status date) work too.
 | Schedule health | standard picker (P6, DECM, DCMA, Integrity, uploaded TOML), Check Summary, flagged items with the rule's definition, metric trend, CSV of every flagged item |
 | Audit | one check: the sets behind its count (counted, checked not counted, excluded), the check re-run with another target or threshold (this page only), the `[[metric]]` table to make it permanent |
 | Changelog | any two files: headline counts, every change (filterable, CSV), weekly counts |
+| Delay analysis | each week read step by step (AACE 29R-03 MIP 3.2): the finish before replanning and the week's slip, then what scope, durations, logic, constraints, calendars and options did to it; how the finish is held (last task, Must Finish By, Mandatory Finish); the series over every update |
 | Earned value | PV, EV, AC, forecast S-curve (hours or % BAC); SPI (labor units; the cost SPI, P6 column, and the other cost figures behind the sidebar checkbox Costs, off by default), BEI (P6 / DCMA), EV/AC per update; Schedule %, Performance % and EV technique per activity |
 | Milestone trend | MTA chart, slip since first forecast and since last week in working days |
 | PPC & progress | PPC per week with target, the week's commitments and outcome, progress and earned hours by WBS and activity |

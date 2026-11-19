@@ -361,7 +361,14 @@ the `[[metric]]` table to paste here.
 | DCMA DECM, other guidelines | v8.0 | EVMS cost data an XER does not carry |
 | GAO Schedule Assessment Guide | GAO-16-89G, Dec 2015 | ten qualitative best practices |
 | NDIA PASEG | v6.0, 30 Sep 2025 | guidance and GASP principles |
-| AACE RP 29R-03 | rev. 2011 | window analysis: the base for the changelog and weekly trends, and for TIA later |
+
+## Forensic reading (not a check)
+
+| Source | Version | Used for |
+|---|---|---|
+| AACE RP 29R-03, Forensic Schedule Analysis | rev. 2011 | MIP 3.2 (contemporaneous period analysis): the half-step reading of each week, `analysis/forensics.py`, Delay analysis page ([formulas.md](formulas.md) 5.1). Observational, the baseline is not read; the TIA (MIP 3.7) is not implemented |
+| Hegazy & Zhang, "Daily Windows Delay Analysis", J. Constr. Eng. Manage. 131(5), 2005 | — | the step-by-step rescheduling; here the window is the week between two updates and the steps the changelog's categories |
+| SCL Delay and Disruption Protocol | 2nd ed., 2017 | method 4 (as-planned vs as-built windows) names the same reading; its Part B on mitigation and acceleration is why the slip and the replanning are shown apart |
 
 ## Sources
 
