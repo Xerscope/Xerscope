@@ -150,6 +150,49 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
     assert _cards(at) == expected
 
 
+@pytest.mark.oracle("property")
+def test_the_score_cards_stop_polling_once_every_score_is_shown(sample_dir, monkeypatch):
+    """A fragment's timer only goes with a full run of the page. Once the four scores were shown the
+    cards went on polling every second for as long as the Overview stayed open, each poll reading the
+    63 checks from the cache. A poll that finds nothing missing asks for that full run, once: the
+    page it draws no longer polls."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
+    _joined(at, "_load_job")
+    files_done(at.run())
+    _joined(at, "_score_job")
+    at.run()  # the poll that collects the four standards
+    shown = _cards(at)
+    assert len(shown) == 4 and all(value.endswith("%") for value, _ in shown.values())
+
+    # the next poll, as the browser's timer makes it: the page had found a score missing when it
+    # armed the fragment, the fragment now finds them all
+    page_saw_one_missing = []
+    held = state.standard_results_held
+
+    def held_after_the_page_looked(standard, snapshot):
+        if not page_saw_one_missing:
+            page_saw_one_missing.append(standard.name)
+            return None
+        return held(standard, snapshot)
+
+    monkeypatch.setattr(state, "standard_results_held", held_after_the_page_looked)
+    reruns = []
+    real_rerun = st.rerun
+
+    def rerun(*args, **kwargs):
+        reruns.append(kwargs.get("scope", args[0] if args else "app"))
+        real_rerun(*args, **kwargs)
+
+    monkeypatch.setattr(st, "rerun", rerun)
+    at.run()
+    _ok(at)
+    assert reruns == ["app"]  # one full run, in which the page finds every score and does not poll
+    assert _cards(at) == shown
+
+
 @pytest.mark.parametrize("sync", ["1", "0"])
 def test_both_load_paths_give_the_same_errors_for_the_same_bad_files(sample_dir, tmp_path, monkeypatch, sync):
     """One file read in the script run (one ticked, or XERSCOPE_SYNC_LOAD) or several in a thread:

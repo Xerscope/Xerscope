@@ -79,7 +79,7 @@ loading = st.session_state.get("_load_job") is not None  # the series is still b
 def score_section(polling: bool) -> None:
     """The score cards. ``polling``: the scores are computed in a thread (``score_job``); this runs
     as a fragment every second and fills each card as its standard finishes, the rest of the page
-    not drawn again. The timer goes with the next full run of the page, which no longer polls."""
+    not drawn again (``polled_score_section``)."""
     held = {key: standard_results_held(standard, latest) for key, standard in built_in.items()}
     missing = [key for key, results in held.items() if results is None]
     if missing and polling:
@@ -97,13 +97,22 @@ def score_section(polling: bool) -> None:
     )
 
 
-polling = (
-    background_jobs()
-    and not loading
-    and any(standard_results_held(standard, latest) is None for standard in built_in.values())
-)
-if polling:
-    st.fragment(score_section, run_every=1.0)(polling=True)
+def is_a_score_missing() -> bool:
+    """Whether a built-in standard has a check that is not computed yet."""
+    return any(standard_results_held(standard, latest) is None for standard in built_in.values())
+
+
+def polled_score_section() -> None:
+    """The score cards as the fragment draws them every second. Its timer only goes with a full
+    run of the page: a poll that finds every score asks for one, and the page then draws the cards
+    without a fragment. Left to its timer, it read every check again each second."""
+    if not is_a_score_missing():
+        st.rerun(scope="app")
+    score_section(polling=True)
+
+
+if background_jobs() and not loading and is_a_score_missing():
+    st.fragment(polled_score_section, run_every=1.0)()
 else:
     score_section(polling=False)
 
