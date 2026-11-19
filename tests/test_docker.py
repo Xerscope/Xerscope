@@ -309,7 +309,7 @@ def test_caddy_security_headers_and_their_ci_check():
         "Referrer-Policy no-referrer",
         "X-Content-Type-Options nosniff",
         "frame-ancestors 'self'",
-        'Strict-Transport-Security "max-age=31536000"',
+        'Strict-Transport-Security "max-age=31536000; includeSubDomains"',
         'Permissions-Policy "camera=(), microphone=(), geolocation=()"',
     )
     for line in headers:
@@ -376,6 +376,22 @@ def test_caddy_answers_404_on_the_app_routes_the_page_never_asks_for():
     assert 'get "http://127.0.0.1:8080/$XERSCOPE_PATH/_stcore/metrics"' in wf  # without the password: 401
     assert "for route in _stcore/metrics _stcore/agent/openapi.json; do" in wf
     assert 'get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/$route"' in wf  # with it: 404, not the app
+
+
+def test_caddy_policy_forbids_plug_ins_and_base_and_hsts_covers_sub_domains():
+    """OWASP ASVS 5.0.0, 3.4.3: the policy holds at least object-src 'none' and base-uri 'none'.
+    3.4.1: from level 2 the HSTS policy covers the sub-domains too; without it, a sub-domain answered
+    in clear by someone on the network sets a cookie for the app's name before the visit, and
+    Streamlit keeps the XSRF token of the cookie a visitor arrives with."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
+    assert '''Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"''' in block
+    assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains"' in block
+    # one value each: a second header line would add a policy or replace the first
+    assert caddy.count("Content-Security-Policy") == 1 and caddy.count("Strict-Transport-Security") == 1
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads the exact values
+    assert r"""\[\"frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]""" in wf
+    assert r"""'"Strict-Transport-Security": \["max-age=31536000; includeSubDomains"\]'""" in wf
 
 
 def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
