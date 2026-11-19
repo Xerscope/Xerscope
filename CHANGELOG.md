@@ -34,6 +34,8 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
   defines it, then scope, durations, logic, constraints, calendars and options): the finish before replanning and the week's slip, then what the
   replanning did; how the finish is held (last task, Must Finish By, Mandatory Finish), the
   longest path's float, the series over every update (formulas.md §5.1). The baseline is not read.
+  A week whose recalculated finish is not the one P6 stored in the file is flagged: its shifts
+  may be the recalculation's.
 - Changelog: categories Calendars (working time changed) and Options (scheduling option changed,
   Must Finish By included); "remaining duration cut" on work not started (formulas.md §5).
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance

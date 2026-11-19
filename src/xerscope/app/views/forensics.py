@@ -39,6 +39,7 @@ SERIES_LABELS = {
     "replanning_wd": "Replanning (wd)",
     "residual_wd": "Residual (wd)",
     "period_wd": "Period (wd)",
+    "engine_gap_wd": "Recalculated vs file (wd)",
     "longest_path_float_d": "Longest path float (d)",
     "matched": "Matched",
     "added": "Added",
@@ -51,6 +52,26 @@ def show_case(new) -> None:
     """Say how the finish of the update is held, and what it means for the reading."""
     case, held_by = finish_case(new)
     st.caption(f"Finish held by: **{case}** ({ui.fmt_date(held_by)}). In this case {CASE_TEXT[case]}.")
+
+
+def show_engine_gap(read, old, new) -> None:
+    """Warn when the recalculated finish of either update is not the one P6 stored in its file."""
+    if read.is_finish_reproduced:
+        return
+    gaps = [
+        f"{ui.fmt_date(snapshot.data_date)}: recalculated {ui.fmt_date(finish)}, in the file "
+        f"{ui.fmt_date(snapshot.finish_date)} ({gap_wd:+.1f} wd)"
+        for snapshot, finish, gap_wd in (
+            (old, read.old_finish, read.old_engine_gap_wd),
+            (new, read.new_finish, read.new_engine_gap_wd),
+        )
+        if gap_wd != 0.0
+    ]
+    st.warning(
+        "xerscope does not recalculate the finish P6 stored in the file (" + "; ".join(gaps) + "). The shifts "
+        "below may come from the recalculation and not from the schedule: read them as indications only. "
+        "The Schedule health page, Integrity standard, lists the dates that differ."
+    )
 
 
 def show_kpis(read, new) -> None:
@@ -165,6 +186,7 @@ except ScheduleError as error:
     st.warning(f"These two updates cannot be read: {ui.without_addresses(str(error))}")
     st.stop()
 show_case(new)
+show_engine_gap(read, old, new)
 show_kpis(read, new)
 show_steps(read, old, new)
 show_series(store)

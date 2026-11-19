@@ -22,6 +22,7 @@ from xerscope.analysis.forensics import (
     MANDATORY_FINISH,
     MUST_FINISH_BY,
     STEP_NAMES,
+    engine_gap_wd,
     finish_case,
     half_step,
     half_step_series,
@@ -179,6 +180,36 @@ def test_the_steps_add_up_to_the_recalculated_move_of_the_finish():
     assert round(read.steps["shift_wd"].iloc[1:].sum(), 2) == round(expected, 2)
     assert read.residual_wd == 0.0
     assert (read.matched, read.added, read.deleted) == (3, 1, 1)
+
+
+# --- the engine against the file -------------------------------------------------------------------
+
+
+@pytest.mark.oracle("standard")
+def test_engine_gap_is_zero_when_the_recalculated_finish_is_the_files_and_signed_otherwise():
+    """A, 40 h from Mon 2, recalculates to Fri 6 17:00. A file that stores Fri 6 17:00 is reproduced
+    (0.0); one that stores Thu 5 17:00 reads -1.0 (recalculated one working day later than the file);
+    one that stores Mon 9 17:00 reads +1.0."""
+    stored = {"reproduced": "2026-03-06 17:00", "earlier": "2026-03-05 17:00", "later": "2026-03-09 17:00"}
+    gaps = {name: engine_gap_wd(snap([todo("A", early_end_date=date, **week())])) for name, date in stored.items()}
+    assert gaps == {"reproduced": 0.0, "earlier": -1.0, "later": 1.0}
+
+
+@pytest.mark.oracle("standard")
+def test_a_reading_is_flagged_when_either_update_is_not_reproduced():
+    """The flag holds for both ends of the week: the earlier file here stores another finish than the
+    recalculation gives, the later one its own."""
+    good = dict(early_end_date="2026-03-06 17:00", **week())
+    reproduced = half_step(snap([todo("A", **good)]), snap([todo("A", **good)]))
+    assert reproduced.is_finish_reproduced and reproduced.new_engine_gap_wd == 0.0
+    off = half_step(snap([todo("A", early_end_date="2026-03-05 17:00", **week())]), snap([todo("A", **good)]))
+    assert not off.is_finish_reproduced and (off.old_engine_gap_wd, off.new_engine_gap_wd) == (-1.0, 0.0)
+
+
+@pytest.mark.oracle("characterization")
+def test_the_demo_series_is_reproduced_every_week(store):
+    """The demo files store the dates the engine gives: no week of the series is flagged."""
+    assert half_step_series(store)["engine_gap_wd"].abs().max() == 0.0
 
 
 # --- how the finish is held -----------------------------------------------------------------------

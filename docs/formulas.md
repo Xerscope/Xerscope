@@ -493,6 +493,7 @@ is not read.
 | `replanning_wd` | the shifts of the other steps, summed: what the replanning absorbed (positive) or added (negative) |
 | `residual_wd` | the later update's recalculated finish against the last step's: 0 when the steps account for every change the engine reads; otherwise a change the changelog does not list |
 | `period_wd` | `project_working_days(status date of the earlier update, status date of the later one)` on the later update's project calendar; `is_slip_beyond_period` when `slip_wd < -period_wd`: 3.4.K.4.g, a revision in the half-step or work pushed into a non-working stretch |
+| `engine_gap_wd` | `0.0 − project_working_days(Snapshot.finish_date, recalculated finish)` of an update: the recalculated finish against the latest activity finish P6 stored in the file, 0 when reproduced to the minute. `is_finish_reproduced` when it is 0 for both updates of the week; otherwise the page warns that the shifts may be the recalculation's |
 | `finish_case` | `must finish by` when `PROJECT.plan_end_date` is set (it bounds the late dates only: the early finish still moves, float turns negative past it); else `mandatory finish` when an end point (no successor, not LOE) carries `CS_MANDFIN` (its date cannot move); else `last task` |
 | `longest_path_float_d` | lowest `tf_hr` of the recalculated longest path / hours per day of the project calendar: under a Must Finish By or a Mandatory Finish, where the delay the finish cannot show goes |
 
@@ -515,8 +516,8 @@ moves one number, the recalculated project finish. xerscope's finish is P6's to 
 schedules (91.1 %): every schedule of 19 sets (H1 to H16, H18, H21, H22), 11 of 12 in H17, H19 and
 H20, and 58 to 75 % in H23 to H30 (driving resources, an expected finish against a Mandatory
 Finish, resource calendars). On a series of that last kind a shift can be the engine's and not the
-schedule's: `xerscope recalc` on each file says whether the finish is reproduced before the
-reading is trusted. The steps themselves leave no residual on any of the 315 pairs of consecutive
+schedule's: `engine_gap_wd` flags each such week on the page and in the series, and `xerscope
+recalc` on the file lists the dates that differ. The steps themselves leave no residual on any of the 315 pairs of consecutive
 corpus schedules that can be read (unrelated schedules, every kind of change at once); 15 pairs
 are not read because links carried one kind at a time close a loop neither schedule has
 (`half_step_series` keeps the row, with the reason). No P6 output exists for a half-step schedule:

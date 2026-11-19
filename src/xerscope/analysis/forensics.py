@@ -30,6 +30,11 @@ see): 0 when every step is applied. 3.4.K.4.g: a progress variance larger than t
 is suspect (a revision in the half-step, or work pushed into a non-working stretch);
 ``period_wd`` gives the period for that check.
 
+The reading moves one number, the recalculated finish, so it is worth what the engine is worth on
+the file: ``engine_gap_wd`` compares the recalculated finish of each update with the one P6 stored
+in it, and a reading with a gap is flagged (``is_finish_reproduced``), its shifts possibly the
+engine's and not the schedule's (docs/formulas.md 5.1, measured on the held-out corpus).
+
 Shifts are working days of the later update's project calendar, days lost negative, as the
 changelog and the finish variances read them.
 """
@@ -230,6 +235,7 @@ class HalfStep:
     ``residual_wd``: the later update's recalculated finish against the last step's, 0 when the
     steps account for every change. ``period_wd``: working days between the two status dates on
     the later update's project calendar, the bound of 3.4.K.4.g (a slip beyond it is suspect).
+    ``old_engine_gap_wd`` / ``new_engine_gap_wd``: ``engine_gap_wd`` of each update.
     """
 
     steps: pd.DataFrame
@@ -237,6 +243,8 @@ class HalfStep:
     new_finish: pd.Timestamp | None
     residual_wd: float
     period_wd: float
+    old_engine_gap_wd: float
+    new_engine_gap_wd: float
     matched: int
     added: int
     deleted: int
@@ -260,6 +268,11 @@ class HalfStep:
         return float(self.steps.set_index("step").loc[STEP_NAMES[1:], "shift_wd"].sum())
 
     @property
+    def is_finish_reproduced(self) -> bool:
+        """Both updates recalculate to the finish P6 stored in them: the shifts are the schedule's."""
+        return self.old_engine_gap_wd == 0.0 and self.new_engine_gap_wd == 0.0
+
+    @property
     def is_slip_beyond_period(self) -> bool:
         """3.4.K.4.g: the progress step lost more than the period holds.
 
@@ -279,6 +292,17 @@ def _shift_wd(new: Snapshot, before: pd.Timestamp | None, after: pd.Timestamp | 
     return 0.0 - round(new.project_working_days(before, after), 2)
 
 
+def engine_gap_wd(snapshot: Snapshot, recomputed: Schedule | None = None) -> float:
+    """Recalculated finish of ``snapshot`` against the finish P6 stored in the file.
+
+    Working days of the project calendar, a recalculated finish later than the file's negative;
+    0.0 when the engine reproduces P6's finish to the minute, missing when either is. The file's
+    finish is its latest activity finish (``Snapshot.finish_date``).
+    """
+    recomputed = schedule(snapshot) if recomputed is None else recomputed
+    return _shift_wd(snapshot, snapshot.finish_date, recomputed.finish)
+
+
 def _step_row(name: str, before: pd.Timestamp | None, after: pd.Timestamp | None, changes: int, new: Snapshot) -> dict:
     return {"step": name, "finish": after, "shift_wd": _shift_wd(new, before, after), "changes": changes}
 
@@ -290,7 +314,8 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
     """
     derivation = _Derivation(old, new, sorted(set(old.by_code.index) & set(new.by_code.index)))
     log = changelog(old, new)
-    old_finish, new_finish = schedule(old).finish, schedule(new).finish
+    old_schedule, new_schedule = schedule(old), schedule(new)
+    old_finish, new_finish = old_schedule.finish, new_schedule.finish
     period_wd = float("nan") if old.data_date is None else new.project_working_days(old.data_date, new.data_date)
     rows = [{"step": AS_SCHEDULED, "finish": old_finish, "shift_wd": float("nan"), "changes": 0}]
     derived, finish = old, old_finish
@@ -306,6 +331,8 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
         new_finish=new_finish,
         residual_wd=_shift_wd(new, finish, new_finish),
         period_wd=period_wd,
+        old_engine_gap_wd=engine_gap_wd(old, old_schedule),
+        new_engine_gap_wd=engine_gap_wd(new, new_schedule),
         matched=len(derivation.common),
         added=len(derivation.added),
         deleted=len(derivation.deleted),
@@ -366,6 +393,7 @@ SERIES_COLUMNS = [
     "replanning_wd",
     "residual_wd",
     "period_wd",
+    "engine_gap_wd",
     "longest_path_float_d",
     "matched",
     "added",
@@ -408,6 +436,7 @@ def _series_row(old: Snapshot, new: Snapshot) -> dict:
         "replanning_wd": read.replanning_wd,
         "residual_wd": read.residual_wd,
         "period_wd": read.period_wd,
+        "engine_gap_wd": read.new_engine_gap_wd,
         "longest_path_float_d": longest_path_float_d(new),
         "matched": read.matched,
         "added": read.added,
