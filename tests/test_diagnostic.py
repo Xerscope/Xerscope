@@ -20,6 +20,7 @@ from xerscope.app.diagnostic import (
     options_comparison,
     options_table,
 )
+from xerscope.app.expected_finish_forms import expected_finish_forms
 
 
 def test_options_comparison_puts_the_baseline_next_to_the_update_and_says_what_differs():
@@ -622,3 +623,54 @@ def test_guid_match_counts_ids_guids_and_what_the_option_links():
     previous = snap([todo("A", guid="g1")])
     assert guid_match_table(update, None, previous)["against"].tolist() == ["previous update"]
     assert guid_match_table(update, None, None).empty
+
+
+def test_expected_finish_forms_count_the_unfinished_activities_by_what_the_rules_key_on():
+    """Data date Monday 2 March 2026 08:00, calendar Mon-Fri 8 h. A: Mandatory Finish Fri 6 March 17:00,
+    expected finish Tue 10 March 17:00 (after the date), finish-to-finish from P. M: finish milestone,
+    expected finish Saturday 7 March 17:00 (off working time). B and C: expected finish Wed 4 March
+    17:00, no constraint; B's stored early dates are the recalculated ones (Mon 08:00 to Wed 17:00), C
+    keeps another stored finish. D is complete: not counted. E: Mandatory Finish Fri 6 March 17:00 and
+    expected finish the same instant (not after the date). F: expected finish Wed 4 March 17:00, start-to-finish
+    from P. No Activity ID and no date in the table."""
+    expected = {"expect_end_date": "2026-03-04 17:00", "total_float_hr_cnt": ""}
+    tasks = [
+        todo("P"),
+        todo("A", cstr_type="CS_MANDFIN", cstr_date="2026-03-06 17:00", expect_end_date="2026-03-10 17:00"),
+        todo("M", task_type="TT_FinMile", expect_end_date="2026-03-07 17:00"),
+        todo("B", **expected, early_start_date="2026-03-02 08:00", early_end_date="2026-03-04 17:00"),
+        todo("C", **expected),
+        done("D", expect_end_date="2026-03-04 17:00"),
+        todo("E", cstr_type="CS_MANDFIN", cstr_date="2026-03-06 17:00", expect_end_date="2026-03-06 17:00"),
+        todo("F", expect_end_date="2026-03-04 17:00"),
+    ]
+    s = snap(
+        tasks, [("P", "A", "FF", 0), ("P", "M", "FS", 0), ("P", "F", "SF", 0)], sched={"sched_use_expect_end_flag": "Y"}
+    )
+    forms = expected_finish_forms(s)
+    assert list(forms.columns) == [
+        "status", "type", "constraint", "after_constraint_date", "off_working_time", "ff_sf_predecessor",
+        "tasks", "stored_identical", "stored_different",
+    ]  # fmt: skip
+    rows = {
+        tuple(row[:6]): tuple(row[6:]) for row in forms.astype(object).where(forms.notna(), None).to_numpy().tolist()
+    }
+    assert rows == {
+        ("Not started", "Task dependent", "", None, False, False): (2, 1, 1),
+        ("Not started", "Task dependent", "Mandatory finish", True, False, True): (1, 0, 1),
+        ("Not started", "Finish milestone", "", None, True, False): (1, 0, 1),
+        ("Not started", "Task dependent", "Mandatory finish", False, False, False): (1, 0, 1),
+        ("Not started", "Task dependent", "", None, False, True): (1, 0, 1),
+    }
+    assert forms.iloc[0]["tasks"] == 2
+    assert expected_finish_forms(snap([todo("P")])).empty
+
+
+def test_expected_finish_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates():
+    """A finish milestone on a Saturday, Activity ID "ZQ7": the anonymous table counts it and shows neither
+    the ID nor a year."""
+    tasks = [todo("ZQ7", task_type="TT_FinMile", expect_end_date="2026-03-07 17:00")]
+    frames = diagnostic_frames(snap(tasks), None, builtin_standards()["P6"], anonymous=True)
+    forms = frames["02b_expected_finish_forms"]
+    assert forms["tasks"].tolist() == [1]
+    assert "ZQ7" not in forms.to_csv() and "2026" not in forms.to_csv()
