@@ -1991,3 +1991,63 @@ params = { op = "between", value = 20, value_max = 0, unit = "days" }
         loads_standard(text, "t.toml")
     accepted = loads_standard(text.replace("value_max = 0", "value_max = 20"), "t.toml")
     assert accepted.metrics[0].params["value_max"] == 20
+
+
+# --- rules for a company standard: relationships of a type with no lag, and which links are listed
+
+
+@pytest.mark.oracle("standard")
+def test_relationship_type_with_zero_lag_counts_the_type_and_the_lag_together():
+    """Requirement "90 % of relationships are Finish-Start with 0d lag": a link counts when it is
+    of the type and its lag is zero (blank = 0; a lead is not zero). Hand count on 6 links: A->B FS 0,
+    B->C FS 0, C->D FS blank, D->E FS 8 h, B->E FS -4 h, A->E SS 0. Type alone: 5 / 6; type and zero
+    lag: 3 / 6."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [todo("A"), todo("B"), todo("C"), todo("D"), todo("E")],
+        [
+            ("A", "B", "FS", 0),
+            ("B", "C", "FS", 0),
+            ("C", "D", "FS", ""),
+            ("D", "E", "FS", 8),
+            ("B", "E", "FS", -4),
+            ("A", "E", "SS", 0),
+        ],
+    )
+    plain = RULES["relationship_type"].fn(AnalysisContext(s), type="FS", links="all")
+    assert counts(plain) == (5, 6) and plain.value == pytest.approx(500 / 6)
+    strict = RULES["relationship_type"].fn(AnalysisContext(s), type="FS", links="all", zero_lag=True)
+    assert counts(strict) == (3, 6) and strict.value == pytest.approx(50.0)
+    assert links(strict) == [("A", "E"), ("B", "E"), ("D", "E")]  # the others, as before
+
+
+@pytest.mark.oracle("standard")
+def test_relationship_type_can_list_the_links_of_the_type():
+    """For a forbidden type ("no Start-Finish"), the list to read is the links of that type, not
+    the others: ``listed = "of_type"`` lists them; the counts do not change."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap([todo("A"), todo("B"), todo("C")], [("A", "B", "SF", 0), ("B", "C", "FS", 0)])
+    of_type = RULES["relationship_type"].fn(AnalysisContext(s), type="SF", links="all", listed="of_type")
+    assert links(of_type) == [("A", "B")] and counts(of_type) == (1, 2)
+    others = RULES["relationship_type"].fn(AnalysisContext(s), type="SF", links="all")
+    assert links(others) == [("B", "C")] and counts(others) == (1, 2)
+
+
+def test_relationship_type_refuses_an_unknown_listed_value_on_load():
+    from xerscope.analysis.standards import loads_standard
+
+    text = """
+[standard]
+id = "T"
+name = "t"
+[[metric]]
+id = "T-1"
+name = "FS share"
+rule = "relationship_type"
+target = ">= 90%"
+params = { type = "FS", links = "all", zero_lag = true, listed = "both" }
+"""
+    with pytest.raises(ValueError, match=r"T-1.*listed.*'both'"):
+        loads_standard(text, "t.toml")

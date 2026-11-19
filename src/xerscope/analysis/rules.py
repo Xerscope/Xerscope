@@ -71,6 +71,7 @@ Names = Sequence[str]  # TOML gives lists, defaults are tuples
 Op = Literal["<", "<=", ">", ">="]
 BandOp = Literal["<", "<=", ">", ">=", "between"]  # "between": value <= measured <= value_max
 LinkPop = Literal["all", "not_both_complete", "succ_incomplete"]
+Listed = Literal["others", "of_type"]  # which relationships a type rule lists: the others, or those of the type
 
 
 @dataclass
@@ -429,14 +430,19 @@ def relationship_type(
     links: LinkPop = "succ_incomplete",
     exclude_loe: bool = False,
     exclude: Names = (),
+    zero_lag: bool = False,
+    listed: Listed = "others",
 ) -> RuleOutput:
     """Relationships of another type.
     Counts: of the required type / relationships checked
 
-    Share of relationships of ``type`` (value), listing the others.
+    Share of relationships of ``type`` (value), listing the others. ``zero_lag`` counts a
+    relationship only when its lag is zero as well (blank = 0): "Finish-Start with 0d lag".
+    ``listed = "of_type"`` lists the relationships of the type instead, for a type that is
+    forbidden ("no Start-Finish").
     """
     funnel = link_funnel(context, links, exclude_loe, exclude)
-    out = share_of_type(funnel.rows, type)
+    out = share_of_type(funnel.rows, type, zero_lag, listed)
     out.funnel = funnel
     return out
 
@@ -659,14 +665,19 @@ def bei(
 # --- shared with the explicit checks -------------------------------------------------------------
 
 
-def share_of_type(relationships: pd.DataFrame, link_type: str) -> RuleOutput:
-    """Share of relationships of ``link_type`` (value), listing the others; the note is the type mix."""
+def share_of_type(
+    relationships: pd.DataFrame, link_type: str, zero_lag: bool = False, listed: Listed = "others"
+) -> RuleOutput:
+    """Share of relationships of ``link_type`` (value), and with a zero lag when ``zero_lag``;
+    the flagged list holds the others, or those of the type (``listed``); the note is the type mix."""
     of_type = relationships["type"] == link_type
+    if zero_lag:
+        of_type &= relationships["lag_hr"].fillna(0) == 0
     share = 100.0 * of_type.sum() / len(relationships) if len(relationships) else None
     mix = ", ".join(f"{kind} {count}" for kind, count in relationships["type"].value_counts().items())
-    others = flagged_relationships(relationships[~of_type])
+    shown = flagged_relationships(relationships[of_type if listed == "of_type" else ~of_type])
     return RuleOutput(
-        others,
+        shown,
         int(of_type.sum()),
         len(relationships),
         share,

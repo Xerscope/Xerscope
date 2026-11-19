@@ -106,7 +106,11 @@ def _flag_line(rule: Rule, params: dict) -> list[str]:
 
 
 def _relationship_type_notes(params: dict) -> list[str]:
-    return [f"Counts relationships of type {params.get('type', 'FS')}; the list shows the others."]
+    counted = f"relationships of type {params.get('type', 'FS')}"
+    if params.get("zero_lag"):
+        counted += " with a zero lag"
+    shown = "those counted" if params.get("listed") == "of_type" else "the others"
+    return [f"Counts {counted}; the list shows {shown}."]
 
 
 def _invalid_dates_notes(params: dict) -> list[str]:

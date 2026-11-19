@@ -52,7 +52,15 @@ id = "CUS-04"
 name = "Finish-to-start share"
 rule = "relationship_type"
 target = ">= 85%"
-params = { type = "FS", links = "succ_incomplete" }
+params = { type = "FS", links = "succ_incomplete" }   # zero_lag = true: FS with a 0d lag only
+
+[[metric]]
+id = "CUS-04b"
+name = "Start-to-finish relationships"
+rule = "relationship_type"
+unit = "count"
+target = "<= 0"
+params = { type = "SF", links = "all", listed = "of_type" }   # a forbidden type: list the SF links
 
 [[metric]]
 id = "CUS-05"
