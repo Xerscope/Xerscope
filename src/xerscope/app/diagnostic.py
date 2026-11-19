@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from xerscope.analysis.audit import step_rows
 from xerscope.analysis.baseline import RENUMBERED_COLUMNS, Baseline, renumbered
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
 from xerscope.analysis.evm import (
@@ -33,6 +34,7 @@ from xerscope.analysis.evm import (
 from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard, builtin_standards
 from xerscope.app.expected_finish_forms import expected_finish_forms
+from xerscope.app.recalculation_departures import departure_forms, departure_funnel, departures
 from xerscope.app.ui import as_dates
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.calendar import Intervals
@@ -818,6 +820,9 @@ def diagnostic_frames(
         "02_expected_finish": expected_finish_table(snapshot),
         "02b_expected_finish_forms": expected_finish_forms(snapshot),
         "03_int01_recalculation": recalculation_table(snapshot),
+        "03a_departure_steps": pd.DataFrame(step_rows(departure_funnel(snapshot))),
+        "03b_departures": departures(snapshot),
+        "03c_departure_forms": departure_forms(snapshot),
         "03_int03_assignments": assignments_table(snapshot),
         "04_check_parameters": check_parameters(standard),
         "05_baseline": baseline_table(snapshot, baseline, anonymous, updates, guid_link),

@@ -149,6 +149,7 @@ carry no pointer logic of their own.
 | `cpm.py` | snapshot → early/late dates, floats, longest path, `rem_override_hr` (remaining set by an expected finish), assignment dates; `compare_with_stored`, `compare_assignments`; `critical_path_test` | see [cpm.md](cpm.md) |
 | `changelog.py` | two snapshots → one row per change | dates and durations in working days |
 | `forensics.py` | two snapshots → `HalfStep` (the finish of the earlier one rescheduled with the later one's changes applied one `Step` at a time), `finish_case`, `longest_path_float_d`; `half_step_series` over the series | AACE RP 29R-03 MIP 3.4 (half-stepped update analysis); reads `changelog` for the kinds of change and `cpm.schedule` on derived snapshots (`dataclasses.replace`); the baseline is not read ([formulas.md](formulas.md) 5.1) |
+| `longest_path.py` | a snapshot → the open activities on its longest path (P6's flag, else recalculated) and where it was read; two snapshots → `path_changes` (stayed, entered, left finished / still open / deleted); `path_churn` over the series | AACE RP 29R-03 3.4.E.9, SVP 2.3.B.6 ([formulas.md](formulas.md) 5.2) |
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique); cost: BAC from `target_cost`, PV per assignment, EV = BAC × Performance %, SPI = EV cost / PV cost |
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
@@ -476,6 +477,7 @@ lexicon, a grammar and an encoder, each measured.
 | `test_rules.py` | each check, especially where P6 and DCMA differ (helpers from `rulekit.py`) |
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ crosscheck |
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
+| `test_longest_path.py` | the longest path of each update and its churn: the P6 flag, the recalculated fallback, one change per activity |
 | `test_forensics.py` | the half-step reading: one hand case per step, the invariants, the finish cases, the two changelog categories it needs |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |

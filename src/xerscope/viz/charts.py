@@ -598,34 +598,20 @@ def build_half_step(steps: pd.DataFrame) -> go.Figure:
 def build_slip_trend(series: pd.DataFrame) -> go.Figure:
     """Finish shown and finish before replanning per update (analysis/forensics.py ``half_step_series``).
 
-    Two lines: the recalculated finish of each update, and where the previous update's plan lands
-    with that update's progress alone. A gap between them, week after week, is the delay the
-    replanning absorbs.
+    Two lines, as ``build_activity_dates`` draws an activity's: the recalculated finish of each update,
+    and where the previous update's plan lands with that update's progress alone. A gap between them,
+    week after week, is the delay the replanning absorbs.
     """
-    rows = series.dropna(subset=["data_date"])
-    figure = go.Figure()
-    for column, name, colour in (
-        ("finish_before_replanning", "Finish before replanning", SERIES[1]),
-        ("finish", "Finish shown", SERIES[0]),
-    ):
-        figure.add_trace(
-            go.Scatter(
-                x=rows["data_date"],
-                y=rows[column],
-                name=name,
-                mode="lines+markers",
-                line=dict(color=colour, width=LINE),
-                marker=dict(size=8, color=colour),
-                hovertemplate=f"Update %{{x|%Y-%m-%d}}<br>{name} %{{y|%Y-%m-%d}}<extra></extra>",
-            )
-        )
+    rows = series.dropna(subset=["finish"])
+    figure = go.Figure(
+        [
+            _line(rows, "finish_before_replanning", "Finish before replanning", SERIES[1]),
+            _line(rows, "finish", "Finish shown", SERIES[0]),
+        ]
+    )
     figure.update_xaxes(title="Status date")
     figure = _with_house_style(figure, 380, "Finish")
     figure.update_yaxes(**DATE_AXIS)
-    figure.update_layout(hovermode="x unified", margin=dict(l=10, r=20, t=20, b=10))
-    if len(rows):
-        _widen_dates(figure.update_xaxes, rows["data_date"].min(), rows["data_date"].max())
-        both = pd.concat([rows["finish"], rows["finish_before_replanning"]]).dropna()
-        if len(both):
-            _widen_dates(figure.update_yaxes, both.min(), both.max())
+    finishes = rows[["finish", "finish_before_replanning"]]
+    _widen_dates(figure.update_yaxes, finishes.min().min(), finishes.max().max())
     return figure
