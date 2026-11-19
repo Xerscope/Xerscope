@@ -1198,6 +1198,39 @@ def test_a_folder_without_a_p6_xml_export_offers_no_folder_baseline_file(sample_
     assert not [box for box in at.selectbox if box.key == "draft_bl_folder_file"]
 
 
+@pytest.mark.oracle("property")
+def test_the_window_that_asks_for_the_baseline_shows_no_file_and_done_keeps_the_series(sample_dir, monkeypatch):
+    """Once a series is read the window opens by itself for the baseline. It showed the Files section
+    too: in a browser its boxes came back unticked under "8 of 8 ticked", and Done there read no file
+    at all. Asked for the baseline, the window holds the Baseline section alone and Done keeps the
+    files read: the same series, not read again. From the sidebar's lines it keeps both sections."""
+    from conftest import is_waiting_for_baseline
+
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = open_files(AppTest.from_file(APP, default_timeout=120).run())
+    for box in file_boxes(at):
+        box.check()
+    at.button(key="files_done").click()
+    at.run()
+    _ok(at)
+    assert is_waiting_for_baseline(at) and at.session_state["files_open"]
+    titles = [html.body for html in at.get("html") if html.body.startswith('<div class="xd-title">')]
+    assert len(titles) == 1 and "Baseline" in titles[0]
+    assert file_boxes(at) == []
+    series, source = at.session_state["store"], at.session_state["files_source"]
+    assert len(series) == 8  # the demo: eight weekly updates
+
+    at.button(key="files_done").click()
+    at.run()
+    _ok(at)
+    assert not is_waiting_for_baseline(at) and not at.session_state["files_open"]
+    assert at.session_state["store"] is series and at.session_state["files_source"] == source
+    assert files_line(at) == "Files · 8 files · 1 project"
+    open_files(at)
+    assert len(file_boxes(at)) == 8 and all(box.value for box in file_boxes(at))
+
+
 def test_baseline_line_opens_the_window_on_its_section_and_the_choice_outlives_the_window(app):
     """The sidebar's Baseline line opens the same window, Baseline section first; a choice applied
     with Done stays once the window is closed, although its selectors are no longer drawn."""
