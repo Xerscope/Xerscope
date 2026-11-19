@@ -303,6 +303,11 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
     },
     "Time gap": {LIPKE: "Plan reached − status date, in calendar days (the schedule variance in time)"},
     "SPI(t)": {LIPKE: "Earned schedule / actual time, both from the plan's start, in the tasks' working time"},
+    "SPI (4 weeks)": {XS: "Σ hours earned / Σ hours planned over the weeks of the window, each on its week's baseline"},
+    "Pace (4 weeks)": {LIPKE: "Σ earned schedule gained / Σ time elapsed over the weeks of the window"},
+    "Planned finish": {LIPKE: "The last planned finish of the baseline tasks measured (PD from the plan's start)"},
+    "Forecast finish (4 weeks)": {LIPKE: "Status date + (PD − ES) / pace of the window, in the tasks' working time"},
+    "Forecast finish (all updates)": {LIPKE: "Status date + (PD − ES) / pace of every week read (IEAC(t))"},
     "PPC Start": {
         XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
         "kept = actual start in W on or before that date (milestones and LOE left out)"

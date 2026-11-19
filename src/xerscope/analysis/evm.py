@@ -786,6 +786,7 @@ class EarnedSchedule:
     note: str = ""
     status_date: pd.Timestamp | None = None
     es_date: pd.Timestamp | None = None  # the instant of the plan reached: the ES as a date
+    plan_time: WorkCalendar | None = None  # when at least one calendar of the tasks measured works
 
     def plan_days(self, minutes: int | None) -> float | None:
         return None if minutes is None else minutes / 60 / self.hours_per_day
@@ -808,6 +809,20 @@ class EarnedSchedule:
         if self.es_date is None or self.status_date is None or self.es_min == self.pd_min:
             return None
         return (self.es_date - self.status_date) / pd.Timedelta(days=1)
+
+    def finish_at(self, pace: float | None) -> pd.Timestamp | None:
+        """The date the plan ends when what is left of it (PD - ES) is done at ``pace``, plan time gained
+        per plan time elapsed, from the status date on (Lipke: IEAC(t) = AT + (PD - ES) / pace). None
+        without an ES, once every hour is earned, without a pace above zero, or past the calendar's range.
+        """
+        if self.es_min is None or self.pd_min is None or self.plan_time is None or self.es_min == self.pd_min:
+            return None
+        if pace is None or not pace > 0:
+            return None
+        try:
+            return self.plan_time.axis().add(self.status_date, (self.pd_min - self.es_min) / pace)
+        except ValueError:  # a pace so low that the date is beyond what a calendar can hold
+            return None
 
     def as_row(self) -> dict:
         return {
@@ -890,10 +905,13 @@ def earned_schedule(snapshot: Snapshot, baseline: Baseline) -> EarnedSchedule:
     dates = pd.concat([measured["bl_start"], measured["bl_finish"]])  # a finish before its start: _Spread
     plan_start, plan_finish = dates.min(), dates.max()
     frame = baseline.frame.loc[measured.index]
-    axis = _plan_time(baseline.snapshot, frame, result.hours_per_day).axis()
+    plan_time = _plan_time(baseline.snapshot, frame, result.hours_per_day)
+    axis = plan_time.axis()
     pd_min = axis.work(plan_finish) - axis.work(plan_start)
     at_min = axis.work(snapshot.data_date) - axis.work(plan_start)
-    result = replace(result, plan_start=plan_start, plan_finish=plan_finish, pd_min=pd_min, at_min=at_min)
+    result = replace(
+        result, plan_start=plan_start, plan_finish=plan_finish, pd_min=pd_min, at_min=at_min, plan_time=plan_time
+    )
     if snapshot.data_date < plan_start:
         return replace(result, note="status date before the plan starts")
     spread = _Spread.build(baseline.snapshot, frame, "ev_labor_hr", "ev_start", "ev_finish", "bl_clndr_id")
@@ -934,6 +952,90 @@ def schedule_gap_by_status(snapshot: Snapshot, baseline: Baseline) -> pd.DataFra
         }
     )
     return per_activity.groupby("status").sum().reset_index()
+
+
+GAIN_COLUMNS = ["ev_gain_hr", "pv_gain_hr", "es_gain_min", "at_gain_min"]
+
+
+def _minutes_gained(before: int | None, after: int | None) -> float:
+    return float("nan") if before is None or after is None else float(after - before)
+
+
+def weekly_gains(
+    store: SnapshotStore,
+    baseline_for: Callable[[Snapshot], Baseline | None],
+    link_by_guid: bool = False,
+    code_filter: CodeFilter | None = None,
+) -> pd.DataFrame:
+    """One row per update after the first: what the week since the previous update earned and what the
+    plan asked for, in hours and in plan time, both ends read on the baseline of the previous update,
+    the plan in force during the week. A baseline made again thus adds no jump to the series.
+
+    ``baseline_changed``: the update that closes the week names another plan than the one it is read
+    on. Gains are missing without a baseline, the time ones also without an ES at either end.
+    ``link_by_guid``, ``code_filter``: as ``evm_series``.
+    """
+
+    def measured(snapshot: Snapshot, baseline: Baseline) -> tuple[EvPoint, EarnedSchedule]:
+        linked = relinked(baseline, snapshot) if link_by_guid else baseline
+        update, its_baseline = update_and_baseline_of_code(snapshot, linked, code_filter)
+        return ev_point(update, its_baseline), earned_schedule(update, its_baseline)
+
+    rows = []
+    for index in range(1, len(store)):
+        opening, closing = store[index - 1], store[index]
+        row: dict = {"data_date": closing.data_date, "week_start": opening.data_date}
+        baseline, next_baseline = baseline_for(opening), baseline_for(closing)
+        if baseline is not None:
+            (point, schedule), (next_point, next_schedule) = measured(opening, baseline), measured(closing, baseline)
+            row["ev_gain_hr"] = next_point.ev_hr - point.ev_hr
+            row["pv_gain_hr"] = next_point.pv_hr - point.pv_hr
+            row["es_gain_min"] = _minutes_gained(schedule.es_min, next_schedule.es_min)
+            row["at_gain_min"] = _minutes_gained(schedule.at_min, next_schedule.at_min)
+            row["baseline_changed"] = next_baseline is None or not next_baseline.frame.equals(baseline.frame)
+        rows.append(row)
+    return pd.DataFrame(rows, columns=["data_date", "week_start", *GAIN_COLUMNS, "baseline_changed"])
+
+
+def moving_window(gains: pd.DataFrame, data_date: pd.Timestamp, days: int = 28) -> pd.Series | None:
+    """The weeks of ``weekly_gains`` summed from the last update dated at least ``days`` before
+    ``data_date`` up to it: the four gains (missing when one week misses it), ``window_start``,
+    ``weeks`` and ``baseline_changes``. None without such an update.
+
+    A ratio of these sums weighs each week by what the plan asked: earned / planned hours is the SPI of
+    the window, ES gained / time elapsed its pace (Lipke). The mean of the weekly ratios would not.
+    """
+    upto = gains[gains["data_date"] <= data_date]
+    starts = upto.loc[upto["week_start"] <= data_date - pd.Timedelta(days=days), "week_start"]
+    if starts.empty:
+        return None
+    window = upto[upto["week_start"] >= starts.max()]
+    sums = window[GAIN_COLUMNS].astype(float).sum(skipna=False)
+    counts = {"window_start": starts.max(), "weeks": len(window)}
+    return pd.Series({**sums, **counts, "baseline_changes": int(window["baseline_changed"].fillna(False).sum())})
+
+
+def gain_ratio(sums: pd.Series | None, gained: str, asked: str) -> float | None:
+    """``gained`` / ``asked`` of summed gains: earned over planned hours is the SPI of these weeks, ES
+    gained over time elapsed their pace. None without sums, when one is missing, or when nothing was
+    asked."""
+    if sums is None or pd.isna(sums[gained]) or pd.isna(sums[asked]) or not sums[asked] > 0:
+        return None
+    return float(sums[gained] / sums[asked])
+
+
+def gains_since_first(gains: pd.DataFrame, data_date: pd.Timestamp) -> pd.Series:
+    """``GAIN_COLUMNS`` summed over the weeks of ``weekly_gains`` up to ``data_date`` that hold all four:
+    a week read before the plan starts has no ES and is left out."""
+    upto = gains[gains["data_date"] <= data_date]
+    return upto.dropna(subset=GAIN_COLUMNS)[GAIN_COLUMNS].astype(float).sum()
+
+
+def spi_by_window(gains: pd.DataFrame, days: int = 28) -> pd.DataFrame:
+    """For each update of ``weekly_gains``: ``spi_4w``, the earned over planned hours of its
+    ``moving_window`` (missing without a window)."""
+    ratios = [gain_ratio(moving_window(gains, when, days), "ev_gain_hr", "pv_gain_hr") for when in gains["data_date"]]
+    return pd.DataFrame({"data_date": gains["data_date"], "spi_4w": pd.Series(ratios, dtype=float)})
 
 
 def priced_assignment_count(snapshot: Snapshot) -> int:
