@@ -270,6 +270,7 @@ def critical_definition(snapshot: Snapshot, default_days: float) -> str:
 P6 = "P6 Professional"
 EVMS = "DCMA EVMS (EIA-748)"
 LPS = "Last Planner (PPC)"
+LIPKE = "Earned Schedule (Lipke)"
 XS = "xerscope"
 
 
@@ -297,6 +298,11 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
         "DCMA 14-Point": "Complete activities / activities with BL finish ≤ status date, no BL finish = due (DCMA-14)",
     },
     "EAC": {P6: "Actual Labor Units + Remaining Labor Units", EVMS: "EAC = ACWP + ETC; VAC = BAC − EAC"},
+    "Plan reached": {
+        LIPKE: "The date t of the baseline at which PV(t) = EV; the status date while the plan asks for no hours"
+    },
+    "Time gap": {LIPKE: "Plan reached − status date, in calendar days (the schedule variance in time)"},
+    "SPI(t)": {LIPKE: "Earned schedule / actual time, both from the plan's start, in the tasks' working time"},
     "PPC Start": {
         XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
         "kept = actual start in W on or before that date (milestones and LOE left out)"
