@@ -172,3 +172,62 @@ def test_mismatch_count_counts_the_checks_that_differ_from_the_report():
     got[["found", "total"]] = got[["found", "total"]].astype("Int64")
     typed = pd.DataFrame({"id": ["A", "B", "D"], "found": [1, 3, 0], "total": [9, 9, 5]})
     assert mismatch_count(compare_counts(got, typed)) == 2
+
+
+# --- items: a standard scored by the criteria of its source, not by its metrics -----------------
+
+
+def _item_results(*rows: tuple[str, str, str]) -> list[CheckResult]:
+    """(metric id, item, status) rows as results; ``item`` "" leaves the metric its own criterion."""
+    return [
+        CheckResult(Metric(id=metric_id, name=metric_id, standard="T", rule="p6_01_logic", item=item), status)
+        for metric_id, item, status in rows
+    ]
+
+
+@pytest.mark.oracle("standard")
+def test_score_counts_the_items_of_the_source_not_the_metrics():
+    """A checklist item written as two metrics is one criterion: it passes when every metric of it
+    passes, fails when one fails, and the failed label names the metric that failed. Hand count:
+    item 1 = T-01 pass + T-02 fail -> fail; T-03 alone pass; item 2 = T-04 pass + T-05 n/a -> pass
+    (n/a weighs nothing); item 3 = T-06 info -> not evaluated. 2 passed / 3 evaluated."""
+    score = standard_score(
+        _item_results(
+            ("T-01", "1", "pass"),
+            ("T-02", "1", "fail"),
+            ("T-03", "", "pass"),
+            ("T-04", "2", "pass"),
+            ("T-05", "2", "n/a"),
+            ("T-06", "3", "info"),
+        )
+    )
+    assert (score.passed, score.evaluated, score.failed_ids) == (2, 3, ("1 (T-02)",))
+    assert (score.value, score.detail) == ("67 %", "3 evaluated · 1 fail: 1 (T-02)")
+
+
+@pytest.mark.oracle("standard")
+def test_an_item_with_two_failed_metrics_is_one_fail_naming_both():
+    score = standard_score(_item_results(("A", "9", "fail"), ("B", "9", "fail"), ("C", "", "pass")))
+    assert (score.passed, score.evaluated, score.failed_ids) == (1, 2, ("9 (A, B)",))
+
+
+def test_item_is_read_from_the_toml_and_must_be_a_string():
+    standard = loads_standard(
+        HEAD + _metric("T-01", "p6_01_logic", "< 5%").replace('name = "T-01"', 'name = "T-01"\nitem = "1"')
+    )
+    assert standard["T-01"].item == "1"
+    with pytest.raises(ValueError, match=r"T-01.*item must be a string"):
+        loads_standard(
+            HEAD + _metric("T-01", "p6_01_logic", "< 5%").replace('name = "T-01"', 'name = "T-01"\nitem = 1')
+        )
+
+
+def test_p6_invalid_progress_dates_is_one_check_of_the_dialog():
+    """101248 lists Invalid Progress Dates once; P6 Professional 26.8 prints it on two lines (before /
+    after the data date). The two metrics are one item of the score: 17 criteria, as the dialog's
+    14 plus the three report-only checks (P6-15 to P6-17)."""
+    from xerscope.analysis import builtin_standards
+
+    p6 = builtin_standards()["P6"]
+    assert p6["P6-10a"].item == "P6-10" == p6["P6-10b"].item
+    assert len({metric.item or metric.id for metric in p6.metrics}) == 17

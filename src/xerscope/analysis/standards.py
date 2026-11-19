@@ -51,6 +51,7 @@ class Metric:
     threshold: float | None = None
     source: str = ""
     group: str = ""  # section of the report (P6: Inflexibility and Inefficiency, ...)
+    item: str = ""  # the criterion of the source this metric belongs to; "" = its own (standard_score)
 
     @property
     def needs_baseline(self) -> bool:
@@ -107,7 +108,7 @@ def parse_target(text: str | None, unit: str) -> tuple[str | None, float | None]
     return m.group(1), float(m.group(2))
 
 
-_TEXT_KEYS = ("id", "name", "rule", "description", "unit", "target", "source", "group")
+_TEXT_KEYS = ("id", "name", "rule", "description", "unit", "target", "source", "group", "item")
 
 
 def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric:
@@ -139,7 +140,7 @@ def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric
             "only % and count are interchangeable"
         )
     comparator, threshold = parse_target(entry.get("target"), unit)
-    extra = set(entry) - {"id", "name", "rule", "description", "params", "unit", "target", "source", "group"}
+    extra = set(entry) - {*_TEXT_KEYS, "params"}
     if extra:
         raise ValueError(f"unknown key(s) {sorted(extra)}")
     return Metric(
@@ -154,6 +155,7 @@ def _parse_metric(entry: dict, standard_name: str, seen_ids: set[str]) -> Metric
         threshold=threshold,
         source=entry.get("source", ""),
         group=entry.get("group", ""),
+        item=entry.get("item", ""),
     )
 
 

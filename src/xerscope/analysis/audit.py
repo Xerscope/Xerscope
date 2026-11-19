@@ -301,6 +301,8 @@ def _toml_value(value) -> str:
 def toml_block(metric: Metric) -> str:
     """The [[metric]] table of ``metric``, ready to paste into a standard file."""
     lines = ["[[metric]]", f"id = {_toml_value(metric.id)}"]
+    if metric.item:
+        lines.append(f"item = {_toml_value(metric.item)}")
     if metric.group:
         lines.append(f"group = {_toml_value(metric.group)}")
     lines += [f"name = {_toml_value(metric.name)}", f"rule = {_toml_value(metric.rule)}"]
