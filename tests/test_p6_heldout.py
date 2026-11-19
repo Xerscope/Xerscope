@@ -45,13 +45,13 @@ FLOORS = {
     "H20": 0.944,
     "H21": 0.996,
     "H22": 0.994,
-    "H23": 0.791,
-    "H24": 0.756,
-    "H25": 0.750,
+    "H23": 0.794,
+    "H24": 0.758,
+    "H25": 0.751,
     "H26": 0.799,
     "H27": 0.825,
     "H28": 0.830,
-    "H29": 0.784,
+    "H29": 0.787,
     "H30": 0.858,
 }
 
@@ -159,10 +159,14 @@ PINNED = {
     ],
     "Mandatory Start before the data date: early start at the data date": [("H2", "H2-06", "A1130", "early_start")],
     "Mandatory Start pins the early start over later logic": [("H2", "H2-07", "A1120", "early_start")],
-    "expected finish earlier than the Mandatory Finish: successors drive, the expected finish caps": [
+    "expected finish earlier than the Mandatory Finish: late finish = lesser of successors' bound and date": [
         ("H22", "H22-06", "A1120", "late_finish"),
         ("H23", "H23-03", "A1210", "late_finish"),
         ("H23", "H23-07", "A1110", "late_finish"),
+        ("H29", "H29-02", "A1160", "late_finish"),
+        ("H29", "H29-05", "A1110", "late_finish"),
+        ("H29", "H29-11", "A1230", "late_finish"),
+        ("H29", "H29-12", "A1240", "late_finish"),
     ],
     "FS lag to a finished successor passes back in full": [("H1", "H1-08", "A1020", "late_finish")],
     "SS lag to a finished successor passes back unexpired only": [("H6", "H6-07", "A1030", "late_start")],
