@@ -5,8 +5,11 @@ frozen from a public randomness-beacon round before P6 saw it, imported into P6
 Professional 23.12.1, scheduled with F9 and read back from P6's own database
 (validation/held-out/PROTOCOL.md there). Pinned by commit: git checks the content.
 
-Only validation/held-out is checked out (sparse, blob-filtered), into
-tests/reference/data/p6-heldout/. Needs git.
+Only validation/held-out and two P6 probe folders are checked out (sparse, blob-filtered),
+into tests/reference/data/p6-heldout/. Needs git.
+
+P6 probes, same commit, same P6 23.12.1: expected finish against finish constraints
+(oc-edges-xc-2026-10-18) and against Mandatory Finish (xf-mandatory-2026-10-18).
 """
 
 from __future__ import annotations
@@ -20,11 +23,15 @@ from reference.sources import P6_HELDOUT_COMMIT, P6_HELDOUT_REPO  # noqa: E402
 
 DATA = Path(__file__).parent / "data" / "p6-heldout"
 HELD_OUT = DATA / "validation" / "held-out"
+PROBES = DATA / "validation" / "p6-probes"
+PROBE_FOLDERS = ("oc-edges-xc-2026-10-18", "xf-mandatory-2026-10-18")
 
 
 def fetch(force: bool = False) -> Path:
     stamp = DATA / ".commit"
-    if HELD_OUT.is_dir() and stamp.exists() and stamp.read_text().strip() == P6_HELDOUT_COMMIT and not force:
+    has_probes = all((PROBES / folder).is_dir() for folder in PROBE_FOLDERS)
+    is_current = stamp.exists() and stamp.read_text().strip() == P6_HELDOUT_COMMIT
+    if HELD_OUT.is_dir() and has_probes and is_current and not force:
         return HELD_OUT
 
     def git(*args):
@@ -34,7 +41,8 @@ def fetch(force: bool = False) -> Path:
     if not (DATA / ".git").exists():
         git("init", "-q")
         git("remote", "add", "origin", P6_HELDOUT_REPO)
-    git("sparse-checkout", "set", "validation/held-out")
+    probe_paths = [f"validation/p6-probes/{folder}" for folder in PROBE_FOLDERS]
+    git("sparse-checkout", "set", "validation/held-out", *probe_paths)
     git("fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", P6_HELDOUT_COMMIT)
     git("checkout", "-q", "--force", "FETCH_HEAD")
     head = subprocess.run(["git", "-C", str(DATA), "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
