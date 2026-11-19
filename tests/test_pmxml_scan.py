@@ -143,6 +143,140 @@ def test_the_search_gives_up_on_what_it_does_not_read_and_the_file_is_parsed_who
     assert index_or_refusal(index_pmxml, data) == index_or_refusal(_index_by_parsing, data)
 
 
+# --- CDATA sections: P6 writes them (the Id and Name of a project in an export of P6 20.12) -----------
+
+
+def in_section(text: str) -> str:
+    return f"<![CDATA[{text}]]>"
+
+
+NAMED_IN_SECTIONS = PLANNED.replace("<Name>A1</Name>", f"<Name>{in_section('Pour <slab> & cure')}</Name>")
+SECTIONS = {
+    "the Id and Name of a project, a baseline and an activity, as P6 20.12 writes them": export(
+        calendar()
+        + project("1", Id=in_section("UPD"), Name=in_section("Update"), CurrentBaselineProjectObjectId="101")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        + baseline("101", "B1", [NAMED_IN_SECTIONS, PLANNED]).replace("<Id>B1</Id>", f"<Id>{in_section('B1')}</Id>")
+    ),
+    "a section that holds the end tag of its own field": export(
+        f"<Project><ObjectId>1</ObjectId><Name>{in_section('a</Name>b')}</Name><Id>P1</Id></Project>"
+    ),
+    "a section that holds the end tag of its project and a start tag of a baseline": export(
+        f"<Project><ObjectId>1</ObjectId><Name>{in_section('x</Project><BaselineProject>y')}</Name></Project>"
+        + baseline("101", "B1", [PLANNED])
+    ),
+    "a section of an activity that holds an activity and the end tag of its baseline": one_baseline(
+        PLANNED.replace("</Id>", f"</Id><Notes>{in_section('<Activity>n</Activity></BaselineProject>')}</Notes>")
+    ).replace(b"</BaselineProject>", (PLANNED + "</BaselineProject>").encode()),
+    "two sections in one field, two closing brackets inside one, an empty one": export(
+        f"<Project><ObjectId>1</ObjectId><Name>{in_section('a]]b')}{in_section('')}{in_section('c')}</Name></Project>"
+    ),
+    "a section that holds what an entity or a tag would be": export(
+        f"<Project><ObjectId>1</ObjectId><Name>{in_section('R&amp;D <b>bold</b> &#233;')}</Name></Project>"
+    ),
+    "text around a section, in a listed field": export(
+        f"<Project><ObjectId> {in_section('1')} </ObjectId><Id>P{in_section('-')}1</Id></Project>"
+    ),
+    "a section in the last field of the file": export(
+        project("1") + f"<Currency><Name>{in_section('Euro</Currency>')}</Name></Currency>"
+    ),
+}
+STILL_NOT_READ = {
+    "a section never closed": export("<Project><ObjectId>1</ObjectId><Name><![CDATA[open</Name></Project>"),
+    "a section between two children of a project": export(
+        f"<Project><ObjectId>1</ObjectId>{in_section('loose')}<Id>P1</Id></Project>"
+    ),
+    "a section between two children of the root element": export(project("1") + in_section("loose")),
+    "what looks like a section but is not one": export(project("1", Name="x") + "<![cdata[n]]>"),
+    "a comment beside a section": export(
+        f"<Project><ObjectId>1</ObjectId><Name>{in_section('n')}</Name><!-- note --></Project>"
+    ),
+}
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize("chunk_bytes", [1, 2, 3, 5, 7, 8, 9, 11, 1 << 24])
+@pytest.mark.parametrize("case", SECTIONS)
+def test_a_cdata_section_is_read_as_the_text_it_holds(case, chunk_bytes, monkeypatch):
+    """What a section holds is text, whatever it looks like: the search does not give up on it and
+    finds the index of the full pass. Read a few bytes at a time, each mark of a section is cut by
+    the end of what was read."""
+    monkeypatch.setattr(pmxml_scan, "CHUNK_BYTES", chunk_bytes)
+    data = SECTIONS[case]
+    assert _index_of(scan_export(data, LISTED_FIELDS)) == _index_by_parsing(data, "export.xml")
+
+
+@pytest.mark.oracle("property")
+def test_the_text_of_a_section_is_the_one_the_file_holds():
+    """Written by hand: the fields of a project named in sections, and the count of its activities."""
+    data = SECTIONS["the Id and Name of a project, a baseline and an activity, as P6 20.12 writes them"]
+    found_project, found_baseline = scan_export(data, LISTED_FIELDS).projects
+    assert (found_project.fields["Id"], found_project.fields["Name"]) == ("UPD", "Update")
+    assert (found_baseline.fields["Id"], found_baseline.activities) == ("B1", 2)
+    odd = SECTIONS["two sections in one field, two closing brackets inside one, an empty one"]
+    assert scan_export(odd, LISTED_FIELDS).projects[0].fields["Name"] == "a]]bc"
+    literal = SECTIONS["a section that holds what an entity or a tag would be"]
+    assert scan_export(literal, LISTED_FIELDS).projects[0].fields["Name"] == "R&amp;D <b>bold</b> &#233;"
+
+
+@pytest.mark.oracle("property")
+def test_an_export_with_sections_is_indexed_without_the_full_pass(monkeypatch):
+    """The reason for reading them: the full pass parses every tag of a file that runs to gigabytes."""
+    data = SECTIONS["the Id and Name of a project, a baseline and an activity, as P6 20.12 writes them"]
+    expected = _index_by_parsing(data, "export.xml")
+
+    def full_pass(*arguments):
+        raise AssertionError("the full pass was made")
+
+    monkeypatch.setattr("xerscope.xer.pmxml._index_by_parsing", full_pass)
+    index = index_pmxml(data, "export.xml")
+    assert index == expected
+    read = read_pmxml_baseline(data, "export.xml", "101", index)
+    assert read.tables["PROJECT"]["proj_short_name"].tolist() == ["B1"]
+    assert sorted(read.tables["TASK"]["task_name"]) == ["A1", "Pour <slab> & cure"]
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize("case", STILL_NOT_READ)
+def test_the_search_still_gives_up_on_a_section_it_cannot_place(case):
+    data = STILL_NOT_READ[case]
+    with pytest.raises(NotPlain):
+        scan_export(data, LISTED_FIELDS)
+    assert index_or_refusal(index_pmxml, data) == index_or_refusal(_index_by_parsing, data)
+
+
+SECTION_TEXTS = [
+    in_section("n"), in_section("a</Name>b"), in_section("</Project>"), in_section("x]]y"), in_section("<Activity>"),
+    in_section(""), "a" + in_section("&amp;") + "b", in_section("</BaselineProject><Resource>"),
+]  # fmt: skip
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize("chunk_bytes", [7, 1 << 24])
+def test_on_random_files_with_sections_the_search_gives_the_index_of_the_full_pass_or_gives_up(
+    chunk_bytes, monkeypatch
+):
+    """1 500 files whose texts are sections half of the time, some holding tags of the index. The search
+    reads most of them (it gave up on every one before sections were read), never differently."""
+    monkeypatch.setattr(pmxml_scan, "CHUNK_BYTES", chunk_bytes)
+    monkeypatch.setitem(globals(), "TEXTS", [*TEXTS[:8], *SECTION_TEXTS])
+    same = with_sections = 0
+    for seed in range(1500):
+        data = random_file(seed)
+        try:
+            searched = _index_of(scan_export(data, LISTED_FIELDS))
+        except NotPlain:
+            continue
+        parsed = index_or_refusal(_index_by_parsing, data)
+        if isinstance(parsed, str):
+            continue
+        assert searched == parsed, (seed, data)
+        same += 1
+        with_sections += b"<![CDATA[" in data
+    assert same > 300 and with_sections > 100, (same, with_sections)
+
+
 # --- random files: the search never gives another index than the full pass ---------------------------
 
 NAMES = [

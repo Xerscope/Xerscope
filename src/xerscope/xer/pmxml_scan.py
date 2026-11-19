@@ -1,12 +1,14 @@
 """Where the elements of a P6 XML export lie, found by searching its bytes instead of parsing every tag.
 
 The elements are its projects, its baselines, its calendars and its resources. P6 writes an export
-as plain elements: UTF-8, one namespace declared on the root element, no comment, no CDATA section,
-no processing instruction. In such a file every ``<`` opens a start tag or an end tag, so an element
-ends at the first end tag of its name after its start tag, and what lies between need not be read.
-``scan_export`` reads the children of the root element and, inside a project or a baseline, its own
-children. It gives up (``NotPlain``) on anything else it meets: ``pmxml.index_pmxml`` then parses the
-whole file.
+as plain elements: UTF-8, one namespace declared on the root element, no comment, no processing
+instruction. It writes some texts as CDATA sections (the Id and Name of a project, P6 Professional
+20.12). Outside a section every ``<`` opens a start tag or an end tag, so an element ends at the first
+end tag of its name after its start tag that lies outside a section (``_end_tag``), and what lies
+between need not be read. ``scan_export`` reads the children of the root element and, inside a
+project or a baseline, its own children. It gives up (``NotPlain``) on anything else it meets:
+``pmxml.index_pmxml`` then parses the whole file. A section is read as the text of a field; one
+that holds what looks like a calendar, or lies between two elements, makes it give up too.
 
 A wrong end is always met again: the tag that really ends the element comes later, where the search
 expects a child or the end of the parent, and it gives up there. What the search does not do is check
@@ -31,9 +33,12 @@ DECLARATION = re.compile(rb"(?:\xef\xbb\xbf)?(?:<\?xml\s[^>]*\?>)?")  # a UTF-8 
 ENCODING = re.compile(rb"encoding\s*=\s*[\"']([^\"']*)[\"']")
 NAMESPACES_DECLARED = re.compile(rb"\s(xmlns(?::[^\s=]+)?)\s*=")
 DEFAULT_NAMESPACE = re.compile(rb"\sxmlns\s*=\s*(?:\"([^\"]*)\"|'([^']*)')")
-# what the search does not read: a comment, a CDATA section or a DOCTYPE; a processing instruction; a namespace
-# declared below the root element
-NOT_READ = (b"<!", b"<?", b"xmlns")
+CDATA_START, CDATA_END = b"<![CDATA[", b"]]>"
+# what the search does not read: a processing instruction; a namespace declared below the root element;
+# and a comment or a DOCTYPE, the "<!" that do not open a CDATA section
+NOT_READ = (b"<?", b"xmlns")
+NOT_A_SECTION = re.compile(rb"<!(?!\[CDATA\[)")
+MARK_BYTES = len(CDATA_START)  # the longest mark the end of a chunk can cut
 ROOT = b"APIBusinessObjects"
 PROJECT_TAGS = (b"Project", b"BaselineProject")
 CALENDAR = b"<Calendar"
@@ -92,6 +97,7 @@ class _FileBytes:
         """Start at ``first``; nothing is read yet."""
         self.data, self.first = data, first
         self.buffer = bytearray()
+        self.has_sections = False  # a CDATA section was read: the tags it may hold are not tags
 
     def read_more(self) -> bool:
         """Read the next chunk; False at the end of the file. A chunk the search cannot read stops it."""
@@ -99,9 +105,13 @@ class _FileBytes:
         chunk = self.data[position : position + CHUNK_BYTES]
         if not chunk:
             return False
-        joint = bytes(self.buffer[-4:]) + chunk[:4]  # what the end of the buffer cut in two
+        cut = bytes(self.buffer[-(MARK_BYTES - 1) :])  # where the end of the buffer cut a mark in two
+        joint = cut + chunk[: MARK_BYTES - 1]
         if any(pattern in chunk or pattern in joint for pattern in NOT_READ):
             raise NotPlain
+        if _opens_something_else(joint, decided_before=len(cut)) or _opens_something_else(chunk, len(chunk)):
+            raise NotPlain
+        self.has_sections = self.has_sections or CDATA_START in chunk or CDATA_START in joint
         self.buffer += chunk
         return True
 
@@ -118,6 +128,11 @@ class _FileBytes:
     def find_before(self, pattern: bytes, position: int, end: int) -> int:
         """Return the first ``pattern`` between two positions already read; -1 when there is none."""
         found = self.buffer.find(pattern, position - self.first, end - self.first)
+        return self.first + found if found >= 0 else -1
+
+    def last_before(self, pattern: bytes, first: int, position: int) -> int:
+        """Return the last ``pattern`` between two positions already read; -1 when there is none."""
+        found = self.buffer.rfind(pattern, first - self.first, position - self.first)
         return self.first + found if found >= 0 else -1
 
     def is_at(self, pattern: bytes, position: int) -> bool:
@@ -152,6 +167,54 @@ class _FileBytes:
             self.first = position
 
 
+def _opens_something_else(data: bytes, decided_before: int) -> bool:
+    """Tell whether a ``<!`` of ``data`` opens something other than a CDATA section.
+
+    Only those that start before ``decided_before`` are judged. One cut by the end of ``data`` is left
+    to the next chunk, which meets it again.
+    """
+    for found in NOT_A_SECTION.finditer(data):
+        if found.start() >= decided_before:
+            return False
+        if found.start() + MARK_BYTES <= len(data):
+            return True
+    return False
+
+
+def _after_section(source: _FileBytes, section: int) -> int:
+    """Return the byte after the CDATA section that starts at ``section``."""
+    end = source.find(CDATA_END, section + len(CDATA_START))
+    if end < 0:
+        raise NotPlain
+    return end + len(CDATA_END)
+
+
+def _end_tag(source: _FileBytes, name: bytes, content: int) -> int:
+    """Find the end tag of ``name`` from ``content``, outside the CDATA sections on the way; -1 without one.
+
+    A section may hold that end tag as text: the search goes on after the section.
+    """
+    end_tag = b"</" + name + b">"
+    close = source.find(end_tag, content)
+    position = content
+    while close >= 0 and source.has_sections:
+        section = source.find_before(CDATA_START, position, close)
+        if section < 0:
+            break
+        position = _after_section(source, section)
+        if position > close:  # the end tag found lay inside the section
+            close = source.find(end_tag, position)
+    return close
+
+
+def _is_in_section(source: _FileBytes, first: int, position: int) -> bool:
+    """Tell whether ``position`` lies in a CDATA section opened from ``first``, the start of an element."""
+    if not source.has_sections:
+        return False
+    opened = source.last_before(CDATA_START, first, position)
+    return opened >= 0 and source.find_before(CDATA_END, opened, position) < 0
+
+
 def _next_element(source: _FileBytes, position: int, parent: bytes) -> Element:
     """Read the next child of ``parent`` from ``position``, or the end tag of ``parent`` (blank name)."""
     start = source.find(b"<", position)
@@ -164,7 +227,7 @@ def _next_element(source: _FileBytes, position: int, parent: bytes) -> Element:
     name, _, closes_itself, content = source.start_tag(start)
     if closes_itself:
         return Element(name, start, content, content, content)
-    close = source.find(b"</" + name + b">", content)
+    close = _end_tag(source, name, content)
     if close < 0:
         raise NotPlain
     return Element(name, start, content, close, close + len(name) + 3)
@@ -195,6 +258,8 @@ def _calendar_spans(source: _FileBytes, first: int, end: int) -> list[tuple[int,
     """Find the span of each calendar between two positions already read."""
     spans: list[tuple[int, int]] = []
     for start in _starts_of_calendars(source, first, end):
+        if _is_in_section(source, first, start):
+            raise NotPlain  # the text of a section that reads as a calendar
         calendar = _next_element(source, start, b"")
         if _starts_of_calendars(source, calendar.content, calendar.close):
             raise NotPlain  # a calendar inside a calendar
@@ -208,7 +273,7 @@ def _text_of(source: _FileBytes, element: Element) -> str:
         return ""
     fragment = b"<field>" + source.between(element.content, element.close) + b"</field>"
     try:
-        parsed = ET.fromstring(fragment)  # nosec B314 - no DOCTYPE reaches here (NOT_READ): no entity to expand
+        parsed = ET.fromstring(fragment)  # nosec B314 - no DOCTYPE reaches here (NOT_A_SECTION): no entity to expand
     except ET.ParseError as error:
         raise NotPlain from error
     return "".join(parsed.itertext()).strip()
