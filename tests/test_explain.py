@@ -138,3 +138,25 @@ def test_critical_definition_says_the_critical_path_type_the_counts_use(project,
 
     said = critical_definition(snap([todo("A")], project=project), default_days=0.0)
     assert said == f"Open tasks (LOE and milestones included) {text}"
+
+
+def test_the_recency_example_of_the_spi_window_help_is_right():
+    """Weeks planned 400 h each. Earned 120, 260, 228, 560: 1 168 / 1 600 = 0.73; with the weights 1-2-3-4,
+    (120 + 520 + 684 + 2 240) / 4 000 = 0.89. One week later (260, 228, 560, 168): 1 216 / 1 600 = 0.76;
+    weighted, (260 + 456 + 1 680 + 672) / 4 000 = 0.77. The plain figure moves by 0.03, the weighted by 0.12."""
+    from xerscope.analysis.explain import SPI_WINDOW_READING
+
+    def plain(earned: list[int]) -> float:
+        return sum(earned) / (400 * len(earned))
+
+    def by_recency(earned: list[int]) -> float:
+        weights = range(1, len(earned) + 1)
+        return sum(weight * hours for weight, hours in zip(weights, earned, strict=True)) / (400 * sum(weights))
+
+    first, second = [120, 260, 228, 560], [260, 228, 560, 168]
+    figures = [plain(first), by_recency(first), plain(second), by_recency(second)]
+    assert [f"{figure:.2f}" for figure in figures] == ["0.73", "0.89", "0.76", "0.77"]
+    assert "give 0.73 here and 0.89 with the weights 1-2-3-4" in SPI_WINDOW_READING
+    assert "gives 0.76 here and 0.77 with the weights" in SPI_WINDOW_READING
+    assert f"{abs(figures[2] - figures[0]):.2f}" == "0.03" and f"{abs(figures[3] - figures[1]):.2f}" == "0.12"
+    assert "moves by 0.03 here, by 0.12 with the weights" in SPI_WINDOW_READING
