@@ -36,8 +36,7 @@ def expected_finish_forms(snapshot: Snapshot) -> pd.DataFrame:
         return pd.DataFrame(columns=EXPECTED_FINISH_FORM + counts)
     links = snapshot.relationships
     bound_at_finish = set(links.loc[links["type"].isin(["FF", "SF"]), "succ_code"])
-    stored = compare_with_stored(snapshot)
-    reproduced = stored[stored["stored"].notna()].groupby("task_code")["agree"].all()
+    identical, different = _reproduction(snapshot)
     rows = []
     for code, task in unfinished.iterrows():
         constraints = [task.get(column) for column in ("cstr_type", "cstr_type2")]
@@ -53,8 +52,8 @@ def expected_finish_forms(snapshot: Snapshot) -> pd.DataFrame:
                 "after_constraint_date": after_constraint_date,
                 "off_working_time": not snapshot.calendar(task["clndr_id"]).axis().is_working(task["expect_end_date"]),
                 "ff_sf_predecessor": code in bound_at_finish,
-                "stored_identical": bool(reproduced.get(code, False)),
-                "stored_different": code in reproduced.index and not reproduced[code],
+                "stored_identical": code in identical,
+                "stored_different": code in different,
             }
         )
     forms = pd.DataFrame(rows).astype({"after_constraint_date": "boolean"})
@@ -65,3 +64,15 @@ def expected_finish_forms(snapshot: Snapshot) -> pd.DataFrame:
         stored_different=("stored_different", "sum"),
     )
     return out.sort_values("tasks", ascending=False, kind="stable").reset_index()
+
+
+def _reproduction(snapshot: Snapshot) -> tuple[set[str], set[str]]:
+    """Activities the recalculation reproduces, and those it does not.
+
+    Reproduced: every date and float P6 stored is the recalculated one. Not reproduced: at least one
+    differs. An activity with no stored value is in neither set.
+    """
+    comparison = compare_with_stored(snapshot)
+    compared = comparison[comparison["stored"].notna()]
+    different = set(compared.loc[~compared["agree"], "task_code"])
+    return set(compared["task_code"]) - different, different
