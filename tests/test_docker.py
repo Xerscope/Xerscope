@@ -348,6 +348,14 @@ def test_caddy_closes_each_connection_except_a_websocket_handshake():
     assert "Connection: close on a WebSocket handshake" in wf
 
 
+def test_ci_fails_when_the_secret_prefix_reaches_the_log():
+    """In the deploy job's script, bash -e ignores a command inverted with "!" unless it is the
+    last one: the prefix check stops the step itself."""
+    wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    assert 'if grep -q "$XERSCOPE_PATH" caddy.log; then echo "the secret prefix is in Caddy\'s log"; exit 1; fi' in wf
+    assert '! grep -q "$XERSCOPE_PATH" caddy.log' not in wf
+
+
 def test_caddy_image_carries_the_rate_limit_module_at_pinned_versions():
     """The stock caddy image has no rate_limit: deploy/ runs Caddy built from deploy/caddy/Dockerfile,
     published by image.yml next to the app (ghcr and the Docker Hub copy), at one Caddy release
