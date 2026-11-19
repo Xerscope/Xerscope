@@ -390,3 +390,88 @@ def test_settings_table_gives_each_setting_now_by_default_and_what_it_accepts():
     assert (
         settings_table(yes_no, yes_no).set_index("setting").loc["ignore_soft_constraints", "accepts"] == "true / false"
     )
+
+
+def _float(target=None, unit="%", **params):
+    """A check on the rule "float" (defaults: op ">", value 44, unit "days", value_max 0)."""
+    from xerscope.analysis import Metric
+    from xerscope.analysis.standards import parse_target
+
+    comparator, threshold = parse_target(target, unit)
+    return Metric(
+        id="T-02",
+        name="check",
+        standard="T",
+        rule="float",
+        unit=unit,
+        comparator=comparator,
+        threshold=threshold,
+        params=params,
+    )
+
+
+@pytest.mark.oracle("property")
+def test_the_form_puts_what_a_measure_is_compared_with_on_one_row():
+    """``op``, ``value``, ``value_max`` and ``unit`` are one question (flagged when the float is from
+    0 to 20 days): one row, in that order, where the rule's signature puts ``op``. Every other
+    parameter is a row of its own, and a rule that compares nothing has no such row."""
+    from xerscope.analysis.audit import form_rows
+    from xerscope.analysis.rules import RULES
+
+    assert form_rows("float") == [("op", "value", "value_max", "unit"), ("exclude",)]
+    assert form_rows("duration") == [("field",), ("op", "value", "unit"), ("exclude",)]
+    assert form_rows("lag") == [("op", "value", "unit"), ("links",), ("exclude_loe",), ("exclude",)]
+    assert form_rows("dcma_06_high_float") == [("limit_days",)]
+    assert form_rows("dcma_01_logic") == []
+    for name, rule in RULES.items():  # no parameter lost, none twice, the rule's order kept between rows
+        drawn = [parameter for row in form_rows(name) for parameter in row]
+        assert sorted(drawn) == sorted(rule.params), name
+
+
+@pytest.mark.oracle("property")
+def test_a_band_bound_is_read_only_by_a_band():
+    """``rules._within`` reads ``value_max`` for ``op = "between"`` alone: a form that asked for it
+    under another operator would take a number the check ignores."""
+    from xerscope.analysis.rules import is_read
+
+    assert is_read("value_max", {"op": "between"})
+    assert not any(is_read("value_max", {"op": op}) for op in ("<", "<=", ">", ">="))
+    assert not is_read("value_max", {})  # the operator is not picked yet
+    assert all(is_read(name, {"op": ">"}) for name in ("op", "value", "unit", "exclude"))
+
+
+@pytest.mark.oracle("property")
+def test_the_settings_are_said_in_sentences_the_parameters_then_the_target():
+    """The two comparisons of a check read apart: what flags a task, then the result that passes,
+    in the words of the formula under it (flagged / checked)."""
+    from xerscope.analysis.explain import settings_lines
+
+    assert settings_lines(_float("< 5%", op="<=", value=40)) == [
+        "Excludes: completed tasks.",
+        "Flagged when total float ≤ 40 days.",
+        "Passes when flagged / checked is < 5 %.",
+    ]
+    band = settings_lines(_float("< 5%", op="between", value=0, value_max=20, exclude=[]))
+    assert band == ["Flagged when total float is from 0 to 20 days (both included).", band[-1]]
+    assert settings_lines(_float("<= 0", unit="count", op="<", value=0))[-1] == "Passes when the number flagged is ≤ 0."
+    assert settings_lines(_float(None))[-1] == "No target: the result is reported for review."
+    built_in = builtin_standards()
+    assert (
+        settings_lines(built_in["DCMA"]["DCMA-14"])[-1] == "Passes when completed / due by the status date is ≥ 0.95."
+    )
+    assert settings_lines(built_in["DCMA"]["DCMA-12"])[-1] == "Passes when the test passes."
+    # P6-08 counts "flagged / checked" relationships: the sentence names them, as the formula does
+    assert settings_lines(built_in["P6"]["P6-08"])[-1] == "Passes when flagged / relationships checked is < 5 %."
+
+
+def test_every_built_in_metric_has_its_settings_in_sentences():
+    from xerscope.analysis.explain import _population, settings_lines
+    from xerscope.analysis.rules import RULES
+
+    for standard in builtin_standards().values():
+        for metric in standard.metrics:
+            lines = settings_lines(metric)
+            rule = RULES[metric.rule]
+            # the sentences of the parameters are those the Calculation block lists under "Population"
+            assert [*rule.population, *lines[:-1]] == _population(rule, {**rule.params, **metric.params}), metric.id
+            assert lines[-1].endswith("."), metric.id

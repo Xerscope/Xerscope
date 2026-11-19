@@ -202,10 +202,39 @@ NOTES: dict[str, Callable[[dict], list[str]]] = {
 }
 
 
+def _parameter_lines(rule: Rule, params: dict) -> list[str]:
+    """The sentences written from the parameters: what is left out, what is flagged, the rule's notes."""
+    notes = NOTES.get(rule.name)
+    return [*_scope_lines(rule, params), *_flag_line(rule, params), *(notes(params) if notes else [])]
+
+
 def _population(rule: Rule, params: dict) -> list[str]:
     """The docstring's population lines, then the sentences written from the parameters."""
-    notes = NOTES.get(rule.name)
-    return [*rule.population, *_scope_lines(rule, params), *_flag_line(rule, params), *(notes(params) if notes else [])]
+    return [*rule.population, *_parameter_lines(rule, params)]
+
+
+def _counting_words(rule: Rule, links: bool) -> tuple[str, str]:
+    """The words of the numerator and of the denominator; relationships are named when checked."""
+    checked = "relationships checked" if links and rule.denominator_word == "checked" else rule.denominator_word
+    return rule.numerator_word, checked
+
+
+def _target_line(metric) -> str:
+    """What passes, in the words of the formula ('Passes when flagged / checked is < 5 %.')."""
+    counted, checked = _counting_words(RULES[metric.rule], RULES[metric.rule].links)
+    if not _target(metric):
+        return "No target: the result is reported for review."
+    if metric.unit == "pass/fail":
+        return "Passes when the test passes."
+    result = f"the number {counted}" if metric.unit == "count" else f"{counted} / {checked}"
+    return f"Passes when {result} is {_target(metric)}."
+
+
+def settings_lines(metric) -> list[str]:
+    """What the settings of a metric ask, before any result: the sentences written from its
+    parameters, then the result that passes."""
+    rule = RULES[metric.rule]
+    return [*_parameter_lines(rule, {**rule.params, **metric.params}), _target_line(metric)]
 
 
 def _formula(result: CheckResult, subject: str, words: tuple[str, str]) -> str:
@@ -248,11 +277,9 @@ def explain(result: CheckResult) -> Explanation:
     parameters = [
         (name, _show(value), "standard" if name in metric.params else "default") for name, value in effective.items()
     ]
-    num_word, den_word = rule.numerator_word, rule.denominator_word
     links = rule.links or "pred_code" in result.flagged.columns
     subject = "relationships" if links else "activities"
-    if links and den_word == "checked":
-        den_word = "relationships checked"
+    num_word, den_word = _counting_words(rule, links)
 
     return Explanation(
         measured=metric.description,
