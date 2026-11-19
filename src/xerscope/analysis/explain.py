@@ -299,18 +299,25 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
     },
     "EAC": {P6: "Actual Labor Units + Remaining Labor Units", EVMS: "EAC = ACWP + ETC; VAC = BAC − EAC"},
     "Plan reached": {
-        LIPKE: "The date t of the baseline at which PV(t) = EV; the status date while the plan asks for no hours"
+        LIPKE: "ES: the date t of the baseline at which PV(t) = EV (Schedule is Different, 2003)",
+        XS: "the status date while the plan asks for no hours",
     },
-    "Time gap": {LIPKE: "Plan reached − status date, in calendar days (the schedule variance in time)"},
-    "SPI(t)": {LIPKE: "Earned schedule / actual time, both from the plan's start, in the tasks' working time"},
-    "SPI (4 weeks)": {XS: "Σ hours earned / Σ hours planned over the weeks of the window, each on its week's baseline"},
-    "Pace (4 weeks)": {LIPKE: "Σ earned schedule gained / Σ time elapsed over the weeks of the window"},
-    "Planned finish": {LIPKE: "The last planned finish of the baseline tasks measured (PD from the plan's start)"},
-    "Forecast finish (4 weeks)": {LIPKE: "Status date + (PD − ES) / pace of the window, in the tasks' working time"},
-    "Forecast finish (all updates)": {LIPKE: "Status date + (PD − ES) / pace of every week read (IEAC(t))"},
-    "TSPI (planned finish)": {LIPKE: "(PD − ES) / (PD − AT): plan time left / time left to the planned finish"},
-    "Hours per week needed": {XS: "(BAC − EV) / calendar weeks from the status date to the planned finish"},
-    "Hours per week earned (4 weeks)": {XS: "Σ hours earned over the window / its length in weeks"},
+    "Time gap": {LIPKE: "SV(t) = ES − AT, shown in calendar days: plan reached − status date"},
+    "SPI(t)": {LIPKE: "SPI(t) = ES / AT, both from the plan's start, in the tasks' working time"},
+    "SPI (4 weeks)": {
+        XS: "Σ ΔEV / Σ ΔPV over the weeks since the last update dated 28 days before or more, each week read "
+        "on the baseline of the update that opens it: the weekly SPI weighted by the planned hours"
+    },
+    "Planned finish": {LIPKE: "Plan start + PD: the last planned finish of the baseline tasks measured"},
+    "Forecast finish (4 weeks)": {
+        LIPKE: "IEAC(t) long form, AT + (PD − ES) / PF(t), from the plan's start",
+        XS: "PF(t) = Σ ΔES / Σ ΔAT over the weeks of the same window",
+    },
+    "Forecast finish (all updates)": {
+        LIPKE: "IEAC(t) long form, AT + (PD − ES) / PF(t), from the plan's start",
+        XS: "PF(t) = Σ ΔES / Σ ΔAT over every week read since the first update loaded",
+    },
+    "TSPI (planned finish)": {LIPKE: "TSPI = (PD − ES) / (TD − AT), the total duration wanted TD = PD"},
     "PPC Start": {
         XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
         "kept = actual start in W on or before that date (milestones and LOE left out)"

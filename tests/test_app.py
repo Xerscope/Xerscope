@@ -179,13 +179,10 @@ def test_earned_value_renders_with_a_single_update(one_file_app):
         "Time gap",
         "SPI(t)",
         "SPI (4 weeks)",
-        "Pace (4 weeks)",
         "Planned finish",
         "Forecast finish (4 weeks)",
         "Forecast finish (all updates)",
         "TSPI (planned finish)",
-        "Hours per week needed",
-        "Hours per week earned (4 weeks)",
     ]
     assert len(one_file_app.get("plotly_chart")) == 2
     assert not any("at least two" in i.value for i in one_file_app.info)
@@ -762,23 +759,22 @@ def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_fini
     def card(label: str) -> str:
         return next(metric.value for metric in at.metric if metric.label == label)
 
-    assert (card("SPI (labor units)"), card("SPI (4 weeks)"), card("Pace (4 weeks)")) == ("0.88", "1.00", "0.75")
+    assert (card("SPI (labor units)"), card("SPI (4 weeks)")) == ("0.88", "1.00")
     assert card("Planned finish") == "20 Mar 2026"
     assert (card("Forecast finish (4 weeks)"), card("Forecast finish (all updates)")) == ("02 Apr 2026", "02 Apr 2026")
-    assert any(
-        text.startswith("Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since.")
-        for text in _caption_texts(at)
-    )
-    # the planned finish, 03-20, is passed: no pace holds it; 120 h earned in the four weeks: 30 h a week
-    assert (card("TSPI (planned finish)"), card("Hours per week needed")) == ("–", "–")
-    assert card("Hours per week earned (4 weeks)") == "30 h"
-    # the update of 03-06: 7.5 of the plan's 20 days reached in 10, 12.5 left for 10: TSPI 1.25; 100 h
-    # left for the two weeks to 03-20: 50 h a week; no update 28 days before it: no window
+    # 15 days of plan gained in the 20 of the four weeks, the same since the first update: pace 0.75
+    assert (
+        "Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since. Pace, plan time gained / time "
+        "elapsed: 0.75 over the last 4 weeks, 0.75 since the first update loaded."
+    ) in _caption_texts(at)
+    # the planned finish, 03-20, is passed: no pace holds it
+    assert card("TSPI (planned finish)") == "–"
+    # the update of 03-06: 7.5 of the plan's 20 days reached in 10, 12.5 left for 10: TSPI 1.25; no update
+    # 28 days before it: no window
     third = at.selectbox(key="ev_snap").options[2]
     at.selectbox(key="ev_snap").set_value(third).run()
     _ok(at)
-    assert (card("TSPI (planned finish)"), card("Hours per week needed")) == ("1.25", "50 h")
-    assert (card("SPI (4 weeks)"), card("Hours per week earned (4 weeks)")) == ("–", "–")
+    assert (card("TSPI (planned finish)"), card("SPI (4 weeks)")) == ("1.25", "–")
 
 
 def test_debug_reads_the_earned_schedule_on_a_task_code(tmp_path, monkeypatch):
