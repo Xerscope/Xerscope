@@ -104,7 +104,7 @@ id = "CUS-10"
 name = "Unresourced activities"
 rule = "no_resource"
 target = "<= 0%"
-params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = false }
+params = { exclude = ["complete", "loe", "milestones", "no_duration"], expenses_count = false }   # kind = "labour_units": budgeted labour hours > 0
 
 [[metric]]
 id = "CUS-11"

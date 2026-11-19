@@ -105,6 +105,12 @@ def _flag_line(rule: Rule, params: dict) -> list[str]:
     return [f"Flagged when {what} {comparison} {params['value']:g} {unit}".rstrip() + "."]
 
 
+def _no_resource_notes(params: dict) -> list[str]:
+    if params.get("kind") == "labour_units":
+        return ["Loaded means budgeted labour units above zero, not any assignment."]
+    return []
+
+
 def _relationship_type_notes(params: dict) -> list[str]:
     counted = f"relationships of type {params.get('type', 'FS')}"
     if params.get("zero_lag"):
@@ -186,6 +192,7 @@ NOTES: dict[str, Callable[[dict], list[str]]] = {
     "decm_06a504b_actual_finishes_changed": _status_period_notes,
     "decm_06a506c_riding_status_date": _riding_notes,
     "relationship_type": _relationship_type_notes,
+    "no_resource": _no_resource_notes,
     "invalid_dates": _invalid_dates_notes,
     "late_vs_baseline": _late_vs_baseline_notes,
     "bei": _bei_notes,

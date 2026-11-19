@@ -588,15 +588,24 @@ def invalid_dates(
 
 
 @rule("no_resource", "%")
-def no_resource(context, exclude: Names = ("complete", "loe", "milestones"), expenses_count: bool = True) -> RuleOutput:
+def no_resource(
+    context,
+    exclude: Names = ("complete", "loe", "milestones"),
+    expenses_count: bool = True,
+    kind: Literal["any", "labour_units"] = "any",
+) -> RuleOutput:
     """Tasks with no resource assignment.
     Counts: without resources / checked
 
     Tasks with no resource assignment (and, if ``expenses_count``, no expense).
+    ``kind = "labour_units"`` asks for budgeted labour units above zero instead (P6's Budgeted
+    Labor Units: TASK target_work_qty, else the labour and role assignments' target_qty): a
+    material-only or a zero-hour assignment does not count.
     """
     funnel = activities_funnel(context, exclude)
     population = funnel.rows
-    has_cost = population["has_resource"] | (population["has_expense"] if expenses_count else False)
+    loaded = population["labor_budget_hr"].fillna(0) > 0 if kind == "labour_units" else population["has_resource"]
+    has_cost = loaded | (population["has_expense"] if expenses_count else False)
     flagged = population[~has_cost]
     return RuleOutput(flagged_activities(flagged), len(flagged), len(population), checked=population, funnel=funnel)
 

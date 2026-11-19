@@ -2051,3 +2051,35 @@ params = { type = "FS", links = "all", zero_lag = true, listed = "both" }
 """
     with pytest.raises(ValueError, match=r"T-1.*listed.*'both'"):
         loads_standard(text, "t.toml")
+
+
+# --- rules for a company standard: resource loaded = budgeted labour units
+
+
+@pytest.mark.oracle("standard")
+def test_no_resource_can_require_budgeted_labour_units():
+    """Requirement "over 90 % of activities have resource labour units (excluding milestones)":
+    ``kind = "labour_units"`` reads the budgeted labour units (TASK target_work_qty, else the sum
+    of the labour and role assignments' target_qty, as P6 shows them), not the presence of an
+    assignment. Hand count on 4 tasks: L labour 80 h, M material only (5 units), Z labour
+    assignment of 0 h, N nothing; milestone MS excluded. Any assignment: N without -> 1 / 4.
+    Labour units: M, N, Z without -> 3 / 4. An expense does not count as labour."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [todo("L"), todo("M"), todo("Z"), todo("N"), todo("MS", task_type="TT_FinMile", target_drtn_hr_cnt="0")],
+        assign=[
+            {"task_code": "L", "rsrc_id": "R1", "rsrc_type": "RT_Labor", "target_qty": "80"},
+            {"task_code": "M", "rsrc_id": "R2", "rsrc_type": "RT_Mat", "target_qty": "5"},
+            {"task_code": "Z", "rsrc_id": "R1", "rsrc_type": "RT_Labor", "target_qty": "0"},
+        ],
+        costs=["N"],
+    )
+    any_kind = RULES["no_resource"].fn(AnalysisContext(s), exclude=["milestones"], expenses_count=False)
+    assert (codes(any_kind), counts(any_kind)) == (["N"], (1, 4))
+    labour = RULES["no_resource"].fn(
+        AnalysisContext(s), exclude=["milestones"], expenses_count=False, kind="labour_units"
+    )
+    assert (codes(labour), counts(labour)) == (["M", "N", "Z"], (3, 4))
+    with_expenses = RULES["no_resource"].fn(AnalysisContext(s), exclude=["milestones"], kind="labour_units")
+    assert codes(with_expenses) == ["M", "Z"]  # N has an expense and expenses_count defaults to true
