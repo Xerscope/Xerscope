@@ -2849,6 +2849,33 @@ def test_gantt_table_view_writes_a_dash_for_a_missing_float_and_shrinks_to_its_r
     assert len(opened) < 20 and data["height"] < 680  # a short tree takes less than the cap
 
 
+@pytest.mark.oracle("property")
+def test_a_missing_number_reads_as_a_dash_in_a_table(app):
+    """st.dataframe writes "None" for a missing number unless told what to write. The Changelog of
+    the demo holds changes without a Δ (a status, an actual date): every table writes the dash the
+    text columns already take (``ui.blank_missing``)."""
+    app.switch_page("views/changelog.py").run()
+    _ok(app)
+    changes = next(d for d in app.dataframe if "delta" in d.value.columns)
+    assert changes.value["delta"].isna().any()  # numbers, some missing: not a text column
+    assert {d.proto.placeholder for d in app.dataframe} == {"–"}
+
+
+@pytest.mark.oracle("property")
+def test_the_audit_settings_are_read_as_text_not_as_dates(app):
+    """The sheet's "now" column holds a target ("<= 0") or a parameter. ``ui.COLUMNS`` knows a
+    "now" that is a date (the Changelog's), and the target was drawn as 2000-01-01."""
+    app.switch_page("views/audit.py").run()
+    app.get("button_group")[0].set_value("DCMA").run()
+    app.selectbox(key="audit_check:DCMA").set_value("DCMA-02").run()
+    _ok(app)
+    sheet = next(d for d in app.dataframe if list(d.value.columns) == ["setting", "now", "default", "accepts"])
+    assert sheet.value.loc[0, ["now", "default"]].tolist() == ["<= 0", "<= 0"]  # dcma.toml, DCMA-02
+    drawn_as = json.loads(sheet.proto.columns)
+    kinds = {name: drawn_as[name]["type_config"]["type"] for name in sheet.value.columns}
+    assert kinds == {"setting": "text", "now": "text", "default": "text", "accepts": "text"}
+
+
 def test_charts_hide_the_plotly_mode_bar(app):
     for page in ("views/overview.py", "views/earned_value.py", "views/ppc.py"):
         app.switch_page(page).run()

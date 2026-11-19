@@ -114,6 +114,19 @@ def test_every_built_in_metric_round_trips_through_its_toml_block():
                 assert parse_standard(data).metrics[0].params == edited.params, edited.id
 
 
+@pytest.mark.oracle("property")
+def test_the_toml_block_is_written_as_the_standard_files_are():
+    """The block is pasted into a standard file, which is UTF-8 (TOML v1.0.0, "a TOML file must be a
+    valid UTF-8 encoded Unicode document"): the section sign of "PAM 200.1 §4.2" is written as
+    itself, as in dcma.toml, not as a \\u00a7 escape."""
+    from xerscope.analysis.audit import toml_block
+
+    leads = next(metric for metric in builtin_standards()["DCMA"].metrics if metric.id == "DCMA-02")
+    assert "§4.2" in leads.source
+    block = toml_block(leads)
+    assert "§4.2" in block and "\\u" not in block
+
+
 @pytest.mark.parametrize(
     ("target", "params", "message"),
     [
