@@ -20,7 +20,7 @@ Two sets of baseline dates, as in P6:
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
 
 import pandas as pd
@@ -289,6 +289,17 @@ def renumbered(old: Snapshot, new: Snapshot) -> pd.DataFrame:
     ]
     pairs = pairs.rename(columns={"task_code_old": "old_code", "task_code_new": "new_code"})
     return pairs[RENUMBERED_COLUMNS].sort_values("old_code").reset_index(drop=True)
+
+
+def restricted(baseline: Baseline, task_codes: Collection[str]) -> Baseline:
+    """``baseline`` with only the tasks ``task_codes`` names, and their assignment costs: what a part
+    of the project (the tasks of an activity code) is measured against."""
+    costs = baseline.assignment_costs
+    return replace(
+        baseline,
+        frame=baseline.frame[baseline.frame.index.isin(task_codes)],
+        assignment_costs=costs[costs["task_code"].isin(task_codes)],
+    )
 
 
 def relinked(baseline: Baseline, snapshot: Snapshot) -> Baseline:

@@ -17,10 +17,12 @@ from xerscope.analysis.evm import (
     priced_assignment_count,
     pv_curve,
     settings_using_pf,
+    update_and_baseline_of_code,
     update_and_previous,
 )
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.app import ui
+from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.state import (
     baseline_for,
     baseline_warnings,
@@ -267,14 +269,14 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
         )
 
 
-def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, costs: bool) -> None:
+def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, costs: bool, code_filter) -> None:
     ui.section(
         "S-curve",
         "Planned value from the baseline, earned value and actual hours per update, "
         "then the forecast of remaining hours.",
     )
     as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
-    forecast = memo(("forecast", snapshot.source), forecast_curve, snapshot, baseline=False)
+    forecast = memo(("forecast", snapshot.source, code_filter), forecast_curve, snapshot, baseline=False)
     ui.chart(
         build_scurve(
             curve,
@@ -371,34 +373,51 @@ if baseline.bac_hours <= 0:
     )
     st.stop()
 
+code_filter = pick_code_filter(snapshot, "ev")
+part, part_baseline = update_and_baseline_of_code(snapshot, baseline, code_filter)
+if code_filter is not None:
+    st.caption(
+        f"Filtered on {ui.md_text(code_filter.type_name)}: BAC, PV, EV, AC, ETC and the curves count only the "
+        "tasks of the values picked, read in each update. BEI counts tasks over the whole project: it is "
+        "not shown on a part of it."
+    )
+    if part_baseline.bac_hours <= 0:
+        st.info("The tasks of the values picked hold no budgeted labor hours in the baseline: nothing to earn.")
+        st.stop()
+
 # which baseline: its label alone is not unique (two baselines of one P6 XML export with the same data
 # date); its source and the project it was read from are ("planned dates" baselines differ per update)
 identity = (baseline.label, baseline.source, baseline.snapshot.source, baseline.snapshot.project_id)
-cache_key = ("evm", *identity, baseline.ev_basis)
+cache_key = ("evm", *identity, baseline.ev_basis, code_filter)
+update_key = (snapshot.source, str(snapshot.data_date))
 # the update's lists (techniques not modelled, tasks not in the baseline, curves) as its KPIs computed them
-point = memo(cache_key + ("point", snapshot.source, str(snapshot.data_date)), ev_point, snapshot, baseline)
-earned_values = memo(cache_key + ("earned", snapshot.source, str(snapshot.data_date)), earned, snapshot, baseline)
-curve = memo(cache_key + ("pv", snapshot.source, str(snapshot.data_date)), pv_curve, baseline, snapshot)
+point = memo(cache_key + ("point", *update_key), ev_point, part, part_baseline)
+earned_values = memo(cache_key + ("earned", *update_key), earned, part, part_baseline)
+curve = memo(cache_key + ("pv", *update_key), pv_curve, part_baseline, part)
 series = memo(
     cache_key + ("series",),
     evm_series,
     store,
     baseline_for(snapshot, link=False),  # each update linked to it on its own renumbered tasks
     st.session_state.get("guid_link", False),
+    code_filter,
 )
-standards = builtin_standards()
-bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
-# each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise
-bei = memo(
-    ("bei", repr(bei_metrics)),
-    bei_series,
-    store,
-    bei_metrics,
-    baseline_for,
-    partial(metric_result, store=store, keep=False),
-    ev_basis=False,
-)
-series = series.merge(bei, on="data_date", how="left")
+if code_filter is None:
+    standards = builtin_standards()
+    bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
+    # each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise
+    bei = memo(
+        ("bei", repr(bei_metrics)),
+        bei_series,
+        store,
+        bei_metrics,
+        baseline_for,
+        partial(metric_result, store=store, keep=False),
+        ev_basis=False,
+    )
+    series = series.merge(bei, on="data_date", how="left")
+else:  # the BEI is a check of the whole project
+    series = series.assign(bei_p6=float("nan"), bei_dcma=float("nan"))
 row, previous = update_and_previous(series, snapshot.data_date)
 
 costs = costs_shown()
@@ -406,5 +425,5 @@ show_kpis(row, previous, costs)
 if not costs:
     show_costs_ignored(snapshot)
 show_calculation(row, baseline, snapshot, point, costs)
-show_charts(series, curve, snapshot, baseline, costs)
+show_charts(series, curve, part, part_baseline, costs, code_filter)
 show_activity_detail(snapshot, baseline, point, earned_values)
