@@ -134,6 +134,12 @@ has no right on that folder: the page shows no file and the log says `Permission
 The case of the folder name matters inside the container: `/volume1/Planning` and
 `/volume1/planning` are two different paths. Copy it from File Station.
 
+A standard of your own (a `.toml`, docs/standards.md "Your own standard") goes in the same
+folder: `XERSCOPE_STANDARDS` points at it, the XER reader keeps the `.xer` files only and the
+standards loader the `.toml` files only. It is read at each start and listed on the Schedule
+health, Audit and Overview pages for every visitor; a wrong file is reported under the standard
+picker, the exports still load.
+
 The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes the files
 window's field that takes a path and the XER uploads (exports and baseline: one parsed 40 MB export
 takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New weeks go in
