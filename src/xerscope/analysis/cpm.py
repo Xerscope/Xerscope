@@ -1410,7 +1410,9 @@ class _Run:
 
     def late_bounds(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
         """Latest dates an open activity may start at and finish at ("not after" bounds): what follows
-        it and the project end, then its constraints; a mandatory date replaces them."""
+        it and the project end, then its constraints; a mandatory date replaces them, except for work
+        an expected finish places (a task with a duration override, an unstarted milestone): its late
+        finish is the lesser of the successors' bound and the date."""
         following_start_bounds, following_finish_bounds = self.bounds_of_what_follows(code, end_anchor)
         pinned, constraint_start_bounds, constraint_finish_bounds = self.late_constraints(code)
         if pinned is None:
@@ -1424,15 +1426,22 @@ class _Run:
         # Finish is the late finish)
         if end == "start":
             return [min([date] + constraint_start_bounds)], []
-        if code in self.duration_override:
+        if code in self.duration_override or self.is_milestone_placed_by_expected_finish(code):
             # With an expected finish applied the Mandatory Finish date no longer pins:
             # the late finish is the lesser of what the successors allow and the date.
-            # P6 23.12.1 on the held-out corpus, unstarted work: H29-02 A1160, H29-05
+            # P6 23.12.1 on the held-out corpus, unstarted tasks: H29-02 A1160, H29-05
             # A1110, H29-11 A1230 (a cap at the early finish gets them wrong),
-            # H29-12 A1240, and H25-05 A1150 on resource-dependent work. Work under way
-            # is not measured: H28-11 A1180 is wrong under either rule
+            # H29-12 A1240, and H25-05 A1150 on resource-dependent work; finish
+            # milestones: 14, e.g. H23-07 A1250. Not measured: work under way (H28-11
+            # A1180 is wrong under either rule), an expected finish after the date for a
+            # milestone, a start milestone
             return following_start_bounds, following_finish_bounds + [date]
         return [], [min([date] + constraint_finish_bounds)]
+
+    def is_milestone_placed_by_expected_finish(self, code) -> bool:
+        """True for an unstarted milestone that an expected finish places (see milestone_expected_finish)."""
+        started = self.status[code] == "TK_Active"
+        return self.milestone_expected_finish(code, started, self.kind(code), self.cal_ax[code]) is not None
 
     def bounds_of_what_follows(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
         """Bounds the successors give, the project end and the late date a link to another project gives."""
