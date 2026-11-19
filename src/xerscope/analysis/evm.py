@@ -55,9 +55,10 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from ..xer.calendar import TimeAxis, WorkCalendar, union_of
-from .baseline import Baseline, relinked
+from .baseline import Baseline, relinked, restricted
 from .checks import AnalysisContext, CheckResult, run_metric
 from .standards import Metric
+from .task_filters import CodeFilter
 
 # Planned Value Cost spreads an assignment over the date difference of the P6 glossary: working
 # time of the assignment's calendar (assumed, no P6 output settles it) or calendar time (False).
@@ -707,12 +708,34 @@ def ev_point(snapshot: Snapshot, baseline: Baseline) -> EvPoint:
     )
 
 
-def evm_series(store: SnapshotStore, baseline: Baseline, link_by_guid: bool = False) -> pd.DataFrame:
+def update_and_baseline_of_code(
+    snapshot: Snapshot, baseline: Baseline, code_filter: CodeFilter | None
+) -> tuple[Snapshot, Baseline]:
+    """``snapshot`` and ``baseline`` with only the tasks ``code_filter`` holds in ``snapshot``; both as
+    given without a filter. The earned value functions then measure that part of the project by their
+    usual formulas: BAC, PV and EV on the baseline tasks kept, AC and ETC on the update's.
+
+    The codes are read in the update, so a baseline without codes (a P6 XML export) is filtered too.
+    The update's other tables (assignments, links, WBS) stay whole: only what reads its tasks follows.
+    """
+    if code_filter is None:
+        return snapshot, baseline
+    kept = code_filter.tasks(snapshot)
+    tasks = snapshot.tasks
+    return replace(snapshot, tasks=tasks[tasks["task_code"].isin(kept)]), restricted(baseline, kept)
+
+
+def evm_series(
+    store: SnapshotStore, baseline: Baseline, link_by_guid: bool = False, code_filter: CodeFilter | None = None
+) -> pd.DataFrame:
     """One ``ev_point`` per update against ``baseline``; ``link_by_guid``: each update against the
-    baseline with that update's renumbered tasks under their new Activity IDs (``relinked``)."""
-    return pd.DataFrame(
-        [ev_point(snapshot, relinked(baseline, snapshot) if link_by_guid else baseline).as_row() for snapshot in store]
-    )
+    baseline with that update's renumbered tasks under their new Activity IDs (``relinked``);
+    ``code_filter``: each update's tasks of that code only (``update_and_baseline_of_code``)."""
+    rows = []
+    for snapshot in store:
+        linked = relinked(baseline, snapshot) if link_by_guid else baseline
+        rows.append(ev_point(*update_and_baseline_of_code(snapshot, linked, code_filter)).as_row())
+    return pd.DataFrame(rows)
 
 
 def update_and_previous(series: pd.DataFrame, data_date: pd.Timestamp) -> tuple[pd.Series, pd.Series | None]:
