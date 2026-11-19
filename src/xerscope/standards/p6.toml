@@ -116,6 +116,7 @@ source = "101248 (P6 Professional help, Negative Lags) and 46290: links between 
 
 [[metric]]
 id = "P6-10a"
+item = "P6-10"   # one check of the dialog (101248: Invalid Progress Dates), two lines of the 26.8 report
 group = "Inaccuracy"
 name = "Invalid Progress Before Data Date"
 description = "Incomplete activities before the data date"
@@ -125,6 +126,7 @@ source = "101248: not started, start before the data date; in progress, remainin
 
 [[metric]]
 id = "P6-10b"
+item = "P6-10"
 group = "Inaccuracy"
 name = "Invalid Progress After Data Date"
 description = "Activities with actual dates after the data date"

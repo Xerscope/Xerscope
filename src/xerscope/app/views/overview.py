@@ -68,7 +68,7 @@ ui.kpis(
 
 ui.section(
     "Score by standard",
-    "Checks in pass over checks evaluated, on the latest update and the baseline picked in the sidebar. "
+    "Criteria in pass over criteria evaluated, on the latest update and the baseline picked in the sidebar. "
     "Shown once Schedule health or the button has computed them: the standards take several seconds "
     "on a large file.",
 )

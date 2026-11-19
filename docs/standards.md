@@ -347,7 +347,8 @@ every comparison into a silent pass); `target = "pass"` goes with a `pass/fail` 
 there, which takes no numeric target; a TOML nested thousands of levels deep is refused as
 "too deeply nested". Every load error is a `ValueError` naming the file: the app lists it
 under the standard picker, the CLI prints `xerscope: <message>` and exits 2. `group`
-(optional) gives a section title. The formula behind every metric is in
+(optional) gives a section title; `item` (optional) ties several metrics to one criterion of
+your source, scored as one ([formulas.md](formulas.md) §1.6). The formula behind every metric is in
 [formulas.md](formulas.md).
 
 Some rules and parameters exist for a company standard alone, no built-in standard uses them:
