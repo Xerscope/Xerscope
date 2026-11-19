@@ -187,8 +187,8 @@ def with_settings(metric: Metric, target: str | None = None, params: dict | None
 
 
 def kept_params(metric: Metric, values: dict) -> dict:
-    """The parameters an audited metric holds, of the ``values`` picked for every parameter of its
-    rule: those that differ from the rule's default and those the standard already sets, as a
+    """The parameters an audited metric holds, of the ``values`` picked for the parameters its rule
+    reads: those that differ from the rule's default and those the standard already sets, as a
     standard file would hold them. A tuple is held as a list, as TOML reads it."""
     defaults = RULES[metric.rule].params
     kept = {}
@@ -240,6 +240,23 @@ def settings_table(metric: Metric, standard_metric: Metric) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+COMPARISON = ("op", "value", "value_max", "unit")  # what a rule compares its measure with, in reading order
+
+
+def form_rows(rule_name: str) -> list[tuple[str, ...]]:
+    """The parameters of a rule as the rows of a form, in the rule's order: ``COMPARISON`` on one
+    row where the rule has an operator, every other parameter on a row of its own."""
+    names = list(RULES[rule_name].params)
+    compared = tuple(name for name in COMPARISON if name in names) if "op" in names else ()
+    rows = []
+    for name in names:
+        if name == "op":
+            rows.append(compared)
+        elif name not in compared:
+            rows.append((name,))
+    return rows
 
 
 def choices(rule_name: str, parameter: str) -> list | None:

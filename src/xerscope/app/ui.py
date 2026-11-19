@@ -459,6 +459,13 @@ def section(title: str, caption: str = "") -> None:
         st.caption(caption)
 
 
+def block(title: str, caption: str = "") -> None:
+    """A titled part of a section: one question of a form among several."""
+    st.markdown(f"##### {title}")
+    if caption:
+        st.caption(caption)
+
+
 def _has_time(values: pd.Series) -> bool:
     timestamps = as_dates(values).dropna()
     return bool(len(timestamps)) and bool(((timestamps.dt.hour != 0) | (timestamps.dt.minute != 0)).any())

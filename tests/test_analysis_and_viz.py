@@ -187,6 +187,35 @@ def test_captions_reach_wcag_aa_on_every_background():
             assert _contrast(faded, background) >= 4.5, (mode, background, faded)
 
 
+FIELDS = (  # the element Streamlit outlines, for each kind of field the app draws
+    '[data-testid="stTextInputRootElement"]',
+    '[data-testid="stNumberInputContainer"]',
+    '[data-testid="stSelectbox"] > div > div',
+    '[data-testid="stMultiSelect"] > div > div',
+)
+
+
+@pytest.mark.oracle("standard")
+def test_the_outline_of_a_field_reaches_3_to_1_on_every_background():
+    """WCAG 2.2 SC 1.4.11, 3:1 for the boundary of an input. Streamlit outlines a field with the
+    theme's borderColor, the hairline of frames and tables: 1.18 to 1.41 on the app's surfaces
+    (measured in the browser on the Audit page), so a field at rest read as part of the page.
+    style.css outlines the fields with the text colour at a share of its own for each theme; the
+    outline is drawn over the field's fill and read against what surrounds it."""
+    css = (Path(xerscope.__file__).parent / "app" / "style.css").read_text(encoding="utf-8")
+    mixed = r"color-mix\(in srgb, currentColor (\d+)%, transparent\)"
+    shares = re.search(rf"^  --xs-field: light-dark\({mixed}, {mixed}\);$", css, re.M).groups()
+    for (mode, theme), share in zip(_themes().items(), shares, strict=True):  # light, then dark
+        surfaces = _backgrounds(theme)
+        assert max(_contrast(theme["borderColor"], surface) for surface in surfaces) < 1.5, mode  # the hairline
+        for fill in surfaces:
+            outline = _faded(theme["textColor"], fill, int(share) / 100)
+            for around in surfaces:
+                assert _contrast(outline, around) >= 3, (mode, share, fill, around)
+    for field in FIELDS:  # at rest only: the field that has the focus keeps the theme's accent
+        assert f"{field}:not(:focus-within)" in css, field
+
+
 @pytest.mark.oracle("standard")
 def test_a_text_button_under_the_pointer_takes_the_accent_not_the_primary_colour():
     """WCAG 2.2 SC 1.4.3. Streamlit colours the text of a text-only button with primaryColor under the

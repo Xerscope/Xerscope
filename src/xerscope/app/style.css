@@ -12,8 +12,18 @@
 :root {
   --xs-hairline: color-mix(in srgb, currentColor 12%, transparent);
   --xs-panel: color-mix(in srgb, currentColor 3%, transparent);
+  --xs-field: light-dark(color-mix(in srgb, currentColor 50%, transparent), color-mix(in srgb, currentColor 40%, transparent));
   --xs-motion: 160ms ease-out;
 }
+
+/* Fields at rest: Streamlit outlines them with the theme's borderColor, the hairline of frames and
+   tables (1.2:1 to 1.4:1 on the page), so a field read as part of the page until it had the focus.
+   The outline is the text colour at --xs-field, 3:1 on every surface of each theme (WCAG 2.2
+   SC 1.4.11); the field that has the focus keeps the theme's accent. */
+[data-testid="stTextInputRootElement"]:not(:focus-within),
+[data-testid="stNumberInputContainer"]:not(:focus-within),
+[data-testid="stSelectbox"] > div > div:not(:focus-within),
+[data-testid="stMultiSelect"] > div > div:not(:focus-within) { border-color: var(--xs-field); }
 
 /* Headings: weight in config.toml, slightly tight tracking */
 .stApp h1 { letter-spacing: -0.025em; }
