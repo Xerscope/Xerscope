@@ -258,6 +258,15 @@ def test_hover_text_is_the_text_colour_of_each_theme():
         assert TEXT[mode].lower() == theme["textColor"].lower(), mode
 
 
+def test_the_spi_over_four_weeks_is_titled_and_written_as_the_other_indices_in_a_table():
+    """Without its line in ``ui.COLUMNS`` the column is titled after its name ("Spi 4w") and written with
+    one decimal: 0.5 for 0.48."""
+    frame = pd.DataFrame({"spi_4w": [None, 0.4799], "spi": [None, 0.9412]})
+    shown, overrides = ui.numbers_as_text(frame, ["spi", "spi_4w"])
+    assert list(shown["spi_4w"]) == ["–", "0.48"] and list(shown["spi"]) == ["–", "0.94"]
+    assert (overrides["spi"]["label"], overrides["spi_4w"]["label"]) == ("SPI (labor units)", "SPI (4 weeks)")
+
+
 def test_fmt_number_and_tables_write_a_dash_for_a_missing_value():
     assert ui.fmt_number(1.26) == "1.3" and ui.fmt_number(None) == "–" and ui.fmt_number(float("nan"), "{:d}", "") == ""
     frame = pd.DataFrame({"total_float_d": [2.0, None], "spi": [None, 0.896], "note": [None, "x"]})
