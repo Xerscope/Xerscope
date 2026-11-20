@@ -716,4 +716,7 @@ def test_departure_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates(
     frames = diagnostic_frames(snap(tasks), None, builtin_standards()["P6"], anonymous=True)
     forms = frames["03c_departure_forms"]
     assert forms["tasks"].tolist() == [1]
+    steps = frames["03a_departure_steps"]  # counts are whole numbers: "850", not "850.0"; blank on the start row
+    assert str(steps["removed"].dtype) == "Int64" and str(steps["left"].dtype) == "Int64"
+    assert steps["left"].tolist() == [1, 1, 1, 1, 1, 1] and pd.isna(steps["removed"].iloc[0])
     assert "ZQ7" not in forms.to_csv() and "2026" not in forms.to_csv()

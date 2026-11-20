@@ -25,6 +25,7 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from .cpm import ScheduleError, schedule
 from .populations import Funnel, activity_funnel, flagged_activities
+from .progress import committed, kept_count, percent_kept
 
 P6_FLAG = "P6 longest path"
 RECALCULATED = "recalculated"
@@ -47,6 +48,10 @@ CHURN_COLUMNS = [
     "left_open",
     "left_deleted",
     "stability",
+    "ppc_week",
+    "path_committed",
+    "path_kept",
+    "ppc_path",
 ]
 
 
@@ -130,11 +135,41 @@ def _stability(counts: dict[str, int]) -> float | None:
     return counts[STAYED] / could_stay if could_stay else None
 
 
+def path_commitments(old: Snapshot, new: Snapshot) -> pd.DataFrame:
+    """Rows of ``progress.committed`` for the week, made on the longest path of ``old``.
+
+    The rows and columns of ``committed``, for the activities on the path of the update that made
+    the commitment and still in ``new`` (a deleted activity is a scope change, not a miss, as on
+    the PPC page). PPC counts every commitment alike; these are the ones a miss of which moves the
+    finish. Hamzeh and Emdanat ("Last Planner System: the need for new metrics", IGLC) note that
+    PPC does not account for the criticality of a task; restricting it to the longest path is
+    xerscope's reading, not a published metric.
+    """
+    commitments = committed(old, new)
+    on_path = commitments["task_code"].isin(longest_path(old)[0])
+    return commitments[on_path & commitments["in_update"]].reset_index(drop=True)
+
+
+def _commitment_counts(old: Snapshot, new: Snapshot) -> dict:
+    """PPC of the week over every commitment and over those on the longest path of ``old``."""
+    commitments = committed(old, new)
+    commitments = commitments[commitments["in_update"]]
+    on_path = path_commitments(old, new)
+    return {
+        "ppc_week": percent_kept(kept_count(commitments), len(commitments)),
+        "path_committed": len(on_path),
+        "path_kept": kept_count(on_path),
+        "ppc_path": percent_kept(kept_count(on_path), len(on_path)),
+    }
+
+
 def path_churn(store: SnapshotStore) -> pd.DataFrame:
     """One row per update after the first: its longest path against the one before.
 
     ``on_path`` the open activities on the path, then how many stayed, entered, were finished,
-    are still open but left the path (``left_open``) or were deleted, and ``stability``.
+    are still open but left the path (``left_open``) or were deleted, and ``stability``; then
+    the week's PPC over every commitment (``ppc_week``, as the PPC page) and over the commitments
+    made on the earlier update's path (``path_committed``, ``path_kept``, ``ppc_path``).
     ``path_source`` is where the later update's path was read; a week between a P6 path and a recalculated one
     compares two definitions and says so (``P6 longest path / recalculated``).
     """
@@ -154,6 +189,7 @@ def path_churn(store: SnapshotStore) -> pd.DataFrame:
                 "left_open": counts[SWITCHED],
                 "left_deleted": counts[DELETED],
                 "stability": _stability(counts),
+                **_commitment_counts(old, new),
             }
         )
     return pd.DataFrame(rows, columns=CHURN_COLUMNS)

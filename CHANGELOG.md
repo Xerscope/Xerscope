@@ -50,6 +50,10 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 - Debug, block 3: the recalculated finish against the file's, the tasks where the recalculated early
   dates first differ from the stored ones, and the same tasks counted by form with no Task ID and no
   date (formulas.md §5.3). The Delay analysis warning points to it.
+- Delay analysis: the week's commitments made on the previous update's longest path, kept or not,
+  and their PPC beside the week's PPC in the series (formulas.md §5.2); where the week's
+  revisions fall, within the lookahead (6 weeks, `Settings.lookahead_weeks`) or beyond it
+  (formulas.md §5.1).
 - Changelog: categories Calendars (working time changed) and Options (scheduling option changed,
   Must Finish By included); "remaining duration cut" on work not started (formulas.md §5).
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance
@@ -80,6 +84,11 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Fixed
 
+- Changelog: a scheduling option and its values are shown under the names of P6's Schedule Options
+  dialog ("Define critical activities as: Longest Path"), not the codes of the file (`CT_DrivPath`).
+- Delay analysis: a step counts the changes it carries; a rename or a move to another WBS is counted
+  at no step (they were counted at the last one).
+- Debug, block 3: the counts of the steps table are whole numbers.
 - Delay analysis: the page no longer stops on a series where an update holds whole hours only and
   the next a fraction of an hour (a remaining duration of 19.2 h): the half-step schedule carries
   the value as it is.
