@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from xerscope.analysis import query
 from xerscope.analysis.ask import suggested
@@ -300,11 +301,13 @@ def _keep_parsed(items: list[tuple[str, bytes]]) -> None:
         del cache[key]
 
 
-def sidebar_loader() -> None:
-    """Read the files chosen in the window and show their lines in the sidebar."""
-    sidebar = st.sidebar
-    files_line = sidebar.container()
+def load_series(on_file: Callable[[int, int, str | None], None]) -> SnapshotStore | None:
+    """Return the store of the files chosen in the window, read now if the choice changed.
 
+    ``on_file(index, count, name)`` is called once with ``name`` None before the first file of an in-run
+    read, then before each file. A series read in a thread is not returned until it is done. Nothing is
+    drawn: the caller shows the progress and the sidebar.
+    """
     signature, items, gone = _chosen_items()
     if items is not None:
         _forget_previous_series()
@@ -314,34 +317,37 @@ def sidebar_loader() -> None:
         job = _start_load(items)
         st.session_state.update(store=None, signature=signature, items=items, errors=gone, _load_job=job)
     elif items is not None:
-        # one line per file read, in the sidebar: a series of large exports takes a while
-        line = sidebar.empty()
         count = len(items)
-        line.progress(0.0, text=f"Reading {count} file(s)…")
-        store, errors = _build(
-            items,
-            on_file=lambda index, name: line.progress(
-                index / count, text=f"Reading {ui.md_text(name)} · {index + 1}/{count}"
-            ),
-        )
-        line.empty()
+        on_file(0, count, None)
+        store, errors = _build(items, on_file=lambda index, name: on_file(index, count, name))
         st.session_state.update(store=store, signature=signature, errors=[*gone, *errors], items=items, _load_job=None)
         _keep_parsed(items)
     elif not signature:
         st.session_state.update(store=None, signature=(), errors=[], items=None, _load_job=None)
     job: LoadJob | None = st.session_state.get("_load_job")
-    if job is not None:
-        if job.done:
-            store, errors = _collect(job)
-            st.session_state.update(store=store, errors=[*st.session_state.get("errors", []), *errors], _load_job=None)
-            _keep_parsed(job.items)
-        else:
-            with sidebar:
-                _poll_load()
-
+    if job is not None and job.done:
+        store, errors = _collect(job)
+        st.session_state.update(store=store, errors=[*st.session_state.get("errors", []), *errors], _load_job=None)
+        _keep_parsed(job.items)
     store: SnapshotStore | None = st.session_state.get("store")
     if store is not None:
         store = _apply_file_choices(store)
+    return store
+
+
+def _show_reading(lines: list[DeltaGenerator], index: int, count: int, name: str | None) -> None:
+    """Write the progress of the in-run read into the sidebar line opened by the first call, kept in ``lines``."""
+    if name is None:
+        lines.append(st.sidebar.empty())
+        text = f"Reading {count} file(s)…"
+    else:
+        text = f"Reading {ui.md_text(name)} · {index + 1}/{count}"
+    lines[0].progress(index / count, text=text)
+
+
+def draw_sidebar(store: SnapshotStore | None, files_line: DeltaGenerator) -> None:
+    """Draw the Files line in its reserved slot, the errors, the pickers and the switches of the series read."""
+    sidebar = st.sidebar
     # written once the projects are read: the count and dates are theirs
     files_line.button(
         f"Files · {_files_count(store)}" if store is not None else "Files · none read",
@@ -378,3 +384,18 @@ def sidebar_loader() -> None:
             help="The costs in the file come from the resource prices. On: the cost SPI is the main SPI "
             "on Earned value, as P6's Schedule Performance Index.",
         )
+
+
+def sidebar_loader() -> None:
+    """Read the files chosen in the window and show their lines in the sidebar."""
+    sidebar = st.sidebar
+    # the Files line keeps the top slot whatever the read does; its label is written once the files are read
+    files_line = sidebar.container()
+    reading_lines: list[DeltaGenerator] = []
+    store = load_series(functools.partial(_show_reading, reading_lines))
+    for line in reading_lines:
+        line.empty()
+    if st.session_state.get("_load_job") is not None:
+        with sidebar:
+            _poll_load()
+    draw_sidebar(store, files_line)
