@@ -96,6 +96,18 @@ GLOSSARY: dict[str, tuple[str, str, str]] = {
     "SS": ("Start to Start", "Relationship: the successor starts after the predecessor starts.", "P6"),
     "SV": ("Schedule Variance", "EV − PV; negative means behind plan.", "DoD EVM terms"),
     "TF": ("Total Float", "How long a task can slip without moving the project finish.", "P6"),
+    "TA": (
+        "Tasks Anticipated",
+        "Commitments of the week's plan that the plan n updates before already held for the same week / "
+        "commitments of the week's plan: how far ahead the week was seen coming.",
+        "Hamzeh, Ballard & Tommelein 2012 (Lean Construction Journal), figure 5; Ballard 1997",
+    ),
+    "TMR": (
+        "Tasks Made Ready",
+        "Commitments the plan n updates before held for the week that were kept / commitments that plan held "
+        "for the week: whether what the lookahead planned was made ready and done.",
+        "Hamzeh, Ballard & Tommelein 2012, TMR(n, 0); Ballard 1997",
+    ),
     "TSPI": (
         "To Complete Schedule Performance Index",
         "(PD − ES) / (PD − AT): the pace needed from now on to end on the planned finish; above 1.10 the "

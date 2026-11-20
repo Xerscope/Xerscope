@@ -3,11 +3,14 @@ import streamlit as st
 
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.progress import (
+    LOOKAHEAD_HORIZONS,
     VARIANCE_COLUMNS,
     committed,
     committed_milestones,
     date_variances,
     kept_count,
+    lookahead_of_week,
+    lookahead_series,
     moved_variances,
     ppc_of_week,
     ppc_series,
@@ -84,6 +87,52 @@ def show_ppc_weeks(ppc: pd.DataFrame) -> None:
                 "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
                 "kept": count("Kept (starts + finishes)", format="%d"),
                 "committed": count("Committed (starts + finishes)", format="%d"),
+            },
+        )
+
+
+LOOKAHEAD_COLUMNS_SHOWN = [
+    "data_date", "horizon", "lookahead_date", "wwp", "anticipated", "ta_pct", "lookahead", "lookahead_kept", "tmr_pct",
+]  # fmt: skip
+
+
+def show_lookahead(week_rows: pd.DataFrame, series: pd.DataFrame) -> None:
+    """Show Tasks Anticipated and Tasks Made Ready of the week, then every week's rows.
+
+    One pair of figures per horizon the series reaches.
+    """
+    ui.section(
+        "Lookahead reliability",
+        "How well the plans of the earlier updates saw this week coming (Hamzeh, Ballard & Tommelein 2012). "
+        "TA: share of this week's commitments the plan of n updates before already held for it. TMR: share of "
+        "what that earlier plan held for this week that was done. The sources measure one and two weeks "
+        "ahead; four and eight are this project's reading.",
+    )
+    if week_rows.empty:
+        st.caption("No earlier update reaches this week: nothing to compare.")
+        return
+    items = []
+    for row in week_rows.itertuples():
+        items.append(
+            (f"TA ({row.horizon} ahead)", _pct(row.ta_pct), None, f"{row.anticipated} of {row.wwp} commitments")
+        )
+        items.append(
+            (f"TMR ({row.horizon} ahead)", _pct(row.tmr_pct), None, f"{row.lookahead_kept} of {row.lookahead}")
+        )
+    ui.kpis(items, formulas=KPI_FORMULAS)
+    with st.expander("Every week: counts behind TA and TMR"):
+        count = st.column_config.NumberColumn
+        ui.table(
+            series.sort_values(["data_date", "horizon"], ascending=[False, True]),
+            columns=LOOKAHEAD_COLUMNS_SHOWN,
+            key="ppc_lookahead",
+            overrides={
+                "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
+                "horizon": count("Updates ahead", format="%d"),
+                "lookahead_date": st.column_config.DateColumn("Plan read", format="YYYY-MM-DD"),
+                "wwp": count("Weekly plan", format="%d"),
+                "ta_pct": count("TA (%)", format="%.0f"),
+                "tmr_pct": count("TMR (%)", format="%.0f"),
             },
         )
 
@@ -278,6 +327,16 @@ if code_filter is not None:
 wbs_progress = rollup_delta(progress)
 week_ppc = ppc_of_week(ppc, week_index)
 show_kpis(week_ppc, project_progress(wbs_progress))
+lookahead = memo(
+    ("ppc_lookahead", include_overdue, code_filter),
+    lookahead_series,
+    store,
+    LOOKAHEAD_HORIZONS,
+    include_overdue,
+    code_filter,
+    baseline=False,
+)
+show_lookahead(lookahead_of_week(lookahead, week_index), lookahead)
 show_renumbered(renumbered_tasks)
 show_commitments_and_wbs(commitments, wbs_progress, week_ppc)
 show_milestones_and_unplanned(milestones, unplanned)
