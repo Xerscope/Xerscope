@@ -17,8 +17,9 @@ Forward pass (early dates), in topological order, for each open activity:
   (expired = working time from its actual start to the data date); Actual Start = its
   actual start + the full lag (a finished predecessor's too)
 - constraints: start on / on or after -> start >= date; finish on / on or after -> finish
-  >= date; mandatory start / finish pin the date whatever the logic, except that the early
-  dates never fall before the data date; a constraint of the wrong kind on a milestone
+  >= date; a primary mandatory start / finish pins the date whatever the logic, except that
+  the early dates never fall before the data date; in the second slot it bounds as a start
+  on / finish on (``second_constraint_type``); a constraint of the wrong kind on a milestone
   (finish constraint on a start milestone) is ignored
 - in progress: actual start kept; the remaining duration starts at the data date, after
   open predecessors too under Retained Logic (P6 default) and Actual Dates; under Progress
@@ -33,8 +34,9 @@ Forward pass (early dates), in topological order, for each open activity:
 - finish = start + remaining duration (minutes of the activity's calendar)
 - resource dependent: the bound is taken on the activity's calendar, each driving
   assignment is placed from it on its resource's calendar (+ assignment lag, duration =
-  remaining units / units per hour), the activity starts at the earliest assignment
-  start on its own calendar and the assignments run forward from there (``rsrc_early``)
+  remaining units / units per hour, or its remaining window without a rate), the activity
+  starts at the earliest assignment start on its own calendar and the assignments run
+  forward from there (``rsrc_early``)
 
 Backward pass (late dates), in reverse order: the same relationships mirrored (an SS/SF
 lag that has partly expired in the forward pass is shortened the same way), started
@@ -84,6 +86,8 @@ from ..xer.calendar import TimeAxis, WorkCalendar
 START_LIKE = {"CS_MSO": "start", "CS_MSOA": "start", "CS_MEO": "finish", "CS_MEOA": "finish"}  # forward
 LATE_LIKE = {"CS_MSO": "start", "CS_MSOB": "start", "CS_MEO": "finish", "CS_MEOB": "finish"}  # backward
 MANDATORY = {"CS_MANDSTART": "start", "CS_MANDFIN": "finish"}
+# What a mandatory date in the second slot is scheduled as: it bounds both passes and pins nothing
+AS_SECOND_CONSTRAINT = {"CS_MANDSTART": "CS_MSO", "CS_MANDFIN": "CS_MEO"}
 PROGRESSED = ("retained_logic", "progress_override", "actual_dates")
 H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_data=False)
 LINK_TYPES = ("FS", "SS", "FF", "SF")
@@ -654,18 +658,30 @@ class _Run:
     def _assignment_from_row(self, code: str, row) -> _Asg | None:
         """One row of the assignment table as the engine schedules it: on the resource calendar when the
         activity is of type Resource Dependent and the row names one, else on the activity calendar; its
-        duration is remaining units / units per hour, none without a rate above 0. None when its lag or its
-        duration is not finite or beyond ``MAX_HOURS``."""
+        duration is remaining units / units per hour. None when its lag or its duration is not finite or
+        beyond ``MAX_HOURS``.
+
+        Without a rate above 0, an assignment on a resource calendar lasts the working time between its
+        own remaining start and finish, and its lag runs as the lag of a link out of the activity does
+        (``unexpired``). P6 23.12.1: 181 such assignments of the held-out corpus after P6's import, e.g.
+        H25-09 A1480; probes zero-units. 26.8 not measured. Not measured either, and left without a
+        duration: no remaining dates, or a resource without a calendar.
+        """
         remaining_units = _number_or_zero(row.remain_qty)
         units_per_hour = _number_or_zero(row.remain_qty_per_hr)
         is_on_resource_calendar = self.inputs[code].get("task_type") == "TT_Rsrc" and bool(row.rsrc_clndr_id)
         axis = self.axes.of(row.rsrc_clndr_id) if is_on_resource_calendar else self.cal_ax[code]
-        remaining_minutes = remaining_units / units_per_hour * 60 if units_per_hour > 0 else None
         lag_hours = _number_or_zero(row.relag_drtn_hr_cnt)
+        lag_minutes, remaining_minutes = lag_hours * 60, None
+        if units_per_hour > 0:
+            remaining_minutes = remaining_units / units_per_hour * 60
+        elif is_on_resource_calendar:
+            remaining_minutes = _window_minutes(row, axis)
+            lag_minutes = self.unexpired(code, axis, lag_minutes)
         if not _bounded(lag_hours) or (remaining_minutes is not None and not _bounded(remaining_minutes / 60)):
             return None
         resource_name = str(row.rsrc_short_name or row.rsrc_name or row.rsrc_id or "")
-        return _Asg(str(row.taskrsrc_id), resource_name, axis, lag_hours * 60, remaining_minutes, bool(row.driving))
+        return _Asg(str(row.taskrsrc_id), resource_name, axis, lag_minutes, remaining_minutes, bool(row.driving))
 
     def _record_resource_dependent(self) -> None:
         """Keep the activities scheduled from their resources (``rsrc_dep``): unfinished, of type Resource
@@ -679,8 +695,8 @@ class _Run:
         lacking = [code for code in self.nodes if code in of_resource_type and code not in self.rsrc_dep]
         if lacking:
             self.warnings.append(
-                f"{len(lacking)} resource-dependent tasks without a driving assignment with "
-                f"units per hour, scheduled on their task calendar: {lacking[:5]}"
+                f"{len(lacking)} resource-dependent tasks without a driving assignment that has a "
+                f"duration, scheduled on their task calendar: {lacking[:5]}"
             )
 
     # --- helpers -----------------------------------------------------------------------------
@@ -737,11 +753,19 @@ class _Run:
     def constraints(self, code) -> list[tuple[str, pd.Timestamp]]:
         """Dated constraints of ``c`` P6 schedules with. A finish constraint on a start
         milestone, or a start constraint on a finish milestone (P6's own dialog refuses
-        them; an import keeps them), is ignored (P6 23.12 corpus, H6-03 A1130)."""
+        them; an import keeps them), is ignored (P6 23.12 corpus, H6-03 A1130).
+
+        Only the primary constraint pins: the second one is given as it is scheduled
+        (``second_constraint_type``).
+        """
         dated = []
         activity_kind = self.kind(code)
-        for type_field, date_field in (("cstr_type", "cstr_date"), ("cstr_type2", "cstr_date2")):
-            constraint_type, date = self.inputs[code].get(type_field), self.inputs[code].get(date_field)
+        written = self.inputs[code]
+        slots = (
+            (written.get("cstr_type"), written.get("cstr_date")),
+            (self.second_constraint_type(code), written.get("cstr_date2")),
+        )
+        for constraint_type, date in slots:
             if constraint_type and isinstance(constraint_type, str) and constraint_type != "CS_ALAP" and pd.notna(date):
                 side = (
                     START_LIKE.get(constraint_type) or LATE_LIKE.get(constraint_type) or MANDATORY.get(constraint_type)
@@ -752,6 +776,21 @@ class _Run:
                     continue
                 dated.append((constraint_type, pd.Timestamp(date)))
         return dated
+
+    def second_constraint_type(self, code):
+        """The type of the second constraint as P6 schedules it.
+
+        On work not started, a Mandatory Start / Finish in the second slot is a Start On / Finish On
+        and pins nothing. P6 23.12.1, 26.8 not measured. Late side: probes xf-mandatory (Q9,
+        Q10: it caps as an "On or Before" does). Early side: the same probes for a Mandatory Finish
+        (the early finish of Q9 and Q10 is the date); for a Mandatory Start, held-out corpus H29-01
+        A1300 and H24-05 A1350 (the early start is the date). Work under way keeps the type as
+        written: no mandatory date bounds its late dates (``late_constraints``; H28-03 A1410).
+        """
+        written = self.inputs[code].get("cstr_type2")
+        if self.status[code] == "TK_NotStart":
+            return AS_SECOND_CONSTRAINT.get(written, written)
+        return written
 
     def pred_bounds(self, code: str, started: bool, finish_only: bool = False) -> list[tuple[str, pd.Timestamp]]:
         """Lower bounds the predecessors of ``c`` put on its start or its finish.
@@ -819,7 +858,9 @@ class _Run:
         return self.shift(link_axis, self.carry[predecessor], unexpired_lag)
 
     def unexpired(self, predecessor: str, link_axis: TimeAxis, lag: float) -> float:
-        """Lag of an SS/SF link from ``p`` still to run after the data date (whole lag if not started)."""
+        """Minutes of a lag counted from the start of ``predecessor`` still to run after the data date:
+        the lag of an SS / SF link out of it, or of one of its assignments without a rate. The whole
+        lag when the activity is not under way; a lead is left as it is."""
         actual_start = self.inputs[predecessor].get("act_start_date")
         if self.status[predecessor] != "TK_Active" or lag <= 0 or actual_start is None or pd.isna(actual_start):
             return lag
@@ -904,18 +945,23 @@ class _Run:
         activity_kind, duration = self.kind(code), self.dur_min(code)
         start_bounds, finish_bounds = self.early_bounds(code, started)
         milestone_expected = self.milestone_expected_finish(code)
-        pinned = self.forward_constraints(code, started, start_bounds, finish_bounds)
-        if milestone_expected is not None:
-            finish_bounds.append(milestone_expected)
+        pinned, constraint_start_bounds, constraint_finish_bounds = self.forward_constraints(code, started)
         # Mandatory Start / Finish: the date, whatever the logic, in both passes; except
         # that unstarted work never starts before the data date (H3-04 A1100, H2-06
         # A1130: the early dates move to the data date, the late dates stay). A milestone's
         # expected finish still counts: it sits at the later of that date and the Mandatory Start
-        # (P6 23.12.1 on the held-out corpus: 17 milestones; tests/test_cpm_milestone_mandatory_start.py)
+        # (P6 23.12.1 on the held-out corpus: 17 milestones; tests/test_cpm_milestone_mandatory_start.py).
+        # So does the second constraint: the early dates take the later of the pin and its date
+        # (H24-05 A1350, H24-04 A1210, H23-02 A1230; tests/test_cpm_second_constraint.py)
         if pinned and pinned[0] == "start":
-            start_bounds = [max(pinned[1], self.data_date)]
-            finish_bounds = [] if milestone_expected is None else [milestone_expected]
-        if code in self.rsrc_dep and activity_kind == "task":
+            start_bounds, finish_bounds = [max(pinned[1], self.data_date)], []
+        start_bounds += constraint_start_bounds
+        finish_bounds += constraint_finish_bounds
+        if milestone_expected is not None:
+            finish_bounds.append(milestone_expected)
+        if pinned and pinned[0] == "finish" and not self.has_expected_finish(code):
+            start, finish_time = self.mandatory_finish_dates(code, axis, activity_kind, duration, pinned[1])
+        elif code in self.rsrc_dep and activity_kind == "task":
             start, finish_time = self.rsrc_early(
                 code,
                 start_bounds,
@@ -925,8 +971,6 @@ class _Run:
             )
         else:
             start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
-        if pinned and pinned[0] == "finish" and not self.has_expected_finish(code):
-            start, finish_time = self.mandatory_finish_dates(axis, activity_kind, duration, pinned[1])
         if self.has_task_expected_finish(code, activity_kind):
             start, finish_time = self.expected_finish(
                 code,
@@ -1005,16 +1049,24 @@ class _Run:
         return pd.Timestamp(self.inputs[code]["expect_end_date"])
 
     def mandatory_finish_dates(
-        self, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
+        self, code, axis: TimeAxis, activity_kind: str, duration: float, date: pd.Timestamp
     ) -> tuple[pd.Timestamp, pd.Timestamp]:
         """Early dates under a Mandatory Finish: the finish at the date and the start a duration before;
-        from the data date instead when that start would fall before it."""
+        from the data date instead when that start would fall before it.
+
+        Resource-dependent work takes that start only: its driving assignments run on from it on their
+        own calendars and the early finish is theirs, before or after the date (P6 23.12.1: probe
+        xf-mandatory Q2, early finish a day after the date; held-out corpus H28-04 A1100, a day
+        before; 26.8 not measured).
+        """
         has_duration = activity_kind == "task" and duration
         finish_time = axis.keep_or_previous(date)
         start = axis.add(finish_time, -duration, finish=False) if has_duration else finish_time
         if start < self.data_date:
             start = axis.snap_start(self.data_date)
             finish_time = axis.add(start, duration, finish=True) if has_duration else start
+        if code in self.rsrc_dep and activity_kind == "task":
+            return self.rsrc_early(code, [start], [], self.extra_hours.get(code, 0.0) * 60)
         return start, finish_time
 
     def record_early(self, code, started: bool, activity_kind: str, start, finish_time) -> None:
@@ -1055,17 +1107,18 @@ class _Run:
             return actual_finish, actual_finish
         return self.data_date, self.data_date
 
-    def forward_constraints(self, code, started: bool, start_bounds: list, finish_bounds: list):
-        """Add the activity's dated constraints to the start / finish bounds (in place).
+    def forward_constraints(self, code, started: bool) -> tuple[tuple[str, pd.Timestamp] | None, list, list]:
+        """The mandatory date of the activity if any (its end, the date), and the bounds its other
+        constraints give to its early start and to its early finish.
 
-        Returns the Mandatory Start / Finish as (side, date), else None. Work under way keeps
-        its actual start, so its constraints are not applied here, only reported.
+        Work under way keeps its actual start, so its constraints are not applied here, only reported.
 
         An expected finish in force on work not started drops the early side of a Finish On and a
         Finish On or After: the work finishes at its expected finish (P6 23.12.1: probes oc-edges-xc
         N5, N7, xf-mandatory M7; 26.8 not measured). Their late side stays in the backward pass.
         """
         pinned = None
+        start_bounds, finish_bounds = [], []
         if started and self.constraints(code):
             self.unapplied.append(code)
         for constraint_type, date in [] if started else self.constraints(code):
@@ -1075,7 +1128,7 @@ class _Run:
                 start_bounds.append(date)
             elif START_LIKE.get(constraint_type) == "finish" and not self.has_expected_finish(code):
                 finish_bounds.append(date)
-        return pinned
+        return pinned, start_bounds, finish_bounds
 
     def expected_finish(
         self,
@@ -1418,9 +1471,12 @@ class _Run:
         end, date = pinned
         # a second constraint of the same end tighter than the mandatory date still
         # holds (H23-08 A1220: Finish On or Before four days before the Mandatory
-        # Finish is the late finish)
+        # Finish is the late finish); under a Mandatory Start, so does a finish date in the
+        # second slot (H26-08 A1280: the late finish is the second date, the late start follows).
+        # Not measured: a start date in the second slot under a primary Mandatory Finish (no corpus
+        # or probe activity has it); it bounds nothing here, as before
         if end == "start":
-            return [min([date] + constraint_start_bounds)], []
+            return [min([date] + constraint_start_bounds)], constraint_finish_bounds
         if self.has_expected_finish(code):
             # With an expected finish in force the Mandatory Finish date no longer pins work not
             # started, whether or not the expected finish sets the duration: the late finish is
@@ -1909,6 +1965,15 @@ def _bounded(hours) -> bool:
     if isinstance(hours, pd.Series):
         return hours.map(_bounded).astype(bool)
     return math.isfinite(hours) and abs(hours) <= MAX_HOURS
+
+
+def _window_minutes(row, axis: TimeAxis) -> float | None:
+    """Working minutes, on the assignment's calendar, from its remaining start to its remaining
+    finish; None when a date is missing or the finish is not after the start."""
+    start, finish = row.restart_date, row.reend_date
+    if pd.isna(start) or pd.isna(finish) or finish <= start:
+        return None
+    return float(axis.between(start, finish))
 
 
 def _early(

@@ -275,6 +275,17 @@ def todo(code: str, **kw) -> dict:
     return {"task_code": code, **kw}
 
 
+def labour_assignment(task_code: str, rsrc_id: str, units: float, units_per_hour: float = 1) -> dict:
+    """A driving TASKRSRC row for ``snap(..., assign=[...])``: ``units`` planned and remaining at
+    ``units_per_hour``, no actual units, no lag."""
+    return {
+        "task_code": task_code, "rsrc_id": rsrc_id, "target_qty": f"{units:g}", "remain_qty": f"{units:g}",
+        "act_reg_qty": "0", "act_ot_qty": "0", "target_qty_per_hr": f"{units_per_hour:g}",
+        "remain_qty_per_hr": f"{units_per_hour:g}", "target_lag_drtn_hr_cnt": "0", "relag_drtn_hr_cnt": "0",
+        "rollup_dates_flag": "Y",
+    }  # fmt: skip
+
+
 def hours(duration: int) -> dict:
     """Original and remaining duration in hours, for ``todo(..., **hours(8))``."""
     return dict(target_drtn_hr_cnt=str(duration), remain_drtn_hr_cnt=str(duration))
