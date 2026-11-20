@@ -16,6 +16,9 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- PPC & progress page: lookahead reliability, Tasks Anticipated and Tasks Made Ready of the
+  week against the plans of 1, 2, 4 and 8 updates before (Hamzeh, Ballard & Tommelein 2012,
+  figure 5; `progress.lookahead_series`, formulas.md §4), with every week's counts.
 - Rules for a company standard (`xerscope standards --rules`, formulas.md §2.5): `on_data_date`
   (activities starting or finishing on the data date); `float` with `op = "between"` and
   `value_max` (a float band, bounds included, reversed bounds refused on load); `missing_logic`
