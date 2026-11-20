@@ -670,7 +670,7 @@ labels" claim is false). KPI dates `%d %b %Y` (`ui.py:268-270`) vs ISO in tables
    diff as a whole.
 
 **Choice.** Option 2 with the golden diff grouped per finding in the PR description
-(CONTRIBUTING Readable 7). Decisions proposed to the maintainer: remove the Activity page
+(CONTRIBUTING Readable 7). Decided with the maintainer (2026-11-20): the Activity page is removed, after checking that the Gantt gives the same access (the task selectbox under the chart, `open_in_gantt` from the Changelog, Health and Milestones tables, `show_history` at `gantt.py:378`); `docs/formulas.md:98` says "task panel" instead of "Activity page". The proposal was: remove the Activity page
 (`views/activity.py`, 24 lines, and `streamlit_app.py:35`; the Gantt already opens the same panel,
 `gantt.py:378`, and Milestones reuse `latest_names`/`code_label`, so nothing else goes: UF-03) or
 retitle it; unit vocabulary `wd` for `_d` columns, `cal. d` for calendar days, `h` for hours
