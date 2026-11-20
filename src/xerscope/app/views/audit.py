@@ -21,6 +21,7 @@ from xerscope.analysis.checks import results_frame
 from xerscope.analysis.explain import explain
 from xerscope.analysis.rules import RULES
 from xerscope.app import ui
+from xerscope.app.explanation_panel import show_calculation, show_method
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
     baseline_for,
@@ -104,23 +105,9 @@ def show_explanation(result) -> None:
     explanation = explain(result)
     left, right = st.columns([3, 2], gap="large")
     with left:
-        with st.container(border=True):
-            st.caption("Calculation")
-            st.markdown(f"#### {explanation.formula}")
-            st.markdown(explanation.verdict)
-        if explanation.population:
-            st.markdown("**Population**")
-            st.markdown("\n".join(f"- {line}" for line in explanation.population))
-        if result.note and result.note not in explanation.formula:
-            st.markdown(f"**Note** · {ui.md_text(result.note)}")
-        if explanation.baseline:
-            st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
+        show_calculation(result, explanation)
     with right:
-        st.markdown("**Method**")
-        st.caption(explanation.method.replace("``", "`"))
-        source = ui.without_addresses(result.metric.source)
-        if source:
-            st.caption(f"Source: {source}")
+        show_method(result.metric, explanation)
 
 
 def show_sheet(standard, metric) -> None:

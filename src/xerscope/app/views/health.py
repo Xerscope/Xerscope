@@ -27,6 +27,7 @@ from xerscope.analysis.checks import (
 from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
+from xerscope.app.explanation_panel import show_calculation, show_method
 from xerscope.app.sets import show_sets
 from xerscope.app.state import (
     SNAP_CHOICE,
@@ -236,21 +237,6 @@ def check_title(result) -> str:
     )
 
 
-def show_method(metric, explanation) -> None:
-    st.markdown("**Method**")
-    st.caption(explanation.method.replace("``", "`"))
-    if explanation.parameters:
-        st.markdown("**Parameters**")
-        ui.table(
-            pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]),
-            max_height=260,
-            key=f"params_{metric.id}",  # one table per check: filters keyed per check
-        )
-    source = ui.without_addresses(metric.source)
-    if source:
-        st.caption(f"Source: {source}")
-
-
 def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
     """The items the check lists, and their download once the anonymized downloads are prepared."""
     metric = result.metric
@@ -284,19 +270,9 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
         left, right = st.columns([3, 2], gap="large")
         with left:
             st.markdown(f"**What it measures** · {explanation.measured}")
-            with st.container(border=True):
-                st.caption("Calculation")
-                st.markdown(f"#### {explanation.formula}")
-                st.markdown(explanation.verdict)
-            if explanation.population:
-                st.markdown("**Population**")
-                st.markdown("\n".join(f"- {line}" for line in explanation.population))
-            if result.note and result.note not in explanation.formula:
-                st.markdown(f"**Note** · {ui.md_text(result.note)}")
-            if explanation.baseline:
-                st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
+            show_calculation(result, explanation)
         with right:
-            show_method(result.metric, explanation)
+            show_method(result.metric, explanation, explanation.parameters)
         if standard is not None:
             show_links(result, snapshot, standard)
         show_flagged(result, explanation, snapshot, sources)
