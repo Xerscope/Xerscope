@@ -262,7 +262,7 @@ HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not show
 MISSING = "–"  # written for a value that is not there: a date, a number, a cell of a table
 
 
-_MD_SPECIAL = str.maketrans({c: "\\" + c for c in "\\`*_{}[]()#+-.!|<>~$"})
+_MD_SPECIAL = str.maketrans({character: "\\" + character for character in "\\`*_{}[]()#+-.!|<>~$"})
 
 
 def fmt_date(timestamp, missing: str = MISSING) -> str:
@@ -307,13 +307,13 @@ def blank_missing(frame: pd.DataFrame, missing: str = MISSING) -> pd.DataFrame:
     return frame if out is None else out
 
 
-def chart(fig, **kwargs) -> None:
+def chart(figure, **kwargs) -> None:
     """A Plotly figure in the house style: no mode bar (it stays on screen on a touch screen), the
     hover text in the theme's text colour (Streamlit's Plotly theme fades it to 3.5:1)."""
     theme = getattr(st.context.theme, "type", None) or "light"
-    fig.update_layout(hoverlabel=dict(font=dict(color=TEXT.get(theme, TEXT["light"]))))
+    figure.update_layout(hoverlabel=dict(font=dict(color=TEXT.get(theme, TEXT["light"]))))
     kwargs.setdefault("width", "stretch")
-    st.plotly_chart(fig, config={"displayModeBar": False}, **kwargs)
+    st.plotly_chart(figure, config={"displayModeBar": False}, **kwargs)
 
 
 def table_height(rows: int, max_height: int) -> int:

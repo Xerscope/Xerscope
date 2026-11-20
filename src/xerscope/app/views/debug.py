@@ -54,7 +54,7 @@ try:
         ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
         partial(
             diagnostic.diagnostic_frames,
-            updates=[s.source for s in store],
+            updates=[snapshot.source for snapshot in store],
             guid_link=st.session_state.get("guid_link", False),
         ),
         snapshot,
@@ -441,7 +441,7 @@ def build_diagnostic(anonymous: bool) -> None:
                     baseline,
                     p6_standard,
                     anonymous=True,
-                    updates=[s.source for s in store],
+                    updates=[snapshot.source for snapshot in store],
                     guid_link=st.session_state.get("guid_link", False),
                 ),
                 "05_guid_match": guid_match,

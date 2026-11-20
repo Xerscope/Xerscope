@@ -127,11 +127,11 @@ ui.chart(build_finish_trend(summary))
 ui.section("Updates loaded")
 ui.table(summary.drop(columns=["snapshot_idx", "project"]), key="overview_updates")
 
-limits = [w for w in store.warnings if LIMIT_MARK in w]
-for w in store.warnings:
-    if w not in limits:
-        st.warning(w, icon=":material/warning:")
+limits = [warning for warning in store.warnings if LIMIT_MARK in warning]
+for warning in store.warnings:
+    if warning not in limits:
+        st.warning(warning, icon=":material/warning:")
 if limits:
     ui.section("Limits", "What these files hold that xerscope reads differently from P6, and where.")
-    for w in limits:
-        st.warning(w, icon=":material/rule:")
+    for warning in limits:
+        st.warning(warning, icon=":material/rule:")

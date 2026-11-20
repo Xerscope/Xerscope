@@ -459,7 +459,7 @@ def _projects_fields(store: SnapshotStore) -> None:
     a draft that Done applies (``_apply_drafts``); otherwise the row says it holds a baseline copy."""
     st.caption("Project read from each file · why")
     with st.container(key="files_projects"):
-        for snapshot in sorted(store, key=lambda s: s.source):
+        for snapshot in sorted(store, key=lambda snapshot: snapshot.source):
             labels = _project_labels(snapshot)
             copies = set(baseline_copies(snapshot.file_projects)) & set(labels)
             # the projects one could analyse: the baseline copies set aside, unless one is the project read
@@ -733,7 +733,7 @@ def sidebar_loader() -> None:
     files_line.button(
         f"Files · {_files_count(store)}" if store is not None else "Files · none read",
         key="files_button",
-        help=f"Projects read: {', '.join(sorted({ui.md_text(s.project_code) for s in store}))}; "
+        help=f"Projects read: {', '.join(sorted({ui.md_text(snapshot.project_code) for snapshot in store}))}; "
         f"{len(store)} snapshot(s), {_period(store)}. Open to change the files or the project read from each."
         if store is not None
         else "Open to upload files or read a folder.",
@@ -956,17 +956,26 @@ def _which_updates(snapshots: list[Snapshot]) -> str:
     (a list of long file names made the lines unreadable on a long series)."""
     if len(snapshots) == 1:
         return ui.md_text(snapshots[0].source)
-    dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
-    span = f", {ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}" if dates else ""
-    return f"{_count(len(snapshots), 'update')}{span}"
+    count = counted(len(snapshots), "update")
+    span = _date_span(snapshots)
+    if span:
+        return f"{count}, {span}"
+    return count
 
 
 def _dates_or_file(snapshots: list[Snapshot]) -> str:
     """The file of a single update, else the first and last data dates of the updates."""
     if len(snapshots) == 1:
         return ui.md_text(snapshots[0].source)
-    dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
-    return f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}" if dates else ""
+    return _date_span(snapshots)
+
+
+def _date_span(snapshots: list[Snapshot]) -> str:
+    """``first → last`` data date of the updates; empty when none has a data date."""
+    dates = sorted(snapshot.data_date for snapshot in snapshots if snapshot.data_date is not None)
+    if not dates:
+        return ""
+    return f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}"
 
 
 def _files_name(snapshots: list[Snapshot]) -> str:
@@ -1052,19 +1061,19 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     updates = sum(len(snapshots) for snapshots in absent.values())
 
     def one(proj_id: str, snapshots: list[Snapshot]) -> str:
-        dates = sorted(s.data_date for s in snapshots if s.data_date is not None)
-        when = ui.fmt_date(dates[0]) if len(dates) == 1 else f"{ui.fmt_date(dates[0])} → {ui.fmt_date(dates[-1])}"
+        dates = sorted(snapshot.data_date for snapshot in snapshots if snapshot.data_date is not None)
+        when = ui.fmt_date(dates[0]) if len(dates) == 1 else _date_span(snapshots)
         name = codes.get(proj_id, "a project no loaded file holds (its code is unknown)")
-        unknown = sum(uses_project_baseline(s) is None for s in snapshots)
-        flag = f", {_count(unknown, 'update')} without use_project_baseline_flag" if unknown else ""
-        return f"{name}, named by {_count(len(snapshots), 'update')} ({when}{flag})"
+        without_flag = sum(uses_project_baseline(snapshot) is None for snapshot in snapshots)
+        flag = f", {counted(without_flag, 'update')} without use_project_baseline_flag" if without_flag else ""
+        return f"{name}, named by {counted(len(snapshots), 'update')} ({when}{flag})"
 
     shown = sorted(absent.items(), key=lambda item: -len(item[1]))[:ABSENT_BASELINES_SHOWN]
     named = "; ".join(one(proj_id, snapshots) for proj_id, snapshots in shown)
     if len(absent) > ABSENT_BASELINES_SHOWN:
         named += f"; {len(absent) - ABSENT_BASELINES_SHOWN} more"
     sidebar.error(
-        f"P6 Project Baseline missing for {_count(updates, 'update')} of {len(store)}: {named}. "
+        f"P6 Project Baseline missing for {counted(updates, 'update')} of {len(store)}: {named}. "
         "P6 measures planned value, BEI, Late Activities and Missed tasks against it "
         "(Project Details > Settings, use project baseline). Export that project from P6 and load its XER "
         f"under Baseline (BL) > {BL_FILE}. Which file names which: Debug, block 5.",
@@ -1080,7 +1089,8 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
         separate, updates, kind = baseline, list(store), choice
     elif choice == BL_EACH and st.session_state.get("fallback_choice") not in (None, BL_PLANNED, BL_NONE):
         separate = st.session_state.get("fallback")
-        updates = [s for s in store if _source_kind(s) == THE_FALLBACK]  # the others found their own
+        # the other updates found their own baseline
+        updates = [snapshot for snapshot in store if _source_kind(snapshot) == THE_FALLBACK]
         kind = st.session_state.get("fallback_choice")
     else:
         return
@@ -1092,7 +1102,7 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
     codes = project_codes([*store, separate.snapshot])
     loaded = separate.snapshot
     named = "; ".join(
-        f"{codes.get(proj_id, 'a project no loaded file holds')} ({_count(len(snapshots), 'update')})"
+        f"{codes.get(proj_id, 'a project no loaded file holds')} ({counted(len(snapshots), 'update')})"
         for proj_id, snapshots in sorted(others.items(), key=lambda item: -len(item[1]))
     )
     what = "separate baseline file" if kind == BL_FILE else "baseline (a loaded update)"
@@ -1112,17 +1122,23 @@ ABSENT_BASELINES_SHOWN = 3  # baselines named in the sidebar line; the rest coun
 MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must find
 
 
-def _count(number: int, word: str) -> str:
-    return f"{number} {word}{'' if number == 1 else 's'}"
+def counted(number: int, word: str, plural: str | None = None) -> str:
+    """``3 files`` or ``1 file``: the number and its word, in the plural unless the number is 1.
+    ``plural`` gives the irregular plural of a word (``copy``, ``copies``)."""
+    if number == 1:
+        return f"{number} {word}"
+    if plural is None:
+        plural = f"{word}s"
+    return f"{number} {plural}"
 
 
 def _files_count(store: SnapshotStore) -> str:
     """``N files · K projects``: K is the projects read, in the alert colour when the series mixes several."""
     count = len({snapshot.project_code for snapshot in store})
-    projects = _count(count, "project")
+    projects = counted(count, "project")
     if count > 1:
         projects = f":orange[{projects}]"
-    return f"{_count(len(store), 'file')} · {projects}"
+    return f"{counted(len(store), 'file')} · {projects}"
 
 
 def _baseline_kind(baseline: Baseline | None) -> str:
@@ -1143,7 +1159,7 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
     """One line under a page title: what the page is computed from (projects read, data date of the update
     shown, the baseline ``baseline_for`` gives it, EV basis, costs, files), the baseline's source in full in
     the help. Pressing it opens the Files and baseline window."""
-    codes = list(dict.fromkeys(s.project_code for s in store))
+    codes = list(dict.fromkeys(update.project_code for update in store))
     projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
     baseline = baseline_for(snapshot)
     kind = _baseline_kind(baseline)
@@ -1334,7 +1350,7 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
         return
     total = sum(found.values())
     files = ui.md_text(", ".join(f"{name} ({count})" for name, count in found.items()))
-    tasks = f"{total} task" if total == 1 else f"{total} tasks"
+    tasks = counted(total, "task")
     if st.session_state.get("guid_link"):
         sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
         return
@@ -1695,7 +1711,9 @@ def _baseline_identity(ev_basis: bool = True) -> tuple:
         return baseline.label, basis, st.session_state.get("baseline_digest")
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
         store = st.session_state.get("store")
-        pointers = tuple((s.source, s.file_baseline.proj_id, s.file_baseline.usable) for s in store or ())
+        pointers = tuple(
+            (snapshot.source, snapshot.file_baseline.proj_id, snapshot.file_baseline.usable) for snapshot in store or ()
+        )
         fallback = (st.session_state.get("fallback_choice"), st.session_state.get("baseline_digest"))
         export = baseline_files_tag(st.session_state)  # the export the updates are looked for in
         return baseline, basis, pointers, fallback, export
@@ -1757,6 +1775,7 @@ def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep
 
 
 def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
+    """The memo key of one metric on one update: the metric's definition, the file and its data date."""
     return ("metric", repr(metric), snapshot.source, str(snapshot.data_date))
 
 
