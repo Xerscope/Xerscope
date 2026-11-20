@@ -36,6 +36,7 @@ from xerscope.app import ui
 from xerscope.app.state import BL_FILE, BL_PLANNED, _picked_folder_baseline, anonymizers_built
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
+from xerscope.viz.gantt import CHROME_PX, ROW_PX
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
 
@@ -209,6 +210,28 @@ def _chips(at) -> list[str]:
 def _toggle(at, label: str, value: bool) -> None:
     next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
     _ok(at)
+
+
+@pytest.mark.oracle("characterization")
+def test_gantt_payload_carries_the_row_size_the_height_cap_and_an_epoch_that_follows_the_filters(app):
+    """The browser sizes the chart from the payload: the row height and the chrome from viz.gantt, the
+    cap from the page. The epoch tells it to drop the branches it kept: it moves when a word is typed
+    in Ask or erased, and holds when a run changes no filter."""
+    app.switch_page("views/gantt.py").run()
+    data = _gantt_data(app)
+    assert (data["rowPx"], data["chromePx"], data["maxHeight"]) == (ROW_PX, CHROME_PX, 680)
+    assert data["height"] <= data["maxHeight"]
+    start = data["openEpoch"]
+    _toggle(app, "Logic links", True)
+    assert _gantt_data(app)["openEpoch"] == start  # no filter changed
+    app.text_input[0].set_value("critical").run()
+    typed = _gantt_data(app)["openEpoch"]
+    assert typed != start
+    app.text_input[0].set_value("jalons civil").run()  # another sentence, the filters still on
+    reworded = _gantt_data(app)["openEpoch"]
+    assert reworded not in (start, typed)
+    app.text_input[0].set_value("").run()
+    assert _gantt_data(app)["openEpoch"] not in (start, typed, reworded)
 
 
 def test_gantt_wbs_choice_filters_and_options(app):

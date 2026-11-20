@@ -33,8 +33,8 @@ PALETTE = {
     "Complete": STATUS["complete"],
 }
 CATEGORY_ORDER = ["Critical", "Near critical", "Normal", "Complete"]
-ROW_PX = 26  # px per row, as .row / .trow in gantt.css and ROW in gantt.js
-CHROME_PX = 96  # px of toolbar, legend, header (52) and borders around the rows
+ROW_PX = 26  # px per row; sent to the browser as rowPx, which gantt.js writes to --row for gantt.css
+CHROME_PX = 96  # px of toolbar, legend, header (52) and borders around the rows; sent as chromePx
 MIN_ROWS = 4  # rows the component is sized for at least: the "no activity" notice needs the room
 WEEK_WINDOW = (pd.Timedelta(weeks=2), pd.Timedelta(weeks=10))  # week timescale: before / after the data date
 SPAN_PAD = pd.Timedelta(days=7)  # month timescale: margin around the schedule
@@ -247,10 +247,14 @@ def gantt_data(
     compare_label: str = "",
     links: bool = False,
     height: int = 640,
+    open_epoch: int = 0,
 ) -> dict:
     """The component's data: rows, links, window and options, all plain JSON values.
 
-    ``height`` is the most the component takes; it shrinks to the rows ``open_ids`` show.
+    ``height`` is the most the component takes (``maxHeight``); ``height`` itself is the
+    first-paint estimate for the rows ``open_ids`` show, and the browser then sizes the
+    component to the rows it draws, from ``rowPx`` and ``chromePx``. ``open_epoch`` changes
+    when the page recomputes which branches are open: the browser then drops the ones it kept.
     ``open_ids`` are the row ids drawn open (default: the top row). ``span`` (start,
     finish) sets the month timescale; "week" shows WEEK_WINDOW around the data date.
     Logic links join the activities drawn, from the predecessor's driving end to the
@@ -279,6 +283,10 @@ def gantt_data(
         "selected": selected,
         "compareLabel": compare_label,
         "height": fitted_height(rows, set(open_rows), height),
+        "maxHeight": height,
+        "rowPx": ROW_PX,
+        "chromePx": CHROME_PX,
+        "openEpoch": open_epoch,
     }
     return payload
 

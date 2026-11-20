@@ -6,7 +6,6 @@ export default function (component) {
   const D = component.data;
   const { setTriggerValue } = component;
   const P = D.palette;
-  const ROW = 26; // px, same as .row / .trow in gantt.css
   const GRID_W = 420; // px, tree grid width
   const DAY = 864e5;
   const root = component.parentElement.querySelector("#gantt");
@@ -15,6 +14,7 @@ export default function (component) {
   // page colours come from the theme in gantt.css; the bars' from the data
   root.style.setProperty("--Normal", P.Normal);
   root.style.setProperty("--grid-w", GRID_W + "px");
+  root.style.setProperty("--row", D.rowPx + "px"); // the row height gantt.css reads
 
   // --- helpers -------------------------------------------------------------------------
   const el = (tag, cls, text) => {
@@ -44,8 +44,11 @@ export default function (component) {
   }
   // the branches opened by the viewer stay open across reruns (a pick, a toggle on the page): the
   // page sends the branches it needs open (the chosen node's, every one under a filter), the host
-  // element keeps the viewer's, and the two are merged
+  // element keeps the viewer's, and the two are merged; the page's epoch changes when it recomputed
+  // the open branches (a filter flips, the Ask text changes) and what the browser kept is dropped
   const host = component.parentElement;
+  if (host.xsEpoch !== D.openEpoch) host.xsOpen = null;
+  host.xsEpoch = D.openEpoch;
   const open = new Set([...(host.xsOpen || []), ...D.open]);
   host.xsOpen = open;
   const maxDepth = Math.max(0, ...rows.filter((r) => r.kind === "wbs").map((r) => r.depth));
@@ -234,7 +237,7 @@ export default function (component) {
 
   const gridRow = (r, i) => {
     const row = el("div", "row cols " + r.kind + (r.id === D.selected ? " sel" : ""));
-    row.style.top = i * ROW + "px";
+    row.style.top = i * D.rowPx + "px";
     row.dataset.i = String(i);
     const name = el("div", "name");
     name.style.paddingLeft = 8 + r.depth * 16 + "px";
@@ -257,7 +260,7 @@ export default function (component) {
 
   const timelineRow = (r, i) => {
     const row = el("div", "trow " + r.kind + (r.id === D.selected ? " sel" : ""));
-    row.style.top = i * ROW + "px";
+    row.style.top = i * D.rowPx + "px";
     row.dataset.i = String(i);
     if (r.kind === "wbs") {
       if (r.t0 !== null && r.t1 !== null) row.append(box("summary", r.t0, r.t1));
@@ -303,7 +306,7 @@ export default function (component) {
       const x1 = x(kind === "FF" || kind === "SF" ? s.t1 : s.t0);
       if (!isFinite(x0) || !isFinite(x1)) continue;
       const path = document.createElementNS(NS, "path");
-      path.setAttribute("d", `M${x0},${i0 * ROW + ROW / 2} H${x0 + 6} V${i1 * ROW + ROW / 2} H${x1}`);
+      path.setAttribute("d", `M${x0},${i0 * D.rowPx + D.rowPx / 2} H${x0 + 6} V${i1 * D.rowPx + D.rowPx / 2} H${x1}`);
       path.setAttribute("marker-end", "url(#arrow)");
       linkSvg.append(path);
     }
@@ -312,8 +315,8 @@ export default function (component) {
   // rows from first to last (inclusive) that the scroll position shows, with a margin
   const windowRows = () => {
     const top = scroll.scrollTop - body.offsetTop;
-    const first = Math.max(0, Math.floor(top / ROW) - BUFFER);
-    const last = Math.min(shown.length - 1, Math.ceil((top + scroll.clientHeight) / ROW) + BUFFER);
+    const first = Math.max(0, Math.floor(top / D.rowPx) - BUFFER);
+    const last = Math.min(shown.length - 1, Math.ceil((top + scroll.clientHeight) / D.rowPx) + BUFFER);
     return [first, last];
   };
 
@@ -336,7 +339,9 @@ export default function (component) {
     width = Math.max(1, tcol.clientWidth);
     shown = visibleRows();
     index = new Map(shown.map((r, i) => [r.id, i]));
-    const height = shown.length * ROW;
+    const height = shown.length * D.rowPx;
+    // with no row the first-paint height stays: it leaves the room the "no activity" notice needs
+    if (shown.length) root.style.height = Math.min(D.maxHeight, D.chromePx + height) + "px";
     const marks = ticks();
     drawScale(marks);
     gcol.style.height = tcol.style.height = height + "px";
@@ -411,7 +416,7 @@ export default function (component) {
   render();
   const selectedIndex = index.get(D.selected);
   if (selectedIndex > 1) {
-    scroll.scrollTop = (selectedIndex - 1) * ROW;
+    scroll.scrollTop = (selectedIndex - 1) * D.rowPx;
     drawWindow(false);
   }
   return () => {

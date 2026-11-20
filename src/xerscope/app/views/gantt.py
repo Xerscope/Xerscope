@@ -31,6 +31,8 @@ NODE_KEY = "gantt_node"  # the WBS node the page opens on, kept across reruns
 NEXT_NODE_KEY = "gantt_node_next"  # a node to open on the next run (the picker is drawn before the chart)
 TASK_KEY = "gantt_task"  # the Activity ID picked in the chart or in the list under it
 CHART_KEY = "gantt_chart"
+OPEN_STATE_KEY = "gantt_open_state"  # (filtering, Ask text) of the last run: what the open branches were computed on
+OPEN_EPOCH_KEY = "gantt_open_epoch"  # counted up when that state changes; the chart drops the branches it kept
 CLICK_KEY = "gantt_clicked"  # the Activity ID of a click in the chart, until the run it causes
 PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
@@ -299,6 +301,19 @@ if focus:
 filtering = len(tasks) < len(in_branch)  # every status ticked filters nothing: the outline stays closed
 
 
+def open_epoch() -> int:
+    """The count of runs that changed the filter state or the Ask text; the chart drops the branches
+    the viewer opened when it changes, because the open branches were computed again."""
+    state = (filtering, asked)
+    if st.session_state.get(OPEN_STATE_KEY) != state:
+        st.session_state[OPEN_STATE_KEY] = state
+        st.session_state[OPEN_EPOCH_KEY] = st.session_state.get(OPEN_EPOCH_KEY, 0) + 1
+    return st.session_state[OPEN_EPOCH_KEY]
+
+
+epoch = open_epoch()
+
+
 def _clicked() -> None:
     """A click on an activity row: the row id the browser sent, applied by the run it causes."""
     st.session_state[CLICK_KEY] = task_from_row_id(st.session_state[CHART_KEY].get("picked"))
@@ -336,6 +351,7 @@ def show_chart(picked: str | None) -> None:
             compare_label=compare_label or "",
             links=show_links,
             height=GANTT_HEIGHT,
+            open_epoch=epoch,
         ),
         key=CHART_KEY,
         on_picked_change=_clicked,  # a click on an activity row sends "a:<Activity ID>"
