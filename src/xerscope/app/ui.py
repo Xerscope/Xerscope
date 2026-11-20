@@ -282,6 +282,12 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "left_open": ("Left: still open", "int"),
     "left_deleted": ("Left: deleted", "int"),
     "stability": ("Stability", "d2"),
+    "path_committed": ("Commitments on the path", "int"),
+    "path_kept": ("Kept on the path", "int"),
+    "ppc_path": ("PPC on the path", "pct"),
+    "within the lookahead": ("Within the lookahead", "int"),
+    "beyond the lookahead": ("Beyond the lookahead", "int"),
+    "beyond_pct": ("Share beyond", "pct"),
 }
 HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not shown
 MISSING = "–"  # written for a value that is not there: a date, a number, a cell of a table
