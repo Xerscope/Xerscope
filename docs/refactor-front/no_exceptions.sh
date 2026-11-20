@@ -7,7 +7,12 @@ base=$1; head=${2:-HEAD}; fail=0
 if [ "$head" = WORKTREE ]; then head=""; fi
 added=$(git diff "$base" $head -- src tests scripts pyproject.toml | grep '^+' | grep -v '^+++')
 markers='noqa|nosec|pragma|type: *ignore|fmt: *skip|fmt: *off|xfail|skipif|pytest\.skip|mark\.skip|importorskip|per-file-ignores|extend-ignore|^\+\s*ignore *=|KNOWN *=|# *C901|# *PLR|max-complexity|cognitive|radon|complexipy|ignore_imports|forbidden_modules|assert_frame_equal\(.*check_'
-hits=$(printf '%s\n' "$added" | grep -E -i "$markers")
+# a marker line removed and added with the same text is a move, not an addition
+removed=$(git diff "$base" $head -- src tests scripts pyproject.toml | grep '^-' | grep -v '^---' | cut -c2- | sed 's/^[[:space:]]*//' | sort -u)
+hits=$(printf '%s\n' "$added" | grep -E -i "$markers" | while IFS= read -r line; do
+  text=$(printf '%s' "$line" | cut -c2- | sed 's/^[[:space:]]*//')
+  printf '%s\n' "$removed" | grep -qxF -- "$text" || printf '%s\n' "$line"
+done)
 if [ -n "$hits" ]; then echo "EXCEPTION MARKERS ADDED:"; echo "$hits"; fail=1; fi
 protected='tests/fitness_baseline.json tests/mutation_baseline.json tests/golden pyproject.toml tests/test_architecture.py tests/test_fitness.py tests/test_characterization.py tests/test_page_golden.py scripts/fitness.py scripts/duplication.py scripts/same_code.py scripts/accessibility.py .github'
 touched=$(git diff --name-only "$base" $head -- $protected)

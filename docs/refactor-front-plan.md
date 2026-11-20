@@ -378,6 +378,35 @@ pivot) fails it. `duplication.py --threshold 0.8` diff: the 0.87 and 0.85/0.84 p
 **Findings.** DF-08, DF-09 (`692-700`, corrected), DF-07 (`debug.py:389-391, 427-429`,
 `state.py:1759-1760`). Merged, unvoted: DP-06 (DF-07), DP-12 (DF-08), RD-14 (DF-09).
 
+### P6-0 — The four exception markers of `state.py` (effort S, executor: mechanical executor, with Quentin; rewrite, output byte-identical)
+
+**Problem.** `state.py` carries four markers that a move would carry into new files, where the
+guard `docs/refactor-front/no_exceptions.sh` counts them as added: `state.py:938` (`fmt: skip`
+on a four-name tuple), `:1603` (`noqa: BLE001` around Streamlit's internal page title),
+`:1820` (`noqa: BLE001` on the thread boundary of `ScoreJob.run`), `:1821`
+(`type: ignore[assignment]`, an error string stored where a result list is typed).
+
+**Options.**
+1. Resolve each at its cause: `:938` let the formatter write one constant per line; `:1603`
+   catch the three exceptions Streamlit's internal API raises when it changes or when there is no
+   script context (`ImportError`, `AttributeError`, `KeyError`); `:1821` type
+   `ScoreJob.results` as `dict[str, list[CheckResult] | str]`, which is what the Overview already
+   reads; `:1820` stays: a worker thread must catch everything a standard raises and show it as an
+   error, the comment says so. The guard learns that a marker line removed and added with the same
+   text is a move, not an addition.
+2. Guard allowance alone for the four. Cost: four markers kept for no reason.
+
+**Choice.** Option 1, agreed with the maintainer (2026-11-20). The guard allowance is the one
+tooling change of this plan: a `-` and a `+` line with identical text after the first character
+cancel out.
+
+**Verification.** The P1 digest base vs tree identical; `uvx ruff@0.17.4 check` passes with the
+three markers gone; `uv run pytest tests/test_app.py -q`; planted defect: `_page_title` raising
+through a `TypeError` is a behaviour change only if it happens, so the planted defect is the
+removed `except` clause itself (AppTest with no page context must still render).
+
+**Findings.** None (prerequisite of P6a).
+
 ### P6a — Split `state.py` by concern: the move (effort L, executor: senior, with Quentin; move, byte-identical)
 
 **Problem.** `state.py` is 2101 lines, MI 0 (rank C, the only one in the front), docstring
@@ -388,29 +417,61 @@ resolution (`770-1570`), `memo`/`ScoreJob` (`1688-1835`), anonymiser and downloa
 modules (`gantt.py:30-39`, `state.py:1653`, `health.py:207-224`, `audit.py:152, 177`).
 
 **Options.**
-1. Pure move in one PR: `app/loading.py` (`72-128`, `208-257`, `554-636`),
-   `app/files_window.py` (`258-552`), `app/baseline_choice.py` (`770-1570`),
-   `app/cache.py` (`1688-1835`), `app/downloads.py` (`1836-2101`), `app/keys.py` (session key
-   constants); `state.py` keeps the session keys and re-exports every public name for one release
-   so no view changes. Cost: ~2000 lines moved, 0 rewritten.
-2. Several PRs, one module each. Cost: five PRs, each under 400 lines; limit: five releases of
-   re-exports and five `same_code.py` runs where one proves the same thing.
+1. Pure move by line range into six modules (`loading`, `files_window`, `baseline_choice`,
+   `cache`, `downloads`, `keys`). Tried on 2026-11-20: the ranges create five module-level import
+   cycles (`cache ↔ loading`, `cache ↔ baseline_choice`, `baseline_choice ↔ downloads`,
+   `baseline_choice ↔ files_window`, all → `state`), and every way out is forbidden (an import
+   inside a function is a rewritten definition for `same_code.py`; an import at the bottom of a
+   module is E402 with no ignore allowed; a callback is a new abstraction).
+2. Pure move cut along the dependency order, one direction only, checked on the syntax tree of
+   every top-level definition (no cycle):
+   - `app/session.py`, the leaf: `UPLOAD_TYPES`, `NBSP`, the session key constants
+     (`BASELINE_*`, `BL_*`, `SNAP_CHOICE`, `COMPARE_*`, `EV_BASIS_LABEL`, `ANONYMISED`,
+     `PREPARE_LABEL`, `DRAFTS`), `_digest`, `_file_digest`, `_file_choices`, `_data_locked`,
+     `data_locked`, `debug_page`, `_period`, `counted`, the window primitives `_open_window`,
+     `_close_window`, `_section_title`, `_project_draft`, `_apply_drafts`;
+   - `app/baselines.py`: the parse, baseline resolution, memo and export cycle as one module:
+     `_parse`, `_pmxml_index`, lines `770-1585` (resolution, pickers, warnings, `baseline_for`,
+     `standards`, `_page_title`, `require_store` excepted), `1704-1856` (`_baseline_identity`,
+     `data_identity`, `memo`, `metric_result`, `ScoreJob`, `score_job`, `standard_results*`),
+     `1857-1940` (`anonymous_exports`, `costs_shown`, `sources_of`, `baseline_items`,
+     `baseline_export`, `export_contents`, `_export_in_use`, `baseline_files_tag`); imports
+     `session` and `files_window` primitives only from `session`;
+   - `app/files_window.py`: `_header`, `_header_date`, `most_recent_first`, `_describe_file`,
+     `_folder_boxes`, `_upload_boxes`, `_same_names`, `_files_section`, `_projects_fields`,
+     `_window_sections`, `_window`; imports `session`, `baselines`;
+   - `app/loading.py`: `_parse_cached`, `_read`, `_build`, `background_jobs`, the lexicon
+     (`135-191`), `LoadJob`, `_start_load`, `_collect`, `_poll_load`, `_chosen_items`,
+     `_read_ticked`, `_apply_file_choices`, `_forget_previous_series`, `_keep_parsed`,
+     `sidebar_loader`; imports `session`, `baselines`, `files_window`;
+   - `app/downloads.py`: `source_raws`, `anonymizers_built`, `_anonymizers_key`, `anonymizer`,
+     `downloads_ready`, `Fetched`, `fetch`, `hold`, `held`, `show_download`, `download`,
+     `csv_download`; imports `session`, `baselines`;
+   - `state.py` keeps `standards`, `_page_title`, `require_store`, `_follow_snapshot`,
+     `snapshot_picker`, `go_to`, `open_in_gantt`, `compare_picker`, `context_banner`,
+     `page_header`, `baseline_warnings`, and re-exports every name the views and tests import
+     today, so no view changes in this package.
+   Cost: ~2000 lines moved, 0 rewritten; `baselines.py` stays near 1100 lines because the
+   resolution cycle is one concern; P6b and P7 cut inside it later.
 
-**Choice.** Option 1, **above the 400-line rule by design**, acceptable only under this review
-method, written in the PR template: `scripts/same_code.py <base>` is the whole review (every
-definition reported as a move, none as a change), the reviewer reads the module boundaries and
-the re-export list, not the bodies; `tests/test_architecture.py` passes with the new modules
-inside `app` (LAYERS unchanged); `pages.json` identical. **`state.py` is changed only with the
-maintainer (Quentin); nothing is coded before his agreement on this Problem / Options / Choice.**
-Which module owns `memo` vs `_parse` is decided here with him, with the backlog item DP-08 in
-view: both go to `app/cache.py` so P7b can unify them without crossing a module.
+**Choice.** Option 2, agreed with the maintainer (2026-11-20), **above the 400-line rule by
+design**, acceptable only under this review method, written in the commit message:
+`scripts/same_code.py <base>` is the whole review (every definition reported as a move, none as
+a change), the reviewer reads the module boundaries, the import direction
+(`session ← baselines ← files_window ← loading`, `downloads → baselines, session`,
+`state → all`) and the re-export list, not the bodies; `tests/test_architecture.py` passes with
+the new modules inside `app` (LAYERS unchanged); `pages.json` identical. `memo` and `_parse`
+both live in `baselines.py` so P7b can unify them without crossing a module (DP-08). The exact
+membership of each module is the list above; a name the list forgets goes to the module the
+dependency order allows, and is named in the commit message.
 
 **Verification.** `uv run python scripts/same_code.py <base>` prints no changed definition;
 `uv run pytest tests/test_architecture.py tests/test_app.py tests/test_page_golden.py -q`;
 `pages.json` identical; `fitness.py --check` passes (the baseline is regenerated by the maintainer
-after merge, `state.py` having shrunk).
+after merge, `state.py` having shrunk); the guard prints `clean` (the `ScoreJob` marker moves
+unchanged). Planted defect: one re-export left out of `state.py`, the suite names the view.
 
-**Findings.** RD-09, RD-16, LD-08 (keys module).
+**Findings.** RD-09, RD-16, LD-08 (keys module, now `session.py`).
 
 ### P6b — Split the four long functions of `state.py`, and the same pattern elsewhere (effort M, executor: senior, with Quentin; rewrite, output byte-identical)
 
@@ -465,7 +526,7 @@ per series change, parallel on the pool, medium not high).
    folder listed once per run and passed down; digest stored next to the uploaded bytes
    (`421-423`); `memo` around `guid_match_table` and `progress_delta`; vocabulary key
    `tuple(taught)`; `LoadJob` receives only the items missing from `_parsed`. Cost: ~230 lines
-   across `cache.py`, `baseline_choice.py`, `loading.py`, `debug.py`, `ppc.py`, `gantt.py`.
+   across `baselines.py`, `loading.py`, `debug.py`, `ppc.py`, `gantt.py`.
    Limit: `standards()` still reads the TOML per rerun (5 ms).
 2. Also `functools.cache` on `builtin_standards`. Cost: 2 lines; limit: the first process-wide
    cache of the front (SE-06); the uploaded standards merge stays per session, so nothing
@@ -615,7 +676,7 @@ list of `tests/test_page_golden.py:33` updated if the Activity page goes.
 loading behaviour, not a visual one (first review).
 
 **Options.**
-1. Audit defaults to `P6` and both pages share one key in `keys.py` (P6a). Cost: ~15 lines;
+1. Audit defaults to `P6` and both pages share one key in `session.py` (P6a). Cost: ~15 lines;
    limit: a user who picked DCMA on Health sees DCMA on Audit, a coupling to say in the help text
    (P14: "The standard whose checks can be audited").
 2. Audit defaults to `P6`, keys stay separate. Cost: 3 lines; limit: two keys for one choice.
@@ -1037,12 +1098,11 @@ Order of merge:
 1. **P1, P2, P3, P4a, P5** are independent of each other and of everything else; merge first
    in any order (small, mechanical, output byte-identical). P3 and P5's `snapshot_identity`
    touch `state.py`: agreed with Quentin first.
-2. **P6a** (state move) after P3 (so the renamed helpers move once); **P6b** after P6a and after
+2. **P6-0** (markers) then **P6a** (state move) after P3 (so the renamed helpers move once); **P6b** after P6a and after
    the U1 decision (section 6).
-3. **P7** after P6a (both caches in `app/cache.py`, baseline resolution in
-   `app/baseline_choice.py`); **P7b** after P7, on the maintainer's choice.
+3. **P7** after P6a (both caches and the baseline resolution in `app/baselines.py`); **P7b** after P7, on the maintainer's choice.
 4. **P8** after P6a (downloads live in `app/downloads.py`).
-5. **P9a** after P2 (explanation panel owns the heading change) and P6a (`keys.py`); it is the
+5. **P9a** after P2 (explanation panel owns the heading change) and P6a (`session.py`); it is the
    first package that regenerates `pages.json`. **P9b** after P6a, on the maintainer's choice.
 6. **P4b** after P4a, on the maintainer's choice (option 2 touches `gantt_data`).
 7. **P10** after P4a (digest script and `DAY` constant) and P9a (one golden regeneration
