@@ -537,6 +537,13 @@ class TimeAxis:
     def add(self, ts, minutes: float, finish: bool = True) -> pd.Timestamp:
         return self.at(self.work(ts) + minutes, finish)
 
+    def shift(self, ts, minutes: float) -> pd.Timestamp:
+        """``ts`` moved by a lag in working minutes: on to a period end, back (a lead) to a period start.
+
+        Unlike ``add``, no lag leaves ``ts`` as it is, in non-working time too.
+        """
+        return ts if minutes == 0 else self.add(ts, minutes, finish=minutes > 0)
+
     def between(self, a, b) -> int:
         """Working minutes from a to b (negative if b is earlier)."""
         return self.work(b) - self.work(a)

@@ -22,7 +22,6 @@ LONG = {
     "analysis/cpm.py:_Run.forward",
     "analysis/cpm.py:_Run.level_of_effort",
     "analysis/cpm.py:_Run.pred_bounds",
-    "analysis/cpm.py:_Run.rsrc_early",
     "analysis/cpm.py:_late",
     "analysis/cpm.py:schedule",
     "analysis/dcma/fourteen_point.py:dcma_11_missed_tasks",
