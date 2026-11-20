@@ -25,7 +25,9 @@ def main() -> None:
     from xerscope.app import ui
     from xerscope.app.state import debug_page, sidebar_loader
 
-    st.set_page_config(page_title="xerscope", page_icon=":material/calendar_month:", layout="wide")
+    # an emoji favicon is a data: URL the browser builds; a :material/ icon is fetched from fonts.gstatic.com,
+    # the one request the page would send outside the site (deploy/Caddyfile forbids it)
+    st.set_page_config(page_title="xerscope", page_icon="📅", layout="wide")
 
     pages = st.navigation(
         {
