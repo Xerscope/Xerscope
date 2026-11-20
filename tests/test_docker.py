@@ -410,16 +410,43 @@ def test_caddy_policy_hashes_every_inline_script_of_the_installed_streamlit():
     allows it by sha256, so a Streamlit upgrade that changes it fails here before it blanks the page."""
     import base64
     import hashlib
-    import re
 
     import streamlit
 
     html = (Path(streamlit.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
-    inline = re.findall(r"<script>(.*?)</script>", html, re.S)
+    inline = _inline_scripts(html)
     assert inline, "Streamlit's page no longer has an inline script: drop the hash from the policy"
     for script in inline:
         digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
         assert f"'sha256-{digest}'" in CSP, digest
+
+
+def _inline_scripts(html: str) -> list[str]:
+    """The text of every <script> without a src, as the browser hashes it (the HTML parsed, not grepped)."""
+    from html.parser import HTMLParser
+
+    class Scripts(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.found: list[str] = []
+            self.inside = False
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self.inside = tag == "script" and all(name != "src" for name, _ in attrs)
+            if self.inside:
+                self.found.append("")
+
+        def handle_data(self, data: str) -> None:
+            if self.inside:
+                self.found[-1] += data
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "script":
+                self.inside = False
+
+    parser = Scripts()
+    parser.feed(html)
+    return parser.found
 
 
 def test_caddy_policy_forbids_plug_ins_and_base_and_hsts_covers_sub_domains():
