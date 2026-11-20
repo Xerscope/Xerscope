@@ -24,6 +24,8 @@ from xerscope.app.session import (
     _digest,
     _project_draft,
     _section_title,
+    folder_root,
+    folder_under_root,
 )
 from xerscope.store import SnapshotStore
 from xerscope.xer import FileHeader, XerError, baseline_copies, load_header, xer_files
@@ -142,7 +144,10 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     ``chosen``: the names of the last validated choice, ticked again when the window reopens (its boxes
     are gone once closed).
     """
-    root = Path(folder).expanduser()
+    root = folder_under_root(folder)
+    if root is None:
+        st.error(f"Folder outside {folder_root()}: set XERSCOPE_FOLDER_ROOT to read another tree")
+        return ()
     files = xer_files(root) if root.is_dir() else []
     if not files:
         st.error("Folder not found" if not root.is_dir() else "No .xer file in that folder")

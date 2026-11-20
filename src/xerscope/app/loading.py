@@ -20,7 +20,7 @@ from xerscope.app import ui
 from xerscope.app.baselines import _ask_for_the_baseline, _baseline_picker, _files_count, _parse
 from xerscope.app.files_window import _window, most_recent_first
 from xerscope.app.reading import read_update, read_updates, store_of
-from xerscope.app.session import _digest, _file_choices, _file_digest, _open_window, _period
+from xerscope.app.session import _digest, _file_choices, _file_digest, _open_window, _period, folder_under_root
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import Snapshot, xer_files
 
@@ -233,7 +233,9 @@ def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None, list[str]]:
             return signature, None, []
         return signature, list(source[1]), []
     _, folder, names = source
-    root = Path(folder).expanduser()
+    root = folder_under_root(folder)
+    if root is None:
+        return (), None, []
     listed = {path.name: path for path in xer_files(root)} if root.is_dir() else {}
     previous = st.session_state.get("signature") or ()
     # the bytes of a file whose digest did not change are those already held: not read again

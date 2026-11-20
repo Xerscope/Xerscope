@@ -134,6 +134,26 @@ def data_locked() -> bool:
     return _data_locked()
 
 
+def folder_root() -> Path:
+    """Return the folder a typed folder must lie under.
+
+    XERSCOPE_FOLDER_ROOT when set, else the folder of XERSCOPE_DATA, else the home directory. The
+    field of the Files window reads nothing outside it, so a path typed in the page cannot walk the
+    server's file system (CodeQL path injection).
+    """
+    root = os.environ.get("XERSCOPE_FOLDER_ROOT") or os.environ.get("XERSCOPE_DATA") or str(Path.home())
+    return Path(os.path.realpath(os.path.expanduser(root)))
+
+
+def folder_under_root(folder: str) -> Path | None:
+    """Return the resolved ``folder`` when it lies under ``folder_root()``, else None."""
+    root = str(folder_root())
+    resolved = os.path.realpath(os.path.expanduser(folder))
+    if resolved != root and not resolved.startswith(root + os.sep):
+        return None
+    return Path(resolved)
+
+
 def _data_locked() -> bool:
     """Return whether this is a remote deployment: the visitor reads the server's exports folder and nothing else.
 

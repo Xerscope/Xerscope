@@ -182,6 +182,7 @@ Configuration (environment variables, also set by the `app` flags):
 | Variable | Effect |
 |---|---|
 | `XERSCOPE_DATA` | folder of weekly `.xer` files listed at start (tick them in Files to read) |
+| `XERSCOPE_FOLDER_ROOT` | the folder a path typed in the Files window must lie under; default: the folder of `XERSCOPE_DATA`, else your home directory |
 | `XERSCOPE_BASELINE` | baseline `.xer`, or a P6 XML export holding the baselines |
 | `XERSCOPE_STANDARDS` | folder of your own standard `.toml` files |
 | `XERSCOPE_DATA_LOCKED` | `true`: the files window offers no folder field and no `.xer` upload (no separate baseline file unless `XERSCOPE_BASELINE` names one), only the files of `XERSCOPE_DATA`; no Debug page (remote deployment) |

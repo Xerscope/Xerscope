@@ -188,6 +188,26 @@ in `code_values` labels reaching `selectbox` option labels (`code_picker.py:20-3
 Streamlit parses option labels as Markdown is unverified); `read_header`/`load_header` on fuzzed
 input (the picker's path, see section 6, file picker); `teach` with a hostile label (guards exist).
 
+### Folder typed in the Files window: read under one root (decided, 2026-11-20)
+
+**Problem.** `_folder_boxes` and `_chosen_items` listed and read any folder typed in the Files
+window (`Path(folder).expanduser()`, `state.py:309, 568` before the split). A remote deployment
+never reaches that code (`XERSCOPE_DATA_LOCKED`), but a local instance exposed to another user on
+the same machine could be pointed at any readable tree; CodeQL reports it as path injection
+("Uncontrolled data used in path expression", high).
+
+**Options.** 1. Dismiss the alert: pre-existing, local instance only. 2. One root: a typed folder
+is accepted only when its resolved path lies under `XERSCOPE_FOLDER_ROOT`, else the folder of
+`XERSCOPE_DATA`, else the home directory; refused with a message naming the root. 3. An allow-list
+of several roots. Cost of 2: two functions in `session.py`, two call sites, one README row; a
+user whose exports live on another drive sets the variable once.
+
+**Choice.** Option 2 (maintainer: no CodeQL alert left standing). Normalisation then a prefix
+check, the shape CodeQL recognises as a sanitiser. Test that fails before:
+`tests/test_folder_root.py` (the root order, the containment including `..` and a sibling whose
+name starts like the root, the window refusing a folder outside the root). The whole-app digest on
+the demo series is identical: the demo folder is `XERSCOPE_DATA`, so inside the root.
+
 ## 3. Work packages
 
 Each package is one pull request aimed at 400 changed lines, independently mergeable in the
