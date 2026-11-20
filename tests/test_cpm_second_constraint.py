@@ -1,6 +1,6 @@
 """Only the primary constraint pins: what the second constraint does beside it (CPM engine).
 
-Source of the rule: P6 Professional 23.12.1 on the pinned corpus. Probes xf-mandatory, rule PC
+Source of the rule: P6 Professional 23.12.1 on the pinned corpus. Probes xf-mandatory
 (projects ZZ-CPP-XQR, -XQO, -XQN, activities Q7 to Q10): "only the primary constraint pins; a
 second constraint caps the late dates, a Mandatory Start or Mandatory Finish in the second slot as
 a Start On or Before or a Finish On or Before does". Held-out corpus, 140 activities with a
@@ -104,6 +104,21 @@ def test_mandatory_start_in_the_second_slot_caps_the_late_start_and_holds_no_ear
     }  # fmt: skip
 
 
+def test_mandatory_start_in_the_second_slot_holds_the_early_start_from_its_date():
+    """Start On or After Tue 3 Mar 08:00, then Mandatory Start Thu 5 Mar 08:00 (shape of H29-01 A1300,
+    whose early start P6 puts at the second date).
+
+    Forward: not before the second date, Thu 5 Mar 08:00 to Fri 6 Mar 17:00. Backward: not after it,
+    late start Thu 5 Mar 08:00, late finish Fri 6 Mar 17:00, though the network would allow Thu 12
+    Mar 17:00. Total float 0.
+    """
+    task = todo("T", cstr_type="CS_MSOA", cstr_date="2026-03-03 08:00", cstr_type2="CS_MANDSTART",
+                cstr_date2="2026-03-05 08:00", **hours(16))  # fmt: skip
+    assert dates_of(row_of_t(task)) == {
+        "es": "03-05 08:00", "ef": "03-06 17:00", "ls": "03-05 08:00", "lf": "03-06 17:00", "tf_hr": 0,
+    }  # fmt: skip
+
+
 def test_mandatory_start_then_an_earlier_mandatory_finish_caps_the_late_dates():
     """Mandatory Start Thu 5 Mar 08:00, then Mandatory Finish Wed 4 Mar 17:00 (shape of H26-08 A1280).
 
@@ -157,6 +172,21 @@ def test_an_earlier_start_on_or_after_leaves_the_pinned_start_where_it_is():
                 cstr_date2="2026-03-04 08:00", **hours(16))  # fmt: skip
     assert dates_of(row_of_t(task)) == {
         "es": "03-05 08:00", "ef": "03-06 17:00", "ls": "03-05 08:00", "lf": "03-06 17:00", "tf_hr": 0,
+    }  # fmt: skip
+
+
+def test_an_earlier_start_on_or_before_caps_the_late_start_of_a_pinned_start():
+    """Mandatory Start Thu 5 Mar 08:00, then Start On or Before Wed 4 Mar 08:00 (shape of H23-07
+    A1090 and H27-12 A1350, where P6's late start is the second date).
+
+    Forward: the pin, Thu 5 Mar 08:00 to Fri 6 Mar 17:00. Backward: the earlier of the two dates,
+    late start Wed 4 Mar 08:00, late finish 16 h later = Thu 5 Mar 17:00. Total float = Fri 6 Mar
+    17:00 back to Thu 5 Mar 17:00 = -8 h.
+    """
+    task = todo("T", cstr_type="CS_MANDSTART", cstr_date="2026-03-05 08:00", cstr_type2="CS_MSOB",
+                cstr_date2="2026-03-04 08:00", **hours(16))  # fmt: skip
+    assert dates_of(row_of_t(task)) == {
+        "es": "03-05 08:00", "ef": "03-06 17:00", "ls": "03-04 08:00", "lf": "03-05 17:00", "tf_hr": -8,
     }  # fmt: skip
 
 

@@ -4,7 +4,7 @@ overtakes (CPM engine).
 Source of the rule: P6 Professional 23.12.1 on the pinned held-out corpus, H25-02 A1240, H27-08
 A1150 and H23-10 A1070 (Mandatory Finish, an expected finish, an FF or SF predecessor whose bound
 is later than the expected finish: P6 finishes the task at that bound, not at the Mandatory Finish
-date), and on the P6 probes h23-shapes; rule XP of the probes xf-mandatory: an expected finish in
+date), and on the P6 probes h23-shapes; the probes xf-mandatory state it: an expected finish in
 force on work not started lifts the Mandatory Finish pin and the date caps the late finish. The
 project's reference, 26.8, is not measured.
 Rule: with "Use Expected Finish Dates" on, the Mandatory Finish of work not started that carries

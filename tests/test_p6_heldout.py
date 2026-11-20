@@ -294,6 +294,7 @@ PINNED = {
         ("H27", "H27-11", "A1060", "late_finish"),
         ("H27", "H27-08", "A1250", "early_start"),
         ("H27", "H27-08", "A1250", "late_start"),
+        ("H29", "H29-01", "A1300", "early_start"),
     ],
     "the second constraint bounds on top of a primary Mandatory Start: later early dates, earlier late dates": [
         ("H26", "H26-08", "A1280", "early_start"),
