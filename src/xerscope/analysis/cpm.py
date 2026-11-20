@@ -493,6 +493,9 @@ class _Run:
         self.assignment_early: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}  # taskrsrc_id -> start, finish
         self.assignment_minutes: dict[str, float] = {}  # taskrsrc_id -> remaining minutes as placed (expected finish)
         self.assignment_late: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
+        # code -> start, finish of resource-dependent work placed again from the activity calendar's next
+        # opening, where that differs from the first placement its successors follow (first_placement)
+        self.second_placement: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
         # Retained Logic: finished activities pass logic through (see pred_bounds)
         self.retain = options.progressed == "retained_logic"
         self.duration_override: dict[str, float] = {}  # remaining minutes set by an expected finish
@@ -925,6 +928,7 @@ class _Run:
             ),
             default=None,
         )
+        self.show_second_placements()
 
     def forward_open(self, code) -> None:
         """Early dates of one open activity: its bounds, its constraints, the placement, then what a
@@ -1204,10 +1208,35 @@ class _Run:
         self.assignment_minutes.update(placement.assignment_minutes)
         self.assignment_early.update(placement.assignment_dates)
         if placement.expected_finish_applies:
-            self.duration_override[code] = float(
-                axis.between(placement.start, placement.finish)
-            )  # backward pass follows
+            # the backward pass follows
+            self.duration_override[code] = float(axis.between(placement.start, placement.finish))
+        return self.first_placement(code, axis, placement, finish_bound, expected_date)
+
+    def first_placement(self, code, axis, placement, finish_bound, expected_date) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Early dates the successors of resource-dependent work follow; the dates shown are kept apart.
+
+        P6 places the work a second time from the activity calendar's next opening after the first
+        placement's start, each assignment keeping the size it was given, and shows that placement and
+        measures float on it (``show_second_placements``), work under way too (H8-11 A1040). Under an
+        expected finish, work not started keeps no first placement: its successors follow the second
+        (H20-03 A1060, H23-12 A1230). P6 23.12.1, 26.8 not measured.
+        """
+        opening = axis.snap_start(placement.start)
+        if opening == placement.start:
+            return placement.start, placement.finish
+        second = place_forward(axis, self.driving(code), placement.assignment_minutes, opening, finish_bound, None)
+        self.second_placement[code] = (second.start, second.finish)
+        if expected_date is not None and self.status[code] == "TK_NotStart":
+            return second.start, second.finish
         return placement.start, placement.finish
+
+    def show_second_placements(self) -> None:
+        """Give resource-dependent work its second placement as early dates, once its successors are placed."""
+        for code, (start, finish) in self.second_placement.items():
+            if self.status[code] == "TK_NotStart":
+                self.early_start[code] = start
+            self.remaining_start[code] = start
+            self.early_finish[code] = finish
 
     # --- backward pass -------------------------------------------------------------------------
     def successor_limits(self, code, late: bool) -> tuple[list, list]:

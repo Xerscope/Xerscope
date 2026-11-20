@@ -114,12 +114,38 @@ def place_forward(
 ) -> ForwardPlacement:
     """Early dates of a resource-dependent activity from its lower start and its finish bound.
 
-    ``base_minutes`` gives the remaining minutes each driving assignment would work. Each assignment
-    gives a start (``activity_start_given_by``); the activity starts at the earliest on its own
-    calendar, and each assignment then runs forward from that start. An expected finish that applies
-    sets an assignment's remaining work, measured on its calendar from its placement.
+    ``base_minutes`` gives the remaining minutes each driving assignment would work; an expected finish
+    that applies resizes it first, on the assignment's calendar from its placement. A finish bound may
+    then move the start later (``start_set_by_finish_bound``). Each assignment starts at its own
+    calendar's first working time at or after the activity's start, works after its lag, and the
+    activity spans them (``assignment_dates_from``).
     """
-    starts, durations, expected_applies = [], {}, False
+    durations, expected_applies = sized_minutes(assignments, base_minutes, lower_start, finish_bound, expected_date)
+    activity_start = lower_start
+    bound_start = start_set_by_finish_bound(axis, assignments, durations, finish_bound)
+    set_by_bound = bound_start is not None and bound_start > activity_start
+    if set_by_bound:
+        activity_start = bound_start
+    starts, dates = assignment_dates_from(assignments, durations, activity_start, finish_bound)
+    finish = max(finish for _, finish in dates.values())
+    if set_by_bound:
+        finish = finish_printed_at_bound(axis, finish, finish_bound)
+    return ForwardPlacement(min(starts), finish, durations, dates, expected_applies)
+
+
+def sized_minutes(
+    assignments: list[Assignment],
+    base_minutes: dict[str, float],
+    lower_start: pd.Timestamp,
+    finish_bound: pd.Timestamp | None,
+    expected_date: pd.Timestamp | None,
+) -> tuple[dict[str, float], bool]:
+    """Remaining minutes of each assignment, and whether an expected finish set any of them.
+
+    An expected finish after an assignment's start and not before the finish bound sets its work,
+    measured on its calendar from where it is placed (H26-11 A1090; H14-05 A1040 keeps the file's).
+    """
+    durations, expected_applies = {}, False
     for assignment in assignments:
         duration_minutes = base_minutes[assignment.taskrsrc_id]
         assignment_start = lagged_start(assignment, lower_start)
@@ -127,15 +153,75 @@ def place_forward(
             duration_minutes = float(assignment.axis.between(assignment_start, expected_date))
             expected_applies = True
         durations[assignment.taskrsrc_id] = duration_minutes
-        starts.append(activity_start_given_by(assignment, assignment_start, duration_minutes, finish_bound))
-    start = axis.snap_start(min(starts))
-    finishes, dates = [], {}
+    return durations, expected_applies
+
+
+def start_set_by_finish_bound(
+    axis: TimeAxis, assignments: list[Assignment], durations: dict[str, float], finish_bound: pd.Timestamp | None
+) -> pd.Timestamp | None:
+    """Start a finish bound (FF, SF link) gives the activity, None when there is none.
+
+    The bound, off the activity calendar's working time, first moves to its next opening. Each
+    assignment with work reaches it at its own calendar's last close at or before it, its work and
+    then its lag before; so does one with no work but a lag, beside one with work. The earliest of
+    those starts, at the activity calendar's next opening, is the start the bound gives. P6 23.12.1,
+    26.8 not measured: probes ZZ-CPP-RD2F, -RDSF, -RSRC, -KD; corpus H9-09 A1230, H10-04 A1040,
+    H27-08 A1260.
+    """
+    if finish_bound is None:
+        return None
+    reached = axis.keep_or_next(finish_bound)
+    has_work = any(durations[assignment.taskrsrc_id] > 0 for assignment in assignments)
+    starts = []
     for assignment in assignments:
-        assignment_start = lagged_start(assignment, start)
-        assignment_finish = finish_run_from(assignment, assignment_start, durations[assignment.taskrsrc_id])
-        dates[assignment.taskrsrc_id] = (assignment_start, assignment_finish)
-        finishes.append(assignment_finish)
-    return ForwardPlacement(start, max(finishes), durations, dates, expected_applies)
+        duration = durations[assignment.taskrsrc_id]
+        if duration <= 0 and not (assignment.lag_minutes > 0 and has_work):
+            continue
+        work_start = assignment.axis.add(reached, -duration, finish=False)
+        starts.append(shift(assignment.axis, work_start, -assignment.lag_minutes))
+    return axis.snap_start(min(starts)) if starts else None
+
+
+def assignment_dates_from(
+    assignments: list[Assignment],
+    durations: dict[str, float],
+    activity_start: pd.Timestamp,
+    finish_bound: pd.Timestamp | None,
+) -> tuple[list[pd.Timestamp], AssignmentDates]:
+    """Where each assignment opens and its start and finish, all run from one activity start.
+
+    Each opens at its own calendar's first working time at or after that start (a resource that opens
+    later, or has that day off, starts the work later: H24-03 A1150, H24-10 A1160) and works after its
+    lag. One with no work left sits where it opens; a finish bound moves it to its next opening after
+    the bound only when no assignment has work left (H13-06 A1230; H12-01 A1200 keeps its Monday).
+    """
+    has_work = any(durations[assignment.taskrsrc_id] > 0 for assignment in assignments)
+    starts, dates = [], {}
+    for assignment in assignments:
+        opening = assignment.axis.snap_start(activity_start)
+        start = lagged_start(assignment, opening)
+        duration = durations[assignment.taskrsrc_id]
+        if duration > 0:
+            finish = assignment.axis.add(start, duration, finish=True)
+        else:
+            if finish_bound is not None and not has_work:
+                start = max(start, assignment.axis.snap_start(finish_bound))
+                opening = max(opening, shift(assignment.axis, start, -assignment.lag_minutes))
+            finish = start
+        starts.append(opening)
+        dates[assignment.taskrsrc_id] = (start, finish)
+    return starts, dates
+
+
+def finish_printed_at_bound(axis: TimeAxis, finish: pd.Timestamp, finish_bound: pd.Timestamp) -> pd.Timestamp:
+    """Early finish of work whose start the finish bound set.
+
+    At the bound as it stands on the activity calendar (at a close, or the next opening after it) when
+    no working time separates them.
+    """
+    if axis.between(min(finish, finish_bound), max(finish, finish_bound)) == 0:
+        return max(finish, axis.keep_or_next(finish_bound))
+    return finish
 
 
 def assignment_late_dates(

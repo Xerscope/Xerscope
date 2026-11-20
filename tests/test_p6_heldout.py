@@ -32,27 +32,27 @@ FLOORS = {
     "H7": 1.000,
     "H8": 0.999,
     "H9": 0.998,
-    "H10": 0.970,
-    "H11": 0.993,
-    "H12": 0.989,
-    "H13": 0.990,
-    "H14": 0.960,
+    "H10": 0.975,
+    "H11": 0.997,
+    "H12": 0.994,
+    "H13": 0.994,
+    "H14": 0.995,
     "H15": 0.995,
-    "H16": 0.905,
-    "H17": 0.959,
+    "H16": 0.981,
+    "H17": 0.990,
     "H18": 0.986,
-    "H19": 0.982,
-    "H20": 0.945,
-    "H21": 0.999,
+    "H19": 0.992,
+    "H20": 0.976,
+    "H21": 1.000,
     "H22": 0.994,
-    "H23": 0.987,
-    "H24": 0.960,
-    "H25": 0.893,
-    "H26": 0.958,
-    "H27": 0.967,
-    "H28": 0.944,
-    "H29": 0.916,
-    "H30": 0.929,
+    "H23": 0.988,
+    "H24": 0.962,
+    "H25": 0.930,
+    "H26": 0.960,
+    "H27": 0.974,
+    "H28": 0.957,
+    "H29": 0.943,
+    "H30": 0.942,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -160,6 +160,24 @@ def test_total_float_agrees_wherever_the_four_dates_do():
 # reading: the value named must be P6's. The ratchet above
 # would absorb a regression on one activity; this names it.
 PINNED = {
+    "resource-dependent work: a finish bound gives the start at the activity calendar's next opening": [
+        ("H14", "H14-11", "A1320", "early_start"),
+        ("H10", "H10-04", "A1040", "early_start"),
+    ],
+    "resource-dependent work: the finish a bound set prints at the bound": [("H16", "H16-12", "A1210", "early_finish")],
+    "resource-dependent work: a bound no later than the start sets nothing": [
+        ("H26", "H26-09", "A1190", "early_finish")
+    ],
+    "resource-dependent work: an assignment with no work but a lag, beside work, bounds the start": [
+        ("H28", "H28-05", "A1470", "early_start")
+    ],
+    "resource-dependent work: the work starts where its resource first works": [
+        ("H24", "H24-03", "A1150", "early_start"),
+        ("H24", "H24-10", "A1160", "early_finish"),
+    ],
+    "resource-dependent work under an expected finish: the second placement is the early start": [
+        ("H23", "H23-12", "A1230", "early_start")
+    ],
     "SF from a started predecessor applies": [("H1", "H1-08", "A1240", "early_start")],
     "expected finish before the early start: remaining 0": [("H1", "H1-02", "A1170", "early_finish")],
     "expected finish with an FF predecessor, later than its bound": [("H4", "H4-10", "A1040", "early_finish")],
