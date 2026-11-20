@@ -337,7 +337,7 @@ agree by coincidence.
 3. A test that greps the three files for the same number. Cost: 6 lines; no runtime change;
    limit: the duplication stays.
 
-**Choice.** Waits for the maintainer. Option 2 is the one the `B` review suggests (no template, the
+**Choice.** Option 2, agreed with the maintainer (2026-11-20), done inside B12 (section 6) which sends `rowPx` and `chromePx` in the payload. Option 2 is the one the `B` review suggests (no template, the
 payload already carries `height`); option 3 is the floor if neither runtime change is wanted.
 Source: skill "one place per concept"; CONTRIBUTING "constants scattered in modules".
 
@@ -1752,7 +1752,16 @@ across reruns" for picks and toggles (the comment's own cases, 45-47) and drops 
 server recomputed the tree. Limit: the server height is still only right for the branches it opened.
 Options 2 and 3 are not exclusive.
 
-**Choice.** Open.
+**Choice.** Options 2 and 3 together, agreed with the maintainer (2026-11-20), with P4b
+option 2 in the same package so that the browser's height uses `D.rowPx` and `D.chromePx` from the
+payload, not a second copy of the numbers. The height in the browser is
+`Math.min(D.maxHeight, D.chromePx + shown.length * D.rowPx)` after `visibleRows()`;
+`fitted_height` stays as the first-paint estimate. `D.openEpoch` is a counter in session state
+bumped when `filtering` flips or the Ask text changes; `gantt.js` drops `host.xsOpen` when the
+epoch differs before the merge. Behaviour package: the test that fails before it is an AppTest
+reading the component's payload for `openEpoch`, `rowPx`, `chromePx`, `maxHeight`; the JS part
+has no runner in the repository and is checked by hand on the sample series (screenshots before
+and after in the pull request).
 
 **Verification (all options).** `uv run pytest tests/test_viz.py -q -k gantt`; `uv run pytest
 tests/test_app.py -q`; by hand on the sample series: Gantt page → type a word in Ask that matches a
