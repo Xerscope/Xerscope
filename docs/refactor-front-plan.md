@@ -533,6 +533,63 @@ U1 unit test (`load_series()` with an injected session dict, section 6) added he
 
 **Findings.** RD-01, RD-02, RD-03, RD-04, RD-15.
 
+### P6c — The baseline domain cut by responsibility (effort M, executor: the "Chaîne d'utilisation des baselines" session, after this branch merges; move, byte-identical)
+
+**Problem.** After P6a, `app/baselines.py` (1050 lines, rank C) holds both what baseline an update
+is measured against (`baseline_for`, `_resolution`, `_file_baseline`, `memo`, `ScoreJob`, exports)
+and what the app says about it (pickers, warnings, banner, `_baseline_fields`, the window's
+baseline section). The parallel session's split drew the same line (`baselines.py` draws nothing,
+`baseline_sidebar.py` talks).
+
+**Choice.** Agreed between the two sessions and the maintainer (2026-11-20): the other session's
+five-module map, applied to this branch's `app/baselines.py` as a pure move after this branch
+merges: `baseline_file.py` (the separate baseline file: folder, upload, env), `baseline_export.py`
+(the XML export in use: index, resolution, baselines read), `baselines.py` (`baseline_for` and the
+paths that build the Baseline of an update), `baseline_window.py` (the window's Baseline section),
+`baseline_warnings.py` (what the sidebar and the pages say); `memo`, `ScoreJob` and the standard
+results go to a new `app/cache.py`; the exports to `baseline_export.py` or `downloads.py`.
+`state.py` keeps re-exporting. Its behaviour commits (`Baseline.kind` / `found_by`, the choice for
+an undecided update) are rebased first, then this move, proven as P6a. Superseded text: `app/baselines.py` keeps the resolution,
+the memo, the jobs and the exports and imports no drawing; `app/baseline_sidebar.py` receives
+`_baseline_picker`, `_ask_for_the_baseline`, `_fallback_picker`, `_describe_baseline`, the
+`*_warnings` and `*_help` functions, `context_banner`'s baseline line, `_baseline_fields` and its
+P6b halves, `baseline_warnings`. Import direction: `baseline_sidebar -> baselines, session`;
+`files_window -> baseline_sidebar` for the window section; `state.py` re-exports. Proof as P6a:
+`same_code.py` prints "same code", the whole-app digest identical, one re-export planted.
+
+**Findings.** RD-09 (continued), the other session's commit `30f65d2` as the boundary.
+
+**Specification (assignment table from the other session's `aa0f948`, applied to this branch's
+names).** `cache.py`: `memo`, `data_identity`, `metric_result`, `ScoreJob`, `score_job`,
+`standard_results`, `hold_standard_results`, `standard_results_held`, `_parse`, `_pmxml_index`.
+`baseline_file.py`: `_folder_baseline_names`, `_picked_folder_baseline`,
+`_is_baseline_file_offered`, `_disk_baseline_file`, `_baseline_file_source`, `baseline_items`,
+`baseline_files_tag`. `baseline_export.py`: `_xml_baseline_id`, `_is_named_in_export`,
+`_resolution`, `_export_baseline`, `baseline_export`, `export_contents`, `_export_in_use`.
+`baselines.py`: `_baseline_from_choice`, `_fallback_picker`, `PROBABLE`, `_fallback_baseline`,
+`_loaded_update_baseline`, `_resolved_baseline`, `_file_baseline`, `baseline_for`,
+`_baseline_identity`. `baseline_window.py`: `EV_BASIS_LABEL`, `_fallback_options`,
+`_baseline_options`, `_baseline_short`, `_baseline_fields` and its P6b halves.
+`baseline_warnings.py`: `_describe_baseline`, `_which_updates`, `_dates_or_file`, `_files_name`,
+`_resolution_warnings`, `_file_baseline_warnings`, `_updates_without_the_baseline_they_name`,
+`_absent_baseline_help`, `_other_baseline_warning`, `ABSENT_BASELINES_SHOWN`, `MATCH_WARN_BELOW`,
+`baseline_warnings`. Kept in `state.py`: `_baseline_picker`, `_baseline_line`,
+`_renumbered_notice`, `_baselines_without_guid`, `_renumbered_counts`, `context_banner`,
+`page_header`, and the re-exports. The leaf is `session.py` (BL_* modes, DRAFTS, digests, window
+primitives). Import edges, one way: `baseline_file -> session`; `baseline_export -> baseline_file,
+session, xml_baselines`; `cache -> session`; `baselines -> baseline_export, baseline_file, cache,
+session`; `baseline_window -> baseline_export, baseline_file, baselines, session, xml_baselines`;
+`baseline_warnings -> baseline_export, baselines, session`; `state -> all`.
+
+### P6d — Pages import each name from its module (effort S, executor: the same session, after P6c; move of imports only)
+
+**Problem.** The re-exports in `state.py` keep every page reading `state.*`, so the import graph
+does not show who depends on what (the other session's point; accepted as a transition).
+
+**Choice.** One commit after P6c: every page, `streamlit_app.py` and test imports each name from
+its defining module (scripted rewrite of the import lines); `state.py` keeps only what it defines.
+No behaviour, `pages.json` identical, the suite green, `tests/test_architecture.py` unchanged.
+
 ### P7 — Caching: no baseline rebuilt on rerun (effort M, executor: senior, with Quentin; same results)
 
 **Problem.** `metric_result` evaluates `AnalysisContext(snapshot, store, baseline_for(snapshot))`
@@ -1816,6 +1873,38 @@ bytes)])` and `XERSCOPE_SYNC_LOAD=1` (`background_jobs()`, 128-132), it returns 
 `signature`, `items`, `errors`, and `_load_job is None`; a second call with the same source returns
 without re-reading (`_parsed` keys unchanged). Regression net: `tests/test_app.py`,
 `tests/test_app_robustness.py:97-137`, `tests/test_page_golden.py`.
+
+### Baseline context — which baseline each page reads (decided)
+
+**Problem.** One global baseline setting serves two readings that the methods define differently.
+P6 computes its checks and its Planned Value against the baseline assigned in the file (Oracle P6,
+Project Baselines and Earned Value settings; P6-12/13 and the DCMA items are defined on it). Earned
+value management requires a stable Performance Measurement Baseline (PMI Practice Standard for
+EVM, EIA-748): a cumulative SPI or an Earned Schedule against a copy that changes every week says
+nothing. "Baseline in each file" applied to Earned value is faithful to P6 and wrong for the
+landing; a fixed origin applied to Health and Audit is right for EVM and wrong for the P6 checks.
+
+**Choice** (maintainer, 2026-11-20, with the "Chaîne d'utilisation des baselines" session, which
+carries the `Baseline.kind` / `found_by` mechanism). The baseline is read **per page**:
+
+- Health, Audit, Gantt: the file's assigned baseline when the file has one, else the chosen one.
+- Earned value: the fixed origin (series or separate file) by default, with a switch "P6 view:
+  the file's baseline" that gives P6's own Planned Value and BEI of the week.
+- In the common case (one baseline assigned once and kept) the two coincide; the rule only
+  diverges when the copies move.
+
+**Explained everywhere (P13, P14).** The context banner names the baseline each page reads and
+its kind (exact / probable / chosen / fallback / planned / series). Each page's reading popover
+says which baseline its figures are computed against and why: Health and Audit "against the
+baseline assigned in this update, as P6 Check Schedule and the DCMA 14-Point Assessment define
+their items"; Earned value "against the origin baseline: a cumulative index needs a baseline that
+does not move (Practice Standard for Earned Value Management); switch to the P6 view to read the
+file's own Planned Value". A probable or chosen baseline keeps the `info` note on the cumulative
+EV figures; the other session asks that the note also cover planned-dates baselines (not-started tasks move with the schedule), subject to the measurement table the maintainer asked for. Sources by mention only, no link.
+
+**Order of work.** The Earned value switch and the per-page rule are behaviour: they come after
+P6c (the baseline sidebar apart from the resolution) and ride on the other session's `kind`
+mechanism, rebased on this branch.
 
 ### File picker slow to open
 
