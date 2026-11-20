@@ -146,6 +146,26 @@ def test_a_remaining_duration_increased_on_started_work_is_a_revision_not_progre
 
 
 @pytest.mark.oracle("standard")
+def test_a_remaining_duration_with_a_fraction_of_an_hour_is_carried_onto_whole_hours():
+    """A file whose durations are all whole hours reads them as integers; the next update holds 19.2 h.
+    The value must be carried as it is, not refused nor rounded.
+
+    A started Mon 2 with 40 h left (finish Fri 6 17:00). A week later, status date Mon 9 08:00, 19.2 h
+    left: Mon 8 h, Tue 8 h, Wed 3.2 h, finish Wed 11 at 11:12. From Fri 6 17:00 that is 19.2 working
+    hours, 2.4 wd lost, all of it progress (a decreased remaining duration, 3.4.K.4.b).
+    """
+    earlier = snap([active("A", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="40", target_drtn_hr_cnt="40")])
+    later = snap(
+        [active("A", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="19.2", target_drtn_hr_cnt="40")],
+        data_date=WEEK_LATER,
+    )
+    read = half_step(earlier, later)
+    assert read.finish_before_replanning == pd.Timestamp("2026-03-11 11:12")
+    assert shifts(read)["progress"] == -2.4 and shifts(read)["durations"] == 0.0
+    assert read.residual_wd == 0.0
+
+
+@pytest.mark.oracle("standard")
 def test_a_slip_beyond_the_period_is_flagged():
     """3.4.K.4.g: a progress variance larger than the update period is suspect. A not started, 40 h,
     no actual start a week later: the 40 h run from Mon 9 instead of Mon 2, 5 wd lost in a 5 wd
