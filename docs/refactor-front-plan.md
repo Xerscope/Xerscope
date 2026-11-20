@@ -559,6 +559,37 @@ P6b halves, `baseline_warnings`. Import direction: `baseline_sidebar -> baseline
 
 **Findings.** RD-09 (continued), the other session's commit `30f65d2` as the boundary.
 
+**Specification (assignment table from the other session's `aa0f948`, applied to this branch's
+names).** `cache.py`: `memo`, `data_identity`, `metric_result`, `ScoreJob`, `score_job`,
+`standard_results`, `hold_standard_results`, `standard_results_held`, `_parse`, `_pmxml_index`.
+`baseline_file.py`: `_folder_baseline_names`, `_picked_folder_baseline`,
+`_is_baseline_file_offered`, `_disk_baseline_file`, `_baseline_file_source`, `baseline_items`,
+`baseline_files_tag`. `baseline_export.py`: `_xml_baseline_id`, `_is_named_in_export`,
+`_resolution`, `_export_baseline`, `baseline_export`, `export_contents`, `_export_in_use`.
+`baselines.py`: `_baseline_from_choice`, `_fallback_picker`, `PROBABLE`, `_fallback_baseline`,
+`_loaded_update_baseline`, `_resolved_baseline`, `_file_baseline`, `baseline_for`,
+`_baseline_identity`. `baseline_window.py`: `EV_BASIS_LABEL`, `_fallback_options`,
+`_baseline_options`, `_baseline_short`, `_baseline_fields` and its P6b halves.
+`baseline_warnings.py`: `_describe_baseline`, `_which_updates`, `_dates_or_file`, `_files_name`,
+`_resolution_warnings`, `_file_baseline_warnings`, `_updates_without_the_baseline_they_name`,
+`_absent_baseline_help`, `_other_baseline_warning`, `ABSENT_BASELINES_SHOWN`, `MATCH_WARN_BELOW`,
+`baseline_warnings`. Kept in `state.py`: `_baseline_picker`, `_baseline_line`,
+`_renumbered_notice`, `_baselines_without_guid`, `_renumbered_counts`, `context_banner`,
+`page_header`, and the re-exports. The leaf is `session.py` (BL_* modes, DRAFTS, digests, window
+primitives). Import edges, one way: `baseline_file -> session`; `baseline_export -> baseline_file,
+session, xml_baselines`; `cache -> session`; `baselines -> baseline_export, baseline_file, cache,
+session`; `baseline_window -> baseline_export, baseline_file, baselines, session, xml_baselines`;
+`baseline_warnings -> baseline_export, baselines, session`; `state -> all`.
+
+### P6d — Pages import each name from its module (effort S, executor: the same session, after P6c; move of imports only)
+
+**Problem.** The re-exports in `state.py` keep every page reading `state.*`, so the import graph
+does not show who depends on what (the other session's point; accepted as a transition).
+
+**Choice.** One commit after P6c: every page, `streamlit_app.py` and test imports each name from
+its defining module (scripted rewrite of the import lines); `state.py` keeps only what it defines.
+No behaviour, `pages.json` identical, the suite green, `tests/test_architecture.py` unchanged.
+
 ### P7 — Caching: no baseline rebuilt on rerun (effort M, executor: senior, with Quentin; same results)
 
 **Problem.** `metric_result` evaluates `AnalysisContext(snapshot, store, baseline_for(snapshot))`
@@ -1869,7 +1900,7 @@ baseline assigned in this update, as P6 Check Schedule and the DCMA 14-Point Ass
 their items"; Earned value "against the origin baseline: a cumulative index needs a baseline that
 does not move (Practice Standard for Earned Value Management); switch to the P6 view to read the
 file's own Planned Value". A probable or chosen baseline keeps the `info` note on the cumulative
-EV figures. Sources by mention only, no link.
+EV figures; the other session asks that the note also cover planned-dates baselines (not-started tasks move with the schedule), subject to the measurement table the maintainer asked for. Sources by mention only, no link.
 
 **Order of work.** The Earned value switch and the per-page rule are behaviour: they come after
 P6c (the baseline sidebar apart from the resolution) and ride on the other session's `kind`
