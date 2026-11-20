@@ -383,6 +383,72 @@ def test_caddy_answers_404_on_the_app_routes_the_page_never_asks_for():
     assert 'get "http://ci:ci-pass@127.0.0.1:8080/$XERSCOPE_PATH/$route"' in wf  # with it: 404, not the app
 
 
+CSP = (
+    "default-src 'self'; connect-src 'self'; "
+    "script-src 'self' blob: 'sha256-THxz9J9+wf7rhwR2YkXJoSZ13UCmYyC+3lNDv2+8ugA='; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; "
+    "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+)
+
+
+def test_caddy_policy_confines_the_page_to_the_site():
+    """The browser loads from the app and connects to the app only (OWASP ASVS 5.0.0, 3.4.3): no
+    default-src wider than 'self', no host but the app's in connect-src, scripts from the app plus
+    the blob: module Streamlit builds for the Gantt component and one inline bootstrap by hash. Read
+    headless with Playwright under this policy on ten pages of the demo (Gantt, Plotly charts, tables,
+    downloads): no violation and no request to another host."""
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text()
+    directives = dict(part.strip().split(" ", 1) for part in CSP.split(";") if part.strip())
+    assert directives["default-src"] == "'self'" and directives["connect-src"] == "'self'"
+    assert "'unsafe-eval'" not in CSP and "'unsafe-inline'" not in directives["script-src"]
+    assert "http" not in CSP  # no host, no scheme: the site itself only
+    assert f'Content-Security-Policy "{CSP}"' in caddy
+
+
+def test_caddy_policy_hashes_every_inline_script_of_the_installed_streamlit():
+    """Streamlit's index.html carries one inline script (window.prerenderReady = false); the policy
+    allows it by sha256, so a Streamlit upgrade that changes it fails here before it blanks the page."""
+    import base64
+    import hashlib
+
+    import streamlit
+
+    html = (Path(streamlit.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    inline = _inline_scripts(html)
+    assert inline, "Streamlit's page no longer has an inline script: drop the hash from the policy"
+    for script in inline:
+        digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+        assert f"'sha256-{digest}'" in CSP, digest
+
+
+def _inline_scripts(html: str) -> list[str]:
+    """The text of every <script> without a src, as the browser hashes it (the HTML parsed, not grepped)."""
+    from html.parser import HTMLParser
+
+    class Scripts(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.found: list[str] = []
+            self.inside = False
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self.inside = tag == "script" and all(name != "src" for name, _ in attrs)
+            if self.inside:
+                self.found.append("")
+
+        def handle_data(self, data: str) -> None:
+            if self.inside:
+                self.found[-1] += data
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "script":
+                self.inside = False
+
+    parser = Scripts()
+    parser.feed(html)
+    return parser.found
+
+
 def test_caddy_policy_forbids_plug_ins_and_base_and_hsts_covers_sub_domains():
     """OWASP ASVS 5.0.0, 3.4.3: the policy holds at least object-src 'none' and base-uri 'none'.
     3.4.1: from level 2 the HSTS policy covers the sub-domains too; without it, a sub-domain answered
@@ -390,12 +456,12 @@ def test_caddy_policy_forbids_plug_ins_and_base_and_hsts_covers_sub_domains():
     Streamlit keeps the XSRF token of the cookie a visitor arrives with."""
     caddy = (ROOT / "deploy" / "Caddyfile").read_text()
     block = caddy[caddy.index("    header {") : caddy.index("    }", caddy.index("    header {"))]
-    assert '''Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"''' in block
+    assert f'Content-Security-Policy "{CSP}"' in block
     assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains"' in block
     # one value each: a second header line would add a policy or replace the first
     assert caddy.count("Content-Security-Policy") == 1 and caddy.count("Strict-Transport-Security") == 1
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job reads the exact values
-    assert r"""\[\"frame-ancestors 'self'; object-src 'none'; base-uri 'none'\"\]""" in wf
+    assert '\\[\\"' + CSP + '\\"\\]' in wf
     assert r"""'"Strict-Transport-Security": \["max-age=31536000; includeSubDomains"\]'""" in wf
 
 
