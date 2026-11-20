@@ -934,8 +934,11 @@ PROBABLE = (
     "probable: "  # opens the ``source`` of a baseline that is not the one the update names (``_resolved_baseline``)
 )
 IN_ITS_FILE, FROM_THE_EXPORT, A_PROBABLE_BASELINE, THE_FALLBACK = (
-    "the baseline of its file", "the baseline it names, from the export", "a probable baseline", "the fallback",
-)  # fmt: skip
+    "the baseline of its file",
+    "the baseline it names, from the export",
+    "a probable baseline",
+    "the fallback",
+)
 
 
 def _source_kind(snapshot: Snapshot) -> str:
@@ -1600,7 +1603,7 @@ def _page_title() -> str:
 
         ctx = get_script_run_ctx()
         return ctx.pages_manager.get_pages()[ctx.page_script_hash]["page_name"]
-    except Exception:  # noqa: BLE001
+    except (ImportError, AttributeError, KeyError):
         return ""
 
 
@@ -1806,7 +1809,7 @@ class ScoreJob:
     store: SnapshotStore
     baseline: Baseline | None
     standards: dict[str, Standard]
-    results: dict[str, list[CheckResult]] = field(default_factory=dict)
+    results: dict[str, list[CheckResult] | str] = field(default_factory=dict)
     held: set[str] = field(default_factory=set)  # standard ids already written to the memo
     done: bool = False
     cancelled: bool = False  # set when another data set or baseline replaces this one
@@ -1815,10 +1818,11 @@ class ScoreJob:
     def run(self) -> None:
         context = AnalysisContext(self.snapshot, self.store, self.baseline)
         for key, standard in self.standards.items():
+            results: list[CheckResult] | str
             try:
                 results = run_standard(standard, context, stopped=lambda: self.cancelled)
             except Exception as exc:  # noqa: BLE001 - shown as an error on the Overview, not lost
-                results = str(exc)  # type: ignore[assignment]
+                results = str(exc)
             if self.cancelled:
                 break  # computed for another data set or baseline: not kept
             self.results[key] = results
