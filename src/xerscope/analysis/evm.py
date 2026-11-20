@@ -1039,7 +1039,7 @@ def _change_row(
         "bac_old_hr": point_old.bac_hr,
         "bac_new_hr": point_new.bac_hr,
         "added": len(set(point_old.unbaselined) - set(point_new.unbaselined)),
-        "removed": len(set(old.frame.index) - set(new.frame.index)),
+        "removed": len(old.frame.index.difference(new.frame.index)),
         "baseline_old": old.source or old.label,
         "baseline_new": new.source or new.label,
     }
