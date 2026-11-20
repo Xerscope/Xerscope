@@ -504,6 +504,9 @@ class _Run:
         # code -> start, finish of resource-dependent work placed again from the activity calendar's next
         # opening, where that differs from the first placement its successors follow (first_placement)
         self.second_placement: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
+        # code -> opening of the start bound and duration before the slide, for As Late As Possible
+        # resource-dependent work stretched to that bound (stretched_to_start_bound)
+        self.stretched_from: dict[str, tuple[pd.Timestamp, float]] = {}
         # Retained Logic: finished activities pass logic through (see pred_bounds)
         self.retain = options.progressed == "retained_logic"
         self.duration_override: dict[str, float] = {}  # remaining minutes set by an expected finish
@@ -1592,6 +1595,29 @@ class _Run:
             return 0.0
         return free_float_hr
 
+    def is_start_float_run_to_late_finish(self, code) -> bool:
+        """Whether P6 runs the start float of resource-dependent work to its late finish less its span.
+
+        It does under FT_Start, and on work under way under Progress Override, but not under FT_SS,
+        the code P6's own dialog writes for "Start Float" (probes ZZ-CPP-RDTF, -FA2; corpus H9-01
+        A1280, H11-10 A1220, H20-05 A1040). Under Retained Logic work under way keeps its own late
+        start (probe ZZ-CPP-RDTR). P6 23.12.1, 26.8 not measured.
+        """
+        float_type = self.options.float_type
+        if code not in self.rsrc_dep or float_type == "FT_SS":
+            return False
+        progress_override = self.options.progressed == "progress_override"
+        return float_type == "FT_Start" or (self.status[code] == "TK_Active" and progress_override)
+
+    def start_float_to_late_finish(self, code, axis, finish_float: float) -> float:
+        """That start float: the finish float, or, for As Late As Possible work stretched to its start
+        bound, from the bound's opening to the late finish less the duration it had before the slide
+        (corpus H27-04 A1220)."""
+        if code not in self.stretched_from:
+            return finish_float
+        opening, duration_before = self.stretched_from[code]
+        return axis.between(opening, axis.add(self.late_finish[code], -duration_before, finish=False)) / 60
+
     def has_multiple_float_paths(self) -> bool:
         """Whether the project asks P6 to calculate multiple float paths."""
         return (self.snapshot.options.get("sched", {}) or {}).get("enable_multiple_longest_path_calc") == "Y"
@@ -1605,6 +1631,8 @@ class _Run:
         """Total float in hours of the activity's calendar, read the way the project's float option says."""
         finish_float = axis.between(self.early_finish[code], self.late_finish[code]) / 60
         start_float = axis.between(self.remaining_start[code], self.late_start[code]) / 60
+        if self.is_start_float_run_to_late_finish(code):
+            start_float = self.start_float_to_late_finish(code, axis, finish_float)
         which = FLOAT_TYPE.get(self.options.float_type, "finish")  # unknown code: P6's default
         if which == "finish":
             return finish_float
@@ -1928,16 +1956,24 @@ class _Run:
         if not any(minutes > 0 for minutes in durations.values()):
             placement = place_forward(axis, driving, durations, axis.snap_start(bound), None, None)
         else:
-            placement = place_backward(axis, driving, durations, bound, None)
-            finish_bound = min(finish_limits) if finish_limits else None
-            placement = self.stretched_to_start_bound(
-                axis, driving, durations, placement, duration, start_limits, finish_bound, bound
-            )
-            opening = axis.snap_start(placement.start)
-            if opening != placement.start:
-                placement = place_forward(axis, driving, durations, opening, None, None)
+            placement = self.slid_work(code, axis, driving, durations, duration, start_limits, finish_limits, bound)
         self.assignment_late.update(placement.assignment_dates)
         return placement.start, placement.finish
+
+    def slid_work(self, code, axis, driving, durations, duration, start_limits, finish_limits, bound):
+        """Placement of slid resource-dependent work that has work left: run back from the bound,
+        stretched to an SS / SF bound it starts before, an off-hours start moved on to the next opening."""
+        placement = place_backward(axis, driving, durations, bound, None)
+        finish_bound = min(finish_limits) if finish_limits else None
+        stretched = self.stretched_to_start_bound(
+            axis, driving, durations, placement, duration, start_limits, finish_bound, bound
+        )
+        if stretched is not placement and not self.has_multiple_float_paths():
+            self.stretched_from[code] = (axis.snap_start(min(start_limits)), duration)
+        opening = axis.snap_start(stretched.start)
+        if opening != stretched.start:
+            return place_forward(axis, driving, durations, opening, None, None)
+        return stretched
 
     @staticmethod
     def stretched_to_start_bound(axis, driving, durations, placement, duration, start_limits, finish_bound, bound):
