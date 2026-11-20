@@ -21,6 +21,7 @@ from xerkit import snap
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import (
+    copied_lag,
     earned_schedule,
     evm_series,
     gain_ratio,
@@ -28,6 +29,7 @@ from xerscope.analysis.evm import (
     moving_window,
     spi_by_window,
     weekly_gains,
+    window_weeks,
 )
 from xerscope.store import SnapshotStore
 
@@ -175,3 +177,39 @@ def test_the_spi_over_four_weeks_of_each_update():
     assert moving["data_date"].tolist() == [pd.Timestamp(friday) for friday in FRIDAYS[1:]]
     assert moving["spi_4w"].isna().tolist() == [True, True, True, False, False]
     assert moving["spi_4w"].iloc[3:].tolist() == [0.625, 0.75]
+
+
+def test_the_weeks_of_the_window_are_listed_one_by_one():
+    """At U5 the window holds W2 to W5 (the test above): earned 40, 20, 20, 40 h, 5, 2.5, 2.5 and 5 plan
+    days gained in 5 elapsed each, W3 closing on plan 2 while read on plan 1. At U3 there is no window."""
+    store, baseline_for = two_plans()
+    gains = weekly_gains(store, baseline_for)
+    weeks = window_weeks(gains, pd.Timestamp(FRIDAYS[5]), hours_per_day=8)
+    assert weeks["week_start"].tolist() == [pd.Timestamp(friday) for friday in FRIDAYS[1:5]]
+    assert weeks["ev_gain_hr"].tolist() == [40.0, 20.0, 20.0, 40.0]
+    assert weeks["es_gain_plan_d"].tolist() == [5.0, 2.5, 2.5, 5.0]
+    assert weeks["at_gain_plan_d"].tolist() == [5.0] * 4
+    assert weeks["baseline_changed"].tolist() == [False, True, False, False]
+    assert weeks["baseline"].tolist() == [baseline_for(store[index]).label for index in range(1, 5)]
+    assert window_weeks(gains, pd.Timestamp(FRIDAYS[3]), hours_per_day=8).empty
+
+
+def test_a_baseline_copied_from_a_project_under_way_keeps_the_lag_of_its_started_tasks():
+    """A copy of the project at U3 (03-13): A done in week 1, B started in week 2 and 50 % done, its
+    planned dates frozen at week 2 (P6, Planned Dates), C and D in weeks 4 and 5. Against that copy at
+    U3: B's planned finish (03-06) is passed, 20 h behind; the ES is Wednesday 03-04 13:00, 9.17 calendar
+    days behind. One week later B is done: 10 plan days gained in 5, pace 2.0: the lag the copy made is
+    read as a catch-up. C, not started at the copy, is not counted a week later though half done on its
+    planned finish day. Against plan 1, made before anything started, B late is plainly late: nothing."""
+    frozen = {"A": WEEKS[0], "B": WEEKS[1], "C": WEEKS[3], "D": WEEKS[4]}
+    copy = Baseline.from_snapshot(snap(tasks_at(frozen, {"A": 100, "B": 50}), data_date=FRIDAYS[3]))
+    at_copy = snap(tasks_at(frozen, {"A": 100, "B": 50}), data_date=FRIDAYS[3])
+    week_after = snap(tasks_at(frozen, {"A": 100, "B": 100, "C": 50}), data_date=FRIDAYS[4])
+    assert copied_lag(at_copy, copy) == (1, 20.0)
+    schedule = earned_schedule(at_copy, copy)
+    assert schedule.es_date == pd.Timestamp("2026-03-04 13:00")
+    assert schedule.gap_calendar_d == pytest.approx(-9.1667, abs=1e-3)
+    gains = weekly_gains(SnapshotStore([at_copy, week_after]), lambda update: copy)
+    assert gains["es_gain_min"].tolist() == [10 * DAY_MIN] and gains["at_gain_min"].tolist() == [5 * DAY_MIN]
+    assert copied_lag(week_after, copy) == (0, 0.0)
+    assert copied_lag(at_copy, plan(PLAN_1)) == (0, 0.0)

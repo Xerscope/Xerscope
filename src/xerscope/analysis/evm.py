@@ -987,7 +987,9 @@ def weekly_gains(
     the plan in force during the week. A baseline made again thus adds no jump to the series.
 
     ``baseline_changed``: the update that closes the week names another plan than the one it is read
-    on. Gains are missing without a baseline, the time ones also without an ES at either end.
+    on. ``baseline``: where the plan the week is read on comes from (its ``source``, else its label),
+    so that a series measured against probable baselines or a fallback says which plan each week got.
+    Gains are missing without a baseline, the time ones also without an ES at either end.
     ``link_by_guid``, ``code_filter``: as ``evm_series``.
     """
 
@@ -1008,8 +1010,9 @@ def weekly_gains(
             row["es_gain_min"] = _minutes_gained(schedule.es_min, next_schedule.es_min)
             row["at_gain_min"] = _minutes_gained(schedule.at_min, next_schedule.at_min)
             row["baseline_changed"] = next_baseline is None or not next_baseline.frame.equals(baseline.frame)
+            row["baseline"] = baseline.source or baseline.label
         rows.append(row)
-    return pd.DataFrame(rows, columns=["data_date", "week_start", *GAIN_COLUMNS, "baseline_changed"])
+    return pd.DataFrame(rows, columns=["data_date", "week_start", *GAIN_COLUMNS, "baseline_changed", "baseline"])
 
 
 def moving_window(gains: pd.DataFrame, data_date: pd.Timestamp, days: int = 28) -> pd.Series | None:
@@ -1028,6 +1031,52 @@ def moving_window(gains: pd.DataFrame, data_date: pd.Timestamp, days: int = 28) 
     sums = window[GAIN_COLUMNS].astype(float).sum(skipna=False)
     counts = {"window_start": starts.max(), "weeks": len(window)}
     return pd.Series({**sums, **counts, "baseline_changes": int(window["baseline_changed"].fillna(False).sum())})
+
+
+def window_weeks(gains: pd.DataFrame, data_date: pd.Timestamp, hours_per_day: float, days: int = 28) -> pd.DataFrame:
+    """The weeks ``moving_window`` sums at ``data_date``, one row each, oldest first: the hours earned and
+    planned, the plan days gained and elapsed (``es_gain_min`` and ``at_gain_min`` over ``hours_per_day``)
+    ``baseline_changed`` and the ``baseline`` read. Empty without a window. Reading them apart from their
+    sum shows which week weighs on the window, and which one closes on another plan than it is read on."""
+    window = moving_window(gains, data_date, days)
+    if window is None:
+        columns = ["week_start", "data_date", "ev_gain_hr", "pv_gain_hr", "es_gain_plan_d", "at_gain_plan_d"]
+        return pd.DataFrame(columns=[*columns, "baseline_changed", "baseline"])
+    weeks = gains[(gains["week_start"] >= window["window_start"]) & (gains["data_date"] <= data_date)]
+    minutes_per_day = 60 * hours_per_day
+    return pd.DataFrame(
+        {
+            "week_start": weeks["week_start"],
+            "data_date": weeks["data_date"],
+            "ev_gain_hr": weeks["ev_gain_hr"].astype(float),
+            "pv_gain_hr": weeks["pv_gain_hr"].astype(float),
+            "es_gain_plan_d": weeks["es_gain_min"].astype(float) / minutes_per_day,
+            "at_gain_plan_d": weeks["at_gain_min"].astype(float) / minutes_per_day,
+            "baseline_changed": weeks["baseline_changed"],
+            "baseline": weeks["baseline"],
+        }
+    ).reset_index(drop=True)
+
+
+def copied_lag(snapshot: Snapshot, baseline: Baseline) -> tuple[int, float]:
+    """The tasks in progress of ``snapshot`` that the baseline's own project had already started, with an
+    EV finish before the baseline's status date, and the hours they are behind (PV - EV summed, among
+    the tasks the Earned Schedule measures). P6 stops moving the planned dates of a task once it has
+    started (Oracle, P6 EPPM User Guide, "Planned Dates"): a baseline copied from a project under way
+    asks for these hours before its own status date, and the ES, the time gap, the TSPI and the
+    forecasts of the update carry that lag from the copy on. A task late against a baseline made before
+    it started is plainly late, not counted here."""
+    values = earned(snapshot, baseline)
+    has_dates = values["bl_start"].notna() & values["bl_finish"].notna()
+    measured = values[values["in_snapshot"] & (values["bl_labor_hr"] != 0) & has_dates]
+    copy_date = baseline.snapshot.data_date
+    if copy_date is None or measured.empty:
+        return 0, 0.0
+    in_progress = snapshot.by_code.loc[measured.index, "status"] == "In progress"
+    started_at_copy = baseline.snapshot.by_code.reindex(measured.index)["act_start_date"].notna()
+    passed_at_copy = measured["bl_finish"] < pd.Timestamp(copy_date)
+    lagging = measured[in_progress & started_at_copy & passed_at_copy]
+    return len(lagging), float((lagging["pv_hr"] - lagging["ev_hr"]).sum())
 
 
 def gain_ratio(sums: pd.Series | None, gained: str, asked: str) -> float | None:
