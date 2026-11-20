@@ -129,10 +129,21 @@ chosen for the user), gives the baseline of the updates whose file has no usable
 A separate baseline file may be a P6 XML export (`xer/pmxml.py`: its `BaselineProject` elements, converted
 to the XER tables `build_snapshot` reads; durations and units in hours, percentages x 100, calendar periods
 ending a minute later than the XML's last working minute). `load_snapshot(..., project_id=)` names the
-baseline; when the XML holds the one an update's file names, that update takes it (`_xml_baseline_of`).
+baseline. In the per-file mode the export is read for every update whose file holds none
+(`analysis/baseline_resolution.py`, applied by `state._resolved_baseline`): the baseline the update names when
+the export holds it (exact), else the loaded update whose project the update names, else the baseline the
+versions of the export created just before and after the update's project both hold (`content_digest`); the
+last two are "probable", their `source` says so and every page, warning and download repeats it; an undecided
+update takes the fallback, and the sidebar says it. A baseline of the export that cannot be read leaves its
+update without one and is named in the sidebar (`_export_read_errors`). The Baseline section of the window
+lists, once the files are read, what each file names and what it is measured against, or would be in the
+per-file mode (`xml_baselines.baseline_per_file`), with the hint that P6 writes no baseline in an XER.
 `Baseline.source` says where the baseline of an update comes from; `run_metric` copies it to
-`CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
-readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
+`CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the readers that do not declare
+it: the dangling logic, DCMA-08 and the CPLI margin, `checks.BASELINE_READERS`; the `duration` rule on the
+baseline), `"none"` when it needs one and has none. "Link renumbered tasks by GUID" (`baseline.relinked`) renames
+the baseline's frame, its assignment costs and the tasks of its own file alike, so the checks that count the
+baseline's tasks (P6-13, the BEI due in the baseline) agree with the earned value. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
 `baseline: <source>`. Every page opens with a one-line context banner (`state.page_header`): the projects
 read, the data date of the update shown, where the baseline `baseline_for` gives it comes from (in file,

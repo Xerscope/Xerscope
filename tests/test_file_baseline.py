@@ -136,17 +136,17 @@ def test_the_baselines_of_a_p6_xml_file_are_held_against_the_baseline_each_updat
     ]
 
 
-def _export_of_versions(versions: dict[str, tuple[str, int]]) -> bytes:
+def _export_of_versions(versions: dict[str, tuple[str, int]], empty: tuple[str, ...] = ()) -> bytes:
     """A P6 XML export of several versions of one project: ``{project id: (baseline id, hours)}``. Each
     version names its baseline as its Project Baseline; each baseline holds A1 with ``hours``, under ids of
-    its own."""
+    its own. The baselines in ``empty`` hold no activity: reading one fails (no TASK table)."""
     from pmxmlkit import NAMESPACE, _fields, activity, baseline, calendar
 
     body = calendar()
     for project_id, (baseline_id, hours) in versions.items():
         fields = {"ObjectId": project_id, "Id": f"V{project_id}", "CurrentBaselineProjectObjectId": baseline_id}
         planned = activity("A1", f"{baseline_id}1", "2026-03-02T08:00:00", "2026-03-06T17:00:00", hours)
-        copy = baseline(baseline_id, f"V{project_id} - B1", [planned])
+        copy = baseline(baseline_id, f"V{project_id} - B1", [] if baseline_id in empty else [planned])
         body += f"<Project>{_fields(fields)}</Project>"
         body += copy.replace("<OriginalProjectObjectId>1<", f"<OriginalProjectObjectId>{project_id}<")
     return f'<?xml version="1.0"?><APIBusinessObjects xmlns="{NAMESPACE}">{body}</APIBusinessObjects>'.encode()
@@ -298,7 +298,7 @@ def test_the_versions_of_the_status_date_of_each_update_are_shown_beside_the_bas
     assert without_index[columns[3:]].values.tolist() == [["", "", ""]] * 5
 
 
-def _series_and_export(folder) -> None:
+def _series_and_export(folder, empty: tuple[str, ...] = ()) -> None:
     """Four updates of 40 h on A1, none with its baseline in its file, next to an export of versions 100,
     200 and 400 of the project: baselines 101 and 201 are copies of one baseline (40 h), 401 is another (48 h).
 
@@ -317,8 +317,104 @@ def _series_and_export(folder) -> None:
         project = {"proj_id": project_id, "sum_base_proj_id": pointer}
         activity = todo("A1", proj_id=project_id, target_work_qty="40")
         (folder / name).write_text(xer_text([activity], project=project, data_date=data_date), encoding="utf-8")
-    export = _export_of_versions({"100": ("101", 40), "200": ("201", 40), "400": ("401", 48)})
+    export = _export_of_versions({"100": ("101", 40), "200": ("201", 40), "400": ("401", 48)}, empty)
     (folder / "export.xml").write_bytes(export)
+
+
+def test_a_baseline_of_the_export_that_cannot_be_read_leaves_its_update_without_one_and_says_so(tmp_path, monkeypatch):
+    """Baseline 201, which b.xer names, holds no activity: b is measured against nothing, the sidebar names the
+    baseline that was not read, the window's table says it, and every page still renders. The other updates
+    keep theirs (a: 101, d: 401)."""
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    import xerscope
+    from xerscope.app.state import BL_EACH
+
+    _series_and_export(tmp_path, empty=("201",))
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(
+        AppTest.from_file(str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py"), default_timeout=120).run()
+    )
+    baseline_box(at, "bl_choice").select(BL_EACH)
+    baseline_box(at, "bl_folder_file").select("export.xml")
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    at = at.switch_page("views/health.py").run()
+    picker = next(box for box in at.selectbox if box.key == "health_snap")
+    picker.select(next(option for option in picker.options if option.startswith("2026-03-09")))
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    help_lines = at.button(key="context_banner").help.replace("\\", "").split("  \n")
+    assert any(line == "Baseline used for 2026-03-09: none" for line in help_lines), help_lines
+    errors = [e.value for e in at.sidebar.error]
+    assert any(text.startswith("Baseline 201 of the export not read: ") for text in errors), errors
+
+
+def _series_store(folder):
+    from xerscope.store import SnapshotStore
+
+    return SnapshotStore.from_paths(sorted(path for path in folder.glob("*.xer")))
+
+
+def test_the_window_table_names_what_each_update_is_measured_against(tmp_path):
+    """The export of ``_series_and_export`` with baseline 201 unreadable: a nothing (undecided: 201, around
+    it, cannot be compared with 101), b nothing (201 cannot be read), c nothing (undecided), d the baseline
+    it names. With a fallback, a, b and c take it; d keeps its own."""
+    from xerscope.analysis.baseline_resolution import IN_EXPORT, SAME_GENERATION, resolutions
+    from xerscope.app.xml_baselines import baseline_per_file, export_of
+    from xerscope.xer.pmxml import index_pmxml
+
+    _series_and_export(tmp_path, empty=("201",))
+    store = _series_store(tmp_path)
+    export = (tmp_path / "export.xml").read_bytes()
+    index = index_pmxml(export, "export.xml")
+    found = dict(
+        zip([u.source for u in store], resolutions(store, export_of("export.xml", export, index)), strict=True)
+    )
+
+    table = baseline_per_file(store, found, unreadable=frozenset({"201"}))
+    assert table["file"].tolist() == ["a.xer", "b.xer", "c.xer", "d.xer"]
+    assert table["names"].tolist() == ["151", "201", "301", "401"]
+    assert table["measured_against"].tolist() == [
+        "none (the versions around it hold different baselines)",
+        "none (baseline 201 of the export cannot be read)",
+        "none (the versions around it hold different baselines)",
+        "baseline 401 of the export",
+    ]
+    assert table["found_by"].tolist() == ["not found"] * 3 + [IN_EXPORT]
+    with_fallback = baseline_per_file(store, found, "planned dates", frozenset({"201"}))
+    assert with_fallback["measured_against"].tolist()[:3] == ["fallback: planned dates"] * 3
+    # 201 readable: a is measured against the copy the versions around it hold
+    _series_and_export(tmp_path)
+    store = _series_store(tmp_path)
+    export = (tmp_path / "export.xml").read_bytes()
+    found = dict(
+        zip(
+            [u.source for u in store],
+            resolutions(store, export_of("export.xml", export, index_pmxml(export, "export.xml"))),
+            strict=True,
+        )
+    )
+    readable = baseline_per_file(store, found)
+    assert readable["measured_against"].tolist()[:2] == [
+        "probable: baseline 101 of the export",
+        "baseline 201 of the export",
+    ]
+    assert readable["found_by"].tolist()[0] == SAME_GENERATION
+
+
+def test_the_window_table_says_that_without_an_export_no_update_has_a_baseline(tmp_path):
+    """No export: each update names a baseline its file does not hold; none, with the pointer's note."""
+    from xerscope.app.xml_baselines import baseline_per_file
+
+    _series_and_export(tmp_path)
+    store = _series_store(tmp_path)
+    table = baseline_per_file(store, dict.fromkeys([u.source for u in store]))
+    assert table["found_by"].tolist() == ["not found"] * 4
+    assert table["measured_against"].tolist() == ["none (the project it names is not in the file)"] * 4
 
 
 def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_announced(tmp_path, monkeypatch):
@@ -792,7 +888,7 @@ def _absent_baseline_boxes(at):
     return [element.value.replace("\\", "") for element in at.sidebar.error if "Baseline missing" in element.value]
 
 
-def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
+def test_an_absent_baseline_is_asked_for_as_a_p6_xml_export(tmp_path, monkeypatch):
     # b.xer points to no baseline, c.xer and d.xer to project 370 which neither file holds: one box
     # names 370 once, with its two files; nothing for b.xer or for the usable a.xer
     c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False}
@@ -805,7 +901,10 @@ def test_an_absent_baseline_is_asked_for_as_its_own_xer(tmp_path, monkeypatch):
     assert f"{unknown}, named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
     assert "370" not in boxes[0]  # P6's internal project id: never shown
     assert "planned value, BEI, Late Activities and Missed tasks" in boxes[0]
-    assert ".xer" not in boxes[0].replace("XER", "") and "Separate baseline file" in boxes[0]
+    # the remedy: P6 writes no baseline in an XER, so the XML export of the baselines, and where to read which
+    # file names which (the window, not the Debug page)
+    assert ".xer" not in boxes[0].replace("XER", "")
+    assert "Primavera P6 XML, Baselines to Export" in boxes[0] and "Files and baseline window" in boxes[0]
 
 
 def test_an_absent_baseline_is_named_by_its_code_when_another_loaded_file_holds_it(tmp_path, monkeypatch):

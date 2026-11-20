@@ -15,7 +15,9 @@ import pandas as pd
 from xerscope.analysis.baseline import content_digest
 from xerscope.analysis.baseline_resolution import (
     IN_EXPORT,
+    IN_FILE,
     LOADED_UPDATE,
+    NOT_FOUND,
     SAME_GENERATION,
     Export,
     Resolution,
@@ -209,3 +211,44 @@ def resolution_table(store: SnapshotStore, export: Export | None, index: PmxmlIn
         for update, found in zip(store, resolutions(store, export), strict=True)
     ]
     return pd.DataFrame(rows, columns=RESOLUTION_COLUMNS)
+
+
+BASELINE_PER_FILE_COLUMNS = ["file", "data_date", "names", "measured_against", "found_by"]
+THE_FALLBACK = "the fallback"
+
+
+def _baseline_row(snapshot: Snapshot, found: Resolution | None, fallback_label: str, unreadable: frozenset) -> dict:
+    """Return one row of ``baseline_per_file``: what the update names and what it is measured against."""
+    pointer = snapshot.file_baseline
+    names = f"{pointer.code} ({pointer.proj_id})" if pointer.code else pointer.proj_id
+    row = {"file": snapshot.source, "data_date": snapshot.data_date, "names": names}
+    if pointer.usable:
+        return {**row, "measured_against": f"{pointer.code}, in its file", "found_by": IN_FILE}
+    applied = (IN_EXPORT, SAME_GENERATION, LOADED_UPDATE)
+    if found is not None and found.found_by in applied and found.baseline_id not in unreadable:
+        where = "a loaded update" if found.found_by == LOADED_UPDATE else "the export"
+        probable = "" if found.found_by == IN_EXPORT else "probable: "
+        against = f"{probable}baseline {found.baseline_id} of {where}"
+        return {**row, "measured_against": against, "found_by": found.found_by}
+    if fallback_label:
+        return {**row, "measured_against": f"fallback: {fallback_label}", "found_by": THE_FALLBACK}
+    why = found.note if found is not None and found.note else pointer.note
+    if found is not None and found.baseline_id in unreadable:
+        why = f"baseline {found.baseline_id} of the export cannot be read"
+    return {**row, "measured_against": "none" + (f" ({why})" if why else ""), "found_by": NOT_FOUND}
+
+
+def baseline_per_file(
+    store: SnapshotStore,
+    found: dict[str, Resolution | None],
+    fallback_label: str = "",
+    unreadable: frozenset = frozenset(),
+) -> pd.DataFrame:
+    """Return one row per update: what its file names, what it is measured against and what found it.
+
+    By status date. ``found``: the resolution of each update by file name (``resolutions``), None for an
+    update outside the series. ``fallback_label``: what applies when nothing is found, blank for none.
+    ``unreadable``: the baselines of the export that could not be read; an update that names one has none.
+    """
+    rows = [_baseline_row(snapshot, found.get(snapshot.source), fallback_label, unreadable) for snapshot in store]
+    return pd.DataFrame(rows, columns=BASELINE_PER_FILE_COLUMNS)

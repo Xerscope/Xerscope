@@ -306,14 +306,17 @@ def restricted(baseline: Baseline, task_codes: Collection[str]) -> Baseline:
 
 def relinked(baseline: Baseline, snapshot: Snapshot) -> Baseline:
     """``baseline`` with each task ``snapshot`` renumbered (``renumbered``) under its new Activity ID, as
-    P6 has it when the renumbering was carried to the baseline; ``baseline`` itself when none is."""
+    P6 has it when the renumbering was carried to the baseline: its frame, its assignment costs and the
+    tasks of its own file, which the checks that count the baseline's tasks read (P6-13, the BEI due in
+    the baseline); ``baseline`` itself when none is."""
     pairs = renumbered(baseline.snapshot, snapshot)
     if pairs.empty:
         return baseline
     mapping = dict(zip(pairs["old_code"], pairs["new_code"], strict=True))
-    costs = baseline.assignment_costs
+    costs, tasks = baseline.assignment_costs, baseline.snapshot.tasks
     return replace(
         baseline,
         frame=baseline.frame.rename(index=mapping),
         assignment_costs=costs.assign(task_code=costs["task_code"].replace(mapping)),
+        snapshot=replace(baseline.snapshot, tasks=tasks.assign(task_code=tasks["task_code"].replace(mapping))),
     )

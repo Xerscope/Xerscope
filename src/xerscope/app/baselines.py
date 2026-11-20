@@ -9,6 +9,7 @@ from collections.abc import MutableMapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import AnalysisContext, Baseline, Standard
@@ -26,6 +27,7 @@ from xerscope.analysis.baseline import (
 from xerscope.analysis.baseline_resolution import (
     IN_EXPORT,
     LOADED_UPDATE,
+    NOT_FOUND,
     SAME_GENERATION,
     UNDECIDED,
     Export,
@@ -52,7 +54,7 @@ from xerscope.app.session import (
     _section_title,
     counted,
 )
-from xerscope.app.xml_baselines import export_of
+from xerscope.app.xml_baselines import baseline_per_file, export_of
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot, XerError, baseline_copies, is_pmxml, load_snapshot, pmxml_files
 from xerscope.xer.pmxml import DiskFile, PmxmlIndex, index_pmxml
@@ -286,6 +288,8 @@ def _source_kind(snapshot: Snapshot) -> str:
     if snapshot.file_baseline.usable:
         return IN_ITS_FILE
     found = _resolution(snapshot)
+    if found is not None and found.baseline_id in st.session_state.get("_export_read_errors", {}):
+        return THE_FALLBACK if st.session_state.get("fallback") is not None else "no baseline"
     if found is not None and found.found_by == IN_EXPORT:
         return FROM_THE_EXPORT
     if found is not None and found.found_by in (LOADED_UPDATE, SAME_GENERATION):
@@ -337,6 +341,8 @@ def _resolution_warnings(sidebar, store: SnapshotStore, instead: str) -> list[Sn
     export_error = _export_in_use()[1]
     if export_error:
         sidebar.error(f"Baselines export not read: {ui.md_text(export_error)}")
+    for baseline_id, error in sorted(st.session_state.get("_export_read_errors", {}).items()):
+        sidebar.error(f"Baseline {baseline_id} of the export not read: {ui.md_text(error)}")
     kinds = {snapshot.source: _source_kind(snapshot) for snapshot in store}
     probable = [snapshot for snapshot in store if kinds[snapshot.source] == A_PROBABLE_BASELINE]
     if probable:
@@ -430,8 +436,9 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     sidebar.error(
         f"P6 Project Baseline missing for {counted(updates, 'update')} of {len(store)}: {named}. "
         "P6 measures planned value, BEI, Late Activities and Missed tasks against it "
-        "(Project Details > Settings, use project baseline). Export that project from P6 and load its XER "
-        f"under Baseline (BL) > {BL_FILE}. Which file names which: Debug, block 5.",
+        "(Project Details > Settings, use project baseline). P6 writes no baseline in an XER: export them "
+        "as P6 XML (Export > Primavera P6 XML, Baselines to Export) and put the file next to the updates. "
+        "Which file names which, and what each is measured against: the Files and baseline window.",
         icon=":material/error:",
     )
 
@@ -764,7 +771,58 @@ def _baseline_fields(store: SnapshotStore) -> None:
             help="Applies update by update: an update uses the baseline of its own file when it has a usable "
             "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
         )
+    if st.session_state.get(BASELINE_SET):  # before the first Done nothing is read for the baseline
+        _baseline_per_file(store)
     _baseline_file_fields(choice, folder_files)
+
+
+def _fallback_label() -> str:
+    """Return the fallback in force as the window's table names it, blank for none."""
+    fallback = st.session_state.get("fallback")
+    if fallback is None:
+        return ""
+    return BL_PLANNED if fallback == BL_PLANNED else fallback.label
+
+
+def _per_file_caption(table: pd.DataFrame) -> str:
+    """Return the caption of the window's per-file table.
+
+    The baselines in force in the per-file mode, or what that mode would give beside the single baseline
+    in force; and, without an export, why most updates have none.
+    """
+    choice = st.session_state.get("baseline")
+    if choice == BL_EACH:
+        caption = "Baseline of each update, as in force now (Done applies the choices above)."
+    elif isinstance(choice, Baseline) or choice == BL_PLANNED:
+        in_force = BL_PLANNED if choice == BL_PLANNED else choice.label
+        caption = (
+            f"In force: every update is measured against {in_force}. Below, the baseline each file names and "
+            f"what '{BL_EACH}' would give it."
+        )
+    else:
+        caption = f"In force: no baseline. Below, the baseline each file names and what '{BL_EACH}' would give it."
+    without = int((table["found_by"] == NOT_FOUND).sum())
+    if without and baseline_export() is None:
+        caption += (
+            f" {without} of {len(table)} have none: P6 writes no baseline in an XER. Put the P6 XML export "
+            "of the baselines (Export > Primavera P6 XML, Baselines to Export) next to the files."
+        )
+    return caption
+
+
+def _baseline_per_file(store: SnapshotStore) -> None:
+    """Show the window's table of the baseline each update names and is, or would be, measured against.
+
+    In the per-file mode (``xml_baselines.baseline_per_file``), with the fallback and the baselines of the
+    export that could not be read. Drawn by ``ui.table``, which labels and formats its columns.
+    """
+    found = {snapshot.source: _resolution(snapshot) for snapshot in store}
+    unreadable = frozenset(st.session_state.get("_export_read_errors", {}))
+    table = baseline_per_file(store, found, _fallback_label(), unreadable)
+    st.caption(_per_file_caption(table))
+    labels = {"names": "Names (sum_base_proj_id)", "measured_against": "Measured against", "found_by": "Found"}
+    overrides = {name: st.column_config.TextColumn(label) for name, label in labels.items()}
+    ui.table(table, key="baseline_per_file", overrides=overrides)
 
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -795,6 +853,7 @@ def _resolution(snapshot: Snapshot) -> Resolution | None:
         found = resolutions(store, export_contents())
         kept = (key, {update.source: one for update, one in zip(store, found, strict=True)})
         st.session_state["_resolutions"] = kept
+        st.session_state["_export_read_errors"] = {}  # the baselines of another export, or another series
     return kept[1].get(snapshot.source)
 
 
@@ -846,7 +905,11 @@ def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
     export = baseline_export()
     if export is None or found.found_by not in (IN_EXPORT, SAME_GENERATION):
         return None
-    built = _export_baseline(export, found.baseline_id)
+    try:
+        built = _export_baseline(export, found.baseline_id)
+    except XerError as exc:  # one baseline of the export cannot be read: this update has none, the sidebar says why
+        st.session_state.setdefault("_export_read_errors", {})[found.baseline_id] = str(exc)
+        return None
     code = built.snapshot.project_code
     if found.found_by == IN_EXPORT:
         return replace(built, source=f"P6 Project Baseline {code} from {export[0]}")

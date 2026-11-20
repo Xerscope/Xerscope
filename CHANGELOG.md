@@ -92,6 +92,15 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 - Delay analysis: a step counts the changes it carries; a rename or a move to another WBS is counted
   at no step (they were counted at the last one).
 - Debug, block 3: the counts of the steps table are whole numbers.
+- Baselines: "Link renumbered tasks by GUID" renamed the baseline's frame but not the tasks of its own
+  file, so P6-13 counted a renumbered task as no longer in the schedule and the BEI due in the baseline
+  lost it, while the earned value found it (`baseline.relinked`). A baseline of the P6 XML export that
+  cannot be read stopped every page; its update now has no baseline and the sidebar names it. DCMA-13
+  (CPLI) reads the baseline finish of the end milestone without a Must Finish By and did not name the
+  baseline in its result; it does (`checks.BASELINE_READERS`). The Files and baseline window lists, once
+  the files are read, the baseline each file names and what it is measured against; the sidebar's
+  message on missing Project Baselines says that P6 writes none in an XER and asks for the P6 XML export.
+
 - Delay analysis: the page no longer stops on a series where an update holds whole hours only and
   the next a fraction of an hour (a remaining duration of 19.2 h): the half-step schedule carries
   the value as it is.
