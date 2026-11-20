@@ -162,7 +162,6 @@ convention = "pep257"
 "src/xerscope/app/glossary.py" = ["D401"]
 "src/xerscope/app/reading.py" = ["D205", "D209", "D401"]
 "src/xerscope/app/sets.py" = ["D103", "D401"]
-"src/xerscope/app/state.py" = ["D102", "D103", "D205", "D209", "D401"]
 "src/xerscope/app/streamlit_app.py" = ["D103"]
 "src/xerscope/app/task_panel.py" = ["D103", "D205", "D209", "D401"]
 "src/xerscope/app/ui.py" = ["D101", "D103", "D205", "D209", "D401", "D402", "D403"]

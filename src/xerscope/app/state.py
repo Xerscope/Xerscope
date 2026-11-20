@@ -70,9 +70,12 @@ NBSP = "\u00a0"  # thousands separator that does not break a label across lines
 
 
 def _parse(name: str, data: bytes | DiskFile, project_id: str | None = None) -> Snapshot:
-    """Parse once per session, keyed on content. The cache lives in the session's state, never in a
-    process-wide cache: when the session ends (server.disconnectedSessionTTL after the tab closes),
-    nothing of the files it read stays in the server."""
+    """Parse once per session, keyed on content.
+
+    The cache lives in the session's state, never in a process-wide cache: when the session ends
+    (server.disconnectedSessionTTL after the tab closes), nothing of the files it read stays in the
+    server.
+    """
     cache = st.session_state.setdefault("_parsed", {})
     key = (name, _digest(data), project_id)
     if key not in cache:
@@ -84,18 +87,21 @@ def _parse(name: str, data: bytes | DiskFile, project_id: str | None = None) -> 
 
 
 def _file_choices() -> dict[str, str]:
-    """The project picked for a file in the window's Files section: proj_id by file name."""
+    """Return the project picked for a file in the window's Files section: proj_id by file name."""
     return st.session_state.setdefault("file_projects", {})
 
 
 def _parse_cached(data: bytes, name: str, project_id: str | None = None) -> Snapshot:
-    """``_parse`` with ``load_snapshot``'s signature, for ``reading.read_update``."""
+    """Run ``_parse`` with ``load_snapshot``'s signature, for ``reading.read_update``."""
     return _parse(name, data, project_id)
 
 
 def _read(name: str, data: bytes) -> Snapshot:
-    """The snapshot of one file: the project picked for it in the window, else the file's default
-    project (``_default_project`` in the model)."""
+    """Return the snapshot of one file.
+
+    The project picked for it in the window, else the file's default project (``_default_project`` in the
+    model).
+    """
     snapshot = _parse(name, data)
     chosen = _file_choices().get(name)
     if chosen in set(snapshot.file_projects["proj_id"]):
@@ -106,10 +112,12 @@ def _read(name: str, data: bytes) -> Snapshot:
 def _build(
     items: list[tuple[str, bytes]], on_file: Callable[[int, str], None] | None = None
 ) -> tuple[SnapshotStore | None, list[str]]:
-    """Each file read for the project picked for it, else its default project, so a project renamed
-    between updates still loads. ``on_file(index, name)`` is called before each file is read (the
-    sidebar's progress line). The file is read and its error worded as on a worker process
-    (``reading.read_update``), the series built as there (``reading.store_of``)."""
+    """Read each file for the project picked for it, else its default project.
+
+    So a project renamed between updates still loads. ``on_file(index, name)`` is called before each file
+    is read (the sidebar's progress line). The file is read and its error worded as on a worker process
+    (``reading.read_update``), the series built as there (``reading.store_of``).
+    """
     choices, results = _file_choices(), []
     for index, (name, data) in enumerate(items):
         if on_file is not None:
@@ -120,56 +128,69 @@ def _build(
 
 
 def _digest(data: bytes | DiskFile) -> str:
-    """sha256 of a file's contents; of a file read from the disk where asked, the one computed from
-    the file itself and kept until the file changes (``_file_digest``)."""
+    """Return the sha256 of a file's contents.
+
+    Of a file read from the disk where asked, the one computed from the file itself and kept until the
+    file changes (``_file_digest``).
+    """
     return _file_digest(data.path) if isinstance(data, DiskFile) else hashlib.sha256(data).hexdigest()
 
 
 def background_jobs() -> bool:
-    """Whether the files after the first and the Overview scores are read in a thread while the
-    pages draw. XERSCOPE_SYNC_LOAD=1 (the tests: AppTest returns when the script ends) does
-    everything in the script run."""
+    """Return whether the files after the first and the Overview scores are read in a thread while the pages draw.
+
+    XERSCOPE_SYNC_LOAD=1 (the tests: AppTest returns when the script ends) does everything in the script
+    run.
+    """
     return os.environ.get("XERSCOPE_SYNC_LOAD", "").lower() not in ("1", "true", "yes")
 
 
 def _lexicon_dirs(name: str) -> list[Path]:
-    """The folder ``name`` (generated, curated, suggested) of XERSCOPE_LEXICON; none when unset."""
+    """Return the folder ``name`` (generated, curated, suggested) of XERSCOPE_LEXICON; none when unset."""
     root = os.environ.get("XERSCOPE_LEXICON", "")
     return [Path(root) / name] if root else []
 
 
 @functools.cache
 def lexicon_and_errors() -> tuple[query.Lexicon, tuple[str, ...]]:
-    """The Ask field's trade words: the *.toml of XERSCOPE_LEXICON's curated/ folder (a company's
-    own words, kept outside the repository; none ships with the app), and the files and refusals
-    skipped with why. Read once for the process: it holds no session's data. The errors show on
-    the Debug page, never to a visitor of another page."""
+    """Return the Ask field's trade words.
+
+    The *.toml of XERSCOPE_LEXICON's curated/ folder (a company's own words, kept outside the repository;
+    none ships with the app), and the files and refusals skipped with why. Read once for the process: it
+    holds no session's data. The errors show on the Debug page, never to a visitor of another page.
+    """
     found, errors = query.load_lexicon(*_lexicon_dirs(query.CURATED))
     return found, tuple(errors + query.load_refusals(*_lexicon_dirs(query.CURATED))[1])
 
 
 def lexicon() -> query.Lexicon:
+    """Return the Ask field's trade words, without the errors met reading them."""
     return lexicon_and_errors()[0]
 
 
 @functools.cache
 def refusals() -> list[tuple[str, frozenset[str]]]:
-    """The generated groups curated/ refuses: they win over generated/ and over the variants
-    derived in memory."""
+    """Return the generated groups curated/ refuses.
+
+    They win over generated/ and over the variants derived in memory.
+    """
     return query.load_refusals(*_lexicon_dirs(query.CURATED))[0]
 
 
 @functools.cache
 def file_variants() -> dict[str, list[list[str]]]:
-    """The variant groups that name their source column: generated/ (``xerscope lexicon build``)
-    less the curated refusals, and curated/'s own; merged with those derived in memory."""
+    """Return the variant groups that name their source column.
+
+    Generated/ (``xerscope lexicon build``) less the curated refusals, and curated/'s own; merged with
+    those derived in memory.
+    """
     generated = query.refuse(query.load_variants(*_lexicon_dirs(query.GENERATED)), refusals())
     curated = query.load_variants(*_lexicon_dirs(query.CURATED))
     return {c: generated.get(c, []) + curated.get(c, []) for c in sorted({*generated, *curated})}
 
 
 def session_lexicon() -> query.Lexicon:
-    """The app's lexicon plus the words taught this session (``teach``): what the Ask field reads."""
+    """Return the app's lexicon plus the words taught this session (``teach``): what the Ask field reads."""
     found = lexicon()
     for word, label in st.session_state.get("taught", []):
         found = query.learn(found, word, label)
@@ -177,10 +198,12 @@ def session_lexicon() -> query.Lexicon:
 
 
 def teach(word: str, label: str, kind: str) -> bool:
-    """Read ``word`` as ``label`` (a ``kind`` of query.suggestions) from now on in this session,
-    and append the correction to XERSCOPE_LEXICON's suggested/ for review (``ask.suggested``:
-    the word, the label, its column, the filter and the date, never the sentence). The Ask field
-    reads it from a file only once copied into curated/. False when a guard refused to record it."""
+    """Read ``word`` as ``label`` (a ``kind`` of query.suggestions) from now on in this session.
+
+    Append the correction to XERSCOPE_LEXICON's suggested/ for review (``ask.suggested``: the word, the
+    label, its column, the filter and the date, never the sentence). The Ask field reads it from a file
+    only once copied into curated/. False when a guard refused to record it.
+    """
     taught = st.session_state.setdefault("taught", [])
     if (word, label) in taught:
         return True
@@ -190,7 +213,7 @@ def teach(word: str, label: str, kind: str) -> bool:
 
 
 def _header_date(name: str, data: bytes) -> pd.Timestamp | None:
-    """The file's status date from its PROJECT rows only, for the reading order; None when unreadable."""
+    """Return the file's status date from its PROJECT rows only, for the reading order; None when unreadable."""
     try:
         return read_header(parse_bytes(data, source=name, keep=HEADER_TABLES)).data_date
     except XerError:
@@ -198,17 +221,21 @@ def _header_date(name: str, data: bytes) -> pd.Timestamp | None:
 
 
 def most_recent_first(items: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
-    """The files by status date, latest first (unreadable last): the pages open on the latest
-    update, so it is read first and the others follow in the background."""
+    """Return the files by status date, latest first (unreadable last).
+
+    The pages open on the latest update, so it is read first and the others follow in the background.
+    """
     dates = {name: _header_date(name, data) for name, data in items}
     return sorted(items, key=lambda item: (dates[item[0]] is None, -(dates[item[0]] or pd.Timestamp(0)).value))
 
 
 @dataclass
 class LoadJob:
-    """The files being read in a thread, which hands them to worker processes (``reading``):
-    ``results`` fills as each file is read (name -> Snapshot, or the error text), ``done`` once every
-    file was tried. Nothing of a partial series is shown: the pages wait for ``done``."""
+    """Hold the files being read in a thread, which hands them to worker processes (``reading``).
+
+    ``results`` fills as each file is read (name -> Snapshot, or the error text), ``done`` once every file
+    was tried. Nothing of a partial series is shown: the pages wait for ``done``.
+    """
 
     items: list[tuple[str, bytes]]
     choices: dict[str, str]
@@ -219,6 +246,7 @@ class LoadJob:
     thread: threading.Thread | None = None
 
     def run(self) -> None:
+        """Read each file in turn into ``results``, then set ``done``."""
         try:
             for name, result, cache in read_updates(self.items, self.choices, lambda: self.cancelled):
                 self.cache.update(cache)
@@ -228,8 +256,10 @@ class LoadJob:
 
 
 def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
-    """Every chosen file read in a daemon thread (the session's choice of project per file taken as
-    it stands); the pages show the progress and draw once the series is complete."""
+    """Read every chosen file in a daemon thread (the session's choice of project per file taken as it stands).
+
+    The pages show the progress and draw once the series is complete.
+    """
     job = LoadJob(most_recent_first(items), dict(_file_choices()))
     job.thread = threading.Thread(target=job.run, name="xerscope-load", daemon=True)
     job.thread.start()
@@ -237,15 +267,17 @@ def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
 
 
 def _collect(job: LoadJob) -> tuple[SnapshotStore | None, list[str]]:
-    """The store of the files read so far, in the order of the series, and the errors met."""
+    """Return the store of the files read so far, in the order of the series, and the errors met."""
     st.session_state.setdefault("_parsed", {}).update(job.cache)
     return store_of((name, job.results[name]) for name, _ in job.items if name in job.results)
 
 
 @st.fragment(run_every=1.0)
 def _poll_load() -> None:
-    """The reading progress, redrawn alone every second (the page is not); one rerun of the app
-    once every file is read, which draws the pages on the complete series."""
+    """Show the reading progress, redrawn alone every second (the page is not).
+
+    One rerun of the app once every file is read, which draws the pages on the complete series.
+    """
     job: LoadJob | None = st.session_state.get("_load_job")
     if job is None:
         return
@@ -256,8 +288,10 @@ def _poll_load() -> None:
 
 
 def _header(path: Path) -> FileHeader | str:
-    """The file's header (PROJECT and TASK only), or why it cannot be read. Kept in the session's
-    state like the parsed files, keyed on name, size and modification time."""
+    """Return the file's header (PROJECT and TASK only), or why it cannot be read.
+
+    Kept in the session's state like the parsed files, keyed on name, size and modification time.
+    """
     cache = st.session_state.setdefault("_headers", {})
     try:
         stat = path.stat()
@@ -275,10 +309,12 @@ def _header(path: Path) -> FileHeader | str:
 
 
 def _describe_file(path: Path, same_date_as: str | None = None) -> tuple[str, str]:
-    """Tick box label and help for a file not read yet: what build_snapshot would take from it, the
-    project, its status date and its number of tasks on the label itself. ``same_date_as``: the file
-    of the folder that comes first with the same status date (the series holds one update per date,
-    so the two cannot be read together)."""
+    """Return the tick box label and help for a file not read yet.
+
+    What build_snapshot would take from it, the project, its status date and its number of tasks on the
+    label itself. ``same_date_as``: the file of the folder that comes first with the same status date (the
+    series holds one update per date, so the two cannot be read together).
+    """
     header = _header(path)
     name = ui.md_text(path.name)  # a widget label and its help are Markdown
     if isinstance(header, str):
@@ -304,8 +340,11 @@ def _describe_file(path: Path, same_date_as: str | None = None) -> tuple[str, st
 
 
 def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
-    """One tick box per XER file of ``folder``; the names ticked. ``chosen``: the names of the
-    last validated choice, ticked again when the window reopens (its boxes are gone once closed)."""
+    """Show one tick box per XER file of ``folder`` and return the names ticked.
+
+    ``chosen``: the names of the last validated choice, ticked again when the window reopens (its boxes
+    are gone once closed).
+    """
     root = Path(folder).expanduser()
     files = xer_files(root) if root.is_dir() else []
     if not files:
@@ -354,8 +393,11 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[str, bytes], ...]:
-    """One tick box per uploaded file, ticked by default; the files left ticked. ``kept``: the files
-    of the last validated choice (an upload widget starts empty each time the window opens)."""
+    """Show one tick box per uploaded file, ticked by default, and return the files left ticked.
+
+    ``kept``: the files of the last validated choice (an upload widget starts empty each time the window
+    opens).
+    """
     files = {(name, _digest(data)): data for name, data in kept}
     for upload in uploads or []:
         files.setdefault((upload.name, _digest(upload.getvalue())), upload.getvalue())
@@ -372,8 +414,10 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
 
 
 def _same_names(files: Iterable[tuple[str, bytes]]) -> dict[str, int]:
-    """Names held by more than one file, with their count: the series is read by file name, so two
-    files of one name would overwrite each other's results."""
+    """Return the names held by more than one file, with their count.
+
+    The series is read by file name, so two files of one name would overwrite each other's results.
+    """
     names = [name for name, _ in files]
     return {name: names.count(name) for name in sorted(set(names)) if names.count(name) > 1}
 
@@ -390,7 +434,7 @@ DRAFTS = {
 
 
 def _project_draft(source: str) -> str:
-    """The draft key of the project picked for file ``source`` in the window (its proj_id)."""
+    """Return the draft key of the project picked for file ``source`` in the window (its proj_id)."""
     return f"draft_file_project:{source}"
 
 
@@ -409,8 +453,11 @@ def _open_window(section: str) -> None:
 
 
 def _apply_drafts() -> None:
-    """Done: the window's baseline choice becomes the one in force, its uploaded file held; a project
-    picked for a file other than the one read is recorded, and the next run reads that file again."""
+    """On Done, make the window's baseline choice the one in force, its uploaded file held.
+
+    A project picked for a file other than the one read is recorded, and the next run reads that file
+    again.
+    """
     for key, draft in DRAFTS.items():
         if draft in st.session_state:
             st.session_state[key] = st.session_state[draft]
@@ -428,13 +475,15 @@ def _close_window() -> None:
 
 
 def _section_title(text: str, note: str = "") -> None:
-    """A section's title in the window, ``note`` aligned right (a count, a state)."""
+    """Show a section's title in the window, ``note`` aligned right (a count, a state)."""
     st.html(f'<div class="xd-title"><span>{html.escape(text)}</span><span>{html.escape(note)}</span></div>')
 
 
 def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
-    """Upload, folder and the list of files with a box to leave one out, then the project read from
-    each file of the series; the choice Done would validate."""
+    """Show the upload, folder and the list of files with a box to leave one out.
+
+    Then the project read from each file of the series; the choice Done would validate.
+    """
     if _data_locked():
         folder, uploads = os.environ.get("XERSCOPE_DATA", ""), None
         _section_title("Files", "server folder")
@@ -454,9 +503,12 @@ def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
 
 
 def _projects_fields(store: SnapshotStore) -> None:
-    """One row per file of the series: the project read from it and the rule that picked it, and a
-    list of its projects when more than one can be analysed once its baseline copies are set aside, on
-    a draft that Done applies (``_apply_drafts``); otherwise the row says it holds a baseline copy."""
+    """Show one row per file of the series.
+
+    The project read from it and the rule that picked it, and a list of its projects when more than one
+    can be analysed once its baseline copies are set aside, on a draft that Done applies
+    (``_apply_drafts``); otherwise the row says it holds a baseline copy.
+    """
     st.caption("Project read from each file · why")
     with st.container(key="files_projects"):
         for snapshot in sorted(store, key=lambda snapshot: snapshot.source):
@@ -510,9 +562,11 @@ def _projects_fields(store: SnapshotStore) -> None:
 
 
 def _window_sections(has_series: bool) -> list[str]:
-    """The sections the window draws, the one its opener names first. Opened by itself for the
-    baseline of a series just read (``BASELINE_ALONE``), the Baseline section alone: the boxes of
-    the Files section came back unticked in a browser, and Done then read no file."""
+    """Return the sections the window draws, the one its opener names first.
+
+    Opened by itself for the baseline of a series just read (``BASELINE_ALONE``), the Baseline section
+    alone: the boxes of the Files section came back unticked in a browser, and Done then read no file.
+    """
     opened_on = st.session_state.get("window_section")
     if opened_on == BASELINE_ALONE:
         return ["baseline"]
@@ -523,10 +577,13 @@ def _window_sections(has_series: bool) -> list[str]:
 
 @st.dialog("Files and baseline", width="large", on_dismiss=_close_window)
 def _window(store: SnapshotStore | None) -> None:
-    """The window of the sidebar's Files and Baseline lines. A widget inside it reruns this function
-    only (st.dialog is a fragment): nothing applies before Done, which reads the files and sets the
-    baseline choice; closing it otherwise changes nothing. The section the line names comes first;
-    without the Files section (``_window_sections``) Done keeps the files already read."""
+    """Show the window of the sidebar's Files and Baseline lines.
+
+    A widget inside it reruns this function only (st.dialog is a fragment): nothing applies before Done,
+    which reads the files and sets the baseline choice; closing it otherwise changes nothing. The section
+    the line names comes first; without the Files section (``_window_sections``) Done keeps the files
+    already read.
+    """
     source = st.session_state.get("files_source") or ("none",)
     with st.container(key="files_sheet"):
         sections = _window_sections(has_series=store is not None)
@@ -552,9 +609,12 @@ def _window(store: SnapshotStore | None) -> None:
 
 
 def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None, list[str]]:
-    """Signature of the files validated in the window, their contents when they changed since the
-    last run (None: unchanged, or nothing chosen when the signature is empty), and a message per
-    file ticked that is no longer in the folder (moved or replaced on the share between two runs)."""
+    """Return the signature of the files validated in the window.
+
+    Their contents when they changed since the last run (None: unchanged, or nothing chosen when the
+    signature is empty), and a message per file ticked that is no longer in the folder (moved or replaced
+    on the share between two runs).
+    """
     source = st.session_state.get("files_source")
     if source is None:
         return (), None, []
@@ -582,8 +642,11 @@ def _chosen_items() -> tuple[tuple, list[tuple[str, bytes]] | None, list[str]]:
 def _read_ticked(
     names, listed: dict[str, Path], held: dict[str, bytes], previous: tuple
 ) -> tuple[list[tuple[str, str]], list[tuple[str, bytes]], list[str]]:
-    """Digest and contents of each ticked file, in name order, and a message per file no longer in
-    the folder. A file whose digest is in ``previous`` keeps the bytes already held."""
+    """Return the digest and contents of each ticked file, in name order.
+
+    And a message per file no longer in the folder. A file whose digest is in ``previous`` keeps the bytes
+    already held.
+    """
     digests, items, gone = [], [], []
     for name in sorted(names):
         try:
@@ -599,9 +662,12 @@ def _read_ticked(
 
 
 def _file_digest(path: Path) -> str:
-    """sha256 of a folder's file, keyed on content as an upload. Read and digested again only when
-    its inode, size, modification or change time moved: a file replaced under the same name and
-    modification time (os.utime) still gets a new change time. Kept in the session's state."""
+    """Return the sha256 of a folder's file, keyed on content as an upload.
+
+    Read and digested again only when its inode, size, modification or change time moved: a file replaced
+    under the same name and modification time (os.utime) still gets a new change time. Kept in the
+    session's state.
+    """
     cache = st.session_state.setdefault("_file_digests", {})
     stat = path.stat()
     stamp = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
@@ -614,8 +680,10 @@ def _file_digest(path: Path) -> str:
 
 
 def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
-    """Read again, for the project picked in the window, the files read for another one;
-    the other files keep their snapshot."""
+    """Read again, for the project picked in the window, the files read for another one.
+
+    The other files keep their snapshot.
+    """
     data = dict(st.session_state.get("items") or [])
     snapshots = list(store)
     for i, snapshot in enumerate(snapshots):
@@ -637,27 +705,34 @@ def _apply_file_choices(store: SnapshotStore) -> SnapshotStore:
 
 
 def debug_page() -> bool:
-    """Whether the Debug page is in the navigation: always on a workstation; on a deployed
-    instance (``_data_locked``) only with XERSCOPE_DEBUG_PAGE=1, since the page describes the
-    server's reading of every file to whoever holds the URL."""
+    """Return whether the Debug page is in the navigation.
+
+    Always on a workstation; on a deployed instance (``_data_locked``) only with XERSCOPE_DEBUG_PAGE=1,
+    since the page describes the server's reading of every file to whoever holds the URL.
+    """
     asked = os.environ.get("XERSCOPE_DEBUG_PAGE", "").lower() in ("1", "true", "yes")
     return not _data_locked() or asked
 
 
 def data_locked() -> bool:
-    """Remote deployment (``_data_locked``): pages show nothing about the server (Debug block 12)."""
+    """Return whether this is a remote deployment (``_data_locked``).
+
+    Pages show nothing about the server (Debug block 12).
+    """
     return _data_locked()
 
 
 def _data_locked() -> bool:
-    """Remote deployment: the visitor reads the server's exports folder and nothing else. No path
-    field (the app cannot be pointed elsewhere) and no upload (one parsed export of 40 MB takes
-    about 1 GB, so a few uploads would push the app past its memory cap, docs/deploy.md §7)."""
+    """Return whether this is a remote deployment: the visitor reads the server's exports folder and nothing else.
+
+    No path field (the app cannot be pointed elsewhere) and no upload (one parsed export of 40 MB takes
+    about 1 GB, so a few uploads would push the app past its memory cap, docs/deploy.md §7).
+    """
     return os.environ.get("XERSCOPE_DATA_LOCKED", "").lower() in ("1", "true", "yes")
 
 
 def _period(store: SnapshotStore) -> str:
-    """First and last data dates, the year written once when both share it: one sidebar row."""
+    """Return the first and last data dates, the year written once when both share it: one sidebar row."""
     first, last = store.first.data_date, store.latest.data_date
     start = ui.fmt_date(first)
     if first is not None and last is not None and first.year == last.year:
@@ -666,10 +741,12 @@ def _period(store: SnapshotStore) -> str:
 
 
 def _forget_previous_series() -> None:
-    """Another choice of files was validated: stop the reading and the score computation still running
-    for the previous one, and drop what was cached for it (analysis results, baselines read from the
-    files). The parsed files are pruned once the new series is read (``_keep_parsed``): an unchanged
-    file is not read twice."""
+    """Stop the reading and the score computation still running for the previous choice of files.
+
+    Another choice of files was validated: drop what was cached for it (analysis results, baselines read
+    from the files). The parsed files are pruned once the new series is read (``_keep_parsed``): an
+    unchanged file is not read twice.
+    """
     for slot in ("_load_job", "_score_job"):
         job = st.session_state.get(slot)
         if job is not None and not job.done:
@@ -680,8 +757,11 @@ def _forget_previous_series() -> None:
 
 
 def _keep_parsed(items: list[tuple[str, bytes]]) -> None:
-    """Keep in the parse cache only the files of the series just read: a snapshot of a 4 000-activity
-    export holds about 30 MB, and the files of earlier choices are not read back."""
+    """Keep in the parse cache only the files of the series just read.
+
+    A snapshot of a 4 000-activity export holds about 30 MB, and the files of earlier choices are not read
+    back.
+    """
     current = {(name, hashlib.sha256(data).hexdigest()) for name, data in items}
     cache = st.session_state.get("_parsed", {})
     for key in [key for key in cache if key[:2] not in current]:
@@ -689,6 +769,7 @@ def _keep_parsed(items: list[tuple[str, bytes]]) -> None:
 
 
 def sidebar_loader() -> None:
+    """Read the files chosen in the window and show their lines in the sidebar."""
     sidebar = st.sidebar
     files_line = sidebar.container()
 
@@ -775,8 +856,10 @@ def _ask_for_the_baseline() -> None:
 
 
 def _project_labels(snapshot: Snapshot) -> dict[str, str]:
-    """The projects of ``snapshot``'s file that own activities, by proj_id, in file order: code, data
-    date, activities and, for a baseline copy, the project it is the baseline of."""
+    """Return the projects of ``snapshot``'s file that own activities, by proj_id, in file order.
+
+    Code, data date, activities and, for a baseline copy, the project it is the baseline of.
+    """
     table = snapshot.file_projects
     codes = dict(zip(table["proj_id"], table["proj_short_name"], strict=True))
     copies = baseline_copies(table)
@@ -808,7 +891,7 @@ EV_BASIS_LABEL = {
 
 
 def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str):
-    """The Baseline (or marker) the window's choice stands for; None when nothing usable."""
+    """Return the Baseline (or marker) the window's choice stands for; None when nothing usable."""
     if choice in (BL_PLANNED, BL_EACH):
         return choice  # resolved per snapshot
     if choice == BL_NONE:
@@ -835,8 +918,10 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
 
 
 def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
-    """The P6 XML exports next to the updates read from a folder, by name; none when the updates
-    were uploaded. A P6 XML export holds a project's baselines, which its XER does not."""
+    """Return the P6 XML exports next to the updates read from a folder, by name; none when the updates were uploaded.
+
+    A P6 XML export holds a project's baselines, which its XER does not.
+    """
     session = st.session_state if session is None else session
     source: tuple = session.get("files_source") or ("none",)
     root = Path(source[1]).expanduser() if source[0] == "folder" else None
@@ -844,8 +929,10 @@ def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
 
 
 def _picked_folder_baseline(session: MutableMapping | None = None) -> Path | None:
-    """The folder's P6 XML export picked in the window as the separate baseline file; None when none
-    is picked. Only a name of the folder's own list is taken: the name never builds a path elsewhere."""
+    """Return the folder's P6 XML export picked in the window as the separate baseline file; None when none is picked.
+
+    Only a name of the folder's own list is taken: the name never builds a path elsewhere.
+    """
     session = st.session_state if session is None else session
     name = session.get("bl_folder_file") or ""
     if name not in _folder_baseline_names(session):
@@ -854,22 +941,28 @@ def _picked_folder_baseline(session: MutableMapping | None = None) -> Path | Non
 
 
 def _is_baseline_file_offered(env_path: str) -> bool:
-    """Whether a separate baseline file can be had: uploaded, picked in the folder, or named by
-    XERSCOPE_BASELINE (a locked server takes no upload)."""
+    """Return whether a separate baseline file can be had.
+
+    Uploaded, picked in the folder, or named by XERSCOPE_BASELINE (a locked server takes no upload).
+    """
     return not _data_locked() or Path(env_path).is_file() or bool(_folder_baseline_names())
 
 
 def _disk_baseline_file(path: Path) -> tuple[str, bytes | DiskFile]:
-    """A baseline file of the disk as (name, contents). A P6 XML export is handed out to be read where
-    asked, never whole: it runs to gigabytes, and a rerun reads none of it once its baselines are
-    built. An XER, a few megabytes, is read as it always was."""
+    """Return a baseline file of the disk as (name, contents).
+
+    A P6 XML export is handed out to be read where asked, never whole: it runs to gigabytes, and a rerun
+    reads none of it once its baselines are built. An XER, a few megabytes, is read as it always was.
+    """
     export = DiskFile(path)
     return path.name, export if is_pmxml(export) else path.read_bytes()
 
 
 def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes | DiskFile] | None:
-    """The separate baseline file: the one picked in the folder, else the one uploaded in the
-    window, else XERSCOPE_BASELINE's."""
+    """Return the separate baseline file.
+
+    The one picked in the folder, else the one uploaded in the window, else XERSCOPE_BASELINE's.
+    """
     picked = _picked_folder_baseline()
     if picked is not None:
         return _disk_baseline_file(picked)
@@ -881,8 +974,10 @@ def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes | Dis
 
 
 def _xml_baseline_id(source: tuple[str, bytes | DiskFile], pointer: str | None) -> str | None:
-    """For a P6 XML baseline file: ``pointer`` (an update's sum_base_proj_id) when the file holds that
-    baseline, else None (the file's Project Baseline is read). None for an XER file."""
+    """Return ``pointer`` (an update's sum_base_proj_id) when the P6 XML baseline file holds that baseline, else None.
+
+    The file's Project Baseline is read. None for an XER file.
+    """
     name, data = source
     if not pointer or not is_pmxml(data):
         return None
@@ -890,9 +985,11 @@ def _xml_baseline_id(source: tuple[str, bytes | DiskFile], pointer: str | None) 
 
 
 def _pmxml_index(name: str, data: bytes | DiskFile) -> PmxmlIndex:
-    """The index of a P6 XML file, made once per content: the sidebar asks which baselines the file
-    holds on every rerun, and each baseline read from it starts from the index. Keyed on the bytes it
-    was made from, since its positions are theirs alone."""
+    """Return the index of a P6 XML file, made once per content.
+
+    The sidebar asks which baselines the file holds on every rerun, and each baseline read from it starts
+    from the index. Keyed on the bytes it was made from, since its positions are theirs alone.
+    """
     cache = st.session_state.setdefault("_pmxml_index", {})
     key = (name, _digest(data))
     if key not in cache:
@@ -914,15 +1011,17 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
 
 
 def _fallback_options(store: SnapshotStore) -> list[str]:
-    """What an update whose file has no usable baseline can be measured against. A separate file on a
-    locked server only when its folder holds a P6 XML export or XERSCOPE_BASELINE names a file (nothing
-    can be uploaded there)."""
+    """Return what an update whose file has no usable baseline can be measured against.
+
+    A separate file on a locked server only when its folder holds a P6 XML export or XERSCOPE_BASELINE
+    names a file (nothing can be uploaded there).
+    """
     file_choice = _is_baseline_file_offered(os.environ.get("XERSCOPE_BASELINE", ""))
     return ([BL_FILE] if file_choice else []) + store.labels + [BL_PLANNED, BL_NONE]
 
 
 def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
-    """What an update whose file has no usable baseline is measured against: chosen, never imposed."""
+    """Show what an update whose file has no usable baseline is measured against: chosen, never imposed."""
     choice = st.session_state["bl_fallback"]
     st.session_state["fallback_choice"] = choice
     # the separate file: uploaded, else named by XERSCOPE_BASELINE (a locked server has only that one)
@@ -942,8 +1041,11 @@ IN_ITS_FILE, FROM_THE_EXPORT, A_PROBABLE_BASELINE, THE_FALLBACK = (
 
 
 def _source_kind(snapshot: Snapshot) -> str:
-    """Where the baseline of an update comes from in the per-file mode: its file, the export under the
-    id it names, a probable baseline (``_resolved_baseline``), the fallback, nothing."""
+    """Return where the baseline of an update comes from in the per-file mode.
+
+    Its file, the export under the id it names, a probable baseline (``_resolved_baseline``), the
+    fallback, nothing.
+    """
     if snapshot.file_baseline.usable:
         return IN_ITS_FILE
     found = _resolution(snapshot)
@@ -955,8 +1057,11 @@ def _source_kind(snapshot: Snapshot) -> str:
 
 
 def _which_updates(snapshots: list[Snapshot]) -> str:
-    """The updates a sidebar line is about, short: the file of a single one, else a count and the dates
-    (a list of long file names made the lines unreadable on a long series)."""
+    """Return the updates a sidebar line is about, short.
+
+    The file of a single one, else a count and the dates (a list of long file names made the lines
+    unreadable on a long series).
+    """
     if len(snapshots) == 1:
         return ui.md_text(snapshots[0].source)
     count = counted(len(snapshots), "update")
@@ -967,14 +1072,14 @@ def _which_updates(snapshots: list[Snapshot]) -> str:
 
 
 def _dates_or_file(snapshots: list[Snapshot]) -> str:
-    """The file of a single update, else the first and last data dates of the updates."""
+    """Return the file of a single update, else the first and last data dates of the updates."""
     if len(snapshots) == 1:
         return ui.md_text(snapshots[0].source)
     return _date_span(snapshots)
 
 
 def _date_span(snapshots: list[Snapshot]) -> str:
-    """``first → last`` data date of the updates; empty when none has a data date."""
+    """Return the ``first → last`` data date of the updates; empty when none has a data date."""
     dates = sorted(snapshot.data_date for snapshot in snapshots if snapshot.data_date is not None)
     if not dates:
         return ""
@@ -982,13 +1087,16 @@ def _date_span(snapshots: list[Snapshot]) -> str:
 
 
 def _files_name(snapshots: list[Snapshot]) -> str:
-    """The subject and verb of a sentence on one update ("its file names") or several."""
+    """Return the subject and verb of a sentence on one update ("its file names") or several."""
     return "its file names" if len(snapshots) == 1 else "their files name"
 
 
 def _resolution_warnings(sidebar, store: SnapshotStore, instead: str) -> list[Snapshot]:
-    """The per-file mode: the export that cannot be read, the updates measured against a probable baseline,
-    those left undecided (``instead``: what applies to them). Returns the updates no baseline was found for."""
+    """Show, in the per-file mode, the export that cannot be read.
+
+    The updates measured against a probable baseline, those left undecided (``instead``: what applies to
+    them). Returns the updates no baseline was found for.
+    """
     export_error = _export_in_use()[1]
     if export_error:
         sidebar.error(f"Baselines export not read: {ui.md_text(export_error)}")
@@ -1013,9 +1121,11 @@ def _resolution_warnings(sidebar, store: SnapshotStore, instead: str) -> list[Sn
 
 
 def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
-    """The per-file mode: what the export gave (``_resolution_warnings``), the updates with no baseline
-    (and what applies instead), each reason a pointer is not used with the updates it concerns, a series
-    that mixes sources."""
+    """Show, in the per-file mode, what the export gave (``_resolution_warnings``).
+
+    The updates with no baseline (and what applies instead), each reason a pointer is not used with the
+    updates it concerns, a series that mixes sources.
+    """
     choice = st.session_state.get("fallback_choice", BL_NONE)
     instead = "their baseline checks are n/a" if choice == BL_NONE else f"fallback: {choice}"
     unusable = _resolution_warnings(sidebar, store, instead)
@@ -1044,19 +1154,24 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
 
 
 def _updates_without_the_baseline_they_name(store: SnapshotStore) -> list[Snapshot]:
-    """The updates ``_absent_baseline_help`` looks at: all of them, less, in the per-file mode, those
-    measured against the baseline they name, read from the export."""
+    """Return the updates ``_absent_baseline_help`` looks at.
+
+    All of them, less, in the per-file mode, those measured against the baseline they name, read from the
+    export.
+    """
     if st.session_state.get("baseline") != BL_EACH:
         return list(store)
     return [snapshot for snapshot in store if _source_kind(snapshot) != FROM_THE_EXPORT]
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
-    """Updates whose P6 Project Baseline (sum_base_proj_id) names a project their file does not hold,
-    the updates whose earned value uses it (use_project_baseline_flag not N): the baseline named by
-    its code when any loaded file holds that project, why it is needed, and what to load. Counts and
-    dates only, no file name (a long series of long names made the line unreadable). No P6 steps:
-    restoring or converting a baseline changes the project. Which file names which: Debug, block 5."""
+    """Show the updates whose P6 Project Baseline (sum_base_proj_id) names a project their file does not hold.
+
+    The updates whose earned value uses it (use_project_baseline_flag not N): the baseline named by its
+    code when any loaded file holds that project, why it is needed, and what to load. Counts and dates
+    only, no file name (a long series of long names made the line unreadable). No P6 steps: restoring or
+    converting a baseline changes the project. Which file names which: Debug, block 5.
+    """
     absent = absent_project_baselines(_updates_without_the_baseline_they_name(store))
     if not absent:
         return
@@ -1085,9 +1200,11 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
 
 
 def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline) -> None:
-    """A separate baseline file or a loaded update in force, for every update or as the fallback of
-    those without a usable baseline in their file, whose project is not the Project Baseline those
-    updates name."""
+    """Show the warning on a separate baseline file or a loaded update in force.
+
+    For every update or as the fallback of those without a usable baseline in their file, whose project is
+    not the Project Baseline those updates name.
+    """
     if choice not in (BL_EACH, BL_PLANNED, BL_NONE):  # the separate file or a loaded update
         separate, updates, kind = baseline, list(store), choice
     elif choice == BL_EACH and st.session_state.get("fallback_choice") not in (None, BL_PLANNED, BL_NONE):
@@ -1126,8 +1243,10 @@ MATCH_WARN_BELOW = 0.9  # share of the update's activities the baseline must fin
 
 
 def counted(number: int, word: str, plural: str | None = None) -> str:
-    """``3 files`` or ``1 file``: the number and its word, in the plural unless the number is 1.
-    ``plural`` gives the irregular plural of a word (``copy``, ``copies``)."""
+    """Return ``3 files`` or ``1 file``: the number and its word, in the plural unless the number is 1.
+
+    ``plural`` gives the irregular plural of a word (``copy``, ``copies``).
+    """
     if number == 1:
         return f"{number} {word}"
     if plural is None:
@@ -1136,7 +1255,7 @@ def counted(number: int, word: str, plural: str | None = None) -> str:
 
 
 def _files_count(store: SnapshotStore) -> str:
-    """``N files · K projects``: K is the projects read, in the alert colour when the series mixes several."""
+    """Return ``N files · K projects``: K is the projects read, in the alert colour when the series mixes several."""
     count = len({snapshot.project_code for snapshot in store})
     projects = counted(count, "project")
     if count > 1:
@@ -1145,8 +1264,11 @@ def _files_count(store: SnapshotStore) -> str:
 
 
 def _baseline_kind(baseline: Baseline | None) -> str:
-    """Where ``baseline`` (``baseline_for`` an update) comes from: its file's P6 Project Baseline, the
-    fallback (``_fallback_baseline`` names it so), planned dates, a loaded update, a separate file, none."""
+    """Return where ``baseline`` (``baseline_for`` an update) comes from.
+
+    Its file's P6 Project Baseline, the fallback (``_fallback_baseline`` names it so), planned dates, a
+    loaded update, a separate file, none.
+    """
     if baseline is None:
         return "none"
     if st.session_state.get("baseline") == BL_EACH:
@@ -1159,9 +1281,12 @@ def _baseline_kind(baseline: Baseline | None) -> str:
 
 
 def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
-    """One line under a page title: what the page is computed from (projects read, data date of the update
-    shown, the baseline ``baseline_for`` gives it, EV basis, costs, files), the baseline's source in full in
-    the help. Pressing it opens the Files and baseline window."""
+    """Show one line under a page title.
+
+    What the page is computed from (projects read, data date of the update shown, the baseline
+    ``baseline_for`` gives it, EV basis, costs, files), the baseline's source in full in the help.
+    Pressing it opens the Files and baseline window.
+    """
     codes = list(dict.fromkeys(update.project_code for update in store))
     projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
     baseline = baseline_for(snapshot)
@@ -1195,7 +1320,7 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
 
 
 def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = None, lead: str = "") -> None:
-    """Page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
+    """Show the page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
     st.title(title)
     context_banner(store, snapshot or store.latest)
     if lead:
@@ -1203,8 +1328,10 @@ def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = No
 
 
 def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
-    """Under a page header: what is wrong with the baseline an update is measured against.
-    ``series``: the page measures every update against this baseline (the PV / EV / SPI curves)."""
+    """Show, under a page header, what is wrong with the baseline an update is measured against.
+
+    ``series``: the page measures every update against this baseline (the PV / EV / SPI curves).
+    """
     name = ui.md_text(snapshot.source)
     if baseline is None:
         if st.session_state.get("baseline") == BL_EACH:
@@ -1238,8 +1365,11 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
 
 
 def _baseline_options(store: SnapshotStore, env_path: str) -> tuple[list[str], str]:
-    """The choices of "Baseline (BL)" and the default one. A separate file is offered when it can be
-    had: uploaded, picked in the folder, or named by XERSCOPE_BASELINE on a locked server."""
+    """Return the choices of "Baseline (BL)" and the default one.
+
+    A separate file is offered when it can be had: uploaded, picked in the folder, or named by
+    XERSCOPE_BASELINE on a locked server.
+    """
     # an update's own baseline: in its file, or in a P6 XML baseline file holding the one its file names
     source = _baseline_file_source(env_path)
     in_files = any(
@@ -1258,8 +1388,10 @@ def _baseline_options(store: SnapshotStore, env_path: str) -> tuple[list[str], s
 
 
 def _is_named_in_export(source: tuple[str, bytes | DiskFile] | None, pointer: str) -> bool:
-    """Whether the separate baseline file is a P6 XML export that holds the baseline ``pointer`` names; an
-    export that cannot be read holds none (the sidebar says so where it is used)."""
+    """Return whether the separate baseline file is a P6 XML export that holds the baseline ``pointer`` names.
+
+    An export that cannot be read holds none (the sidebar says so where it is used).
+    """
     try:
         return source is not None and _xml_baseline_id(source, pointer) is not None
     except XerError:
@@ -1267,7 +1399,7 @@ def _is_named_in_export(source: tuple[str, bytes | DiskFile] | None, pointer: st
 
 
 def _baseline_short(choice: str) -> str:
-    """The sidebar line's name for the baseline in use."""
+    """Return the sidebar line's name for the baseline in use."""
     if choice == BL_FILE:
         picked = _picked_folder_baseline()
         if picked is not None:
@@ -1281,7 +1413,7 @@ def _baseline_short(choice: str) -> str:
 
 
 def _baseline_picker(store: SnapshotStore) -> None:
-    """The window's baseline choice, applied: the sidebar line names it, the warnings follow it."""
+    """Apply the window's baseline choice: the sidebar line names it, the warnings follow it."""
     sidebar = st.sidebar
     line = sidebar.container()
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
@@ -1322,7 +1454,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
 
 
 def _baseline_line(line, choice: str) -> None:
-    """The sidebar's Baseline line: the choice in force; it opens the window on its Baseline section."""
+    """Show the sidebar's Baseline line: the choice in force; it opens the window on its Baseline section."""
     line.button(
         f"Baseline · {_baseline_short(choice)}",
         key="baseline_button",
@@ -1336,9 +1468,11 @@ def _baseline_line(line, choice: str) -> None:
 
 
 def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
-    """Tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``):
-    a warning while they count as deleted and new, a caption once the option links them, nothing
-    when there are none."""
+    """Show the tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``).
+
+    A warning while they count as deleted and new, a caption once the option links them, nothing when
+    there are none.
+    """
     if st.session_state.get("guid_link"):
         blank = memo(("baselines_without_guid",), _baselines_without_guid, store, ev_basis=False)
         if blank:
@@ -1366,8 +1500,10 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
 
 
 def _baselines_without_guid(store: SnapshotStore) -> list[str]:
-    """Labels of the baselines in use (other than an update itself) none of whose tasks has a
-    TASK.guid: the GUID link finds nothing against them (a P6 XML baseline: xer/pmxml.py)."""
+    """Return the labels of the baselines in use (other than an update itself) none of whose tasks has a TASK.guid.
+
+    The GUID link finds nothing against them (a P6 XML baseline: xer/pmxml.py).
+    """
     labels = set()
     for snapshot in store:
         baseline = baseline_for(snapshot, link=False)
@@ -1380,8 +1516,10 @@ def _baselines_without_guid(store: SnapshotStore) -> list[str]:
 
 
 def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
-    """Renumbered tasks per update (file -> count), once per data set and baseline: the sidebar
-    draws the notice on every rerun of every page, and the GUID match reads every update."""
+    """Return the renumbered tasks per update (file -> count), once per data set and baseline.
+
+    The sidebar draws the notice on every rerun of every page, and the GUID match reads every update.
+    """
     found = {}
     for snapshot in store:
         baseline = baseline_for(snapshot, link=False)
@@ -1394,8 +1532,11 @@ def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
 
 
 def _baseline_fields(store: SnapshotStore) -> None:
-    """The window's Baseline section: the selectors the sidebar held, same choices, on drafts
-    (DRAFTS) that Done applies. A draft the store no longer offers starts again from the value in force."""
+    """Show the window's Baseline section.
+
+    The selectors the sidebar held, same choices, on drafts (DRAFTS) that Done applies. A draft the store
+    no longer offers starts again from the value in force.
+    """
     options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""))
     folder_files = ["", *_folder_baseline_names()]  # "": none picked
     offered = {
@@ -1467,7 +1608,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
 
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
-    """The fallback chosen in the window, as it applies to ``snapshot`` (a file with no usable baseline)."""
+    """Return the fallback chosen in the window, as it applies to ``snapshot`` (a file with no usable baseline)."""
     fallback, choice = st.session_state.get("fallback"), st.session_state.get("fallback_choice", BL_NONE)
     if fallback == BL_PLANNED:
         built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
@@ -1479,8 +1620,10 @@ def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
 
 
 def _resolution(snapshot: Snapshot) -> Resolution | None:
-    """What ``analysis.baseline_resolution`` finds for an update of the series read; None outside it. Found
-    once for the series, its projects and the export in use."""
+    """Return what ``analysis.baseline_resolution`` finds for an update of the series read; None outside it.
+
+    Found once for the series, its projects and the export in use.
+    """
     store = st.session_state.get("store")
     if store is None:
         return None
@@ -1496,8 +1639,11 @@ def _resolution(snapshot: Snapshot) -> Resolution | None:
 
 
 def _export_baseline(export: tuple[str, bytes | DiskFile, PmxmlIndex], object_id: str) -> Baseline:
-    """One baseline of the export in use, by ObjectId, on the EV basis of the window: built once per file
-    content, baseline and basis (``baseline_for`` asks for it on every page and rerun)."""
+    """Return one baseline of the export in use, by ObjectId, on the EV basis of the window.
+
+    Built once per file content, baseline and basis (``baseline_for`` asks for it on every page and
+    rerun).
+    """
     name, data, _ = export
     basis = st.session_state.get("ev_basis", DEFAULT_EV_BASIS)
     cache = st.session_state.setdefault("_xml_baselines", {})
@@ -1510,9 +1656,11 @@ def _export_baseline(export: tuple[str, bytes | DiskFile, PmxmlIndex], object_id
 
 
 def _loaded_update_baseline(snapshot: Snapshot, project_id: str) -> Baseline:
-    """The last update read from ``project_id``, the project ``snapshot`` names as its baseline, as a
-    probable baseline: the same P6 object, in the state it was exported in, not the one it was made a
-    baseline in."""
+    """Return the last update read from ``project_id``, the project ``snapshot`` names as its baseline.
+
+    As a probable baseline: the same P6 object, in the state it was exported in, not the one it was made a
+    baseline in.
+    """
     update = [other for other in st.session_state["store"] if other.project_id == project_id][-1]
     built = Baseline.from_snapshot(update, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
     return replace(
@@ -1523,12 +1671,13 @@ def _loaded_update_baseline(snapshot: Snapshot, project_id: str) -> Baseline:
 
 
 def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
-    """The baseline found for an update whose file holds none (``analysis.baseline_resolution``).
+    """Return the baseline found for an update whose file holds none (``analysis.baseline_resolution``).
 
     The one the export holds under the id the update names is what P6 measured against. The two others
     are not, and their ``source`` opens with ``PROBABLE`` so that every page, warning and download says
     it: the loaded update whose project the update names as its baseline, and the baseline the versions
-    of the export hold before and after the update's project."""
+    of the export hold before and after the update's project.
+    """
     found = _resolution(snapshot)
     if found is None:
         return None
@@ -1550,9 +1699,11 @@ def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
-    """The Baseline built from the project ``snapshot``'s file names as its P6 Project Baseline, or
-    None when the file names none that can be used (``Snapshot.file_baseline``). Kept for the files
-    and EV basis loaded."""
+    """Return the Baseline built from the project ``snapshot``'s file names as its P6 Project Baseline.
+
+    None when the file names none that can be used (``Snapshot.file_baseline``). Kept for the files and EV
+    basis loaded.
+    """
     pointer = snapshot.file_baseline
     data = dict(st.session_state.get("items") or []).get(snapshot.source)
     if not pointer.usable or data is None:
@@ -1573,8 +1724,11 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
 
 
 def baseline_for(snapshot: Snapshot, link: bool | None = None) -> Baseline | None:
-    """The sidebar's baseline, as it applies to ``snapshot``. ``link`` (default: the window's option
-    "Link renumbered tasks by GUID"): with the tasks ``snapshot`` renumbered under their new IDs."""
+    """Return the sidebar's baseline, as it applies to ``snapshot``.
+
+    ``link`` (default: the window's option "Link renumbered tasks by GUID"): with the tasks ``snapshot``
+    renumbered under their new IDs.
+    """
     choice = st.session_state.get("baseline")
     if choice == BL_EACH:
         baseline = _file_baseline(snapshot) or _resolved_baseline(snapshot) or _fallback_baseline(snapshot)
@@ -1587,7 +1741,7 @@ def baseline_for(snapshot: Snapshot, link: bool | None = None) -> Baseline | Non
 
 
 def standards() -> dict[str, Standard]:
-    """Built-in standards, files in XERSCOPE_STANDARDS and any uploaded this session."""
+    """Return the built-in standards, files in XERSCOPE_STANDARDS and any uploaded this session."""
     extra_folder = os.environ.get("XERSCOPE_STANDARDS", "")
     found, errors = discover_standards(*([extra_folder] if extra_folder else []))
     found.update(st.session_state.get("uploaded_standards", {}))
@@ -1596,8 +1750,10 @@ def standards() -> dict[str, Standard]:
 
 
 def _page_title() -> str:
-    """The title of the page being drawn (st.navigation's), "" when Streamlit's registry does not
-    give it: an internal API, so a change of Streamlit only drops the title of the empty state."""
+    """Return the title of the page being drawn (st.navigation's), "" when Streamlit's registry does not give it.
+
+    An internal API, so a change of Streamlit only drops the title of the empty state.
+    """
     try:
         from streamlit.runtime.scriptrunner import get_script_run_ctx
 
@@ -1608,8 +1764,10 @@ def _page_title() -> str:
 
 
 def require_store() -> SnapshotStore:
-    """The series read, or the empty state: the page's title, so the viewer knows where they are,
-    and what to do, then the page stops."""
+    """Return the series read, or show the empty state.
+
+    The page's title, so the viewer knows where they are, and what to do, then the page stops.
+    """
     store = st.session_state.get("store")
     job: LoadJob | None = st.session_state.get("_load_job")
     if store is None and job is not None:
@@ -1650,8 +1808,11 @@ def _follow_snapshot(key: str) -> None:
 
 
 def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "snap") -> Snapshot:
-    """The update a page works on. One choice for the whole session (``SNAP_CHOICE``): picked on
-    Schedule health, the Gantt opens on the same update; the latest update until one is picked."""
+    """Return the update a page works on.
+
+    One choice for the whole session (``SNAP_CHOICE``): picked on Schedule health, the Gantt opens on the
+    same update; the latest update until one is picked.
+    """
     labels = store.labels
     wanted = st.session_state.get(SNAP_CHOICE)
     st.session_state[key] = wanted if wanted in labels else labels[-1]
@@ -1660,15 +1821,21 @@ def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "s
 
 
 def go_to(page: str, **state) -> None:
-    """Open another page with ``state`` written to the session first: the page's widgets read
-    it (``views/gantt.py``, ``gantt_task=...``). Pages are named by their path under app/."""
+    """Open another page with ``state`` written to the session first.
+
+    The page's widgets read it (``views/gantt.py``, ``gantt_task=...``). Pages are named by their path
+    under app/.
+    """
     st.session_state.update(state)
     st.switch_page(f"views/{page}.py")
 
 
 def open_in_gantt(task_code: str, snapshot: Snapshot | None = None) -> None:
-    """The Gantt on ``task_code`` (its card and history under the chart), on ``snapshot``'s update
-    when given, the whole project in view and no filter. Passed to ``ui.table(open_task=...)``."""
+    """Open the Gantt on ``task_code`` (its card and history under the chart).
+
+    On ``snapshot``'s update when given, the whole project in view and no filter. Passed to
+    ``ui.table(open_task=...)``.
+    """
     state = {"gantt_task": task_code, "gantt_node": ROOT, "gantt_focus": None}
     if snapshot is not None:
         state[SNAP_CHOICE] = snapshot.label
@@ -1682,7 +1849,7 @@ COMPARE_FIRST = "First snapshot"
 
 
 def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") -> tuple[pd.DataFrame | None, str]:
-    """Activities (task_code, start, finish, …) to outline the current bars against."""
+    """Return the activities (task_code, start, finish, …) to outline the current bars against."""
     options = [COMPARE_PREV, COMPARE_BL, COMPARE_FIRST, COMPARE_NONE] + [
         label for label in store.labels if label != current.label
     ]
@@ -1705,9 +1872,12 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
 
 
 def _baseline_identity(ev_basis: bool = True) -> tuple:
-    """What the sidebar's baseline is: the choice, the EV basis (None when ``ev_basis`` is False)
-    with the GUID link option (always: ``baseline_for`` relinks the baseline whatever the analysis
-    reads), and, for an uploaded file, its bytes."""
+    """Return what the sidebar's baseline is.
+
+    The choice, the EV basis (None when ``ev_basis`` is False) with the GUID link option (always:
+    ``baseline_for`` relinks the baseline whatever the analysis reads), and, for an uploaded file, its
+    bytes.
+    """
     baseline = st.session_state.get("baseline")
     basis = (st.session_state.get("ev_basis") if ev_basis else None, st.session_state.get("guid_link", False))
     if isinstance(baseline, Baseline):
@@ -1724,10 +1894,12 @@ def _baseline_identity(ev_basis: bool = True) -> tuple:
 
 
 def data_identity(baseline: bool = True, ev_basis: bool = True) -> tuple:
-    """What a result computed now was computed from: the files (``signature``: names and content
-    digests), the project read from each and, unless
-    ``baseline`` is False, the baseline in use with (unless ``ev_basis`` is False) the EV basis.
-    The memo's key and the tag of a built download start with it."""
+    """Return what a result computed now was computed from.
+
+    The files (``signature``: names and content digests), the project read from each and, unless
+    ``baseline`` is False, the baseline in use with (unless ``ev_basis`` is False) the EV basis. The
+    memo's key and the tag of a built download start with it.
+    """
     # the project pickers re-read the same files for another project: same signature, other data
     store = st.session_state.get("store")
     projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
@@ -1739,7 +1911,9 @@ MEMO_SIZE = 128  # entries per session; a standard holds at most 18 metrics, eac
 
 
 def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = True, ev_basis: bool = True):
-    """Per-session cache keyed on the loaded files and the baseline: heavy analyses run once per data set.
+    """Return the value cached per session, keyed on the loaded files and the baseline.
+
+    Heavy analyses run once per data set.
 
     The full key: ``data_identity`` (files, projects, and the baseline and EV basis unless the
     analysis reads neither: ``baseline`` / ``ev_basis`` False), then ``key``, which names the
@@ -1763,10 +1937,12 @@ def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = T
 
 
 def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep: bool = True) -> CheckResult:
-    """``metric`` on ``snapshot`` against the sidebar's baseline for it, once per session: Health,
-    Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
-    written (rule, parameters, target, standard: its repr) and the update (file, data date). Not
-    the EV basis: no rule reads what it sets (the ev_* columns, the assignment costs)."""
+    """Return ``metric`` on ``snapshot`` against the sidebar's baseline for it, once per session.
+
+    Health, Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
+    written (rule, parameters, target, standard: its repr) and the update (file, data date). Not the EV
+    basis: no rule reads what it sets (the ev_* columns, the assignment costs).
+    """
     return memo(
         _metric_key(metric, snapshot),
         run_metric,
@@ -1778,31 +1954,35 @@ def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep
 
 
 def snapshot_identity(snapshot: Snapshot) -> tuple[str, str]:
-    """The file and the data date that tell one update from another, as the memo keys and the tags of
-    built downloads hold them."""
+    """Return the file and the data date that tell one update from another.
+
+    As the memo keys and the tags of built downloads hold them.
+    """
     return snapshot.source, str(snapshot.data_date)
 
 
 def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
-    """The memo key of one metric on one update: the metric's definition, the file and its data date."""
+    """Return the memo key of one metric on one update: the metric's definition, the file and its data date."""
     return ("metric", repr(metric), *snapshot_identity(snapshot))
 
 
 def standard_results(standard: Standard, snapshot: Snapshot, store: SnapshotStore) -> list[CheckResult]:
-    """Every check of ``standard`` on ``snapshot``, each through :func:`metric_result`."""
+    """Return every check of ``standard`` on ``snapshot``, each through :func:`metric_result`."""
     return [metric_result(metric, snapshot, store) for metric in standard.metrics]
 
 
 def hold_standard_results(standard: Standard, snapshot: Snapshot, results: list[CheckResult]) -> None:
-    """Results computed outside the script run (ScoreJob) stored where ``metric_result`` reads."""
+    """Store the results computed outside the script run (ScoreJob) where ``metric_result`` reads."""
     for metric, result in zip(standard.metrics, results, strict=True):
         memo(_metric_key(metric, snapshot), lambda result=result: result, ev_basis=False)
 
 
 @dataclass
 class ScoreJob:
-    """The standards' checks on one update, computed in a thread for the Overview's score cards:
-    ``results`` fills per standard id as each finishes."""
+    """Hold the standards' checks on one update, computed in a thread for the Overview's score cards.
+
+    ``results`` fills per standard id as each finishes.
+    """
 
     identity: tuple
     snapshot: Snapshot
@@ -1816,6 +1996,7 @@ class ScoreJob:
     thread: threading.Thread | None = None
 
     def run(self) -> None:
+        """Compute each standard in turn into ``results``, then set ``done``."""
         context = AnalysisContext(self.snapshot, self.store, self.baseline)
         for key, standard in self.standards.items():
             results: list[CheckResult] | str
@@ -1830,9 +2011,11 @@ class ScoreJob:
 
 
 def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, Standard]) -> ScoreJob:
-    """The job computing ``standards_`` on ``snapshot`` for the current data set, started on the
-    first call; a new data set or baseline starts another. The results already in are written to
-    the memo, so Schedule health reads them."""
+    """Return the job computing ``standards_`` on ``snapshot`` for the current data set, started on the first call.
+
+    A new data set or baseline starts another. The results already in are written to the memo, so Schedule
+    health reads them.
+    """
     identity = (*data_identity(ev_basis=False), snapshot.source, str(snapshot.data_date), tuple(standards_))
     job: ScoreJob | None = st.session_state.get("_score_job")
     if job is None or job.identity != identity:
@@ -1850,8 +2033,10 @@ def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, St
 
 
 def standard_results_held(standard: Standard, snapshot: Snapshot) -> list[CheckResult] | None:
-    """The results :func:`standard_results` would return, if every one is already cached, else None.
-    Computes nothing."""
+    """Return the results :func:`standard_results` would return, if every one is already cached, else None.
+
+    Computes nothing.
+    """
     results = [
         memo(_metric_key(metric, snapshot), lambda: None, keep=False, ev_basis=False) for metric in standard.metrics
     ]
@@ -1863,27 +2048,29 @@ PREPARE_LABEL = "Prepare anonymized downloads"
 
 
 def anonymous_exports(session: MutableMapping | None = None) -> bool:
-    """The sidebar switch: downloads anonymized (default) or in the files' own names."""
+    """Return the sidebar switch: downloads anonymized (default) or in the files' own names."""
     session = st.session_state if session is None else session
     return session.get("anon_exports", True)
 
 
 def costs_shown(session: MutableMapping | None = None) -> bool:
-    """The sidebar checkbox: cost figures on Earned value (default off, the schedules are sourced in hours)."""
+    """Return the sidebar checkbox: cost figures on Earned value (default off, the schedules are sourced in hours)."""
     session = st.session_state if session is None else session
     return bool(session.get("costs", False))
 
 
 def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) -> list[str]:
-    """The files a download is made from: the updates shown and the baseline's file."""
+    """Return the files a download is made from: the updates shown and the baseline's file."""
     found = [snapshot.source for snapshot in snapshots if snapshot is not None]
     return found + ([baseline.snapshot.source] if baseline is not None else [])
 
 
 def baseline_items(session: MutableMapping) -> list[tuple[str, bytes | DiskFile]]:
-    """The separate baseline file as (name, contents), when one is in use (picked in the folder, uploaded
-    or XERSCOPE_BASELINE): the baseline or the fallback of the window, or, in the per-file mode, the P6
-    XML export the updates are looked for in (an XER is no such export)."""
+    """Return the separate baseline file as (name, contents), when one is in use.
+
+    Picked in the folder, uploaded or XERSCOPE_BASELINE: the baseline or the fallback of the window, or,
+    in the per-file mode, the P6 XML export the updates are looked for in (an XER is no such export).
+    """
     is_the_baseline = session.get("bl_choice") == BL_FILE or session.get("bl_fallback") == BL_FILE
     if not is_the_baseline and session.get("bl_choice") != BL_EACH:
         return []
@@ -1900,17 +2087,20 @@ def baseline_items(session: MutableMapping) -> list[tuple[str, bytes | DiskFile]
 
 
 def baseline_export() -> tuple[str, bytes | DiskFile, PmxmlIndex] | None:
-    """The separate baseline file in use when it is a P6 XML export that can be read: its name, its
-    contents and the session's index of it. None for an XER, for no file, and for an export that cannot
-    be read (the sidebar says so)."""
+    """Return the separate baseline file in use when it is a P6 XML export that can be read.
+
+    Its name, its contents and the session's index of it. None for an XER, for no file, and for an export
+    that cannot be read (the sidebar says so).
+    """
     return _export_in_use()[0]
 
 
 def export_contents() -> Export | None:
-    """What the resolution reads of the export in use (``xml_baselines.export_of``); None without one.
-    Kept for the session with the content digests found so far, and read through the session's own
-    reader: the pages and the Debug page compare and apply the baselines of the export from one read of
-    each."""
+    """Return what the resolution reads of the export in use (``xml_baselines.export_of``); None without one.
+
+    Kept for the session with the content digests found so far, and read through the session's own reader:
+    the pages and the Debug page compare and apply the baselines of the export from one read of each.
+    """
     export = baseline_export()
     if export is None:
         return None
@@ -1924,7 +2114,7 @@ def export_contents() -> Export | None:
 
 
 def _export_in_use() -> tuple[tuple[str, bytes | DiskFile, PmxmlIndex] | None, str]:
-    """``baseline_export`` and, when the export in use cannot be read, why (blank otherwise)."""
+    """Return ``baseline_export`` and, when the export in use cannot be read, why (blank otherwise)."""
     for name, data in baseline_items(st.session_state):
         if is_pmxml(data):
             try:
@@ -1935,13 +2125,15 @@ def _export_in_use() -> tuple[tuple[str, bytes | DiskFile, PmxmlIndex] | None, s
 
 
 def baseline_files_tag(session: MutableMapping) -> tuple[tuple[str, str], ...]:
-    """(name, digest) of each ``baseline_items`` file: with the signature, which files an anonymizer
-    or an extract was built from."""
+    """Return the (name, digest) of each ``baseline_items`` file.
+
+    With the signature, which files an anonymizer or an extract was built from.
+    """
     return tuple((name, _digest(data)) for name, data in baseline_items(session))
 
 
 def source_raws(name: str, data: bytes | DiskFile) -> list[RawXer]:
-    """The XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
+    """Return the XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
     if is_pmxml(data):
         index = index_pmxml(data, name)  # one pass through the file for all its baselines
         return [read_pmxml_baseline(data, name, baseline.object_id, index) for baseline in index.baselines]
@@ -1949,7 +2141,7 @@ def source_raws(name: str, data: bytes | DiskFile) -> list[RawXer]:
 
 
 def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[str], Anonymizer]:
-    """The anonymizers of the session, by the set of file names each one read."""
+    """Return the anonymizers of the session, by the set of file names each one read."""
     session = st.session_state if session is None else session
     built_anonymizers = session.get("_anonymizers")
     return (
@@ -1960,18 +2152,19 @@ def anonymizers_built(session: MutableMapping | None = None) -> dict[frozenset[s
 
 
 def _anonymizers_key(session: MutableMapping) -> tuple:
-    """The files the session's anonymizers read: a baseline file replaced under the same name is new text."""
+    """Return the files the session's anonymizers read: a baseline file replaced under the same name is new text."""
     return (session.get("signature"), baseline_files_tag(session))
 
 
 def anonymizer(
     prepare: bool = False, sources: Iterable[str] | None = None, session: MutableMapping | None = None
 ) -> Anonymizer | None:
-    """New codes for ``sources`` (file names; None = every loaded file), kept in the session only.
+    """Return new codes for ``sources`` (file names; None = every loaded file), kept in the session only.
 
     Built on request, from those files only: it reads them again. The codes come from one key per
     session (HMAC), so an anonymizer of one update and one of the whole series name an activity
-    the same way. One built from more files also serves a download of fewer."""
+    the same way. One built from more files also serves a download of fewer.
+    """
     session = st.session_state if session is None else session
     files_key = _anonymizers_key(session)
     # the updates and the separate baseline file: a name found only in the baseline is a secret too
@@ -1999,14 +2192,14 @@ def anonymizer(
 
 
 def downloads_ready(sources: Iterable[str] | None = None, session: MutableMapping | None = None) -> bool:
-    """Whether a download of ``sources`` can be offered now: the switch is off, or its anonymizer is built."""
+    """Return whether a download of ``sources`` can be offered now: the switch is off, or its anonymizer is built."""
     session = st.session_state if session is None else session
     return not anonymous_exports(session) or anonymizer(sources=sources, session=session) is not None
 
 
 @dataclass(frozen=True)
 class Fetched:
-    """The bytes of a download, or why it was refused (a leak of original values)."""
+    """Hold the bytes of a download, or why it was refused (a leak of original values)."""
 
     data: bytes | None
     refused: str
@@ -2022,10 +2215,11 @@ def fetch(
     prepare: bool = False,
     anonymous: bool | None = None,
 ) -> Fetched | None:
-    """The bytes of one download under the sidebar switch (``anonymous`` overrides it).
+    """Return the bytes of one download under the sidebar switch (``anonymous`` overrides it).
 
     Switch off: ``plain()``. On: ``anonymised(anonymizer)`` only, never ``plain``; None while the
-    anonymizer for ``sources`` is not built and ``prepare`` is false. A ``LeakError`` is a refusal."""
+    anonymizer for ``sources`` is not built and ``prepare`` is false. A ``LeakError`` is a refusal.
+    """
     if anonymous is None:
         anonymous = anonymous_exports(session)
     if not anonymous:
@@ -2045,7 +2239,7 @@ def hold(session: MutableMapping, slot: str, tag: object, fetched: Fetched) -> N
 
 
 def held(session: MutableMapping, slot: str, tag: object) -> Fetched | None:
-    """The download kept by ``hold`` if it is for the loaded files and this ``tag``."""
+    """Return the download kept by ``hold`` if it is for the loaded files and this ``tag``."""
     kept = session.get(slot)
     return kept[2] if kept is not None and kept[:2] == (session.get("signature"), tag) else None
 
@@ -2060,7 +2254,7 @@ def show_download(
     key: str | None = None,
     **button,
 ) -> None:
-    """The download button of ``fetched`` (labelled anonymized when it is), or the refusal."""
+    """Show the download button of ``fetched`` (labelled anonymized when it is), or the refusal."""
     if fetched.refused:
         st.error(fetched.refused, icon=":material/block:")
         return
@@ -2088,8 +2282,11 @@ def download(
     anon_file_name: str | None = None,
     **button,
 ) -> None:
-    """A download under the sidebar switch. On, a button prepares the anonymizer of ``sources``
-    (file names; None = every loaded file) and the download shows from then on."""
+    """Show a download under the sidebar switch.
+
+    On, a button prepares the anonymizer of ``sources`` (file names; None = every loaded file) and the
+    download shows from then on.
+    """
     fetched = fetch(st.session_state, plain, anonymised, sources)
     if fetched is None and st.button(
         PREPARE_LABEL,
@@ -2112,9 +2309,11 @@ def csv_download(
     sources: Iterable[str] | None = None,
     sensitive: bool = True,
 ) -> None:
-    """A table as CSV, anonymized or not as the sidebar switch says; ``sources`` are the files the
-    table comes from, the only ones read to anonymise it. ``sensitive=False``: a table with no
-    schedule data, always as is."""
+    """Show a table as a CSV download, anonymized or not as the sidebar switch says.
+
+    ``sources`` are the files the table comes from, the only ones read to anonymise it.
+    ``sensitive=False``: a table with no schedule data, always as is.
+    """
     if not sensitive:
         data = csv_bytes(frame)
         show_download(Fetched(data, "", False), label, filename, "text/csv", key=key)
