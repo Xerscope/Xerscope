@@ -960,19 +960,16 @@ class _Run:
         if pinned and pinned[0] == "start":
             start_bounds, finish_bounds = [max(pinned[1], self.data_date)], []
         start_bounds += constraint_start_bounds
+        constraint_finish_bounds, floors = self.finish_floors_apart(
+            code, started, activity_kind, constraint_finish_bounds
+        )
         finish_bounds += constraint_finish_bounds
         if milestone_expected is not None:
             finish_bounds.append(milestone_expected)
         if pinned and pinned[0] == "finish" and not self.has_expected_finish(code):
             start, finish_time = self.mandatory_finish_dates(code, axis, activity_kind, duration, pinned[1])
         elif code in self.rsrc_dep and activity_kind == "task":
-            start, finish_time = self.rsrc_early(
-                code,
-                start_bounds,
-                finish_bounds,
-                self.extra_hours.get(code, 0.0) * 60,
-                self.resource_expected_finish(code),
-            )
+            start, finish_time = self.resource_early_dates(code, axis, duration, start_bounds, finish_bounds, floors)
         else:
             start, finish_time = _early(axis, activity_kind, duration, start_bounds, finish_bounds)
         if self.has_task_expected_finish(code, activity_kind):
@@ -995,6 +992,39 @@ class _Run:
         predecessors no longer bound it; FF / SF predecessors still bound its finish (H1-11 A1040).
         Mirrored in successor_limits."""
         return not (started and self.options.progressed == "progress_override")
+
+    def resource_early_dates(self, code, axis, duration, start_bounds, finish_bounds, floors):
+        """Early dates of resource-dependent work: placed from its bounds, then moved by its finish
+        floors compared by start (``moved_by_finish_floors``)."""
+        extra_minutes = self.extra_hours.get(code, 0.0) * 60
+        dates = self.rsrc_early(code, start_bounds, finish_bounds, extra_minutes, self.resource_expected_finish(code))
+        return self.moved_by_finish_floors(code, axis, duration, floors, *dates)
+
+    def finish_floors_apart(self, code, started: bool, activity_kind: str, floors: list) -> tuple[list, list]:
+        """The constraints' finish floors as finish bounds, and those that move the work by its start.
+
+        Finish On or After, Finish On and a Mandatory Finish in the second slot move resource-dependent
+        work not started, with no expected finish in force, by its start (``moved_by_finish_floors``);
+        elsewhere they are finish bounds.
+        """
+        by_start = (
+            code in self.rsrc_dep and activity_kind == "task" and not started and not self.has_expected_finish(code)
+        )
+        return ([], floors) if by_start else (floors, [])
+
+    def moved_by_finish_floors(self, code, axis, duration, floors: list, start, finish_time):
+        """Early dates of resource-dependent work under finish floors, compared by start.
+
+        Each floor's date, at the activity calendar's last close at or before it, less the activity's
+        remaining duration, gives a start; where that is later than the work's start, the work is
+        placed again from it: its own calendars can finish it after the date and still start it
+        earlier (probes ZZ-CPP-QD1, -RD1; corpus H28-09 A1220). P6 23.12.1, 26.8 not measured.
+        """
+        for floor in floors:
+            floor_start = axis.add(axis.snap_finish(floor), -duration, finish=False) if duration > 0 else floor
+            if floor_start > start:
+                start, finish_time = self.rsrc_early(code, [floor_start], [], self.extra_hours.get(code, 0.0) * 60)
+        return start, finish_time
 
     def early_bounds(self, code, started: bool) -> tuple[list, list]:
         """Earliest dates the start and the finish may take ("not before" bounds), constraints apart: the
