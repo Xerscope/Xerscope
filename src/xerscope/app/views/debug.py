@@ -7,7 +7,15 @@ import streamlit as st
 
 from xerscope.analysis import query
 from xerscope.analysis.cpm import ScheduleError
-from xerscope.analysis.evm import earned_schedule, schedule_gap_by_status, update_and_baseline_of_code
+from xerscope.analysis.evm import (
+    baseline_changes,
+    earned_schedule,
+    schedule_gap_by_status,
+    update_and_baseline_of_code,
+    weekly_gains,
+    window_weeks,
+)
+from xerscope.analysis.forensics import engine_gap_wd
 from xerscope.app import diagnostic, ui, xml_baselines
 from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.state import (
@@ -134,6 +142,21 @@ with st.expander(
         st.caption("INT-03: every stored assignment date is reproduced.")
     else:
         table(int03, max_height=480, key="debug_03_int03_assignments")
+    gap_wd = engine_gap_wd(snapshot)
+    st.caption(
+        "Delay analysis reads the recalculated finish. Recalculated finish against the latest finish stored "
+        f"in the file: {'not known' if pd.isna(gap_wd) else f'{gap_wd:+.1f} wd'} (0 = reproduced, negative = "
+        "recalculated later). Below, the unfinished tasks where the recalculated early dates first differ from "
+        "the stored ones (none of their predecessors differs: what differs downstream follows from them): "
+        "the steps that lead to them and what each removed, the tasks, then the same tasks counted by form, "
+        "with no Task ID and no date."
+    )
+    table(frames["03a_departure_steps"], key="debug_03a_departure_steps")
+    if frames["03b_departures"].empty:
+        st.caption("Every stored early date is reproduced.")
+    else:
+        table(frames["03b_departures"], max_height=480, key="debug_03b_departures")
+        table(frames["03c_departure_forms"], key="debug_03c_departure_forms")
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
     st.caption("Targets, x and dialog options of standards/p6.toml, on the tab of the P6 dialog each check sits on.")
@@ -289,6 +312,28 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         )
         gaps = memo(("schedule_gap_by_status", *part_key), schedule_gap_by_status, part, part_baseline)
         table(gaps, key="debug_09_schedule_gap_by_status")
+        st.caption(
+            "The weeks of the four weeks' window of the Earned value page, one by one: hours earned and "
+            "planned, plan days gained and elapsed, each week read on the baseline of the update that opens "
+            "it. baseline_changed: the update that closes the week names another plan than the one it is "
+            "read on. The window's SPI and pace are the ratios of these columns summed. Empty without an "
+            "update dated at least 28 days before this one."
+        )
+        gains = memo(("evm_weekly", code_filter), weekly_gains, store, partial(baseline_for, link=False),
+                     st.session_state.get("guid_link", False), code_filter)  # fmt: skip
+        table(window_weeks(gains, snapshot.data_date, schedule.hours_per_day), key="debug_09_window_weeks")
+        st.caption(
+            "Every update whose baseline is not the previous update's, read on both plans: its time gap in "
+            "calendar days on the plan it leaves (gap_old_d) and on the one it takes (gap_new_d), the lag the "
+            "change takes out of the cumulative figures (absorbed_d = new - old), the BAC each plan holds, the "
+            "tasks the new plan adds or drops, and where each plan comes from. An absorbed lag with the same "
+            "BAC: a copy of the project under way, its started tasks' planned dates frozen (P6, Planned Dates). "
+            "A BAC that grows: scope added. Empty when every update keeps its predecessor's plan."
+        )
+        link = st.session_state.get("guid_link", False)
+        unlinked = partial(baseline_for, link=False)
+        changes = memo(("evm_baseline_changes", code_filter), baseline_changes, store, unlinked, link, code_filter)
+        table(changes, key="debug_09_baseline_changes")
     st.caption(
         "Labor assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "
         "task's), and task dependent assignments on another calendar than their task's."

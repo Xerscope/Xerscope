@@ -7,12 +7,14 @@ corpus). That is P6 output on progressed, constrained, multi-calendar and (from 
 resource-dependent work, which no public export covers. P6's import re-sizes
 resource-dependent work: the corpus records what P6 held after import
 (p6-imported/*.json) and ``p6_heldout_score`` lays it over the case before scheduling,
-as the corpus' own scorer does.
+as the corpus' own scorer does. So it does with the float type P6 held: saving the Schedule
+Options dialog in P6 stores FT_SS for an imported FT_Start, and P6's floats follow the stored code.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -45,12 +47,29 @@ SCORE_COLUMNS = [
 ]
 
 
+FLOAT_TYPE_DIFFERENCE = re.compile(r"^SCHEDOPTIONS sched_float_type: xer '[^']*' p6 '([^']*)'$")
+
+
+def float_type_p6_held(record: dict) -> str | None:
+    """Return the float type P6 held before its F9, None when the record of a case does not tell.
+
+    It is the record's own ``sched_float_type`` (from H30), else the difference it names (H28, H29).
+    """
+    if record.get("sched_float_type"):
+        return record["sched_float_type"]
+    named = (FLOAT_TYPE_DIFFERENCE.match(line) for line in record.get("differences", []))
+    return next((found.group(1) for found in named if found), None)
+
+
 def _apply_p6_import(raw, path: Path) -> list[str]:
-    """Apply P6's post-import sizing (p6-imported/<case>.json) to the raw tables. Returns
-    the task codes P6 re-sized (their dates are compared on P6's input, not the file's)."""
+    """Apply what P6 held after its import (p6-imported/<case>.json) to the raw tables: the float
+    type where the record tells it, and the sizing of resource-dependent work. Returns the task
+    codes P6 re-sized (their dates are compared on P6's input, not the file's)."""
     if not path.exists():
         return []
-    resource_dependent = json.loads(path.read_text(encoding="utf-8")).get("resource_dependent", {})
+    record = json.loads(path.read_text(encoding="utf-8"))
+    _write_float_type(raw, float_type_p6_held(record))
+    resource_dependent = record.get("resource_dependent", {})
     tasks = raw.tables.get("TASK")
     resized: list[str] = []
     for task_code, columns in resource_dependent.get("tasks", {}).items():
@@ -72,6 +91,13 @@ def _apply_p6_import(raw, path: Path) -> list[str]:
             _write_as_xer_text(assignments, is_this_assignment, columns)
             resized.append(assignment["task_code"])
     return sorted(set(resized))
+
+
+def _write_float_type(raw, float_type: str | None) -> None:
+    """Write the float type P6 held into the schedule options of the case; nothing when none is told."""
+    options = raw.tables.get("SCHEDOPTIONS")
+    if options is not None and float_type:
+        options["sched_float_type"] = float_type
 
 
 def _write_as_xer_text(table: pd.DataFrame, rows: pd.Series, columns: dict[str, Any]) -> None:

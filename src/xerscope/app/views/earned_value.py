@@ -9,6 +9,7 @@ from xerscope.analysis.evm import (
     EarnedSchedule,
     bei_series,
     change_since_previous,
+    copied_lag,
     earned,
     earned_schedule,
     etc_settings,
@@ -149,8 +150,29 @@ def window_text(window: pd.Series | None) -> str:
     return text + "."
 
 
-def show_earned_schedule(schedule: EarnedSchedule, window: pd.Series | None, since_first: pd.Series) -> None:
-    """Where the update stands on its plan in time, how the last four weeks went, when the plan ends."""
+def copied_lag_text(lagging: int, behind_hr: float) -> str | None:
+    """Why the plan reached and the forecasts may carry a lag the baseline made.
+
+    Tasks already started and past their planned finish when the baseline was copied; None without any.
+    """
+    if lagging == 0:
+        return None
+    return (
+        f"{lagging} task{'s' if lagging > 1 else ''} in progress {'were' if lagging > 1 else 'was'} already past "
+        f"the baseline finish when the baseline was copied, {behind_hr:,.0f} h behind. P6 stops moving the planned "
+        "dates of a task once it has started: a baseline copied from a project under way keeps that lag, and the "
+        "plan reached, the time gap, the TSPI and the forecast finishes carry it from the copy on. The week after "
+        "such a copy reads a catch-up as pace."
+    )
+
+
+def show_earned_schedule(
+    schedule: EarnedSchedule, window: pd.Series | None, since_first: pd.Series, lag: tuple[int, float]
+) -> None:
+    """Where the update stands on its plan in time, how the last four weeks went, when the plan ends.
+
+    ``lag``: ``copied_lag`` of the update, warned about under the figures.
+    """
     ui.section(
         "Earned Schedule",
         "The schedule read in time: the date at which the baseline planned the hours earned now, then the "
@@ -223,6 +245,9 @@ def show_earned_schedule(schedule: EarnedSchedule, window: pd.Series | None, sin
         f"{window_text(window)} Pace, plan time gained / time elapsed: {ratio_text(pace_4w)} over the last 4 weeks, "
         f"{ratio_text(pace_all)} since the first update loaded."
     )
+    lag_text = copied_lag_text(*lag)
+    if lag_text is not None:
+        st.warning(lag_text, icon=":material/warning:")
 
 
 def show_costs_ignored(snapshot) -> None:
@@ -535,6 +560,9 @@ show_kpis(row, previous, costs)
 if not costs:
     show_costs_ignored(snapshot)
 show_calculation(row, baseline, snapshot, point, costs)
-show_earned_schedule(schedule, moving_window(gains, snapshot.data_date), gains_since_first(gains, snapshot.data_date))
+lag = memo(cache_key + ("copied_lag", *update_key), copied_lag, part, part_baseline)
+show_earned_schedule(
+    schedule, moving_window(gains, snapshot.data_date), gains_since_first(gains, snapshot.data_date), lag
+)
 show_charts(series, curve, part, part_baseline, costs, code_filter)
 show_activity_detail(snapshot, baseline, point, earned_values)

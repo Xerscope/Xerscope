@@ -50,6 +50,7 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from .changelog import changelog
 from .cpm import Schedule, ScheduleError, schedule
+from .populations import has_successor_in_project, without
 
 PROGRESS_COLUMNS = [
     "status_code",
@@ -93,15 +94,20 @@ class _Derivation:
 def _with_columns_of_new(tasks: pd.DataFrame, derivation: _Derivation, codes, columns: list[str]) -> pd.DataFrame:
     """``tasks`` with ``columns`` of the activities ``codes`` read from the later update.
 
-    A column the later update's file does not carry is left as it is.
+    A column the later update's file does not carry is left as it is. The column takes the type
+    that holds both updates' values: a file whose hours are all whole reads them as integers, and
+    the next may hold 19.2.
     """
     out = tasks.copy()
     rows = out["task_code"].isin(codes)
+    if not rows.any():
+        return out
     for column in columns:
         if column not in derivation.new.by_code.columns:
             continue
         values = derivation.new.by_code[column].reindex(out.loc[rows, "task_code"])
-        out.loc[rows, column] = values.to_numpy()
+        carried = pd.Series(values.to_numpy(), index=out.index[rows])
+        out[column] = pd.concat([out.loc[~rows, column], carried]).reindex(out.index)
     return out
 
 
@@ -358,9 +364,8 @@ def finish_case(snapshot: Snapshot, recomputed: Schedule | None = None) -> tuple
     must_finish_by = snapshot.options.get("must_finish_by")
     if must_finish_by is not None:
         return MUST_FINISH_BY, must_finish_by
-    activities = snapshot.activities
-    has_successor = set(snapshot.relationships["pred_code"])
-    at_the_end = ~activities["task_code"].isin(has_successor) & ~activities["is_loe"].astype(bool)
+    activities = without(snapshot.activities, snapshot.data_date, ["loe"])
+    at_the_end = ~has_successor_in_project(snapshot, activities)
     mandatory = activities[at_the_end & (activities["cstr_type"] == "CS_MANDFIN")]
     if not mandatory.empty:
         return MANDATORY_FINISH, mandatory["cstr_date"].max()
@@ -395,9 +400,9 @@ SERIES_COLUMNS = [
     "period_wd",
     "engine_gap_wd",
     "longest_path_float_d",
-    "matched",
-    "added",
-    "deleted",
+    "tasks_matched",
+    "tasks_added",
+    "tasks_deleted",
     "note",
 ]
 
@@ -438,8 +443,8 @@ def _series_row(old: Snapshot, new: Snapshot) -> dict:
         "period_wd": read.period_wd,
         "engine_gap_wd": read.new_engine_gap_wd,
         "longest_path_float_d": longest_path_float_d(new),
-        "matched": read.matched,
-        "added": read.added,
-        "deleted": read.deleted,
+        "tasks_matched": read.matched,
+        "tasks_added": read.added,
+        "tasks_deleted": read.deleted,
         "note": "",
     }
