@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import secrets
 from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass
@@ -185,6 +186,70 @@ def download(
     if fetched is not None:
         name = anon_file_name if fetched.anonymised and anon_file_name else file_name
         show_download(fetched, label, name, mime, key=key, **button)
+
+
+def build_and_hold(
+    slot: str,
+    tag: object,
+    plain: Callable[[], bytes] | None,
+    anonymised: Callable[[Anonymizer], bytes],
+    sources: Iterable[str] | None,
+    *,
+    spinner: str | None = None,
+    anonymous: bool | None = None,
+) -> None:
+    """Build a download, reading ``sources`` for the anonymizer if need be, and keep it in ``slot`` for ``tag``.
+
+    ``spinner`` is the text shown while it is built; ``anonymous`` overrides the sidebar switch.
+    """
+    waiting = st.spinner(spinner) if spinner else contextlib.nullcontext()
+    with waiting:
+        fetched = fetch(st.session_state, plain, anonymised, sources, prepare=True, anonymous=anonymous)
+    hold(st.session_state, slot, tag, fetched)
+
+
+def show_held(
+    slot: str, tag: object, label: str, file_name: str, mime: str, *, key: str, suffix: bool = True
+) -> Fetched | None:
+    """Show the download kept in ``slot`` for ``tag``, if any, and return it."""
+    kept = held(st.session_state, slot, tag)
+    if kept is not None:
+        show_download(kept, label, file_name, mime, suffix=suffix, key=key)
+    return kept
+
+
+def built_download(
+    slot: str,
+    tag: object,
+    build_label: str,
+    label: str,
+    file_name: str,
+    mime: str,
+    plain: Callable[[], bytes] | None,
+    anonymised: Callable[[Anonymizer], bytes],
+    sources: Iterable[str] | None,
+    *,
+    key: str,
+    build_key: str,
+    icon: str,
+    spinner: str | None = None,
+    anonymous: bool | None = None,
+    suffix: bool = True,
+) -> Fetched | None:
+    """Show a button that builds a download on request, then the download built for ``tag``.
+
+    The built download is kept in ``slot`` until the loaded files or ``tag`` change. Returns it, or
+    None while nothing is built.
+    """
+    if st.button(build_label, icon=icon, key=build_key):
+        build_and_hold(slot, tag, plain, anonymised, sources, spinner=spinner, anonymous=anonymous)
+    return show_held(slot, tag, label, file_name, mime, key=key, suffix=suffix)
+
+
+def download_text(label: str, text: str, name: str, mime: str) -> None:
+    """Show a download button for a text that holds no schedule data, as it is."""
+    data = text.encode("utf-8")
+    show_download(Fetched(data, "", False), label, name, mime)
 
 
 def csv_download(

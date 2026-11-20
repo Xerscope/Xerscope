@@ -14,17 +14,14 @@ from xerscope.app.state import (
     anonymous_exports,
     baseline_export,
     baseline_for,
+    built_download,
     data_identity,
     data_locked,
     export_contents,
-    fetch,
-    held,
-    hold,
     lexicon_and_errors,
     memo,
     page_header,
     require_store,
-    show_download,
     snapshot_identity,
     snapshot_picker,
     sources_of,
@@ -402,28 +399,20 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
     table(calendar_frames["13_calendar_week"], key="debug_13_calendar_week")
     table(calendar_frames["13_calendar_exceptions"], max_height=480, key="debug_13_calendar_exceptions")
 
-    if st.button("Build calendar detail", icon=":material/calendar_month:", key="debug_calendars_build"):
-        hold(
-            st.session_state,
-            "debug_calendars_zip",
-            zip_tag(anonymous_exports()),
-            fetch(
-                st.session_state,
-                lambda: zip_frames(calendar_frames, "csv"),
-                lambda anonymizer: anonymizer.zip_frames(diagnostic.calendar_detail_frames(snapshot, anonymous=True)),
-                sources_of(snapshot),
-                prepare=True,
-            ),
-        )
-    calendar_zip = held(st.session_state, "debug_calendars_zip", zip_tag(anonymous_exports()))
-    if calendar_zip is not None:
-        show_download(
-            calendar_zip,
-            "Download calendar detail (.zip)",
-            f"xerscope_calendars_{ui.stamp(snapshot.data_date)}.zip",
-            "application/zip",
-            key="debug_calendars_download",
-        )
+    built_download(
+        "debug_calendars_zip",
+        zip_tag(anonymous_exports()),
+        "Build calendar detail",
+        "Download calendar detail (.zip)",
+        f"xerscope_calendars_{ui.stamp(snapshot.data_date)}.zip",
+        "application/zip",
+        lambda: zip_frames(calendar_frames, "csv"),
+        lambda anonymizer: anonymizer.zip_frames(diagnostic.calendar_detail_frames(snapshot, anonymous=True)),
+        sources_of(snapshot),
+        key="debug_calendars_download",
+        build_key="debug_calendars_build",
+        icon=":material/calendar_month:",
+    )
 
 # not on a deployed instance: the block names the server's folders, the package path and versions
 if not data_locked():
@@ -434,32 +423,6 @@ if not data_locked():
             "runs; after an update, reload the page with the cache bypassed (Ctrl+Shift+R) if it still looks old."
         )
         table(ui.runtime_table(), key="debug_12_runtime")
-
-
-def build_diagnostic(anonymous: bool) -> None:
-    sources = sources_of(snapshot, baseline=baseline)
-    fetched = fetch(
-        st.session_state,
-        lambda: zip_frames({**frames, "05_guid_match": guid_match, **p6_frames}, "csv"),
-        lambda anonymizer: anonymizer.zip_frames(
-            {
-                **diagnostic.diagnostic_frames(
-                    snapshot,
-                    baseline,
-                    p6_standard,
-                    anonymous=True,
-                    updates=[snapshot.source for snapshot in store],
-                    guid_link=st.session_state.get("guid_link", False),
-                ),
-                "05_guid_match": guid_match,
-                **p6_frames,
-            },
-            diagnostic.own_text(),
-        ),
-        sources,
-        prepare=True,
-    )
-    hold(st.session_state, "debug_zip", zip_tag(anonymous, repr(p6_standard), p6_key), fetched)
 
 
 def _where(error: str) -> str:
@@ -490,10 +453,31 @@ ui.section(
     "anonymous exports on, Task IDs, resource codes, WBS codes and project ids are renamed as in the anonymized XER "
     "extract; the tables hold no name or project name. Dates are left as they are.",
 )
-if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
-    build_diagnostic(anonymous)
-diagnostic_zip = held(st.session_state, "debug_zip", zip_tag(anonymous, repr(p6_standard), p6_key))
-if diagnostic_zip is not None:
-    show_download(
-        diagnostic_zip, "Download diagnostic (.zip)", "xerscope_diagnostic.zip", "application/zip", key="debug_download"
-    )
+built_download(
+    "debug_zip",
+    zip_tag(anonymous, repr(p6_standard), p6_key),
+    "Build diagnostic",
+    "Download diagnostic (.zip)",
+    "xerscope_diagnostic.zip",
+    "application/zip",
+    lambda: zip_frames({**frames, "05_guid_match": guid_match, **p6_frames}, "csv"),
+    lambda anonymizer: anonymizer.zip_frames(
+        {
+            **diagnostic.diagnostic_frames(
+                snapshot,
+                baseline,
+                p6_standard,
+                anonymous=True,
+                updates=[snapshot.source for snapshot in store],
+                guid_link=st.session_state.get("guid_link", False),
+            ),
+            "05_guid_match": guid_match,
+            **p6_frames,
+        },
+        diagnostic.own_text(),
+    ),
+    sources_of(snapshot, baseline=baseline),
+    key="debug_download",
+    build_key="debug_build",
+    icon=":material/folder_zip:",
+)

@@ -37,13 +37,17 @@ from xerscope.app.baselines import standard_results as standard_results
 from xerscope.app.baselines import standard_results_held as standard_results_held
 from xerscope.app.downloads import anonymizer as anonymizer
 from xerscope.app.downloads import anonymizers_built as anonymizers_built
+from xerscope.app.downloads import build_and_hold as build_and_hold
+from xerscope.app.downloads import built_download as built_download
 from xerscope.app.downloads import csv_download as csv_download
 from xerscope.app.downloads import download as download
+from xerscope.app.downloads import download_text as download_text
 from xerscope.app.downloads import downloads_ready as downloads_ready
 from xerscope.app.downloads import fetch as fetch
 from xerscope.app.downloads import held as held
 from xerscope.app.downloads import hold as hold
 from xerscope.app.downloads import show_download as show_download
+from xerscope.app.downloads import show_held as show_held
 from xerscope.app.downloads import source_raws as source_raws
 from xerscope.app.files_window import most_recent_first as most_recent_first
 from xerscope.app.loading import LoadJob

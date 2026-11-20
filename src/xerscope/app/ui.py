@@ -514,6 +514,22 @@ def _column_for(label: str, kind: str, values: pd.Series):
     return st.column_config.TextColumn(label, help=help_)
 
 
+def number_columns(kind: str, *names: str, **labels: str) -> dict:
+    """Return the ``overrides`` of ``table`` that write columns in the ``kind`` format of NUMBER_FORMATS.
+
+    A column of ``names`` is labelled with its field name; ``labels`` gives column=label for the others.
+    """
+    labelled = {**{name: name for name in names}, **labels}
+    return {
+        column: st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind]) for column, label in labelled.items()
+    }
+
+
+def count_columns(*names: str, **labels: str) -> dict:
+    """Return the ``overrides`` of ``table`` that write whole-number columns as counts (see ``number_columns``)."""
+    return number_columns("int", *names, **labels)
+
+
 def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels: bool = False) -> dict:
     """Label and format of each column. ``raw_labels`` keeps the field names as written (the XER
     field, the analysis column), for tables read beside P6; formats are unchanged."""

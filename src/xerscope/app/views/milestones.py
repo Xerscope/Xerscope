@@ -90,8 +90,7 @@ ui.table(
     overrides={
         "first_forecast": st.column_config.DatetimeColumn("First forecast", format="YYYY-MM-DD"),
         "latest_forecast": st.column_config.DatetimeColumn("Latest forecast", format="YYYY-MM-DD"),
-        "slip_wd": st.column_config.NumberColumn("Slip since first (wd)", format="%+.1f"),
-        "last_week_wd": st.column_config.NumberColumn("Last update (wd)", format="%+.1f"),
+        **ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
     },
 )
 with st.expander("Data"):
