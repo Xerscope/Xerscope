@@ -305,9 +305,9 @@ def ppc_series(
                 "starts_kept": starts_kept,
                 "committed": planned,
                 "kept": kept,
-                "ppc_start": _share(starts_kept, len(starts)),
-                "ppc_finish": _share(finishes_kept, len(finishes)),
-                "ppc_week": _share(kept, planned),
+                "ppc_start": percent_kept(starts_kept, len(starts)),
+                "ppc_finish": percent_kept(finishes_kept, len(finishes)),
+                "ppc_week": percent_kept(kept, planned),
                 "note": _notes(store[index - 1], store[index]),
             }
         )
@@ -341,7 +341,7 @@ def kept_count(commitments: pd.DataFrame) -> int:
     return int(commitments["kept"].sum())
 
 
-def _share(kept: int, committed: int) -> float | None:
+def percent_kept(kept: int, committed: int) -> float | None:
     """Percent kept, None when nothing was committed."""
     return 100 * kept / committed if committed else None
 

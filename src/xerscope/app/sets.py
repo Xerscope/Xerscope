@@ -51,12 +51,15 @@ def show_set(frame: pd.DataFrame, title: str, filename: str, key: str, sources: 
     csv_download(frame, filename, "Download CSV", key=f"dl_{key}", sources=sources)
 
 
-def show_steps(funnel) -> None:
-    """A funnel's steps as a table, each step with the text it follows (the Gantt Ask field)."""
+def show_steps(funnel, key: str = "ask_funnel") -> None:
+    """A funnel's steps as a table, each step with the text it follows.
+
+    Used by the Gantt Ask field and by the longest path of Delay analysis; ``key`` keeps two tables apart.
+    """
     ui.table(
         pd.DataFrame(step_rows(funnel)),
         raw_labels=True,
-        key="ask_funnel",
+        key=key,
         overrides=STEP_COUNT_COLUMNS,
     )
     st.caption(source_caption(funnel))

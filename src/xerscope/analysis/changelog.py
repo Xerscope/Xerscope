@@ -18,6 +18,7 @@ import pandas as pd
 
 from ..store import SnapshotStore
 from ..xer import Snapshot
+from ..xer.model import SCHEDULE_OPTIONS
 from .populations import joined_sorted
 
 CATEGORIES = [
@@ -33,20 +34,6 @@ CATEGORIES = [
     "Resources",
     "Calendars",
     "Options",
-]
-# Scheduling options compared between two updates: key in ``Snapshot.options``, label shown.
-# The nested keys read the raw SCHEDOPTIONS row (``options["sched"]``), as analysis.cpm.Options does.
-SCHEDULING_OPTIONS = [
-    (("progressed",), "progressed activities"),
-    (("lag_calendar",), "lag calendar"),
-    (("sched", "sched_float_type"), "total float type"),
-    (("sched", "sched_open_critical_flag"), "open ends critical"),
-    (("sched", "sched_lag_early_start_flag"), "SS lag from early start"),
-    (("sched", "sched_use_expect_end_flag"), "use expected finish"),
-    (("sched", "sched_outer_depend_type"), "external relationships"),
-    (("critical_path_type",), "critical path definition"),
-    (("critical_float_hr",), "critical float (h)"),
-    (("must_finish_by",), "must finish by"),
 ]
 COLS = ["category", "change", "task_code", "task_name", "wbs_code", "field", "before", "after", "delta", "unit"]
 
@@ -416,13 +403,15 @@ def _option_value(options: dict, keys: tuple[str, ...]):
 
 
 def _option_changes(old: Snapshot, new: Snapshot) -> list:
-    """One row per scheduling option of ``SCHEDULING_OPTIONS`` that differs: the same file scheduled
-    under another option gives other dates, so a half-step reading must know of it."""
+    """One row per scheduling option of ``SCHEDULE_OPTIONS`` that differs: the same file scheduled
+    under another option gives other dates, so a half-step reading must know of it. The option and
+    its values carry their P6 names (``xer.model.ScheduleOption``)."""
     changes = []
-    for keys, label in SCHEDULING_OPTIONS:
-        before, after = _option_value(old.options, keys), _option_value(new.options, keys)
+    for option in SCHEDULE_OPTIONS:
+        before, after = _option_value(old.options, option.keys), _option_value(new.options, option.keys)
         if before != after:
-            changes.append(_change("Options", "scheduling option changed", "", label, before, after))
+            named = option.value_name(before), option.value_name(after)
+            changes.append(_change("Options", "scheduling option changed", "", option.name, *named))
     return changes
 
 

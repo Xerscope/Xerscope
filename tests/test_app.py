@@ -2583,7 +2583,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 41 and len(table_keys) == 41 and len(set(table_keys)) == 41
+    assert len(tables) == 46 and len(table_keys) == 46 and len(set(table_keys)) == 46
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)
@@ -2947,6 +2947,97 @@ def test_the_audit_settings_are_read_as_text_not_as_dates(app):
     drawn_as = json.loads(sheet.proto.columns)
     kinds = {name: drawn_as[name]["type_config"]["type"] for name in sheet.value.columns}
     assert kinds == {"setting": "text", "now": "text", "default": "text", "accepts": "text"}
+
+
+@pytest.fixture
+def float_audit(sample_dir, tmp_path, monkeypatch):
+    """The Audit page on CUS-06 of the template standard: rule "float", op ">", 30 days, target <= 10%."""
+    from xerscope.analysis.standards import template_text
+
+    (tmp_path / "mine.toml").write_text(template_text(), encoding="utf-8")
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_STANDARDS", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
+    at.switch_page("views/audit.py").run()
+    at.get("button_group")[0].set_value("CUSTOM").run()
+    at.selectbox(key="audit_check:CUSTOM").set_value("CUS-06").run()
+    _ok(at)
+    return at
+
+
+FLOAT = "audit:CUSTOM:CUS-06"
+
+
+def _settings_in_words(at) -> list[str]:
+    """The sentences under the settings form (the only st.info of the Audit page once a check is picked)."""
+    (said,) = at.info
+    return said.value.split("  \n")
+
+
+def _toml(at) -> str:
+    return next(c.value for c in at.code if c.value.startswith("[[metric]]"))
+
+
+@pytest.mark.oracle("property")
+def test_the_audit_form_asks_for_the_parameters_then_for_the_target_and_says_both(float_audit):
+    """Target stood above ``op`` and ``value``: two comparisons in one column, nothing saying that
+    the second flags a task and the first judges the share. Two titled blocks, in that order, and
+    under them the settings in sentences, which follow every change."""
+    at = float_audit
+    blocks = [m.value for m in at.markdown if m.value.startswith("##### ")]
+    assert blocks == ["##### Rule parameters", "##### Target"]
+    assert _settings_in_words(at) == [
+        "Excludes: completed tasks, level of effort.",
+        "Flagged when total float > 30 days.",
+        "Passes when flagged / checked is ≤ 10 %.",
+    ]
+    at.text_input(key=f"{FLOAT}:target").set_value("< 5%").run()
+    at.number_input(key=f"{FLOAT}:value").set_value(40.0).run()
+    _ok(at)
+    assert _settings_in_words(at)[1:] == [
+        "Flagged when total float > 40 days.",
+        "Passes when flagged / checked is < 5 %.",
+    ]
+    assert [n.proto.format for n in at.number_input] == ["%g"]  # 40, not 40.00
+
+
+@pytest.mark.oracle("property")
+def test_the_audit_form_asks_for_the_end_of_a_band_only_under_a_band(float_audit):
+    """``value_max`` was always drawn, at 0.00, and a number typed there under ">" was ignored
+    without a word, then written in the TOML block. It is asked for under "between" alone, its
+    value is kept for the session, and the block holds it only when the check reads it."""
+    at = float_audit
+    assert [n.label for n in at.number_input] == ["value"]
+    at.selectbox(key=f"{FLOAT}:op").set_value("between").run()
+    assert [n.label for n in at.number_input] == ["value", "value_max"]
+    assert "needs value_max (0) >= value (30.0)" in at.error[0].value  # the rule's own refusal, as before
+    at.number_input(key=f"{FLOAT}:value_max").set_value(60.0).run()
+    _ok(at)
+    assert not at.error and "Flagged when total float is from 30 to 60 days (both included)." in _settings_in_words(at)
+    assert 'op = "between", value = 30, value_max = 60, unit = "days"' in _toml(at)
+    at.selectbox(key=f"{FLOAT}:op").set_value("<=").run()
+    _ok(at)
+    assert [n.label for n in at.number_input] == ["value"]
+    assert "value_max" not in _toml(at) and "Flagged when total float ≤ 30 days." in _settings_in_words(at)
+    at.selectbox(key=f"{FLOAT}:op").set_value("between").run()
+    assert at.number_input(key=f"{FLOAT}:value_max").value == 60.0  # the session kept it
+
+
+@pytest.mark.oracle("property")
+def test_reset_puts_every_setting_of_the_audit_back_and_a_rule_without_parameter_has_one_block(float_audit):
+    at = float_audit
+    at.selectbox(key=f"{FLOAT}:op").set_value("<").run()
+    at.text_input(key=f"{FLOAT}:target").set_value("< 5%").run()
+    assert [m.label for m in at.metric if m.label.startswith("Audit")]  # the audited result beside the standard's
+    at.button(key=f"{FLOAT}:reset").click().run()
+    _ok(at)
+    assert at.selectbox(key=f"{FLOAT}:op").value == ">" and at.text_input(key=f"{FLOAT}:target").value == "<= 10%"
+    assert not [m.label for m in at.metric if m.label.startswith("Audit")]
+    at.get("button_group")[0].set_value("DCMA").run()
+    at.selectbox(key="audit_check:DCMA").set_value("DCMA-01").run()  # dcma_01_logic: no parameter
+    _ok(at)
+    assert [m.value for m in at.markdown if m.value.startswith("##### ")] == ["##### Target"]
 
 
 def test_charts_hide_the_plotly_mode_bar(app):

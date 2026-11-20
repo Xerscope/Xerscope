@@ -54,6 +54,7 @@ STEP_SOURCES = {
     ),
     "PAM 200.1": "https://mail.mosaicprojects.com.au/PDF-Gen/DCMA-PAM-200-1.pdf",
     "DECM 8.0": "https://ssitools.com/helpandsuport/DECM/help/ssi_decm_schedule_tests.htm",
+    "AACE 29R-03": "docs/standards.md: AACE RP 29R-03, Forensic Schedule Analysis (rev. April 25, 2011)",
     "xerscope": "docs/standards.md: INTEGRITY and the exclusions your own standard sets (not a published standard)",
     "ask": "analysis/query.py: a filter the Gantt Ask field understood from the sentence, as the page's widgets",
 }

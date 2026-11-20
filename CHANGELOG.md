@@ -31,6 +31,8 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 - Standards: a metric's optional `item` ties it to a criterion of the source; the score counts
   criteria (an item fails when one of its metrics fails, the card names which). P6-10a and
   P6-10b are one item: the P6 score reads 17 criteria for 18 metrics (formulas.md §1.6).
+- Remote deployment: the HTML shell (`/`, `index.html`) is `Cache-Control: no-store` like the
+  downloads; the browser keeps the public JS chunks only.
 - Remote deployment: `XERSCOPE_STANDARDS` points at the exports folder, so a standard of your
   own (.toml) dropped beside the exports is read at each start (`deploy/compose.yaml`,
   docs/deploy.md §5).
@@ -42,6 +44,16 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
   Must Finish By, Mandatory Finish), the longest path's float, the series over every update
   (formulas.md §5.1). The baseline is not read. A week whose recalculated finish is not the one P6
   stored in the file is flagged: its shifts may be the recalculation's.
+- Delay analysis: the longest path of each update against the one before (`analysis/longest_path.py`,
+  AACE RP 29R-03 3.4.E.9 and SVP 2.3.B.6): the tasks that stayed, entered, were finished, or are
+  still open and left the path, per week and over the series (formulas.md §5.2).
+- Debug, block 3: the recalculated finish against the file's, the tasks where the recalculated early
+  dates first differ from the stored ones, and the same tasks counted by form with no Task ID and no
+  date (formulas.md §5.3). The Delay analysis warning points to it.
+- Delay analysis: the week's commitments made on the previous update's longest path, kept or not,
+  and their PPC beside the week's PPC in the series (formulas.md §5.2); where the week's
+  revisions fall, within the lookahead (6 weeks, `Settings.lookahead_weeks`) or beyond it
+  (formulas.md §5.1).
 - Changelog: categories Calendars (working time changed) and Options (scheduling option changed,
   Must Finish By included); "remaining duration cut" on work not started (formulas.md §5).
 - Supply chain (plan bloc F): the published images carry BuildKit's SLSA provenance
@@ -72,6 +84,14 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Fixed
 
+- Changelog: a scheduling option and its values are shown under the names of P6's Schedule Options
+  dialog ("Define critical activities as: Longest Path"), not the codes of the file (`CT_DrivPath`).
+- Delay analysis: a step counts the changes it carries; a rename or a move to another WBS is counted
+  at no step (they were counted at the last one).
+- Debug, block 3: the counts of the steps table are whole numbers.
+- Delay analysis: the page no longer stops on a series where an update holds whole hours only and
+  the next a fraction of an hour (a remaining duration of 19.2 h): the half-step schedule carries
+  the value as it is.
 - Parser and model: the findings of `audit-report.md` (AUDIT-XER, AUDIT-CPM, AUDIT-APP)
   closed by plan blocs A to E are listed here as they land; the crashes the fuzzer still
   finds are recorded in `tests/test_fuzz_parser.py` with their finding.

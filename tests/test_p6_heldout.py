@@ -31,28 +31,28 @@ FLOORS = {
     "H6": 0.998,
     "H7": 1.000,
     "H8": 0.999,
-    "H9": 0.998,
-    "H10": 0.970,
-    "H11": 0.993,
-    "H12": 0.989,
-    "H13": 0.990,
-    "H14": 0.960,
-    "H15": 0.995,
-    "H16": 0.905,
-    "H17": 0.959,
-    "H18": 0.986,
-    "H19": 0.982,
-    "H20": 0.945,
-    "H21": 0.999,
-    "H22": 0.994,
-    "H23": 0.872,
-    "H24": 0.864,
-    "H25": 0.794,
-    "H26": 0.811,
-    "H27": 0.875,
-    "H28": 0.860,
-    "H29": 0.826,
-    "H30": 0.874,
+    "H9": 1.000,
+    "H10": 0.982,
+    "H11": 1.000,
+    "H12": 1.000,
+    "H13": 0.995,
+    "H14": 0.996,
+    "H15": 0.998,
+    "H16": 0.984,
+    "H17": 0.992,
+    "H18": 0.998,
+    "H19": 0.996,
+    "H20": 0.997,
+    "H21": 1.000,
+    "H22": 0.998,
+    "H23": 0.997,
+    "H24": 0.985,
+    "H25": 0.998,
+    "H26": 0.991,
+    "H27": 0.993,
+    "H28": 0.994,
+    "H29": 0.992,
+    "H30": 0.995,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -89,6 +89,16 @@ def _p6_results(set_dir: Path) -> pd.DataFrame:
     return res
 
 
+def _float_type_p6_held(set_dir: Path, case: str) -> str | None:
+    """The float type the corpus recorded P6 as holding for a case, None when it recorded none."""
+    import json
+
+    from xerscope.verify.p6_corpus import float_type_p6_held
+
+    record = set_dir / "p6-imported" / f"{case}.json"
+    return float_type_p6_held(json.loads(record.read_text(encoding="utf-8"))) if record.exists() else None
+
+
 def test_float_type_codes_read_as_p6_does(corpus):
     """Which float P6 reports under each ``sched_float_type`` code, measured on P6's own
     dates (nothing of xerscope's CPM is involved), on the resource-dependent work of
@@ -104,7 +114,8 @@ def test_float_type_codes_read_as_p6_does(corpus):
         set_dir = corpus / f"H{i}"
         for case, g in _p6_results(set_dir).groupby("case"):
             snap = load_snapshot(set_dir / "cases" / f"{case}.xer")
-            code = (snap.options.get("sched") or {}).get("sched_float_type") or "FT_FF"
+            code = _float_type_p6_held(set_dir, case) or (snap.options.get("sched") or {}).get("sched_float_type")
+            code = code or "FT_FF"
             axes = _Axes(snap, *_date_range(snap))
             t = snap.activities.drop_duplicates("task_code").set_index("task_code")
             for r in g.itertuples():
@@ -149,6 +160,61 @@ def test_total_float_agrees_wherever_the_four_dates_do():
 # reading: the value named must be P6's. The ratchet above
 # would absorb a regression on one activity; this names it.
 PINNED = {
+    "resource-dependent work: a finish floor moves it by its start": [
+        ("H29", "H29-04", "A1570", "early_start"),
+        ("H28", "H28-09", "A1220", "early_start"),
+    ],
+    "the project's late finish caps a pinned date": [
+        ("H12", "H12-09", "A1330", "late_start"),
+        ("H28", "H28-12", "A1200", "late_start"),
+        ("H23", "H23-04", "A1240", "late_start"),
+        ("H12", "H12-09", "A1200", "late_start"),
+    ],
+    "resource-dependent work: a start bound the late start already meets binds nothing": [
+        ("H12", "H12-11", "A1160", "late_finish")
+    ],
+    "resource-dependent work: several assignments under a bound run back from one late finish": [
+        ("H9", "H9-08", "A1050", "late_start"),
+        ("H24", "H24-09", "A1260", "late_start"),
+    ],
+    "resource-dependent work: a lagged assignment with no work lands its lag after the bound": [
+        ("H24", "H24-12", "A1180", "late_finish"),
+        ("H25", "H25-02", "A1460", "late_start"),
+    ],
+    "resource-dependent work under a Mandatory Start: pinned on the span its resources give": [
+        ("H29", "H29-05", "A1710", "late_start")
+    ],
+    "As Late As Possible resource-dependent work: slid back, off-hours start moved on": [
+        ("H23", "H23-05", "A1060", "early_start"),
+        ("H28", "H28-12", "A1080", "early_start"),
+    ],
+    "As Late As Possible resource-dependent work: stretched to its start bound": [
+        ("H28", "H28-09", "A1580", "early_start"),
+        ("H27", "H27-04", "A1220", "early_start"),
+        ("H28", "H28-03", "A1450", "early_start"),
+    ],
+    "As Late As Possible resource-dependent work: no slide without working time before the bound": [
+        ("H18", "H18-08", "A1120", "early_start")
+    ],
+    "As Late As Possible work holds no free float": [("H23", "H23-02", "A1220", "free_float_hr")],
+    "resource-dependent work: a finish bound gives the start at the activity calendar's next opening": [
+        ("H14", "H14-11", "A1320", "early_start"),
+        ("H10", "H10-04", "A1040", "early_start"),
+    ],
+    "resource-dependent work: the finish a bound set prints at the bound": [("H16", "H16-12", "A1210", "early_finish")],
+    "resource-dependent work: a bound no later than the start sets nothing": [
+        ("H26", "H26-09", "A1190", "early_finish")
+    ],
+    "resource-dependent work: an assignment with no work but a lag, beside work, bounds the start": [
+        ("H28", "H28-05", "A1470", "early_start")
+    ],
+    "resource-dependent work: the work starts where its resource first works": [
+        ("H24", "H24-03", "A1150", "early_start"),
+        ("H24", "H24-10", "A1160", "early_finish"),
+    ],
+    "resource-dependent work under an expected finish: the second placement is the early start": [
+        ("H23", "H23-12", "A1230", "early_start")
+    ],
     "SF from a started predecessor applies": [("H1", "H1-08", "A1240", "early_start")],
     "expected finish before the early start: remaining 0": [("H1", "H1-02", "A1170", "early_finish")],
     "expected finish with an FF predecessor, later than its bound": [("H4", "H4-10", "A1040", "early_finish")],
@@ -284,6 +350,42 @@ PINNED = {
         ("H18", "H18-09", "A1340", "late_start"),
         ("H25", "H25-01", "A1380", "late_start"),
         ("H9", "H9-04", "A1390", "late_start"),
+    ],
+    "a mandatory date in the second slot pins nothing: early dates from the logic, late dates capped": [
+        ("H28", "H28-07", "A1210", "early_finish"),
+        ("H28", "H28-07", "A1210", "late_finish"),
+        ("H29", "H29-12", "A1110", "early_start"),
+        ("H29", "H29-12", "A1110", "late_finish"),
+        ("H27", "H27-11", "A1060", "early_finish"),
+        ("H27", "H27-11", "A1060", "late_finish"),
+        ("H27", "H27-08", "A1250", "early_start"),
+        ("H27", "H27-08", "A1250", "late_start"),
+        ("H29", "H29-01", "A1300", "early_start"),
+    ],
+    "the second constraint bounds on top of a primary Mandatory Start: later early dates, earlier late dates": [
+        ("H26", "H26-08", "A1280", "early_start"),
+        ("H26", "H26-08", "A1280", "late_finish"),
+        ("H23", "H23-02", "A1230", "early_start"),
+        ("H23", "H23-02", "A1230", "late_start"),
+        ("H24", "H24-05", "A1350", "early_start"),
+        ("H24", "H24-05", "A1350", "late_start"),
+        ("H24", "H24-04", "A1210", "early_start"),
+    ],
+    "work under way: a Mandatory Finish in the second slot caps no late date": [
+        ("H28", "H28-03", "A1410", "late_finish"),
+        ("H28", "H28-04", "A1510", "late_finish"),
+    ],
+    "resource dependent under a Mandatory Finish: the assignments run on from the pinned start": [
+        ("H28", "H28-04", "A1100", "early_start"),
+        ("H28", "H28-04", "A1100", "early_finish"),
+        ("H23", "H23-04", "A1220", "early_finish"),
+        ("H23", "H23-05", "A1240", "early_finish"),
+        ("H28", "H28-04", "A1170", "early_finish"),
+    ],
+    "resource dependent: an assignment without units per hour lasts its own window": [
+        ("H25", "H25-09", "A1480", "early_finish"),
+        ("H25", "H25-03", "A1320", "early_finish"),
+        ("H25", "H25-01", "A1460", "early_finish"),
     ],
     "resource dependent: a late start from an SS bound is written at the bound's instant": [
         ("H26", "H26-04", "A1440", "late_start")

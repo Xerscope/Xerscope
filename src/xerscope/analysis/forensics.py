@@ -50,6 +50,7 @@ from ..store import SnapshotStore
 from ..xer import Snapshot
 from .changelog import changelog
 from .cpm import Schedule, ScheduleError, schedule
+from .populations import has_successor_in_project, without
 
 PROGRESS_COLUMNS = [
     "status_code",
@@ -93,15 +94,20 @@ class _Derivation:
 def _with_columns_of_new(tasks: pd.DataFrame, derivation: _Derivation, codes, columns: list[str]) -> pd.DataFrame:
     """``tasks`` with ``columns`` of the activities ``codes`` read from the later update.
 
-    A column the later update's file does not carry is left as it is.
+    A column the later update's file does not carry is left as it is. The column takes the type
+    that holds both updates' values: a file whose hours are all whole reads them as integers, and
+    the next may hold 19.2.
     """
     out = tasks.copy()
     rows = out["task_code"].isin(codes)
+    if not rows.any():
+        return out
     for column in columns:
         if column not in derivation.new.by_code.columns:
             continue
         values = derivation.new.by_code[column].reindex(out.loc[rows, "task_code"])
-        out.loc[rows, column] = values.to_numpy()
+        carried = pd.Series(values.to_numpy(), index=out.index[rows])
+        out[column] = pd.concat([out.loc[~rows, column], carried]).reindex(out.index)
     return out
 
 
@@ -211,15 +217,23 @@ class Step:
     name: str
     categories: tuple[str, ...]
     apply: Callable[[_Derivation, Snapshot], Snapshot]
+    # the kinds of the changelog's Tasks category the step carries: a rename or a move to
+    # another WBS is no input of the recalculation and belongs to no step
+    task_changes: tuple[str, ...] = ()
+
+    def is_carried(self, log: pd.DataFrame) -> pd.Series:
+        """Flag the rows of a changelog this step accounts for."""
+        in_tasks = (log["category"] == "Tasks") & log["change"].isin(self.task_changes)
+        return log["category"].isin(self.categories) | in_tasks
 
 
 STEPS = [
     Step("progress", ("Progress",), _apply_progress),
-    Step("scope", ("Scope",), _apply_scope),
+    Step("scope", ("Scope",), _apply_scope, task_changes=("type changed",)),
     Step("durations", ("Durations", "Resources"), _apply_durations),
     Step("logic", ("Relationships",), _apply_logic),
     Step("constraints", ("Constraints",), _apply_constraints),
-    Step("calendars and options", ("Calendars", "Options", "Tasks"), _apply_calendars_and_options),
+    Step("calendars and options", ("Calendars", "Options"), _apply_calendars_and_options, ("calendar changed",)),
 ]
 STEP_NAMES = [step.name for step in STEPS]
 STEP_COLUMNS = ["step", "finish", "shift_wd", "changes"]
@@ -322,7 +336,7 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
     for step in STEPS:
         derived = step.apply(derivation, derived)
         stepped_finish = schedule(derived).finish
-        changes = int(log["category"].isin(step.categories).sum())
+        changes = int(step.is_carried(log).sum())
         rows.append(_step_row(step.name, finish, stepped_finish, changes, new))
         finish = stepped_finish
     return HalfStep(
@@ -337,6 +351,51 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
         added=len(derivation.added),
         deleted=len(derivation.deleted),
     )
+
+
+# --- where the revisions fall ---------------------------------------------------------------------
+
+WITHIN_LOOKAHEAD = "within the lookahead"
+BEYOND_LOOKAHEAD = "beyond the lookahead"
+HORIZON_COLUMNS = ["step", WITHIN_LOOKAHEAD, BEYOND_LOOKAHEAD, "beyond_pct"]
+
+
+def revisions_by_horizon(old: Snapshot, new: Snapshot, lookahead_weeks: float) -> pd.DataFrame:
+    """Non-progress revisions of the week by step, split by where the revised activity sits in time.
+
+    One row per step after progress, then ``all``: the changelog rows the step carries that name
+    an activity, ``within the lookahead`` when the activity starts on or before the later status
+    date plus ``lookahead_weeks`` (work under way included), ``beyond the lookahead`` otherwise;
+    ``beyond_pct`` the share beyond. The start is the later update's, the earlier one's for an
+    activity deleted since; a row without an activity or a start is left out.
+
+    The lookahead is where a Last Planner team makes work ready; revisions mostly beyond it
+    reshape the far plan (docs/formulas.md 5.1: the source, and what is xerscope's reading).
+    """
+    log = changelog(old, new)
+    starts = new.by_code["start"].combine_first(old.by_code["start"])
+    start = log["task_code"].map(starts)
+    limit = new.data_date + pd.Timedelta(weeks=lookahead_weeks) if new.data_date is not None else pd.NaT
+    is_within = start <= limit
+    is_beyond = start > limit
+    rows = []
+    for step in STEPS[1:]:
+        carried = step.is_carried(log)
+        rows.append(_horizon_row(step.name, int((carried & is_within).sum()), int((carried & is_beyond).sum())))
+    rows.append(
+        _horizon_row("all", sum(row[WITHIN_LOOKAHEAD] for row in rows), sum(row[BEYOND_LOOKAHEAD] for row in rows))
+    )
+    return pd.DataFrame(rows, columns=HORIZON_COLUMNS)
+
+
+def _horizon_row(step: str, within: int, beyond: int) -> dict:
+    total = within + beyond
+    return {
+        "step": step,
+        WITHIN_LOOKAHEAD: within,
+        BEYOND_LOOKAHEAD: beyond,
+        "beyond_pct": 100 * beyond / total if total else None,
+    }
 
 
 # --- how the project's finish is held -----------------------------------------------------------
@@ -358,9 +417,8 @@ def finish_case(snapshot: Snapshot, recomputed: Schedule | None = None) -> tuple
     must_finish_by = snapshot.options.get("must_finish_by")
     if must_finish_by is not None:
         return MUST_FINISH_BY, must_finish_by
-    activities = snapshot.activities
-    has_successor = set(snapshot.relationships["pred_code"])
-    at_the_end = ~activities["task_code"].isin(has_successor) & ~activities["is_loe"].astype(bool)
+    activities = without(snapshot.activities, snapshot.data_date, ["loe"])
+    at_the_end = ~has_successor_in_project(snapshot, activities)
     mandatory = activities[at_the_end & (activities["cstr_type"] == "CS_MANDFIN")]
     if not mandatory.empty:
         return MANDATORY_FINISH, mandatory["cstr_date"].max()
@@ -395,9 +453,9 @@ SERIES_COLUMNS = [
     "period_wd",
     "engine_gap_wd",
     "longest_path_float_d",
-    "matched",
-    "added",
-    "deleted",
+    "tasks_matched",
+    "tasks_added",
+    "tasks_deleted",
     "note",
 ]
 
@@ -438,8 +496,8 @@ def _series_row(old: Snapshot, new: Snapshot) -> dict:
         "period_wd": read.period_wd,
         "engine_gap_wd": read.new_engine_gap_wd,
         "longest_path_float_d": longest_path_float_d(new),
-        "matched": read.matched,
-        "added": read.added,
-        "deleted": read.deleted,
+        "tasks_matched": read.matched,
+        "tasks_added": read.added,
+        "tasks_deleted": read.deleted,
         "note": "",
     }

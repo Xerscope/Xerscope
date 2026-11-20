@@ -26,7 +26,6 @@ import xerscope.app.state as state
 import xerscope.analysis.baseline as bl
 import xerscope.analysis.standards as stds
 import xerscope.xer as xer
-import xerscope.xer.model as model
 for n in ["_parse", "_baseline_options", "_folder_baseline_names", "_baseline_file_source", "_renumbered_counts",
           "_baselines_without_guid", "data_identity", "memo", "standards", "baseline_for", "_apply_file_choices",
           "_chosen_items", "_file_digest", "_digest", "_resolution", "_export_baseline", "_file_baseline",
@@ -55,7 +54,7 @@ pages = ["overview", "gantt", "health", "audit", "changelog", "forensics", "earn
 for page in pages:
     counts.clear()
     t = time.perf_counter(); at.switch_page(f"views/{page}.py").run(); first = time.perf_counter() - t
-    c_first = dict(counts); counts.clear()
+    counts.clear()
     t = time.perf_counter(); at.run(); rerun = time.perf_counter() - t
     c_rerun = dict(counts); counts.clear()
     t = time.perf_counter(); at.run(); rerun2 = time.perf_counter() - t

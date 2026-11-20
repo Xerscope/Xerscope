@@ -257,6 +257,37 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "result": ("Result", "text"),
     "count": ("Found / checked", "text"),
     "note": ("Note", "wide"),
+    # Delay analysis (analysis/forensics.py, analysis/longest_path.py)
+    "step": ("Step", "text"),
+    "shift_wd": ("Shift (wd)", "signed"),
+    "changes": ("Changes applied", "int"),
+    "finish_case": ("Finish held by", "text"),
+    "held_by": ("Date that holds it", "datetime"),
+    "finish_before_replanning": ("Finish before replanning", "datetime"),
+    "slip_wd": ("Slip (wd)", "signed"),
+    "replanning_wd": ("Replanning (wd)", "signed"),
+    "residual_wd": ("Residual (wd)", "signed"),
+    "period_wd": ("Period (wd)", "d1"),
+    "engine_gap_wd": ("Recalculated vs file (wd)", "signed"),
+    "longest_path_float_d": ("Longest path float (wd)", "d1"),
+    "tasks_matched": ("Tasks matched", "int"),
+    "tasks_added": ("Tasks added", "int"),
+    "tasks_deleted": ("Tasks deleted", "int"),
+    "float_before_d": ("Total float before (wd)", "d1"),
+    "path_source": ("Path read from", "text"),
+    "on_path": ("On the path", "int"),
+    "stayed": ("Stayed", "int"),
+    "entered": ("Entered", "int"),
+    "left_finished": ("Left: finished", "int"),
+    "left_open": ("Left: still open", "int"),
+    "left_deleted": ("Left: deleted", "int"),
+    "stability": ("Stability", "d2"),
+    "path_committed": ("Commitments on the path", "int"),
+    "path_kept": ("Kept on the path", "int"),
+    "ppc_path": ("PPC on the path", "pct"),
+    "within the lookahead": ("Within the lookahead", "int"),
+    "beyond the lookahead": ("Beyond the lookahead", "int"),
+    "beyond_pct": ("Share beyond", "pct"),
 }
 HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not shown
 MISSING = "–"  # written for a value that is not there: a date, a number, a cell of a table
@@ -455,6 +486,13 @@ def as_dates(values: pd.Series) -> pd.Series:
 
 def section(title: str, caption: str = "") -> None:
     st.subheader(title)
+    if caption:
+        st.caption(caption)
+
+
+def block(title: str, caption: str = "") -> None:
+    """A titled part of a section: one question of a form among several."""
+    st.markdown(f"##### {title}")
     if caption:
         st.caption(caption)
 

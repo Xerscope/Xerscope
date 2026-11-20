@@ -18,15 +18,18 @@ from xerscope.analysis.changelog import changelog
 from xerscope.analysis.cpm import CycleError, schedule
 from xerscope.analysis.forensics import (
     AS_SCHEDULED,
+    BEYOND_LOOKAHEAD,
     LAST_ACTIVITY,
     MANDATORY_FINISH,
     MUST_FINISH_BY,
     STEP_NAMES,
+    WITHIN_LOOKAHEAD,
     engine_gap_wd,
     finish_case,
     half_step,
     half_step_series,
     longest_path_float_d,
+    revisions_by_horizon,
 )
 from xerscope.store import SnapshotStore
 from xerscope.xer import build_snapshot, read_xer
@@ -143,6 +146,26 @@ def test_a_remaining_duration_increased_on_started_work_is_a_revision_not_progre
     read = half_step(earlier, later)
     assert shifts(read)["progress"] == -5.0 and shifts(read)["durations"] == -1.0
     assert read.period_wd == 5.0 and read.is_slip_beyond_period is False
+
+
+@pytest.mark.oracle("standard")
+def test_a_remaining_duration_with_a_fraction_of_an_hour_is_carried_onto_whole_hours():
+    """A file whose durations are all whole hours reads them as integers; the next update holds 19.2 h.
+    The value must be carried as it is, not refused nor rounded.
+
+    A started Mon 2 with 40 h left (finish Fri 6 17:00). A week later, status date Mon 9 08:00, 19.2 h
+    left: Mon 8 h, Tue 8 h, Wed 3.2 h, finish Wed 11 at 11:12. From Fri 6 17:00 that is 19.2 working
+    hours, 2.4 wd lost, all of it progress (a decreased remaining duration, 3.4.K.4.b).
+    """
+    earlier = snap([active("A", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="40", target_drtn_hr_cnt="40")])
+    later = snap(
+        [active("A", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="19.2", target_drtn_hr_cnt="40")],
+        data_date=WEEK_LATER,
+    )
+    read = half_step(earlier, later)
+    assert read.finish_before_replanning == pd.Timestamp("2026-03-11 11:12")
+    assert shifts(read)["progress"] == -2.4 and shifts(read)["durations"] == 0.0
+    assert read.residual_wd == 0.0
 
 
 @pytest.mark.oracle("standard")
@@ -323,17 +346,69 @@ def test_a_week_that_cannot_be_scheduled_keeps_its_row_in_the_series():
 
 @pytest.mark.oracle("standard")
 def test_changelog_lists_a_scheduling_option_and_a_must_finish_by_that_changed():
-    """SCHEDOPTIONS retained logic -> progress override, and a Must Finish By set: one Options row each."""
-    before = snap([todo("A", **week())], sched={"sched_retained_logic": "Y", "sched_progress_override": "N"})
+    """SCHEDOPTIONS retained logic -> progress override, a Must Finish By set, the critical definition
+    from Longest Path to a total float of 120 h: one Options row each, the option and its values under
+    the names of P6's Schedule Options dialog (Oracle P6 Professional 24 help, General tab), not the
+    codes the file writes."""
+    before = snap(
+        [todo("A", **week())],
+        sched={"sched_retained_logic": "Y", "sched_progress_override": "N"},
+        project={"critical_path_type": "CT_DrivPath", "critical_drtn_hr_cnt": "80"},
+    )
     after = snap(
         [todo("A", **week())],
         sched={"sched_retained_logic": "N", "sched_progress_override": "Y"},
-        project={"plan_end_date": "2026-03-05 17:00"},
+        project={
+            "plan_end_date": "2026-03-05 17:00",
+            "critical_path_type": "CT_TotFloat",
+            "critical_drtn_hr_cnt": "120",
+        },
     )
     options = changelog(before, after).query("category == 'Options'").set_index("field")
-    assert options.loc["progressed activities", ["before", "after"]].tolist() == ["retained_logic", "progress_override"]
-    assert options.loc["must finish by", "after"] == "2026-03-05 17:00"
+    read = {field: options.loc[field, ["before", "after"]].tolist() for field in options.index}
+    assert read == {
+        "When scheduling progressed activities use": ["Retained Logic", "Progress Override"],
+        "Define critical activities as": ["Longest Path", "Total Float less than or equal to"],
+        "Total Float less than or equal to (h)": ["80", "120"],
+        "Must Finish By": ["", "2026-03-05 17:00"],
+    }
     assert changelog(before, before).query("category == 'Options'").empty
+
+
+@pytest.mark.oracle("standard")
+def test_a_step_counts_only_the_changes_it_carries():
+    """A is renamed (no input of the recalculation: no step), B becomes a finish milestone (scope),
+    C moves to the 10 h calendar (calendars and options). One change each at scope and at the last
+    step, none for the rename."""
+    earlier = snap([todo("A", **week()), todo("B", **week()), todo("C", **week())])
+    later = snap(
+        [todo("A", task_name="A renamed", **week()), todo("B", **FM), todo("C", clndr_id="C10", **week())],
+    )
+    changes = half_step(earlier, later).steps.set_index("step")["changes"]
+    assert changes["scope"] == 1 and changes["calendars and options"] == 1
+    assert changes["progress"] == 0 and changes["logic"] == 0 and changes["constraints"] == 0
+
+
+@pytest.mark.oracle("standard")
+def test_revisions_are_split_by_where_the_revised_activity_starts():
+    """Status date Mon 9 March 2026, lookahead 6 weeks: the limit is Mon 20 April 08:00. NEAR starts
+    Mon 2 March (within), FAR starts Mon 1 June (beyond). NEAR goes from 40 h to 80 h: two Durations
+    rows within (original changed, remaining increased). FAR goes from 40 h to 24 h: two beyond
+    (original changed, remaining cut). A link NEAR -> FAR is added: the Relationships row names the
+    successor, FAR: one beyond. Durations 2 / 2 (50 %), logic 0 / 1 (100 %), all 2 / 3 (60 %)."""
+    far = {"early_start_date": "2026-06-01 08:00", "early_end_date": "2026-06-05 17:00"}
+    earlier = snap([todo("NEAR", **week()), todo("FAR", **far, **week())])
+    later = snap(
+        [todo("NEAR", **week(80)), todo("FAR", **far, **week(24))], [("NEAR", "FAR", "FS", 0)], data_date=WEEK_LATER
+    )
+    horizon = revisions_by_horizon(earlier, later, lookahead_weeks=6).set_index("step")
+    rows = {step: (row[WITHIN_LOOKAHEAD], row[BEYOND_LOOKAHEAD], row["beyond_pct"]) for step, row in horizon.iterrows()}
+    assert rows["durations"] == (2, 2, 50.0)
+    assert rows["logic"] == (0, 1, 100.0)
+    assert rows["all"] == (2, 3, 60.0)
+    assert rows["scope"][:2] == (0, 0) and pd.isna(rows["scope"][2])  # nothing revised: no share
+    with_a_longer_lookahead = revisions_by_horizon(earlier, later, lookahead_weeks=13).set_index("step")
+    assert with_a_longer_lookahead.loc["all", BEYOND_LOOKAHEAD] == 0  # FAR starts within 13 weeks
 
 
 @pytest.mark.oracle("standard")

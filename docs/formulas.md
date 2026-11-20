@@ -464,7 +464,7 @@ Two updates of one project, activities matched by `task_code` (first row per cod
 | Relationships | added / deleted | (pred, succ) pair only in new / only in old | — |
 | Relationships | type changed / lag changed | pair in both with a different set of (type, `lag_hr`): type changed when the set of types differs, else lag changed | — |
 | Calendars | working time changed | a calendar id in both updates whose hours per day, week or dated exceptions differ (`_calendar_definition`); `field` = the calendar's name | — |
-| Options | scheduling option changed | one of `SCHEDULING_OPTIONS` differs: progressed activities, lag calendar, total float type, open ends critical, SS lag from early start, use expected finish, external relationships, critical path definition, critical float, must finish by (blank and absent are equal) | — |
+| Options | scheduling option changed | one of `xer.model.SCHEDULE_OPTIONS` differs (blank and absent are equal). `field`, `before` and `after` carry the names of P6's Schedule Options dialog (Oracle P6 Professional 24 help, General tab): When scheduling progressed activities use (Retained Logic / Progress Override / Actual Dates), Calendar for scheduling Relationship Lag, Compute Total Float as, Make open-ended activities critical, Calculate start-to-start lag from (Early Start / Actual Start), Use Expected Finish Dates, Define critical activities as (Total Float less than or equal to / Longest Path) and its hours, Must Finish By; a code the help does not name is shown as written | — |
 
 `summary(log)` counts rows per (category, change), Project rows excluded. Pinned by
 test_changelog_finds_each_kind_of_change, test_changelog_relationships,
@@ -487,11 +487,11 @@ is not read.
 | Step | Carries from the later update (activities in both updates unless stated) | Changelog categories counted |
 |---|---|---|
 | progress | status date; `status_code`, actual dates, suspend / resume, `phys_complete_pct`, the external early start / late finish bounds; `remain_drtn_hr_cnt` of the activities started in the later update whose remaining duration decreased (3.4.K.4.b: actual start, actual finish, increased percent complete, decreased remaining duration) | Progress |
-| scope | activities added (their TASK rows, the links and assignments that reach them), deleted (taken out with theirs), `task_type` | Scope |
+| scope | activities added (their TASK rows, the links and assignments that reach them), deleted (taken out with theirs), `task_type` | Scope, Tasks: type changed |
 | durations | `target_drtn_hr_cnt`, `expect_end_date`, every other `remain_drtn_hr_cnt` that changed (an increase, or a change on work not started: non-progress revisions, 3.4.K.4), the resource assignments | Durations, Resources |
 | logic | every relationship of the later update (the scope step brought those that reach an added activity; the rest are the links between activities of both updates and the links to other projects) | Relationships |
 | constraints | `cstr_type`, `cstr_date`, `cstr_type2`, `cstr_date2`, the project's Must Finish By | Constraints |
-| calendars and options | `clndr_id`, the calendar definitions, the scheduling options, the planned start | Calendars, Options, Tasks |
+| calendars and options | `clndr_id`, the calendar definitions, the scheduling options, the planned start | Calendars, Options, Tasks: calendar changed |
 
 | Quantity | Definition |
 |---|---|
@@ -505,6 +505,20 @@ is not read.
 | `finish_case` | `must finish by` when `PROJECT.plan_end_date` is set (it bounds the late dates only: the early finish still moves, float turns negative past it); else `mandatory finish` when an end point (no successor, not LOE) carries `CS_MANDFIN` (its date cannot move); else `last task` |
 | `longest_path_float_d` | lowest `tf_hr` of the recalculated longest path / hours per day of the project calendar: under a Must Finish By or a Mandatory Finish, where the delay the finish cannot show goes |
 
+A rename or a move to another WBS (the other kinds of the Tasks category) is no input of the
+recalculation and is counted at no step.
+
+**Where the revisions fall** (`revisions_by_horizon(old, new, lookahead_weeks)`). Per step after
+progress, and for all of them: the changelog rows the step carries that name an activity, counted
+`within the lookahead` when the activity's Start (actual, else forecast; the later update's, the
+earlier one's for an activity deleted since) is on or before the later status date plus
+`lookahead_weeks`, `beyond the lookahead` otherwise; `beyond_pct = 100 × beyond / (within +
+beyond)`, blank when nothing was revised. Rows without an activity (Options, Calendars) or without
+a start are left out. `lookahead_weeks` is `Settings.lookahead_weeks`, 6 by default. In the Last
+Planner System the weeks ahead are where work is made ready (Ballard and Tommelein, "2020 Current
+Process Benchmark for the Last Planner System", Lean Construction Journal, 2021); the split is
+xerscope's reading and no source sets a threshold on the share.
+
 What is progress and what is a revision follows 3.4.K.4 (the list of non-progress revisions:
 activities added or deleted, logic links and lags, constraints, original durations, a remaining
 duration increased or changed without a change in percent complete, calendar and holiday
@@ -517,7 +531,8 @@ absorbed by a 2 wd cut reads −2 at progress and +2 at durations with the finis
 case per step; every kind of change at once sums to the recalculated move with residual 0
 (property); the three finish cases; the float under a Must Finish By (P6); the demo series has no
 residual (characterization); a remaining duration increased on started work is a revision, not
-progress (3.4.K.4); the period bound of 3.4.K.4.g.
+progress (3.4.K.4); the period bound of 3.4.K.4.g; a step counts only the changes it carries; the
+revisions of a week split at a 6-week lookahead (durations 2 / 2, logic 0 / 1, all 60 % beyond).
 
 **What this reading rests on, measured (Nov 2026, held-out P6 corpus, 359 schedules).** The reading
 moves one number, the recalculated project finish. xerscope's finish is P6's to the minute on 327
@@ -530,6 +545,43 @@ corpus schedules that can be read (unrelated schedules, every kind of change at 
 are not read because links carried one kind at a time close a loop neither schedule has
 (`half_step_series` keeps the row, with the reason). No P6 output exists for a half-step schedule:
 the progress step has no oracle beyond the hand cases and the sum rule of 3.4.K.4.f.
+
+### 5.2 Longest path of each update (analysis/longest_path.py)
+
+AACE RP 29R-03 (rev. April 25, 2011) 3.4.E.9 ("use both the longest path and the least float criteria
+to identify the controlling chain of activities") and SVP 2.3.B.6 ("for each update, identify all
+changes made that extend, reduce, or change the longest path"); SCL Protocol 2nd ed. 11.6(c), the
+contemporaneous critical path of each time slice.
+
+| Quantity | Definition |
+|---|---|
+| longest path of an update | the activities P6 flagged (`TASK.driving_path_flag`, P6's Longest Path column) that are not complete; when the file flags none, the recalculated longest path (`cpm.schedule`), not complete; `source` = `P6 longest path` / `recalculated` / `none` (no flag and the file cannot be scheduled) |
+| `change` of an activity on the path of either update | `stayed` (on both), `entered` (on the later only), `left: finished` (complete in the later), `left: still open` (in the later update, not complete, off its path: the path switched away from it), `left: deleted` (not in the later update) |
+| `path_changes` row | `change`, `float_before_d` (P6's `total_float_d` in the earlier update), then the standard activity columns (`populations.ACTIVITY_COLS`, `total_float_d` the later update's); a deleted activity shows the earlier update's, without a float after |
+| `path_churn` row | per update after the first: `on_path` = stayed + entered, `stayed`, `entered`, `left_finished`, `left_open`, `left_deleted`, `stability = stayed / (stayed + left_open)` (finished and deleted work could not stay; blank when nothing could), `path_source` of the later update, both sources when they differ |
+| `path_commitments(old, new)` | the rows of `progress.committed(old, new)` (section 4, PPC) whose activity is on the longest path of `old`, the update that made the commitment, and still in `new` |
+| `ppc_week`, `path_committed`, `path_kept`, `ppc_path` (in `path_churn`) | `ppc_week = 100 × kept / committed` over every commitment still in the later update, as the PPC page; the same over `path_commitments`; blank when nothing was committed. PPC counts every commitment alike; Hamzeh and Emdanat ("Last Planner System: the need for new metrics", IGLC) note it does not account for the criticality of a task. Restricting it to the longest path is xerscope's reading, not a published metric |
+| population (`longest_path_funnel`) | a funnel of `analysis/populations.py`: every activity, `not complete`, `on the longest path (<source>)`; the page shows its steps and what each removed |
+
+Pinned by tests/test_longest_path.py: the flagged path, open work only (P6); the recalculated path
+when nothing is flagged; one change per activity, in reading order, with its floats; the churn of
+three updates and its stability (0.5, then 1.0); two sources named; an update against itself; six
+commitments of which four on the path, two kept (PPC 66.7 %, on the path 50 %).
+
+### 5.3 Where the recalculation departs from the file (app/recalculation_departures.py, Debug block 3)
+
+For the reading of 5.1, whose shifts are the recalculation's when `engine_gap_wd` is not 0.
+The population is a funnel of `analysis/populations.py` (`departure_funnel`: not complete, not level
+of effort, with a stored early date, one not the recalculated one, no predecessor in the same case),
+and Debug shows its steps and what each removed.
+`departures`: the unfinished activities with a stored early start or early finish the recalculation
+does not give (`compare_with_stored`, exact clock time) and no predecessor in the same case: what
+differs downstream follows from them. Per activity: stored and recalculated early finish, `gap_hr`
+(recalculated minus stored, working hours of its calendar), status, type, constraints, an expected
+finish, resource dependent, on the recalculated longest path. `departure_forms`: the same rows
+counted by form, with no Activity ID and no date, for a diagnostic that can be shared. Pinned by
+tests/test_diagnostic.py: test_departures_keep_the_activities_where_the_recalculation_first_differs,
+test_departure_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates.
 
 ## 6. CPM output compared with P6 (analysis/cpm.py `compare_with_stored`, `compare_assignments`)
 
