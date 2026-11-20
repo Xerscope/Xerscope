@@ -88,6 +88,8 @@ LATE_LIKE = {"CS_MSO": "start", "CS_MSOB": "start", "CS_MEO": "finish", "CS_MEOB
 MANDATORY = {"CS_MANDSTART": "start", "CS_MANDFIN": "finish"}
 # What a mandatory date in the second slot is scheduled as: it bounds both passes and pins nothing
 AS_SECOND_CONSTRAINT = {"CS_MANDSTART": "CS_MSO", "CS_MANDFIN": "CS_MEO"}
+# On work under way, one of these in either slot removes both constraints from the backward pass
+DROPS_LATE_SIDE_UNDER_WAY = ("CS_MSOB", "CS_MANDSTART", "CS_MANDFIN")
 PROGRESSED = ("retained_logic", "progress_override", "actual_dates")
 H24 = WorkCalendar("__24h__", "24 hours", 24.0, (((0, 1440),),) * 7, {}, from_data=False)
 LINK_TYPES = ("FS", "SS", "FF", "SF")
@@ -1118,7 +1120,8 @@ class _Run:
         N5, N7, xf-mandatory M7; 26.8 not measured). Their late side stays in the backward pass.
         """
         pinned = None
-        start_bounds, finish_bounds = [], []
+        start_bounds: list[pd.Timestamp] = []
+        finish_bounds: list[pd.Timestamp] = []
         if started and self.constraints(code):
             self.unapplied.append(code)
         for constraint_type, date in [] if started else self.constraints(code):
@@ -1522,8 +1525,11 @@ class _Run:
         not measured.
         """
         pinned = None
-        start_bounds, finish_bounds = [], []
+        start_bounds: list[pd.Timestamp] = []
+        finish_bounds: list[pd.Timestamp] = []
         started = self.status[code] == "TK_Active"
+        if started and self.is_late_side_dropped(code):
+            return pinned, start_bounds, finish_bounds
         for constraint_type, date in self.constraints(code):
             if constraint_type in MANDATORY and not started:
                 pinned = (MANDATORY[constraint_type], date)
@@ -1532,6 +1538,15 @@ class _Run:
             elif LATE_LIKE.get(constraint_type) == "finish":
                 finish_bounds.append(date)
         return pinned, start_bounds, finish_bounds
+
+    def is_late_side_dropped(self, code) -> bool:
+        """Whether work under way loses both its constraints on the late side: a Start On or Before, a
+        Mandatory Start or a Mandatory Finish in either slot. P6 23.12.1 on the probes h1-situations
+        (P7, P10, P14, K10: a Finish On or Before beside one of them is dropped too; beside a Start On or
+        After or a Start On it holds, P8, P9) and h27-causes (KB1-KB5: a Finish On or Before and a
+        Mandatory Finish in either order; KB6, KB7 each alone). 26.8 not measured. Not measured: a
+        Finish On beside a Mandatory Finish; it is dropped here as the rule is stated."""
+        return any(constraint_type in DROPS_LATE_SIDE_UNDER_WAY for constraint_type, _ in self.constraints(code))
 
     # --- float, as late as possible ------------------------------------------------------------
     def floats(self) -> None:
