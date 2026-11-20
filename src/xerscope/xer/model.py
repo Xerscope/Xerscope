@@ -136,6 +136,63 @@ CONSTRAINT = {
 }
 
 
+@dataclass(frozen=True)
+class ScheduleOption:
+    """One scheduling option as P6 names it: where it sits in ``Snapshot.options``, its name in the
+    Schedule Options dialog, and the names of the values the file codes.
+
+    Oracle P6 Professional 24 help, Schedule Options dialog box, General tab. A code the help does
+    not name is shown as the file writes it.
+    """
+
+    keys: tuple[str, ...]
+    name: str
+    values: Mapping[str, str] = field(default_factory=dict)
+
+    def value_name(self, value: object) -> object:
+        return self.values.get(value, value) if isinstance(value, str) else value
+
+
+YES_NO = {"Y": "Yes", "N": "No"}
+SCHEDULE_OPTIONS = [
+    ScheduleOption(
+        ("progressed",),
+        "When scheduling progressed activities use",
+        {"retained_logic": "Retained Logic", "progress_override": "Progress Override", "actual_dates": "Actual Dates"},
+    ),
+    ScheduleOption(
+        ("lag_calendar",),
+        "Calendar for scheduling Relationship Lag",
+        {
+            "rcal_Successor": "Successor Activity Calendar",
+            "rcal_Predecessor": "Predecessor Activity Calendar",
+            "rcal_24Hour": "24 Hour Calendar",
+            "rcal_ProjDefault": "Project Default Calendar",
+        },
+    ),
+    ScheduleOption(
+        ("sched", "sched_float_type"),
+        "Compute Total Float as",
+        {"FT_SS": "Start Float", "FT_FF": "Finish Float", "FT_Min": "Smallest of Start Float and Finish Float"},
+    ),
+    ScheduleOption(("sched", "sched_open_critical_flag"), "Make open-ended activities critical", YES_NO),
+    ScheduleOption(
+        ("sched", "sched_lag_early_start_flag"),
+        "Calculate start-to-start lag from",
+        {"Y": "Early Start", "N": "Actual Start"},
+    ),
+    ScheduleOption(("sched", "sched_use_expect_end_flag"), "Use Expected Finish Dates", YES_NO),
+    ScheduleOption(("sched", "sched_outer_depend_type"), "Relationships to and from other projects"),
+    ScheduleOption(
+        ("critical_path_type",),
+        "Define critical activities as",
+        {"CT_TotFloat": "Total Float less than or equal to", "CT_DrivPath": "Longest Path"},
+    ),
+    ScheduleOption(("critical_float_hr",), "Total Float less than or equal to (h)"),
+    ScheduleOption(("must_finish_by",), "Must Finish By"),
+]
+
+
 def constraints_label(task: Mapping) -> str:
     """Primary and secondary constraint of ``task`` by their P6 names, "A + B"; "" without any."""
     codes = [task.get(column) for column in ("cstr_type", "cstr_type2")]

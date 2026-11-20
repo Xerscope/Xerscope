@@ -21,6 +21,7 @@ from xerscope.analysis.longest_path import (
     longest_path_funnel,
     path_changes,
     path_churn,
+    path_commitments,
 )
 from xerscope.store import SnapshotStore
 
@@ -84,6 +85,30 @@ def test_path_churn_counts_each_update_against_the_one_before():
     assert (row["on_path"], row["stayed"], row["entered"], row["left_finished"], row["left_open"]) == (2, 1, 1, 1, 1)
     assert churn["stability"].tolist() == [0.5, 1.0]
     assert churn["path_source"].tolist() == [P6_FLAG, P6_FLAG]
+
+
+@pytest.mark.oracle("standard")
+def test_the_weeks_commitments_on_the_path_are_counted_apart_from_the_ppc():
+    """Status dates Mon 2 and Mon 16 March 2026. A, B and C are due to start Mon 2 and finish Fri 13
+    March: two commitments each, six in all. A (on the path) and C (off it) are done in time; B (on
+    the path) has not started. PPC of the week: 4 kept of 6, 66.7 %. On the path of the earlier
+    update, A and B: 2 kept of 4, 50 %. PPC counts every commitment alike (progress.committed); the
+    path's are those a miss of which moves the finish."""
+    in_time = {"act_start_date": "2026-03-02 08:00", "act_end_date": "2026-03-13 17:00"}
+    earlier = snap([todo("A", **ON_PATH), todo("B", **ON_PATH), todo("C")])
+    later = snap(
+        [done("A", **in_time, **ON_PATH), todo("B", **ON_PATH), done("C", **in_time)], data_date="2026-03-16 08:00"
+    )
+    on_path = path_commitments(earlier, later)
+    assert sorted(zip(on_path["task_code"], on_path["commitment"], on_path["kept"], strict=True)) == [
+        ("A", "Finish", True),
+        ("A", "Start", True),
+        ("B", "Finish", False),
+        ("B", "Start", False),
+    ]
+    row = path_churn(SnapshotStore([earlier, later])).iloc[0]
+    assert (row["path_committed"], row["path_kept"], row["ppc_path"]) == (4, 2, 50.0)
+    assert round(row["ppc_week"], 1) == 66.7
 
 
 @pytest.mark.oracle("standard")
