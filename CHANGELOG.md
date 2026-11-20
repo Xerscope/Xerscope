@@ -78,6 +78,9 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Fixed
 
+- Delay analysis: the page no longer stops on a series where an update holds whole hours only and
+  the next a fraction of an hour (a remaining duration of 19.2 h): the half-step schedule carries
+  the value as it is.
 - Parser and model: the findings of `audit-report.md` (AUDIT-XER, AUDIT-CPM, AUDIT-APP)
   closed by plan blocs A to E are listed here as they land; the crashes the fuzzer still
   finds are recorded in `tests/test_fuzz_parser.py` with their finding.

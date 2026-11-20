@@ -94,15 +94,20 @@ class _Derivation:
 def _with_columns_of_new(tasks: pd.DataFrame, derivation: _Derivation, codes, columns: list[str]) -> pd.DataFrame:
     """``tasks`` with ``columns`` of the activities ``codes`` read from the later update.
 
-    A column the later update's file does not carry is left as it is.
+    A column the later update's file does not carry is left as it is. The column takes the type
+    that holds both updates' values: a file whose hours are all whole reads them as integers, and
+    the next may hold 19.2.
     """
     out = tasks.copy()
     rows = out["task_code"].isin(codes)
+    if not rows.any():
+        return out
     for column in columns:
         if column not in derivation.new.by_code.columns:
             continue
         values = derivation.new.by_code[column].reindex(out.loc[rows, "task_code"])
-        out.loc[rows, column] = values.to_numpy()
+        carried = pd.Series(values.to_numpy(), index=out.index[rows])
+        out[column] = pd.concat([out.loc[~rows, column], carried]).reindex(out.index)
     return out
 
 
