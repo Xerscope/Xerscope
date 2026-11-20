@@ -1788,7 +1788,18 @@ the top slot of the sidebar whatever the read does, and the button's label is wr
 (733-745, comment 732). Pages run last (`pages.run()`, 58) and stop on `require_store` while a job
 runs (`state.py:1591-1602`). The split must keep: placeholder first, read second, label third.
 
-**Choice.** Open: whether the split is wanted, and whether `load_series` may draw the progress line.
+**Choice.** The split, and `load_series` draws nothing: agreed with the maintainer (2026-11-20).
+Since P6a the function lives in `app/loading.py`. Shape: `load_series(on_file) -> SnapshotStore |
+None` holds the decision (lines "chosen items / forget / thread job or in-run read / nothing"), the
+collection of a finished job and the per-file project choice; `on_file(index, count, name)` is the
+one callback, called by the in-run read for each file (and once before the first with `name`
+None, for the "Reading N file(s)" line); it never touches `st.sidebar`. `draw_sidebar(store,
+files_line)` holds the drawing unchanged (button, errors, picker and prompt, window, two switches).
+`sidebar_loader()` keeps the invariant in three lines: `files_line = sidebar.container()` first,
+then the progress slot and `store = load_series(...)`, the `_poll_load()` fragment while
+`_load_job` runs, then `draw_sidebar(store, files_line)`. Inner helpers `_start_or_read` and
+`_collect_finished_job` only if the fitness check asks for them (cognitive 17 today). The
+Overview's `score_section` is P11a, not this package.
 
 **Test.** `load_series()` testable without AppTest by injecting the session dict as the `memo`
 helpers do (`session=None` pattern, `state.py:840, 849`): given `files_source = ("upload", [(name,
