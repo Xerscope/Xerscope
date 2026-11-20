@@ -149,9 +149,11 @@ def folder_under_root(folder: str) -> Path | None:
     """Return the resolved ``folder`` when it lies under ``folder_root()``, else None."""
     root = str(folder_root())
     resolved = os.path.realpath(os.path.expanduser(folder))
-    if resolved != root and not resolved.startswith(root + os.sep):
-        return None
-    return Path(resolved)
+    if resolved == root:
+        return Path(root)
+    if resolved.startswith(root + os.sep):
+        return Path(resolved)
+    return None
 
 
 def _data_locked() -> bool:
