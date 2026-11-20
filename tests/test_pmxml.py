@@ -286,7 +286,7 @@ def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch)
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app import state
+    from xerscope.app import baselines, downloads, state
     from xerscope.app.state import BL_EACH, BL_FILE
 
     data = tmp_path / "updates"
@@ -304,7 +304,8 @@ def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
     calls = []
     indexed, built = state.index_pmxml, Baseline.from_snapshot.__func__
-    monkeypatch.setattr(state, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
+    monkeypatch.setattr(baselines, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
+    monkeypatch.setattr(downloads, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
     monkeypatch.setattr(pmxml, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
     monkeypatch.setattr(
         Baseline, "from_snapshot", classmethod(lambda c, *a, **k: calls.append("build") or built(c, *a, **k))
@@ -427,7 +428,7 @@ def test_a_file_cut_short_is_a_xer_error():
 
 def _count_index_passes(monkeypatch) -> list[str]:
     """Each pass ``index_pmxml`` makes through a file from now on adds the file's name to the list."""
-    from xerscope.app import state
+    from xerscope.app import baselines, downloads
 
     passes: list[str] = []
     indexed = pmxml.index_pmxml
@@ -437,7 +438,8 @@ def _count_index_passes(monkeypatch) -> list[str]:
         return indexed(data, source)
 
     monkeypatch.setattr(pmxml, "index_pmxml", counted)
-    monkeypatch.setattr(state, "index_pmxml", counted)
+    monkeypatch.setattr(baselines, "index_pmxml", counted)
+    monkeypatch.setattr(downloads, "index_pmxml", counted)
     return passes
 
 

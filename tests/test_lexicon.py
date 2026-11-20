@@ -36,7 +36,7 @@ P6_NAMES = {
         "Activity Status",
     ],
     "glossary.py": ["P6 Activity ID", "Level of Effort activity type"],
-    "state.py": [
+    "baselines.py": [
         "Renumber Activity IDs",
         "Renumber Selected Activities in Baselines",
         "Late Activities",  # the P6 check name

@@ -1024,11 +1024,11 @@ def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_close
 def test_the_banner_names_the_baseline_the_page_uses_when_the_file_baseline_cannot_be_read(tmp_path, monkeypatch):
     """a.xer names a usable P6 Project Baseline; if it cannot be built, the update falls back, and the
     banner says so as the page does instead of "in file"."""
-    from xerscope.app import state
+    from xerscope.app import baselines
 
     at = _series(tmp_path, monkeypatch)
     baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
-    monkeypatch.setattr(state, "_file_baseline", lambda snapshot: None)  # as when the copy fails to parse
+    monkeypatch.setattr(baselines, "_file_baseline", lambda snapshot: None)  # as when the copy fails to parse
     at = _health(at.run(), "2026-03-02")
     label = at.button(key="context_banner").label.replace("\\", "")
     assert " · BL fallback, planned dates · " in label
@@ -1099,11 +1099,11 @@ def _app_on_series_and_export(tmp_path, monkeypatch, exports=("export.xml",), se
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app import state
+    from xerscope.app import baselines
     from xerscope.xer.pmxml import read_pmxml_baseline
 
     calls = {"resolutions": 0, "reads": {}}
-    real_resolutions = state.resolutions
+    real_resolutions = baselines.resolutions
 
     def counted_resolutions(store, export):
         calls["resolutions"] += 1
@@ -1113,7 +1113,7 @@ def _app_on_series_and_export(tmp_path, monkeypatch, exports=("export.xml",), se
         calls["reads"][baseline_id] = calls["reads"].get(baseline_id, 0) + 1
         return read_pmxml_baseline(data, source, baseline_id, index)
 
-    monkeypatch.setattr(state, "resolutions", counted_resolutions)
+    monkeypatch.setattr(baselines, "resolutions", counted_resolutions)
     monkeypatch.setattr("xerscope.xer.read_pmxml_baseline", counted_read)  # the name load_snapshot calls
     _series_and_export(tmp_path)
     for name in exports[1:]:

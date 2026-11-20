@@ -116,14 +116,15 @@ def test_a_file_gone_from_the_folder_is_named_and_the_others_stay_read(tmp_path,
 def test_a_file_gone_between_the_listing_and_its_reading_does_not_crash_the_page(tmp_path, sample_dir, monkeypatch):
     """The folder is listed, then each file is read: a file removed in between (os.stat fails) is
     named, as one gone before the listing."""
-    from xerscope.app import state
+    from xerscope.app import files_window, loading, state
 
     files = _folder_of(tmp_path, sample_dir, 2)
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
     listed = state.xer_files(tmp_path)
-    monkeypatch.setattr(state, "xer_files", lambda root: listed)
+    monkeypatch.setattr(files_window, "xer_files", lambda root: listed)
+    monkeypatch.setattr(loading, "xer_files", lambda root: listed)
     files[0].unlink()
     at.run()
     _ok(at)

@@ -253,11 +253,11 @@ def test_empty_store_is_refused_or_consistent():
 
 @pytest.fixture
 def session(monkeypatch):
-    """state.py talking to a plain dict instead of st.session_state (no Streamlit runtime)."""
-    from xerscope.app import state
+    """baselines.py talking to a plain dict instead of st.session_state (no Streamlit runtime)."""
+    from xerscope.app import baselines
 
     fake = types.SimpleNamespace(session_state={})
-    monkeypatch.setattr(state, "st", fake)
+    monkeypatch.setattr(baselines, "st", fake)
     return fake.session_state
 
 
