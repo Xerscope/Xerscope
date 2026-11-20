@@ -407,6 +407,37 @@ removed `except` clause itself (AppTest with no page context must still render).
 
 **Findings.** None (prerequisite of P6a).
 
+### P6-1 — The docstrings of `state.py` brought to form (effort M, executor: mechanical executor, with Quentin; docstrings only, output byte-identical)
+
+**Problem.** `state.py` is exempted from five docstring rules in `pyproject.toml`
+(D102, D103, D205, D209, D401): 236 findings. `tests/test_docstrings.py` counts the
+exemptions as (file, rule) pairs and lets the count only shrink. The P6a move spreads the same
+docstrings over six files, so the pairs go from 5 to 21 and the test fails; extending the
+exemption would mean raising the test's bound, which no package does.
+
+**Options.**
+1. Bring every docstring of `state.py` to the form `CONTRIBUTING.md` gives (one-line summary
+   written as a command, period, blank line before detail; the closing quotes on their own line
+   for a multi-line docstring; a public function or method without one gets one line saying what
+   comes out), then remove the `state.py` entry from the per-file ignores. Cost: ~85 reshaped,
+   ~69 reworded summaries, 4 added; the move then needs no exemption.
+2. Extend the exemption to the six files and raise the bound of `test_docstrings.py`. Forbidden
+   by the brief.
+
+**Choice.** Option 1, agreed with the maintainer (2026-11-20), before P6a. Content of a
+docstring does not change: the same facts in the same words, only the mood of the summary
+("Return the ..." for what comes out, "Show ..." for what is drawn, "Start ...", "Keep ...")
+and the layout. No sentence added except the four one-line docstrings of the undocumented
+definitions. The one-line removal in `pyproject.toml` is the only protected-file change, and it
+shrinks the debt.
+
+**Verification.** `uv run python scripts/same_code.py <base> --ignore-docstrings` prints
+nothing; the P1 digest base vs tree identical; `uvx ruff@0.17.4 check src/xerscope/app/state.py`
+with the entry removed: no finding; `uv run pytest tests/test_docstrings.py -q` passes with the
+count down by five. Planted defect: one summary left in the indicative, ruff names its line.
+
+**Findings.** None (prerequisite of P6a).
+
 ### P6a — Split `state.py` by concern: the move (effort L, executor: senior, with Quentin; move, byte-identical)
 
 **Problem.** `state.py` is 2101 lines, MI 0 (rank C, the only one in the front), docstring
@@ -1098,7 +1129,7 @@ Order of merge:
 1. **P1, P2, P3, P4a, P5** are independent of each other and of everything else; merge first
    in any order (small, mechanical, output byte-identical). P3 and P5's `snapshot_identity`
    touch `state.py`: agreed with Quentin first.
-2. **P6-0** (markers) then **P6a** (state move) after P3 (so the renamed helpers move once); **P6b** after P6a and after
+2. **P6-0** (markers), **P6-1** (docstrings) then **P6a** (state move) after P3 (so the renamed helpers move once); **P6b** after P6a and after
    the U1 decision (section 6).
 3. **P7** after P6a (both caches and the baseline resolution in `app/baselines.py`); **P7b** after P7, on the maintainer's choice.
 4. **P8** after P6a (downloads live in `app/downloads.py`).
