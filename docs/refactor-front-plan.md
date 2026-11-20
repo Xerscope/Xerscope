@@ -586,9 +586,18 @@ session`; `baseline_window -> baseline_export, baseline_file, baselines, session
 **Problem.** The re-exports in `state.py` keep every page reading `state.*`, so the import graph
 does not show who depends on what (the other session's point; accepted as a transition).
 
-**Choice.** One commit after P6c: every page, `streamlit_app.py` and test imports each name from
+**Choice** (maintainer, 2026-11-20: settled, not deferred). P6d lands in the same pull request as
+P6c, right after the move commit: every page, `streamlit_app.py` and test imports each name from
 its defining module (scripted rewrite of the import lines); `state.py` keeps only what it defines.
-No behaviour, `pages.json` identical, the suite green, `tests/test_architecture.py` unchanged.
+Reviewable in two commits: the move alone (`same_code.py`), then the imports alone (a diff of
+import lines only). No behaviour, `pages.json` identical, the suite green. A guard so it does not
+come back, in `tests/test_architecture.py` (a protected file; the maintainer's request is the
+reason written in the commit): the app-internal import graph with its expected edges written in
+the test: (a) no module under `app/` other than `views/*`, `streamlit_app.py` and `state.py`
+imports from `xerscope.app.state`; (b) the baseline domain (`baseline_file`, `baseline_export`,
+`baselines`, `baseline_window`, `baseline_warnings`) imports neither `state`, `loading`,
+`downloads` nor `cache`; (c) the graph of `app/*.py` has no cycle (AST walk). Until P6d lands, no
+new import of `state` from a module of the baseline domain.
 
 ### P7 — Caching: no baseline rebuilt on rerun (effort M, executor: senior, with Quentin; same results)
 
