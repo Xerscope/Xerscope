@@ -646,14 +646,11 @@ def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
     return found
 
 
-def _baseline_fields(store: SnapshotStore) -> None:
-    """Show the window's Baseline section.
+def _reset_stale_drafts(store: SnapshotStore, options: list[str], folder_files: list[str]) -> None:
+    """Start again from the value in force each draft the store no longer offers.
 
-    The selectors the sidebar held, same choices, on drafts (DRAFTS) that Done applies. A draft the store
-    no longer offers starts again from the value in force.
+    ``options``: the baselines offered; ``folder_files``: the names of the baseline files of the folder.
     """
-    options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""))
-    folder_files = ["", *_folder_baseline_names()]  # "": none picked
     offered = {
         "draft_bl_choice": options,
         "draft_ev_basis": list(EV_BASES),
@@ -664,6 +661,47 @@ def _baseline_fields(store: SnapshotStore) -> None:
     for key, draft in DRAFTS.items():
         if st.session_state.get(draft) not in offered[draft]:
             st.session_state[draft] = st.session_state[key]
+
+
+def _baseline_file_fields(choice: str, folder_files: list[str]) -> None:
+    """Show the pickers of a baseline file: the one in the folder, and the upload of a .xer or P6 XML.
+
+    ``choice``: the draft baseline choice. The folder picker serves the separate baseline file and each
+    file's own baseline (the file looked for in it); the upload only the separate file.
+    """
+    wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["draft_bl_fallback"] == BL_FILE)
+    if (wants_file or choice == BL_EACH) and len(folder_files) > 1:
+        st.selectbox(
+            "Baseline file in the folder",
+            folder_files,
+            key="draft_bl_folder_file",
+            format_func=lambda name: name or "(none)",
+            help="The P6 XML exports placed next to the .xer files (Export > Primavera P6 XML, Baselines to "
+            "Export). The one picked is the separate baseline file; it is never read as an update. With "
+            f"'{BL_EACH}', each update is looked for in it: the baseline its file names, else a copy of it "
+            "(Debug, block 5).",
+        )
+    if wants_file and not _data_locked():
+        st.file_uploader(
+            "Baseline .xer, or a P6 XML export with its baselines",
+            type=[*UPLOAD_TYPES, "xml"],
+            key="bl_upload",
+            help="P6 Professional exports a project's baselines in XML only (Export > Primavera P6 XML, "
+            "Baselines to Export). Each update is then measured against the baseline its file names.",
+        )
+        held = st.session_state.get("bl_file")
+        if held:
+            st.caption(f"Held: {ui.md_text(held[0])}")
+
+
+def _baseline_fields(store: SnapshotStore) -> None:
+    """Show the window's Baseline section.
+
+    The selectors the sidebar held, same choices, on drafts (DRAFTS) that Done applies.
+    """
+    options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""))
+    folder_files = ["", *_folder_baseline_names()]  # "": none picked
+    _reset_stale_drafts(store, options, folder_files)
     _section_title("Baseline", _baseline_short(st.session_state["draft_bl_choice"]))
     st.selectbox(
         "Baseline (BL)",
@@ -697,29 +735,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
             help="Applies update by update: an update uses the baseline of its own file when it has a usable "
             "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
         )
-    wants_file = choice == BL_FILE or (choice == BL_EACH and st.session_state["draft_bl_fallback"] == BL_FILE)
-    if (wants_file or choice == BL_EACH) and len(folder_files) > 1:
-        st.selectbox(
-            "Baseline file in the folder",
-            folder_files,
-            key="draft_bl_folder_file",
-            format_func=lambda name: name or "(none)",
-            help="The P6 XML exports placed next to the .xer files (Export > Primavera P6 XML, Baselines to "
-            "Export). The one picked is the separate baseline file; it is never read as an update. With "
-            f"'{BL_EACH}', each update is looked for in it: the baseline its file names, else a copy of it "
-            "(Debug, block 5).",
-        )
-    if wants_file and not _data_locked():
-        st.file_uploader(
-            "Baseline .xer, or a P6 XML export with its baselines",
-            type=[*UPLOAD_TYPES, "xml"],
-            key="bl_upload",
-            help="P6 Professional exports a project's baselines in XML only (Export > Primavera P6 XML, "
-            "Baselines to Export). Each update is then measured against the baseline its file names.",
-        )
-        held = st.session_state.get("bl_file")
-        if held:
-            st.caption(f"Held: {ui.md_text(held[0])}")
+    _baseline_file_fields(choice, folder_files)
 
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:

@@ -100,6 +100,42 @@ def _describe_file(path: Path, same_date_as: str | None = None) -> tuple[str, st
     return label, details
 
 
+def _doubles_by_date(headers: dict[str, FileHeader | str]) -> dict[str, str]:
+    """Return each file that shares its status date with an earlier one by name, with that earlier file.
+
+    The series holds one update per status date: of the files sharing one, the first by name is the one
+    Select all ticks, the others say which file they double. A file unreadable or without status date
+    doubles none.
+    """
+    first_by_date: dict[pd.Timestamp, str] = {}
+    doubles: dict[str, str] = {}
+    for name, header in headers.items():
+        if isinstance(header, str) or header.data_date is None:
+            continue
+        kept = first_by_date.setdefault(header.data_date, name)
+        if kept != name:
+            doubles[name] = kept
+    return doubles
+
+
+def _select_all_line(keys: dict[str, str], readable: list[str], folder_id: str) -> None:
+    """Show the count of ticked files with the Select all and Clear buttons.
+
+    ``keys``: the widget key of each file's box, by file name; ``readable``: the names Select all ticks.
+    """
+
+    def tick_all(value: bool) -> None:
+        """Select all ticks every readable file but the doubles of a status date; Clear unticks all."""
+        names = readable if value else list(keys)
+        st.session_state.update({keys[name]: value for name in names})
+
+    ticked = sum(bool(st.session_state[key]) for key in keys.values())
+    count, select, clear = st.columns([2, 1, 1], vertical_alignment="center")
+    count.caption(f"{ticked} of {len(keys)} ticked")
+    select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
+    clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
+
+
 def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     """Show one tick box per XER file of ``folder`` and return the names ticked.
 
@@ -120,28 +156,9 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
         st.session_state.setdefault(key, name in chosen)
 
     headers = {path.name: _header(path) for path in files}
-    # the series holds one update per status date: of the files sharing one, the first by name is
-    # the one Select all ticks, the others say which file they double
-    first_by_date: dict[pd.Timestamp, str] = {}
-    same_date_as: dict[str, str] = {}
-    for name, header in headers.items():
-        if isinstance(header, str) or header.data_date is None:
-            continue
-        kept = first_by_date.setdefault(header.data_date, name)
-        if kept != name:
-            same_date_as[name] = kept
+    same_date_as = _doubles_by_date(headers)
     readable = [name for name, header in headers.items() if not isinstance(header, str) and name not in same_date_as]
-
-    def tick_all(value: bool) -> None:
-        """Select all ticks every readable file but the doubles of a status date; Clear unticks all."""
-        names = readable if value else list(keys)
-        st.session_state.update({keys[name]: value for name in names})
-
-    ticked = sum(bool(st.session_state[key]) for key in keys.values())
-    count, select, clear = st.columns([2, 1, 1], vertical_alignment="center")
-    count.caption(f"{ticked} of {len(files)} ticked")
-    select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
-    clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
+    _select_all_line(keys, readable, folder_id)
     picked = []
     with st.container(key="files_list_folder"):
         for path in files:
@@ -279,6 +296,33 @@ def _window_sections(has_series: bool) -> list[str]:
     return ["baseline", "files"] if opened_on == "baseline" else ["files", "baseline"]
 
 
+def _draw_sections(sections: list[str], source: tuple, store: SnapshotStore | None) -> tuple | None:
+    """Show the window's sections, a rule between them, and return the files choice Done would validate.
+
+    Without the Files section the choice is the files already read.
+    """
+    choice = None if "files" in sections else st.session_state.get("files_source")
+    for index, section in enumerate(sections):
+        if index:
+            st.html('<hr class="xd-rule">')
+        if section == "files":
+            choice = _files_section(source, store)
+        else:
+            _baseline_fields(store)
+    return choice
+
+
+def _on_done(choice: tuple | None, store: SnapshotStore | None) -> None:
+    """Apply the drafts and the files ``choice``, close the window and rerun the page."""
+    _apply_drafts()
+    if choice != st.session_state.get("files_source"):  # other files: their baseline is asked once read
+        st.session_state.update({BASELINE_ASKED: False, BASELINE_SET: False})
+    elif store is not None:  # the Baseline section was shown
+        st.session_state[BASELINE_SET] = True
+    st.session_state.update(files_source=choice, files_open=False)
+    st.rerun()
+
+
 @st.dialog("Files and baseline", width="large", on_dismiss=_close_window)
 def _window(store: SnapshotStore | None) -> None:
     """Show the window of the sidebar's Files and Baseline lines.
@@ -290,23 +334,10 @@ def _window(store: SnapshotStore | None) -> None:
     """
     source = st.session_state.get("files_source") or ("none",)
     with st.container(key="files_sheet"):
-        sections = _window_sections(has_series=store is not None)
-        choice = None if "files" in sections else st.session_state.get("files_source")
-        for index, section in enumerate(sections):
-            if index:
-                st.html('<hr class="xd-rule">')
-            if section == "files":
-                choice = _files_section(source, store)
-            else:
-                _baseline_fields(store)
+        choice = _draw_sections(_window_sections(has_series=store is not None), source, store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
             st.caption("Done applies · Esc cancels")
             clash = choice is not None and choice[0] == "upload" and bool(_same_names(choice[1]))
-            if st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter", disabled=clash):
-                _apply_drafts()
-                if choice != st.session_state.get("files_source"):  # other files: their baseline is asked once read
-                    st.session_state.update({BASELINE_ASKED: False, BASELINE_SET: False})
-                elif store is not None:  # the Baseline section was shown
-                    st.session_state[BASELINE_SET] = True
-                st.session_state.update(files_source=choice, files_open=False)
-                st.rerun()
+            is_done = st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter", disabled=clash)
+        if is_done:
+            _on_done(choice, store)

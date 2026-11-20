@@ -324,6 +324,23 @@ def show_trend(store, standard) -> None:
         )
 
 
+def _uploaded_counts(upload, got: pd.DataFrame) -> pd.DataFrame | None:
+    """Return the counts of the uploaded ``id,found,total`` CSV set against this page's results.
+
+    Shows the error and returns None when the file is unreadable or lacks one of the three columns.
+    """
+    try:
+        typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
+    except (ValueError, UnicodeDecodeError) as exc:
+        st.error(f"Unreadable CSV: {ui.md_text(exc)}")
+        return None
+    missing = {"id", "found", "total"} - set(typed.columns)
+    if missing:
+        st.error(f"Columns missing: {ui.md_text(', '.join(sorted(missing)))}")
+        return None
+    return report_counts(got, typed)
+
+
 def show_report_comparison(results, standard) -> None:
     """Counts typed from a P6 Check Schedule report (or its id,found,total CSV) against this
     page's results, on the update and baseline picked above. Nothing typed is kept on the server."""
@@ -335,19 +352,12 @@ def show_report_comparison(results, standard) -> None:
         )
         got = results_frame(results)
         upload = st.file_uploader("Report counts (.csv)", type=["csv"], key=f"report_csv_{standard.id}")
-        if upload is not None:
-            try:
-                typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
-                missing = {"id", "found", "total"} - set(typed.columns)
-                if missing:
-                    st.error(f"Columns missing: {ui.md_text(', '.join(sorted(missing)))}")
-                    return
-            except (ValueError, UnicodeDecodeError) as exc:
-                st.error(f"Unreadable CSV: {ui.md_text(exc)}")
-                return
-            typed = report_counts(got, typed)
-        else:
+        if upload is None:
             typed = report_counts(got)
+        else:
+            typed = _uploaded_counts(upload, got)
+        if typed is None:
+            return
         edited = st.data_editor(
             typed,
             disabled=["id", "check"],
