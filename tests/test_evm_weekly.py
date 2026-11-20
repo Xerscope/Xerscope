@@ -21,6 +21,7 @@ from xerkit import snap
 
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import (
+    baseline_changes,
     copied_lag,
     earned_schedule,
     evm_series,
@@ -213,3 +214,21 @@ def test_a_baseline_copied_from_a_project_under_way_keeps_the_lag_of_its_started
     assert gains["es_gain_min"].tolist() == [10 * DAY_MIN] and gains["at_gain_min"].tolist() == [5 * DAY_MIN]
     assert copied_lag(week_after, copy) == (0, 0.0)
     assert copied_lag(at_copy, plan(PLAN_1)) == (0, 0.0)
+
+
+def test_what_a_change_of_baseline_absorbs_is_read_at_the_update_that_changes_it():
+    """U3 (03-13 17:00, A and B done, 80 h) is the first update on plan 2. On plan 1 the PV at U3 is A, B
+    and C, 120 h: the 80 h earned were planned by the end of week 2, and the PV holds 80 h over the weekend
+    until Monday 03-09 08:00, the instant reached (the plan asks for nothing in between): 4 days 9 hours
+    behind, 4.375. On plan 2 (B in week 3) the PV is 80 h: the plan is reached on the status date, gap 0.
+    The change absorbs 4.375 days; both plans hold the same 160 h and the same four tasks. U1, U2, U4 and U5 keep their
+    predecessor's plan: no row. A series on one plan has none."""
+    store, baseline_for = two_plans()
+    changes = baseline_changes(store, baseline_for)
+    assert changes["data_date"].tolist() == [pd.Timestamp(FRIDAYS[3])]
+    row = changes.iloc[0]
+    assert (row["gap_old_d"], row["gap_new_d"], row["absorbed_d"]) == (-4.375, 0.0, 4.375)
+    assert (row["bac_old_hr"], row["bac_new_hr"], row["added"], row["removed"]) == (160.0, 160.0, 0, 0)
+    assert (row["baseline_old"], row["baseline_new"]) == (plan(PLAN_1).label, plan(PLAN_2).label)
+    one_plan, baseline_for = series([PLAN_1] * 6)
+    assert baseline_changes(one_plan, baseline_for).empty

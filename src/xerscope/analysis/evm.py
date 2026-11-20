@@ -976,6 +976,16 @@ def _minutes_gained(before: int | None, after: int | None) -> float:
     return float("nan") if before is None or after is None else float(after - before)
 
 
+def _measured(
+    snapshot: Snapshot, baseline: Baseline, link_by_guid: bool, code_filter: CodeFilter | None
+) -> tuple[EvPoint, EarnedSchedule]:
+    """``ev_point`` and ``earned_schedule`` of ``snapshot`` on ``baseline``, linked and filtered as
+    ``evm_series`` does."""
+    linked = relinked(baseline, snapshot) if link_by_guid else baseline
+    update, its_baseline = update_and_baseline_of_code(snapshot, linked, code_filter)
+    return ev_point(update, its_baseline), earned_schedule(update, its_baseline)
+
+
 def weekly_gains(
     store: SnapshotStore,
     baseline_for: Callable[[Snapshot], Baseline | None],
@@ -992,19 +1002,14 @@ def weekly_gains(
     Gains are missing without a baseline, the time ones also without an ES at either end.
     ``link_by_guid``, ``code_filter``: as ``evm_series``.
     """
-
-    def measured(snapshot: Snapshot, baseline: Baseline) -> tuple[EvPoint, EarnedSchedule]:
-        linked = relinked(baseline, snapshot) if link_by_guid else baseline
-        update, its_baseline = update_and_baseline_of_code(snapshot, linked, code_filter)
-        return ev_point(update, its_baseline), earned_schedule(update, its_baseline)
-
     rows = []
     for index in range(1, len(store)):
         opening, closing = store[index - 1], store[index]
         row: dict = {"data_date": closing.data_date, "week_start": opening.data_date}
         baseline, next_baseline = baseline_for(opening), baseline_for(closing)
         if baseline is not None:
-            (point, schedule), (next_point, next_schedule) = measured(opening, baseline), measured(closing, baseline)
+            point, schedule = _measured(opening, baseline, link_by_guid, code_filter)
+            next_point, next_schedule = _measured(closing, baseline, link_by_guid, code_filter)
             row["ev_gain_hr"] = next_point.ev_hr - point.ev_hr
             row["pv_gain_hr"] = next_point.pv_hr - point.pv_hr
             row["es_gain_min"] = _minutes_gained(schedule.es_min, next_schedule.es_min)
@@ -1013,6 +1018,55 @@ def weekly_gains(
             row["baseline"] = baseline.source or baseline.label
         rows.append(row)
     return pd.DataFrame(rows, columns=["data_date", "week_start", *GAIN_COLUMNS, "baseline_changed", "baseline"])
+
+
+def _gap_days(schedule: EarnedSchedule) -> float:
+    return float("nan") if schedule.gap_calendar_d is None else schedule.gap_calendar_d
+
+
+def _change_row(
+    snapshot: Snapshot, old: Baseline, new: Baseline, link_by_guid: bool, code_filter: CodeFilter | None
+) -> dict:
+    """``snapshot`` read on the plan it leaves and on the one it takes (see ``baseline_changes``)."""
+    point_old, schedule_old = _measured(snapshot, old, link_by_guid, code_filter)
+    point_new, schedule_new = _measured(snapshot, new, link_by_guid, code_filter)
+    gap_old, gap_new = _gap_days(schedule_old), _gap_days(schedule_new)
+    return {
+        "data_date": snapshot.data_date,
+        "gap_old_d": gap_old,
+        "gap_new_d": gap_new,
+        "absorbed_d": gap_new - gap_old,
+        "bac_old_hr": point_old.bac_hr,
+        "bac_new_hr": point_new.bac_hr,
+        "added": len(set(point_old.unbaselined) - set(point_new.unbaselined)),
+        "removed": len(set(old.frame.index) - set(new.frame.index)),
+        "baseline_old": old.source or old.label,
+        "baseline_new": new.source or new.label,
+    }
+
+
+def baseline_changes(
+    store: SnapshotStore,
+    baseline_for: Callable[[Snapshot], Baseline | None],
+    link_by_guid: bool = False,
+    code_filter: CodeFilter | None = None,
+) -> pd.DataFrame:
+    """One row per update whose baseline is not the previous update's: the update read on both plans.
+    ``gap_old_d`` / ``gap_new_d``: its time gap (``EarnedSchedule.gap_calendar_d``) on the plan it leaves
+    and on the one it takes; ``absorbed_d``: new - old, the lag the change takes out of every cumulative
+    figure (Lipke, MetSIG webinar 2007: "information is always lost with a new baseline"). ``bac_old_hr``
+    / ``bac_new_hr``: the hours of the update each plan holds; ``added``: tasks of the update the old
+    plan did not hold and the new one does; ``removed``: tasks of the old plan the new one drops.
+    ``baseline_old`` / ``baseline_new``: where each plan comes from. An absorbed lag with the same BAC is a
+    copy of the project under way; a BAC that grows is scope added. ``link_by_guid``, ``code_filter``: as
+    ``evm_series``."""
+    rows = []
+    for index in range(1, len(store)):
+        old, new = baseline_for(store[index - 1]), baseline_for(store[index])
+        if old is not None and new is not None and not new.frame.equals(old.frame):
+            rows.append(_change_row(store[index], old, new, link_by_guid, code_filter))
+    columns = ["data_date", "gap_old_d", "gap_new_d", "absorbed_d", "bac_old_hr", "bac_new_hr", "added", "removed"]
+    return pd.DataFrame(rows, columns=[*columns, "baseline_old", "baseline_new"])
 
 
 def moving_window(gains: pd.DataFrame, data_date: pd.Timestamp, days: int = 28) -> pd.Series | None:
