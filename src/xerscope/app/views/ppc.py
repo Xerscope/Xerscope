@@ -272,7 +272,7 @@ unplanned = memo(("ppc_unplanned", week), unplanned_work, previous, current, bas
 commitments, milestones = of_filter(commitments, previous), of_filter(milestones, previous)
 unplanned = of_filter(unplanned, current)
 renumbered_tasks = memo(("ppc_renumbered", week), renumbered, previous, current, baseline=False)
-progress = progress_delta(previous, current, baseline_for(current))
+progress = memo(("ppc_progress", week), progress_delta, previous, current, baseline_for(current))
 if code_filter is not None:
     progress = progress_of_code(progress, code_filter, previous, current)
 wbs_progress = rollup_delta(progress)

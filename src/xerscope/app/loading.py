@@ -141,8 +141,9 @@ def teach(word: str, label: str, kind: str) -> bool:
 class LoadJob:
     """Hold the files being read in a thread, which hands them to worker processes (``reading``).
 
-    ``results`` fills as each file is read (name -> Snapshot, or the error text), ``done`` once every file
-    was tried. Nothing of a partial series is shown: the pages wait for ``done``.
+    ``results`` starts with the files the session parsed already and fills as each other file is read
+    (name -> Snapshot, or the error text), ``done`` once every file was tried. Nothing of a partial series
+    is shown: the pages wait for ``done``.
     """
 
     items: list[tuple[str, bytes]]
@@ -154,13 +155,32 @@ class LoadJob:
     thread: threading.Thread | None = None
 
     def run(self) -> None:
-        """Read each file in turn into ``results``, then set ``done``."""
+        """Read each file not yet in ``results`` in turn into it, then set ``done``."""
+        waiting = [(name, data) for name, data in self.items if name not in self.results]
         try:
-            for name, result, cache in read_updates(self.items, self.choices, lambda: self.cancelled):
+            for name, result, cache in read_updates(waiting, self.choices, lambda: self.cancelled):
                 self.cache.update(cache)
                 self.results[name] = result
         finally:
             self.done = True
+
+
+def _parsed_snapshots(items: list[tuple[str, bytes]], choices: dict[str, str]) -> dict[str, Snapshot]:
+    """Return, by file name, the snapshot of each file the session parsed already for the project picked for it.
+
+    The files a series change leaves as they were are not read again, as on the synchronous path.
+    """
+    cache = st.session_state.get("_parsed", {})
+    found = {}
+    for name, data in items:
+        digest = _digest(data)
+        snapshot = cache.get((name, digest, None))
+        chosen = choices.get(name)
+        if snapshot is not None and chosen in set(snapshot.file_projects["proj_id"]) and chosen != snapshot.project_id:
+            snapshot = cache.get((name, digest, chosen))
+        if snapshot is not None:
+            found[name] = snapshot
+    return found
 
 
 def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
@@ -168,7 +188,8 @@ def _start_load(items: list[tuple[str, bytes]]) -> LoadJob:
 
     The pages show the progress and draw once the series is complete.
     """
-    job = LoadJob(most_recent_first(items), dict(_file_choices()))
+    choices = dict(_file_choices())
+    job = LoadJob(most_recent_first(items), choices, results=_parsed_snapshots(items, choices))
     job.thread = threading.Thread(target=job.run, name="xerscope-load", daemon=True)
     job.thread.start()
     return job
@@ -285,7 +306,7 @@ def _forget_previous_series() -> None:
         if job is not None and not job.done:
             job.cancelled = True
     st.session_state.update(_load_job=None, _score_job=None)
-    for cache in ("_memo", "_file_baselines"):
+    for cache in ("_memo", "_file_baselines", "_baselines_for", "_update_baselines"):
         st.session_state.pop(cache, None)
 
 

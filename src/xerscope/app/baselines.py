@@ -99,15 +99,18 @@ def _project_labels(snapshot: Snapshot) -> dict[str, str]:
     return labels
 
 
-def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str):
-    """Return the Baseline (or marker) the window's choice stands for; None when nothing usable."""
+def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str, exports: list[str]):
+    """Return the Baseline (or marker) the window's choice stands for; None when nothing usable.
+
+    ``exports``: the names of the folder's P6 XML exports (``_folder_baseline_names``), listed once per run.
+    """
     if choice in (BL_PLANNED, BL_EACH):
         return choice  # resolved per snapshot
     if choice == BL_NONE:
         return None
     if choice != BL_FILE:
-        return Baseline.from_snapshot(store.by_label(choice), basis)
-    source = _baseline_file_source(env_path)
+        return _update_baseline(store, choice, basis)
+    source = _baseline_file_source(env_path, exports)
     if source is not None:
         st.session_state["baseline_digest"] = _digest(source[1])
     if source is None:
@@ -126,6 +129,26 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
     return Baseline.from_snapshot(snapshot, basis)
 
 
+def _cache_for(slot: str, identity: tuple) -> dict:
+    """Return the session's cache ``slot`` for ``identity``, emptied when the identity moved since the last call."""
+    held_for, cache = st.session_state.get(slot, (None, {}))
+    if held_for != identity:
+        cache = {}
+    st.session_state[slot] = (identity, cache)
+    return cache
+
+
+def _update_baseline(store: SnapshotStore, choice: str, basis: str) -> Baseline:
+    """Return the loaded update ``choice`` as a Baseline on ``basis``, built once per series.
+
+    The sidebar asks for it on every run, whichever page is open.
+    """
+    cache = _cache_for("_update_baselines", (*data_identity(baseline=False), basis))
+    if choice not in cache:
+        cache[choice] = Baseline.from_snapshot(store.by_label(choice), basis)
+    return cache[choice]
+
+
 def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
     """Return the P6 XML exports next to the updates read from a folder, by name; none when the updates were uploaded.
 
@@ -137,24 +160,26 @@ def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
     return [path.name for path in pmxml_files(root)] if root is not None and root.is_dir() else []
 
 
-def _picked_folder_baseline(session: MutableMapping | None = None) -> Path | None:
+def _picked_folder_baseline(session: MutableMapping | None = None, exports: list[str] | None = None) -> Path | None:
     """Return the folder's P6 XML export picked in the window as the separate baseline file; None when none is picked.
 
-    Only a name of the folder's own list is taken: the name never builds a path elsewhere.
+    Only a name of the folder's own list (``exports``, listed here when not given) is taken: the name never
+    builds a path elsewhere.
     """
     session = st.session_state if session is None else session
     name = session.get("bl_folder_file") or ""
-    if name not in _folder_baseline_names(session):
+    exports = _folder_baseline_names(session) if exports is None else exports
+    if name not in exports:
         return None
     return Path(session["files_source"][1]).expanduser() / name
 
 
-def _is_baseline_file_offered(env_path: str) -> bool:
+def _is_baseline_file_offered(env_path: str, exports: list[str]) -> bool:
     """Return whether a separate baseline file can be had.
 
     Uploaded, picked in the folder, or named by XERSCOPE_BASELINE (a locked server takes no upload).
     """
-    return not _data_locked() or Path(env_path).is_file() or bool(_folder_baseline_names())
+    return not _data_locked() or Path(env_path).is_file() or bool(exports)
 
 
 def _disk_baseline_file(path: Path) -> tuple[str, bytes | DiskFile]:
@@ -167,12 +192,13 @@ def _disk_baseline_file(path: Path) -> tuple[str, bytes | DiskFile]:
     return path.name, export if is_pmxml(export) else path.read_bytes()
 
 
-def _baseline_file_source(env_path: str | None = None) -> tuple[str, bytes | DiskFile] | None:
+def _baseline_file_source(env_path: str | None, exports: list[str]) -> tuple[str, bytes | DiskFile] | None:
     """Return the separate baseline file.
 
-    The one picked in the folder, else the one uploaded in the window, else XERSCOPE_BASELINE's.
+    The one picked in the folder (among ``exports``), else the one uploaded in the window, else
+    XERSCOPE_BASELINE's.
     """
-    picked = _picked_folder_baseline()
+    picked = _picked_folder_baseline(exports=exports)
     if picked is not None:
         return _disk_baseline_file(picked)
     source = None if _data_locked() else st.session_state.get("bl_file")
@@ -219,23 +245,23 @@ def _describe_baseline(sidebar, store: SnapshotStore, baseline: Baseline) -> Non
         )
 
 
-def _fallback_options(store: SnapshotStore) -> list[str]:
+def _fallback_options(store: SnapshotStore, exports: list[str]) -> list[str]:
     """Return what an update whose file has no usable baseline can be measured against.
 
     A separate file on a locked server only when its folder holds a P6 XML export or XERSCOPE_BASELINE
     names a file (nothing can be uploaded there).
     """
-    file_choice = _is_baseline_file_offered(os.environ.get("XERSCOPE_BASELINE", ""))
+    file_choice = _is_baseline_file_offered(os.environ.get("XERSCOPE_BASELINE", ""), exports)
     return ([BL_FILE] if file_choice else []) + store.labels + [BL_PLANNED, BL_NONE]
 
 
-def _fallback_picker(sidebar, store: SnapshotStore, basis: str) -> None:
+def _fallback_picker(sidebar, store: SnapshotStore, basis: str, exports: list[str]) -> None:
     """Show what an update whose file has no usable baseline is measured against: chosen, never imposed."""
     choice = st.session_state["bl_fallback"]
     st.session_state["fallback_choice"] = choice
     # the separate file: uploaded, else named by XERSCOPE_BASELINE (a locked server has only that one)
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
-    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, env_path)
+    st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, env_path, exports)
 
 
 PROBABLE = (
@@ -479,21 +505,21 @@ def _baseline_kind(baseline: Baseline | None) -> str:
     return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
 
 
-def _baseline_options(store: SnapshotStore, env_path: str) -> tuple[list[str], str]:
+def _baseline_options(store: SnapshotStore, env_path: str, exports: list[str]) -> tuple[list[str], str]:
     """Return the choices of "Baseline (BL)" and the default one.
 
     A separate file is offered when it can be had: uploaded, picked in the folder, or named by
     XERSCOPE_BASELINE on a locked server.
     """
     # an update's own baseline: in its file, or in a P6 XML baseline file holding the one its file names
-    source = _baseline_file_source(env_path)
+    source = _baseline_file_source(env_path, exports)
     in_files = any(
         snapshot.file_baseline.usable or _is_named_in_export(source, snapshot.file_baseline.proj_id)
         for snapshot in store
     )
     # an export the updates can be looked for in: the separate file, or one of the folder still to pick
-    export_at_hand = (source is not None and is_pmxml(source[1])) or bool(_folder_baseline_names())
-    file_choice = _is_baseline_file_offered(env_path)
+    export_at_hand = (source is not None and is_pmxml(source[1])) or bool(exports)
+    file_choice = _is_baseline_file_offered(env_path, exports)
     options = ([BL_EACH] if in_files or export_at_hand else []) + ([BL_FILE] if file_choice else []) + store.labels
     options += [BL_PLANNED, BL_NONE]
     # BL_EACH leads the list and is the default, unless a baseline file is named by XERSCOPE_BASELINE
@@ -539,12 +565,12 @@ def _baseline_picker(store: SnapshotStore) -> None:
         # never picked, or a file no longer in the folder: the folder's only export, unless the server
         # names its own baseline file (XERSCOPE_BASELINE)
         st.session_state["bl_folder_file"] = exports[0] if len(exports) == 1 and not env_path else ""
-    options, default = _baseline_options(store, env_path)
+    options, default = _baseline_options(store, env_path, exports)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default
     if st.session_state.get("ev_basis") not in EV_BASES:
         st.session_state["ev_basis"] = DEFAULT_EV_BASIS
-    if st.session_state.get("bl_fallback") not in _fallback_options(store):
+    if st.session_state.get("bl_fallback") not in _fallback_options(store, exports):
         st.session_state["bl_fallback"] = BL_NONE
     if not isinstance(st.session_state.get("guid_link"), bool):
         st.session_state["guid_link"] = False
@@ -555,10 +581,10 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if not st.session_state.get(BASELINE_SET):
         st.session_state["baseline"] = None  # no file read for it, no warning: the pages wait (require_store)
         return
-    baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path)
+    baseline: Baseline | None | str = _baseline_from_choice(sidebar, store, choice, basis, env_path, exports)
     st.session_state["baseline"] = baseline
     if baseline == BL_EACH:
-        _fallback_picker(sidebar, store, basis)
+        _fallback_picker(sidebar, store, basis, exports)
     if isinstance(baseline, Baseline):
         _describe_baseline(sidebar, store, baseline)
     if baseline == BL_EACH:
@@ -646,15 +672,16 @@ def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:
     return found
 
 
-def _reset_stale_drafts(store: SnapshotStore, options: list[str], folder_files: list[str]) -> None:
+def _reset_stale_drafts(options: list[str], fallback_options: list[str], folder_files: list[str]) -> None:
     """Start again from the value in force each draft the store no longer offers.
 
-    ``options``: the baselines offered; ``folder_files``: the names of the baseline files of the folder.
+    ``options``: the baselines offered; ``fallback_options``: what a file with no baseline can be measured
+    against; ``folder_files``: the names of the baseline files of the folder.
     """
     offered = {
         "draft_bl_choice": options,
         "draft_ev_basis": list(EV_BASES),
-        "draft_bl_fallback": _fallback_options(store),
+        "draft_bl_fallback": fallback_options,
         "draft_bl_folder_file": folder_files,
         "draft_guid_link": [True, False],
     }
@@ -699,9 +726,11 @@ def _baseline_fields(store: SnapshotStore) -> None:
 
     The selectors the sidebar held, same choices, on drafts (DRAFTS) that Done applies.
     """
-    options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""))
-    folder_files = ["", *_folder_baseline_names()]  # "": none picked
-    _reset_stale_drafts(store, options, folder_files)
+    exports = _folder_baseline_names()
+    options, _ = _baseline_options(store, os.environ.get("XERSCOPE_BASELINE", ""), exports)
+    fallback_options = _fallback_options(store, exports)
+    folder_files = ["", *exports]  # "": none picked
+    _reset_stale_drafts(options, fallback_options, folder_files)
     _section_title("Baseline", _baseline_short(st.session_state["draft_bl_choice"]))
     st.selectbox(
         "Baseline (BL)",
@@ -730,7 +759,7 @@ def _baseline_fields(store: SnapshotStore) -> None:
     if choice == BL_EACH:
         st.selectbox(
             "When a file has no baseline",
-            _fallback_options(store),
+            fallback_options,
             key="draft_bl_fallback",
             help="Applies update by update: an update uses the baseline of its own file when it has a usable "
             "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
@@ -858,8 +887,19 @@ def baseline_for(snapshot: Snapshot, link: bool | None = None) -> Baseline | Non
     """Return the sidebar's baseline, as it applies to ``snapshot``.
 
     ``link`` (default: the window's option "Link renumbered tasks by GUID"): with the tasks ``snapshot``
-    renumbered under their new IDs.
+    renumbered under their new IDs. Built once per data set: the banner, the page and each check ask
+    for it on every run.
     """
+    link = st.session_state.get("guid_link", False) if link is None else link
+    cache = _cache_for("_baselines_for", data_identity())
+    key = (snapshot.source, link)
+    if key not in cache:
+        cache[key] = _built_baseline(snapshot, link)
+    return cache[key]
+
+
+def _built_baseline(snapshot: Snapshot, link: bool) -> Baseline | None:
+    """Return the sidebar's baseline for ``snapshot``, with its renumbered tasks relinked when ``link``."""
     choice = st.session_state.get("baseline")
     if choice == BL_EACH:
         baseline = _file_baseline(snapshot) or _resolved_baseline(snapshot) or _fallback_baseline(snapshot)
@@ -867,7 +907,6 @@ def baseline_for(snapshot: Snapshot, link: bool | None = None) -> Baseline | Non
         baseline = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
     else:
         baseline = choice if isinstance(choice, Baseline) else None
-    link = st.session_state.get("guid_link", False) if link is None else link
     return relinked(baseline, snapshot) if link and baseline is not None else baseline
 
 
@@ -945,9 +984,7 @@ def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep
     """
     return memo(
         _metric_key(metric, snapshot),
-        run_metric,
-        metric,
-        AnalysisContext(snapshot, store, baseline_for(snapshot)),
+        lambda: run_metric(metric, AnalysisContext(snapshot, store, baseline_for(snapshot))),  # built on a miss only
         keep=keep,
         ev_basis=False,
     )

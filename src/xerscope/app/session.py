@@ -30,9 +30,13 @@ def _digest(data: bytes | DiskFile) -> str:
     """Return the sha256 of a file's contents.
 
     Of a file read from the disk where asked, the one computed from the file itself and kept until the
-    file changes (``_file_digest``).
+    file changes (``_file_digest``). Of the uploaded baseline, the one computed when it was held
+    (``_apply_drafts``): the memo asks for it on every call.
     """
-    return _file_digest(data.path) if isinstance(data, DiskFile) else hashlib.sha256(data).hexdigest()
+    if isinstance(data, DiskFile):
+        return _file_digest(data.path)
+    held, held_digest = st.session_state.get("bl_file_digest", (None, ""))
+    return held_digest if data is held else hashlib.sha256(data).hexdigest()
 
 
 # The window's baseline selectors write to drafts, filled with the values in force when it opens;
@@ -80,7 +84,9 @@ def _apply_drafts() -> None:
             _file_choices()[snapshot.source] = chosen
     upload = st.session_state.get("bl_upload")
     if upload is not None:
-        st.session_state["bl_file"] = (upload.name, upload.getvalue())
+        contents = upload.getvalue()
+        st.session_state["bl_file"] = (upload.name, contents)
+        st.session_state["bl_file_digest"] = (contents, hashlib.sha256(contents).hexdigest())
 
 
 def _close_window() -> None:

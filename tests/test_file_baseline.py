@@ -1027,8 +1027,9 @@ def test_the_banner_names_the_baseline_the_page_uses_when_the_file_baseline_cann
     from xerscope.app import baselines
 
     at = _series(tmp_path, monkeypatch)
-    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
+    # before the fallback is chosen: the baseline built for a data set is kept, a copy that fails later is not seen
     monkeypatch.setattr(baselines, "_file_baseline", lambda snapshot: None)  # as when the copy fails to parse
+    baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     at = _health(at.run(), "2026-03-02")
     label = at.button(key="context_banner").label.replace("\\", "")
     assert " · BL fallback, planned dates · " in label

@@ -108,7 +108,7 @@ taught = st.session_state.get("taught", [])
 # the variants of each source column, generated from every loaded file, in memory (never written)
 generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
 lexicon = memo(  # the labels of every loaded file (memo's key names them all), rebuilt when a word is taught
-    ("vocabulary", snapshot.source, len(taught)),
+    ("vocabulary", snapshot.source, tuple(taught)),
     query.vocabulary,
     snapshot,
     nodes,

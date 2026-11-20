@@ -54,7 +54,13 @@ def zip_tag(anonymous: bool, *extra: object) -> tuple:
 
 
 p6_standard = standards()["P6"]
-guid_match = diagnostic.guid_match_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot))
+guid_match = memo(
+    ("debug_guid_match", *snapshot_identity(snapshot)),
+    diagnostic.guid_match_table,
+    snapshot,
+    baseline_for(snapshot, link=False),
+    store.previous(snapshot),
+)
 try:
     frames = memo(
         ("debug", snapshot.source, str(snapshot.data_date), repr(p6_standard)),
@@ -189,10 +195,14 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         "Tasks of this update that carry the GUID (TASK.guid) of a task of the baseline file or of the "
         "previous update under a new Task ID. P6 links a task to its baseline by Activity ID."
     )
-    table(
-        diagnostic.renumbered_table(snapshot, baseline_for(snapshot, link=False), store.previous(snapshot)),
-        key="debug_05_renumbered",
+    renumbered_tasks = memo(
+        ("debug_renumbered", *snapshot_identity(snapshot)),
+        diagnostic.renumbered_table,
+        snapshot,
+        baseline_for(snapshot, link=False),
+        store.previous(snapshot),
     )
+    table(renumbered_tasks, key="debug_05_renumbered")
     st.caption(
         "How this update's tasks match the baseline file and the previous update, by Activity ID and by GUID: "
         "counts only. renumbered = what 'Link renumbered tasks by GUID' links; gone_guid_absent = tasks gone "
