@@ -533,6 +533,24 @@ U1 unit test (`load_series()` with an injected session dict, section 6) added he
 
 **Findings.** RD-01, RD-02, RD-03, RD-04, RD-15.
 
+### P6c — The baseline sidebar apart from the resolution (effort M, executor: mechanical executor, with Quentin; move, byte-identical)
+
+**Problem.** After P6a, `app/baselines.py` (1050 lines, rank C) holds both what baseline an update
+is measured against (`baseline_for`, `_resolution`, `_file_baseline`, `memo`, `ScoreJob`, exports)
+and what the app says about it (pickers, warnings, banner, `_baseline_fields`, the window's
+baseline section). The parallel session's split drew the same line (`baselines.py` draws nothing,
+`baseline_sidebar.py` talks).
+
+**Choice.** A scripted move on this branch's layout: `app/baselines.py` keeps the resolution,
+the memo, the jobs and the exports and imports no drawing; `app/baseline_sidebar.py` receives
+`_baseline_picker`, `_ask_for_the_baseline`, `_fallback_picker`, `_describe_baseline`, the
+`*_warnings` and `*_help` functions, `context_banner`'s baseline line, `_baseline_fields` and its
+P6b halves, `baseline_warnings`. Import direction: `baseline_sidebar -> baselines, session`;
+`files_window -> baseline_sidebar` for the window section; `state.py` re-exports. Proof as P6a:
+`same_code.py` prints "same code", the whole-app digest identical, one re-export planted.
+
+**Findings.** RD-09 (continued), the other session's commit `30f65d2` as the boundary.
+
 ### P7 — Caching: no baseline rebuilt on rerun (effort M, executor: senior, with Quentin; same results)
 
 **Problem.** `metric_result` evaluates `AnalysisContext(snapshot, store, baseline_for(snapshot))`
@@ -1816,6 +1834,38 @@ bytes)])` and `XERSCOPE_SYNC_LOAD=1` (`background_jobs()`, 128-132), it returns 
 `signature`, `items`, `errors`, and `_load_job is None`; a second call with the same source returns
 without re-reading (`_parsed` keys unchanged). Regression net: `tests/test_app.py`,
 `tests/test_app_robustness.py:97-137`, `tests/test_page_golden.py`.
+
+### Baseline context — which baseline each page reads (decided)
+
+**Problem.** One global baseline setting serves two readings that the methods define differently.
+P6 computes its checks and its Planned Value against the baseline assigned in the file (Oracle P6,
+Project Baselines and Earned Value settings; P6-12/13 and the DCMA items are defined on it). Earned
+value management requires a stable Performance Measurement Baseline (PMI Practice Standard for
+EVM, EIA-748): a cumulative SPI or an Earned Schedule against a copy that changes every week says
+nothing. "Baseline in each file" applied to Earned value is faithful to P6 and wrong for the
+landing; a fixed origin applied to Health and Audit is right for EVM and wrong for the P6 checks.
+
+**Choice** (maintainer, 2026-11-20, with the "Chaîne d'utilisation des baselines" session, which
+carries the `Baseline.kind` / `found_by` mechanism). The baseline is read **per page**:
+
+- Health, Audit, Gantt: the file's assigned baseline when the file has one, else the chosen one.
+- Earned value: the fixed origin (series or separate file) by default, with a switch "P6 view:
+  the file's baseline" that gives P6's own Planned Value and BEI of the week.
+- In the common case (one baseline assigned once and kept) the two coincide; the rule only
+  diverges when the copies move.
+
+**Explained everywhere (P13, P14).** The context banner names the baseline each page reads and
+its kind (exact / probable / chosen / fallback / planned / series). Each page's reading popover
+says which baseline its figures are computed against and why: Health and Audit "against the
+baseline assigned in this update, as P6 Check Schedule and the DCMA 14-Point Assessment define
+their items"; Earned value "against the origin baseline: a cumulative index needs a baseline that
+does not move (Practice Standard for Earned Value Management); switch to the P6 view to read the
+file's own Planned Value". A probable or chosen baseline keeps the `info` note on the cumulative
+EV figures. Sources by mention only, no link.
+
+**Order of work.** The Earned value switch and the per-page rule are behaviour: they come after
+P6c (the baseline sidebar apart from the resolution) and ride on the other session's `kind`
+mechanism, rebased on this branch.
 
 ### File picker slow to open
 
