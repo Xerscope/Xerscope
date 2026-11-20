@@ -429,3 +429,12 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
     },
     "PPC W/W−1": {XS: "(starts + finishes kept) / (starts + finishes committed)"},
 }
+for _ahead in (1, 2, 4, 8):  # the lookahead horizons of the PPC page, one KPI label each
+    KPI_FORMULAS[f"TA ({_ahead} ahead)"] = {
+        LPS: f"Tasks Anticipated = commitments of the weekly work plan that the plan {_ahead} update(s) before "
+        "held for the same week / commitments of the weekly work plan (Hamzeh, Ballard & Tommelein 2012, fig. 5)"
+    }
+    KPI_FORMULAS[f"TMR ({_ahead} ahead)"] = {
+        LPS: f"Tasks Made Ready = commitments the plan {_ahead} update(s) before held for the week that were kept "
+        f"in W / commitments that plan held for the week (TMR({_ahead}, 0), Hamzeh, Ballard & Tommelein 2012)"
+    }

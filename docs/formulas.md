@@ -388,6 +388,23 @@ test_ppc_counts_only_commitments_still_in_the_update, test_ppc_series_one_row_pe
 test_ppc_notes_a_point_that_spans_a_missing_update, test_ppc_regular_weekly_series_has_no_note,
 test_ppc_week_at_another_hour_has_no_note.
 
+**Lookahead reliability** (`planned_for_week`, `lookahead_series`): for the week W-1 → W and a
+horizon of n updates, the plan of W-1-n for the week is its commitments due by W's data date,
+read as `committed` reads W-1's (with `include_overdue` false, only the dates after W-1's data
+date), their outcome read in W; at n = 0 it is the weekly work plan, `committed(W-1, W)`.
+`ta_pct = 100 × commitments of the weekly work plan held by the plan of W-1-n for the same week
+/ commitments of the weekly work plan` (Tasks Anticipated) and `tmr_pct = 100 × commitments of
+the plan of W-1-n for the week kept in W / commitments of that plan` (Tasks Made Ready,
+TMR(n, 0)), both as Hamzeh, Ballard & Tommelein (2012), "Rethinking Lookahead Planning to
+Optimize Construction Workflow", Lean Construction Journal, figure 5 (TA = 14/18, TMR = 11/20,
+PPC = 13/18), first proposed by Ballard (1997). The unit is a commitment (Start or Finish), as
+the PPC above; the sources count tasks. Activities deleted in W are left out, as for the PPC.
+Horizons 1, 2, 4 and 8 updates: the sources measure one week (Ballard & Tommelein 2016, Current
+Process Benchmark for the Last Planner System: "we are not aware that anyone has ever measured
+beyond Week1") and two (Hamzeh et al. 2012); beyond, the reading is xerscope's. The example of
+the 2016 benchmark (TA = FG/ACEFG) contradicts its own definition of TA; the 2012 figure is
+followed. Pinned by tests/test_lookahead.py.
+
 **Progress delta** (`progress_delta(prev, cur, baseline)`), per activity of either update:
 
 | Column | Formula |
