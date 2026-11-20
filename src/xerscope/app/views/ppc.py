@@ -70,7 +70,7 @@ ACTIVITY_COLUMNS = [
 
 
 def _pct(value) -> str:
-    return "n/a" if pd.isna(value) else f"{value:.0f} %"
+    return ui.fmt_number(value, "{:.0f} %", missing="n/a")
 
 
 def show_ppc_weeks(ppc: pd.DataFrame) -> None:
@@ -124,7 +124,7 @@ def show_kpis(week: pd.Series, project_progress: pd.Series) -> None:
             ),
             (
                 "Project progress",
-                "–" if pd.isna(project_progress["progress_pts"]) else f"{project_progress['progress_pts']:+.2f} pts",
+                ui.fmt_number(project_progress["progress_pts"], "{:+.2f} pts"),
                 None,
                 "Earned labor hours this week / budget hours (baseline hours and EV technique when a baseline is set)",
             ),

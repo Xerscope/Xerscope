@@ -222,7 +222,7 @@ ui.kpis(
         ("Focus", node["wbs_code"] if current != ROOT else "Whole project", None, node["wbs_name"]),
         (
             "% complete",
-            "–" if pd.isna(node["pct_complete"]) else f"{node['pct_complete']:.1f} %",
+            ui.fmt_number(node["pct_complete"], "{:.1f} %"),
             None,
             f"Weighted by {node['weight']}",
         ),

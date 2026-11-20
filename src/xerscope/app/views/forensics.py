@@ -96,7 +96,7 @@ def show_kpis(read, new) -> None:
             ),
             (
                 "Longest path float",
-                "–" if float_d is None else f"{float_d:.1f} d",
+                ui.fmt_number(float_d, "{:.1f} d"),
                 None,
                 "Lowest total float on the recalculated longest path, days of the project calendar: under a "
                 "Must Finish By or a Mandatory Finish, the delay the finish cannot show goes here.",

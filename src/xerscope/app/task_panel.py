@@ -50,19 +50,19 @@ def task_from_row_id(value: object) -> str | None:
 
 
 def _text(value) -> str:
-    return "–" if value is None or (not isinstance(value, str) and pd.isna(value)) or value == "" else str(value)
+    return ui.MISSING if value is None or (not isinstance(value, str) and pd.isna(value)) or value == "" else str(value)
 
 
 def _when(value) -> str:
-    return "–" if pd.isna(value) else pd.Timestamp(value).strftime(DATETIME_FMT)
-
-
-def _days(value) -> str:
-    return "–" if pd.isna(value) else f"{value:.1f} wd"
+    if pd.isna(value):
+        return ui.MISSING
+    return pd.Timestamp(value).strftime(DATETIME_FMT)
 
 
 def _yes(value) -> str:
-    return "–" if pd.isna(value) else ("Yes" if bool(value) else "No")
+    if pd.isna(value):
+        return ui.MISSING
+    return "Yes" if bool(value) else "No"
 
 
 def _constraint(kind, date) -> str:
@@ -110,11 +110,11 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
             "Status",
             [
                 ("Status", _text(task["status"])),
-                ("% complete", "–" if pd.isna(task["pct_complete"]) else f"{task['pct_complete']:.1f} %"),
-                ("Original duration", _days(task["original_d"])),
-                ("Remaining duration", _days(task["remaining_d"])),
-                ("Total float", _days(task["total_float_d"])),
-                ("Free float", _days(task["free_float_d"])),
+                ("% complete", ui.fmt_number(task["pct_complete"], "{:.1f} %")),
+                ("Original duration", ui.fmt_number(task["original_d"], "{:.1f} wd")),
+                ("Remaining duration", ui.fmt_number(task["remaining_d"], "{:.1f} wd")),
+                ("Total float", ui.fmt_number(task["total_float_d"], "{:.1f} wd")),
+                ("Free float", ui.fmt_number(task["free_float_d"], "{:.1f} wd")),
                 ("Critical", _yes(task["is_critical"])),
                 ("Longest path", _yes(task["on_longest_path"])),
             ],
@@ -241,8 +241,8 @@ def show_history(store, task_code: str) -> None:
                 "Working days gained (+) or lost (−) since the first forecast of this task, on its calendar: "
                 "a later finish reads negative",
             ),
-            ("Total float", "–" if pd.isna(last["total_float_d"]) else f"{last['total_float_d']:.1f} wd"),
-            ("% complete", "–" if pd.isna(last["pct_complete"]) else f"{last['pct_complete']:.0f} %"),
+            ("Total float", ui.fmt_number(last["total_float_d"], "{:.1f} wd")),
+            ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),
         ]
     )
     dates_column, float_column = st.columns(2, gap="large")

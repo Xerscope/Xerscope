@@ -45,7 +45,7 @@ ui.kpis(
         ),
         (
             "Shift since first update",
-            "–" if total is None else f"{total:+.1f} wd",
+            ui.fmt_number(total, "{:+.1f} wd"),
             None,
             "Working days gained (+) or lost (−) on the forecast finish since the first loaded update "
             "(project calendar): a later finish reads negative",
