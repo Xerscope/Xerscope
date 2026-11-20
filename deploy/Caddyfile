@@ -60,7 +60,8 @@
         @download path /media/*          # st.download_button files: schedule data, never kept on the visitor's disk
         header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
         @page path / /index.html         # the page names the hashed JS chunks of the running image
-        header @page >Cache-Control no-cache   # revalidated: after an update a plain reload gets the new chunk names
+        header @page >Cache-Control no-store   # never kept: a reload after an update gets the new chunk names, and
+                                               # no HTML of the app stays on a shared computer's disk (the JS chunks do)
         header >Set-Cookie (.*) "$1; Secure"   # Streamlit marks its XSRF cookie Secure only when it holds the
                                                # certificate itself; here tailscaled does, so Caddy adds it
         @unused path /_stcore/metrics /_stcore/agent/*   # the app's session counters and the description of its

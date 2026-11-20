@@ -814,7 +814,9 @@ def diagnostic_frames(
         "02_expected_finish": expected_finish_table(snapshot),
         "02b_expected_finish_forms": expected_finish_forms(snapshot),
         "03_int01_recalculation": recalculation_table(snapshot),
-        "03a_departure_steps": pd.DataFrame(step_rows(departure_funnel(snapshot))),
+        "03a_departure_steps": pd.DataFrame(step_rows(departure_funnel(snapshot))).astype(
+            {"removed": "Int64", "left": "Int64"}  # counts: whole numbers, blank on the start row
+        ),
         "03b_departures": departures(snapshot),
         "03c_departure_forms": departure_forms(snapshot),
         "03_int03_assignments": assignments_table(snapshot),

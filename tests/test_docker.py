@@ -321,9 +321,11 @@ def test_caddy_security_headers_and_their_ci_check():
     # a deletion defers the whole block, and deferred ops skip the 401: -Server has its own directive
     assert "-Server" not in block and "    header -Server" in caddy
     assert "header @download >Cache-Control no-store" in caddy and "@download path /media/*" in caddy
-    # the page names the hashed JS chunks of the running image: revalidated, so a reload after an update
-    # never asks for chunks the new image no longer has; the chunks themselves keep their cache
-    assert "@page path / /index.html" in caddy and "header @page >Cache-Control no-cache" in caddy
+    # the page names the hashed JS chunks of the running image and is the only HTML the visitor's browser
+    # could keep: never stored, so a reload after an update fetches the new chunk names and nothing of the
+    # app survives on a shared computer's disk; the chunks themselves (public code) keep their cache
+    assert "@page path / /index.html" in caddy and "header @page >Cache-Control no-store" in caddy
+    assert "header @page >Cache-Control no-cache" not in caddy
     wf = (ROOT / ".github" / "workflows" / "tests.yml").read_text()  # the deploy job runs Caddy and reads them
     assert "docker compose up -d tailscale caddy" in wf and "frame-ancestors 'self'" in wf
     assert "Strict-Transport-Security" in wf and "Permissions-Policy" in wf

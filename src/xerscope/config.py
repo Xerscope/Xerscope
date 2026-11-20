@@ -12,6 +12,7 @@ class Settings:
     critical_float_days: float = 0.0  # total float <= this => critical
     near_critical_float_days: float = 10.0  # Gantt colouring only
     table_filter_min_rows: int = 10  # app tables with more rows than this get column filters
+    lookahead_weeks: float = 6.0  # Delay analysis: revisions starting within this many weeks are make-ready work
 
 
 DEFAULT_SETTINGS = Settings()

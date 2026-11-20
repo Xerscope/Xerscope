@@ -14,6 +14,7 @@ from xerscope.analysis.forensics import (
     half_step,
     half_step_series,
     longest_path_float_d,
+    revisions_by_horizon,
 )
 from xerscope.analysis.longest_path import (
     SWITCHED,
@@ -22,7 +23,9 @@ from xerscope.analysis.longest_path import (
     longest_path_funnel,
     path_changes,
     path_churn,
+    path_commitments,
 )
+from xerscope.analysis.progress import kept_count
 from xerscope.app import ui
 from xerscope.app.sets import show_steps as show_funnel_steps
 from xerscope.app.state import (
@@ -34,6 +37,7 @@ from xerscope.app.state import (
     snapshot_picker,
     sources_of,
 )
+from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz.charts import build_half_step, build_slip_trend
 
 CASE_TEXT = {
@@ -114,6 +118,37 @@ def show_steps(read, old, new) -> None:
     )
 
 
+def show_horizon(old, new) -> None:
+    """Where the week's revisions fall: within the lookahead, where work is made ready, or beyond it."""
+    weeks = DEFAULT_SETTINGS.lookahead_weeks
+    horizon = memo(
+        ("forensics_horizon", old.label, new.label, weeks),
+        revisions_by_horizon, old, new, weeks, baseline=False, ev_basis=False,
+    )  # fmt: skip
+    st.caption(
+        f"Where the revisions fall: on tasks starting within {weeks:g} weeks of the status date (work under "
+        "way included), where a Last Planner team makes work ready, or beyond. Revisions that fall mostly "
+        "beyond reshape the far plan."
+    )
+    ui.table(horizon, key="forensics_horizon")
+
+
+def show_path_commitments(old, new) -> None:
+    """Show the week's commitments made on the previous update's longest path, kept or not."""
+    commitments = path_commitments(old, new)
+    st.caption(
+        f"Commitments of the week on the previous update's longest path: {kept_count(commitments)} kept of "
+        f"{len(commitments)}. PPC counts every commitment alike; a miss here moves the finish."
+    )
+    if not commitments.empty:
+        ui.table(
+            commitments.sort_values(["kept", "planned_date"]),
+            key="forensics_path_commitments",
+            max_height=320,
+            open_task=partial(open_in_gantt, snapshot=new),
+        )
+
+
 def show_longest_path(old, new) -> None:
     """Tasks that entered or left the longest path since the previous update, then the table."""
     changes = path_changes(old, new)
@@ -187,6 +222,8 @@ show_case(new)
 show_engine_gap(read, old, new)
 show_kpis(read, new)
 show_steps(read, old, new)
+show_horizon(old, new)
 show_longest_path(old, new)
+show_path_commitments(old, new)
 show_series(store)
 show_path_series(store)
