@@ -34,7 +34,7 @@ FLOORS = {
     "H9": 0.999,
     "H10": 0.982,
     "H11": 0.999,
-    "H12": 0.994,
+    "H12": 1.000,
     "H13": 0.995,
     "H14": 0.995,
     "H15": 0.997,
@@ -45,14 +45,14 @@ FLOORS = {
     "H20": 0.995,
     "H21": 1.000,
     "H22": 0.998,
-    "H23": 0.992,
+    "H23": 0.997,
     "H24": 0.985,
-    "H25": 0.987,
+    "H25": 0.998,
     "H26": 0.991,
-    "H27": 0.991,
-    "H28": 0.984,
-    "H29": 0.977,
-    "H30": 0.987,
+    "H27": 0.993,
+    "H28": 0.993,
+    "H29": 0.988,
+    "H30": 0.990,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -160,6 +160,12 @@ def test_total_float_agrees_wherever_the_four_dates_do():
 # reading: the value named must be P6's. The ratchet above
 # would absorb a regression on one activity; this names it.
 PINNED = {
+    "the project's late finish caps a pinned date": [
+        ("H12", "H12-09", "A1330", "late_start"),
+        ("H28", "H28-12", "A1200", "late_start"),
+        ("H23", "H23-04", "A1240", "late_start"),
+        ("H12", "H12-09", "A1200", "late_start"),
+    ],
     "resource-dependent work: a start bound the late start already meets binds nothing": [
         ("H12", "H12-11", "A1160", "late_finish")
     ],

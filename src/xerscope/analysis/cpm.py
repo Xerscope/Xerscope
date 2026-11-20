@@ -1424,11 +1424,14 @@ class _Run:
         # second slot (H26-08 A1280: the late finish is the second date, the late start follows).
         # Not measured: a start date in the second slot under a primary Mandatory Finish (no corpus
         # or probe activity has it); it bounds nothing here, as before
+        # The project's late finish still caps the pin: P6 keeps the late finish it gives and the late
+        # start that much earlier, so the float goes negative; a pin before it holds (probes
+        # ZZ-CPP-MSNP, -MSNR; corpus H12-09 A1330, H28-12 A1200). P6 23.12.1, 26.8 not measured
         if end == "start":
             start = min([date] + constraint_start_bounds)
             if code in self.rsrc_dep and self.kind(code) == "task":
-                return [], [self.resource_pin_finish(code, start)] + constraint_finish_bounds
-            return [start], constraint_finish_bounds
+                return [], [self.resource_pin_finish(code, start), end_anchor] + constraint_finish_bounds
+            return [start], constraint_finish_bounds + [end_anchor]
         if self.has_expected_finish(code):
             # With an expected finish in force the Mandatory Finish date no longer pins work not
             # started, whether or not the expected finish sets the duration: the late finish is
@@ -1439,7 +1442,7 @@ class _Run:
             # measured: an expected finish after the date for a milestone, a start milestone, a
             # secondary constraint. Work under way never gets here (late_constraints)
             return following_start_bounds, following_finish_bounds + [date]
-        return [], [min([date] + constraint_finish_bounds)]
+        return [], [min([date, end_anchor] + constraint_finish_bounds)]
 
     def resource_pin_finish(self, code, pinned_start: pd.Timestamp) -> pd.Timestamp:
         """Late finish a Mandatory Start pins on resource-dependent work: its assignments then run back
