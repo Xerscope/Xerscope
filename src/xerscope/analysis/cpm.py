@@ -82,7 +82,15 @@ from pandas.errors import OutOfBoundsDatetime
 
 from ..xer import Snapshot
 from ..xer.calendar import TimeAxis, WorkCalendar
-from .resource_placement import Assignment, finish_run_from, lagged_start, place_backward, place_forward, shift
+from .resource_placement import (
+    Assignment,
+    finish_run_from,
+    lagged_start,
+    place_backward,
+    place_forward,
+    shift,
+    start_printed_at_bound,
+)
 
 START_LIKE = {"CS_MSO": "start", "CS_MSOA": "start", "CS_MEO": "finish", "CS_MEOA": "finish"}  # forward
 LATE_LIKE = {"CS_MSO": "start", "CS_MSOB": "start", "CS_MEO": "finish", "CS_MEOB": "finish"}  # backward
@@ -1346,12 +1354,12 @@ class _Run:
         """Latest start and finish within the bounds; ``alap`` when placing early dates."""
         if code not in self.rsrc_dep or activity_kind != "task":
             return _late(axis, activity_kind, duration, late_start_bounds, late_finish_bounds)
+        if alap:
+            return self.slid_resource_dates(code, axis, duration, late_start_bounds, late_finish_bounds)
         # Mirror of rsrc_early: the bounds are taken on the activity calendar first (H10-04
         # A1220: a successor's late start Tue 08:00 is Mon 16:00 on a Mon-Sat 08-16 activity,
         # the 24 h resource then runs back from there), then each driving assignment is
         # placed on its resource calendar (H9-08 A1230: the resource's holiday moves it)
-        upper_finish = axis.snap_finish(min(late_finish_bounds)) if late_finish_bounds else None
-        upper_start = axis.snap_start(min(late_start_bounds)) if late_start_bounds else None
         driving = self.driving(code)
         extra_minutes = self.extra_hours.get(code, 0.0) * 60
         durations = {
@@ -1361,9 +1369,10 @@ class _Run:
             for assignment in driving
         }
         late_start_bound = min(late_start_bounds) if late_start_bounds else None
-        placement = place_backward(axis, driving, durations, upper_start, upper_finish, late_start_bound, alap)
+        late_finish_bound = min(late_finish_bounds) if late_finish_bounds else None
+        placement = place_backward(axis, driving, durations, late_finish_bound, late_start_bound)
         self.assignment_late.update(placement.assignment_dates)
-        return placement.start, placement.finish
+        return placement.start if alap else start_printed_at_bound(axis, placement), placement.finish
 
     def backward(self) -> None:
         """Late dates: the latest each activity can start and finish without delaying the
@@ -1416,7 +1425,10 @@ class _Run:
         # Not measured: a start date in the second slot under a primary Mandatory Finish (no corpus
         # or probe activity has it); it bounds nothing here, as before
         if end == "start":
-            return [min([date] + constraint_start_bounds)], constraint_finish_bounds
+            start = min([date] + constraint_start_bounds)
+            if code in self.rsrc_dep and self.kind(code) == "task":
+                return [], [self.resource_pin_finish(code, start)] + constraint_finish_bounds
+            return [start], constraint_finish_bounds
         if self.has_expected_finish(code):
             # With an expected finish in force the Mandatory Finish date no longer pins work not
             # started, whether or not the expected finish sets the duration: the late finish is
@@ -1428,6 +1440,26 @@ class _Run:
             # secondary constraint. Work under way never gets here (late_constraints)
             return following_start_bounds, following_finish_bounds + [date]
         return [], [min([date] + constraint_finish_bounds)]
+
+    def resource_pin_finish(self, code, pinned_start: pd.Timestamp) -> pd.Timestamp:
+        """Late finish a Mandatory Start pins on resource-dependent work: its assignments then run back
+        from it (``place_backward``).
+
+        The pin runs, on the activity calendar from the date's next opening, the span of the work
+        placed forward from the date on its resources' own calendars; with an expected finish in force,
+        or no work, the stored remaining duration (probes ZZ-CPP-LC1, -MM1, -MX1, -XNR; corpus H29-05
+        A1710). P6 23.12.1, 26.8 not measured.
+        """
+        axis = self.cal_ax[code]
+        opening = axis.snap_start(pinned_start)
+        driving = self.driving(code)
+        durations = {assignment.taskrsrc_id: self.assignment_minutes.get(
+            assignment.taskrsrc_id, self.base_minutes(code, assignment)) for assignment in driving}  # fmt: skip
+        span = self.dur_min(code)
+        if any(minutes > 0 for minutes in durations.values()) and not self.has_expected_finish(code):
+            placed = place_forward(axis, driving, durations, opening, None, None)
+            span = axis.between(placed.start, placed.finish)
+        return axis.add(opening, span, finish=True) if span > 0 else opening
 
     def bounds_of_what_follows(self, code, end_anchor: pd.Timestamp) -> tuple[list, list]:
         """Bounds the successors give, the project end and the late date a link to another project gives."""
@@ -1542,6 +1574,12 @@ class _Run:
         free_float_hr = (
             max(0.0, min(gaps)) if gaps else max(0.0, axis.between(self.early_finish[code], self.finish) / 60)
         )
+        if self.is_as_late_as_possible(code) and not self.has_multiple_float_paths():
+            # As Late As Possible work holds no free float, even where its slide stops short of its
+            # successors; not under "Calculate multiple float paths" (probes ZZ-CPP-AFF, -HSM; corpus
+            # H23-02 A1220). P6 23.12.1, 26.8 not measured. Not ported: the end activity those paths
+            # may be set to (probes ZZ-CPP-KEA, -KF1)
+            return 0.0
         if self.has_expected_finish(code) or self.is_unstarted_under_mandatory(code):
             # P6 23.12.1 gives no free float to an activity with an expected finish in force,
             # whether or not it sets the duration (held-out corpus: 707 of 707; H1-08 A1090,
@@ -1550,6 +1588,10 @@ class _Run:
             # 26.8 not measured.
             return 0.0
         return free_float_hr
+
+    def has_multiple_float_paths(self) -> bool:
+        """Whether the project asks P6 to calculate multiple float paths."""
+        return (self.snapshot.options.get("sched", {}) or {}).get("enable_multiple_longest_path_calc") == "Y"
 
     def is_unstarted_under_mandatory(self, code) -> bool:
         """True for work not started whose primary constraint is a dated Mandatory Start / Finish."""
@@ -1855,6 +1897,64 @@ class _Run:
         )
         late_assignment_finish = finish_run_from(assignment, late_assignment_start, duration_minutes)
         return assignment_start, assignment_finish, late_assignment_start, late_assignment_finish
+
+    def slid_resource_dates(
+        self, code, axis, duration, start_limits: list, finish_limits: list
+    ) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """Dates "as late as possible" moves resource-dependent work to, its current ones when it stays.
+
+        The bound is the earliest of what its FS / FF successors allow and, for an SS / SF one, that
+        start plus the activity's remaining duration on its calendar. No slide where no working time of
+        the activity calendar lies between the early finish and the bound (probe ZZ-CPP-ALZ; corpus
+        H25-01 A1310). The assignments run back from the bound, with no start bound; work with no work
+        left runs forward from it instead (probes ZZ-CPP-QF1, -RF1; corpus H28-12 A1080). A start off
+        the activity calendar's working time moves on to its next opening and the work runs forward
+        from there (probe ZZ-CPP-ARU; corpus H23-05 A1060). P6 23.12.1, 26.8 not measured.
+        """
+        bounds = list(finish_limits)
+        if start_limits:
+            start_bound = min(start_limits)
+            bounds.append(axis.add(start_bound, duration, finish=True) if duration > 0 else start_bound)
+        bound = min(bounds)
+        current = (self.remaining_start[code], self.early_finish[code])
+        if axis.between(self.early_finish[code], bound) <= 0:
+            return current
+        driving = self.driving(code)
+        durations = {assignment.taskrsrc_id: self.assignment_minutes.get(
+            assignment.taskrsrc_id, self.base_minutes(code, assignment)) for assignment in driving}  # fmt: skip
+        if not any(minutes > 0 for minutes in durations.values()):
+            placement = place_forward(axis, driving, durations, axis.snap_start(bound), None, None)
+        else:
+            placement = place_backward(axis, driving, durations, bound, None)
+            finish_bound = min(finish_limits) if finish_limits else None
+            placement = self.stretched_to_start_bound(
+                axis, driving, durations, placement, duration, start_limits, finish_bound, bound
+            )
+            opening = axis.snap_start(placement.start)
+            if opening != placement.start:
+                placement = place_forward(axis, driving, durations, opening, None, None)
+        self.assignment_late.update(placement.assignment_dates)
+        return placement.start, placement.finish
+
+    @staticmethod
+    def stretched_to_start_bound(axis, driving, durations, placement, duration, start_limits, finish_bound, bound):
+        """Slid work that starts before its SS / SF bound, placed back again from that bound.
+
+        ``bound`` is the slide's own (``slid_resource_dates``). The remaining duration becomes the span
+        the placement gives, or the duration stored for it where that is longer, carried from the SS /
+        SF bound, no later than an FS / FF bound (probes ZZ-CPP-QB1, -KR1; corpus H27-04 A1220, H28-02
+        A1410, H28-09 A1580). P6 23.12.1, 26.8 not measured. Not ported: under "Start Float" P6 then runs the start
+        float from the bound.
+        """
+        if not start_limits or axis.between(placement.start, min(start_limits)) <= 0:
+            return placement
+        span = max(axis.between(placement.start, placement.finish), duration)
+        stretched_finish = axis.add(min(start_limits), span, finish=True)
+        if finish_bound is not None:
+            stretched_finish = min(stretched_finish, finish_bound)
+        if stretched_finish <= bound:
+            return placement
+        return place_backward(axis, driving, durations, stretched_finish, None)
 
     # --- result ------------------------------------------------------------------------------
     def result(self) -> Schedule:

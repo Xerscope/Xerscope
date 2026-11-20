@@ -31,28 +31,28 @@ FLOORS = {
     "H6": 0.998,
     "H7": 1.000,
     "H8": 0.999,
-    "H9": 0.998,
-    "H10": 0.975,
-    "H11": 0.997,
+    "H9": 0.999,
+    "H10": 0.982,
+    "H11": 0.999,
     "H12": 0.994,
-    "H13": 0.994,
+    "H13": 0.995,
     "H14": 0.995,
-    "H15": 0.995,
-    "H16": 0.981,
-    "H17": 0.990,
-    "H18": 0.986,
-    "H19": 0.992,
-    "H20": 0.976,
+    "H15": 0.997,
+    "H16": 0.983,
+    "H17": 0.992,
+    "H18": 0.998,
+    "H19": 0.995,
+    "H20": 0.995,
     "H21": 1.000,
-    "H22": 0.994,
-    "H23": 0.988,
-    "H24": 0.962,
-    "H25": 0.930,
-    "H26": 0.960,
-    "H27": 0.974,
-    "H28": 0.957,
-    "H29": 0.943,
-    "H30": 0.942,
+    "H22": 0.998,
+    "H23": 0.992,
+    "H24": 0.985,
+    "H25": 0.987,
+    "H26": 0.991,
+    "H27": 0.991,
+    "H28": 0.984,
+    "H29": 0.977,
+    "H30": 0.987,
 }
 
 DATES = ["early_start", "early_finish", "late_start", "late_finish"]
@@ -160,6 +160,33 @@ def test_total_float_agrees_wherever_the_four_dates_do():
 # reading: the value named must be P6's. The ratchet above
 # would absorb a regression on one activity; this names it.
 PINNED = {
+    "resource-dependent work: a start bound the late start already meets binds nothing": [
+        ("H12", "H12-11", "A1160", "late_finish")
+    ],
+    "resource-dependent work: several assignments under a bound run back from one late finish": [
+        ("H9", "H9-08", "A1050", "late_start"),
+        ("H24", "H24-09", "A1260", "late_start"),
+    ],
+    "resource-dependent work: a lagged assignment with no work lands its lag after the bound": [
+        ("H24", "H24-12", "A1180", "late_finish"),
+        ("H25", "H25-02", "A1460", "late_start"),
+    ],
+    "resource-dependent work under a Mandatory Start: pinned on the span its resources give": [
+        ("H29", "H29-05", "A1710", "late_start")
+    ],
+    "As Late As Possible resource-dependent work: slid back, off-hours start moved on": [
+        ("H23", "H23-05", "A1060", "early_start"),
+        ("H28", "H28-12", "A1080", "early_start"),
+    ],
+    "As Late As Possible resource-dependent work: stretched to its start bound": [
+        ("H28", "H28-09", "A1580", "early_start"),
+        ("H27", "H27-04", "A1220", "early_start"),
+        ("H28", "H28-03", "A1450", "early_start"),
+    ],
+    "As Late As Possible resource-dependent work: no slide without working time before the bound": [
+        ("H18", "H18-08", "A1120", "early_start")
+    ],
+    "As Late As Possible work holds no free float": [("H23", "H23-02", "A1220", "free_float_hr")],
     "resource-dependent work: a finish bound gives the start at the activity calendar's next opening": [
         ("H14", "H14-11", "A1320", "early_start"),
         ("H10", "H10-04", "A1040", "early_start"),
