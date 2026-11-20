@@ -533,7 +533,7 @@ U1 unit test (`load_series()` with an injected session dict, section 6) added he
 
 **Findings.** RD-01, RD-02, RD-03, RD-04, RD-15.
 
-### P6c — The baseline sidebar apart from the resolution (effort M, executor: mechanical executor, with Quentin; move, byte-identical)
+### P6c — The baseline domain cut by responsibility (effort M, executor: the "Chaîne d'utilisation des baselines" session, after this branch merges; move, byte-identical)
 
 **Problem.** After P6a, `app/baselines.py` (1050 lines, rank C) holds both what baseline an update
 is measured against (`baseline_for`, `_resolution`, `_file_baseline`, `memo`, `ScoreJob`, exports)
@@ -541,7 +541,15 @@ and what the app says about it (pickers, warnings, banner, `_baseline_fields`, t
 baseline section). The parallel session's split drew the same line (`baselines.py` draws nothing,
 `baseline_sidebar.py` talks).
 
-**Choice.** A scripted move on this branch's layout: `app/baselines.py` keeps the resolution,
+**Choice.** Agreed between the two sessions and the maintainer (2026-11-20): the other session's
+five-module map, applied to this branch's `app/baselines.py` as a pure move after this branch
+merges: `baseline_file.py` (the separate baseline file: folder, upload, env), `baseline_export.py`
+(the XML export in use: index, resolution, baselines read), `baselines.py` (`baseline_for` and the
+paths that build the Baseline of an update), `baseline_window.py` (the window's Baseline section),
+`baseline_warnings.py` (what the sidebar and the pages say); `memo`, `ScoreJob` and the standard
+results go to a new `app/cache.py`; the exports to `baseline_export.py` or `downloads.py`.
+`state.py` keeps re-exporting. Its behaviour commits (`Baseline.kind` / `found_by`, the choice for
+an undecided update) are rebased first, then this move, proven as P6a. Superseded text: `app/baselines.py` keeps the resolution,
 the memo, the jobs and the exports and imports no drawing; `app/baseline_sidebar.py` receives
 `_baseline_picker`, `_ask_for_the_baseline`, `_fallback_picker`, `_describe_baseline`, the
 `*_warnings` and `*_help` functions, `context_banner`'s baseline line, `_baseline_fields` and its
