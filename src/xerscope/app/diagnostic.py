@@ -13,7 +13,7 @@ import io
 import math
 import re
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import pandas as pd
@@ -306,52 +306,46 @@ def _inputs(snapshot: Snapshot, codes: pd.Index) -> pd.DataFrame:
     return inputs
 
 
-def recalculation_table(snapshot: Snapshot) -> pd.DataFrame:
-    """INT-01: one row per activity with a stored date or float that differs from the recalculation,
-    stored and recalculated values side by side, then the inputs the CPM read for it."""
-    empty = pd.DataFrame(columns=["task_code", "differs"])
-    comparison = compare_with_stored(snapshot)
+def _differences_wide(comparison: pd.DataFrame, key: str, fields: list[tuple[str, str]]) -> pd.DataFrame:
+    """One row per ``key`` with a stored value that differs from the recalculation: each field stored, then
+    ``<field>_recalc``, then ``differs`` naming the fields that differ. Empty when no key differs."""
     if comparison.empty:
-        return empty
+        return pd.DataFrame()
     comparison = comparison[comparison["stored"].notna()]
-    differing = comparison[~comparison["agree"]]["task_code"].unique()
+    differing = comparison[~comparison["agree"]][key].unique()
     if not len(differing):
-        return empty
-    wide = comparison[comparison["task_code"].isin(differing)]
-    stored = wide.pivot(index="task_code", columns="field", values="stored")
-    computed = wide.pivot(index="task_code", columns="field", values="computed")
-    out = pd.DataFrame(index=pd.Index(sorted(differing), name="task_code"))
-    for _, stored_name in FIELDS:
+        return pd.DataFrame()
+    wide = comparison[comparison[key].isin(differing)]
+    stored = wide.pivot(index=key, columns="field", values="stored")
+    computed = wide.pivot(index=key, columns="field", values="computed")
+    out = pd.DataFrame(index=pd.Index(sorted(differing), name=key))
+    for _, stored_name in fields:
         if stored_name in stored:
             out[stored_name] = stored[stored_name]
             out[f"{stored_name}_recalc"] = computed[stored_name]
-    out["differs"] = wide[~wide["agree"]].groupby("task_code")["field"].agg(", ".join)
-    return out.join(_inputs(snapshot, out.index)).reset_index()
+    out["differs"] = wide[~wide["agree"]].groupby(key)["field"].agg(", ".join)
+    return out
+
+
+def recalculation_table(snapshot: Snapshot) -> pd.DataFrame:
+    """INT-01: one row per activity with a stored date or float that differs from the recalculation,
+    stored and recalculated values side by side, then the inputs the CPM read for it."""
+    differences = _differences_wide(compare_with_stored(snapshot), "task_code", FIELDS)
+    if differences.empty:
+        return pd.DataFrame(columns=["task_code", "differs"])
+    return differences.join(_inputs(snapshot, differences.index)).reset_index()
 
 
 def assignments_table(snapshot: Snapshot) -> pd.DataFrame:
     """INT-03: one row per open assignment whose stored remaining dates differ, with TASKRSRC inputs."""
-    empty = pd.DataFrame(columns=["taskrsrc_id", "task_code", "differs"])
     comparison = compare_assignments(snapshot)
-    if comparison.empty:
-        return empty
-    comparison = comparison[comparison["stored"].notna()]
-    differing = comparison[~comparison["agree"]]["taskrsrc_id"].unique()
-    if not len(differing):
-        return empty
-    wide = comparison[comparison["taskrsrc_id"].isin(differing)]
-    stored = wide.pivot(index="taskrsrc_id", columns="field", values="stored")
-    computed = wide.pivot(index="taskrsrc_id", columns="field", values="computed")
-    out = pd.DataFrame(index=pd.Index(sorted(differing), name="taskrsrc_id"))
-    out["task_code"] = wide.groupby("taskrsrc_id")["task_code"].first()
-    for _, stored_name in ASSIGNMENT_FIELDS:
-        if stored_name in stored:
-            out[stored_name] = stored[stored_name]
-            out[f"{stored_name}_recalc"] = computed[stored_name]
-    out["differs"] = wide[~wide["agree"]].groupby("taskrsrc_id")["field"].agg(", ".join)
+    differences = _differences_wide(comparison, "taskrsrc_id", ASSIGNMENT_FIELDS)
+    if differences.empty:
+        return pd.DataFrame(columns=["taskrsrc_id", "task_code", "differs"])
+    differences.insert(0, "task_code", comparison.groupby("taskrsrc_id")["task_code"].first())
     assignments = snapshot.assignments.astype({"taskrsrc_id": str}).set_index("taskrsrc_id")
-    inputs = assignments.loc[out.index, [column for column in ASSIGNMENT_INPUT_COLS if column in assignments]]
-    return out.join(inputs).reset_index()
+    inputs = assignments.loc[differences.index, [column for column in ASSIGNMENT_INPUT_COLS if column in assignments]]
+    return differences.join(inputs).reset_index()
 
 
 def own_text() -> dict[str, frozenset[str]]:
@@ -641,6 +635,13 @@ def _numbers_of(frame: pd.DataFrame, column: str) -> pd.Series:
     return to_number(frame[column]).dropna() if column in frame.columns else pd.Series(dtype=float)
 
 
+def _column_or(frame: pd.DataFrame, column: str, convert: Callable[[pd.Series], pd.Series], fill: object) -> pd.Series:
+    """The column through ``convert``; ``fill`` on every row when the frame has no such column."""
+    if column in frame:
+        return convert(frame[column])
+    return pd.Series(fill, index=frame.index)
+
+
 def _cost_figures(frame: pd.DataFrame, with_rate: bool) -> dict:
     """The cost figures of one table; ``with_rate``: its ``cost_per_qty`` range too (TASKRSRC has one)."""
     cost = _numbers_of(frame, "target_cost")
@@ -689,19 +690,12 @@ def assignment_dates_table(snapshot: Snapshot) -> pd.DataFrame:
     assignments = assignments[assignments["rsrc_type"].isin(LABOR_KINDS)] if not assignments.empty else assignments
     activities = snapshot.by_code
 
-    def number(column: str) -> pd.Series:
-        return (
-            to_number(assignments[column]).fillna(0.0)
-            if column in assignments
-            else pd.Series(0.0, index=assignments.index)
-        )
-
-    def date(frame: pd.DataFrame, column: str) -> pd.Series:
-        return as_dates(frame[column]) if column in frame else pd.Series(pd.NaT, index=frame.index)
-
-    task_start = assignments["task_code"].map(date(activities, "target_start_date"))
-    task_finish = assignments["task_code"].map(date(activities, "target_end_date"))
-    own_start, own_finish = date(assignments, "target_start_date"), date(assignments, "target_end_date")
+    original_lag_hr = _column_or(assignments, "target_lag_drtn_hr_cnt", to_number, 0.0)
+    remaining_lag_hr = _column_or(assignments, "relag_drtn_hr_cnt", to_number, 0.0)
+    task_start = assignments["task_code"].map(_column_or(activities, "target_start_date", as_dates, pd.NaT))
+    task_finish = assignments["task_code"].map(_column_or(activities, "target_end_date", as_dates, pd.NaT))
+    own_start = _column_or(assignments, "target_start_date", as_dates, pd.NaT)
+    own_finish = _column_or(assignments, "target_end_date", as_dates, pd.NaT)
     task_type = (
         assignments["task_code"].map(activities["task_type"])
         if "task_type" in activities
@@ -718,8 +712,8 @@ def assignment_dates_table(snapshot: Snapshot) -> pd.DataFrame:
         [
             {
                 "labor_assignments": len(assignments),
-                "with_original_lag": int((number("target_lag_drtn_hr_cnt") > 0).sum()),
-                "with_remaining_lag": int((number("relag_drtn_hr_cnt") > 0).sum()),
+                "with_original_lag": int((original_lag_hr > 0).sum()),
+                "with_remaining_lag": int((remaining_lag_hr > 0).sum()),
                 "planned_dates_blank": int((own_start.isna() | own_finish.isna()).sum()),
                 "planned_start_later_than_activity": int((own_start > task_start).sum()),
                 "planned_finish_earlier_than_activity": int((own_finish < task_finish).sum()),

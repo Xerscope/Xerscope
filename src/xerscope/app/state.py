@@ -1774,9 +1774,15 @@ def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep
     )
 
 
+def snapshot_identity(snapshot: Snapshot) -> tuple[str, str]:
+    """The file and the data date that tell one update from another, as the memo keys and the tags of
+    built downloads hold them."""
+    return snapshot.source, str(snapshot.data_date)
+
+
 def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
     """The memo key of one metric on one update: the metric's definition, the file and its data date."""
-    return ("metric", repr(metric), snapshot.source, str(snapshot.data_date))
+    return ("metric", repr(metric), *snapshot_identity(snapshot))
 
 
 def standard_results(standard: Standard, snapshot: Snapshot, store: SnapshotStore) -> list[CheckResult]:

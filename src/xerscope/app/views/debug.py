@@ -25,6 +25,7 @@ from xerscope.app.state import (
     page_header,
     require_store,
     show_download,
+    snapshot_identity,
     snapshot_picker,
     sources_of,
     standards,
@@ -45,6 +46,11 @@ with top:
     )
 
 table = partial(ui.table, raw_labels=True)
+
+
+def zip_tag(anonymous: bool, *extra: object) -> tuple:
+    """What a zip is built from: files, projects, update, the anonymous switch, then ``extra``."""
+    return (*data_identity(), *snapshot_identity(snapshot), anonymous, *extra)
 
 
 p6_standard = standards()["P6"]
@@ -386,15 +392,11 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
     table(calendar_frames["13_calendar_week"], key="debug_13_calendar_week")
     table(calendar_frames["13_calendar_exceptions"], max_height=480, key="debug_13_calendar_exceptions")
 
-    def calendar_zip_tag(anonymous: bool) -> tuple:
-        """What the calendar zip is built from: files, projects, update and the anonymous switch."""
-        return (*data_identity(), snapshot.source, str(snapshot.data_date), anonymous)
-
     if st.button("Build calendar detail", icon=":material/calendar_month:", key="debug_calendars_build"):
         hold(
             st.session_state,
             "debug_calendars_zip",
-            calendar_zip_tag(anonymous_exports()),
+            zip_tag(anonymous_exports()),
             fetch(
                 st.session_state,
                 lambda: zip_frames(calendar_frames, "csv"),
@@ -403,7 +405,7 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
                 prepare=True,
             ),
         )
-    calendar_zip = held(st.session_state, "debug_calendars_zip", calendar_zip_tag(anonymous_exports()))
+    calendar_zip = held(st.session_state, "debug_calendars_zip", zip_tag(anonymous_exports()))
     if calendar_zip is not None:
         show_download(
             calendar_zip,
@@ -422,11 +424,6 @@ if not data_locked():
             "runs; after an update, reload the page with the cache bypassed (Ctrl+Shift+R) if it still looks old."
         )
         table(ui.runtime_table(), key="debug_12_runtime")
-
-
-def zip_tag(anonymous: bool) -> tuple:
-    """What the zip is built from: files, projects, baseline, EV basis, update, P6 export of block 10."""
-    return (*data_identity(), snapshot.source, str(snapshot.data_date), repr(p6_standard), anonymous, p6_key)
 
 
 def build_diagnostic(anonymous: bool) -> None:
@@ -452,7 +449,7 @@ def build_diagnostic(anonymous: bool) -> None:
         sources,
         prepare=True,
     )
-    hold(st.session_state, "debug_zip", zip_tag(anonymous), fetched)
+    hold(st.session_state, "debug_zip", zip_tag(anonymous, repr(p6_standard), p6_key), fetched)
 
 
 def _where(error: str) -> str:
@@ -485,7 +482,7 @@ ui.section(
 )
 if st.button("Build diagnostic", icon=":material/folder_zip:", key="debug_build"):
     build_diagnostic(anonymous)
-diagnostic_zip = held(st.session_state, "debug_zip", zip_tag(anonymous))
+diagnostic_zip = held(st.session_state, "debug_zip", zip_tag(anonymous, repr(p6_standard), p6_key))
 if diagnostic_zip is not None:
     show_download(
         diagnostic_zip, "Download diagnostic (.zip)", "xerscope_diagnostic.zip", "application/zip", key="debug_download"
