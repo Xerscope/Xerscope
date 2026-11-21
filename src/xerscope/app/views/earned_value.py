@@ -30,18 +30,24 @@ from xerscope.analysis.evm import (
 )
 from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING
 from xerscope.app import ui
-from xerscope.app.code_picker import pick_code_filter
-from xerscope.app.state import (
+from xerscope.app.baselines import (
     baseline_for,
-    baseline_warnings,
-    costs_shown,
-    csv_download,
+)
+from xerscope.app.cache import (
     memo,
     metric_result,
+)
+from xerscope.app.code_picker import pick_code_filter
+from xerscope.app.downloads import (
+    costs_shown,
+    csv_download,
+    sources_of,
+)
+from xerscope.app.state import (
+    baseline_warnings,
     page_header,
     require_store,
     snapshot_picker,
-    sources_of,
 )
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
 

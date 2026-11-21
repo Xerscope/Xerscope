@@ -36,11 +36,9 @@ P6_NAMES = {
         "Activity Status",
     ],
     "glossary.py": ["P6 Activity ID", "Level of Effort activity type"],
-    "baselines.py": [
-        "Renumber Activity IDs",
-        "Renumber Selected Activities in Baselines",
-        "Late Activities",  # the P6 check name
-    ],
+    # the P6 names moved with their functions: the window's GUID option and the sidebar's missing-baseline line
+    "baseline_window.py": ["Renumber Activity IDs", "Renumber Selected Activities in Baselines"],
+    "baseline_warnings.py": ["Late Activities"],  # the P6 check name
     "views/debug.py": [
         "P6 links a task to its baseline by Activity ID",
         "Activities view of P6",

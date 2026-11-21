@@ -23,16 +23,22 @@ from xerscope.analysis.checks import results_frame
 from xerscope.analysis.explain import explain, settings_lines
 from xerscope.analysis.rules import RULES, is_read
 from xerscope.app import ui
+from xerscope.app.baselines import (
+    baseline_for,
+)
+from xerscope.app.cache import (
+    metric_result,
+)
+from xerscope.app.downloads import (
+    sources_of,
+)
 from xerscope.app.explanation_panel import show_calculation, show_method
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
-    baseline_for,
     baseline_warnings,
-    metric_result,
     page_header,
     require_store,
     snapshot_picker,
-    sources_of,
     standards,
 )
 

@@ -4,7 +4,8 @@ import streamlit as st
 
 from xerscope.analysis.progress import milestone_codes, milestone_slips, milestone_trend, plotted_trend
 from xerscope.app import ui
-from xerscope.app.state import memo, open_in_gantt, page_header, require_store
+from xerscope.app.cache import memo
+from xerscope.app.state import open_in_gantt, page_header, require_store
 from xerscope.viz.charts import SERIES, build_mta
 
 store = require_store()

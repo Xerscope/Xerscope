@@ -13,7 +13,7 @@ import pytest
 from xerkit import todo, xer_text
 
 from xerscope.anonymize import LeakError
-from xerscope.app.state import anonymizer, anonymizers_built, downloads_ready, fetch, held, hold
+from xerscope.app.downloads import anonymizer, anonymizers_built, downloads_ready, fetch, held, hold
 
 NAMES = {"A": "Pump house", "B": "Boiler room"}
 

@@ -8,6 +8,7 @@ from conftest import baseline_box, files_done, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
+from xerscope.xer import xer_files
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 
@@ -47,20 +48,20 @@ def test_an_anonymizer_is_not_served_for_a_baseline_file_replaced_under_the_same
     under the same name is other text, so the anonymizer of the old one does not serve it."""
     from xerkit import todo, xer_text
 
-    from xerscope.app import state
+    from xerscope.app import downloads, session
 
     monkeypatch.delenv("XERSCOPE_DATA_LOCKED", raising=False)
     update = xer_text([todo("A1")]).encode()
     session = {
         "signature": ("folder", "x", ("a.xer", "d")),
         "items": [("a.xer", update)],
-        "bl_choice": state.BL_FILE,
+        "bl_choice": session.BL_FILE,
         "bl_file": ("bl.xer", xer_text([todo("A1", task_name="First name")]).encode()),
     }
-    assert state.anonymizer(prepare=True, session=session) is not None
+    assert downloads.anonymizer(prepare=True, session=session) is not None
     session["bl_file"] = ("bl.xer", xer_text([todo("A1", task_name="Second name")]).encode())
-    assert state.anonymizer(session=session) is None
-    assert "Second name" in state.anonymizer(prepare=True, session=session).secrets_
+    assert downloads.anonymizer(session=session) is None
+    assert "Second name" in downloads.anonymizer(prepare=True, session=session).secrets_
 
 
 CRAFTED = "![x](https://example.invalid/p.png)"
@@ -116,13 +117,13 @@ def test_a_file_gone_from_the_folder_is_named_and_the_others_stay_read(tmp_path,
 def test_a_file_gone_between_the_listing_and_its_reading_does_not_crash_the_page(tmp_path, sample_dir, monkeypatch):
     """The folder is listed, then each file is read: a file removed in between (os.stat fails) is
     named, as one gone before the listing."""
-    from xerscope.app import files_window, loading, state
+    from xerscope.app import files_window, loading
 
     files = _folder_of(tmp_path, sample_dir, 2)
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
-    listed = state.xer_files(tmp_path)
+    listed = xer_files(tmp_path)
     monkeypatch.setattr(files_window, "xer_files", lambda root: listed)
     monkeypatch.setattr(loading, "xer_files", lambda root: listed)
     files[0].unlink()
@@ -188,23 +189,23 @@ def test_a_check_that_errors_is_counted_as_an_error_not_as_not_applicable(app, m
 def bad_lexicon(tmp_path, monkeypatch):
     """XERSCOPE_LEXICON names a folder with a malformed file beside a valid one (no lexicon ships with
     the package); the lexicon is read once per process, so it is read again for this test and after it."""
-    from xerscope.app import state
+    from xerscope.app import loading
 
     folder = tmp_path / "lexicon"
     (folder / "curated").mkdir(parents=True)
     (folder / "curated" / "bad.toml").write_text("[[group]\nwords = [\n")
     (folder / "curated" / "good.toml").write_text('[[group]]\nwords = ["béton", "concrete"]\n', encoding="utf-8")
     monkeypatch.setenv("XERSCOPE_LEXICON", str(folder))
-    state.lexicon_and_errors.cache_clear()
+    loading.lexicon_and_errors.cache_clear()
     yield
-    state.lexicon_and_errors.cache_clear()
+    loading.lexicon_and_errors.cache_clear()
 
 
 @pytest.mark.usefixtures("bad_lexicon")
 def test_lexicon_load_errors_show_on_the_debug_page_of_every_session(sample_dir, monkeypatch):
     """A malformed lexicon file is skipped, and said so on the Debug page, in each session (the
     lexicon is loaded once for the process, not once per session)."""
-    from xerscope.app.state import lexicon
+    from xerscope.app.loading import lexicon
 
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)

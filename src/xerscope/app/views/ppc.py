@@ -23,8 +23,11 @@ from xerscope.analysis.progress import (
     unplanned_work,
 )
 from xerscope.app import ui
+from xerscope.app.baselines import baseline_for
+from xerscope.app.cache import memo
 from xerscope.app.code_picker import pick_code_filter
-from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
+from xerscope.app.downloads import csv_download, sources_of
+from xerscope.app.state import page_header, require_store
 from xerscope.viz.charts import PPC_TARGET, build_ppc
 
 COMMITMENT_COLUMNS = [

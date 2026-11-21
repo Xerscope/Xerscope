@@ -48,8 +48,9 @@ class CheckResult:
         return f"{self.note} · baseline: {self.baseline}" if self.note else f"baseline: {self.baseline}"
 
 
-# Rules that read the baseline without needing one (they fall back on the planned dates), by name
-BASELINE_READERS = {"decm_06a204b_dangling_logic", "dcma_08_high_duration"}
+# Rules that read the baseline without declaring ``needs_baseline``, by name: 06A204b falls back on the
+# planned dates, DCMA-08 has no value without one, DCMA-13 takes its margin from it without a Must Finish By
+BASELINE_READERS = {"decm_06a204b_dangling_logic", "dcma_08_high_duration", "dcma_13_cpli"}
 
 
 def uses_baseline(metric: Metric) -> bool:

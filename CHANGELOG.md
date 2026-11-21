@@ -16,6 +16,14 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- Baselines: `Baseline.kind` and `found_by` say how the baseline of an update relates to it (in file,
+  exact, probable, chosen, fallback, planned, series) and what found it; set by every path of the app,
+  read by one classifier (`app.baselines.kind_of`) for the context banner, the sidebar and the Debug
+  page, so a baseline read from the export is no longer called "in file". An update left undecided by the
+  resolution (the versions of the export around its project hold different baselines) is not measured,
+  not even by the fallback, until the Files and baseline window gets a choice for it: one of the two
+  candidate baselines (applied as "chosen", alerted like a probable one) or the fallback.
+
 - PPC & progress page: lookahead reliability, Tasks Anticipated and Tasks Made Ready of the
   week against the plans of 1, 2, 4 and 8 updates before (Hamzeh, Ballard & Tommelein 2012,
   figure 5; `progress.lookahead_series`, formulas.md §4), with every week's counts.
@@ -72,6 +80,21 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Changed
 
+- The pages, `streamlit_app.py` and the tests import each name from the module that defines it;
+  `app/state.py` no longer re-exports what the other modules define. `tests/test_architecture.py`
+  guards the app's import graph: the edges between the app modules written in the test, the baseline
+  domain reading neither `state`, `loading`, `downloads` nor `cache`, `state.py` imported by the pages
+  only, no cycle.
+
+- `app/baselines.py` (1 338 lines) cut by responsibility, no behaviour changed (`scripts/same_code.py`:
+  same code): `app/baseline_file.py` (the separate baseline file), `app/baseline_export.py` (the P6 XML
+  export in use and the resolution), `app/baselines.py` (`baseline_for` and the paths that build the
+  Baseline of an update), `app/baseline_window.py` (the window's Baseline section),
+  `app/baseline_warnings.py` (the sidebar's Baseline line and its warnings), `app/cache.py` (`memo`,
+  the checks' results, the score job); the parse cache and `_cache_for` in `app/session.py`, the exports
+  and `costs_shown` in `app/downloads.py`. Dependencies run one way, no cycle; `state.py` keeps its
+  re-exports; the tests patch the module that calls the patched name.
+
 - Funnel stack, CVE-2026-97054 (Go `net/http`, fixed in Go 1.27.4): `tailscale/tailscale`
   v1.104.4 → v1.104.7 (Go 1.27.4); `deploy/caddy/Dockerfile` on Caddy 2.11.9 (its builder holds
   Go 1.27.4, the build checks it), x/net replaced by v0.63.0, the go-jose/v4 replace dropped (2.11.9 requires the
@@ -92,6 +115,15 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 - Delay analysis: a step counts the changes it carries; a rename or a move to another WBS is counted
   at no step (they were counted at the last one).
 - Debug, block 3: the counts of the steps table are whole numbers.
+- Baselines: "Link renumbered tasks by GUID" renamed the baseline's frame but not the tasks of its own
+  file, so P6-13 counted a renumbered task as no longer in the schedule and the BEI due in the baseline
+  lost it, while the earned value found it (`baseline.relinked`). A baseline of the P6 XML export that
+  cannot be read stopped every page; its update now has no baseline and the sidebar names it. DCMA-13
+  (CPLI) reads the baseline finish of the end milestone without a Must Finish By and did not name the
+  baseline in its result; it does (`checks.BASELINE_READERS`). The Files and baseline window lists, once
+  the files are read, the baseline each file names and what it is measured against; the sidebar's
+  message on missing Project Baselines says that P6 writes none in an XER and asks for the P6 XML export.
+
 - Delay analysis: the page no longer stops on a series where an update holds whole hours only and
   the next a fraction of an hour (a remaining duration of 19.2 h): the half-step schedule carries
   the value as it is.
