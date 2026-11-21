@@ -10,8 +10,6 @@ the same column names and number formats everywhere.
 
 from __future__ import annotations
 
-import base64
-import functools
 import os
 import re
 import zlib
@@ -26,10 +24,13 @@ from xerscope.analysis.explain import READINGS
 from xerscope.analysis.query import fold as _fold
 from xerscope.analysis.task_filters import search_mask as _search_mask
 from xerscope.app.glossary import GLOSSARY, spelled_out
+from xerscope.app.table_filters import FILTER_HINT, FILTER_RULE, as_dates, keep_mask
+from xerscope.app.theme import STYLE, theme_loaded
+from xerscope.app.theme import apply_style as apply_style
+from xerscope.app.theme import font_fallback_css as font_fallback_css
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
-from xerscope.viz.charts import ACCENT, SERIES, STATUS, TEXT
-from xerscope.xer.model import to_datetime
+from xerscope.viz.charts import STATUS, TEXT
 
 
 class StatusStyle(NamedTuple):
@@ -54,35 +55,7 @@ STATUS_STYLE = {
 GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())  # type: ignore[arg-type]
 
 
-STYLE = Path(__file__).parent / "style.css"
 STRICT_READINGS = "XERSCOPE_STRICT_READINGS"  # set by the tests: a figure without a reading raises
-STATIC = Path(__file__).parent / "static"
-# The theme's fonts (.streamlit/config.toml, [[theme.fontFaces]]): family -> file in app/static/.
-FONT_FILES = {"Onest": "Onest-latin-wght.woff2", "JetBrains Mono": "JetBrainsMono-latin-wght.woff2"}
-
-
-def theme_loaded() -> bool:
-    """Whether Streamlit read the app's .streamlit/config.toml: ``xerscope app`` runs from that folder,
-    and Streamlit 1.66 also reads it next to the script. An older Streamlit started from another
-    folder reads none: the page then shows Streamlit's defaults (its own fonts and colours, no
-    static folder, every interface listened on)."""
-    return st.get_option("theme.font") is not None and bool(st.get_option("server.enableStaticServing"))
-
-
-@functools.cache
-def font_fallback_css() -> str:
-    """@font-face rules with the two fonts inlined (data: URLs, ~100 KB), for a run without the
-    config: the static folder is not served then, so the theme's font URLs would 404."""
-    rules = []
-    for family, name in FONT_FILES.items():
-        data = base64.b64encode((STATIC / name).read_bytes()).decode("ascii")
-        rules.append(
-            f'@font-face {{ font-family: "{family}"; font-weight: 100 900; font-display: swap; '
-            f"src: url(data:font/woff2;base64,{data}) format('woff2'); }}"
-        )
-    rules.append('.stApp { font-family: "Onest", sans-serif; }')
-    rules.append('.stApp code, .stApp pre { font-family: "JetBrains Mono", monospace; }')
-    return "\n".join(rules)
 
 
 def runtime_table() -> pd.DataFrame:
@@ -105,21 +78,6 @@ def runtime_table() -> pd.DataFrame:
         ("Python", platform.python_version()),
     ]
     return pd.DataFrame(rows, columns=["setting", "value"])
-
-
-def apply_style() -> None:
-    """style.css with the app's colours (sent once per run, takes no space). The series colours
-    and the status colours hold on both themes, the accent is a CSS light-dark() pair resolved by the
-    color-scheme Streamlit sets on the app, and the rest follows the page's text colour, so a theme switch
-    needs no rerun. Without the config (``theme_loaded``), the fonts are inlined so the page at
-    least reads in the app's faces."""
-    accent = f"light-dark({ACCENT['light']}, {ACCENT['dark']})"
-    series = {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
-    status = {f"status-{name}": colour for name, colour in STATUS.items()}
-    colours = {"accent": accent} | series | status
-    variables = "".join(f"--{name}: {value};" for name, value in colours.items())
-    fallback = "" if theme_loaded() else font_fallback_css()
-    st.html(f"<style>:root {{{variables}}}\n{fallback}\n{STYLE.read_text(encoding='utf-8')}</style>")
 
 
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
@@ -510,16 +468,6 @@ def glossary() -> None:
         )
 
 
-def as_dates(values: pd.Series) -> pd.Series:
-    """A column as dates: left as it is when already one, else read as the XER writes dates
-    ("YYYY-MM-DD HH:MM", ISO 8601, seconds tolerated). Never a guess from the first value, which
-    pandas would otherwise make and then apply to the rest (a date without time becomes NaT after
-    one with seconds), nor a dateutil fallback on a label."""
-    if pd.api.types.is_datetime64_any_dtype(values):
-        return values
-    return to_datetime(values.astype("string").fillna(""))
-
-
 def section(title: str, caption: str = "") -> None:
     st.subheader(title)
     if caption:
@@ -629,20 +577,7 @@ def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels
     return config
 
 
-# Column filters. One text per column, all of them must hold (AND); an empty text filters nothing.
-#   text     beton            contains, ignoring case and accents
-#   number   <0  >=5  =3  -10..0
-#   date     >2026-11-01  2026-11  2026-11..2026-12   (a year, month or day; ranges are inclusive)
-FILTER_HINT = {
-    "text": "contains…",
-    "number": "<0, >=5, -10..0",
-    "date": ">2026-11-01, 2026-11, 2026-11..2026-12",
-}
-FILTER_RULE = "Every filter must hold; an empty text filters nothing."
-_OPERATOR = re.compile(r"^(<=|>=|<|>|=)?\s*(.+)$")
-_YEAR_MONTH_OR_DAY = re.compile(r"\d{4}(-\d{2}(-\d{2})?)?")
-
-
+# How a filter text is read is in table_filters; the kind of a column comes from COLUMNS, which is here.
 def filter_kind(column: str, values: pd.Series) -> str:
     """text | number | date: how a column's filter text is read."""
     kind = COLUMNS.get(column, ("", ""))[1] or _infer_kind(values)
@@ -651,66 +586,6 @@ def filter_kind(column: str, values: pd.Series) -> str:
     if kind in NUMBER_FORMATS and pd.api.types.is_numeric_dtype(values):
         return "number"
     return "text"
-
-
-def _number(text: str) -> float:
-    return float(text.replace("−", "-").replace(",", "").replace("%", "").strip())
-
-
-def _range(text: str) -> tuple[str, str] | None:
-    """Bounds of "a..b"; the split skips the first character so "-10..0" keeps its sign."""
-    cut = text.find("..", 1)
-    return (text[:cut], text[cut + 2 :]) if cut > 0 else None
-
-
-def _operator_and_value(text: str) -> tuple[str, str]:
-    """The comparison a filter starts with ("" when it has none) and the value after it."""
-    found = _OPERATOR.match(text)
-    if found is None:  # the pattern reads one line: a value holding a line break is not a filter
-        raise ValueError(f"not a filter: {text!r}")
-    operator, value = found.groups()
-    return operator or "", value
-
-
-def _number_test(text: str) -> Callable[[pd.Series], pd.Series]:
-    bounds = _range(text)
-    if bounds:
-        low, high = _number(bounds[0]), _number(bounds[1])
-        return lambda values: values.between(low, high)
-    operator, value = _operator_and_value(text)
-    number = _number(value)
-    return {
-        "<": lambda values: values < number,
-        "<=": lambda values: values <= number,
-        ">": lambda values: values > number,
-        ">=": lambda values: values >= number,
-    }.get(operator or "=", lambda values: values == number)
-
-
-def _period(text: str) -> pd.Period:
-    """The year, month or day a filter names (2026, 2026-11, 2026-11-01). Any other text is refused:
-    read loosely, "3 4" would be 4 March of the year 1."""
-    written = text.strip()
-    if not _YEAR_MONTH_OR_DAY.fullmatch(written):
-        raise ValueError(f"not a year, a month or a day: {text!r}")
-    return pd.Period(written)
-
-
-def _date_test(text: str) -> Callable[[pd.Series], pd.Series]:
-    """A date may be a year, a month or a day: "=" keeps the whole period, ">" what is after it."""
-    bounds = _range(text)
-    if bounds:
-        start, end = _period(bounds[0]).start_time, _period(bounds[1]).end_time
-        return lambda values: (values >= start) & (values <= end)
-    operator, value = _operator_and_value(text)
-    period = _period(value)
-    start, end = period.start_time, period.end_time
-    return {
-        "<": lambda values: values < start,
-        "<=": lambda values: values <= end,
-        ">": lambda values: values > end,
-        ">=": lambda values: values >= start,
-    }.get(operator or "=", lambda values: (values >= start) & (values <= end))
 
 
 def filter_rows(frame: pd.DataFrame, filters: Mapping[str, str]) -> tuple[pd.DataFrame, dict[str, str]]:
@@ -725,12 +600,7 @@ def filter_rows(frame: pd.DataFrame, filters: Mapping[str, str]) -> tuple[pd.Dat
         values = frame[column]
         kind = filter_kind(column, values)
         try:
-            if kind == "number":
-                keep &= _number_test(text)(values).fillna(False)
-            elif kind == "date":
-                keep &= _date_test(text)(as_dates(values)).fillna(False)
-            else:
-                keep &= values.map(fold).str.contains(fold(text), regex=False)
+            keep &= keep_mask(kind, text, values)
         except ValueError:
             errors[column] = f"Not read as a {kind} filter. Examples: {FILTER_HINT[kind]}"
     return frame[keep], errors
