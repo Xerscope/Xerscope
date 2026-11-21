@@ -80,6 +80,12 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Changed
 
+- The pages, `streamlit_app.py` and the tests import each name from the module that defines it;
+  `app/state.py` no longer re-exports what the other modules define. `tests/test_architecture.py`
+  guards the app's import graph: the edges between the app modules written in the test, the baseline
+  domain reading neither `state`, `loading`, `downloads` nor `cache`, `state.py` imported by the pages
+  only, no cycle.
+
 - `app/baselines.py` (1 338 lines) cut by responsibility, no behaviour changed (`scripts/same_code.py`:
   same code): `app/baseline_file.py` (the separate baseline file), `app/baseline_export.py` (the P6 XML
   export in use and the resolution), `app/baselines.py` (`baseline_for` and the paths that build the

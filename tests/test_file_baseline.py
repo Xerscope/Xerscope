@@ -330,7 +330,7 @@ def test_a_baseline_of_the_export_that_cannot_be_read_leaves_its_update_without_
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     _series_and_export(tmp_path, empty=("201",))
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
@@ -440,7 +440,7 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app.state import BL_EACH, BL_FILE, BL_NONE
+    from xerscope.app.session import BL_EACH, BL_FILE, BL_NONE
 
     _series_and_export(tmp_path)
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
@@ -547,7 +547,7 @@ def test_each_baseline_of_the_export_is_read_once_for_the_pages_and_the_debug_ta
 
     import xerscope
     from xerscope.analysis.baseline_resolution import IN_EXPORT, SAME_GENERATION, UNDECIDED
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
     from xerscope.xer.pmxml import read_pmxml_baseline
 
     reads: dict[str, int] = {}
@@ -582,7 +582,7 @@ def test_the_debug_page_lists_the_projects_of_the_export_in_use(tmp_path, monkey
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     _series_and_export(tmp_path)
     monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
@@ -606,7 +606,8 @@ def test_the_export_of_baselines_is_read_for_the_downloads_in_the_per_file_mode(
     when it is the fallback."""
     from xerkit import todo, xer_text
 
-    from xerscope.app.state import BL_EACH, BL_FILE, baseline_items
+    from xerscope.app.baseline_file import baseline_items
+    from xerscope.app.session import BL_EACH, BL_FILE
 
     _series_and_export(tmp_path)
     session = {"bl_choice": BL_EACH, "files_source": ("folder", str(tmp_path), ("a.xer",))}
@@ -746,7 +747,7 @@ def _selection(at):
 
 
 def test_the_sidebar_defaults_to_the_baseline_in_the_file_and_the_panel_names_it(tmp_path, monkeypatch):
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     at = _app(tmp_path, monkeypatch, baseline_ids=("A1", "A2"))
     assert not at.exception
@@ -755,7 +756,7 @@ def test_the_sidebar_defaults_to_the_baseline_in_the_file_and_the_panel_names_it
 
 
 def test_the_sidebar_keeps_its_choice_when_the_pointer_names_an_absent_project(tmp_path, monkeypatch):
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     at = _app(tmp_path, monkeypatch, pointer="370", with_baseline=False)
     assert not at.exception
@@ -769,7 +770,7 @@ def test_the_panel_says_why_an_inconsistent_baseline_is_not_used(tmp_path, monke
 
 
 def test_schedule_health_runs_on_the_baseline_of_the_file(tmp_path, monkeypatch):
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     at = _app(tmp_path, monkeypatch).switch_page("views/health.py").run()
     assert not at.exception
@@ -1040,7 +1041,7 @@ def _portfolio(tmp_path, monkeypatch):
 def test_a_file_whose_baseline_copy_ties_on_activities_is_read_for_its_project(tmp_path, monkeypatch):
     # a's baseline copy BL has as many TASK rows as UPD: set aside as a baseline copy, a is read for UPD,
     # and its P6 Project Baseline is found
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     at = _portfolio(tmp_path, monkeypatch)
     assert not at.exception
@@ -1201,7 +1202,7 @@ def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointe
     a warning names both, since the numbers will not be P6's."""
     from xerkit import todo, xer_text
 
-    from xerscope.app.state import BL_FILE
+    from xerscope.app.session import BL_FILE
 
     c = {"pointer": "370", "data_date": "2026-03-09 08:00", "with_baseline": False, "flag": "Y"}
     baseline_file = tmp_path.parent / f"{tmp_path.name}-bl.xer"
@@ -1220,7 +1221,7 @@ def test_a_separate_baseline_file_of_another_project_is_named_against_the_pointe
 def test_a_loaded_update_as_baseline_is_named_against_the_pointer(tmp_path, monkeypatch):
     """Both updates name project 370 (flag Y), absent; the user takes the first update as baseline:
     the same warning, since P6 measures against 370, not against that update."""
-    from xerscope.app.state import BL_EACH, BL_FILE, BL_NONE, BL_PLANNED
+    from xerscope.app.session import BL_EACH, BL_FILE, BL_NONE, BL_PLANNED
 
     files = {
         name: {"pointer": "370", "data_date": stamp, "with_baseline": False, "flag": "Y"}
@@ -1288,7 +1289,7 @@ def test_once_the_series_is_read_the_window_asks_for_the_baseline_and_nothing_is
     page draws, the updates are looked for once and each baseline they are measured against read once."""
     from conftest import is_waiting_for_baseline
 
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     at, calls = _app_on_series_and_export(tmp_path, monkeypatch)
     assert not at.exception, [e.value for e in at.exception]

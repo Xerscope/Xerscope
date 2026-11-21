@@ -134,7 +134,7 @@ def test_each_update_is_measured_against_the_baseline_its_file_names_in_the_xml(
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app.state import BL_EACH, BL_FILE
+    from xerscope.app.session import BL_EACH, BL_FILE
 
     data = tmp_path / "updates"
     data.mkdir()
@@ -250,7 +250,7 @@ def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app.state import BL_EACH, BL_FILE
+    from xerscope.app.session import BL_EACH, BL_FILE
 
     data = tmp_path / "updates"
     data.mkdir()
@@ -286,8 +286,8 @@ def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch)
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app import downloads, session, state
-    from xerscope.app.state import BL_EACH, BL_FILE
+    from xerscope.app import downloads, session
+    from xerscope.app.session import BL_EACH, BL_FILE
 
     data = tmp_path / "updates"
     data.mkdir()
@@ -303,7 +303,7 @@ def test_a_rerun_reads_the_xml_baselines_from_the_session(tmp_path, monkeypatch)
     baseline_box(at, "bl_fallback").select(BL_FILE)
     at.switch_page("views/earned_value.py").run()
     calls = []
-    indexed, built = state.index_pmxml, Baseline.from_snapshot.__func__
+    indexed, built = pmxml.index_pmxml, Baseline.from_snapshot.__func__
     monkeypatch.setattr(session, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
     monkeypatch.setattr(downloads, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
     monkeypatch.setattr(pmxml, "index_pmxml", lambda *a, **k: calls.append("index") or indexed(*a, **k))
@@ -467,7 +467,7 @@ def test_a_session_goes_through_the_p6_xml_baseline_file_once(tmp_path, monkeypa
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app.state import BL_EACH, BL_FILE
+    from xerscope.app.session import BL_EACH, BL_FILE
 
     data = tmp_path / "updates"
     data.mkdir()
@@ -492,7 +492,7 @@ def test_a_session_goes_through_the_p6_xml_baseline_file_once(tmp_path, monkeypa
 
 
 def test_the_anonymizer_reads_every_baseline_of_the_export_from_one_index(monkeypatch):
-    from xerscope.app.state import source_raws
+    from xerscope.app.downloads import source_raws
 
     passes = _count_index_passes(monkeypatch)
     raws = source_raws("export.xml", TWO)

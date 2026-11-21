@@ -15,7 +15,7 @@ if _MPXJ_CPM:
 
 
 # AppTest returns when the script run ends: the app reads every file and computes the Overview
-# scores in that run (state.background_jobs). test_app_background.py lifts this for its own tests.
+# scores in that run (loading.background_jobs). test_app_background.py lifts this for its own tests.
 os.environ.setdefault("XERSCOPE_SYNC_LOAD", "1")
 
 

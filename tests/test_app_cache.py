@@ -14,8 +14,8 @@ import xerscope
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, health_history
 from xerscope.analysis import baseline as analysis_baseline
 from xerscope.analysis.checks import run_metric
-from xerscope.app import baseline_file, baseline_warnings, cache, diagnostic, loading, session, state
-from xerscope.app.state import BL_EACH, BL_PLANNED
+from xerscope.app import baseline_file, baseline_warnings, cache, diagnostic, loading, session
+from xerscope.app.session import BL_EACH, BL_PLANNED
 from xerscope.store import SnapshotStore
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
@@ -61,7 +61,7 @@ def same_result(cached, fresh) -> None:
 def _metric_script():
     import streamlit as st
 
-    from xerscope.app.state import metric_result
+    from xerscope.app.cache import metric_result
 
     store = st.session_state["store"]
     metric_result(st.session_state["metric"], store.by_label(st.session_state["update"]), store)
@@ -182,7 +182,7 @@ def test_every_check_gives_the_same_result_whatever_the_ev_basis(store, planned)
 def _fill_script():
     import streamlit as st
 
-    from xerscope.app.state import MEMO_SIZE, memo
+    from xerscope.app.cache import MEMO_SIZE, memo
 
     runs = st.session_state.setdefault("runs", [])
     memo(("entry", 0), lambda: runs.append(0))
@@ -194,9 +194,9 @@ def _fill_script():
 def test_memo_drops_the_least_recently_used_entry_past_its_size():
     at = AppTest.from_function(_fill_script, default_timeout=120).run()
     assert not at.exception
-    cache = at.session_state["_memo"]
-    assert len(cache) == state.MEMO_SIZE
-    kept = {key[-1] for key in cache}
+    entries = at.session_state["_memo"]
+    assert len(entries) == cache.MEMO_SIZE
+    kept = {key[-1] for key in entries}
     assert 0 in kept and 1 not in kept  # entry 1 was the oldest unread one
     assert at.session_state["runs"].count(0) == 1
 
@@ -566,7 +566,8 @@ def test_overview_shows_the_scores_schedule_health_computed_without_running_a_ch
 def _missed_tasks_script():
     import streamlit as st
 
-    from xerscope.app.state import data_identity, metric_result
+    from xerscope.app.baselines import data_identity
+    from xerscope.app.cache import metric_result
 
     store = st.session_state["store"]
     st.session_state["identity"] = data_identity(ev_basis=False)  # the score job's identity starts with it

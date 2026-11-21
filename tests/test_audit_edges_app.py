@@ -263,21 +263,21 @@ def session(monkeypatch):
 
 
 def test_memo_is_bounded_and_evicts_least_recently_used(session):
-    from xerscope.app import state
+    from xerscope.app.cache import MEMO_SIZE, memo
 
     for i in range(300):
-        state.memo(("k", i), lambda i=i: i)
-    cache = session["_memo"]
-    assert len(cache) == state.MEMO_SIZE == 128
-    assert state.memo(("k", 0), lambda: "recomputed") == "recomputed"  # evicted
-    assert state.memo(("k", 299), lambda: "recomputed") == 299  # kept
+        memo(("k", i), lambda i=i: i)
+    kept = session["_memo"]
+    assert len(kept) == MEMO_SIZE == 128
+    assert memo(("k", 0), lambda: "recomputed") == "recomputed"  # evicted
+    assert memo(("k", 299), lambda: "recomputed") == 299  # kept
 
 
 def test_parsed_file_cache_is_bounded(session):
-    from xerscope.app import state
+    from xerscope.app.session import _parse
 
     for i in range(70):
-        state._parse(f"f{i}.xer", xer_text([todo(f"A{i}")]).encode())
+        _parse(f"f{i}.xer", xer_text([todo(f"A{i}")]).encode())
     assert len(session["_parsed"]) <= 65
 
 

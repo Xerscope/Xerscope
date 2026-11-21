@@ -292,9 +292,11 @@ Outside `analysis/`:
   `metric_result` and the standard results, `ScoreJob`.
 - **`session.py`:** the leaf the others read: the window's modes (`BL_*`) and drafts, the parse cache
   (`_parse`, `_pmxml_index`), the digests, `_cache_for`, the locked deployment.
-- **`state.py`:** the page-level pieces (context banner, page header, `baseline_warnings`, pickers,
-  `require_store`) and, as a transition, the re-exports of every name the pages still import from it;
-  the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
+- **`state.py`:** the page-level pieces only (context banner, page header, `baseline_warnings`, pickers,
+  `require_store`, `standards`); every other name a page reads comes from its defining module, which
+  `tests/test_architecture.py` guards (the app's import edges, written in the test; the baseline domain
+  reads none of the pages' machinery; `state.py` is imported by the pages only; no cycle). What follows
+  describes the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
   `_window`: files read on Done, baseline selectors kept in session state while it is closed;
   shortcuts F, B and Ctrl+Enter for Done), pickers, a per-session cache keyed on the loaded
   files, and the list of standards (built-in, `XERSCOPE_STANDARDS`, uploaded). One update for

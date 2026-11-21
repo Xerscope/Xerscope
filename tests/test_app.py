@@ -33,7 +33,9 @@ import xerscope
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
-from xerscope.app.state import BL_FILE, BL_PLANNED, _picked_folder_baseline, anonymizers_built
+from xerscope.app.baseline_file import _picked_folder_baseline
+from xerscope.app.downloads import anonymizers_built
+from xerscope.app.session import BL_FILE, BL_PLANNED
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.viz.gantt import CHROME_PX, ROW_PX
@@ -806,13 +808,13 @@ def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_
     """The help says how the figure is calculated and which settings it is meant for; the settings carry
     the labels of the Baseline window."""
     from xerscope.analysis.baseline import DEFAULT_EV_BASIS
-    from xerscope.app import baseline_window, state
+    from xerscope.app import baseline_window, session
 
     app.switch_page("views/earned_value.py").run()
     _ok(app)
     card = next(metric for metric in app.metric if metric.label == "SPI (4 weeks)")
     assert "Σ ΔEV / Σ ΔPV" in card.help and "1,260 h were earned for 1,520 planned: 0.83" in card.help
-    for label in (state.BL_EACH, state.EV_BASIS_LABEL[DEFAULT_EV_BASIS], state.BL_NONE):
+    for label in (session.BL_EACH, session.EV_BASIS_LABEL[DEFAULT_EV_BASIS], session.BL_NONE):
         assert f"*{label}*" in card.help
     window_source = Path(baseline_window.__file__).read_text(encoding="utf-8")  # the window's Baseline section
     for field in (
@@ -1060,7 +1062,7 @@ def test_a_folder_baseline_file_no_longer_in_the_folder_is_not_read(tmp_path, mo
 def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tmp_path, monkeypatch):
     """What an anonymized download is built from (``baseline_items``): the export picked in the folder;
     nothing for a name that is not one of the folder's files, whatever path it spells."""
-    from xerscope.app.state import baseline_items
+    from xerscope.app.baseline_file import baseline_items
 
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
@@ -1096,7 +1098,7 @@ def test_an_export_that_cannot_be_read_is_said_in_the_sidebar_when_an_update_nam
     """w2 names baseline 370; export.xml, picked as the baseline file, is cut short afterwards. The sidebar
     says the baseline was not read; the page still draws. In "Baseline in each file" the same export is
     said not read, and no update is measured against it."""
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     _updates_and_a_p6_xml_export(tmp_path)
     named = {"proj_id": "20", "sum_base_proj_id": "370"}
@@ -1958,7 +1960,7 @@ def _memo_runs(at) -> int:
 def _probe_script():
     import streamlit as st
 
-    from xerscope.app.state import memo
+    from xerscope.app.cache import memo
 
     runs = st.session_state.setdefault("runs", [])
     memo(("probe",), lambda: runs.append(1))
@@ -1968,7 +1970,7 @@ def _probe_script():
 def test_memo_recomputes_when_the_baseline_changes(store, change):
     """The cache key carries the baseline's identity: a page need not add it by hand."""
     from xerscope.analysis.baseline import Baseline
-    from xerscope.app.state import BL_PLANNED
+    from xerscope.app.session import BL_PLANNED
 
     first, second = store.labels[:2]
     at = AppTest.from_function(_probe_script, default_timeout=120)
@@ -2044,15 +2046,15 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
 @pytest.fixture
 def lexicon_root(tmp_path, monkeypatch):
     """XERSCOPE_LEXICON with its three folders; the app's cached reads start and end empty."""
-    from xerscope.app import state
+    from xerscope.app import loading
 
     for folder in ("generated", "curated", "suggested"):
         (tmp_path / folder).mkdir()
     monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
-    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+    for read in (loading.lexicon_and_errors, loading.refusals, loading.file_variants):
         read.cache_clear()
     yield tmp_path
-    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+    for read in (loading.lexicon_and_errors, loading.refusals, loading.file_variants):
         read.cache_clear()
 
 
@@ -2221,7 +2223,7 @@ def test_debug_names_a_curated_file_not_utf8_or_misshaped_and_the_gantt_still_re
 
 
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
-    from xerscope.app import state
+    from xerscope.app import loading
 
     (lexicon_root / "generated" / "variants.toml").write_text(
         '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
@@ -2236,11 +2238,11 @@ def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     (lexicon_root / "suggested" / "suggestions.toml").write_text(
         '[[group]]\ncolumn = "TASK.task_name"\nwords = ["pose", "poses"]\n', encoding="utf-8"
     )
-    assert state.file_variants() == {
+    assert loading.file_variants() == {
         "PROJWBS.wbs_name": [["beton", "betons"]],
         "TASK.task_name": [["coffrage", "coffrages"]],
     }
-    assert state.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+    assert loading.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
 
 
 def test_a_lexicon_uploaded_as_a_standard_never_reaches_the_ask_field(app):
