@@ -114,9 +114,10 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     ui.table(
         summary,
         status="status",
-        max_height=700,
+        max_height=ui.TABLE_LONG,
         overrides=ui.count_columns(flagged="Items listed"),
         key="health_results",
+        reading="health_results",
     )
 
     # Every flagged item of every check in one file: the audit trail behind the scores.
@@ -188,6 +189,8 @@ def show_check_sets(results, standard, snapshot, sources: list[str]) -> None:
         placeholder="Pick a check to list the items it counted, checked and excluded",
         format_func=lambda key: f"{key} · {next(r.metric.name for r in results if r.metric.id == key)}",
         key=f"health_sets_check:{standard.id}",
+        help="Lists, for one check, the items it counted, the items checked but not counted and the items "
+        "excluded from the file. Use it to see the tasks or links behind a count without leaving the page.",
     )
     if chosen is not None:
         show_sets(next(result for result in results if result.metric.id == chosen), snapshot, sources, f"{chosen}:")
@@ -247,8 +250,9 @@ def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
     )
     ui.table(
         culprits_first(result.flagged),
-        max_height=420,
+        max_height=ui.TABLE_SHORT,
         key=f"flag_{metric.id}",
+        reading="check_flagged",
         open_task=partial(open_in_gantt, snapshot=snapshot),
     )
     if not downloads_ready(sources):
@@ -279,10 +283,16 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
 
 def show_details(results, snapshot, only_failed: bool, sources: list[str], standard) -> None:
     ui.section("Detail by check")
-    expand_all = st.toggle("Expand all", value=False, key="health_expand")
+    expand_all = st.toggle(
+        "Expand all",
+        value=False,
+        key="health_expand",
+        help="Opens every check's panel at once (calculation, method, flagged items). "
+        "Use it to read or print the whole standard; off, open checks one by one.",
+    )
     for group, shown in shown_by_group(results, only_failed).items():
         if group:
-            st.markdown(f"##### {group}")
+            st.markdown(f"#### {group}")
         for result in shown:
             show_check(result, explain(result), snapshot, expand_all, sources, standard)
 
@@ -295,13 +305,24 @@ def show_trend(store, standard) -> None:
     history = memo(key, lambda: None, keep=False, ev_basis=False)  # None until computed for this key
     if history is None:
         if not st.button(
-            f"Compute the trend on the {len(store)} updates", icon=":material/show_chart:", key="health_trend_btn"
+            f"Compute the trend on the {len(store)} updates",
+            icon=":material/show_chart:",
+            key="health_trend_btn",
+            help="Runs every check of the standard on every loaded update, once per session; each update's "
+            "result comes from the cache when it is there. Use it to see a check across weeks; it takes "
+            "several seconds on a large file.",
         ):
             return
         result_of = partial(metric_result, store=store, keep=False)
         history = memo(key, health_history, store, standard, None, result_of, ev_basis=False)
     metric_ids = [metric.id for metric in standard.metrics]
-    metric_id = st.selectbox("Check", metric_ids, key="health_trend_metric", format_func=partial(check_label, standard))
+    metric_id = st.selectbox(
+        "Check",
+        metric_ids,
+        key="health_trend_metric",
+        format_func=partial(check_label, standard),
+        help="The check drawn in the trend chart below: its value per update against its target.",
+    )
     metric = standard[metric_id]
     ui.chart(
         build_metric_trend(
@@ -316,10 +337,11 @@ def show_trend(store, standard) -> None:
     with st.expander("All checks, all updates"):
         ui.table(
             by_update,
-            max_height=640,
+            max_height=ui.TABLE_LONG,
             # dates follow the id and check columns
             overrides=ui.number_columns("d2", *by_update.columns[2:]),
             key="health_trend",
+            reading="health_trend",
         )
 
 
@@ -350,7 +372,13 @@ def show_report_comparison(results, standard) -> None:
             "update and baseline as this page."
         )
         got = results_frame(results)
-        upload = st.file_uploader("Report counts (.csv)", type=["csv"], key=f"report_csv_{standard.id}")
+        upload = st.file_uploader(
+            "Report counts (.csv)",
+            type=["csv"],
+            key=f"report_csv_{standard.id}",
+            help="A CSV `id,found,total` typed from a P6 Check Schedule report run on the same update and "
+            "baseline. Use it instead of typing the counts in the table below; nothing typed is kept on the server.",
+        )
         if upload is None:
             typed = report_counts(got)
         else:
@@ -362,8 +390,20 @@ def show_report_comparison(results, standard) -> None:
             disabled=["id", "check"],
             hide_index=True,
             column_config={
-                "found": st.column_config.NumberColumn("Found (report)", min_value=0, step=1),
-                "total": st.column_config.NumberColumn("Total (report)", min_value=0, step=1),
+                "found": st.column_config.NumberColumn(
+                    "Found (report)",
+                    min_value=0,
+                    step=1,
+                    help="Type the report's found for this check; a line left empty is not compared. "
+                    "Use it to prove the page's counts against P6's.",
+                ),
+                "total": st.column_config.NumberColumn(
+                    "Total (report)",
+                    min_value=0,
+                    step=1,
+                    help="Type the report's total for this check; a line left empty is not compared. "
+                    "Use it to prove the page's counts against P6's.",
+                ),
             },
             key=f"report_counts_{standard.id}_{upload.file_id if upload else 'typed'}",  # a new upload resets the edits
         )
@@ -387,6 +427,7 @@ def show_report_comparison(results, standard) -> None:
                 "match": st.column_config.CheckboxColumn("Match"),
             },
             key="health_report",
+            reading="health_report",
         )
 
 
@@ -416,8 +457,22 @@ def show_own_standard() -> None:
             "Start from the template, edit it, upload it here (or put it in the folder given to "
             "`xerscope app --standards`)."
         )
-        download_text("Download the template", template_text(), "my-standard.toml", "application/toml")
-        upload = st.file_uploader("Upload a standard (.toml)", type=["toml"], key="std_upload")
+        download_text(
+            "Download the template",
+            template_text(),
+            "my-standard.toml",
+            "application/toml",
+            help_text="A TOML file with every rule, its parameters and a target, to edit into your own standard. "
+            "Use it as the starting point; upload the result below.",
+        )
+        upload = st.file_uploader(
+            "Upload a standard (.toml)",
+            type=["toml"],
+            key="std_upload",
+            help="Registers your standard for this session and lists it in the Standard picker above; a "
+            "built-in id is refused. Use it to run your company's checks; the folder given to "
+            "`xerscope app --standards` does the same for every session.",
+        )
         try:
             message = load_uploaded_standard(upload)
         except (ValueError, UnicodeDecodeError) as exc:
@@ -447,12 +502,20 @@ standard_id = st.segmented_control(
     default="P6" if "P6" in available else None,
     format_func=standard_name,
     key="health_std",
+    help="The checklist run on the update: P6 Check Schedule (the P6 Professional dialog's checks), DCMA "
+    "14-Point, DCMA DECM v8.0, Integrity (the Schedule Project Log checks), or an uploaded one. Pick the one "
+    "your report follows; P6 is the default.",
 )
 snapshot_column, failed_column = st.columns([3, 1], vertical_alignment="bottom")
 with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="health_snap")
 with failed_column:
-    only_failed = st.toggle("Failed checks only", value=False, key="health_failed")
+    only_failed = st.toggle(
+        "Failed checks only",
+        value=False,
+        key="health_failed",
+        help="Hides the checks in pass, info or n/a in the detail below. Use it to read what needs attention first.",
+    )
 standard = available[standard_id or next(iter(available))]
 baseline = baseline_for(snapshot)
 
@@ -461,10 +524,9 @@ with top:
     baseline_warnings(snapshot, baseline)
 st.caption(standard.description or standard.name)
 if baseline is None:
-    st.warning(
+    ui.need(
         "No baseline selected: checks against the baseline (late tasks, BEI, missed tasks) "
-        "are not applicable. Pick one in the sidebar.",
-        icon=":material/info:",
+        "are not applicable. Pick one in the sidebar."
     )
 
 # memoised per (data set, metric, update, baseline): the DECM critical path test alone

@@ -204,7 +204,15 @@ def snapshot_picker(store: SnapshotStore, label: str = "Snapshot", key: str = "s
     labels = store.labels
     wanted = st.session_state.get(SNAP_CHOICE)
     st.session_state[key] = wanted if wanted in labels else labels[-1]
-    choice = st.selectbox(label, labels, key=key, on_change=_follow_snapshot, args=(key,))
+    choice = st.selectbox(
+        label,
+        labels,
+        key=key,
+        on_change=_follow_snapshot,
+        args=(key,),
+        help="The weekly update the page works on; one choice for the session, every page opens on it. "
+        "Use it to read an earlier week; the latest update is picked until you choose.",
+    )
     return store.by_label(choice)
 
 
@@ -235,7 +243,13 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
     options = [COMPARE_PREV, COMPARE_BL, COMPARE_FIRST, COMPARE_NONE] + [
         label for label in store.labels if label != current.label
     ]
-    choice = st.selectbox("Compare with", options, key=key)
+    choice = st.selectbox(
+        "Compare with",
+        options,
+        key=key,
+        help="The dates to outline behind each Gantt bar: previous update, baseline, first update, another "
+        "update or none. Use it to read slippage as the bar leaving its outline.",
+    )
     if choice == COMPARE_NONE:
         return None, ""
     if choice == COMPARE_PREV:

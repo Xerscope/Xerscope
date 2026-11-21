@@ -25,6 +25,7 @@ def main() -> None:
     from xerscope.app import ui
     from xerscope.app.loading import sidebar_loader
     from xerscope.app.session import debug_page
+    from xerscope.app.theme import apply_style
 
     st.set_page_config(page_title="xerscope", page_icon=":material/calendar_month:", layout="wide")
 
@@ -33,7 +34,6 @@ def main() -> None:
             "Schedule": [
                 st.Page(VIEWS / "overview.py", title="Overview", icon=":material/dashboard:", default=True),
                 st.Page(VIEWS / "gantt.py", title="Gantt & WBS", icon=":material/view_timeline:"),
-                st.Page(VIEWS / "activity.py", title="Task history (to be removed)", icon=":material/history:"),
             ],
             "Analysis": [
                 st.Page(VIEWS / "health.py", title="Schedule health", icon=":material/fact_check:"),
@@ -53,7 +53,7 @@ def main() -> None:
         }
     )
 
-    ui.apply_style()
+    apply_style()
     sidebar_loader()
     ui.glossary()
     pages.run()

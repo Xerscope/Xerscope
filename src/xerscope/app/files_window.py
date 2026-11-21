@@ -134,8 +134,23 @@ def _select_all_line(keys: dict[str, str], readable: list[str], folder_id: str) 
     ticked = sum(bool(st.session_state[key]) for key in keys.values())
     count, select, clear = st.columns([2, 1, 1], vertical_alignment="center")
     count.caption(f"{ticked} of {len(keys)} ticked")
-    select.button("Select all", key=f"all:{folder_id}", on_click=tick_all, args=(True,), width="stretch")
-    clear.button("Clear", key=f"none:{folder_id}", on_click=tick_all, args=(False,), width="stretch")
+    select.button(
+        "Select all",
+        key=f"all:{folder_id}",
+        on_click=tick_all,
+        args=(True,),
+        width="stretch",
+        help="Ticks every readable file of the folder except the doubles of one status date. "
+        "Use it to load a whole folder in one go.",
+    )
+    clear.button(
+        "Clear",
+        key=f"none:{folder_id}",
+        on_click=tick_all,
+        args=(False,),
+        width="stretch",
+        help="Unticks every file of the folder. Use it to start the choice again.",
+    )
 
 
 def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
@@ -216,9 +231,20 @@ def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
     else:
         _section_title("Files")
         uploads = st.file_uploader(
-            "Upload .xer files", type=UPLOAD_TYPES, accept_multiple_files=True, key="files_upload"
+            "Upload .xer files",
+            type=UPLOAD_TYPES,
+            accept_multiple_files=True,
+            key="files_upload",
+            help="Reads P6 exports (.xer) kept in this session's memory only; nothing is written to disk. "
+            "Use it for files on this computer; a folder path below reads from the server instead.",
         )
-        folder = st.text_input("…or read a folder", key="files_folder", placeholder="/path/to/exports")
+        folder = st.text_input(
+            "…or read a folder",
+            key="files_folder",
+            placeholder="/path/to/exports",
+            help="A folder of the server whose .xer files are listed below for ticking. "
+            "Use it for a weekly series kept on the server; uploads above take precedence.",
+        )
     kept = _upload_boxes(uploads, source[1] if source[0] == "upload" else ())
     picked = () if kept else _folder_boxes(folder, source[2] if source[0] == "folder" else ()) if folder else ()
     if store is not None:
@@ -260,6 +286,8 @@ def _projects_fields(store: SnapshotStore) -> None:
                 format_func=labels.get,
                 key=key,
                 label_visibility="collapsed",
+                help="The project of this file the pages analyse, when the file holds several (its P6 Project "
+                "Baselines are listed aside). Use it when the analysed project is not the one picked by default.",
             )
     with st.expander("Selection details"):
         st.caption(
@@ -343,7 +371,16 @@ def _window(store: SnapshotStore | None) -> None:
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
             st.caption("Done applies · Esc cancels")
             clash = choice is not None and choice[0] == "upload" and bool(_same_names(choice[1]))
-            is_done = st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter", disabled=clash)
+            is_done = st.button(
+                "Done",
+                type="primary",
+                key="files_done",
+                shortcut="Ctrl+Enter",
+                disabled=clash,
+                help="Reads the ticked files, then the pages draw once the whole series is loaded; another choice "
+                "of files asks for its baseline once. Use Ctrl+Enter; Esc cancels. Disabled while two uploads "
+                "share a name.",
+            )
         if is_done:
             _on_done(choice, store)
 

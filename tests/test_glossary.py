@@ -10,7 +10,6 @@ from xerscope.app.ui import COLUMNS
 PAGES = [
     "views/overview.py",
     "views/gantt.py",
-    "views/activity.py",
     "views/health.py",
     "views/audit.py",
     "views/changelog.py",

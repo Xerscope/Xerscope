@@ -22,17 +22,22 @@ def _draw_code_widgets(snapshot: Snapshot, key_prefix: str) -> tuple[str | None,
             list(dict.fromkeys(snapshot.code_values["code_type"])),
             index=None,
             placeholder="None",
+            help="Picks one P6 activity code type of the file (ACTVTYPE); its values then filter the page's tasks. "
+            "Use it to read one trade, area or contract on its own; None keeps every task.",
         )
         by_label = code_value_labels(snapshot, code_type) if code_type else {}
+        placeholder = "Pick a task code first"
+        if code_type:
+            placeholder = "Type to search; pick a value, or press Enter to keep every value containing the text"
         picks = value_column.multiselect(
             "Code values",
             list(by_label),
-            placeholder="Type to search; pick a value, or press Enter to keep every value containing the text"
-            if code_type
-            else "Pick a task code first",
+            placeholder=placeholder,
             accept_new_options=True,
             filter_mode="contains",
             disabled=code_type is None,
+            help="The values of the picked code type to keep; a typed text followed by Enter keeps every value "
+            "containing it. Use it to narrow to a few values when the type has many.",
             key=f"{key_prefix}_code_values:{code_type}",  # another code type starts with nothing picked
         )
     return code_type, by_label, picks

@@ -19,6 +19,12 @@ from xerscope.xer import RawXer, Snapshot, is_pmxml
 from xerscope.xer.parser import parse_bytes
 from xerscope.xer.pmxml import DiskFile, index_pmxml, read_pmxml_baseline
 
+# The tooltip of a download button that gives no text of its own (docs/architecture.md, anonymous exports).
+DOWNLOAD_HELP = (
+    "Downloads this table as it is shown; with Anonymous exports on (sidebar), Task IDs and names are "
+    "replaced as in every other download of the session."
+)
+
 
 def source_raws(name: str, data: bytes | DiskFile) -> list[RawXer]:
     """Return the XER tables of a source file: an XER as read; a P6 XML export, each of its baselines."""
@@ -140,6 +146,7 @@ def show_download(
     *,
     suffix: bool = True,
     key: str | None = None,
+    help_text: str = DOWNLOAD_HELP,
     **button,
 ) -> None:
     """Show the download button of ``fetched`` (labelled anonymized when it is), or the refusal."""
@@ -153,6 +160,7 @@ def show_download(
         mime,
         icon=":material/download:",
         key=key,
+        help=help_text,
         **button,
     )
 
@@ -210,12 +218,20 @@ def build_and_hold(
 
 
 def show_held(
-    slot: str, tag: object, label: str, file_name: str, mime: str, *, key: str, suffix: bool = True
+    slot: str,
+    tag: object,
+    label: str,
+    file_name: str,
+    mime: str,
+    *,
+    key: str,
+    suffix: bool = True,
+    help_text: str = DOWNLOAD_HELP,
 ) -> Fetched | None:
     """Show the download kept in ``slot`` for ``tag``, if any, and return it."""
     kept = held(st.session_state, slot, tag)
     if kept is not None:
-        show_download(kept, label, file_name, mime, suffix=suffix, key=key)
+        show_download(kept, label, file_name, mime, suffix=suffix, key=key, help_text=help_text)
     return kept
 
 
@@ -233,6 +249,7 @@ def built_download(
     key: str,
     build_key: str,
     icon: str,
+    help_text: str,
     spinner: str | None = None,
     anonymous: bool | None = None,
     suffix: bool = True,
@@ -240,17 +257,17 @@ def built_download(
     """Show a button that builds a download on request, then the download built for ``tag``.
 
     The built download is kept in ``slot`` until the loaded files or ``tag`` change. Returns it, or
-    None while nothing is built.
+    None while nothing is built. ``help_text`` is the tooltip of both buttons.
     """
-    if st.button(build_label, icon=icon, key=build_key):
+    if st.button(build_label, icon=icon, key=build_key, help=help_text):
         build_and_hold(slot, tag, plain, anonymised, sources, spinner=spinner, anonymous=anonymous)
-    return show_held(slot, tag, label, file_name, mime, key=key, suffix=suffix)
+    return show_held(slot, tag, label, file_name, mime, key=key, suffix=suffix, help_text=help_text)
 
 
-def download_text(label: str, text: str, name: str, mime: str) -> None:
+def download_text(label: str, text: str, name: str, mime: str, help_text: str) -> None:
     """Show a download button for a text that holds no schedule data, as it is."""
     data = text.encode("utf-8")
-    show_download(Fetched(data, "", False), label, name, mime)
+    show_download(Fetched(data, "", False), label, name, mime, help_text=help_text)
 
 
 def csv_download(
@@ -260,6 +277,7 @@ def csv_download(
     key: str | None = None,
     sources: Iterable[str] | None = None,
     sensitive: bool = True,
+    help_text: str = DOWNLOAD_HELP,
 ) -> None:
     """Show a table as a CSV download, anonymized or not as the sidebar switch says.
 
@@ -268,7 +286,7 @@ def csv_download(
     """
     if not sensitive:
         data = csv_bytes(frame)
-        show_download(Fetched(data, "", False), label, filename, "text/csv", key=key)
+        show_download(Fetched(data, "", False), label, filename, "text/csv", key=key, help_text=help_text)
         return
     download(
         label,
@@ -278,6 +296,7 @@ def csv_download(
         lambda anonymous: anonymous.csv(frame),
         key=key,
         sources=sources,
+        help_text=help_text,
     )
 
 

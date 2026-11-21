@@ -62,7 +62,7 @@ with top:
         "Columns keep the XER and analysis field names.",
     )
 
-table = partial(ui.table, raw_labels=True)
+table = partial(ui.table, raw_labels=True, reading="debug")
 
 
 def zip_tag(anonymous: bool, *extra: object) -> tuple:
@@ -146,11 +146,11 @@ with st.expander(
     if int01.empty:
         st.caption("INT-01: every stored date and total float is reproduced.")
     else:
-        table(int01, max_height=480, key="debug_03_int01_recalculation")
+        table(int01, max_height=ui.TABLE_SHORT, key="debug_03_int01_recalculation")
     if int03.empty:
         st.caption("INT-03: every stored assignment date is reproduced.")
     else:
-        table(int03, max_height=480, key="debug_03_int03_assignments")
+        table(int03, max_height=ui.TABLE_SHORT, key="debug_03_int03_assignments")
     gap_wd = engine_gap_wd(snapshot)
     st.caption(
         "Delay analysis reads the recalculated finish. Recalculated finish against the latest finish stored "
@@ -164,7 +164,7 @@ with st.expander(
     if frames["03b_departures"].empty:
         st.caption("Every stored early date is reproduced.")
     else:
-        table(frames["03b_departures"], max_height=480, key="debug_03b_departures")
+        table(frames["03b_departures"], max_height=ui.TABLE_SHORT, key="debug_03b_departures")
         table(frames["03c_departure_forms"], key="debug_03c_departure_forms")
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
@@ -252,7 +252,7 @@ with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled task
     for warning in snapshot.warnings:
         st.caption(warning)
     if not frames["06_leveling"].empty:
-        table(frames["06_leveling"], max_height=480, key="debug_06_leveling")
+        table(frames["06_leveling"], max_height=ui.TABLE_SHORT, key="debug_06_leveling")
     table(frames["06_project_finish"], key="debug_06_project_finish")
     table(frames["06_latest_finishes"], key="debug_06_latest_finishes")
 
@@ -272,7 +272,7 @@ with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_e
         "factor P6 reads when it is entered; a code not identified is shown as stored."
     )
     table(frames["08_etc_techniques"], key="debug_08_etc_techniques")
-    table(frames["08_ev_settings"], max_height=480, key="debug_08_ev_settings")
+    table(frames["08_ev_settings"], max_height=ui.TABLE_SHORT, key="debug_08_ev_settings")
 
 with st.expander("9 · XER tables and planned value labor units", key="debug_pv_labor"):
     st.caption(
@@ -281,7 +281,7 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         "target_qty x share of the assignment's own dates elapsed; tasks without labor assignment keep "
         "the task value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - task."
     )
-    table(frames["09_xer_tables"], max_height=480, key="debug_09_xer_tables")
+    table(frames["09_xer_tables"], max_height=ui.TABLE_SHORT, key="debug_09_xer_tables")
     if frames["09_udf_fields"].empty:
         st.caption("No user defined field (UDFVALUE) holds a value in the project read.")
     else:
@@ -361,7 +361,14 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
         "and the update's tasks the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
         "counts as 0. The file stays in this session's memory; the task list is not part of the zip."
     )
-    upload = st.file_uploader("P6 Activities export", type=diagnostic.P6_EXPORT_SUFFIXES, key="debug_p6_export")
+    upload = st.file_uploader(
+        "P6 Activities export",
+        type=diagnostic.P6_EXPORT_SUFFIXES,
+        key="debug_p6_export",
+        help="The Activities view of P6 saved as CSV (labour units in hours) with Activity ID, Planned Value Labor "
+        "Units, Earned Value Labor Units, Schedule % Complete. Use it to hold xerscope's PV and EV against P6's, "
+        "task by task; the file stays in this session's memory.",
+    )
     if upload is not None and (baseline is None or snapshot.data_date is None):
         st.caption("No baseline or no status date: nothing to compare.")
     elif upload is not None:
@@ -379,19 +386,35 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                     required = diagnostic.P6_EXPORT_FIELDS[field][1]
                     options = list(raw.columns) if required else [NONE, *raw.columns]
                     picked = st.selectbox(
-                        f"Column not found: {field}", options, index=None if required else 0, key=f"debug_p6_{field}"
+                        f"Column not found: {field}",
+                        options,
+                        index=None if required else 0,
+                        key=f"debug_p6_{field}",
+                        help="The column of your export that carries this field, when its header is not P6's "
+                        "default. Pick it once per field; required fields block the comparison until picked.",
                     )
                     if picked is not None and picked != NONE:
                         chosen[field] = picked
             columns = diagnostic.p6_export_columns(raw, chosen)
             tolerance = st.number_input(
-                "Gap tolerance (h)", min_value=0.0, value=diagnostic.PV_P6_TOLERANCE_HR, step=0.01, format="%.2f",
+                "Gap tolerance (h)",
+                min_value=0.0,
+                value=diagnostic.PV_P6_TOLERANCE_HR,
+                step=0.01,
+                format="%.2f",
                 key="debug_p6_tolerance",
-            )  # fmt: skip
+                help="Difference in hours between xerscope and P6 above which a task is listed as differing "
+                "(PV and EV, labour units). Use it to hide rounding gaps; 0 lists every difference.",
+            )
             p6_total = st.number_input(
-                "PV labor units total shown by P6 (h, optional)", value=None, step=1.0, format="%.2f",
+                "PV labor units total shown by P6 (h, optional)",
+                value=None,
+                step=1.0,
+                format="%.2f",
                 key="debug_p6_total",
-            )  # fmt: skip
+                help="The project PV total P6 shows, to compare with xerscope's sum. "
+                "Fill it when the task list of the export is partial.",
+            )
             if any(columns[field] is None for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required):
                 st.caption("Choose the missing columns to compare.")
             else:
@@ -427,7 +450,7 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                 st.caption("Matched tasks by calendar (clndr_id)")
                 table(comparison.by_calendar, key="debug_10_by_calendar")
                 st.caption("Tasks in gap (PV or EV), largest gap first. On screen only: not in the zip.")
-                table(comparison.activities, max_height=480, key="debug_10_activities")
+                table(comparison.activities, max_height=ui.TABLE_SHORT, key="debug_10_activities")
 
 with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):
     st.caption(
@@ -454,7 +477,7 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
         calendar_frames["13_calendar_summary"].astype(str), key="debug_13_calendar_summary"
     )  # numbers, flags and blanks: one type for Arrow
     table(calendar_frames["13_calendar_week"], key="debug_13_calendar_week")
-    table(calendar_frames["13_calendar_exceptions"], max_height=480, key="debug_13_calendar_exceptions")
+    table(calendar_frames["13_calendar_exceptions"], max_height=ui.TABLE_SHORT, key="debug_13_calendar_exceptions")
 
     built_download(
         "debug_calendars_zip",
@@ -469,6 +492,9 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
         key="debug_calendars_download",
         build_key="debug_calendars_build",
         icon=":material/calendar_month:",
+        help_text="Builds block 13 (each calendar's hours per period, weekday periods, exceptions) as one zip of "
+        "CSV files, anonymized when the sidebar switch is on. Use it to check a calendar P6 and xerscope read "
+        "differently.",
     )
 
 # not on a deployed instance: the block names the server's folders, the package path and versions
@@ -537,4 +563,6 @@ built_download(
     key="debug_download",
     build_key="debug_build",
     icon=":material/folder_zip:",
+    help_text="Builds blocks 1 to 9, 11 and 13 as CSV, block 10 without its activity list, as one zip. "
+    "Use it to send what xerscope read and decided for this update, without the XER file.",
 )

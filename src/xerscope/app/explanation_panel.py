@@ -10,7 +10,7 @@ def show_calculation(result, explanation) -> None:
     """Show the calculation box, the population, the note and the baseline of one check."""
     with st.container(border=True):
         st.caption("Calculation")
-        st.markdown(f"#### {explanation.formula}")
+        st.markdown(f"**{explanation.formula}**")  # not a heading: each check would enter the outline
         st.markdown(explanation.verdict)
     if explanation.population:
         st.markdown("**Population**")
@@ -29,8 +29,9 @@ def show_method(metric, explanation, parameters=()) -> None:
         st.markdown("**Parameters**")
         ui.table(
             pd.DataFrame(parameters, columns=["parameter", "value", "set by"]),
-            max_height=260,
+            max_height=ui.TABLE_SHORT,
             key=f"params_{metric.id}",  # one table per check: filters keyed per check
+            reading="check_parameters",
         )
     source = ui.without_addresses(metric.source)
     if source:

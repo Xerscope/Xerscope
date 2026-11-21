@@ -438,3 +438,405 @@ for _ahead in (1, 2, 4, 8):  # the lookahead horizons of the PPC page, one KPI l
         LPS: f"Tasks Made Ready = commitments the plan {_ahead} update(s) before held for the week that were kept "
         f"in W / commitments that plan held for the week (TMR({_ahead}, 0), Hamzeh, Ballard & Tommelein 2012)"
     }
+
+
+@dataclass(frozen=True)
+class Reading:
+    """Hold the text of a "How to read" popover: how a chart or table is drawn, what it means, what to conclude.
+
+    ``source`` names a standard or a document, never a web address (docs/standards.md, Sources, holds them).
+    A table's text is one paragraph, kept in ``how``."""
+
+    how: str
+    meaning: str = ""
+    conclude: str = ""
+    source: str = ""
+
+
+# Figures by the key their builder sets (viz/charts.py ``reading``), tables by the key a page passes
+# to ``ui.table``.
+
+FUNNEL_READING = Reading(
+    how=(
+        "start, then one row per population step: its label, the text it follows, rows removed, rows left; last row "
+        "= counted. The denominator is the last step's left."
+    ),
+    source=(
+        "`populations.STEP_SOURCES` (docs/formulas.md:127-128: Oracle P6 help 101248 and 46282, R1, Ten Six, PAM "
+        "200.1, DECM 8.0, xerscope)"
+    ),
+)
+
+PPC_COMMITMENTS_READING = Reading(
+    how=(
+        "Per commitment: kind, kept, forecast at W−1, actual, forecast now, status now, in update. Milestones are "
+        "shown but out of the PPC counts."
+    ),
+    source="Last Planner System (PPC); docs/formulas.md §4",
+)
+
+TASK_TABLES_READING = Reading(
+    how=(
+        "TASKRSRC rows (units budgeted / actual / remaining); predecessors then successors with type and lag; one "
+        "row per update with status, dates, float, durations, % complete, critical."
+    ),
+    source="P6 Activity Details (Resources, Relationships)",
+)
+
+EXPORT_TABLES_READING = Reading(
+    how="table, rows, columns of the star schema; the first 200 rows of fact_activity.",
+    source="`export.export_tables`",
+)
+
+
+READINGS: dict[str, Reading] = {
+    "scurve": Reading(
+        how=(
+            "x = calendar dates, y = labour hours or % of BAC (toggle). PV (baseline) is a line through every day "
+            "of the plan; EV and AC are one point per update (circles, squares); the dashed line continues AC with "
+            "the remaining hours to the EAC label; the BAC label ends the PV curve. A dashed vertical line marks "
+            "the status date (`_mark_data_date`, `charts.py:70-83`); at it a vertical mark joins PV and EV, "
+            "labelled SV, green when EV ≥ PV, red when behind (`charts.py:210-240`)."
+        ),
+        meaning=(
+            "EV under PV at the status date is work planned and not earned; AC above EV is hours spent for less "
+            "work; the forecast end above BAC is an overrun in hours."
+        ),
+        conclude="SV < 0 is behind plan in hours; the gap EV–PV read along x is the time behind.",
+        source=(
+            "Oracle P6 glossary definitions quoted in docs/formulas.md §3 (PV, EV, BAC, SPI); EVMS EIA-748 / PMI "
+            "Practice Standard for EVM for the names (explain.py `EVMS`)."
+        ),
+    ),
+    "index_trend": Reading(
+        how=(
+            "x = status dates, y = a ratio; one line per index (SPI labour units, SPI 4 weeks, BEI DCMA, EV / AC, "
+            "and SPI cost when costs are on); a grey line at 1.0, a red dotted line at 0.95 labelled; end labels "
+            "give the last value (three decimals for SPI, `charts.py:248`)."
+        ),
+        meaning=(
+            "1.0 = on plan; SPI < 1 = less earned than planned to date; SPI (4 weeks) = the last month alone "
+            "(`SPI_WINDOW_READING`, `explain.py:296`); BEI = tasks completed / tasks due."
+        ),
+        conclude=(
+            "BEI < 0.95 is flagged by DCMA 14-Point (PAM 200.1 §3.1.2.4, `dcma.toml:141`) and by P6 Check Schedule "
+            "(> 0.95, `p6.toml:164`); for SPI and EV / AC the 0.95 line is xerscope's alert (`charts.py:39`), no "
+            "standard in the repository fixes it."
+        ),
+        source=(
+            "DCMA 14-Point Assessment, item 14 (BEI); P6 Professional Check Schedule report (BEI); EVMS EIA-748 for "
+            "SPI; docs/formulas.md §3."
+        ),
+    ),
+    "mta": Reading(
+        how=(
+            "x = reporting (status) date, y = forecast date of the milestone, both axes on the same scale so the "
+            "line forecast = status date is the 45° diagonal; below it is the past (shaded). One line per milestone "
+            "in its tag colour; a diamond where the update reports it complete, where the line meets the diagonal. "
+            "The last point is bigger and red when the date moved later in the last update, green when earlier; the "
+            "end label gives the code and the move in wd (`_mta_end_label`, `charts.py:377-387`)."
+        ),
+        meaning=(
+            "a horizontal line is a stable forecast; a rising line is a milestone slipping week after week; a line "
+            "climbing parallel to the diagonal is a milestone that moves as fast as time passes."
+        ),
+        conclude=(
+            "red up-arrows on several milestones in the same update mean the week's replanning moved the end dates; "
+            "read the Slippage table for the wd on each milestone's calendar."
+        ),
+        source=(
+            "docs/formulas.md §4 (MTA: `milestone_trend`, `milestone_slips`, `plotted_trend`); no external standard "
+            "is named in the repository for the MTA."
+        ),
+    ),
+    "activity_dates": Reading(
+        how="x = status date, y = the task's forecast start and finish, one line each.",
+        meaning=(
+            "a finish rising from update to update is the task slipping; a flat start with a rising finish is a "
+            "duration growing."
+        ),
+        conclude=(
+            "compare with the Total float chart beside it: a slip with float falling to 0 puts the task on the "
+            "critical path."
+        ),
+        source="xerscope (`store.history`); P6 fields Start / Finish as docs/architecture.md defines them.",
+    ),
+    "activity_float": Reading(
+        how=(
+            "x = status date, y = total float in working days of the task's calendar; a red dotted line at 0 "
+            'labelled "critical".'
+        ),
+        meaning=(
+            "float is the delay the task can take without moving the project finish (or its Must Finish By); "
+            "negative float = the project is already late against that date."
+        ),
+        conclude=(
+            "≤ 0 d is critical (`config.py:12`; P6 Define critical activities, read by "
+            "`explain.critical_definition`); > 44 wd is high float for DCMA 14-Point, item 6 (`dcma.toml:70`), and "
+            "P6 Check Schedule Large Float (`p6.toml:86`)."
+        ),
+        source=(
+            "DCMA 14-Point Assessment, items 6 and 7; P6 Professional Check Schedule report (Large Float, Negative "
+            "Float)."
+        ),
+    ),
+    "finish_trend": Reading(
+        how=(
+            "x = status date, y = the project's forecast finish, one point per weekly XER; the hover gives the file "
+            "and the shift in wd against the previous update."
+        ),
+        meaning=(
+            "a rising line is the end date slipping; the shift is working days on the newer update's project "
+            "calendar, later = negative (`store.py:231-236`)."
+        ),
+        conclude=(
+            'a finish that holds while the half-step "finish before replanning" slips (Delay analysis) is a delay '
+            "absorbed by replanning."
+        ),
+        source="xerscope (`SnapshotStore.summary`, docs/formulas.md §4 Finish shift); P6 Latest Early Finish.",
+    ),
+    "ppc": Reading(
+        how=(
+            "x = week ending (status date, categorical), y = % 0–105; three lines: PPC Finish (Last Planner's PPC), "
+            "PPC Start, PPC W/W−1 (both kinds together); a red dotted line at the target with its label in the "
+            "right margin; an open marker = a week with a note (more than a week since the previous update, or Task "
+            "IDs changed); a gap = a week with nothing committed."
+        ),
+        meaning=(
+            "the share of what W−1 promised to start or finish by W's status date that W reports done "
+            "(docs/formulas.md:368-378); milestones and LOE are left out."
+        ),
+        conclude=(
+            "under the target line, commitments are not kept; the Commitments table names which. 80 % is xerscope's "
+            "default target (`charts.py:40`); the repository names no PPC threshold from the Last Planner System."
+        ),
+        source="Last Planner System (PPC); docs/formulas.md §4.",
+    ),
+    "metric_trend": Reading(
+        how=(
+            "x = status date, y = the check's value in its unit (%, count, ratio); the hover gives found / checked; "
+            "a red dotted line at the target when the check has one (none for pass/fail)."
+        ),
+        meaning="the same check, same standard, on every loaded update.",
+        conclude=(
+            "on the wrong side of the target line the check fails that week; the target and its direction are the "
+            "TOML's (`standards/*.toml` `target`)."
+        ),
+        source=(
+            "the check's own `source` field (P6 Professional Check Schedule help page ids; DCMA-EA PAM 200.1 §; "
+            "DECM v8.0 metric ID; Oracle P6 EPPM 26 help, Schedule Project Log), shown by `show_method`."
+        ),
+    ),
+    "half_step": Reading(
+        how=(
+            "x = the steps of the half-step reading in order (scope, dates, logic, durations, constraints, "
+            "calendars, options…), y = working days the project finish moved when that kind of change was applied "
+            "to the earlier update; red bars = lost, green = gained; the hover gives the finish once applied and "
+            "the number of changes."
+        ),
+        meaning=(
+            "the earlier update is rescheduled with this update's changes one kind at a time "
+            "(analysis/forensics.py); each bar is what that kind did to the finish."
+        ),
+        conclude=(
+            "a progress bar deeper than the period (warning `forensics.py:124-129`) points to a revision hidden in "
+            "the half-step or to a non-working stretch; a residual (`130-134`) means a change the changelog does "
+            "not list moved the finish."
+        ),
+        source="AACE RP 29R-03 MIP 3.4 (observational, dynamic, contemporaneous, half-step; docs/formulas.md §5.1).",
+    ),
+    "slip_trend": Reading(
+        how=(
+            'x = status date, y = date; two lines: "Finish shown" (the recalculated finish of each update) and '
+            "\"Finish before replanning\" (where the previous update's plan lands with this update's progress alone)."
+        ),
+        meaning="the gap between them, week after week, is the delay the replanning absorbs.",
+        conclude=(
+            'a flat "Finish shown" over a rising "Finish before replanning" is a schedule being re-planned to hold '
+            "its date; read the series table for the wd of slip and replanning."
+        ),
+        source="AACE RP 29R-03 MIP 3.4; docs/formulas.md §5.1.",
+    ),
+    "gantt": Reading(
+        how=(
+            "a tree grid on the left (Activity / WBS, % complete, float) and the timeline on the right, one row "
+            "each, in P6 Activities-view order (WBS node, its activities, its child nodes). Bar colour = float "
+            "category: Critical (red, P6 critical), Near critical (amber, total float ≤ 10 wd), Normal (blue), "
+            "Complete (grey) (`PALETTE`, `gantt.py:29-35`; `categorise` 43-50). Diamonds = milestones; a dark thin "
+            "bar = WBS summary; a hollow outline behind a bar = the same activity in the comparison update or "
+            'baseline (legend item with the comparison label); a dashed vertical line = data date. Hover: "Finish '
+            'vs <comparison>" in wd, or "Finish vs BL (baselined tasks)".'
+        ),
+        meaning=(
+            "slippage reads as the bar leaving its outline; red bars are the path that sets the finish; amber bars "
+            "are within 10 wd of it."
+        ),
+        conclude=(
+            "red bars not started before the data date line are the week's risk; the Float filter and the Ask field "
+            "isolate them. Thresholds: critical = total float ≤ 0 d or the project's critical path type (P6 Define "
+            "critical activities); near critical = 10 wd (xerscope setting, no standard)."
+        ),
+        source=(
+            "Oracle P6 Professional Activities view and Define critical activities (via "
+            "`explain.critical_definition`); xerscope `config.Settings`."
+        ),
+    ),
+    "overview_updates": Reading(
+        how=(
+            "One row per weekly XER: status date, file, forecast finish, finish shift (wd, later = negative), "
+            "counts of tasks by status, critical, relationships, % complete by count. A finish shift < 0 week after "
+            "week is a slipping project."
+        ),
+        source="xerscope `store.summary` (`store.py:209-238`)",
+    ),
+    "health_results": Reading(
+        how=(
+            "One row per check in the standard's order: status (pass red/green labels), id, group, check, result in "
+            "its unit, found / checked, target, items listed. Fail = result on the wrong side of the target; info "
+            "and n/a are not scored."
+        ),
+        source="The standard's TOML `source` per check; `SCORE_HELP` (`ui.py:400-405`) for the score",
+    ),
+    "check_parameters": Reading(
+        how="parameter, value, set by (standard or default): the effective settings of the check.",
+        source="the TOML",
+    ),
+    "check_flagged": Reading(
+        how="The tasks or links the check lists, culprits first; select a row to open the Gantt.",
+        source="the check's `source`",
+    ),
+    "health_trend": Reading(
+        how=(
+            "One row per check, one column per update (value, `%.2f`). Read a row left to right as the check's history."
+        ),
+        source="the check's `source`",
+    ),
+    "health_report": Reading(
+        how=(
+            "Found / total typed from the P6 report beside xerscope's, Match ticked when equal. A mismatch names "
+            "the population to audit."
+        ),
+        source="P6 Professional Check Schedule report",
+    ),
+    "sheet_settings": Reading(
+        how="setting, now, default, accepts: the `[[metric]]` values to paste into a standard file.",
+        source="`analysis/audit.settings_table`",
+    ),
+    "check_sets": Reading(
+        how="The three sets behind a count; nothing is recomputed (`audit.split`).",
+        source="the check's `source`",
+    ),
+    "funnel": FUNNEL_READING,
+    "ask_funnel": FUNNEL_READING,
+    "changelog_categories": Reading(
+        how="category, total changes, kinds seen.",
+        source="docs/formulas.md §5",
+    ),
+    "changelog_all": Reading(
+        how=(
+            "One row per change: task, category, change, field, before, after, Δ (wd for dates, later = negative; "
+            "after − before otherwise)."
+        ),
+        source="docs/formulas.md §5",
+    ),
+    "changelog_weekly": Reading(
+        how=(
+            "(category, change) rows, one column per week: counts. A kind that repeats every week is a habit of the "
+            "updating, not an event."
+        ),
+        source="`changelog.weekly_change_matrix` (`493-499`)",
+    ),
+    "forensics_steps": Reading(
+        how="step, finish once applied, shift (wd), changes applied: the table of the half-step bars.",
+        source="AACE RP 29R-03 MIP 3.4",
+    ),
+    "forensics_series": Reading(
+        how=(
+            "One row per update: finish held by (last activity, Must Finish By, Mandatory Finish), finish shown, "
+            "finish before replanning, slip, replanning, residual, period (wd), recalculated vs file (wd), longest "
+            "path float (d), matched / added / deleted, note."
+        ),
+        source="AACE RP 29R-03 MIP 3.4; `FINISH_CASES` text (`forensics.py:20-25`)",
+    ),
+    "ev_calculation": Reading(
+        how=(
+            "measure, P6 column, formula, value this update: each EV figure with its P6 name and the numbers behind it."
+        ),
+        source="Oracle P6 glossary (docs/formulas.md §3); EVMS EIA-748 names",
+    ),
+    "ev_updates": Reading(
+        how=(
+            "One row per update: PV, EV, AC, SV, SPI, SPI 4 weeks, BEI P6 / DCMA, CPI, EV / AC baselined; indices "
+            "written as text with a dash on the first update."
+        ),
+        source="docs/formulas.md §3; DCMA 14-Point item 14 (BEI)",
+    ),
+    "ev_tasks": Reading(
+        how=(
+            "Per baseline task present in the update: EV budget, schedule %, PV, technique, performance %, EV, "
+            "actual hours, EV finish."
+        ),
+        source="docs/formulas.md §3",
+    ),
+    "mta_slips": Reading(
+        how=(
+            "Per milestone: first and latest forecast, slip since first (wd), last update (wd), on its own "
+            "calendar; later = negative."
+        ),
+        source="docs/formulas.md §4 MTA",
+    ),
+    "mta_trend": Reading(
+        how="The long frame of the chart: one row per milestone and update.",
+        source="docs/formulas.md §4 MTA",
+    ),
+    "ppc_weeks": Reading(
+        how="Per week: starts / finishes kept and committed, the three PPC, kept and committed together, note.",
+        source="Last Planner System (PPC); docs/formulas.md §4",
+    ),
+    "ppc_commitments": PPC_COMMITMENTS_READING,
+    "ppc_milestones": PPC_COMMITMENTS_READING,
+    "ppc_wbs": Reading(
+        how="Per WBS level 1: progress points, earned and actual hours this week, budget, tasks progressed.",
+        source="docs/formulas.md §4 Roll-up",
+    ),
+    "ppc_unplanned": Reading(
+        how="Tasks absent from W−1 with an actual start by W's status date: work done outside W−1's plan.",
+        source="docs/formulas.md §4",
+    ),
+    "ppc_progress": Reading(
+        how=(
+            "Tasks whose % complete, earned or actual hours moved: % previous, % now, Δ, earned and actual hours "
+            "this week."
+        ),
+        source="docs/formulas.md §4 Progress delta",
+    ),
+    "ppc_variances": Reading(
+        how=(
+            "Per task, wd of its calendar between its date in W−1 / W−2 and now (reference − current): negative = "
+            "later."
+        ),
+        source="xerscope (`analysis/progress.py`)",
+    ),
+    "gantt_tasks": Reading(
+        how=(
+            "The bars as rows: task, WBS, status, float category, dates, total float and remaining (wd, dash when "
+            "complete), % complete, budget hours, constraint."
+        ),
+        source=(
+            "Oracle P6 Professional Activities view and Define critical activities (via "
+            "`explain.critical_definition`); xerscope `config.Settings`."
+        ),
+    ),
+    "task_resources": TASK_TABLES_READING,
+    "task_logic": TASK_TABLES_READING,
+    "task_history": TASK_TABLES_READING,
+    "export_tables": EXPORT_TABLES_READING,
+    "export_fact_activity": EXPORT_TABLES_READING,
+    "debug": Reading(
+        how=(
+            "Raw readings for comparison with P6; no reading beyond each block's caption (`debug.py:379-381, "
+            "419-423, 469-472`)."
+        ),
+        source="Oracle P6 EPPM 26 help, Schedule Project Log; P6 XER data map",
+    ),
+}

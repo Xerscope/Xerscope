@@ -202,7 +202,7 @@ def show_earned_schedule(
             ),
             (
                 "Time gap",
-                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} d",
+                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} cal. d",
                 None,
                 "Plan reached − status date, in calendar days, weekends included; negative = behind. Compare "
                 "updates measured against the same baseline: a baseline made again starts near zero. SV is "
@@ -374,6 +374,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
         ui.table(
             calculation,
             key="ev_calculation",
+            reading="ev_calculation",
             overrides={
                 "formula": st.column_config.TextColumn("Formula", width="large"),
                 "this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date)),
@@ -402,7 +403,14 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
         "Planned value from the baseline, earned value and actual hours per update, "
         "then the forecast of remaining hours.",
     )
-    as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
+    as_percent = st.toggle(
+        "Show as % of BAC",
+        value=False,
+        key="ev_pct_toggle",
+        help="Draws PV, EV, AC and the forecast as a share of the Budget at Completion instead of labour hours; "
+        "each update's points over its own BAC, the curves over the BAC of the update shown. "
+        "Use it to compare updates whose baselines differ in size.",
+    )
     forecast = memo(("forecast", snapshot.source, code_filter), forecast_curve, snapshot, baseline=False)
     ui.chart(
         build_scurve(
@@ -437,7 +445,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
     hidden = ["bac_hr", "vac_hr", "ac_baselined_hr"] + ([] if costs else COST_COLUMNS)
     # the first update has no PV yet: its indices are missing, written as a dash
     shown, overrides = ui.numbers_as_text(series.drop(columns=hidden), INDEX_COLUMNS)
-    ui.table(shown, overrides=overrides, key="ev_updates")
+    ui.table(shown, overrides=overrides, key="ev_updates", reading="ev_updates")
 
 
 def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame) -> None:
@@ -446,7 +454,7 @@ def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame)
         values = earned_values.reset_index().rename(columns=EV_BASIS_COLUMNS)
         # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
         activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
-        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640, key="ev_tasks")
+        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=ui.TABLE_LONG, key="ev_tasks", reading="ev_tasks")
         st.caption(
             f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
             f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."
@@ -496,7 +504,7 @@ with top:
     )
     baseline_warnings(snapshot, baseline, series=True)
 if baseline is None:
-    st.info("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
+    ui.need("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(

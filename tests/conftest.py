@@ -19,6 +19,10 @@ if _MPXJ_CPM:
 os.environ.setdefault("XERSCOPE_SYNC_LOAD", "1")
 
 
+# A figure drawn without its "How to read" key raises (app/ui.py chart), so no test draws one by accident.
+os.environ.setdefault("XERSCOPE_STRICT_READINGS", "1")
+
+
 # The fuzz tests (tests/test_fuzz_parser.py, tests/test_fuzz_ask.py): 200 examples per property,
 # 1000 with HYPOTHESIS_PROFILE=ci.
 _HEALTH = [HealthCheck.too_slow, HealthCheck.filter_too_much]

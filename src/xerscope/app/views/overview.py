@@ -43,16 +43,15 @@ ui.kpis(
         (
             "Forecast finish",
             ui.fmt_date(latest.finish_date),
-            None if pd.isna(shift) else f"{round(shift, 1):+g} wd vs previous update",
-            "Latest early finish of the project. Against the previous update: working days gained (+) or "
-            "lost (−) on the project calendar, a later finish reads negative.",
+            None if pd.isna(shift) else f"{ui.SHIFT_WD_FORMAT.format(shift)} vs previous update",
+            "Latest early finish of the project, against the previous update, on the project calendar. "
+            f"{ui.SHIFT_WD_SENTENCE}",
         ),
         (
             "Shift since first update",
-            ui.fmt_number(total, "{:+.1f} wd"),
+            ui.fmt_number(total, ui.SHIFT_WD_FORMAT),
             None,
-            "Working days gained (+) or lost (−) on the forecast finish since the first loaded update "
-            "(project calendar): a later finish reads negative",
+            f"Forecast finish against the first loaded update, on the project calendar. {ui.SHIFT_WD_SENTENCE}",
         ),
         (
             "Tasks complete",
@@ -94,7 +93,18 @@ def score_section(polling: bool) -> None:
             st.error(message, icon=":material/error:")
         if not job.done:
             st.caption(f"Computing the scores · {len(job.held)}/{len(available)} standards")
-    elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
+    elif (
+        missing
+        and not loading
+        and st.button(
+            "Compute scores",
+            icon=":material/calculate:",
+            key="overview_scores",
+            help="Runs every built-in standard on the latest update and fills the score cards; Schedule health "
+            'reuses the results. Use it when the cards read "not computed yet"; it takes several seconds on a '
+            "large file.",
+        )
+    ):
         held = {key: standard_results(standard, latest, store) for key, standard in available.items()}
     ui.score_cards(
         {available[key].name: None if results is None else standard_score(results) for key, results in held.items()}
@@ -129,7 +139,7 @@ ui.section(
 ui.chart(build_finish_trend(summary))
 
 ui.section("Updates loaded")
-ui.table(summary.drop(columns=["snapshot_idx", "project"]), key="overview_updates")
+ui.table(summary.drop(columns=["snapshot_idx", "project"]), key="overview_updates", reading="overview_updates")
 
 limits = [warning for warning in store.warnings if LIMIT_MARK in warning]
 for warning in store.warnings:
