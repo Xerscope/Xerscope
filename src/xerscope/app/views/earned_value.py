@@ -397,7 +397,14 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
         "Planned value from the baseline, earned value and actual hours per update, "
         "then the forecast of remaining hours.",
     )
-    as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
+    as_percent = st.toggle(
+        "Show as % of BAC",
+        value=False,
+        key="ev_pct_toggle",
+        help="Draws PV, EV, AC and the forecast as a share of the Budget at Completion instead of labour hours; "
+        "each update's points over its own BAC, the curves over the BAC of the update shown. "
+        "Use it to compare updates whose baselines differ in size.",
+    )
     forecast = memo(("forecast", snapshot.source, code_filter), forecast_curve, snapshot, baseline=False)
     ui.chart(
         build_scurve(

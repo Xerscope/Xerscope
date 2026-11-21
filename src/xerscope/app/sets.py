@@ -72,7 +72,12 @@ def show_removed(result, snapshot, sources: list[str]) -> None:
     if not removing:
         return
     label = st.selectbox(
-        "Rows removed by", [step.label for step in removing], index=None, key=f"funnel_step:{result.metric.id}"
+        "Rows removed by",
+        [step.label for step in removing],
+        index=None,
+        key=f"funnel_step:{result.metric.id}",
+        help="Lists the rows one population step took out of this check's denominator (the steps are in the "
+        "funnel table above). Use it to see which tasks or links an exclusion removed, and why.",
     )
     if label is None:
         return

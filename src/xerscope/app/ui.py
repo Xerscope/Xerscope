@@ -638,6 +638,7 @@ FILTER_HINT = {
     "number": "<0, >=5, -10..0",
     "date": ">2026-11-01, 2026-11, 2026-11..2026-12",
 }
+FILTER_RULE = "Every filter must hold; an empty text filters nothing."
 _OPERATOR = re.compile(r"^(<=|>=|<|>|=)?\s*(.+)$")
 _YEAR_MONTH_OR_DAY = re.compile(r"\d{4}(-\d{2}(-\d{2})?)?")
 
@@ -757,6 +758,11 @@ def _filtered(frame: pd.DataFrame, config: dict, key: str, status: str | None) -
     return rows
 
 
+def _filter_help(label: str, *sentences: str) -> str:
+    """The tooltip of a column filter: the column's help (the acronyms its label holds), then ``sentences``."""
+    return "\n\n".join(part for part in (spelled_out(label), *sentences) if part)
+
+
 def _filter_inputs(
     frame: pd.DataFrame, labels: dict, prefix: str, status: str | None
 ) -> tuple[dict[str, str], list[str]]:
@@ -768,10 +774,12 @@ def _filter_inputs(
         label, widget_key = labels[column], prefix + str(column)
         if column == status:
             options = sorted({status_label(value) for value in frame[column].dropna()})
-            statuses_picked = st.multiselect(label, options, key=widget_key, placeholder="any")
+            help_text = _filter_help(label, FILTER_RULE)
+            statuses_picked = st.multiselect(label, options, key=widget_key, placeholder="any", help=help_text)
         else:
             hint = FILTER_HINT[filter_kind(column, frame[column])]
-            filters[column] = st.text_input(label, key=widget_key, placeholder=hint)
+            help_text = _filter_help(label, f"Operators: {hint}", FILTER_RULE)
+            filters[column] = st.text_input(label, key=widget_key, placeholder=hint, help=help_text)
     return filters, statuses_picked
 
 
@@ -825,7 +833,13 @@ def _open_in_gantt_button(event, frame: pd.DataFrame, table_key: str, open_task:
         st.caption("Select a row to open its task in the Gantt.")
         return
     code = str(frame.iloc[selected[0]]["task_code"])
-    if st.button(f"Open {md_text(code)} in the Gantt", icon=":material/view_timeline:", key=f"{table_key}:open"):
+    if st.button(
+        f"Open {md_text(code)} in the Gantt",
+        icon=":material/view_timeline:",
+        key=f"{table_key}:open",
+        help="Switches to the Gantt on the selected row's task, in the update shown. "
+        "Use it to see the task's bar, logic and card.",
+    ):
         open_task(code)
 
 

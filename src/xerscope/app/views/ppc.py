@@ -289,7 +289,16 @@ if len(store) < 2:
     st.stop()
 
 target_column, overdue_column, week_column = st.columns([1, 1, 2], vertical_alignment="bottom")
-target = target_column.number_input("PPC target (%)", 0, 100, PPC_TARGET, step=5)
+target = target_column.number_input(
+    "PPC target (%)",
+    0,
+    100,
+    PPC_TARGET,
+    step=5,
+    help="The dotted line of the chart: the share of commitments kept you aim for, in percent. 80 is "
+    "xerscope's default (`PPC_TARGET`); Last Planner System (PPC) sets no fixed target in the sources this "
+    "repository names.",
+)
 include_overdue = overdue_column.checkbox(
     "Include commitments late at W−1",
     value=True,
@@ -298,7 +307,14 @@ include_overdue = overdue_column.checkbox(
     "for the week. Unchecked: only those forecast after W−1's status date commit.",
 )
 week_labels = store.labels[1:]
-week = week_column.selectbox("Week ending", week_labels, index=len(week_labels) - 1, key="ppc_week")
+week = week_column.selectbox(
+    "Week ending",
+    week_labels,
+    index=len(week_labels) - 1,
+    key="ppc_week",
+    help="The update W whose commitments are read: what W−1 forecast to start or finish by W's status date, "
+    "against what W reports done. Pick a week; the first update has no W−1.",
+)
 week_index = store.labels.index(week)
 previous, current = store[week_index - 1], store[week_index]
 with top:

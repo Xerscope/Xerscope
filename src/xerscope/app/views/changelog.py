@@ -60,10 +60,25 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
     ui.section("All changes")
     category_column, change_column, search_column = st.columns([2, 3, 2])
     categories = category_column.multiselect(
-        "Category", [name for name in log["category"].cat.categories if name != "Project"], placeholder="All"
+        "Category",
+        [name for name in log["category"].cat.categories if name != "Project"],
+        placeholder="All",
+        help="Keeps the changes of the picked categories (Scope, Dates, Logic, Durations, Resources, "
+        "Constraints…; the Project rows are never listed here). Empty keeps all.",
     )
-    kinds = change_column.multiselect("Change", sorted(counts["change"].unique()), placeholder="All")
-    search = search_column.text_input("Search", placeholder="ID, name or WBS")
+    kinds = change_column.multiselect(
+        "Change",
+        sorted(counts["change"].unique()),
+        placeholder="All",
+        help="Keeps the picked kinds of change within the categories. "
+        "Use it to list one kind, such as durations changed, on its own.",
+    )
+    search = search_column.text_input(
+        "Search",
+        placeholder="ID, name or WBS",
+        help="Keeps the rows whose Task ID, name, WBS or field contains the text, ignoring case and accents. "
+        "Use it to follow one task or one WBS branch.",
+    )
     view = log[log["category"] != "Project"]
     if categories:
         view = view[view["category"].isin(categories)]
@@ -107,9 +122,23 @@ if len(store) < 2:
 
 labels = store.labels
 old_column, new_column = st.columns(2)
-new_label = new_column.selectbox("To (newer)", labels, index=len(labels) - 1, key="cl_new")
+new_label = new_column.selectbox(
+    "To (newer)",
+    labels,
+    index=len(labels) - 1,
+    key="cl_new",
+    help="The later of the two updates compared; the changes are read as To minus From. "
+    "Use it with From to compare any two weeks, not only consecutive ones.",
+)
 new_index = labels.index(new_label)
-old_label = old_column.selectbox("From (older)", labels, index=max(new_index - 1, 0), key="cl_old")
+old_label = old_column.selectbox(
+    "From (older)",
+    labels,
+    index=max(new_index - 1, 0),
+    key="cl_old",
+    help="The earlier of the two updates compared. The buttons below set it one, four updates back or to the "
+    "first loaded.",
+)
 
 
 def _from(back: int | None) -> None:
@@ -120,7 +149,15 @@ def _from(back: int | None) -> None:
 
 with old_column, st.container(horizontal=True, gap="small"):
     for text, back in (("Previous", 1), ("4 back", 4), ("First", None)):
-        st.button(text, key=f"cl_from_{text}", type="secondary", on_click=_from, args=(back,))
+        st.button(
+            text,
+            key=f"cl_from_{text}",
+            type="secondary",
+            on_click=_from,
+            args=(back,),
+            help="Sets From to the update before To, four updates before it, or the first loaded. "
+            'Use "4 back" for a monthly reading.',
+        )
 old, new = store.by_label(old_label), store.by_label(new_label)
 with top:
     page_header(

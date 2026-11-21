@@ -40,7 +40,13 @@ ui.table(
 )
 
 table_formats: list[Fmt] = ["parquet", "csv"]
-table_format = st.radio("Format", table_formats, horizontal=True)
+table_format = st.radio(
+    "Format",
+    table_formats,
+    horizontal=True,
+    help="Parquet keeps the column types (dates, numbers) for Power BI; CSV opens anywhere. "
+    "Pick Parquet for Power BI, CSV for a spreadsheet.",
+)
 download(
     f"Download {table_format.upper()} tables (.zip)",
     f"{store.latest.project_code}_xerscope_{table_format}.zip",
@@ -98,6 +104,9 @@ extract = built_download(
     key="anon_download",
     build_key="anon_build",
     icon=":material/visibility_off:",
+    help_text="Rebuilds every loaded file and the separate baseline file with new Task IDs, WBS, project, "
+    "resource and calendar names; dates, durations, units and logic unchanged. Use it to share a schedule "
+    "P6 and xerscope compute the same results on.",
     spinner=f"Anonymizing {len(items) + len(baselines)} file(s)…",
     anonymous=True,
     suffix=False,

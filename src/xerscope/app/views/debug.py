@@ -349,7 +349,14 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
         "and the update's tasks the baseline does not know (PV and EV 0). gap_hr = xerscope - P6, blank "
         "counts as 0. The file stays in this session's memory; the task list is not part of the zip."
     )
-    upload = st.file_uploader("P6 Activities export", type=diagnostic.P6_EXPORT_SUFFIXES, key="debug_p6_export")
+    upload = st.file_uploader(
+        "P6 Activities export",
+        type=diagnostic.P6_EXPORT_SUFFIXES,
+        key="debug_p6_export",
+        help="P6's Activities view saved as CSV (labour units in hours) with Activity ID, Planned Value Labor "
+        "Units, Earned Value Labor Units, Schedule % Complete. Use it to hold xerscope's PV and EV against P6's, "
+        "task by task; the file stays in this session's memory.",
+    )
     if upload is not None and (baseline is None or snapshot.data_date is None):
         st.caption("No baseline or no status date: nothing to compare.")
     elif upload is not None:
@@ -367,19 +374,35 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                     required = diagnostic.P6_EXPORT_FIELDS[field][1]
                     options = list(raw.columns) if required else [NONE, *raw.columns]
                     picked = st.selectbox(
-                        f"Column not found: {field}", options, index=None if required else 0, key=f"debug_p6_{field}"
+                        f"Column not found: {field}",
+                        options,
+                        index=None if required else 0,
+                        key=f"debug_p6_{field}",
+                        help="The column of your export that carries this field, when its header is not P6's "
+                        "default. Pick it once per field; required fields block the comparison until picked.",
                     )
                     if picked is not None and picked != NONE:
                         chosen[field] = picked
             columns = diagnostic.p6_export_columns(raw, chosen)
             tolerance = st.number_input(
-                "Gap tolerance (h)", min_value=0.0, value=diagnostic.PV_P6_TOLERANCE_HR, step=0.01, format="%.2f",
+                "Gap tolerance (h)",
+                min_value=0.0,
+                value=diagnostic.PV_P6_TOLERANCE_HR,
+                step=0.01,
+                format="%.2f",
                 key="debug_p6_tolerance",
-            )  # fmt: skip
+                help="Difference in hours between xerscope and P6 above which a task is listed as differing "
+                "(PV and EV, labour units). Use it to hide rounding gaps; 0 lists every difference.",
+            )
             p6_total = st.number_input(
-                "PV labor units total shown by P6 (h, optional)", value=None, step=1.0, format="%.2f",
+                "PV labor units total shown by P6 (h, optional)",
+                value=None,
+                step=1.0,
+                format="%.2f",
                 key="debug_p6_total",
-            )  # fmt: skip
+                help="The project PV total P6 shows, to compare with xerscope's sum. "
+                "Fill it when the task list of the export is partial.",
+            )
             if any(columns[field] is None for field, (_, required) in diagnostic.P6_EXPORT_FIELDS.items() if required):
                 st.caption("Choose the missing columns to compare.")
             else:
@@ -457,6 +480,9 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
         key="debug_calendars_download",
         build_key="debug_calendars_build",
         icon=":material/calendar_month:",
+        help_text="Builds block 13 (each calendar's hours per period, weekday periods, exceptions) as one zip of "
+        "CSV files, anonymized when the sidebar switch is on. Use it to check a calendar P6 and xerscope read "
+        "differently.",
     )
 
 # not on a deployed instance: the block names the server's folders, the package path and versions
@@ -525,4 +551,6 @@ built_download(
     key="debug_download",
     build_key="debug_build",
     icon=":material/folder_zip:",
+    help_text="Builds blocks 1 to 9, 11 and 13 as CSV, block 10 without its activity list, as one zip. "
+    "Use it to send what xerscope read and decided for this update, without the XER file.",
 )

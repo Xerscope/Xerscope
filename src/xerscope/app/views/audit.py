@@ -46,12 +46,39 @@ def parameter_widget(rule_name: str, name: str, current, key: str):
     """Draw one parameter by what it accepts (several names, one of a list, yes / no, a number); return its value."""
     allowed = choices(rule_name, name)
     if is_list(rule_name, name):
-        return st.multiselect(name, allowed or list(current), default=list(current), key=key)
+        return st.multiselect(
+            name,
+            allowed or list(current),
+            default=list(current),
+            key=key,
+            help="The values this parameter accepts (several at a time), starting from the standard's. "
+            "Change them to see the check re-run with another population; the standard itself is not changed.",
+        )
     if allowed is not None:
-        return st.selectbox(name, allowed, index=allowed.index(current), key=key)
+        return st.selectbox(
+            name,
+            allowed,
+            index=allowed.index(current),
+            key=key,
+            help="One of the values this parameter accepts, starting from the standard's. "
+            "Change it to re-run the check with another reading; the standard itself is not changed.",
+        )
     if isinstance(current, bool):
-        return st.checkbox(name, value=current, key=key)
-    return st.number_input(name, value=float(current), format="%g", key=key)  # %g: 44, not 44.00
+        return st.checkbox(
+            name,
+            value=current,
+            key=key,
+            help="Switches this parameter on or off for the audit, starting from the standard's value. "
+            "The standard itself is not changed.",
+        )
+    return st.number_input(
+        name,
+        value=float(current),
+        format="%g",  # %g: 44, not 44.00
+        key=key,
+        help="The threshold of this parameter, in the unit its name says (`limit_hours`: hours as P6 stores "
+        "them; `limit_days`: working days of each task's calendar). Change it to see what the count becomes.",
+    )
 
 
 def draw_row(metric, prefix: str, row: tuple[str, ...], values: dict, saved: dict) -> None:
@@ -94,6 +121,8 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
         saved.get(f"{prefix}:target", metric.threshold_label),
         key=f"{prefix}:target",
         label_visibility="collapsed",
+        help=f"The result that passes, written as: {TARGET_FORMS}. Change it to see the status the check would "
+        "have; the standard itself is not changed.",
     )
     saved[f"{prefix}:target"] = target
     return target, kept_params(metric, values)
@@ -183,7 +212,12 @@ available = standards()
 top = st.container()
 # the standards on a row of their own (as on Schedule health): in a column their names were cut
 standard_id = st.segmented_control(
-    "Standard", list(available), format_func=lambda key: available[key].name, key="audit_std"
+    "Standard",
+    list(available),
+    format_func=lambda key: available[key].name,
+    key="audit_std",
+    help="The standard whose checks can be audited: P6 Check Schedule, DCMA 14-Point, DCMA DECM v8.0, "
+    "Integrity, or an uploaded one. Pick the one your report follows.",
 )
 snapshot_column, check_column = st.columns(2, vertical_alignment="bottom")
 with snapshot_column:
@@ -209,6 +243,9 @@ with check_column:
         index=None,
         format_func=lambda key: f"{key} · {standard[key].name}",
         key=f"audit_check:{standard_id}",
+        help="One check of the standard: its sets (counted, checked but not counted, excluded), its population "
+        "step by step and the same check re-run with the settings below. Use it to explain one number of "
+        "Schedule health.",
     )
 if metric_id is None:
     ui.need("Pick a check.")

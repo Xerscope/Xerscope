@@ -45,9 +45,22 @@ def _keep_picks() -> None:
 st.session_state.setdefault(SAVED, _finish_milestones(critical_only=False))
 st.session_state["mta_pick"] = [code for code in st.session_state[SAVED] if code in all_ms or code in others]
 with st.container(horizontal=True, gap="small"):
-    st.button("Finish milestones", key="mta_finish", on_click=_set_picks, args=(_finish_milestones(False),))
-    st.button("Critical milestones", key="mta_critical", on_click=_set_picks, args=(_finish_milestones(True),))
-    st.button("Clear", key="mta_clear", on_click=_set_picks, args=([],))
+    st.button(
+        "Finish milestones",
+        key="mta_finish",
+        on_click=_set_picks,
+        args=(_finish_milestones(False),),
+        help="Picks every finish milestone of the latest update. Use it as the usual MTA set.",
+    )
+    st.button(
+        "Critical milestones",
+        key="mta_critical",
+        on_click=_set_picks,
+        args=(_finish_milestones(True),),
+        help="Picks the critical finish milestones only. "
+        "Use it on a large schedule where every milestone would crowd the chart.",
+    )
+    st.button("Clear", key="mta_clear", on_click=_set_picks, args=([],), help="Empties the pick.")
 picked = st.multiselect(
     f"Milestones and key tasks (up to {cap})",
     all_ms + others,
@@ -55,6 +68,8 @@ picked = st.multiselect(
     format_func=partial(ui.code_label, names),
     key="mta_pick",
     on_change=_keep_picks,
+    help=f"The milestones and tasks whose forecast date is followed update by update; each keeps the colour of "
+    f"its tag in the chart. Up to {cap} at a time; a task's finish is used, a start milestone's start.",
 )
 if not picked:
     st.info("Pick at least one milestone or task.")

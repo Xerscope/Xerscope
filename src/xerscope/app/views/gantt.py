@@ -104,6 +104,9 @@ asked = st.text_input(
     key=ASK_KEY,
     icon=":material/search:",
     max_chars=query.MAX_CHARS,
+    help='A sentence in English or French ("critical not started in civil works", "jalons en retard") turned '
+    "into the page's filters from the file's own words; no model reads the schedule. Use it instead of the "
+    "filters below; a × on a chip drops that filter.",
 )[: query.MAX_CHARS + 1]
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
@@ -157,7 +160,13 @@ if ask is not None:
         with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"clarify_{word}"):
             st.markdown(f"Which **{ui.md_text(word)}**:")
             for choice in (c for c in ask.clarify if c.word == word):
-                if st.button(ui.md_text(choice.label), key=f"clarify_{word}_{choice.value}", type="tertiary"):
+                if st.button(
+                    ui.md_text(choice.label),
+                    key=f"clarify_{word}_{choice.value}",
+                    type="tertiary",
+                    help="Picks which code value or type the word meant when the file has several of that name. "
+                    "Click one; the choice is kept for this sentence.",
+                ):
                     _choose(asked, word, choice.value)
                     st.rerun()
     # a word nothing holds: the closest labels, a click teaches it for the session; the first
@@ -175,7 +184,13 @@ if ask is not None:
             with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):
                 st.markdown(f"Did you mean, for **{ui.md_text(word)}**:")
                 for kind, label, _ratio in offers:
-                    if st.button(ui.md_text(label), key=f"teach_{word}_{label}", type="tertiary"):
+                    if st.button(
+                        ui.md_text(label),
+                        key=f"teach_{word}_{label}",
+                        type="tertiary",
+                        help="Teaches, for this session, that the word you typed means this label of the file. "
+                        "Click the right one; a pick is kept for review in the lexicon folder of the server.",
+                    ):
                         st.session_state["teach_unrecorded"] = not teach(word, label, kind)
                         st.rerun()
     if st.session_state.pop("teach_unrecorded", False):  # neutral: the visitor's word is never echoed
@@ -195,6 +210,8 @@ current = st.selectbox(
     nodes["wbs_id"].tolist(),
     format_func=path_labels.get,  # type: ignore[arg-type]
     key=NODE_KEY,
+    help="The WBS branch drawn: the node, its tasks, then its child nodes, as in P6's Activities view. "
+    "Use it to focus a branch; the breadcrumb above climbs back.",
 )
 node = nodes[nodes["wbs_id"] == current].iloc[0]
 
@@ -218,6 +235,7 @@ if len(path) > 1:
                     type="tertiary",
                     on_click=_focus_node,
                     args=(step,),
+                    help="Moves the chart up to this ancestor node. Use it to climb back from a branch.",
                 )
 ui.kpis(
     [
@@ -243,13 +261,39 @@ ui.kpis(
 )
 
 status_column, float_column, search_column = st.columns(3)
-status = status_column.multiselect("Status", list(STATUS.values()), placeholder="All")
-categories = float_column.multiselect("Float", CATEGORY_ORDER, placeholder="All")
-search = search_column.text_input("Search", placeholder="Task ID or name")
+status = status_column.multiselect(
+    "Status",
+    list(STATUS.values()),
+    placeholder="All",
+    help="Keeps the tasks with the picked P6 status (Not started, In progress, Complete). Empty keeps all.",
+)
+categories = float_column.multiselect(
+    "Float",
+    CATEGORY_ORDER,
+    placeholder="All",
+    help="Keeps the tasks of the picked float category: Critical (P6 critical, float ≤ 0 d or driving "
+    "path), Near critical (total float ≤ 10 wd), Normal, Complete (thresholds in `config.py`). "
+    "Use it to see the critical and near-critical work alone.",
+)
+search = search_column.text_input(
+    "Search",
+    placeholder="Task ID or name",
+    help="Keeps the tasks whose Task ID or name contains the text, ignoring case and accents.",
+)
 code_type, code_ids = pick_activity_code(snapshot, "gantt")
 options = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
-show_links = options.toggle("Logic links", value=False)
-hide_loe = options.toggle("Hide LOE", value=True)
+show_links = options.toggle(
+    "Logic links",
+    value=False,
+    help="Draws the relationships between the tasks shown, from the predecessor's driving end to the "
+    "successor's driven end. Switch it on to read why a task waits; off on a large branch.",
+)
+hide_loe = options.toggle(
+    "Hide LOE",
+    value=True,
+    help="Leaves out Level of Effort tasks, whose bars span their predecessors and successors and carry "
+    "no float of their own. Switch it off to see hammocks and management tasks.",
+)
 timescale = options.segmented_control(
     "Timescale",
     ["Month", "Week"],
@@ -289,7 +333,14 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
         )
         with banner:
             st.markdown(ui.md_text(said), width="stretch")
-            st.button("Show all", key="ask_clear", type="tertiary", icon=":material/close:", on_click=_clear_ask)
+            st.button(
+                "Show all",
+                key="ask_clear",
+                type="tertiary",
+                icon=":material/close:",
+                on_click=_clear_ask,
+                help="Empties the Ask field and its filters; every task of the branch is drawn again.",
+            )
         how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
@@ -297,7 +348,13 @@ if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         st.markdown(f"Showing the **{len(tasks)}** tasks of **{ui.md_text(focus['label'])}**")
-        if st.button("Show all", icon=":material/close:", key="gantt_focus_clear", type="tertiary"):
+        if st.button(
+            "Show all",
+            icon=":material/close:",
+            key="gantt_focus_clear",
+            type="tertiary",
+            help="Drops the focus a Schedule health check set (its listed tasks) and draws the whole branch again.",
+        ):
             st.session_state[FOCUS_KEY] = None
             st.rerun()
 filtering = len(tasks) < len(in_branch)  # every status ticked filters nothing: the outline stays closed
@@ -376,6 +433,8 @@ def show_task_picker(picked: str | None) -> None:
         placeholder="Click a task in the chart, or pick one here",
         key=PICK_KEY,
         on_change=_pick_from_list,
+        help="The task whose card (P6 properties, assignments, logic) and history are shown under the chart. "
+        "Click a bar or a row in the chart, or pick a Task ID here.",
     )
     if st.session_state.get(TASK_KEY) and not picked:
         st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")

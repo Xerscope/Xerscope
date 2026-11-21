@@ -89,7 +89,18 @@ def score_section(polling: bool) -> None:
             st.error(message, icon=":material/error:")
         if not job.done:
             st.caption(f"Computing the scores · {len(job.held)}/{len(available)} standards")
-    elif missing and not loading and st.button("Compute scores", icon=":material/calculate:", key="overview_scores"):
+    elif (
+        missing
+        and not loading
+        and st.button(
+            "Compute scores",
+            icon=":material/calculate:",
+            key="overview_scores",
+            help="Runs every built-in standard on the latest update and fills the score cards; Schedule health "
+            'reuses the results. Use it when the cards read "not computed yet"; it takes several seconds on a '
+            "large file.",
+        )
+    ):
         held = {key: standard_results(standard, latest, store) for key, standard in available.items()}
     ui.score_cards(
         {available[key].name: None if results is None else standard_score(results) for key, results in held.items()}
