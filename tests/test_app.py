@@ -36,6 +36,7 @@ from xerscope.app import ui
 from xerscope.app.baseline_file import _picked_folder_baseline
 from xerscope.app.downloads import anonymizers_built
 from xerscope.app.session import BL_FILE, BL_PLANNED
+from xerscope.app.theme import font_fallback_css
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.viz.gantt import CHROME_PX, ROW_PX
@@ -2815,7 +2816,7 @@ def test_runtime_block_names_what_the_app_read(app):
 
 def test_font_fallback_inlines_both_faces():
     """Without the config (no static folder served), the theme's two fonts come as data: URLs."""
-    css = ui.font_fallback_css()
+    css = font_fallback_css()
     assert css.count("data:font/woff2;base64,") == 2
     assert all(f'font-family: "{family}"' in css for family in ("Onest", "JetBrains Mono"))
 

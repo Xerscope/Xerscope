@@ -26,8 +26,6 @@ from xerscope.analysis.task_filters import search_mask as _search_mask
 from xerscope.app.glossary import GLOSSARY, spelled_out
 from xerscope.app.table_filters import FILTER_HINT, FILTER_RULE, as_dates, keep_mask
 from xerscope.app.theme import STYLE, theme_loaded
-from xerscope.app.theme import apply_style as apply_style
-from xerscope.app.theme import font_fallback_css as font_fallback_css
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz import gantt_assets
 from xerscope.viz.charts import STATUS, TEXT
