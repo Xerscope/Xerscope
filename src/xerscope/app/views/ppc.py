@@ -56,6 +56,8 @@ PPC_COLUMNS = [
     "ppc_week",
     "note",
 ]
+# the status date of a week's row is the week it closes: COLUMNS calls data_date "Status date"
+WEEK_ENDING = st.column_config.DateColumn("Week ending", format="YYYY-MM-DD")
 VARIANCE_TABLE_COLUMNS = ["task_code", "task_name", "status", "start", "finish", *VARIANCE_COLUMNS, "wbs_code"]
 WBS_COLUMNS = ["wbs_code", "progress_pts", "earned_hr_week", "actual_hr_week", "budget_hr", "activities_progressed"]
 ACTIVITY_COLUMNS = [
@@ -81,16 +83,15 @@ def _pct(value) -> str:
 
 def show_ppc_weeks(ppc: pd.DataFrame) -> None:
     with st.expander("Every week: counts behind the three PPC"):
-        count = st.column_config.NumberColumn
         ui.table(
             ppc.sort_values("data_date", ascending=False),
             columns=PPC_COLUMNS,
             key="ppc_weeks",
             reading="ppc_weeks",
             overrides={
-                "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
-                "kept": count("Kept (starts + finishes)", format="%d"),
-                "committed": count("Committed (starts + finishes)", format="%d"),
+                "data_date": WEEK_ENDING,
+                # elsewhere kept is yes / no per commitment; here the weeks' counts of starts and finishes together
+                **ui.count_columns(kept="Kept (starts + finishes)", committed="Committed (starts + finishes)"),
             },
         )
 
@@ -125,18 +126,13 @@ def show_lookahead(week_rows: pd.DataFrame, series: pd.DataFrame) -> None:
         )
     ui.kpis(items, formulas=KPI_FORMULAS)
     with st.expander("Every week: counts behind TA and TMR"):
-        count = st.column_config.NumberColumn
         ui.table(
             series.sort_values(["data_date", "horizon"], ascending=[False, True]),
             columns=LOOKAHEAD_COLUMNS_SHOWN,
             key="ppc_lookahead",
             overrides={
-                "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
-                "horizon": count("Updates ahead", format="%d"),
+                "data_date": WEEK_ENDING,
                 "lookahead_date": st.column_config.DateColumn("Plan read", format="YYYY-MM-DD"),
-                "wwp": count("Weekly plan", format="%d"),
-                "ta_pct": count("TA (%)", format="%.0f"),
-                "tmr_pct": count("TMR (%)", format="%.0f"),
             },
         )
 
@@ -209,7 +205,12 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
     with right:
         ui.section("Progress by WBS", "Points of % complete gained this week, weighted by labor hours.")
         ui.table(
-            wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS, key="ppc_wbs", reading="ppc_wbs"
+            wbs_progress.rename(columns={"wbs_l1": "wbs_code"}),
+            columns=WBS_COLUMNS,
+            key="ppc_wbs",
+            reading="ppc_wbs",
+            empty="No task to roll up by WBS: the progress table of the week (W−1 against W, after the code filter) "
+            "holds no task.",
         )
 
 
@@ -261,7 +262,14 @@ def show_renumbered(pairs: pd.DataFrame) -> None:
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
     moved = progressed_tasks(progress).sort_values("earned_hr_week", ascending=False)
-    ui.table(moved, max_height=ui.TABLE_LONG, columns=ACTIVITY_COLUMNS, key="ppc_progress", reading="ppc_progress")
+    ui.table(
+        moved,
+        max_height=ui.TABLE_LONG,
+        columns=ACTIVITY_COLUMNS,
+        key="ppc_progress",
+        reading="ppc_progress",
+        empty="No task moved this week: none has a % complete, earned hours or actual hours different from W−1's.",
+    )
     csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
@@ -274,7 +282,12 @@ def show_variances(variances: pd.DataFrame, sources: list[str], current) -> None
     )
     moved = moved_variances(variances).sort_values(VARIANCE_COLUMNS)
     ui.table(
-        moved, max_height=ui.TABLE_LONG, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances", reading="ppc_variances"
+        moved,
+        max_height=ui.TABLE_LONG,
+        columns=VARIANCE_TABLE_COLUMNS,
+        key="ppc_variances",
+        reading="ppc_variances",
+        empty="No task moved against W−1 or W−2: every start and finish variance is zero or blank.",
     )
     csv_download(
         variances,

@@ -62,7 +62,17 @@ with top:
         "Columns keep the XER and analysis field names.",
     )
 
-table = partial(ui.table, raw_labels=True, reading="debug")
+NO_ROW = "No row: nothing in the file read selects a row of this block."
+
+
+def table(frame: pd.DataFrame, *, key: str, reason: str = NO_ROW, **kwargs) -> None:
+    """A block's grid, kept when it is empty because its header is the information, with ``reason`` under it then.
+
+    ``reason`` says why nothing is listed and how the block is read: the file table it comes from, the condition
+    that selects its rows.
+    """
+    ui.table(frame, raw_labels=True, reading="debug", key=key, **kwargs)
+    ui.caption_why_empty(frame, reason)
 
 
 def zip_tag(anonymous: bool, *extra: object) -> tuple:
@@ -129,14 +139,23 @@ with st.expander(f"2 · Expected finish ({len(frames['02_expected_finish'])} tas
         "ef_recalc is the expected finish, or the early start when the expected finish falls before it "
         "(remaining_set_to_0). An FF / SF bound later than that wins instead (rem_override_hr blank)."
     )
-    table(frames["02_expected_finish"], key="debug_02_expected_finish")
+    table(
+        frames["02_expected_finish"],
+        key="debug_02_expected_finish",
+        reason="No task has an expected finish (TASK.expect_end_date): the table lists the tasks that carry one, "
+        "beside the dates P6 stored and the ones recalculated.",
+    )
     st.caption(
         "Counts only (no Task ID, no date): the unfinished tasks above by status, type, constraints, "
         "expected finish after the primary constraint date, expected finish off the working time of the "
         "task's calendar, and an FF / SF predecessor. stored_identical: every date and float P6 stored "
         "is the recalculated one; stored_different: at least one is not."
     )
-    table(frames["02b_expected_finish_forms"], key="debug_02b_expected_finish_forms")
+    table(
+        frames["02b_expected_finish_forms"],
+        key="debug_02b_expected_finish_forms",
+        reason="Nothing to count: the table counts the unfinished tasks of the table above, and none is listed there.",
+    )
 
 int01, int03 = frames["03_int01_recalculation"], frames["03_int03_assignments"]
 with st.expander(
@@ -193,6 +212,7 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         table(
             xml_baselines.xml_baselines_table(export[2], pointers["sum_base_proj_id"]),
             key="debug_05_xml_baselines",
+            reason="The P6 XML baseline file holds no baseline: the table has one row per baseline of the file.",
         )
         st.caption(
             "The projects of the P6 XML baseline file, in the order of the file: the id an XER read from one "
@@ -201,7 +221,11 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
             "how many updates of the series were read from it (updates_from_it) and how many have their status "
             "date on the same day (updates_same_status_date)."
         )
-        table(xml_baselines.xml_projects_table(export[2], store), key="debug_05_xml_projects")
+        table(
+            xml_baselines.xml_projects_table(export[2], store),
+            key="debug_05_xml_projects",
+            reason="The P6 XML baseline file holds no project: the table has one row per project of the file.",
+        )
     st.caption(
         "The baseline found for each update, and what finds it (found_by): in its file; in the "
         "export, under the id it names; a loaded update, when it names the project that update was read from; "
@@ -234,13 +258,23 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         baseline_for(snapshot, link=False),
         store.previous(snapshot),
     )
-    table(renumbered_tasks, key="debug_05_renumbered")
+    table(
+        renumbered_tasks,
+        key="debug_05_renumbered",
+        reason="No task carries the GUID of a task of the baseline file or of the previous update under a new Task "
+        "ID: every task kept its Task ID, or the files hold no GUID, or only blank or repeated ones, to match on.",
+    )
     st.caption(
         "How this update's tasks match the baseline file and the previous update, by Activity ID and by GUID: "
         "counts only. renumbered = what 'Link renumbered tasks by GUID' links; gone_guid_absent = tasks gone "
         "whose GUID this update does not carry (deleted, or a copy of the project with new GUIDs)."
     )
-    table(guid_match, key="debug_05_guid_match")
+    table(
+        guid_match,
+        key="debug_05_guid_match",
+        reason="No baseline file and no previous update to match this update against: the table has one row for "
+        "each of the two.",
+    )
     table(frames["05_calendars"], key="debug_05_calendars")
 
 with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled tasks)", key="debug_load_warnings"):
@@ -320,7 +354,12 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
             "its started tasks, which these rows size."
         )
         gaps = memo(("schedule_gap_by_status", *part_key), schedule_gap_by_status, part, part_baseline)
-        table(gaps, key="debug_09_schedule_gap_by_status")
+        table(
+            gaps,
+            key="debug_09_schedule_gap_by_status",
+            reason="No task of the update has baseline hours and both EV dates: the table counts these tasks by "
+            "status.",
+        )
         st.caption(
             "The weeks of the four weeks' window of the Earned value page, one by one: hours earned and "
             "planned, plan days gained and elapsed, each week read on the baseline of the update that opens "
@@ -330,7 +369,11 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         )
         gains = memo(("evm_weekly", code_filter), weekly_gains, store, partial(baseline_for, link=False),
                      st.session_state.get("guid_link", False), code_filter)  # fmt: skip
-        table(window_weeks(gains, snapshot.data_date, schedule.hours_per_day), key="debug_09_window_weeks")
+        table(
+            window_weeks(gains, snapshot.data_date, schedule.hours_per_day),
+            key="debug_09_window_weeks",
+            reason="No update is dated at least 28 days before this one: the four weeks' window holds no week.",
+        )
         st.caption(
             "Every update whose baseline is not the previous update's, read on both plans: its time gap in "
             "calendar days on the plan it leaves (gap_old_d) and on the one it takes (gap_new_d), the lag the "
@@ -342,7 +385,12 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         link = st.session_state.get("guid_link", False)
         unlinked = partial(baseline_for, link=False)
         changes = memo(("evm_baseline_changes", code_filter), baseline_changes, store, unlinked, link, code_filter)
-        table(changes, key="debug_09_baseline_changes")
+        table(
+            changes,
+            key="debug_09_baseline_changes",
+            reason="Every update keeps its predecessor's plan: the table lists the updates whose baseline is not "
+            "the previous update's.",
+        )
     st.caption(
         "Labor assignments with dates of their own (Original Lag, Planned Start / Finish apart from the "
         "task's), and task dependent assignments on another calendar than their task's."
@@ -477,7 +525,13 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
         calendar_frames["13_calendar_summary"].astype(str), key="debug_13_calendar_summary"
     )  # numbers, flags and blanks: one type for Arrow
     table(calendar_frames["13_calendar_week"], key="debug_13_calendar_week")
-    table(calendar_frames["13_calendar_exceptions"], max_height=ui.TABLE_SHORT, key="debug_13_calendar_exceptions")
+    table(
+        calendar_frames["13_calendar_exceptions"],
+        max_height=ui.TABLE_SHORT,
+        key="debug_13_calendar_exceptions",
+        reason="No calendar of the file has an exception (clndr_data Exceptions): every calendar follows the weekly "
+        "periods above.",
+    )
 
     built_download(
         "debug_calendars_zip",
@@ -524,7 +578,12 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
         "generated in memory from every loaded file; `xerscope lexicon build` writes them as a file."
     )
     variant_counts = pd.DataFrame(list(query.variant_counts(generated).items()), columns=["column", "groups"])
-    table(variant_counts, key="debug_14_ask_variants")
+    table(
+        variant_counts,
+        key="debug_14_ask_variants",
+        reason="No word of the loaded files has a variant (a plural, an abbreviation with its dot): the Ask field "
+        "reads the words as written.",
+    )
     for error in lexicon_and_errors()[1]:  # curated/ files skipped, refusals that cannot apply
         st.warning(ui.md_text(_where(error)))
 

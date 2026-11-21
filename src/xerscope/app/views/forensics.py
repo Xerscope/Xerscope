@@ -177,6 +177,7 @@ def show_longest_path(old, new) -> None:
         key="forensics_path",
         max_height=ui.TABLE_SHORT,
         open_task=partial(open_in_gantt, snapshot=new),
+        empty="No open task is on the longest path of either update: nothing entered, stayed on or left it.",
     )
 
 

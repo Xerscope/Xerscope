@@ -36,11 +36,8 @@ ui.table(
     pd.DataFrame(
         [{"table": name, "rows": len(frame), "columns": len(frame.columns)} for name, frame in tables.items()]
     ),
-    overrides={
-        "table": st.column_config.TextColumn("Table"),
-        "rows": st.column_config.NumberColumn("Rows", format="%,d"),
-        **ui.count_columns(columns="Columns"),
-    },
+    # the Debug costs table writes its rows column as text, so COLUMNS holds no rows: its label and format stay here
+    overrides=ui.number_columns("thousands", rows="Rows"),
     key="export_tables",
     reading="export_tables",
 )
