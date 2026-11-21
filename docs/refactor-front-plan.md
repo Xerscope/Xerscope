@@ -1131,6 +1131,14 @@ Three selectboxes label a task "code · name" (`ui.code_label`, `ui.py:751-753`,
 "Where a change goes"). Waits for the maintainer on the `empty=` sentences and on which Debug
 blocks keep the grid.
 
+Decided (maintainer, 2026-11-21): `empty=` is one sentence per table, written by the page, with
+enough detail to debug or to confront the result: what was looked for, in which update or period,
+and why nothing came out (the rule that filtered everything, the file that lacks the table), e.g.
+"No commitment in the 4 weeks before the status date: no task with a baseline finish in that
+window." Debug keeps the grid everywhere (the header is the information) and adds under each empty
+grid a caption saying why it is empty and how the block is read (the file table it comes from,
+the condition that selects rows).
+
 **What changes for the user.** Column headers byte-identical; a help tooltip on every column; a
 caption instead of an empty grid where a page passes `empty=`; the Forensics filter popover keyed
 on field names; the Gantt task picker label unchanged.
