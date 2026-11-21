@@ -234,7 +234,7 @@ ui.kpis(
             None if pd.isna(node["finish_variance_wd"]) else f"{node['finish_variance_wd']:+.1f} wd vs BL",
             "Variance to BL: latest finish of the baselined tasks against their latest BL finish"
             + (f"; {node['outside_bl']} task(s) not in the baseline left out" if node["outside_bl"] else "")
-            + ". Working days gained (+) or lost (−): a later finish reads negative.",
+            + f". {ui.SHIFT_WD_SENTENCE}",
         ),
         ("Labor hours", f"{node['actual_hr']:,.0f} / {node['budget_hr']:,.0f}", None, "Actual / budgeted"),
         ("Open critical", int(node["critical"])),

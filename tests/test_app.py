@@ -44,7 +44,6 @@ APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [
     "views/overview.py",
     "views/gantt.py",
-    "views/activity.py",
     "views/health.py",
     "views/audit.py",
     "views/changelog.py",
@@ -749,7 +748,7 @@ def test_earned_value_on_a_task_code_counts_the_tasks_of_its_values(tmp_path, mo
 def test_earned_value_shows_the_date_the_plan_is_reached_and_the_gap_in_days(tmp_path, monkeypatch):
     """Friday 03-13 17:00. Whole project, EV 120 h: the plan held them from Friday 03-06 17:00 to Monday
     03-09 08:00, the end of that stretch is the date reached: 09 Mar, 4 d 9 h before the status date,
-    shown -4 d. On CIV, EV 60 h, reached on Wednesday 03-11 at 13:00: 11 Mar, 2 d 4 h before, shown -2 d,
+    shown -4 cal. d. On CIV, EV 60 h, reached on Wednesday 03-11 at 13:00: 11 Mar, 2 d 4 h before, shown -2 cal. d,
     SPI(t) 7.5 / 10 = 0.750."""
     at = _app_on_two_disciplines(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
@@ -758,9 +757,9 @@ def test_earned_value_shows_the_date_the_plan_is_reached_and_the_gap_in_days(tmp
     def card(label: str) -> str:
         return next(metric.value for metric in at.metric if metric.label == label)
 
-    assert (card("Plan reached"), card("Time gap")) == ("09 Mar 2026", "-4 d")
+    assert (card("Plan reached"), card("Time gap")) == ("09 Mar 2026", "-4 cal. d")
     _pick_discipline(at, "ev", "CIV")
-    assert (card("Plan reached"), card("Time gap"), card("SPI(t)")) == ("11 Mar 2026", "-2 d", "0.750")
+    assert (card("Plan reached"), card("Time gap"), card("SPI(t)")) == ("11 Mar 2026", "-2 cal. d", "0.750")
 
 
 def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_finish(tmp_path, monkeypatch):
@@ -2707,7 +2706,7 @@ def test_a_finish_that_goes_later_reads_negative_and_red_on_every_readout(app):
     app.switch_page("views/overview.py").run()
     _ok(app)
     finish = readout("Forecast finish")
-    assert (finish.delta, finish.color) == ("-2 wd vs previous update", normal)
+    assert (finish.delta, finish.color) == ("-2.0 wd vs previous update", normal)
     assert readout("Shift since first update").value == "-15.0 wd"
     app.switch_page("views/changelog.py").run()
     _ok(app)
@@ -2719,10 +2718,12 @@ def test_a_finish_that_goes_later_reads_negative_and_red_on_every_readout(app):
     _ok(app)
     finish = readout("Forecast finish")
     assert finish.delta.startswith("-") and finish.delta.endswith(" wd vs BL") and finish.color == normal
-    app.switch_page("views/activity.py").run()
-    app.selectbox[0].set_value("M9999").run()  # the project finish milestone: it follows the forecast finish
+    app.selectbox(key="gantt_node").set_value("__project__").run()  # back to the whole project
+    app.session_state["gantt_task"] = "M9999"  # the project finish milestone: it follows the forecast finish
+    app.run()
     _ok(app)
-    finish = readout("Forecast finish")
+    finishes = [metric for metric in app.metric if metric.label == "Forecast finish"]
+    finish = finishes[-1]  # the task panel, under the node's
     assert (finish.delta, finish.color) == ("-15.0 wd since first", normal)
 
 
@@ -3053,8 +3054,9 @@ def test_charts_hide_the_plotly_mode_bar(app):
 def test_health_names_each_group_once_and_offers_one_prepare_button(app):
     app.switch_page("views/health.py").run()
     _ok(app)
-    titles = [m.value for m in app.markdown if m.value.startswith("##### ")]
+    titles = [markdown.value for markdown in app.markdown if markdown.value.startswith("#### ")]
     assert titles and len(titles) == len(set(titles)), titles
+    assert len(titles) == 3, titles  # the three groups of the P6 standard: no check's formula is a heading
     assert [b.label for b in app.button].count("Prepare anonymized downloads") == 1
 
 

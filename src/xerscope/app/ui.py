@@ -205,9 +205,11 @@ COLUMNS: dict[str, tuple[str, str]] = {
     "bei_p6": ("BEI (P6)", "d2"),
     "bei_dcma": ("BEI (DCMA)", "d2"),
     "ev_technique": ("EV technique", "text"),
-    "data_date": ("Status date", "date"),
+    "data_date": ("Status date", "date"),  # the PPC tables label it "Week ending" on purpose: one row per week
     "source": ("File", "text"),
     "forecast_finish": ("Forecast finish", "datetime"),
+    "first_forecast": ("First forecast", "date"),
+    "latest_forecast": ("Latest forecast", "date"),
     "finish_shift_wd": ("Finish shift (wd)", "signed"),
     "activities": ("Tasks", "int"),
     "complete": ("Complete", "int"),
@@ -291,11 +293,16 @@ COLUMNS: dict[str, tuple[str, str]] = {
 }
 HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not shown
 MISSING = "–"  # written for a value that is not there: a date, a number, a cell of a table
+SHIFT_WD_FORMAT = "{:+.1f} wd"  # a move of a finish, in working days, the same on every page
+SHIFT_WD_SENTENCE = "Working days gained (+) or lost (−); a later finish reads negative."
 
 
 _MD_SPECIAL = str.maketrans({character: "\\" + character for character in "\\`*_{}[]()#+-.!|<>~$"})
 
 
+# A date in a KPI or a caption is read inside a sentence, so its month is a word ("02 Nov 2026");
+# a date in a table or a chart hover is a column to compare and sort, so it stays ISO
+# (2026-11-02), the order P6 shows in its own grids.
 def fmt_date(timestamp, missing: str = MISSING) -> str:
     """A date for display ("02 Nov 2026"); ``missing`` stands for NaT / None."""
     return missing if pd.isna(timestamp) else f"{timestamp:%d %b %Y}"
@@ -488,6 +495,19 @@ def section(title: str, caption: str = "") -> None:
     st.subheader(title)
     if caption:
         st.caption(caption)
+
+
+# Message boxes, one rule for every page. info: a choice the user still has to make, or a page that does
+# not apply (need). warning: a result is shown but is to be read with care (caveat). error: nothing can
+# be shown, and the page stops (st.error where it stops).
+def need(text: str) -> None:
+    """Show ``text`` as the choice still to make, or the reason the page does not apply."""
+    st.info(text)
+
+
+def caveat(text: str) -> None:
+    """Show ``text`` as the care to take in reading the result under it."""
+    st.warning(text)
 
 
 def block(title: str, caption: str = "") -> None:

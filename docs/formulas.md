@@ -83,7 +83,7 @@ to 2 decimals. Pinned by `test_reference.py::test_percent_complete_matches_p6_ex
 (row-wise, the same on each row's calendar). The convention is xerscope's: Oracle's help for the
 Variance columns (P6 help 47223) says "Finish minus BL Project Finish" and names no calendar, so no
 Oracle text settles it. Project-level dates use the project calendar, an activity's dates its own
-calendar; of two updates, the newer (changelog, store) or the latest (MTA, activity page) supplies
+calendar; of two updates, the newer (changelog, store) or the latest (MTA, task panel) supplies
 the calendar.
 
 | Shift | Dates | Calendar | Pinned by (tests/test_shift_calendar.py) |
@@ -95,7 +95,7 @@ the calendar.
 | changelog Dates rows | an activity's start, finish | activity, new update | test_changelog_date_moves_are_on_the_activity_calendar |
 | Gantt `shift_wd` | an activity's finish against the comparison update | activity, displayed update | test_gantt_finish_shift_is_on_the_activity_calendar |
 | MTA `slip_wd`, `last_week_wd` | a milestone's forecast, start or finish | the milestone's own, latest update | test_milestone_slip_is_on_the_milestone_calendar |
-| Activity page "wd since first" (`activity_finish_shift`) | the activity's forecast finish | the activity's own, latest update | test_activity_page_slip_is_on_the_activity_calendar |
+| Task panel "wd since first" (`activity_finish_shift`) | the activity's forecast finish | the activity's own, latest update | test_activity_page_slip_is_on_the_activity_calendar |
 | P6-12 variance, DCMA-08 limit, 06A506c windows | an activity's dates and durations | activity (`hours_per_day`) | test_p6_12_variance_is_on_the_activity_calendar, test_dcma_08_limit_is_in_days_of_the_activity_calendar, test_06a506c_windows_are_in_days_of_the_activity_calendar |
 
 The critical path test measures its shift on the delayed activity's calendar (2.5). DCMA-13 takes

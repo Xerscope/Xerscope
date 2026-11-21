@@ -68,7 +68,7 @@ def show_engine_gap(read, old, new) -> None:
         )
         if gap_wd != 0.0
     ]
-    st.warning(
+    ui.caveat(
         "xerscope does not recalculate the finish P6 stored in the file (" + "; ".join(gaps) + "). The shifts "
         "below may come from the recalculation and not from the schedule: read them as indications only. "
         "The Schedule health page, Integrity standard, lists the dates that differ; the Debug page, block 3, "
@@ -81,8 +81,16 @@ def show_kpis(read, new) -> None:
     float_d = longest_path_float_d(new)
     ui.kpis(
         [
-            ("Finish before replanning", ui.fmt_date(read.finish_before_replanning), f"{read.slip_wd:+.1f} wd"),
-            ("Finish shown", ui.fmt_date(read.new_finish), f"{read.replanning_wd:+.1f} wd by replanning"),
+            (
+                "Finish before replanning",
+                ui.fmt_date(read.finish_before_replanning),
+                ui.SHIFT_WD_FORMAT.format(read.slip_wd),
+            ),
+            (
+                "Finish shown",
+                ui.fmt_date(read.new_finish),
+                f"{ui.SHIFT_WD_FORMAT.format(read.replanning_wd)} by replanning",
+            ),
             ("Longest path float", ui.fmt_number(float_d, "{:.1f} wd")),
             ("Tasks matched", f"{read.matched}", f"{read.added} added, {read.deleted} deleted"),
         ],
@@ -100,13 +108,13 @@ def show_steps(read, old, new) -> None:
     ui.chart(build_half_step(read.steps))
     ui.table(read.steps, key="forensics_steps")
     if read.is_slip_beyond_period:
-        st.warning(
+        ui.caveat(
             f"The progress step lost {abs(read.slip_wd):.1f} wd in a period of {read.period_wd:.1f} wd. "
             "AACE 29R-03 3.4.K.4.g: a revision may sit in the half-step, or the lack of progress pushed work "
             "into a non-working stretch of a calendar."
         )
     if abs(read.residual_wd) > 0.005:
-        st.warning(
+        ui.caveat(
             f"Residual {read.residual_wd:+.1f} wd: the steps do not account for every change between the two "
             "files. A change the changelog does not list moved the finish."
         )
@@ -216,7 +224,7 @@ with top:
 try:
     read = memo(("forensics", old.label, new.label), half_step, old, new, baseline=False, ev_basis=False)
 except ScheduleError as error:
-    st.warning(f"These two updates cannot be read: {ui.without_addresses(str(error))}")
+    st.error(f"These two updates cannot be read: {ui.without_addresses(str(error))}", icon=":material/block:")
     st.stop()
 show_case(new)
 show_engine_gap(read, old, new)

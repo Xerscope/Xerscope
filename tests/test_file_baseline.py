@@ -707,11 +707,11 @@ def test_p6_12_and_p6_13_are_computed_on_the_source_each_update_uses(tmp_path, m
     at = _series(tmp_path, monkeypatch)
     a = _health(at, "2026-03-02")
     # file baseline, by hand: A1 and A2 forecast 03-13 against 03-06 -> 2 late of 2; 0 complete of 2 baseline
-    assert "#### 2 late / 2 checked = 100.0 %" in _markdown(a)
-    assert any(m.startswith("#### 0 completed / 2") for m in _markdown(a))
+    assert "**2 late / 2 checked = 100.0 %**" in _markdown(a)
+    assert any(line.startswith("**0 completed / 2") for line in _markdown(a))
     # planned dates carry no target_end_date here: nothing is late, and the 2 activities are their own baseline
     b = _health(a, "2026-03-09", fallback="Planned dates in each file (target_*)")
-    assert "#### 0 late / 2 checked = 0.0 %" in _markdown(b)
+    assert "**0 late / 2 checked = 0.0 %**" in _markdown(b)
 
 
 def test_a_result_names_the_baseline_it_was_computed_on():

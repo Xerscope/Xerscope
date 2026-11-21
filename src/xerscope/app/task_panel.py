@@ -1,8 +1,8 @@
 """One activity: its P6 properties in the update shown, then its history across every update.
 
-Drawn under the Gantt for the activity picked there, and by the Task history page. The
-activity is named by its Activity ID (task_code) only; every value shown is read from the
-loaded snapshot or store, nothing comes back from the browser but that ID.
+Drawn under the Gantt for the activity picked there. The activity is named by its Activity ID
+(task_code) only; every value shown is read from the loaded snapshot or store, nothing comes
+back from the browser but that ID.
 """
 
 from __future__ import annotations
@@ -237,9 +237,8 @@ def show_history(store, task_code: str) -> None:
             (
                 "Forecast finish",
                 ui.fmt_date(last["finish"], "—"),
-                None if slip is None else f"{slip:+.1f} wd since first",
-                "Working days gained (+) or lost (−) since the first forecast of this task, on its calendar: "
-                "a later finish reads negative",
+                None if slip is None else f"{ui.SHIFT_WD_FORMAT.format(slip)} since first",
+                f"Forecast finish against the first forecast of this task, on its own calendar. {ui.SHIFT_WD_SENTENCE}",
             ),
             ("Total float", ui.fmt_number(last["total_float_d"], "{:.1f} wd")),
             ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),

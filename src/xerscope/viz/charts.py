@@ -426,7 +426,9 @@ def _widen_dates(update_axis, low, high) -> None:
 
 def build_activity_float(history: pd.DataFrame) -> go.Figure:
     """Total float of one activity in every update, zero marked as critical."""
-    figure = go.Figure(_line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} d<extra></extra>"))
+    figure = go.Figure(
+        _line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} wd<extra></extra>")
+    )
     figure.add_hline(
         y=0,
         line=dict(color=STATUS["critical"], width=1, dash="dot"),
@@ -465,8 +467,11 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
 
 
 def format_shift(shift_wd: float) -> str:
-    """A move in working days as it follows a date or a code: " (+2.5 wd)"; nothing when unknown."""
-    return "" if pd.isna(shift_wd) else f" ({round(shift_wd, 1):+g} wd)"
+    """A move in working days as it follows a date or a code: " (+2.5 wd)"; nothing when unknown.
+
+    Written as ui.SHIFT_WD_FORMAT writes it: viz does not import app.
+    """
+    return "" if pd.isna(shift_wd) else f" ({shift_wd:+.1f} wd)"
 
 
 # --- PPC ---------------------------------------------------------------------------------------

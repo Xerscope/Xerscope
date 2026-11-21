@@ -195,7 +195,7 @@ with top:
     )
     baseline_warnings(snapshot, baseline)
 if standard_id is None:
-    st.info("Pick a standard, then a check.", icon=":material/fact_check:")
+    ui.need("Pick a standard, then a check.")
     st.stop()
 standard = available[standard_id]
 with check_column:
@@ -207,7 +207,7 @@ with check_column:
         key=f"audit_check:{standard_id}",
     )
 if metric_id is None:
-    st.info("Pick a check.", icon=":material/fact_check:")
+    ui.need("Pick a check.")
     st.stop()
 
 metric = standard[metric_id]

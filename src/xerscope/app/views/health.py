@@ -274,7 +274,7 @@ def show_details(results, snapshot, only_failed: bool, sources: list[str], stand
     expand_all = st.toggle("Expand all", value=False, key="health_expand")
     for group, shown in shown_by_group(results, only_failed).items():
         if group:
-            st.markdown(f"##### {group}")
+            st.markdown(f"#### {group}")
         for result in shown:
             show_check(result, explain(result), snapshot, expand_all, sources, standard)
 
@@ -453,10 +453,9 @@ with top:
     baseline_warnings(snapshot, baseline)
 st.caption(standard.description or standard.name)
 if baseline is None:
-    st.warning(
+    ui.need(
         "No baseline selected: checks against the baseline (late tasks, BEI, missed tasks) "
-        "are not applicable. Pick one in the sidebar.",
-        icon=":material/info:",
+        "are not applicable. Pick one in the sidebar."
     )
 
 # memoised per (data set, metric, update, baseline): the DECM critical path test alone

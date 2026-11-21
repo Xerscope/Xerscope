@@ -196,7 +196,7 @@ def show_earned_schedule(
             ),
             (
                 "Time gap",
-                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} d",
+                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} cal. d",
                 None,
                 "Plan reached − status date, in calendar days, weekends included; negative = behind. Compare "
                 "updates measured against the same baseline: a baseline made again starts near zero. SV is "
@@ -490,7 +490,7 @@ with top:
     )
     baseline_warnings(snapshot, baseline, series=True)
 if baseline is None:
-    st.info("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
+    ui.need("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(

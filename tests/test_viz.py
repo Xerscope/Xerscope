@@ -92,7 +92,7 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     assert texts == sorted(
         [
             "SAME",
-            f'<span style="color:{red}">▲</span> LATE (-2 wd)',
+            f'<span style="color:{red}">▲</span> LATE (-2.0 wd)',
             f'<span style="color:{green}">▼</span> EARLY (+1.5 wd)',
         ]
     )

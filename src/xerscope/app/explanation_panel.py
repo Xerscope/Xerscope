@@ -10,7 +10,7 @@ def show_calculation(result, explanation) -> None:
     """Show the calculation box, the population, the note and the baseline of one check."""
     with st.container(border=True):
         st.caption("Calculation")
-        st.markdown(f"#### {explanation.formula}")
+        st.markdown(f"**{explanation.formula}**")  # not a heading: each check would enter the outline
         st.markdown(explanation.verdict)
     if explanation.population:
         st.markdown("**Population**")

@@ -73,7 +73,7 @@ ACTIVITY_COLUMNS = [
 
 
 def _pct(value) -> str:
-    return ui.fmt_number(value, "{:.0f} %", missing="n/a")
+    return ui.fmt_number(value, "{:.0f} %")
 
 
 def show_ppc_weeks(ppc: pd.DataFrame) -> None:

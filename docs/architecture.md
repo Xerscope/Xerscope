@@ -347,7 +347,7 @@ Outside `analysis/`:
   (P6 properties, resource assignments, logic) and its history across updates. Opened under
   the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
   the page only an activity the chart draws); every value is read from the snapshot or the
-  store, card text is escaped. The Task history page draws the same history.
+  store, card text is escaped.
 
 ### The Gantt "Ask" field: talking to the schedule without a model reading it
 

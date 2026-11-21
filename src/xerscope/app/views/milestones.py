@@ -87,11 +87,7 @@ ui.table(
     slips,
     key="mta_slips",
     open_task=partial(open_in_gantt, snapshot=store.latest),
-    overrides={
-        "first_forecast": st.column_config.DatetimeColumn("First forecast", format="YYYY-MM-DD"),
-        "latest_forecast": st.column_config.DatetimeColumn("Latest forecast", format="YYYY-MM-DD"),
-        **ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
-    },
+    overrides=ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
 )
 with st.expander("Data"):
     ui.table(trend, max_height=640, key="mta_trend")

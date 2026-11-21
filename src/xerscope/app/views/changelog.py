@@ -26,9 +26,8 @@ def show_kpis(log: pd.DataFrame, counts: pd.DataFrame) -> None:
             (
                 "Forecast finish",
                 ui.fmt_date(finish),
-                None if shift_wd is None else f"{shift_wd:+.1f} wd",
-                "Working days gained (+) or lost (−) on the forecast finish between the two updates "
-                "(project calendar): a later finish reads negative",
+                None if shift_wd is None else ui.SHIFT_WD_FORMAT.format(shift_wd),
+                f"Forecast finish between the two updates, on the project calendar. {ui.SHIFT_WD_SENTENCE}",
             ),
             ("Added / deleted", f"{headline['added']} / {headline['deleted']}", None, "Tasks"),
             ("Logic changes", headline["logic"]),
@@ -125,7 +124,7 @@ with top:
         "dates, float, constraints, budgets and resource assignments. Tasks are matched by Task ID.",
     )
 if old is new:
-    st.warning("Pick two different files.")
+    ui.need("Pick two different files.")
     st.stop()
 
 log = memo(("changelog", old_label, new_label), changelog, old, new, baseline=False)
