@@ -218,7 +218,7 @@ current = st.selectbox(
     nodes["wbs_id"].tolist(),
     format_func=path_labels.get,  # type: ignore[arg-type]
     key=NODE_KEY,
-    help="The WBS branch drawn: the node, its tasks, then its child nodes, as in P6's Activities view. "
+    help="The WBS branch drawn: the node, its tasks, then its child nodes, as P6 groups them by WBS. "
     "Use it to focus a branch; the breadcrumb above climbs back.",
 )
 node = nodes[nodes["wbs_id"] == current].iloc[0]
