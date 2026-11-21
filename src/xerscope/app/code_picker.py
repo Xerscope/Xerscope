@@ -22,7 +22,7 @@ def _draw_code_widgets(snapshot: Snapshot, key_prefix: str) -> tuple[str | None,
             list(dict.fromkeys(snapshot.code_values["code_type"])),
             index=None,
             placeholder="None",
-            help="Picks one activity code type of the file (P6 ACTVTYPE); its values then filter the page's tasks. "
+            help="Picks one P6 activity code type of the file (ACTVTYPE); its values then filter the page's tasks. "
             "Use it to read one trade, area or contract on its own; None keeps every task.",
         )
         by_label = code_value_labels(snapshot, code_type) if code_type else {}

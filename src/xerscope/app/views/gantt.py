@@ -6,21 +6,29 @@ from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.baselines import (
+    baseline_for,
+)
+from xerscope.app.cache import (
+    memo,
+)
 from xerscope.app.code_picker import pick_activity_code
+from xerscope.app.downloads import (
+    csv_download,
+    sources_of,
+)
+from xerscope.app.loading import (
+    file_variants,
+    refusals,
+    session_lexicon,
+    teach,
+)
 from xerscope.app.sets import show_steps
 from xerscope.app.state import (
-    baseline_for,
     compare_picker,
-    csv_download,
-    file_variants,
-    memo,
     page_header,
-    refusals,
     require_store,
-    session_lexicon,
     snapshot_picker,
-    sources_of,
-    teach,
 )
 from xerscope.app.task_panel import show_card, show_history, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
@@ -210,7 +218,7 @@ current = st.selectbox(
     nodes["wbs_id"].tolist(),
     format_func=path_labels.get,  # type: ignore[arg-type]
     key=NODE_KEY,
-    help="The WBS branch drawn: the node, its tasks, then its child nodes, as in P6's Activities view. "
+    help="The WBS branch drawn: the node, its tasks, then its child nodes, as P6 groups them by WBS. "
     "Use it to focus a branch; the breadcrumb above climbs back.",
 )
 node = nodes[nodes["wbs_id"] == current].iloc[0]

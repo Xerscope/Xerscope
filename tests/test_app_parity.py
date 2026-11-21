@@ -21,7 +21,7 @@ from xerscope.analysis.evm import bei_series, evm_series
 from xerscope.analysis.explain import fmt_value
 from xerscope.analysis.progress import ppc_series
 from xerscope.app import ui
-from xerscope.app.state import BL_NONE, BL_PLANNED
+from xerscope.app.session import BL_NONE, BL_PLANNED
 from xerscope.app.ui import md_text, status_label
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
@@ -364,7 +364,7 @@ def test_baseline_in_each_file_equals_check_baseline_in_file(tmp_path, monkeypat
     from file_projects import two_projects
 
     from xerscope import cli
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     data, out_dir = tmp_path / "data", tmp_path / "out"
     data.mkdir()

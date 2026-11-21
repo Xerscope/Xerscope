@@ -19,7 +19,7 @@ from xerscope.analysis.audit import (
 from xerscope.analysis.explain import noun
 from xerscope.analysis.populations import STEP_SOURCES
 from xerscope.app import ui
-from xerscope.app.state import csv_download
+from xerscope.app.downloads import csv_download
 
 # the funnel tables of the Ask field and of a check's population write both counts as whole numbers
 STEP_COUNT_COLUMNS = ui.count_columns("removed", "left")

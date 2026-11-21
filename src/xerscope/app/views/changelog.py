@@ -13,7 +13,9 @@ from xerscope.analysis.changelog import (
     weekly_change_matrix,
 )
 from xerscope.app import ui
-from xerscope.app.state import csv_download, memo, open_in_gantt, page_header, require_store, sources_of
+from xerscope.app.cache import memo
+from xerscope.app.downloads import csv_download, sources_of
+from xerscope.app.state import open_in_gantt, page_header, require_store
 
 SEARCH_COLUMNS = ["task_code", "task_name", "wbs_code", "field"]
 

@@ -23,7 +23,9 @@ def main() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
     from xerscope.app import ui
-    from xerscope.app.state import debug_page, sidebar_loader
+    from xerscope.app.loading import sidebar_loader
+    from xerscope.app.session import debug_page
+    from xerscope.app.theme import apply_style
 
     st.set_page_config(page_title="xerscope", page_icon=":material/calendar_month:", layout="wide")
 
@@ -51,7 +53,7 @@ def main() -> None:
         }
     )
 
-    ui.apply_style()
+    apply_style()
     sidebar_loader()
     ui.glossary()
     pages.run()

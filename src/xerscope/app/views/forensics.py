@@ -27,15 +27,19 @@ from xerscope.analysis.longest_path import (
 )
 from xerscope.analysis.progress import kept_count
 from xerscope.app import ui
+from xerscope.app.cache import (
+    memo,
+)
+from xerscope.app.downloads import (
+    csv_download,
+    sources_of,
+)
 from xerscope.app.sets import show_steps as show_funnel_steps
 from xerscope.app.state import (
-    csv_download,
-    memo,
     open_in_gantt,
     page_header,
     require_store,
     snapshot_picker,
-    sources_of,
 )
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz.charts import build_half_step, build_slip_trend

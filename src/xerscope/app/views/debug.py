@@ -17,22 +17,34 @@ from xerscope.analysis.evm import (
 )
 from xerscope.analysis.forensics import engine_gap_wd
 from xerscope.app import diagnostic, ui, xml_baselines
-from xerscope.app.code_picker import pick_code_filter
-from xerscope.app.state import (
-    anonymous_exports,
+from xerscope.app.baseline_export import (
     baseline_export,
-    baseline_for,
-    built_download,
-    data_identity,
-    data_locked,
     export_contents,
-    lexicon_and_errors,
+)
+from xerscope.app.baselines import (
+    baseline_for,
+    data_identity,
+    snapshot_identity,
+)
+from xerscope.app.cache import (
     memo,
+)
+from xerscope.app.code_picker import pick_code_filter
+from xerscope.app.downloads import (
+    anonymous_exports,
+    built_download,
+    sources_of,
+)
+from xerscope.app.loading import (
+    lexicon_and_errors,
+)
+from xerscope.app.session import (
+    data_locked,
+)
+from xerscope.app.state import (
     page_header,
     require_store,
-    snapshot_identity,
     snapshot_picker,
-    sources_of,
     standards,
 )
 from xerscope.export import zip_frames
@@ -353,7 +365,7 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
         "P6 Activities export",
         type=diagnostic.P6_EXPORT_SUFFIXES,
         key="debug_p6_export",
-        help="P6's Activities view saved as CSV (labour units in hours) with Activity ID, Planned Value Labor "
+        help="The Activities view of P6 saved as CSV (labour units in hours) with Activity ID, Planned Value Labor "
         "Units, Earned Value Labor Units, Schedule % Complete. Use it to hold xerscope's PV and EV against P6's, "
         "task by task; the file stays in this session's memory.",
     )
