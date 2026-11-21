@@ -448,7 +448,7 @@ def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame)
         values = earned_values.reset_index().rename(columns=EV_BASIS_COLUMNS)
         # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
         activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
-        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640, key="ev_tasks", reading="ev_tasks")
+        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=ui.TABLE_LONG, key="ev_tasks", reading="ev_tasks")
         st.caption(
             f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
             f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."

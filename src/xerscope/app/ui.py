@@ -34,7 +34,7 @@ from xerscope.xer.model import to_datetime
 
 class StatusStyle(NamedTuple):
     label: str
-    tone: str  # key of the label's background in BADGE
+    tone: str  # key of the label's background in STATUS
     mark: str  # Markdown, coloured by the theme
 
 
@@ -46,11 +46,6 @@ STATUS_STYLE = {
     "n/a": StatusStyle("N/A", "muted", ":gray[**N/A**]"),
     "error": StatusStyle("Error", "warning", ":orange[**ERROR**]"),
 }
-
-
-# Background of each status label in tables, white text on it (>= 4.5:1). A label carries its
-# own background, so it reads the same on the light and the dark theme without a redraw.
-BADGE = {**STATUS, "muted": "#5b6b82"}
 
 
 # The WBS Gantt (viz/gantt.js), registered once: this module is imported once per process. A
@@ -114,12 +109,14 @@ def runtime_table() -> pd.DataFrame:
 
 def apply_style() -> None:
     """style.css with the app's colours (sent once per run, takes no space). The series colours
-    hold on both themes, the accent is a CSS light-dark() pair resolved by the color-scheme
-    Streamlit sets on the app, and the rest follows the page's text colour, so a theme switch
+    and the status colours hold on both themes, the accent is a CSS light-dark() pair resolved by the
+    color-scheme Streamlit sets on the app, and the rest follows the page's text colour, so a theme switch
     needs no rerun. Without the config (``theme_loaded``), the fonts are inlined so the page at
     least reads in the app's faces."""
     accent = f"light-dark({ACCENT['light']}, {ACCENT['dark']})"
-    colours = {"accent": accent} | {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
+    series = {f"s{index}": colour for index, colour in enumerate(SERIES, start=1)}
+    status = {f"status-{name}": colour for name, colour in STATUS.items()}
+    colours = {"accent": accent} | series | status
     variables = "".join(f"--{name}: {value};" for name, value in colours.items())
     fallback = "" if theme_loaded() else font_fallback_css()
     st.html(f"<style>:root {{{variables}}}\n{fallback}\n{STYLE.read_text(encoding='utf-8')}</style>")
@@ -127,6 +124,9 @@ def apply_style() -> None:
 
 ROW_HEIGHT = 33  # pixels per dataframe row, header included in HEADER_HEIGHT
 HEADER_HEIGHT = 38
+# Tallest a table grows before it scrolls: a table of parameters or a summary, and a list of items.
+TABLE_SHORT = 420
+TABLE_LONG = 640
 
 # column -> (label, kind). kind: text | date | datetime | d1 | d2 | h0 | pct | signed | int | bool
 COLUMNS: dict[str, tuple[str, str]] = {
@@ -847,7 +847,9 @@ def status_style(frame: pd.DataFrame, column: str = "status"):
     """Styler drawing the status column as labels (pass green, fail red…), capitalised."""
     out = frame.copy()
     out[column] = out[column].map(status_label)
-    background_of_label = {style.label: BADGE[style.tone] for style in STATUS_STYLE.values()}
+    # white text on a STATUS colour (>= 4.5:1): a label carries its own background, so it reads the
+    # same on the light and the dark theme without a redraw
+    background_of_label = {style.label: STATUS[style.tone] for style in STATUS_STYLE.values()}
 
     def colour_cell(label: str) -> str:
         background = background_of_label.get(label)

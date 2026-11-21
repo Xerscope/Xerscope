@@ -134,11 +134,11 @@ with st.expander(
     if int01.empty:
         st.caption("INT-01: every stored date and total float is reproduced.")
     else:
-        table(int01, max_height=480, key="debug_03_int01_recalculation")
+        table(int01, max_height=ui.TABLE_SHORT, key="debug_03_int01_recalculation")
     if int03.empty:
         st.caption("INT-03: every stored assignment date is reproduced.")
     else:
-        table(int03, max_height=480, key="debug_03_int03_assignments")
+        table(int03, max_height=ui.TABLE_SHORT, key="debug_03_int03_assignments")
     gap_wd = engine_gap_wd(snapshot)
     st.caption(
         "Delay analysis reads the recalculated finish. Recalculated finish against the latest finish stored "
@@ -152,7 +152,7 @@ with st.expander(
     if frames["03b_departures"].empty:
         st.caption("Every stored early date is reproduced.")
     else:
-        table(frames["03b_departures"], max_height=480, key="debug_03b_departures")
+        table(frames["03b_departures"], max_height=ui.TABLE_SHORT, key="debug_03b_departures")
         table(frames["03c_departure_forms"], key="debug_03c_departure_forms")
 
 with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="debug_parameters"):
@@ -240,7 +240,7 @@ with st.expander(f"6 · Load warnings ({len(frames['06_leveling'])} leveled task
     for warning in snapshot.warnings:
         st.caption(warning)
     if not frames["06_leveling"].empty:
-        table(frames["06_leveling"], max_height=480, key="debug_06_leveling")
+        table(frames["06_leveling"], max_height=ui.TABLE_SHORT, key="debug_06_leveling")
     table(frames["06_project_finish"], key="debug_06_project_finish")
     table(frames["06_latest_finishes"], key="debug_06_latest_finishes")
 
@@ -260,7 +260,7 @@ with st.expander("8 · Earned Value settings of the WBS (PROJWBS)", key="debug_e
         "factor P6 reads when it is entered; a code not identified is shown as stored."
     )
     table(frames["08_etc_techniques"], key="debug_08_etc_techniques")
-    table(frames["08_ev_settings"], max_height=480, key="debug_08_ev_settings")
+    table(frames["08_ev_settings"], max_height=ui.TABLE_SHORT, key="debug_08_ev_settings")
 
 with st.expander("9 · XER tables and planned value labor units", key="debug_pv_labor"):
     st.caption(
@@ -269,7 +269,7 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         "target_qty x share of the assignment's own dates elapsed; tasks without labor assignment keep "
         "the task value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - task."
     )
-    table(frames["09_xer_tables"], max_height=480, key="debug_09_xer_tables")
+    table(frames["09_xer_tables"], max_height=ui.TABLE_SHORT, key="debug_09_xer_tables")
     if frames["09_udf_fields"].empty:
         st.caption("No user defined field (UDFVALUE) holds a value in the project read.")
     else:
@@ -438,7 +438,7 @@ with st.expander("10 · PV against a P6 export", key="debug_pv_p6"):
                 st.caption("Matched tasks by calendar (clndr_id)")
                 table(comparison.by_calendar, key="debug_10_by_calendar")
                 st.caption("Tasks in gap (PV or EV), largest gap first. On screen only: not in the zip.")
-                table(comparison.activities, max_height=480, key="debug_10_activities")
+                table(comparison.activities, max_height=ui.TABLE_SHORT, key="debug_10_activities")
 
 with st.expander("11 · Project settings (PROJECT, TASK.complete_pct_type)", key="debug_project_settings"):
     st.caption(
@@ -465,7 +465,7 @@ with st.expander("13 · Calendar detail (CALENDAR.clndr_data, hours per time per
         calendar_frames["13_calendar_summary"].astype(str), key="debug_13_calendar_summary"
     )  # numbers, flags and blanks: one type for Arrow
     table(calendar_frames["13_calendar_week"], key="debug_13_calendar_week")
-    table(calendar_frames["13_calendar_exceptions"], max_height=480, key="debug_13_calendar_exceptions")
+    table(calendar_frames["13_calendar_exceptions"], max_height=ui.TABLE_SHORT, key="debug_13_calendar_exceptions")
 
     built_download(
         "debug_calendars_zip",

@@ -46,7 +46,7 @@ def show_set(frame: pd.DataFrame, title: str, filename: str, key: str, sources: 
     if frame.empty:
         st.caption(f"No {title.lower()}.")
         return
-    ui.table(frame, max_height=480, key=f"table_{key}", reading="check_sets")
+    ui.table(frame, max_height=ui.TABLE_SHORT, key=f"table_{key}", reading="check_sets")
     # anonymised or raw as the sidebar switch says; only the files behind this result are read
     csv_download(frame, filename, "Download CSV", key=f"dl_{key}", sources=sources)
 

@@ -106,7 +106,7 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     ui.table(
         summary,
         status="status",
-        max_height=700,
+        max_height=ui.TABLE_LONG,
         overrides=ui.count_columns(flagged="Items listed"),
         key="health_results",
         reading="health_results",
@@ -242,7 +242,7 @@ def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
     )
     ui.table(
         culprits_first(result.flagged),
-        max_height=420,
+        max_height=ui.TABLE_SHORT,
         key=f"flag_{metric.id}",
         reading="check_flagged",
         open_task=partial(open_in_gantt, snapshot=snapshot),
@@ -329,7 +329,7 @@ def show_trend(store, standard) -> None:
     with st.expander("All checks, all updates"):
         ui.table(
             by_update,
-            max_height=640,
+            max_height=ui.TABLE_LONG,
             # dates follow the id and check columns
             overrides=ui.number_columns("d2", *by_update.columns[2:]),
             key="health_trend",

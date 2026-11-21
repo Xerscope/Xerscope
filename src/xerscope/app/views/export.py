@@ -62,7 +62,10 @@ download(
 
 with st.expander("Preview fact_activity"):
     ui.table(
-        tables["fact_activity"].head(200), max_height=640, key="export_fact_activity", reading="export_fact_activity"
+        tables["fact_activity"].head(200),
+        max_height=ui.TABLE_LONG,
+        key="export_fact_activity",
+        reading="export_fact_activity",
     )
 
 

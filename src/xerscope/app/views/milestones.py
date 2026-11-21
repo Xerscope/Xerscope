@@ -106,4 +106,4 @@ ui.table(
     overrides=ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
 )
 with st.expander("Data"):
-    ui.table(trend, max_height=640, key="mta_trend", reading="mta_trend")
+    ui.table(trend, max_height=ui.TABLE_LONG, key="mta_trend", reading="mta_trend")

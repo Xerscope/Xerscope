@@ -285,7 +285,7 @@ def test_text_colours_reach_wcag_aa_on_both_backgrounds():
             for colour in texts:
                 assert _contrast(colour, background) >= 4.5, (mode, colour, background)
     for style in ui.STATUS_STYLE.values():
-        assert _contrast("#ffffff", ui.BADGE[style.tone]) >= 4.5, style.label
+        assert _contrast("#ffffff", STATUS[style.tone]) >= 4.5, style.label
 
 
 def test_hover_text_is_the_text_colour_of_each_theme():

@@ -29,7 +29,7 @@ def show_method(metric, explanation, parameters=()) -> None:
         st.markdown("**Parameters**")
         ui.table(
             pd.DataFrame(parameters, columns=["parameter", "value", "set by"]),
-            max_height=260,
+            max_height=ui.TABLE_SHORT,
             key=f"params_{metric.id}",  # one table per check: filters keyed per check
             reading="check_parameters",
         )

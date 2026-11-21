@@ -92,7 +92,7 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
     )
     ui.table(
         view,
-        max_height=640,
+        max_height=ui.TABLE_LONG,
         key="changelog_all",
         reading="changelog_all",
         open_task=partial(open_in_gantt, snapshot=new),
@@ -109,7 +109,7 @@ def show_weekly(store) -> None:
     with st.expander("Every week, side by side"):
         weekly = memo(("changelog_weekly",), weekly_change_counts, store, baseline=False)
         wide = weekly_change_matrix(weekly)
-        ui.table(wide, max_height=640, key="changelog_weekly", reading="changelog_weekly")
+        ui.table(wide, max_height=ui.TABLE_LONG, key="changelog_weekly", reading="changelog_weekly")
 
 
 store = require_store()

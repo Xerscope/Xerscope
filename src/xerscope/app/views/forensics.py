@@ -152,7 +152,7 @@ def show_path_commitments(old, new) -> None:
         ui.table(
             commitments.sort_values(["kept", "planned_date"]),
             key="forensics_path_commitments",
-            max_height=320,
+            max_height=ui.TABLE_SHORT,
             open_task=partial(open_in_gantt, snapshot=new),
         )
 
@@ -171,7 +171,7 @@ def show_longest_path(old, new) -> None:
     ui.table(
         changes,
         key="forensics_path",
-        max_height=420,
+        max_height=ui.TABLE_SHORT,
         open_task=partial(open_in_gantt, snapshot=new),
     )
 
@@ -179,7 +179,7 @@ def show_longest_path(old, new) -> None:
 def show_path_series(store) -> None:
     """Longest path of every update against the one before it: table, CSV."""
     churn = memo(("forensics_path_churn",), path_churn, store, baseline=False, ev_basis=False)
-    ui.table(churn, key="forensics_path_churn", max_height=360)
+    ui.table(churn, key="forensics_path_churn", max_height=ui.TABLE_SHORT)
     csv_download(churn, "longest_path_churn.csv", "Download longest path (CSV)", sources=sources_of(*list(store)))
 
 
@@ -192,7 +192,7 @@ def show_series(store) -> None:
     )
     series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
     ui.chart(build_slip_trend(series))
-    ui.table(series, key="forensics_series", reading="forensics_series", max_height=480)
+    ui.table(series, key="forensics_series", reading="forensics_series", max_height=ui.TABLE_SHORT)
     csv_download(series, "half_step_series.csv", "Download series (CSV)", sources=sources_of(*list(store)))
 
 

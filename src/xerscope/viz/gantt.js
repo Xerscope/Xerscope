@@ -6,14 +6,12 @@ export default function (component) {
   const D = component.data;
   const { setTriggerValue } = component;
   const P = D.palette;
-  const GRID_W = 420; // px, tree grid width
   const DAY = 864e5;
   const root = component.parentElement.querySelector("#gantt");
   root.replaceChildren(); // drawn again from scratch when the data change
   root.style.height = D.height + "px";
   // page colours come from the theme in gantt.css; the bars' from the data
   root.style.setProperty("--Normal", P.Normal);
-  root.style.setProperty("--grid-w", GRID_W + "px");
   root.style.setProperty("--row", D.rowPx + "px"); // the row height gantt.css reads
 
   // --- helpers -------------------------------------------------------------------------
@@ -108,7 +106,7 @@ export default function (component) {
   scroll.tabIndex = 0; // the rows scroll from the keyboard (arrow and page keys)
   const head = el("div", "head");
   const ghead = el("div", "ghead cols");
-  ghead.append(el("div", null, "Activity / WBS"), el("div", null, "%"), el("div", null, "Float"));
+  ghead.append(el("div", null, "Activity / WBS"), el("div", null, "% complete"), el("div", null, "Float (wd)"));
   const scale = el("div", "scale");
   head.append(ghead, scale);
   const body = el("div", "body");

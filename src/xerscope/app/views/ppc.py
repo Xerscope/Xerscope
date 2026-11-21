@@ -258,7 +258,7 @@ def show_renumbered(pairs: pd.DataFrame) -> None:
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
     moved = progressed_tasks(progress).sort_values("earned_hr_week", ascending=False)
-    ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS, key="ppc_progress", reading="ppc_progress")
+    ui.table(moved, max_height=ui.TABLE_LONG, columns=ACTIVITY_COLUMNS, key="ppc_progress", reading="ppc_progress")
     csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
@@ -270,7 +270,9 @@ def show_variances(variances: pd.DataFrame, sources: list[str], current) -> None
         "milestones have only their own end. Tasks that moved shown; the CSV has every task.",
     )
     moved = moved_variances(variances).sort_values(VARIANCE_COLUMNS)
-    ui.table(moved, max_height=640, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances", reading="ppc_variances")
+    ui.table(
+        moved, max_height=ui.TABLE_LONG, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances", reading="ppc_variances"
+    )
     csv_download(
         variances,
         f"variances_{ui.stamp(current.data_date)}.csv",

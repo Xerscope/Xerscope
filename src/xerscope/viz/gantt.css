@@ -10,6 +10,7 @@
   --band: var(--st-secondary-background-color);
   --axis: var(--st-border-color);
   --grid: color-mix(in srgb, var(--st-border-color) 55%, var(--st-background-color));
+  --grid-w: min(420px, 55vw); /* the tree grid: the timeline keeps the rest of a narrow page */
   display: flex; flex-direction: column;
   font: 13px/1.3 var(--st-font); color: var(--ink); background: var(--background);
 }
@@ -34,7 +35,11 @@
 .ghead { display: grid; width: var(--grid-w); flex: none; border-right: 1px solid var(--axis); }
 .ghead div { padding: 0 8px; align-self: end; height: var(--row); line-height: var(--row); color: var(--secondary); font-weight: 600; white-space: nowrap; }
 .ghead div + div { text-align: right; }
-.cols { grid-template-columns: 1fr 44px 58px; }
+.cols { grid-template-columns: 1fr 88px 88px; }
+@media (max-width: 640px) {
+  .cols { grid-template-columns: 1fr; }
+  .ghead div + div, .row .num { display: none; } /* % complete and Float (wd) */
+}
 .scale { position: relative; flex: 1; height: 52px; overflow: hidden; }
 .scale .tick { position: absolute; color: var(--secondary); white-space: nowrap; padding-left: 4px; border-left: 1px solid var(--axis); height: var(--row); line-height: var(--row); }
 .scale .tier2 { top: var(--row); font-size: 12px; }
