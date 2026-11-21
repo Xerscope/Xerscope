@@ -3,174 +3,175 @@
 // written with textContent or as a DOM property, never parsed as HTML.
 export default function (component) {
   "use strict";
-  const D = component.data;
+  const payload = component.data;
   const { setTriggerValue } = component;
-  const P = D.palette;
-  const DAY = 864e5;
+  const palette = payload.palette;
+  const DAY_MS = 864e5;
   const root = component.parentElement.querySelector("#gantt");
   root.replaceChildren(); // drawn again from scratch when the data change
-  root.style.height = D.height + "px";
+  root.style.height = payload.height + "px";
   // page colours come from the theme in gantt.css; the bars' from the data
-  root.style.setProperty("--Normal", P.Normal);
-  root.style.setProperty("--row", D.rowPx + "px"); // the row height gantt.css reads
+  root.style.setProperty("--Normal", palette.Normal);
+  root.style.setProperty("--row", payload.rowPx + "px"); // the row height gantt.css reads
 
   // --- helpers -------------------------------------------------------------------------
-  const el = (tag, cls, text) => {
+  const element = (tag, className, text) => {
     const node = document.createElement(tag);
-    if (cls) node.className = cls;
+    if (className) node.className = className;
     if (text !== undefined && text !== null) node.textContent = String(text);
     return node;
   };
-  const time = (iso) => {
+  const timestampMs = (iso) => {
     if (!iso) return null;
-    const [d, t] = iso.split("T");
-    const [y, m, day] = d.split("-").map(Number);
-    const [h, min] = (t || "00:00").split(":").map(Number);
-    return Date.UTC(y, m - 1, day, h, min);
+    const [datePart, timePart] = iso.split("T");
+    const [year, month, dayOfMonth] = datePart.split("-").map(Number);
+    const [hour, minute] = (timePart || "00:00").split(":").map(Number);
+    return Date.UTC(year, month - 1, dayOfMonth, hour, minute);
   };
-  const day = (iso) => (iso ? iso.slice(0, 10) : "–");
-  const signed = (v, unit) => (v === null || v === undefined ? null : (v > 0 ? "+" : "") + v + " " + unit);
+  const dayText = (iso) => (iso ? iso.slice(0, 10) : "–");
+  const signedText = (value, unit) => {
+    if (value === null || value === undefined) return null;
+    const sign = value > 0 ? "+" : "";
+    return sign + value + " " + unit;
+  };
 
   // --- tree ----------------------------------------------------------------------------
-  const rows = D.rows;
-  const byId = new Map(rows.map((r) => [r.id, r]));
+  const rows = payload.rows;
+  const byId = new Map(rows.map((row) => [row.id, row]));
   const children = new Map();
-  for (const r of rows) {
-    if (!r.parent) continue;
-    if (!children.has(r.parent)) children.set(r.parent, []);
-    children.get(r.parent).push(r.id);
+  for (const row of rows) {
+    if (!row.parent) continue;
+    if (!children.has(row.parent)) children.set(row.parent, []);
+    children.get(row.parent).push(row.id);
   }
   // the branches opened by the viewer stay open across reruns (a pick, a toggle on the page): the
   // page sends the branches it needs open (the chosen node's, every one under a filter), the host
   // element keeps the viewer's, and the two are merged; the page's epoch changes when it recomputed
   // the open branches (a filter flips, the Ask text changes) and what the browser kept is dropped
   const host = component.parentElement;
-  if (host.xsEpoch !== D.openEpoch) host.xsOpen = null;
-  host.xsEpoch = D.openEpoch;
-  const open = new Set([...(host.xsOpen || []), ...D.open]);
+  if (host.xsEpoch !== payload.openEpoch) host.xsOpen = null;
+  host.xsEpoch = payload.openEpoch;
+  const open = new Set([...(host.xsOpen || []), ...payload.open]);
   host.xsOpen = open;
-  const maxDepth = Math.max(0, ...rows.filter((r) => r.kind === "wbs").map((r) => r.depth));
+  const maxDepth = Math.max(0, ...rows.filter((row) => row.kind === "wbs").map((row) => row.depth));
 
   const visibleRows = () => {
-    const shown = new Set();
-    const out = [];
-    for (const r of rows) {
-      if (!r.parent || (shown.has(r.parent) && open.has(r.parent))) {
-        shown.add(r.id);
-        out.push(r);
+    const shownIds = new Set();
+    const visible = [];
+    for (const row of rows) {
+      if (!row.parent || (shownIds.has(row.parent) && open.has(row.parent))) {
+        shownIds.add(row.id);
+        visible.push(row);
       }
     }
-    return out;
+    return visible;
   };
 
   // --- skeleton ------------------------------------------------------------------------
-  const toolbar = el("div", "toolbar");
+  const toolbar = element("div", "toolbar");
   const button = (label, onClick) => {
-    const b = el("button", null, label);
-    b.type = "button";
-    b.addEventListener("click", onClick);
-    toolbar.append(b);
-    return b;
+    const buttonElement = element("button", null, label);
+    buttonElement.type = "button";
+    buttonElement.addEventListener("click", onClick);
+    toolbar.append(buttonElement);
+    return buttonElement;
   };
   button("Collapse all", () => { open.clear(); render(); });
   button("Expand all", () => { for (const id of children.keys()) open.add(id); render(); });
-  toolbar.append(el("span", "sep"), el("span", "label", "Level"));
+  toolbar.append(element("span", "sep"), element("span", "label", "Level"));
   for (let level = 1; level <= Math.min(maxDepth + 1, 6); level++) {
     button(String(level), () => {
       open.clear();
-      for (const r of rows) if (r.kind === "wbs" && r.depth < level) open.add(r.id);
+      for (const row of rows) if (row.kind === "wbs" && row.depth < level) open.add(row.id);
       render();
     });
   }
-  const legend = el("div", "legend");
-  for (const cat of D.categories) {
-    const item = el("span");
-    const swatch = el("i");
-    swatch.style.background = P[cat];
-    item.append(swatch, el("span", null, cat));
+  const legend = element("div", "legend");
+  const legendItem = (swatchClass, text) => {
+    const item = element("span");
+    const swatch = element("i", swatchClass);
+    item.append(swatch, element("span", null, text));
     legend.append(item);
+    return swatch;
+  };
+  for (const category of payload.categories) {
+    const swatch = legendItem(null, category);
+    swatch.style.background = palette[category];
   }
-  if (D.compareLabel) {
-    const item = el("span");
-    item.append(el("i", "ring"), el("span", null, D.compareLabel));
-    legend.append(item);
-  }
-  if (D.dataDate) {
-    const item = el("span");
-    item.append(el("i", "dd"), el("span", null, "Data date " + day(D.dataDate)));
-    legend.append(item);
-  }
+  if (payload.compareLabel) legendItem("ring", payload.compareLabel);
+  if (payload.dataDate) legendItem("dd", "Data date " + dayText(payload.dataDate));
   toolbar.append(legend);
 
-  const scroll = el("div", "scroll");
+  const scroll = element("div", "scroll");
   scroll.tabIndex = 0; // the rows scroll from the keyboard (arrow and page keys)
-  const head = el("div", "head");
-  const ghead = el("div", "ghead cols");
-  ghead.append(el("div", null, "Activity / WBS"), el("div", null, "% complete"), el("div", null, "Float (wd)"));
-  const scale = el("div", "scale");
-  head.append(ghead, scale);
-  const body = el("div", "body");
-  const gcol = el("div", "gcol");
-  const tcol = el("div", "tcol");
-  body.append(gcol, tcol);
-  scroll.append(head, body);
-  const tip = el("div", "tip");
+  const header = element("div", "head");
+  const gridHeader = element("div", "ghead cols");
+  gridHeader.append(element("div", null, "Activity / WBS"), element("div", null, "% complete"), element("div", null, "Float (wd)"));
+  const scale = element("div", "scale");
+  header.append(gridHeader, scale);
+  const body = element("div", "body");
+  const gridColumn = element("div", "gcol");
+  const timelineColumn = element("div", "tcol");
+  body.append(gridColumn, timelineColumn);
+  scroll.append(header, body);
+  const tip = element("div", "tip");
   root.append(toolbar, scroll, tip);
 
   // --- time axis -----------------------------------------------------------------------
-  const t0 = time(D.window[0]);
-  const t1 = time(D.window[1]);
+  const windowStartMs = timestampMs(payload.window[0]);
+  const windowEndMs = timestampMs(payload.window[1]);
   let width = 1;
-  const x = (t) => ((t - t0) / (t1 - t0)) * width;
+  const pixelX = (timeMs) => ((timeMs - windowStartMs) / (windowEndMs - windowStartMs)) * width;
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   const monthStarts = () => {
-    const out = [];
-    const start = new Date(t0);
-    let y = start.getUTCFullYear();
-    let m = start.getUTCMonth() + 1; // the first month boundary inside the window
+    const starts = [];
+    const start = new Date(windowStartMs);
+    let year = start.getUTCFullYear();
+    let month = start.getUTCMonth() + 1; // the first month boundary inside the window
     for (;;) {
-      if (m === 12) { m = 0; y++; }
-      const t = Date.UTC(y, m, 1);
-      if (t > t1) return out;
-      out.push({ t, y, m });
-      m++;
+      if (month === 12) { month = 0; year++; }
+      const timeMs = Date.UTC(year, month, 1);
+      if (timeMs > windowEndMs) return starts;
+      starts.push({ timeMs, year, month });
+      month++;
     }
   };
   const mondays = () => {
-    const out = [];
-    const first = new Date(t0);
-    const offset = (8 - first.getUTCDay()) % 7 || 7; // days to the next Monday
-    for (let t = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), first.getUTCDate() + offset); t <= t1; t += 7 * DAY) {
-      out.push({ t, label: String(new Date(t).getUTCDate()).padStart(2, "0") });
+    const weekTicks = [];
+    const first = new Date(windowStartMs);
+    const daysToMonday = (8 - first.getUTCDay()) % 7 || 7;
+    const firstMondayMs = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), first.getUTCDate() + daysToMonday);
+    for (let timeMs = firstMondayMs; timeMs <= windowEndMs; timeMs += 7 * DAY_MS) {
+      weekTicks.push({ timeMs, label: String(new Date(timeMs).getUTCDate()).padStart(2, "0") });
     }
-    return out;
+    return weekTicks;
   };
   // Two tiers, as in P6: month timescale = years over months, week timescale = months over weeks.
   const ticks = () => {
     const months = monthStarts();
-    const startDate = new Date(t0);
-    if (D.timescale === "week") {
-      const top = [{ t: t0, label: MONTHS[startDate.getUTCMonth()] + " " + startDate.getUTCFullYear() }];
-      for (const s of months) top.push({ t: s.t, label: MONTHS[s.m] + " " + s.y });
+    const startDate = new Date(windowStartMs);
+    if (payload.timescale === "week") {
+      const top = [{ timeMs: windowStartMs, label: MONTHS[startDate.getUTCMonth()] + " " + startDate.getUTCFullYear() }];
+      for (const start of months) top.push({ timeMs: start.timeMs, label: MONTHS[start.month] + " " + start.year });
       return { top, bottom: mondays() };
     }
-    const top = [{ t: t0, label: String(startDate.getUTCFullYear()) }];
-    for (const s of months) if (s.m === 0) top.push({ t: s.t, label: String(s.y) });
-    return { top, bottom: months.map((s) => ({ t: s.t, label: MONTHS[s.m] })) };
+    const top = [{ timeMs: windowStartMs, label: String(startDate.getUTCFullYear()) }];
+    for (const start of months) if (start.month === 0) top.push({ timeMs: start.timeMs, label: String(start.year) });
+    return { top, bottom: months.map((start) => ({ timeMs: start.timeMs, label: MONTHS[start.month] })) };
   };
 
   const drawScale = ({ top, bottom }) => {
     scale.replaceChildren();
-    const place = (list, cls, minGap) => {
-      let last = -Infinity;
-      for (const tick of list) {
-        const left = x(tick.t);
-        if (left - last < minGap) continue; // too close to the previous label
-        const node = el("div", cls, tick.label);
+    const place = (tickList, className, minGapPx) => {
+      let lastLeft = -Infinity;
+      for (const tick of tickList) {
+        const left = pixelX(tick.timeMs);
+        if (left - lastLeft < minGapPx) continue; // too close to the previous label
+        const node = element("div", className, tick.label);
         node.style.left = left + "px";
         scale.append(node);
-        last = left;
+        lastLeft = left;
       }
     };
     place(top, "tick", 70);
@@ -178,29 +179,29 @@ export default function (component) {
   };
 
   // --- tooltip -------------------------------------------------------------------------
-  const tooltipLines = (r) => {
-    const lines = [["Start", day(r.start)], ["Finish", day(r.finish)]];
-    if (r.kind === "task") {
-      lines.push(["Status", r.status], ["% complete", r.pct === null ? "–" : r.pct + " %"]);
-      lines.push(["Total float", r.float_d === null ? "–" : r.float_d + " d"]);
-      if (D.compareLabel) {
-        const shift = signed(r.shift_wd, "wd");
-        lines.push(["Finish vs " + D.compareLabel, r.cmp_finish ? shift || "–" : "not in " + D.compareLabel]);
+  const tooltipLines = (row) => {
+    const lines = [["Start", dayText(row.start)], ["Finish", dayText(row.finish)]];
+    if (row.kind === "task") {
+      lines.push(["Status", row.status], ["% complete", row.pct === null ? "–" : row.pct + " %"]);
+      lines.push(["Total float", row.float_d === null ? "–" : row.float_d + " d"]);
+      if (payload.compareLabel) {
+        const shift = signedText(row.shift_wd, "wd");
+        lines.push(["Finish vs " + payload.compareLabel, row.cmp_finish ? shift || "–" : "not in " + payload.compareLabel]);
       }
     } else {
-      lines.push(["% complete", r.pct === null ? "–" : r.pct + " %"], ["Activities", r.activities]);
-      const shift = signed(r.shift_wd, "wd");
+      lines.push(["% complete", row.pct === null ? "–" : row.pct + " %"], ["Activities", row.activities]);
+      const shift = signedText(row.shift_wd, "wd");
       if (shift) lines.push(["Finish vs BL (baselined tasks)", shift]);
     }
     return lines;
   };
-  const showTip = (r, event) => {
-    tip.replaceChildren(el("div", "title", (r.code ? r.code + "  " : "") + r.name));
-    for (const [label, value] of tooltipLines(r)) tip.append(el("div", "line", label + ": " + value));
+  const showTip = (row, event) => {
+    tip.replaceChildren(element("div", "title", (row.code ? row.code + "  " : "") + row.name));
+    for (const [label, value] of tooltipLines(row)) tip.append(element("div", "line", label + ": " + value));
     tip.style.display = "block";
-    const box = tip.getBoundingClientRect();
-    const left = Math.min(event.clientX + 14, window.innerWidth - box.width - 8);
-    const top = event.clientY + 14 + box.height > window.innerHeight ? event.clientY - box.height - 10 : event.clientY + 14;
+    const tipRect = tip.getBoundingClientRect();
+    const left = Math.min(event.clientX + 14, window.innerWidth - tipRect.width - 8);
+    const top = event.clientY + 14 + tipRect.height > window.innerHeight ? event.clientY - tipRect.height - 10 : event.clientY + 14;
     tip.style.left = Math.max(4, left) + "px";
     tip.style.top = Math.max(4, top) + "px";
   };
@@ -210,150 +211,160 @@ export default function (component) {
   // Only the rows in view (plus a margin) exist in the DOM: a 15,000-activity schedule
   // draws as fast as a small one. Events are handled once per column, not per row.
   const BUFFER = 30; // rows drawn above and below the visible ones
-  const NS = "http://www.w3.org/2000/svg";
-  for (const r of rows) {
-    r.t0 = time(r.start); r.t1 = time(r.finish);
-    r.c0 = time(r.cmp_start); r.c1 = time(r.cmp_finish);
+  const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+  for (const row of rows) {
+    row.startMs = timestampMs(row.start);
+    row.finishMs = timestampMs(row.finish);
+    row.compareStartMs = timestampMs(row.cmp_start);
+    row.compareFinishMs = timestampMs(row.cmp_finish);
   }
   let shown = [];
-  let index = new Map();
+  let indexById = new Map();
   let drawn = [-1, -1];
 
-  const gridLayer = el("div", "layer");
-  const timeLayer = el("div", "layer");
-  const gridLines = el("div", "layer");
-  const linkSvg = document.createElementNS(NS, "svg");
+  const gridLayer = element("div", "layer");
+  const timeLayer = element("div", "layer");
+  const gridLines = element("div", "layer");
+  const linkSvg = document.createElementNS(SVG_NAMESPACE, "svg");
   linkSvg.setAttribute("class", "links");
-  gcol.append(gridLayer);
-  tcol.append(gridLines, timeLayer, linkSvg);
+  gridColumn.append(gridLayer);
+  timelineColumn.append(gridLines, timeLayer, linkSvg);
 
-  const toggle = (r) => {
-    if (!children.has(r.id)) return;
-    if (open.has(r.id)) open.delete(r.id); else open.add(r.id);
+  const toggle = (row) => {
+    if (!children.has(row.id)) return;
+    if (open.has(row.id)) open.delete(row.id); else open.add(row.id);
     render();
   };
 
-  const gridRow = (r, i) => {
-    const row = el("div", "row cols " + r.kind + (r.id === D.selected ? " sel" : ""));
-    row.style.top = i * D.rowPx + "px";
-    row.dataset.i = String(i);
-    const name = el("div", "name");
-    name.style.paddingLeft = 8 + r.depth * 16 + "px";
-    name.append(el("span", "toggle", children.has(r.id) ? (open.has(r.id) ? "▾" : "▸") : ""));
-    if (r.code) name.append(el("span", "code", r.code));
-    const text = el("span", "text", r.name);
-    text.title = r.name;
-    name.append(text);
-    row.append(name, el("div", "num", r.pct === null ? "" : r.pct), el("div", "num", r.float_d === null ? "" : r.float_d));
-    return row;
+  // the opening both columns share: its class (the row's kind, "sel" when picked), place and data-i
+  const rowShell = (className, index, isSelected) => {
+    const shell = element("div", className + (isSelected ? " sel" : ""));
+    shell.style.top = index * payload.rowPx + "px";
+    shell.dataset.i = String(index);
+    return shell;
   };
 
-  const box = (cls, a, b) => {
-    const node = el("div", cls);
-    const left = x(a);
+  const gridRow = (row, index) => {
+    const shell = rowShell("row cols " + row.kind, index, row.id === payload.selected);
+    const name = element("div", "name");
+    name.style.paddingLeft = 8 + row.depth * 16 + "px";
+    let arrow = "";
+    if (children.has(row.id)) arrow = open.has(row.id) ? "▾" : "▸";
+    name.append(element("span", "toggle", arrow));
+    if (row.code) name.append(element("span", "code", row.code));
+    const text = element("span", "text", row.name);
+    text.title = row.name;
+    name.append(text);
+    shell.append(name, element("div", "num", row.pct === null ? "" : row.pct), element("div", "num", row.float_d === null ? "" : row.float_d));
+    return shell;
+  };
+
+  const box = (className, startMs, endMs) => {
+    const node = element("div", className);
+    const left = pixelX(startMs);
     node.style.left = left + "px";
-    node.style.width = Math.max(2, x(b) - left) + "px";
+    node.style.width = Math.max(2, pixelX(endMs) - left) + "px";
     return node;
   };
 
-  const timelineRow = (r, i) => {
-    const row = el("div", "trow " + r.kind + (r.id === D.selected ? " sel" : ""));
-    row.style.top = i * D.rowPx + "px";
-    row.dataset.i = String(i);
-    if (r.kind === "wbs") {
-      if (r.t0 !== null && r.t1 !== null) row.append(box("summary", r.t0, r.t1));
-      return row;
+  const timelineRow = (row, index) => {
+    const shell = rowShell("trow " + row.kind, index, row.id === payload.selected);
+    if (row.kind === "wbs") {
+      if (row.startMs !== null && row.finishMs !== null) shell.append(box("summary", row.startMs, row.finishMs));
+      return shell;
     }
-    if (r.c0 !== null && r.c1 !== null && !r.milestone) row.append(box("outline", r.c0, r.c1));
-    const colour = P[r.category] || P.Normal;
-    if (r.milestone) {
-      const at = r.milestone === "start" ? r.t0 : r.t1;
-      if (at !== null) {
-        const diamond = el("div", "diamond");
-        diamond.style.left = x(at) + "px";
+    if (row.compareStartMs !== null && row.compareFinishMs !== null && !row.milestone) {
+      shell.append(box("outline", row.compareStartMs, row.compareFinishMs));
+    }
+    const colour = palette[row.category] || palette.Normal;
+    if (row.milestone) {
+      const milestoneMs = row.milestone === "start" ? row.startMs : row.finishMs;
+      if (milestoneMs !== null) {
+        const diamond = element("div", "diamond");
+        diamond.style.left = pixelX(milestoneMs) + "px";
         diamond.style.background = colour;
-        row.append(diamond);
+        shell.append(diamond);
       }
-    } else if (r.t0 !== null && r.t1 !== null) {
-      const bar = box("bar", r.t0, r.t1);
+    } else if (row.startMs !== null && row.finishMs !== null) {
+      const bar = box("bar", row.startMs, row.finishMs);
       bar.style.background = colour;
-      row.append(bar);
+      shell.append(bar);
     }
-    return row;
+    return shell;
   };
 
-  const drawLinks = (first, last) => {
+  const drawLinks = (firstIndex, lastIndex) => {
     linkSvg.replaceChildren();
-    if (!D.links.length) return;
-    const defs = document.createElementNS(NS, "defs");
-    const marker = document.createElementNS(NS, "marker");
-    for (const [k, v] of Object.entries({ id: "arrow", markerWidth: "6", markerHeight: "6", refX: "5", refY: "3", orient: "auto" })) marker.setAttribute(k, v);
-    const head = document.createElementNS(NS, "path");
-    head.setAttribute("d", "M0,0 L6,3 L0,6 Z");
-    marker.append(head);
+    if (!payload.links.length) return;
+    const defs = document.createElementNS(SVG_NAMESPACE, "defs");
+    const marker = document.createElementNS(SVG_NAMESPACE, "marker");
+    for (const [name, value] of Object.entries({ id: "arrow", markerWidth: "6", markerHeight: "6", refX: "5", refY: "3", orient: "auto" })) marker.setAttribute(name, value);
+    const arrowHead = document.createElementNS(SVG_NAMESPACE, "path");
+    arrowHead.setAttribute("d", "M0,0 L6,3 L0,6 Z");
+    marker.append(arrowHead);
     defs.append(marker);
     linkSvg.append(defs);
-    for (const [pred, succ, kind] of D.links) {
-      const i0 = index.get(pred);
-      const i1 = index.get(succ);
-      if (i0 === undefined || i1 === undefined) continue;
-      if (Math.max(i0, i1) < first || Math.min(i0, i1) > last) continue; // crosses no drawn row
-      const p = byId.get(pred);
-      const s = byId.get(succ);
-      const x0 = x(kind === "SS" || kind === "SF" ? p.t0 : p.t1);
-      const x1 = x(kind === "FF" || kind === "SF" ? s.t1 : s.t0);
-      if (!isFinite(x0) || !isFinite(x1)) continue;
-      const path = document.createElementNS(NS, "path");
-      path.setAttribute("d", `M${x0},${i0 * D.rowPx + D.rowPx / 2} H${x0 + 6} V${i1 * D.rowPx + D.rowPx / 2} H${x1}`);
+    for (const [predecessorId, successorId, linkType] of payload.links) {
+      const predecessorIndex = indexById.get(predecessorId);
+      const successorIndex = indexById.get(successorId);
+      if (predecessorIndex === undefined || successorIndex === undefined) continue;
+      if (Math.max(predecessorIndex, successorIndex) < firstIndex || Math.min(predecessorIndex, successorIndex) > lastIndex) continue; // crosses no drawn row
+      const predecessor = byId.get(predecessorId);
+      const successor = byId.get(successorId);
+      const startX = pixelX(linkType === "SS" || linkType === "SF" ? predecessor.startMs : predecessor.finishMs);
+      const endX = pixelX(linkType === "FF" || linkType === "SF" ? successor.finishMs : successor.startMs);
+      if (!isFinite(startX) || !isFinite(endX)) continue;
+      const path = document.createElementNS(SVG_NAMESPACE, "path");
+      path.setAttribute("d", `M${startX},${predecessorIndex * payload.rowPx + payload.rowPx / 2} H${startX + 6} V${successorIndex * payload.rowPx + payload.rowPx / 2} H${endX}`);
       path.setAttribute("marker-end", "url(#arrow)");
       linkSvg.append(path);
     }
   };
 
-  // rows from first to last (inclusive) that the scroll position shows, with a margin
+  // rows from firstIndex to lastIndex (inclusive) that the scroll position shows, with a margin
   const windowRows = () => {
     const top = scroll.scrollTop - body.offsetTop;
-    const first = Math.max(0, Math.floor(top / D.rowPx) - BUFFER);
-    const last = Math.min(shown.length - 1, Math.ceil((top + scroll.clientHeight) / D.rowPx) + BUFFER);
-    return [first, last];
+    const firstIndex = Math.max(0, Math.floor(top / payload.rowPx) - BUFFER);
+    const lastIndex = Math.min(shown.length - 1, Math.ceil((top + scroll.clientHeight) / payload.rowPx) + BUFFER);
+    return [firstIndex, lastIndex];
   };
 
   const drawWindow = (force) => {
-    const [first, last] = windowRows();
-    if (!force && first === drawn[0] && last === drawn[1]) return;
-    drawn = [first, last];
-    const g = [];
-    const t = [];
-    for (let i = first; i <= last; i++) {
-      g.push(gridRow(shown[i], i));
-      t.push(timelineRow(shown[i], i));
+    const [firstIndex, lastIndex] = windowRows();
+    if (!force && firstIndex === drawn[0] && lastIndex === drawn[1]) return;
+    drawn = [firstIndex, lastIndex];
+    const gridRows = [];
+    const timelineRows = [];
+    for (let index = firstIndex; index <= lastIndex; index++) {
+      gridRows.push(gridRow(shown[index], index));
+      timelineRows.push(timelineRow(shown[index], index));
     }
-    gridLayer.replaceChildren(...g);
-    timeLayer.replaceChildren(...t);
-    drawLinks(first, last);
+    gridLayer.replaceChildren(...gridRows);
+    timeLayer.replaceChildren(...timelineRows);
+    drawLinks(firstIndex, lastIndex);
   };
 
   function render() {
-    width = Math.max(1, tcol.clientWidth);
+    width = Math.max(1, timelineColumn.clientWidth);
     shown = visibleRows();
-    index = new Map(shown.map((r, i) => [r.id, i]));
-    const height = shown.length * D.rowPx;
+    indexById = new Map(shown.map((row, index) => [row.id, index]));
+    const height = shown.length * payload.rowPx;
     // with no row the first-paint height stays: it leaves the room the "no activity" notice needs
-    if (shown.length) root.style.height = Math.min(D.maxHeight, D.chromePx + height) + "px";
+    if (shown.length) root.style.height = Math.min(payload.maxHeight, payload.chromePx + height) + "px";
     const marks = ticks();
     drawScale(marks);
-    gcol.style.height = tcol.style.height = height + "px";
+    gridColumn.style.height = timelineColumn.style.height = height + "px";
     linkSvg.setAttribute("width", String(width));
     linkSvg.setAttribute("height", String(height));
     const lines = marks.bottom.map((tick) => {
-      const line = el("div", "vline");
-      line.style.left = x(tick.t) + "px";
+      const line = element("div", "vline");
+      line.style.left = pixelX(tick.timeMs) + "px";
       line.style.height = height + "px";
       return line;
     });
-    if (D.dataDate) {
-      const line = el("div", "vline dd");
-      line.style.left = x(time(D.dataDate)) + "px";
+    if (payload.dataDate) {
+      const line = element("div", "vline dd");
+      line.style.left = pixelX(timestampMs(payload.dataDate)) + "px";
       line.style.height = height + "px";
       lines.push(line);
     }
@@ -362,25 +373,25 @@ export default function (component) {
     drawWindow(true);
   }
 
-  const empty = el("div", "empty", "No activity matches the filters.");
+  const empty = element("div", "empty", "No activity matches the filters.");
   scroll.append(empty);
 
   // one listener per column: hover, tooltip and folding find their row through data-i
   let hovered = -1;
-  const setHover = (i) => {
-    if (i === hovered) return;
+  const setHover = (index) => {
+    if (index === hovered) return;
     for (const node of body.querySelectorAll(".hover")) node.classList.remove("hover");
-    hovered = i;
-    if (i >= 0) for (const node of body.querySelectorAll(`[data-i="${i}"]`)) node.classList.add("hover");
+    hovered = index;
+    if (index >= 0) for (const node of body.querySelectorAll(`[data-i="${index}"]`)) node.classList.add("hover");
   };
-  const rowAt = (event) => {
+  const rowIndexAt = (event) => {
     const node = event.target.closest("[data-i]");
     return node ? Number(node.dataset.i) : -1;
   };
   body.addEventListener("mousemove", (event) => {
-    const i = rowAt(event);
-    setHover(i);
-    if (i >= 0) showTip(shown[i], event); else hideTip();
+    const index = rowIndexAt(event);
+    setHover(index);
+    if (index >= 0) showTip(shown[index], event); else hideTip();
   });
   body.addEventListener("mouseleave", () => { setHover(-1); hideTip(); });
   // the page scrolling under the pointer (wheel outside the chart's own scroll box): the tip would
@@ -389,16 +400,16 @@ export default function (component) {
   // a WBS row opens or closes; an activity row sends its row id ("a:<Activity ID>") and only
   // that: the page reads every value it shows from the loaded schedule (app/task_panel.py)
   body.addEventListener("click", (event) => {
-    const i = rowAt(event);
-    if (i < 0) return;
-    const r = shown[i];
-    if (r.kind === "task") setTriggerValue("picked", r.id); else toggle(r);
+    const index = rowIndexAt(event);
+    if (index < 0) return;
+    const row = shown[index];
+    if (row.kind === "task") setTriggerValue("picked", row.id); else toggle(row);
   });
   // a double click on a WBS row makes it the page's focus ("w:<wbs_id>"); the two single
   // clicks before it toggled the branch twice, so it is left as it was
   body.addEventListener("dblclick", (event) => {
-    const i = rowAt(event);
-    if (i >= 0 && shown[i].kind === "wbs") setTriggerValue("focus", shown[i].id);
+    const index = rowIndexAt(event);
+    if (index >= 0 && shown[index].kind === "wbs") setTriggerValue("focus", shown[index].id);
   });
 
   let pending = false;
@@ -412,9 +423,9 @@ export default function (component) {
   window.addEventListener("resize", onResize);
 
   render();
-  const selectedIndex = index.get(D.selected);
+  const selectedIndex = indexById.get(payload.selected);
   if (selectedIndex > 1) {
-    scroll.scrollTop = (selectedIndex - 1) * D.rowPx;
+    scroll.scrollTop = (selectedIndex - 1) * payload.rowPx;
     drawWindow(false);
   }
   return () => {

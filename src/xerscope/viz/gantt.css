@@ -10,6 +10,7 @@
   --band: var(--st-secondary-background-color);
   --axis: var(--st-border-color);
   --grid: color-mix(in srgb, var(--st-border-color) 55%, var(--st-background-color));
+  --shadow: rgba(0, 0, 0, 0.15);
   --grid-w: min(420px, 55vw); /* the tree grid: the timeline keeps the rest of a narrow page */
   display: flex; flex-direction: column;
   font: 13px/1.3 var(--st-font); color: var(--ink); background: var(--background);
@@ -81,7 +82,7 @@ svg.links marker path { fill: var(--muted); stroke: none; }
 .tip {
   position: fixed; z-index: 10; pointer-events: none; display: none; max-width: 360px;
   background: var(--background); border: 1px solid var(--axis); border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); padding: 6px 9px; color: var(--ink);
+  box-shadow: 0 2px 8px var(--shadow); padding: 6px 9px; color: var(--ink);
 }
 .tip .title { font-weight: 600; margin-bottom: 3px; }
 .tip .line { color: var(--secondary); }

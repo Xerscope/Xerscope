@@ -26,12 +26,13 @@ def _draw_code_widgets(snapshot: Snapshot, key_prefix: str) -> tuple[str | None,
             "Use it to read one trade, area or contract on its own; None keeps every task.",
         )
         by_label = code_value_labels(snapshot, code_type) if code_type else {}
+        placeholder = "Pick a task code first"
+        if code_type:
+            placeholder = "Type to search; pick a value, or press Enter to keep every value containing the text"
         picks = value_column.multiselect(
             "Code values",
             list(by_label),
-            placeholder="Type to search; pick a value, or press Enter to keep every value containing the text"
-            if code_type
-            else "Pick a task code first",
+            placeholder=placeholder,
             accept_new_options=True,
             filter_mode="contains",
             disabled=code_type is None,

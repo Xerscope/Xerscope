@@ -459,7 +459,7 @@ chart_and_task()
 
 if ask_funnel is not None and ask_funnel.steps:
     with st.expander("Population, step by step"):
-        show_steps(ask_funnel)
+        show_steps(ask_funnel, key="ask_funnel")
 with st.expander("Table view"):
     table_columns = [
         "task_code",

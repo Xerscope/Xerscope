@@ -141,7 +141,7 @@ def test_gantt_row_height_comes_from_the_payload_not_from_the_script_or_the_styl
     """viz.gantt owns the row height: the script writes ``--row`` from the payload and the stylesheet reads it."""
     css, script = gantt_assets()["css"], gantt_assets()["js"]
     assert "26px" not in css and "var(--row)" in css
-    assert "const ROW =" not in script and 'setProperty("--row", D.rowPx + "px")' in script
+    assert "const ROW =" not in script and 'setProperty("--row", payload.rowPx + "px")' in script
 
 
 def test_marks_reach_3_to_1_on_both_themes():
@@ -243,7 +243,7 @@ def test_gantt_rows_scroll_from_the_keyboard():
     """WCAG 2.2 SC 2.1.1: the box that scrolls the rows takes the keyboard focus, so the arrow and page
     keys move it; it holds no focusable element of its own."""
     script = gantt_assets()["js"]
-    assert 'const scroll = el("div", "scroll");\n  scroll.tabIndex = 0;' in script
+    assert 'const scroll = element("div", "scroll");\n  scroll.tabIndex = 0;' in script
 
 
 def test_fonts_are_served_by_the_app_and_used_everywhere():
