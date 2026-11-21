@@ -16,6 +16,14 @@ from xerscope.analysis import AnalysisContext, Baseline, Standard
 from xerscope.analysis.baseline import (
     DEFAULT_EV_BASIS,
     EV_BASES,
+    KIND_CHOSEN,
+    KIND_EXACT,
+    KIND_FALLBACK,
+    KIND_IN_FILE,
+    KIND_NONE,
+    KIND_PLANNED,
+    KIND_PROBABLE,
+    KIND_SERIES,
     absent_project_baselines,
     baseline_in_file,
     other_project_baselines,
@@ -26,6 +34,7 @@ from xerscope.analysis.baseline import (
 )
 from xerscope.analysis.baseline_resolution import (
     IN_EXPORT,
+    IN_FILE,
     LOADED_UPDATE,
     NOT_FOUND,
     SAME_GENERATION,
@@ -111,7 +120,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
     if choice == BL_NONE:
         return None
     if choice != BL_FILE:
-        return _update_baseline(store, choice, basis)
+        return _series(_update_baseline(store, choice, basis), choice)
     source = _baseline_file_source(env_path, exports)
     if source is not None:
         st.session_state["baseline_digest"] = _digest(source[1])
@@ -128,7 +137,12 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         return None
     if is_pmxml(source[1]):
         sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)}")
-    return Baseline.from_snapshot(snapshot, basis)
+    return _series(Baseline.from_snapshot(snapshot, basis), choice)
+
+
+def _series(baseline: Baseline, choice: str) -> Baseline:
+    """Return ``baseline`` as the one baseline of the whole series: ``choice`` is BL_FILE or an update's label."""
+    return replace(baseline, kind=KIND_SERIES, found_by=choice, source=baseline.label)
 
 
 def _cache_for(slot: str, identity: tuple) -> dict:
@@ -260,7 +274,6 @@ def _fallback_options(store: SnapshotStore, exports: list[str]) -> list[str]:
 def _fallback_picker(sidebar, store: SnapshotStore, basis: str, exports: list[str]) -> None:
     """Show what an update whose file has no usable baseline is measured against: chosen, never imposed."""
     choice = st.session_state["bl_fallback"]
-    st.session_state["fallback_choice"] = choice
     # the separate file: uploaded, else named by XERSCOPE_BASELINE (a locked server has only that one)
     env_path = os.environ.get("XERSCOPE_BASELINE", "")
     st.session_state["fallback"] = _baseline_from_choice(sidebar, store, choice, basis, env_path, exports)
@@ -271,30 +284,44 @@ PROBABLE = (
 )
 
 
-IN_ITS_FILE, FROM_THE_EXPORT, A_PROBABLE_BASELINE, THE_FALLBACK = (
-    "the baseline of its file",
-    "the baseline it names, from the export",
-    "a probable baseline",
-    "the fallback",
-)
+UNDECIDED_NONE = "none"  # the window's choice for an undecided update: not measured (the default)
+UNDECIDED_FALLBACK = "fallback"  # the window's choice for an undecided update: the fallback
+CHOSEN_IN_THE_WINDOW = "chosen in the window"
+KIND_TEXT = {  # how the sidebar names each kind of baseline (``analysis.baseline.KIND_*``)
+    KIND_IN_FILE: "the baseline of its file",
+    KIND_EXACT: "the baseline it names, from the export",
+    KIND_PROBABLE: "a probable baseline",
+    KIND_CHOSEN: "a baseline chosen in the window",
+    KIND_FALLBACK: "the fallback",
+    KIND_PLANNED: "its planned dates",
+    KIND_SERIES: "the baseline of the series",
+    KIND_NONE: "no baseline",
+}
 
 
-def _source_kind(snapshot: Snapshot) -> str:
-    """Return where the baseline of an update comes from in the per-file mode.
+def kind_of(baseline: Baseline | None) -> str:
+    """Return how ``baseline`` relates to its update (``analysis.baseline.KIND_*``), "none" without one."""
+    return KIND_NONE if baseline is None else baseline.kind
 
-    Its file, the export under the id it names, a probable baseline (``_resolved_baseline``), the
-    fallback, nothing.
-    """
-    if snapshot.file_baseline.usable:
-        return IN_ITS_FILE
+
+def _kinds(store: SnapshotStore) -> dict[str, str]:
+    """Return the kind of baseline each update of the series is measured against, by file name."""
+    return {snapshot.source: kind_of(baseline_for(snapshot, link=False)) for snapshot in store}
+
+
+def is_undecided(snapshot: Snapshot) -> bool:
+    """Tell whether the resolution left ``snapshot`` undecided: the versions around it hold different baselines."""
     found = _resolution(snapshot)
-    if found is not None and found.baseline_id in st.session_state.get("_export_read_errors", {}):
-        return THE_FALLBACK if st.session_state.get("fallback") is not None else "no baseline"
-    if found is not None and found.found_by == IN_EXPORT:
-        return FROM_THE_EXPORT
-    if found is not None and found.found_by in (LOADED_UPDATE, SAME_GENERATION):
-        return A_PROBABLE_BASELINE
-    return THE_FALLBACK if st.session_state.get("fallback") is not None else "no baseline"
+    return found is not None and found.found_by == UNDECIDED
+
+
+def candidates(snapshot: Snapshot) -> dict[str, str]:
+    """Return the baselines an undecided update can be measured against: baseline id -> the version holding it."""
+    found, export = _resolution(snapshot), export_contents()
+    if found is None or export is None:
+        return {}
+    versions = (found.version_before, found.version_after)
+    return {export.project_baselines[version]: version for version in versions if version in export.project_baselines}
 
 
 def _which_updates(snapshots: list[Snapshot]) -> str:
@@ -332,7 +359,7 @@ def _files_name(snapshots: list[Snapshot]) -> str:
     return "its file names" if len(snapshots) == 1 else "their files name"
 
 
-def _resolution_warnings(sidebar, store: SnapshotStore, instead: str) -> list[Snapshot]:
+def _resolution_warnings(sidebar, store: SnapshotStore, kinds: dict[str, str]) -> list[Snapshot]:
     """Show, in the per-file mode, the export that cannot be read.
 
     The updates measured against a probable baseline, those left undecided (``instead``: what applies to
@@ -343,24 +370,22 @@ def _resolution_warnings(sidebar, store: SnapshotStore, instead: str) -> list[Sn
         sidebar.error(f"Baselines export not read: {ui.md_text(export_error)}")
     for baseline_id, error in sorted(st.session_state.get("_export_read_errors", {}).items()):
         sidebar.error(f"Baseline {baseline_id} of the export not read: {ui.md_text(error)}")
-    kinds = {snapshot.source: _source_kind(snapshot) for snapshot in store}
-    probable = [snapshot for snapshot in store if kinds[snapshot.source] == A_PROBABLE_BASELINE]
+    probable = [snapshot for snapshot in store if kinds[snapshot.source] in (KIND_PROBABLE, KIND_CHOSEN)]
     if probable:
         sidebar.warning(
             f"{_which_updates(probable)}: measured against a probable baseline, not the one "
             f"{_files_name(probable)}. Which one and why: under the title of each page, and Debug, block 5.",
             icon=":material/warning:",
         )
-    found = (IN_ITS_FILE, FROM_THE_EXPORT, A_PROBABLE_BASELINE)
-    unusable = [snapshot for snapshot in store if kinds[snapshot.source] not in found]
-    undecided = [snapshot for snapshot in unusable if getattr(_resolution(snapshot), "found_by", "") == UNDECIDED]
+    undecided = [snapshot for snapshot in store if kinds[snapshot.source] == KIND_NONE and is_undecided(snapshot)]
     if undecided:
         sidebar.warning(
             f"{_which_updates(undecided)}: the baseline {_files_name(undecided)} is not in the export, and the "
-            f"versions around it do not hold one same baseline; {instead}. Debug, block 5.",
+            "versions around it hold different baselines: not measured until one is chosen in the Baseline "
+            "window. Debug, block 5.",
             icon=":material/warning:",
         )
-    return unusable
+    return [s for s in store if kinds[s.source] in (KIND_FALLBACK, KIND_NONE) and s not in undecided]
 
 
 def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
@@ -369,9 +394,10 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
     The updates with no baseline (and what applies instead), each reason a pointer is not used with the
     updates it concerns, a series that mixes sources.
     """
-    choice = st.session_state.get("fallback_choice", BL_NONE)
+    choice = st.session_state.get("bl_fallback", BL_NONE)
     instead = "their baseline checks are n/a" if choice == BL_NONE else f"fallback: {choice}"
-    unusable = _resolution_warnings(sidebar, store, instead)
+    kinds = _kinds(store)
+    unusable = _resolution_warnings(sidebar, store, kinds)
     if unusable:
         sidebar.warning(
             f"No usable P6 Project Baseline in the file of {_which_updates(unusable)}: {instead}.",
@@ -385,7 +411,7 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
         sidebar.warning(f"{_which_updates(snapshots)}: {ui.md_text(reason)}. Not used.", icon=":material/warning:")
     groups: dict[str, list[Snapshot]] = {}
     for snapshot in store:
-        groups.setdefault(_source_kind(snapshot), []).append(snapshot)
+        groups.setdefault(KIND_TEXT[kinds[snapshot.source]], []).append(snapshot)
     if len(groups) > 1:
         parts = [f"{len(snapshots)} on {kind} ({_dates_or_file(snapshots)})" for kind, snapshots in groups.items()]
         sidebar.warning(
@@ -404,7 +430,7 @@ def _updates_without_the_baseline_they_name(store: SnapshotStore) -> list[Snapsh
     """
     if st.session_state.get("baseline") != BL_EACH:
         return list(store)
-    return [snapshot for snapshot in store if _source_kind(snapshot) != FROM_THE_EXPORT]
+    return [snapshot for snapshot in store if kind_of(baseline_for(snapshot, link=False)) != KIND_EXACT]
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
@@ -451,11 +477,11 @@ def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline
     """
     if choice not in (BL_EACH, BL_PLANNED, BL_NONE):  # the separate file or a loaded update
         separate, updates, kind = baseline, list(store), choice
-    elif choice == BL_EACH and st.session_state.get("fallback_choice") not in (None, BL_PLANNED, BL_NONE):
+    elif choice == BL_EACH and st.session_state.get("bl_fallback") not in (None, BL_PLANNED, BL_NONE):
         separate = st.session_state.get("fallback")
         # the other updates found their own baseline
-        updates = [snapshot for snapshot in store if _source_kind(snapshot) == THE_FALLBACK]
-        kind = st.session_state.get("fallback_choice")
+        updates = [snapshot for snapshot in store if kind_of(baseline_for(snapshot, link=False)) == KIND_FALLBACK]
+        kind = st.session_state.get("bl_fallback", "")
     else:
         return
     if not isinstance(separate, Baseline):
@@ -495,21 +521,19 @@ def _files_count(store: SnapshotStore) -> str:
     return f"{counted(len(store), 'file')} · {projects}"
 
 
-def _baseline_kind(baseline: Baseline | None) -> str:
+def banner_kind(baseline: Baseline | None) -> str:
     """Return where ``baseline`` (``baseline_for`` an update) comes from.
 
     Its file's P6 Project Baseline, the fallback (``_fallback_baseline`` names it so), planned dates, a
     loaded update, a separate file, none.
     """
     if baseline is None:
-        return "none"
-    if st.session_state.get("baseline") == BL_EACH:
-        if baseline.source.startswith("fallback"):
-            return f"fallback, {_baseline_short(st.session_state.get('fallback_choice', BL_NONE))}"
-        if baseline.source.startswith(PROBABLE):
-            return "probable"
-        return "in file"
-    return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
+        return KIND_NONE
+    if st.session_state.get("baseline") != BL_EACH:  # one baseline for the series, or the planned dates
+        return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
+    if baseline.kind == KIND_FALLBACK:
+        return f"fallback, {_baseline_short(st.session_state.get('bl_fallback', BL_NONE))}"
+    return baseline.kind
 
 
 def _baseline_options(store: SnapshotStore, env_path: str, exports: list[str]) -> tuple[list[str], str]:
@@ -583,7 +607,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
         st.session_state["guid_link"] = False
     choice, basis = st.session_state["bl_choice"], st.session_state["ev_basis"]
     st.session_state["baseline_digest"] = None  # set again when the choice is a baseline file
-    st.session_state["fallback"], st.session_state["fallback_choice"] = None, BL_NONE
+    st.session_state["fallback"] = None
     _baseline_line(line, choice)
     if not st.session_state.get(BASELINE_SET):
         st.session_state["baseline"] = None  # no file read for it, no warning: the pages wait (require_store)
@@ -764,16 +788,50 @@ def _baseline_fields(store: SnapshotStore) -> None:
     )
     choice = st.session_state["draft_bl_choice"]
     if choice == BL_EACH:
-        st.selectbox(
-            "When a file has no baseline",
-            fallback_options,
-            key="draft_bl_fallback",
-            help="Applies update by update: an update uses the baseline of its own file when it has a usable "
-            "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
-        )
+        _fallback_fields(store, fallback_options)
     if st.session_state.get(BASELINE_SET):  # before the first Done nothing is read for the baseline
         _baseline_per_file(store)
     _baseline_file_fields(choice, folder_files)
+
+
+def _fallback_fields(store: SnapshotStore, fallback_options: list[str]) -> None:
+    """Show the per-file mode's own fields: the fallback, then the choice of each undecided update."""
+    st.selectbox(
+        "When a file has no baseline",
+        fallback_options,
+        key="draft_bl_fallback",
+        help="Applies update by update: an update uses the baseline of its own file when it has a usable "
+        "one, otherwise this. None: the checks that need a baseline are n/a for that update.",
+    )
+    if st.session_state.get(BASELINE_SET):
+        _undecided_fields(store)
+
+
+def _undecided_fields(store: SnapshotStore) -> None:
+    """Show, for each undecided update, the choice of its baseline: a candidate of the export, the fallback, none."""
+    for snapshot in store:
+        held_by = candidates(snapshot)
+        if is_undecided(snapshot) and held_by:
+            _undecided_box(snapshot, held_by)
+
+
+def _undecided_box(snapshot: Snapshot, held_by: dict[str, str]) -> None:
+    """Show the selector of one undecided update: ``held_by`` is baseline id -> the version of the export holding it."""
+    options = [UNDECIDED_NONE, *held_by, UNDECIDED_FALLBACK]
+    labels = {UNDECIDED_NONE: "None: not measured", UNDECIDED_FALLBACK: "The fallback above"}
+    labels.update({held: f"Baseline {held}, held by version {version}" for held, version in held_by.items()})
+    key = f"draft_bl_undecided:{snapshot.source}"
+    if st.session_state.get(key) not in options:
+        st.session_state[key] = st.session_state.get("bl_undecided", {}).get(snapshot.source, UNDECIDED_NONE)
+    st.selectbox(
+        f"Baseline of {snapshot.source} (undecided)",
+        options,
+        key=key,
+        format_func=labels.__getitem__,
+        help="The baseline this file names is not in the export, and the versions of the export created just "
+        "before and just after its project hold different baselines: xerscope does not guess. The one you "
+        "pick is applied as a probable baseline, said so on every page and in every download.",
+    )
 
 
 def _fallback_label() -> str:
@@ -818,7 +876,8 @@ def _baseline_per_file(store: SnapshotStore) -> None:
     """
     found = {snapshot.source: _resolution(snapshot) for snapshot in store}
     unreadable = frozenset(st.session_state.get("_export_read_errors", {}))
-    table = baseline_per_file(store, found, _fallback_label(), unreadable)
+    chosen = {name: pick for name, pick in st.session_state.get("bl_undecided", {}).items() if pick != UNDECIDED_NONE}
+    table = baseline_per_file(store, found, _fallback_label(), unreadable, chosen)
     st.caption(_per_file_caption(table))
     labels = {"names": "Names (sum_base_proj_id)", "measured_against": "Measured against", "found_by": "Found"}
     overrides = {name: st.column_config.TextColumn(label) for name, label in labels.items()}
@@ -827,14 +886,20 @@ def _baseline_per_file(store: SnapshotStore) -> None:
 
 def _fallback_baseline(snapshot: Snapshot) -> Baseline | None:
     """Return the fallback chosen in the window, as it applies to ``snapshot`` (a file with no usable baseline)."""
-    fallback, choice = st.session_state.get("fallback"), st.session_state.get("fallback_choice", BL_NONE)
+    fallback, choice = st.session_state.get("fallback"), st.session_state.get("bl_fallback", BL_NONE)
     if fallback == BL_PLANNED:
-        built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
-        return replace(built, source=f"fallback ({BL_PLANNED})")
+        built = _planned(snapshot)
+        return replace(built, kind=KIND_FALLBACK, found_by=choice, source=f"fallback ({BL_PLANNED})")
     if isinstance(fallback, Baseline):
-        kind = "separate baseline file" if choice == BL_FILE else "loaded update"
-        return replace(fallback, source=f"fallback ({kind}): {fallback.label}")
+        what = "separate baseline file" if choice == BL_FILE else "loaded update"
+        return replace(fallback, kind=KIND_FALLBACK, found_by=choice, source=f"fallback ({what}): {fallback.label}")
     return None
+
+
+def _planned(snapshot: Snapshot) -> Baseline:
+    """Return the planned dates (target_*) of ``snapshot`` as its baseline, on the EV basis of the window."""
+    built = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
+    return replace(built, kind=KIND_PLANNED, found_by=BL_PLANNED, source=built.label)
 
 
 def _resolution(snapshot: Snapshot) -> Resolution | None:
@@ -882,11 +947,11 @@ def _loaded_update_baseline(snapshot: Snapshot, project_id: str) -> Baseline:
     """
     update = [other for other in st.session_state["store"] if other.project_id == project_id][-1]
     built = Baseline.from_snapshot(update, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
-    return replace(
-        built,
-        source=f"{PROBABLE}the project of {update.source}, as exported on {ui.stamp(update.data_date)}, "
-        f"which the update names as its baseline ({snapshot.file_baseline.proj_id})",
+    source = (
+        f"{PROBABLE}the project of {update.source}, as exported on {ui.stamp(update.data_date)}, "
+        f"which the update names as its baseline ({snapshot.file_baseline.proj_id})"
     )
+    return replace(built, kind=KIND_PROBABLE, found_by=LOADED_UPDATE, source=source)
 
 
 def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -902,23 +967,56 @@ def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
         return None
     if found.found_by == LOADED_UPDATE:
         return _loaded_update_baseline(snapshot, found.baseline_id)
+    if found.found_by == UNDECIDED:
+        return _chosen_baseline(snapshot)
     export = baseline_export()
     if export is None or found.found_by not in (IN_EXPORT, SAME_GENERATION):
         return None
-    try:
-        built = _export_baseline(export, found.baseline_id)
-    except XerError as exc:  # one baseline of the export cannot be read: this update has none, the sidebar says why
-        st.session_state.setdefault("_export_read_errors", {})[found.baseline_id] = str(exc)
+    built = _read_export_baseline(export, found.baseline_id)
+    if built is None:
         return None
     code = built.snapshot.project_code
     if found.found_by == IN_EXPORT:
-        return replace(built, source=f"P6 Project Baseline {code} from {export[0]}")
-    return replace(
-        built,
-        source=f"{PROBABLE}baseline {code} of {export[0]}, held by the versions created before and after the "
+        source = f"P6 Project Baseline {code} from {export[0]}"
+        return replace(built, kind=KIND_EXACT, found_by=IN_EXPORT, source=source)
+    source = (
+        f"{PROBABLE}baseline {code} of {export[0]}, held by the versions created before and after the "
         f"update's project ({found.version_before} and {found.version_after}); the one its file names "
-        f"({snapshot.file_baseline.proj_id}) is not in the export",
+        f"({snapshot.file_baseline.proj_id}) is not in the export"
     )
+    return replace(built, kind=KIND_PROBABLE, found_by=SAME_GENERATION, source=source)
+
+
+def _read_export_baseline(export: tuple[str, bytes | DiskFile, PmxmlIndex], baseline_id: str) -> Baseline | None:
+    """Return one baseline of the export (``_export_baseline``); None, recorded for the sidebar, if unreadable."""
+    try:
+        return _export_baseline(export, baseline_id)
+    except XerError as exc:  # this update has none, the sidebar says why
+        st.session_state.setdefault("_export_read_errors", {})[baseline_id] = str(exc)
+        return None
+
+
+def _chosen_baseline(snapshot: Snapshot) -> Baseline | None:
+    """Return the baseline the window chose for an undecided update: a candidate, the fallback, or None (the default).
+
+    The versions created around the update's project hold different baselines, so nothing is applied
+    until the user picks one of them, or the fallback, in the window's Baseline section.
+    """
+    choice = st.session_state.get("bl_undecided", {}).get(snapshot.source, UNDECIDED_NONE)
+    if choice == UNDECIDED_FALLBACK:
+        return _fallback_baseline(snapshot)
+    held_by, export = candidates(snapshot), baseline_export()
+    if choice not in held_by or export is None:
+        return None
+    built = _read_export_baseline(export, choice)
+    if built is None:
+        return None
+    source = (
+        f"{CHOSEN_IN_THE_WINDOW}: baseline {built.snapshot.project_code} of {export[0]}, held by version "
+        f"{held_by[choice]}; the versions around the update's project hold different baselines and the one "
+        f"its file names ({snapshot.file_baseline.proj_id}) is not in the export"
+    )
+    return replace(built, kind=KIND_CHOSEN, found_by=CHOSEN_IN_THE_WINDOW, source=source)
 
 
 def _file_baseline(snapshot: Snapshot) -> Baseline | None:
@@ -941,7 +1039,7 @@ def _file_baseline(snapshot: Snapshot) -> Baseline | None:
         built = baseline_in_file(snapshot, data, basis, lambda data, name, project_id: _parse(name, data, project_id))
         if built is None:
             return None
-        cache[key] = built
+        cache[key] = replace(built, kind=KIND_IN_FILE, found_by=IN_FILE)
     st.session_state["_file_baselines"] = (signature, cache)
     return cache[key]
 
@@ -965,12 +1063,23 @@ def _built_baseline(snapshot: Snapshot, link: bool) -> Baseline | None:
     """Return the sidebar's baseline for ``snapshot``, with its renumbered tasks relinked when ``link``."""
     choice = st.session_state.get("baseline")
     if choice == BL_EACH:
-        baseline = _file_baseline(snapshot) or _resolved_baseline(snapshot) or _fallback_baseline(snapshot)
+        baseline = _per_file_baseline(snapshot)
     elif choice == BL_PLANNED:
-        baseline = Baseline.planned(snapshot, st.session_state.get("ev_basis", DEFAULT_EV_BASIS))
+        baseline = _planned(snapshot)
     else:
         baseline = choice if isinstance(choice, Baseline) else None
     return relinked(baseline, snapshot) if link and baseline is not None else baseline
+
+
+def _per_file_baseline(snapshot: Snapshot) -> Baseline | None:
+    """Return the baseline of ``snapshot`` in the per-file mode: its file's, else the one found, else the fallback.
+
+    An undecided update takes no fallback: it is measured once its baseline is chosen in the window.
+    """
+    baseline = _file_baseline(snapshot) or _resolved_baseline(snapshot)
+    if baseline is not None or is_undecided(snapshot):
+        return baseline
+    return _fallback_baseline(snapshot)
 
 
 def _baseline_identity(ev_basis: bool = True) -> tuple:
@@ -989,9 +1098,10 @@ def _baseline_identity(ev_basis: bool = True) -> tuple:
         pointers = tuple(
             (snapshot.source, snapshot.file_baseline.proj_id, snapshot.file_baseline.usable) for snapshot in store or ()
         )
-        fallback = (st.session_state.get("fallback_choice"), st.session_state.get("baseline_digest"))
+        fallback = (st.session_state.get("bl_fallback"), st.session_state.get("baseline_digest"))
+        chosen = tuple(sorted(st.session_state.get("bl_undecided", {}).items()))
         export = baseline_files_tag(st.session_state)  # the export the updates are looked for in
-        return baseline, basis, pointers, fallback, export
+        return baseline, basis, pointers, fallback, chosen, export
     return baseline, basis  # None, or BL_PLANNED (resolved per snapshot)
 
 

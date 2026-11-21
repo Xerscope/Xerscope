@@ -16,6 +16,14 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- Baselines: `Baseline.kind` and `found_by` say how the baseline of an update relates to it (in file,
+  exact, probable, chosen, fallback, planned, series) and what found it; set by every path of the app,
+  read by one classifier (`app.baselines.kind_of`) for the context banner, the sidebar and the Debug
+  page, so a baseline read from the export is no longer called "in file". An update left undecided by the
+  resolution (the versions of the export around its project hold different baselines) is not measured,
+  not even by the fallback, until the Files and baseline window gets a choice for it: one of the two
+  candidate baselines (applied as "chosen", alerted like a probable one) or the fallback.
+
 - PPC & progress page: lookahead reliability, Tasks Anticipated and Tasks Made Ready of the
   week against the plans of 1, 2, 4 and 8 updates before (Hamzeh, Ballard & Tommelein 2012,
   figure 5; `progress.lookahead_series`, formulas.md §4), with every week's counts.

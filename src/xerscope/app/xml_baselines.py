@@ -19,6 +19,7 @@ from xerscope.analysis.baseline_resolution import (
     LOADED_UPDATE,
     NOT_FOUND,
     SAME_GENERATION,
+    UNDECIDED,
     Export,
     Resolution,
     Version,
@@ -28,6 +29,7 @@ from xerscope.analysis.baseline_resolution import (
 from xerscope.app import ui
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot, load_snapshot
+from xerscope.xer.model import FileBaseline
 from xerscope.xer.parser import XerError
 from xerscope.xer.pmxml import DiskFile, PmxmlIndex, XmlBaseline
 
@@ -217,25 +219,56 @@ BASELINE_PER_FILE_COLUMNS = ["file", "data_date", "names", "measured_against", "
 THE_FALLBACK = "the fallback"
 
 
-def _baseline_row(snapshot: Snapshot, found: Resolution | None, fallback_label: str, unreadable: frozenset) -> dict:
-    """Return one row of ``baseline_per_file``: what the update names and what it is measured against."""
+def _baseline_row(
+    snapshot: Snapshot, found: Resolution | None, fallback_label: str, unreadable: frozenset, chosen: str = ""
+) -> dict:
+    """Return one row of ``baseline_per_file``: what the update names and what it is measured against.
+
+    ``chosen``: for an undecided update, the baseline id or the fallback picked in the window, blank for none.
+    """
     pointer = snapshot.file_baseline
     names = f"{pointer.code} ({pointer.proj_id})" if pointer.code else pointer.proj_id
-    row = {"file": snapshot.source, "data_date": snapshot.data_date, "names": names}
+    against, found_by = _measured_against(pointer, found, fallback_label, unreadable, chosen)
+    return {
+        "file": snapshot.source,
+        "data_date": snapshot.data_date,
+        "names": names,
+        "measured_against": against,
+        "found_by": found_by,
+    }
+
+
+def _measured_against(
+    pointer: FileBaseline, found: Resolution | None, fallback_label: str, unreadable: frozenset, chosen: str
+) -> tuple[str, str]:
+    """Return what an update is measured against and what found it, as the window's table words them."""
     if pointer.usable:
-        return {**row, "measured_against": f"{pointer.code}, in its file", "found_by": IN_FILE}
-    applied = (IN_EXPORT, SAME_GENERATION, LOADED_UPDATE)
-    if found is not None and found.found_by in applied and found.baseline_id not in unreadable:
-        where = "a loaded update" if found.found_by == LOADED_UPDATE else "the export"
-        probable = "" if found.found_by == IN_EXPORT else "probable: "
-        against = f"{probable}baseline {found.baseline_id} of {where}"
-        return {**row, "measured_against": against, "found_by": found.found_by}
-    if fallback_label:
-        return {**row, "measured_against": f"fallback: {fallback_label}", "found_by": THE_FALLBACK}
-    why = found.note if found is not None and found.note else pointer.note
-    if found is not None and found.baseline_id in unreadable:
-        why = f"baseline {found.baseline_id} of the export cannot be read"
-    return {**row, "measured_against": "none" + (f" ({why})" if why else ""), "found_by": NOT_FOUND}
+        return f"{pointer.code}, in its file", IN_FILE
+    if found is None:
+        return _nothing(pointer.note), NOT_FOUND
+    unreadable_baseline = found.baseline_id in unreadable
+    if found.found_by in (IN_EXPORT, SAME_GENERATION, LOADED_UPDATE) and not unreadable_baseline:
+        return _found_baseline(found), found.found_by
+    undecided = found.found_by == UNDECIDED
+    if undecided and chosen not in ("", "fallback"):
+        return f"chosen: baseline {chosen} of the export", "chosen in the window"
+    if fallback_label and (not undecided or chosen == "fallback"):
+        return f"fallback: {fallback_label}", THE_FALLBACK
+    if unreadable_baseline:
+        return _nothing(f"baseline {found.baseline_id} of the export cannot be read"), NOT_FOUND
+    return _nothing(found.note or pointer.note), NOT_FOUND
+
+
+def _found_baseline(found: Resolution) -> str:
+    """Return the baseline the resolution found, exact from the export or probable, as the table words it."""
+    where = "a loaded update" if found.found_by == LOADED_UPDATE else "the export"
+    probable = "" if found.found_by == IN_EXPORT else "probable: "
+    return f"{probable}baseline {found.baseline_id} of {where}"
+
+
+def _nothing(why: str) -> str:
+    """Return "none", with ``why`` in brackets when there is one."""
+    return "none" + (f" ({why})" if why else "")
 
 
 def baseline_per_file(
@@ -243,12 +276,18 @@ def baseline_per_file(
     found: dict[str, Resolution | None],
     fallback_label: str = "",
     unreadable: frozenset = frozenset(),
+    chosen: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Return one row per update: what its file names, what it is measured against and what found it.
 
     By status date. ``found``: the resolution of each update by file name (``resolutions``), None for an
     update outside the series. ``fallback_label``: what applies when nothing is found, blank for none.
     ``unreadable``: the baselines of the export that could not be read; an update that names one has none.
+    ``chosen``: by file name, what the window picked for an undecided update (a baseline id, or "fallback").
     """
-    rows = [_baseline_row(snapshot, found.get(snapshot.source), fallback_label, unreadable) for snapshot in store]
+    picked = chosen or {}
+    rows = [
+        _baseline_row(snapshot, found.get(snapshot.source), fallback_label, unreadable, picked.get(snapshot.source, ""))
+        for snapshot in store
+    ]
     return pd.DataFrame(rows, columns=BASELINE_PER_FILE_COLUMNS)

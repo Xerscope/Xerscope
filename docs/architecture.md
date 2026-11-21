@@ -133,8 +133,13 @@ baseline. In the per-file mode the export is read for every update whose file ho
 (`analysis/baseline_resolution.py`, applied by `state._resolved_baseline`): the baseline the update names when
 the export holds it (exact), else the loaded update whose project the update names, else the baseline the
 versions of the export created just before and after the update's project both hold (`content_digest`); the
-last two are "probable", their `source` says so and every page, warning and download repeats it; an undecided
-update takes the fallback, and the sidebar says it. A baseline of the export that cannot be read leaves its
+last two are "probable", their `source` says so and every page, warning and download repeats it. An undecided
+update (the versions around it hold different baselines) takes nothing, not even the fallback, until the
+window's Baseline section gets a choice for it (`bl_undecided`: one of the two candidate baselines, applied as
+"chosen" and alerted like a probable one, or the fallback). `Baseline.kind` says how the baseline relates to
+its update (`analysis.baseline.KIND_*`: in file, exact, probable, chosen, fallback, planned, series) and
+`found_by` what found it; every path that builds a Baseline in the app sets both, and `baselines.kind_of` is the
+one classifier the banner, the sidebar and the Debug page read. A baseline of the export that cannot be read leaves its
 update without one and is named in the sidebar (`_export_read_errors`). The Baseline section of the window
 lists, once the files are read, what each file names and what it is measured against, or would be in the
 per-file mode (`xml_baselines.baseline_per_file`), with the hint that P6 writes no baseline in an XER.

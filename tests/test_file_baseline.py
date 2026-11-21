@@ -362,7 +362,7 @@ def _series_store(folder):
 def test_the_window_table_names_what_each_update_is_measured_against(tmp_path):
     """The export of ``_series_and_export`` with baseline 201 unreadable: a nothing (undecided: 201, around
     it, cannot be compared with 101), b nothing (201 cannot be read), c nothing (undecided), d the baseline
-    it names. With a fallback, a, b and c take it; d keeps its own."""
+    it names. With a fallback, b takes it; a and c, undecided, take nothing until chosen; d keeps its own."""
     from xerscope.analysis.baseline_resolution import IN_EXPORT, SAME_GENERATION, resolutions
     from xerscope.app.xml_baselines import baseline_per_file, export_of
     from xerscope.xer.pmxml import index_pmxml
@@ -385,8 +385,20 @@ def test_the_window_table_names_what_each_update_is_measured_against(tmp_path):
         "baseline 401 of the export",
     ]
     assert table["found_by"].tolist() == ["not found"] * 3 + [IN_EXPORT]
+    # the fallback applies to b (not found); a and c, undecided, take nothing until the window's choice
     with_fallback = baseline_per_file(store, found, "planned dates", frozenset({"201"}))
-    assert with_fallback["measured_against"].tolist()[:3] == ["fallback: planned dates"] * 3
+    assert with_fallback["measured_against"].tolist()[:3] == [
+        "none (the versions around it hold different baselines)",
+        "fallback: planned dates",
+        "none (the versions around it hold different baselines)",
+    ]
+    chosen = baseline_per_file(store, found, "planned dates", frozenset({"201"}), {"a.xer": "101", "c.xer": "fallback"})
+    assert chosen["measured_against"].tolist()[:3] == [
+        "chosen: baseline 101 of the export",
+        "fallback: planned dates",
+        "fallback: planned dates",
+    ]
+    assert chosen["found_by"].tolist()[:3] == ["chosen in the window", "the fallback", "the fallback"]
     # 201 readable: a is measured against the copy the versions around it hold
     _series_and_export(tmp_path)
     store = _series_store(tmp_path)
@@ -420,7 +432,9 @@ def test_the_window_table_says_that_without_an_export_no_update_has_a_baseline(t
 def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_announced(tmp_path, monkeypatch):
     """ "Baseline in each file" with the export of the folder picked and no fallback. b and d are measured
     against the baseline they name; a against the copy the versions around it hold, and the app says it is
-    a probable baseline in the sidebar and under the title of the page; c, undecided, is not measured."""
+    a probable baseline in the sidebar and under the title of the page; c, undecided, is not measured, even
+    with a fallback, until the window's choice for it: a candidate (applied as chosen, alerted like a
+    probable baseline) or the fallback."""
     from pathlib import Path
 
     from streamlit.testing.v1 import AppTest
@@ -438,7 +452,7 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
     baseline_box(at, "bl_folder_file").select("export.xml")  # asked for without making it the fallback
     at.run()
     assert not at.exception, [e.value for e in at.exception]
-    assert at.session_state["fallback_choice"] == BL_NONE
+    assert at.session_state["bl_fallback"] == BL_NONE
 
     used, said_on_the_page = {}, {}
     at = at.switch_page("views/health.py").run()
@@ -481,13 +495,47 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
     errors = [e.value.replace("\\", "") for e in at.sidebar.error]
     assert any(text.startswith("P6 Project Baseline missing for 2 updates of 4") for text in errors), errors
 
-    # with the export as the fallback too, c alone falls back on it (baseline 401, named by the last update),
-    # and is the only update said to name another baseline than the one it is measured against
+    # with the export as the fallback too, c stays undecided: nothing is applied in its place
     baseline_box(at, "bl_fallback").select(BL_FILE)
     at.run()
     assert not at.exception, [e.value for e in at.exception]
+    assert _baseline_used(at, "2026-03-16") == "none"
+    assert not any("name another P6 Project Baseline" in w.value for w in at.sidebar.warning)
+    # the window offers c's candidates: the baselines of the versions around its project, and the fallback
+    choice = baseline_box(at, "bl_undecided:c.xer")
+    assert choice.options == [
+        "None: not measured",
+        "Baseline 201, held by version 200",
+        "Baseline 401, held by version 400",
+        "The fallback above",
+    ]
+    choice.select("401")
+    at.run()
+    assert _baseline_used(at, "2026-03-16").startswith(
+        "chosen in the window: baseline V400 - B1 of export.xml, held by version 400; the versions around"
+    )
+    assert any(w.value.startswith("Baseline of this update: chosen in the window") for w in at.main.warning)
+    assert any(
+        text.startswith("a.xer, c.xer: measured against a probable baseline") or "2 updates" in text
+        for text in (w.value.replace("\\", "") for w in at.sidebar.warning)
+    )
+    # the fallback, when chosen for it, applies to c alone: the one update said to name another baseline
+    baseline_box(at, "bl_undecided:c.xer").select("fallback")
+    at.run()
+    assert _baseline_used(at, "2026-03-16").startswith("fallback (separate baseline file): BL ")
     other = [w.value.replace("\\", "") for w in at.sidebar.warning if "name another P6 Project Baseline" in w.value]
-    assert len(other) == 1 and other[0].count(" update)") == 1, other  # one baseline named, by one update
+    assert len(other) == 1 and other[0].count(" update)") == 1, other
+
+
+def _baseline_used(at, stamp: str) -> str:
+    """The baseline the context banner's help names for the update of ``stamp``, shown on the Health page."""
+    picker = next(box for box in at.selectbox if box.key == "health_snap")
+    picker.select(next(option for option in picker.options if option.startswith(stamp)))
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    help_lines = at.button(key="context_banner").help.replace("\\", "").split("  \n")
+    line = next(line for line in help_lines if line.startswith(f"Baseline used for {stamp}"))
+    return line.split(": ", 1)[1]
 
 
 def test_each_baseline_of_the_export_is_read_once_for_the_pages_and_the_debug_table(tmp_path, monkeypatch):
@@ -1018,7 +1066,7 @@ def test_an_update_without_baseline_says_where_to_pick_one(tmp_path, monkeypatch
     )
     baseline_box(at, "bl_fallback").select("Separate baseline file")
     at.run()
-    assert any("upload the baseline XER" in element.value for element in at.info)
+    assert any("P6 XML export of the baselines" in element.value for element in at.info)
 
 
 @pytest.mark.parametrize("key", ["bl_choice", "bl_fallback"])

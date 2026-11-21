@@ -38,6 +38,16 @@ EV_BASES = {
     "at_completion_current": "At Completion values with current dates",
 }
 DEFAULT_EV_BASIS = "budgeted_planned"
+# How the baseline of an update relates to it (``Baseline.kind``), as the app chose it. Shown with every
+# result; "none" stands for no baseline. Only "in file" and "exact" are what P6 measured against.
+KIND_IN_FILE = "in file"  # the P6 Project Baseline held by the update's own file
+KIND_EXACT = "exact"  # the baseline the update names, read from the P6 XML export
+KIND_PROBABLE = "probable"  # a copy of the same generation, or the loaded update the pointer names
+KIND_CHOSEN = "chosen"  # one of the candidates of an undecided update, chosen in the window
+KIND_FALLBACK = "fallback"  # the window's "When a file has no baseline"
+KIND_PLANNED = "planned"  # the planned dates (target_*) of the update itself
+KIND_SERIES = "series"  # one baseline for every update: a separate file or a loaded update
+KIND_NONE = "none"
 
 
 def _frame(activities: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) -> pd.DataFrame:
@@ -118,6 +128,8 @@ class Baseline:
     ev_basis: str = DEFAULT_EV_BASIS
     is_planned: bool = False  # the planned dates (target_*) of the snapshot itself, no baseline file
     source: str = ""  # where it comes from, when the app chose it for an update (shown with every result)
+    kind: str = ""  # how it relates to the update (KIND_*), set by the app; "" when built outside it
+    found_by: str = ""  # what found it: a baseline_resolution constant, or the window's choice
     assignment_costs: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=ASSIGNMENT_COST_COLS))
 
     @classmethod

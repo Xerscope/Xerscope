@@ -135,11 +135,11 @@ def test_metric_result_runs_once_then_again_for_any_other_input(store, runs, cha
 
 def test_metric_result_runs_again_for_another_fallback(store, runs):
     at = _metric_app(store, BL_EACH)
-    at.session_state["fallback_choice"] = BL_PLANNED
+    at.session_state["bl_fallback"] = BL_PLANNED
     at.run()
     at.run()
     assert len(runs) == 1
-    at.session_state["fallback_choice"] = store.labels[0]
+    at.session_state["bl_fallback"] = store.labels[0]
     at.run()
     assert not at.exception and len(runs) == 2
 

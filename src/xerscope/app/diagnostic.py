@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from xerscope.analysis.audit import step_rows
-from xerscope.analysis.baseline import RENUMBERED_COLUMNS, Baseline, renumbered
+from xerscope.analysis.baseline import KIND_FALLBACK, RENUMBERED_COLUMNS, Baseline, renumbered
 from xerscope.analysis.cpm import ASSIGNMENT_FIELDS, FIELDS, Options, compare_assignments, compare_with_stored, schedule
 from xerscope.analysis.evm import (
     PV_P6_OPTIONAL,
@@ -414,7 +414,7 @@ def baseline_table(
         kind = "loaded update"
     else:
         kind = "separate file"
-    if baseline.source.startswith("fallback"):
+    if baseline.kind == KIND_FALLBACK:
         kind = f"fallback, {kind}"
     return pd.DataFrame(
         [

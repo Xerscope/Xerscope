@@ -8,13 +8,13 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, KIND_CHOSEN, KIND_PROBABLE
 from xerscope.analysis.baseline_resolution import resolutions as resolutions
 from xerscope.analysis.checks import run_metric as run_metric
 from xerscope.analysis.checks import run_standard as run_standard
 from xerscope.analysis.wbs import ROOT
 from xerscope.app import ui
-from xerscope.app.baselines import MATCH_WARN_BELOW, PROBABLE, _baseline_kind, _files_count
+from xerscope.app.baselines import MATCH_WARN_BELOW, _files_count, banner_kind, is_undecided
 from xerscope.app.baselines import MEMO_SIZE as MEMO_SIZE
 from xerscope.app.baselines import ScoreJob as ScoreJob
 from xerscope.app.baselines import _file_baseline as _file_baseline
@@ -85,7 +85,7 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
     codes = list(dict.fromkeys(update.project_code for update in store))
     projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
     baseline = baseline_for(snapshot)
-    kind = _baseline_kind(baseline)
+    kind = banner_kind(baseline)
     basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
     costs = "on" if costs_shown() else "off"
     label = (
@@ -110,7 +110,7 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
         on_click=_open_window,
         args=("files",),
     )
-    if baseline is not None and baseline.source.startswith(PROBABLE):
+    if baseline is not None and baseline.kind in (KIND_PROBABLE, KIND_CHOSEN):
         st.warning(f"Baseline of this update: {used}.", icon=":material/warning:")
 
 
@@ -122,6 +122,18 @@ def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = No
         st.caption(lead)
 
 
+def _what_to_do(snapshot: Snapshot) -> str:
+    """Return what measures an update of the per-file mode that has no baseline, for the page's note."""
+    if is_undecided(snapshot):
+        return "choose one of its candidate baselines, or the fallback, in the Baseline window"
+    if st.session_state.get("bl_fallback") == BL_FILE:
+        return (
+            "put the P6 XML export of the baselines next to the files, or upload it, "
+            "under 'When a file has no baseline'"
+        )
+    return "pick what applies instead under 'When a file has no baseline' (the sidebar's Baseline line)"
+
+
 def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: bool = False) -> None:
     """Show, under a page header, what is wrong with the baseline an update is measured against.
 
@@ -130,12 +142,9 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
     name = ui.md_text(snapshot.source)
     if baseline is None:
         if st.session_state.get("baseline") == BL_EACH:
-            todo = (
-                "upload the baseline XER under 'When a file has no baseline'"
-                if st.session_state.get("fallback_choice") == BL_FILE
-                else "pick what applies instead under 'When a file has no baseline' (the sidebar's Baseline line)"
+            st.info(
+                f"{name}: {ui.md_text(snapshot.file_baseline.text)}. To measure this update, {_what_to_do(snapshot)}."
             )
-            st.info(f"{name}: {ui.md_text(snapshot.file_baseline.text)}. To measure this update, {todo}.")
         return
     if series and st.session_state.get("baseline") == BL_EACH and len(st.session_state["store"]) > 1:
         st.caption(

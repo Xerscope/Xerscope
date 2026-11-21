@@ -48,6 +48,7 @@ DRAFTS = {
     "bl_folder_file": "draft_bl_folder_file",
     "guid_link": "draft_guid_link",
 }
+UNDECIDED_DRAFT = "draft_bl_undecided:"  # + file name: the choice for an undecided update (``bl_undecided``)
 
 
 def _project_draft(source: str) -> str:
@@ -62,11 +63,24 @@ def _open_window(section: str) -> None:
     # field's key in the session state with an empty value, which a default would not fill.
     source = st.session_state.get("files_source") or ("none",)
     st.session_state["files_folder"] = source[1] if source[0] == "folder" else os.environ.get("XERSCOPE_DATA", "")
+    _fill_drafts()
+    for snapshot in st.session_state.get("store") or ():
+        st.session_state[_project_draft(snapshot.source)] = snapshot.project_id
+
+
+def _fill_drafts() -> None:
+    """Copy the choices in force onto the window's drafts, the undecided updates' choices included."""
     for key, draft in DRAFTS.items():
         if key in st.session_state:
             st.session_state[draft] = st.session_state[key]
-    for snapshot in st.session_state.get("store") or ():
-        st.session_state[_project_draft(snapshot.source)] = snapshot.project_id
+    for name, choice in st.session_state.get("bl_undecided", {}).items():
+        st.session_state[UNDECIDED_DRAFT + name] = choice
+
+
+def _undecided_drafts() -> dict[str, str]:
+    """Return the choice drafted for each undecided update, by file name (``UNDECIDED_DRAFT`` keys)."""
+    drafts = {str(key): value for key, value in st.session_state.items() if str(key).startswith(UNDECIDED_DRAFT)}
+    return {key[len(UNDECIDED_DRAFT) :]: value for key, value in drafts.items()}
 
 
 def _apply_drafts() -> None:
@@ -78,6 +92,7 @@ def _apply_drafts() -> None:
     for key, draft in DRAFTS.items():
         if draft in st.session_state:
             st.session_state[key] = st.session_state[draft]
+    st.session_state["bl_undecided"] = _undecided_drafts()  # filled from the choices in force when the window opened
     for snapshot in st.session_state.get("store") or ():
         chosen = st.session_state.get(_project_draft(snapshot.source))
         if chosen is not None and chosen != snapshot.project_id:
