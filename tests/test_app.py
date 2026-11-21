@@ -806,7 +806,7 @@ def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_
     """The help says how the figure is calculated and which settings it is meant for; the settings carry
     the labels of the Baseline window."""
     from xerscope.analysis.baseline import DEFAULT_EV_BASIS
-    from xerscope.app import baselines, state
+    from xerscope.app import baseline_window, state
 
     app.switch_page("views/earned_value.py").run()
     _ok(app)
@@ -814,7 +814,7 @@ def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_
     assert "Σ ΔEV / Σ ΔPV" in card.help and "1,260 h were earned for 1,520 planned: 0.83" in card.help
     for label in (state.BL_EACH, state.EV_BASIS_LABEL[DEFAULT_EV_BASIS], state.BL_NONE):
         assert f"*{label}*" in card.help
-    window_source = Path(baselines.__file__).read_text(encoding="utf-8")
+    window_source = Path(baseline_window.__file__).read_text(encoding="utf-8")  # the window's Baseline section
     for field in (
         "Baseline (BL)",
         "Earned value basis",
@@ -1367,16 +1367,16 @@ def test_the_window_reopened_after_esc_shows_the_folder_and_its_files(sample_dir
 
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
     """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
-    from xerscope.app import baselines
+    from xerscope.app import session
 
     calls = []
-    real = baselines.load_snapshot
+    real = session.load_snapshot  # the session's parse cache calls it
 
     def counting(data, **kwargs):
         calls.append(kwargs.get("name"))
         return real(data, **kwargs)
 
-    monkeypatch.setattr(baselines, "load_snapshot", counting)
+    monkeypatch.setattr(session, "load_snapshot", counting)
     first = _run(sample_dir, monkeypatch)
     _ok(first)
     parsed_once = len(calls)

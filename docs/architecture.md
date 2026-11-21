@@ -271,7 +271,30 @@ Outside `analysis/`:
 
 - **`streamlit_app.py`:** declares the pages (`st.navigation`); the Debug page is left out on a
   locked deployment unless `XERSCOPE_DEBUG_PAGE=1` (`state.debug_page`).
-- **`state.py`:** the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
+- **`baselines.py`:** which baseline each update is measured against, as the session chose it:
+  `baseline_for` (cached per data set), the paths that build the `Baseline` of one update (its file's,
+  the one resolved from the export, the one chosen for an undecided update, the fallback, the planned
+  dates, one baseline for the series), each setting `kind` and `found_by`; `kind_of`, the one
+  classifier; `data_identity` and `_baseline_identity` for the cache keys. Draws nothing.
+- **`baseline_file.py`:** the separate baseline file: picked in the folder, uploaded, or named by
+  `XERSCOPE_BASELINE`; `baseline_items` and `baseline_files_tag` for the downloads and the cache keys.
+- **`baseline_export.py`:** the P6 XML export in use: its index, what the resolution reads of it
+  (`export_contents`), the resolution of each update (`_resolution`, cached for the series), the
+  baselines read from it (`_export_baseline`, one read per baseline and basis) and the candidates of an
+  undecided update.
+- **`baseline_window.py`:** the window's Baseline section: the choices it offers and their names
+  (`_baseline_options`, `_baseline_short`, `banner_kind`), the fallback and the choice of each undecided
+  update, the per-file table.
+- **`baseline_warnings.py`:** the sidebar's Baseline line (`_baseline_picker`) and what the sidebar says
+  about the baseline in use: probable or chosen baselines, undecided updates, pointers not used, a series
+  that mixes sources, the Project Baselines the files name but do not hold, the renumbered tasks.
+- **`cache.py`:** the session's caches of what the pages compute: `memo` (keyed on `data_identity`),
+  `metric_result` and the standard results, `ScoreJob`.
+- **`session.py`:** the leaf the others read: the window's modes (`BL_*`) and drafts, the parse cache
+  (`_parse`, `_pmxml_index`), the digests, `_cache_for`, the locked deployment.
+- **`state.py`:** the page-level pieces (context banner, page header, `baseline_warnings`, pickers,
+  `require_store`) and, as a transition, the re-exports of every name the pages still import from it;
+  the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
   `_window`: files read on Done, baseline selectors kept in session state while it is closed;
   shortcuts F, B and Ctrl+Enter for Done), pickers, a per-session cache keyed on the loaded
   files, and the list of standards (built-in, `XERSCOPE_STANDARDS`, uploaded). One update for

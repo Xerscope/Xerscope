@@ -253,11 +253,12 @@ def test_empty_store_is_refused_or_consistent():
 
 @pytest.fixture
 def session(monkeypatch):
-    """baselines.py talking to a plain dict instead of st.session_state (no Streamlit runtime)."""
-    from xerscope.app import baselines
+    """The session modules talking to a plain dict instead of st.session_state (no Streamlit runtime)."""
+    from xerscope.app import baseline_export, baseline_file, baselines, cache, session
 
     fake = types.SimpleNamespace(session_state={})
-    monkeypatch.setattr(baselines, "st", fake)
+    for module in (baselines, baseline_export, baseline_file, cache, session):
+        monkeypatch.setattr(module, "st", fake)
     return fake.session_state
 
 
@@ -294,6 +295,31 @@ def test_no_process_wide_cache_in_state_module():
         if isinstance(value, (dict, list, set)) and not name.isupper() and not name.startswith("__")
     ]
     assert growing == []
+
+
+def test_no_process_wide_cache_in_the_split_modules():
+    """The same, in the modules the baseline domain and the caches were split into: two sessions never share."""
+    import inspect
+
+    from xerscope.app import (
+        baseline_export,
+        baseline_file,
+        baseline_warnings,
+        baseline_window,
+        baselines,
+        cache,
+        session,
+    )
+
+    for module in (baselines, baseline_file, baseline_export, baseline_window, baseline_warnings, cache, session):
+        source = inspect.getsource(module)
+        assert "cache_data" not in source and "cache_resource" not in source, module.__name__
+        growing = [
+            name
+            for name, value in vars(module).items()
+            if isinstance(value, (dict, list, set)) and not name.isupper() and not name.startswith("__")
+        ]
+        assert growing == [], module.__name__
 
 
 # --- export ------------------------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.baselines import _baseline_fields, _project_labels
+from xerscope.app.baseline_window import _baseline_fields
 from xerscope.app.session import (
     BASELINE_ALONE,
     BASELINE_ASKED,
@@ -28,7 +28,7 @@ from xerscope.app.session import (
     folder_under_root,
 )
 from xerscope.store import SnapshotStore
-from xerscope.xer import FileHeader, XerError, baseline_copies, load_header, xer_files
+from xerscope.xer import FileHeader, Snapshot, XerError, baseline_copies, load_header, xer_files
 from xerscope.xer.model import HEADER_TABLES, project_counts_text, read_header
 from xerscope.xer.parser import parse_bytes
 
@@ -346,3 +346,20 @@ def _window(store: SnapshotStore | None) -> None:
             is_done = st.button("Done", type="primary", key="files_done", shortcut="Ctrl+Enter", disabled=clash)
         if is_done:
             _on_done(choice, store)
+
+
+def _project_labels(snapshot: Snapshot) -> dict[str, str]:
+    """Return the projects of ``snapshot``'s file that own activities, by proj_id, in file order.
+
+    Code, data date, activities and, for a baseline copy, the project it is the baseline of.
+    """
+    table = snapshot.file_projects
+    codes = dict(zip(table["proj_id"], table["proj_short_name"], strict=True))
+    copies = baseline_copies(table)
+    labels = {}
+    for _, row in table[table["tasks"] > 0].iterrows():
+        label = f"{row['proj_short_name']} · {ui.fmt_date(row['data_date'])} · {row['tasks']} tasks"
+        if row["proj_id"] in copies:
+            label += f" · baseline of {codes[copies[row['proj_id']]]}"
+        labels[row["proj_id"]] = label
+    return labels

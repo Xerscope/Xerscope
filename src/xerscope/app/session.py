@@ -11,8 +11,8 @@ import streamlit as st
 
 from xerscope.app import ui
 from xerscope.store import SnapshotStore
-from xerscope.xer import XER_SUFFIXES
-from xerscope.xer.pmxml import DiskFile
+from xerscope.xer import XER_SUFFIXES, Snapshot, is_pmxml, load_snapshot
+from xerscope.xer.pmxml import DiskFile, PmxmlIndex, index_pmxml
 
 # Streamlit wants extensions without the dot.
 UPLOAD_TYPES = [suffix.lstrip(".") for suffix in XER_SUFFIXES]
@@ -250,3 +250,43 @@ ANONYMISED = " · anonymized"  # suffix of an anonymized download's label
 
 
 PREPARE_LABEL = "Prepare anonymized downloads"
+
+
+def _cache_for(slot: str, identity: tuple) -> dict:
+    """Return the session's cache ``slot`` for ``identity``, emptied when the identity moved since the last call."""
+    held_for, cache = st.session_state.get(slot, (None, {}))
+    if held_for != identity:
+        cache = {}
+    st.session_state[slot] = (identity, cache)
+    return cache
+
+
+def _parse(name: str, data: bytes | DiskFile, project_id: str | None = None) -> Snapshot:
+    """Parse once per session, keyed on content.
+
+    The cache lives in the session's state, never in a process-wide cache: when the session ends
+    (server.disconnectedSessionTTL after the tab closes), nothing of the files it read stays in the
+    server.
+    """
+    cache = st.session_state.setdefault("_parsed", {})
+    key = (name, _digest(data), project_id)
+    if key not in cache:
+        if len(cache) > 64:
+            cache.clear()
+        index = _pmxml_index(name, data) if is_pmxml(data) else None
+        cache[key] = load_snapshot(data, name=name, project_id=project_id, pmxml_index=index)
+    return cache[key]
+
+
+def _pmxml_index(name: str, data: bytes | DiskFile) -> PmxmlIndex:
+    """Return the index of a P6 XML file, made once per content.
+
+    The sidebar asks which baselines the file holds on every rerun, and each baseline read from it starts
+    from the index. Keyed on the bytes it was made from, since its positions are theirs alone.
+    """
+    cache = st.session_state.setdefault("_pmxml_index", {})
+    key = (name, _digest(data))
+    if key not in cache:
+        cache.clear()  # one baseline file at a time
+        cache[key] = index_pmxml(data, name)
+    return cache[key]

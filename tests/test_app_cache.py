@@ -14,7 +14,7 @@ import xerscope
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, health_history
 from xerscope.analysis import baseline as analysis_baseline
 from xerscope.analysis.checks import run_metric
-from xerscope.app import baselines, diagnostic, loading, session, state
+from xerscope.app import baseline_file, baseline_warnings, cache, diagnostic, loading, session, state
 from xerscope.app.state import BL_EACH, BL_PLANNED
 from xerscope.store import SnapshotStore
 
@@ -27,13 +27,13 @@ HIGH_DURATION = builtin_standards()["DCMA"]["DCMA-08"]  # reads the baseline, ha
 def runs(monkeypatch):
     """Every metric the app computes: (standard, metric id, file)."""
     calls = []
-    original = baselines.run_metric
+    original = cache.run_metric  # the module whose metric_result calls it
 
     def counting(metric, context):
         calls.append((metric.standard, metric.id, context.snapshot.source))
         return original(metric, context)
 
-    monkeypatch.setattr(baselines, "run_metric", counting)
+    monkeypatch.setattr(cache, "run_metric", counting)
     return calls
 
 
@@ -258,7 +258,7 @@ def test_audit_computes_a_check_with_other_settings_once(app, store, monkeypatch
         return original(metric, context)
 
     monkeypatch.setattr(checks, "run_metric", counting)  # the name the Audit page imports
-    monkeypatch.setattr(baselines, "run_metric", counting)  # the name the session's cache calls
+    monkeypatch.setattr(cache, "run_metric", counting)  # the name the session's cache calls
     app.switch_page("views/audit.py").run()
     app.get("button_group")[0].set_value("P6").run()
     app.selectbox(key="audit_check:P6").set_value("P6-04").run()
@@ -459,13 +459,13 @@ def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sampl
     shutil.copy2(week1, folder / "a.xer")
     shutil.copy2(week2, folder / "b.xer")
     parsed = []
-    original = baselines.load_snapshot
+    original = session.load_snapshot
 
     def counting(data, *args, name=None, **kwargs):
         parsed.append(name)
         return original(data, *args, name=name, **kwargs)
 
-    monkeypatch.setattr(baselines, "load_snapshot", counting)
+    monkeypatch.setattr(session, "load_snapshot", counting)
     monkeypatch.setenv("XERSCOPE_DATA", str(folder))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
@@ -626,9 +626,9 @@ def builds(monkeypatch):
 
     counting(Baseline, "from_snapshot", "Baseline.from_snapshot")
     counting(Baseline, "planned", "Baseline.planned")
-    for module in (analysis_baseline, baselines, diagnostic):
+    for module in (analysis_baseline, baseline_warnings, diagnostic):  # the sidebar notice reads renumbered
         counting(module, "renumbered", "renumbered")
-    counting(baselines, "pmxml_files", "folder listings")
+    counting(baseline_file, "pmxml_files", "folder listings")
     return counts
 
 

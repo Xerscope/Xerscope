@@ -10,11 +10,12 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis import Baseline
 from xerscope.anonymize import Anonymizer, LeakError
-from xerscope.app.baselines import anonymous_exports, baseline_files_tag, baseline_items
+from xerscope.app.baseline_file import baseline_files_tag, baseline_items
 from xerscope.app.session import ANONYMISED, PREPARE_LABEL
 from xerscope.export import csv_bytes
-from xerscope.xer import RawXer, is_pmxml
+from xerscope.xer import RawXer, Snapshot, is_pmxml
 from xerscope.xer.parser import parse_bytes
 from xerscope.xer.pmxml import DiskFile, index_pmxml, read_pmxml_baseline
 
@@ -278,3 +279,21 @@ def csv_download(
         key=key,
         sources=sources,
     )
+
+
+def anonymous_exports(session: MutableMapping | None = None) -> bool:
+    """Return the sidebar switch: downloads anonymized (default) or in the files' own names."""
+    session = st.session_state if session is None else session
+    return session.get("anon_exports", True)
+
+
+def costs_shown(session: MutableMapping | None = None) -> bool:
+    """Return the sidebar checkbox: cost figures on Earned value (default off, the schedules are sourced in hours)."""
+    session = st.session_state if session is None else session
+    return bool(session.get("costs", False))
+
+
+def sources_of(*snapshots: Snapshot | None, baseline: Baseline | None = None) -> list[str]:
+    """Return the files a download is made from: the updates shown and the baseline's file."""
+    found = [snapshot.source for snapshot in snapshots if snapshot is not None]
+    return found + ([baseline.snapshot.source] if baseline is not None else [])

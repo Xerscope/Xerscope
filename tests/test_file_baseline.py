@@ -1247,11 +1247,11 @@ def _app_on_series_and_export(tmp_path, monkeypatch, exports=("export.xml",), se
     from streamlit.testing.v1 import AppTest
 
     import xerscope
-    from xerscope.app import baselines
+    from xerscope.app import baseline_export
     from xerscope.xer.pmxml import read_pmxml_baseline
 
     calls = {"resolutions": 0, "reads": {}}
-    real_resolutions = baselines.resolutions
+    real_resolutions = baseline_export.resolutions  # the module whose _resolution calls it
 
     def counted_resolutions(store, export):
         calls["resolutions"] += 1
@@ -1261,7 +1261,7 @@ def _app_on_series_and_export(tmp_path, monkeypatch, exports=("export.xml",), se
         calls["reads"][baseline_id] = calls["reads"].get(baseline_id, 0) + 1
         return read_pmxml_baseline(data, source, baseline_id, index)
 
-    monkeypatch.setattr(baselines, "resolutions", counted_resolutions)
+    monkeypatch.setattr(baseline_export, "resolutions", counted_resolutions)
     monkeypatch.setattr("xerscope.xer.read_pmxml_baseline", counted_read)  # the name load_snapshot calls
     _series_and_export(tmp_path)
     for name in exports[1:]:

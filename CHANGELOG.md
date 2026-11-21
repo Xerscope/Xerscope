@@ -80,6 +80,15 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Changed
 
+- `app/baselines.py` (1 338 lines) cut by responsibility, no behaviour changed (`scripts/same_code.py`:
+  same code): `app/baseline_file.py` (the separate baseline file), `app/baseline_export.py` (the P6 XML
+  export in use and the resolution), `app/baselines.py` (`baseline_for` and the paths that build the
+  Baseline of an update), `app/baseline_window.py` (the window's Baseline section),
+  `app/baseline_warnings.py` (the sidebar's Baseline line and its warnings), `app/cache.py` (`memo`,
+  the checks' results, the score job); the parse cache and `_cache_for` in `app/session.py`, the exports
+  and `costs_shown` in `app/downloads.py`. Dependencies run one way, no cycle; `state.py` keeps its
+  re-exports; the tests patch the module that calls the patched name.
+
 - Funnel stack, CVE-2026-97054 (Go `net/http`, fixed in Go 1.27.4): `tailscale/tailscale`
   v1.104.4 → v1.104.7 (Go 1.27.4); `deploy/caddy/Dockerfile` on Caddy 2.11.9 (its builder holds
   Go 1.27.4, the build checks it), x/net replaced by v0.63.0, the go-jose/v4 replace dropped (2.11.9 requires the
