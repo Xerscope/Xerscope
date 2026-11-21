@@ -293,7 +293,7 @@ HIDDEN = {"total_float_hr_cnt"}  # stored P6 units, kept in exports but not show
 MISSING = "–"  # written for a value that is not there: a date, a number, a cell of a table
 
 
-_MD_SPECIAL = str.maketrans({c: "\\" + c for c in "\\`*_{}[]()#+-.!|<>~$"})
+_MD_SPECIAL = str.maketrans({character: "\\" + character for character in "\\`*_{}[]()#+-.!|<>~$"})
 
 
 def fmt_date(timestamp, missing: str = MISSING) -> str:
@@ -338,13 +338,13 @@ def blank_missing(frame: pd.DataFrame, missing: str = MISSING) -> pd.DataFrame:
     return frame if out is None else out
 
 
-def chart(fig, **kwargs) -> None:
+def chart(figure, **kwargs) -> None:
     """A Plotly figure in the house style: no mode bar (it stays on screen on a touch screen), the
     hover text in the theme's text colour (Streamlit's Plotly theme fades it to 3.5:1)."""
     theme = getattr(st.context.theme, "type", None) or "light"
-    fig.update_layout(hoverlabel=dict(font=dict(color=TEXT.get(theme, TEXT["light"]))))
+    figure.update_layout(hoverlabel=dict(font=dict(color=TEXT.get(theme, TEXT["light"]))))
     kwargs.setdefault("width", "stretch")
-    st.plotly_chart(fig, config={"displayModeBar": False}, **kwargs)
+    st.plotly_chart(figure, config={"displayModeBar": False}, **kwargs)
 
 
 def table_height(rows: int, max_height: int) -> int:
@@ -550,6 +550,22 @@ def _column_for(label: str, kind: str, values: pd.Series):
     if kind == "wide":
         return st.column_config.TextColumn(label, width="medium", help=help_)
     return st.column_config.TextColumn(label, help=help_)
+
+
+def number_columns(kind: str, *names: str, **labels: str) -> dict:
+    """Return the ``overrides`` of ``table`` that write columns in the ``kind`` format of NUMBER_FORMATS.
+
+    A column of ``names`` is labelled with its field name; ``labels`` gives column=label for the others.
+    """
+    labelled = {**{name: name for name in names}, **labels}
+    return {
+        column: st.column_config.NumberColumn(label, format=NUMBER_FORMATS[kind]) for column, label in labelled.items()
+    }
+
+
+def count_columns(*names: str, **labels: str) -> dict:
+    """Return the ``overrides`` of ``table`` that write whole-number columns as counts (see ``number_columns``)."""
+    return number_columns("int", *names, **labels)
 
 
 def column_config(frame: pd.DataFrame, overrides: dict | None = None, raw_labels: bool = False) -> dict:

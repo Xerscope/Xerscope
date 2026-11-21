@@ -137,6 +137,13 @@ def test_gantt_page_colours_and_font_follow_the_theme_in_the_browser():
     assert "#" not in css.split("#gantt {", 1)[1].split("}", 1)[0]  # no colour written in the root rule
 
 
+def test_gantt_row_height_comes_from_the_payload_not_from_the_script_or_the_stylesheet():
+    """viz.gantt owns the row height: the script writes ``--row`` from the payload and the stylesheet reads it."""
+    css, script = gantt_assets()["css"], gantt_assets()["js"]
+    assert "26px" not in css and "var(--row)" in css
+    assert "const ROW =" not in script and 'setProperty("--row", D.rowPx + "px")' in script
+
+
 def test_marks_reach_3_to_1_on_both_themes():
     # One set for both themes (WCAG 2.2 SC 1.4.11, non-text contrast): lines, markers, bars and the
     # reference lines read on every page background, so nothing needs redrawing on a theme switch.

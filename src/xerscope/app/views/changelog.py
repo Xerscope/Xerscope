@@ -50,7 +50,7 @@ def show_categories(counts: pd.DataFrame) -> None:
         category_totals(counts),
         key="changelog_categories",
         overrides={
-            "total": st.column_config.NumberColumn("Changes", format="%d"),
+            **ui.count_columns(total="Changes"),
             "kinds": st.column_config.TextColumn("Kinds of change", width="large"),
         },
     )

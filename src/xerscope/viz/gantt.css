@@ -32,18 +32,18 @@
 .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--axis); border-radius: 4px; }
 .head { position: sticky; top: 0; z-index: 3; display: flex; background: var(--band); border-bottom: 1px solid var(--axis); }
 .ghead { display: grid; width: var(--grid-w); flex: none; border-right: 1px solid var(--axis); }
-.ghead div { padding: 0 8px; align-self: end; height: 26px; line-height: 26px; color: var(--secondary); font-weight: 600; white-space: nowrap; }
+.ghead div { padding: 0 8px; align-self: end; height: var(--row); line-height: var(--row); color: var(--secondary); font-weight: 600; white-space: nowrap; }
 .ghead div + div { text-align: right; }
 .cols { grid-template-columns: 1fr 44px 58px; }
 .scale { position: relative; flex: 1; height: 52px; overflow: hidden; }
-.scale .tick { position: absolute; color: var(--secondary); white-space: nowrap; padding-left: 4px; border-left: 1px solid var(--axis); height: 26px; line-height: 26px; }
-.scale .tier2 { top: 26px; font-size: 12px; }
+.scale .tick { position: absolute; color: var(--secondary); white-space: nowrap; padding-left: 4px; border-left: 1px solid var(--axis); height: var(--row); line-height: var(--row); }
+.scale .tier2 { top: var(--row); font-size: 12px; }
 
 .body { display: flex; position: relative; }
 .gcol { width: var(--grid-w); flex: none; position: relative; border-right: 1px solid var(--axis); }
 .layer { position: absolute; left: 0; top: 0; right: 0; }
 .tcol { flex: 1; position: relative; overflow: hidden; }
-.row, .trow { height: 26px; }
+.row, .trow { height: var(--row); }
 .row { position: absolute; left: 0; right: 0; display: grid; align-items: center; border-bottom: 1px solid var(--grid); cursor: default; }
 .row > div { padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }

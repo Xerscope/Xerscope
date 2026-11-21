@@ -12,8 +12,9 @@ from streamlit.testing.v1 import AppTest
 
 import xerscope
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, health_history
+from xerscope.analysis import baseline as analysis_baseline
 from xerscope.analysis.checks import run_metric
-from xerscope.app import state
+from xerscope.app import baselines, diagnostic, loading, session, state
 from xerscope.app.state import BL_EACH, BL_PLANNED
 from xerscope.store import SnapshotStore
 
@@ -26,13 +27,13 @@ HIGH_DURATION = builtin_standards()["DCMA"]["DCMA-08"]  # reads the baseline, ha
 def runs(monkeypatch):
     """Every metric the app computes: (standard, metric id, file)."""
     calls = []
-    original = state.run_metric
+    original = baselines.run_metric
 
     def counting(metric, context):
         calls.append((metric.standard, metric.id, context.snapshot.source))
         return original(metric, context)
 
-    monkeypatch.setattr(state, "run_metric", counting)
+    monkeypatch.setattr(baselines, "run_metric", counting)
     return calls
 
 
@@ -257,7 +258,7 @@ def test_audit_computes_a_check_with_other_settings_once(app, store, monkeypatch
         return original(metric, context)
 
     monkeypatch.setattr(checks, "run_metric", counting)  # the name the Audit page imports
-    monkeypatch.setattr(state, "run_metric", counting)  # the name the session's cache calls
+    monkeypatch.setattr(baselines, "run_metric", counting)  # the name the session's cache calls
     app.switch_page("views/audit.py").run()
     app.get("button_group")[0].set_value("P6").run()
     app.selectbox(key="audit_check:P6").set_value("P6-04").run()
@@ -367,8 +368,12 @@ def test_another_ev_basis_withdraws_the_diagnostic_built_before(app):
 @pytest.mark.parametrize("page", ["ppc", "changelog", "export"])
 def test_pages_that_read_no_baseline_are_not_recomputed_for_another(app, store, page):
     app.switch_page(f"views/{page}.py").run()
-    # the sidebar's renumbered notice is the one entry that follows the baseline on every page
-    entries = lambda: {key for key in app.session_state["_memo"] if key[-1] != "renumbered"}  # noqa: E731
+
+    def entries():
+        # the sidebar's renumbered notice follows the baseline on every page; so does the progress of the
+        # activities, which Percent plan complete measures against it
+        return {key for key in app.session_state["_memo"] if key[-1] != "renumbered" and "ppc_progress" not in key}
+
     before = entries()
     assert before
     baseline_box(app).set_value(store.labels[1])
@@ -454,13 +459,13 @@ def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sampl
     shutil.copy2(week1, folder / "a.xer")
     shutil.copy2(week2, folder / "b.xer")
     parsed = []
-    original = state.load_snapshot
+    original = baselines.load_snapshot
 
     def counting(data, *args, name=None, **kwargs):
         parsed.append(name)
         return original(data, *args, name=name, **kwargs)
 
-    monkeypatch.setattr(state, "load_snapshot", counting)
+    monkeypatch.setattr(baselines, "load_snapshot", counting)
     monkeypatch.setenv("XERSCOPE_DATA", str(folder))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
@@ -600,3 +605,140 @@ def test_ticking_the_guid_link_gives_the_checks_of_the_linked_baseline():
     fresh = run_metric(missed, AnalysisContext(update, store, relinked(baseline, update)))
     assert not at.exception and at.session_state["denominator"] == fresh.denominator == 2
     assert at.session_state["identity"] != unlinked
+
+
+# --- no baseline built again by a rerun -----------------------------------------------------------------
+
+
+@pytest.fixture
+def builds(monkeypatch):
+    """How often the app builds a baseline, looks tasks up by GUID or lists the baseline folder."""
+    counts = Counter()
+
+    def counting(owner, name, label):
+        original = getattr(owner, name)
+
+        def counted(*arguments, **keywords):
+            counts[label] += 1
+            return original(*arguments, **keywords)
+
+        monkeypatch.setattr(owner, name, counted)
+
+    counting(Baseline, "from_snapshot", "Baseline.from_snapshot")
+    counting(Baseline, "planned", "Baseline.planned")
+    for module in (analysis_baseline, baselines, diagnostic):
+        counting(module, "renumbered", "renumbered")
+    counting(baselines, "pmxml_files", "folder listings")
+    return counts
+
+
+def _rebuilt_by_a_rerun(at, builds, page: str) -> dict[str, int]:
+    at.switch_page(f"views/{page}.py").run()
+    builds.clear()
+    at.run()
+    assert not at.exception
+    return dict(builds)
+
+
+@pytest.mark.parametrize("page", ["overview", "gantt", "health", "debug", "ppc", "earned_value"])
+@pytest.mark.parametrize("choice", ["loaded update", "planned dates, renumbered tasks linked"])
+def test_a_rerun_with_nothing_changed_builds_no_baseline_and_lists_the_folder_once(app, builds, page, choice):
+    if choice != "loaded update":
+        app.session_state["bl_choice"] = BL_PLANNED
+        app.session_state["guid_link"] = True
+        app.run()
+    assert _rebuilt_by_a_rerun(app, builds, page) == {"folder listings": 1}
+
+
+def test_a_check_asks_for_the_baseline_only_when_it_is_computed(app, builds):
+    """Health reads twenty cached results: none builds the context they were computed from."""
+    app.session_state["bl_choice"] = BL_PLANNED
+    app.session_state["guid_link"] = True
+    app.run()
+    app.switch_page("views/health.py").run()
+    builds.clear()
+    app.toggle(key="health_expand").set_value(True).run()
+    assert not app.exception
+    assert "Baseline.planned" not in builds and "renumbered" not in builds
+
+
+def test_another_baseline_is_built_once_and_the_pages_follow_it(app, builds, store):
+    app.switch_page("views/health.py").run()
+    before = app.session_state["_baselines_for"]
+    builds.clear()
+    app.session_state["bl_choice"] = store.labels[2]
+    app.run()
+    app.run()
+    assert not app.exception
+    assert builds["Baseline.from_snapshot"] == 1  # the sidebar's, shared by the two runs
+    assert app.session_state["_baselines_for"] != before
+    (baseline,) = {value.label for key, value in app.session_state["_baselines_for"][1].items() if key[1] is False}
+    assert baseline == Baseline.from_snapshot(store.by_label(store.labels[2]), "budgeted_planned").label
+
+
+def _upload_script():
+    import types
+
+    import streamlit as st
+
+    from xerscope.app.session import _apply_drafts, _digest
+
+    data = st.session_state["contents"]
+    st.session_state["bl_upload"] = types.SimpleNamespace(name="bl.xer", getvalue=lambda: data)
+    _apply_drafts()
+    st.session_state["held"] = _digest(st.session_state["bl_file"][1])
+    st.session_state["held_again"] = _digest(st.session_state["bl_file"][1])
+    st.session_state["other"] = _digest(b"another file")
+
+
+def test_the_digest_of_the_uploaded_baseline_is_computed_once_when_it_is_held(monkeypatch):
+    import hashlib
+
+    hashed = []
+    real = hashlib.sha256
+    monkeypatch.setattr(session.hashlib, "sha256", lambda data=b"": hashed.append(data) or real(data))
+    at = AppTest.from_function(_upload_script, default_timeout=120)
+    at.session_state["contents"] = b"the baseline"
+    at.run()
+    assert not at.exception
+    assert at.session_state["held"] == at.session_state["held_again"] == real(b"the baseline").hexdigest()
+    assert at.session_state["other"] == real(b"another file").hexdigest()
+    assert hashed == [b"the baseline", b"another file"]  # the baseline once, not again for each call
+
+
+# --- the files a series change leaves as they were are not read again -----------------------------------
+
+
+def test_a_series_change_reads_only_the_files_the_session_has_not_parsed(sample_dir, monkeypatch):
+    from conftest import file_boxes, files_done, open_files
+
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    asked = []
+    original = loading.read_updates
+
+    def recording(items, *arguments, **keywords):
+        asked.append([name for name, _ in items])
+        return original(items, *arguments, **keywords)
+
+    monkeypatch.setattr(loading, "read_updates", recording)
+
+    def join_and_collect(at):
+        job = at.session_state["_load_job"]  # None when the run already collected a job with nothing to read
+        if job is not None:
+            job.thread.join(timeout=300)
+        return at.run()
+
+    at = join_and_collect(read_folder(AppTest.from_file(APP, default_timeout=300).run()))
+    names = sorted(path.name for path in sample_dir.glob("*.xer"))
+    assert sorted(asked[0]) == names and len(at.session_state["store"]) == len(names)
+    open_files(at)
+    file_boxes(at)[-1].uncheck()  # the files left are all parsed
+    at = join_and_collect(files_done(at))
+    assert asked[1] == [] and len(at.session_state["store"]) == len(names) - 1
+    open_files(at)
+    file_boxes(at)[-1].check()  # the one dropped from the cache when the series was read again
+    at = join_and_collect(files_done(at))
+    assert [sorted(read) for read in asked[2:]] == [[names[-1]]]
+    assert not at.exception and len(at.session_state["store"]) == len(names)

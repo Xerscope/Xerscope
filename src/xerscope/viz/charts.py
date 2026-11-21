@@ -30,6 +30,7 @@ ACCENT = {"light": "#1d6a73", "dark": "#6cc0c9"}
 TEXT = {"light": "#1c1917", "dark": "#ece9e4"}
 MIN_DATE_SPAN = pd.Timedelta(days=14)  # a date axis narrower than this is widened by DATE_PAD each side
 DATE_PAD = pd.Timedelta(days=7)
+DAY = "%Y-%m-%d"  # a date written to the day, in the labels pandas and Python build
 LINE = 1.5  # data line width, px
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
@@ -152,34 +153,26 @@ def build_scurve(
     update_scale = 100 / updates["bac_hr"].where(updates["bac_hr"] > 0) if percent else 1.0
     unit = "% of BAC" if percent else "labor hours"
     figure = go.Figure()
+    figure.add_trace(_series_trace(curve["date"], curve["pv_cum_hr"] * curve_scale, "PV (baseline)", SERIES[0]))
     figure.add_trace(
-        go.Scatter(
-            x=curve["date"],
-            y=curve["pv_cum_hr"] * curve_scale,
-            mode="lines",
-            name="PV (baseline)",
-            line=dict(color=SERIES[0], width=LINE),
-        )
-    )
-    figure.add_trace(
-        go.Scatter(
-            x=updates["data_date"],
-            y=updates["ev_hr"] * update_scale,
+        _series_trace(
+            updates["data_date"],
+            updates["ev_hr"] * update_scale,
+            "EV (earned)",
+            SERIES[1],
             mode="lines+markers",
-            name="EV (earned)",
-            line=dict(color=SERIES[1], width=LINE),
             marker=dict(size=8),
             customdata=(updates["sv_hr"] * update_scale).to_frame().to_numpy(),
             hovertemplate="%{y:,.1f}  (SV %{customdata[0]:+,.1f})",
         )
     )
     figure.add_trace(
-        go.Scatter(
-            x=updates["data_date"],
-            y=updates["ac_hr"] * update_scale,
+        _series_trace(
+            updates["data_date"],
+            updates["ac_hr"] * update_scale,
+            "AC (actual)",
+            SERIES[2],
             mode="lines+markers",
-            name="AC (actual)",
-            line=dict(color=SERIES[2], width=LINE),
             marker=dict(size=8, symbol="square"),
         )
     )
@@ -205,6 +198,11 @@ def build_scurve(
     _mark_data_date(figure, data_date)
     figure.update_traces(hovertemplate="%{y:,.1f}", selector=lambda trace: trace.name != "EV (earned)")
     return _with_house_style(figure, 500, unit)
+
+
+def _series_trace(x, y, name: str, colour: str, mode: str = "lines", **properties) -> go.Scatter:
+    """A solid line in one series colour; ``properties`` are the trace's own (marker, hover)."""
+    return go.Scatter(x=x, y=y, mode=mode, name=name, line=dict(color=colour, width=LINE), **properties)
 
 
 def _add_schedule_variance(
@@ -329,26 +327,13 @@ def build_mta(
         line_colour = SERIES[order.index(code) % len(SERIES)]
         shift_wd = last_shift_wd.get(code, 0.0)
         # the colour of the last move: later is red, earlier green, none when the date did not move
-        move_colour = STATUS["critical"] if shift_wd < 0 else STATUS["good"] if shift_wd > 0 else None
+        move_colour = None
+        if shift_wd < 0:
+            move_colour = STATUS["critical"]
+        elif shift_wd > 0:
+            move_colour = STATUS["good"]
         drawn = rows.loc[: rows["forecast"].last_valid_index()]  # blank forecast = hidden update: the line breaks
-        earlier_points = len(drawn) - 1
-        figure.add_trace(
-            go.Scatter(
-                x=drawn["data_date"],
-                y=drawn["forecast"].astype(object).where(drawn["forecast"].notna(), None),
-                mode="lines+markers",
-                name=f"{code} {drawn['task_name'].iloc[-1]}",
-                line=dict(color=line_colour, width=LINE),
-                marker=dict(
-                    # the last point bigger when it moved: red / orange series stay apart
-                    size=[9] * earlier_points + [13 if move_colour else 9],
-                    symbol=["diamond" if is_complete else "circle" for is_complete in drawn["is_complete"].to_numpy()],
-                    color=[line_colour] * earlier_points + [move_colour or line_colour],
-                ),
-                hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
-                cliponaxis=False,  # the first update's points sit on the left edge: drawn whole
-            )
-        )
+        figure.add_trace(_mta_trace(code, drawn, line_colour, move_colour))
         label = _mta_end_label(code, shift_wd, move_colour)
         ends.append((drawn["data_date"].iloc[-1], drawn["forecast"].iloc[-1], label))
     _add_end_labels(figure, ends, (last_date - first_date).value)
@@ -358,6 +343,27 @@ def build_mta(
     figure.update_xaxes(title="Reporting date (status date)", range=axis_range, constrain="domain")
     figure.update_yaxes(range=axis_range, scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
     return figure
+
+
+def _mta_trace(code: str, drawn: pd.DataFrame, line_colour: str, move_colour: str | None) -> go.Scatter:
+    """The line of one milestone: its forecast at each update, the last point in ``move_colour``
+    (and bigger) when the date moved in the last update."""
+    earlier_points = len(drawn) - 1
+    return go.Scatter(
+        x=drawn["data_date"],
+        y=drawn["forecast"].astype(object).where(drawn["forecast"].notna(), None),
+        mode="lines+markers",
+        name=f"{code} {drawn['task_name'].iloc[-1]}",
+        line=dict(color=line_colour, width=LINE),
+        marker=dict(
+            # the last point bigger when it moved: red / orange series stay apart
+            size=[9] * earlier_points + [13 if move_colour else 9],
+            symbol=["diamond" if is_complete else "circle" for is_complete in drawn["is_complete"].to_numpy()],
+            color=[line_colour] * earlier_points + [move_colour or line_colour],
+        ),
+        hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
+        cliponaxis=False,  # the first update's points sit on the left edge: drawn whole
+    )
 
 
 def _mta_axis_span(
@@ -490,7 +496,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     A week with nothing committed has no point, a gap in the line (a point at 0 would read as
     0 % kept); its hover says "no commitment"."""
     weeks = ppc.copy()
-    weeks["label"] = weeks["data_date"].dt.strftime("%Y-%m-%d")
+    weeks["label"] = weeks["data_date"].dt.strftime(DAY)
     has_note = [isinstance(note, str) for note in weeks["note"]]
     figure = go.Figure()
     for column, kept, committed, name, colour in (
@@ -577,7 +583,7 @@ def build_half_step(steps: pd.DataFrame) -> go.Figure:
     """
     stepped = steps.iloc[1:]
     colours = [STATUS["critical"] if shift < 0 else STATUS["good"] for shift in stepped["shift_wd"].fillna(0)]
-    finishes = stepped["finish"].map(lambda stamp: "–" if pd.isna(stamp) else f"{stamp:%Y-%m-%d}")
+    finishes = stepped["finish"].map(lambda stamp: "–" if pd.isna(stamp) else stamp.strftime(DAY))
     figure = go.Figure(
         go.Bar(
             x=stepped["step"],

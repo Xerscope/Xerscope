@@ -21,6 +21,9 @@ from xerscope.analysis.populations import STEP_SOURCES
 from xerscope.app import ui
 from xerscope.app.state import csv_download
 
+# the funnel tables of the Ask field and of a check's population write both counts as whole numbers
+STEP_COUNT_COLUMNS = ui.count_columns("removed", "left")
+
 
 def source_text(key: str, own_source: str = "") -> str:
     """A step's source as the caption shows it: its key alone for a web page, with its text otherwise.
@@ -57,7 +60,7 @@ def show_steps(funnel, key: str = "ask_funnel") -> None:
         pd.DataFrame(step_rows(funnel)),
         raw_labels=True,
         key=key,
-        overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
+        overrides=STEP_COUNT_COLUMNS,
     )
     st.caption(source_caption(funnel))
 
@@ -91,7 +94,7 @@ def show_funnel(result, snapshot, sources: list[str]) -> None:
         funnel_table(result.funnel, result.numerator),
         raw_labels=True,
         key="funnel",
-        overrides={name: st.column_config.NumberColumn(name, format="%d") for name in ("removed", "left")},
+        overrides=STEP_COUNT_COLUMNS,
     )
     if result.funnel.steps:
         st.caption(source_caption(result.funnel, result.metric.source))

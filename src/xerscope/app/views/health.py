@@ -27,25 +27,25 @@ from xerscope.analysis.checks import (
 from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
+from xerscope.app.explanation_panel import show_calculation, show_method
 from xerscope.app.sets import show_sets
 from xerscope.app.state import (
     SNAP_CHOICE,
     anonymous_exports,
     baseline_for,
     baseline_warnings,
+    build_and_hold,
     csv_download,
     data_identity,
+    download_text,
     downloads_ready,
-    fetch,
     go_to,
-    held,
-    hold,
     memo,
     metric_result,
     open_in_gantt,
     page_header,
     require_store,
-    show_download,
+    show_held,
     snapshot_picker,
     sources_of,
     standard_results,
@@ -107,7 +107,7 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
         summary,
         status="status",
         max_height=700,
-        overrides={"flagged": st.column_config.NumberColumn("Items listed", format="%d")},
+        overrides=ui.count_columns(flagged="Items listed"),
         key="health_results",
     )
 
@@ -151,30 +151,22 @@ def prepare_sets(results, standard, snapshot, sources: list[str]) -> None:
     ):
         table = sets_long(results, snapshot)
         per_check = by_check(table)
-        csv_file = fetch(
-            st.session_state,
-            lambda: csv_bytes(table),
-            lambda anonymizer: anonymizer.csv(table),
-            sources,
-            prepare=True,
+        build_and_hold(
+            "health_sets_csv", tag, lambda: csv_bytes(table), lambda anonymizer: anonymizer.csv(table), sources
         )
-        zip_file = fetch(
-            st.session_state,
+        build_and_hold(
+            "health_sets_zip",
+            tag,
             lambda: zip_frames(per_check, "csv"),
             lambda anonymizer: zip_frames({name: anonymizer.frame(frame) for name, frame in per_check.items()}, "csv"),
             sources,
-            prepare=True,
         )
-        hold(st.session_state, "health_sets_csv", tag, csv_file)
-        hold(st.session_state, "health_sets_zip", tag, zip_file)
     stamp = f"{standard.id}_{ui.stamp(snapshot.data_date)}"
     for slot, label, name, mime in (
         ("health_sets_csv", "All sets (CSV)", f"{stamp}_sets.csv", "text/csv"),
         ("health_sets_zip", "All sets (ZIP)", f"{stamp}_sets.zip", "application/zip"),
     ):
-        built = held(st.session_state, slot, tag)
-        if built is not None:
-            show_download(built, label, name, mime, key=f"dl_{slot}")
+        show_held(slot, tag, label, name, mime, key=f"dl_{slot}")
 
 
 @st.fragment
@@ -236,21 +228,6 @@ def check_title(result) -> str:
     )
 
 
-def show_method(metric, explanation) -> None:
-    st.markdown("**Method**")
-    st.caption(explanation.method.replace("``", "`"))
-    if explanation.parameters:
-        st.markdown("**Parameters**")
-        ui.table(
-            pd.DataFrame(explanation.parameters, columns=["parameter", "value", "set by"]),
-            max_height=260,
-            key=f"params_{metric.id}",  # one table per check: filters keyed per check
-        )
-    source = ui.without_addresses(metric.source)
-    if source:
-        st.caption(f"Source: {source}")
-
-
 def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
     """The items the check lists, and their download once the anonymized downloads are prepared."""
     metric = result.metric
@@ -284,19 +261,9 @@ def show_check(result, explanation, snapshot, expanded: bool, sources: list[str]
         left, right = st.columns([3, 2], gap="large")
         with left:
             st.markdown(f"**What it measures** · {explanation.measured}")
-            with st.container(border=True):
-                st.caption("Calculation")
-                st.markdown(f"#### {explanation.formula}")
-                st.markdown(explanation.verdict)
-            if explanation.population:
-                st.markdown("**Population**")
-                st.markdown("\n".join(f"- {line}" for line in explanation.population))
-            if result.note and result.note not in explanation.formula:
-                st.markdown(f"**Note** · {ui.md_text(result.note)}")
-            if explanation.baseline:
-                st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
+            show_calculation(result, explanation)
         with right:
-            show_method(result.metric, explanation)
+            show_method(result.metric, explanation, explanation.parameters)
         if standard is not None:
             show_links(result, snapshot, standard)
         show_flagged(result, explanation, snapshot, sources)
@@ -343,9 +310,26 @@ def show_trend(store, standard) -> None:
             by_update,
             max_height=640,
             # dates follow the id and check columns
-            overrides={name: st.column_config.NumberColumn(name, format="%.2f") for name in by_update.columns[2:]},
+            overrides=ui.number_columns("d2", *by_update.columns[2:]),
             key="health_trend",
         )
+
+
+def _uploaded_counts(upload, got: pd.DataFrame) -> pd.DataFrame | None:
+    """Return the counts of the uploaded ``id,found,total`` CSV set against this page's results.
+
+    Shows the error and returns None when the file is unreadable or lacks one of the three columns.
+    """
+    try:
+        typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
+    except (ValueError, UnicodeDecodeError) as exc:
+        st.error(f"Unreadable CSV: {ui.md_text(exc)}")
+        return None
+    missing = {"id", "found", "total"} - set(typed.columns)
+    if missing:
+        st.error(f"Columns missing: {ui.md_text(', '.join(sorted(missing)))}")
+        return None
+    return report_counts(got, typed)
 
 
 def show_report_comparison(results, standard) -> None:
@@ -359,19 +343,12 @@ def show_report_comparison(results, standard) -> None:
         )
         got = results_frame(results)
         upload = st.file_uploader("Report counts (.csv)", type=["csv"], key=f"report_csv_{standard.id}")
-        if upload is not None:
-            try:
-                typed = pd.read_csv(upload, dtype={"id": str}).rename(columns=str.strip)
-                missing = {"id", "found", "total"} - set(typed.columns)
-                if missing:
-                    st.error(f"Columns missing: {ui.md_text(', '.join(sorted(missing)))}")
-                    return
-            except (ValueError, UnicodeDecodeError) as exc:
-                st.error(f"Unreadable CSV: {ui.md_text(exc)}")
-                return
-            typed = report_counts(got, typed)
-        else:
+        if upload is None:
             typed = report_counts(got)
+        else:
+            typed = _uploaded_counts(upload, got)
+        if typed is None:
+            return
         edited = st.data_editor(
             typed,
             disabled=["id", "check"],
@@ -393,10 +370,12 @@ def show_report_comparison(results, standard) -> None:
         ui.table(
             compared,
             overrides={
-                "found_exp": st.column_config.NumberColumn("Found (report)", format="%d"),
-                "found": st.column_config.NumberColumn("Found (xerscope)", format="%d"),
-                "total_exp": st.column_config.NumberColumn("Total (report)", format="%d"),
-                "total": st.column_config.NumberColumn("Total (xerscope)", format="%d"),
+                **ui.count_columns(
+                    found_exp="Found (report)",
+                    found="Found (xerscope)",
+                    total_exp="Total (report)",
+                    total="Total (xerscope)",
+                ),
                 "match": st.column_config.CheckboxColumn("Match"),
             },
             key="health_report",
@@ -429,13 +408,7 @@ def show_own_standard() -> None:
             "Start from the template, edit it, upload it here (or put it in the folder given to "
             "`xerscope app --standards`)."
         )
-        st.download_button(
-            "Download the template",
-            template_text().encode("utf-8"),
-            "my-standard.toml",
-            "application/toml",
-            icon=":material/download:",
-        )
+        download_text("Download the template", template_text(), "my-standard.toml", "application/toml")
         upload = st.file_uploader("Upload a standard (.toml)", type=["toml"], key="std_upload")
         try:
             message = load_uploaded_standard(upload)

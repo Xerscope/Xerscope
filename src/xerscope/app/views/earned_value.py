@@ -76,10 +76,6 @@ def format_index_change(change: float) -> str:
     return f"{change:+.2f}"
 
 
-def format_number(value: float, template: str = "{:,.0f}") -> str:
-    return "–" if pd.isna(value) else template.format(value)
-
-
 def formatted_change(row: pd.Series, previous: pd.Series | None, column: str, formatter) -> str | None:
     """Formatted change of ``column`` against the previous update, None when either side is missing."""
     change = change_since_previous(row, previous, column)
@@ -112,14 +108,14 @@ def show_kpis(row: pd.Series, previous: pd.Series | None, costs: bool) -> None:
             *([cost_card] if costs else []),
             (
                 "SPI (labor units)",
-                format_number(row["spi"], "{:.2f}"),
+                ui.fmt_number(row["spi"], "{:.2f}"),
                 formatted_change(row, previous, "spi", format_index_change),
                 "EV / PV in labor hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
             (
                 "BEI (P6 / DCMA)",
-                " / ".join(format_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
+                " / ".join(ui.fmt_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
                 None,
                 (
                     "P6 (P6-13): completed / every baseline task, milestones and LOE out; "
@@ -298,7 +294,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
                 (
                     "SPI (labor units)",
                     "EV / PV",
-                    f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {planned:,.1f} = {ui.fmt_number(row['spi'], '{:.2f}')}",
                     "Schedule Performance Index - Labor Units",
                 ),
                 (
@@ -354,14 +350,14 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
                 (
                     "CPI (labor units)",
                     "EV / AC, all actual hours",
-                    f"{earned_hours:,.1f} / {actual:,.1f} = {format_number(row['cpi'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {actual:,.1f} = {ui.fmt_number(row['cpi'], '{:.2f}')}",
                     "Cost Performance Index - Labor Units",
                 ),
                 (
                     "EV / AC (baselined work)",
                     "EV / AC without the hours of tasks the baseline does not have: EV exists only for "
                     "baselined tasks, so those hours would lower the ratio",
-                    f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {ui.fmt_number(row['productivity'], '{:.2f}')}",
                     "not a P6 column: P6 divides by all actual units (CPI above)",
                 ),
             ],

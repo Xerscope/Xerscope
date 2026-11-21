@@ -23,6 +23,7 @@ from xerscope.analysis.baseline_resolution import (
     resolutions,
     versions_of_the_same_date,
 )
+from xerscope.app import ui
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot, load_snapshot
 from xerscope.xer.parser import XerError
@@ -62,7 +63,7 @@ def xml_projects_table(index: PmxmlIndex, updates: Iterable[Snapshot]) -> pd.Dat
     on the same day, whatever project they were read from.
     """
     updates = list(updates)
-    status_days = [update.data_date.strftime("%Y-%m-%d") for update in updates if update.data_date is not None]
+    status_days = [ui.stamp(update.data_date) for update in updates if update.data_date is not None]
     project_ids = [update.project_id for update in updates]
     rows = [
         {
@@ -150,7 +151,7 @@ def _listing_applied(store: SnapshotStore, found: Resolution, listings: dict) ->
     if found.found_by == LOADED_UPDATE:
         baseline = [update for update in store if update.project_id == found.baseline_id][-1]
         if baseline.data_date is not None:
-            return f"{baseline.data_date:%Y-%m-%d}", len(baseline.activities)
+            return ui.stamp(baseline.data_date), len(baseline.activities)
     return None
 
 

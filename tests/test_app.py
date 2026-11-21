@@ -36,6 +36,7 @@ from xerscope.app import ui
 from xerscope.app.state import BL_FILE, BL_PLANNED, _picked_folder_baseline, anonymizers_built
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
+from xerscope.viz.gantt import CHROME_PX, ROW_PX
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
 
@@ -209,6 +210,28 @@ def _chips(at) -> list[str]:
 def _toggle(at, label: str, value: bool) -> None:
     next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
     _ok(at)
+
+
+@pytest.mark.oracle("characterization")
+def test_gantt_payload_carries_the_row_size_the_height_cap_and_an_epoch_that_follows_the_filters(app):
+    """The browser sizes the chart from the payload: the row height and the chrome from viz.gantt, the
+    cap from the page. The epoch tells it to drop the branches it kept: it moves when a word is typed
+    in Ask or erased, and holds when a run changes no filter."""
+    app.switch_page("views/gantt.py").run()
+    data = _gantt_data(app)
+    assert (data["rowPx"], data["chromePx"], data["maxHeight"]) == (ROW_PX, CHROME_PX, 680)
+    assert data["height"] <= data["maxHeight"]
+    start = data["openEpoch"]
+    _toggle(app, "Logic links", True)
+    assert _gantt_data(app)["openEpoch"] == start  # no filter changed
+    app.text_input[0].set_value("critical").run()
+    typed = _gantt_data(app)["openEpoch"]
+    assert typed != start
+    app.text_input[0].set_value("jalons civil").run()  # another sentence, the filters still on
+    reworded = _gantt_data(app)["openEpoch"]
+    assert reworded not in (start, typed)
+    app.text_input[0].set_value("").run()
+    assert _gantt_data(app)["openEpoch"] not in (start, typed, reworded)
 
 
 def test_gantt_wbs_choice_filters_and_options(app):
@@ -783,7 +806,7 @@ def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_
     """The help says how the figure is calculated and which settings it is meant for; the settings carry
     the labels of the Baseline window."""
     from xerscope.analysis.baseline import DEFAULT_EV_BASIS
-    from xerscope.app import state
+    from xerscope.app import baselines, state
 
     app.switch_page("views/earned_value.py").run()
     _ok(app)
@@ -791,7 +814,7 @@ def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_
     assert "Σ ΔEV / Σ ΔPV" in card.help and "1,260 h were earned for 1,520 planned: 0.83" in card.help
     for label in (state.BL_EACH, state.EV_BASIS_LABEL[DEFAULT_EV_BASIS], state.BL_NONE):
         assert f"*{label}*" in card.help
-    window_source = Path(state.__file__).read_text(encoding="utf-8")
+    window_source = Path(baselines.__file__).read_text(encoding="utf-8")
     for field in (
         "Baseline (BL)",
         "Earned value basis",
@@ -1344,16 +1367,16 @@ def test_the_window_reopened_after_esc_shows_the_folder_and_its_files(sample_dir
 
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
     """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
-    from xerscope.app import state
+    from xerscope.app import baselines
 
     calls = []
-    real = state.load_snapshot
+    real = baselines.load_snapshot
 
     def counting(data, **kwargs):
         calls.append(kwargs.get("name"))
         return real(data, **kwargs)
 
-    monkeypatch.setattr(state, "load_snapshot", counting)
+    monkeypatch.setattr(baselines, "load_snapshot", counting)
     first = _run(sample_dir, monkeypatch)
     _ok(first)
     parsed_once = len(calls)
