@@ -1939,6 +1939,30 @@ does not move (Practice Standard for Earned Value Management); switch to the P6 
 file's own Planned Value". A probable or chosen baseline keeps the `info` note on the cumulative
 EV figures; the other session asks that the note also cover planned-dates baselines (not-started tasks move with the schedule), subject to the measurement table the maintainer asked for. Sources by mention only, no link.
 
+**Earned value, refined with the "Calculs earned schedule prévision" session (2026-11-21).**
+The page reads two baselines, passed as two explicit arguments to the `analysis/evm` calls (never a
+session-state read inside analysis):
+- cumulative figures (`ev_point`, `earned_schedule`: PV, EV, SPI, SPI(t), gap, `evm_series`,
+  `copied_lag`) against the origin (switch off) or the file's baseline (switch on, "P6 view");
+- the weekly window (`weekly_gains` → `moving_window`, `gains_since_first`, `baseline_changes`)
+  against the plan in force each week (the per-file callable) in both switch positions: read on
+  the origin it collapses when tasks are added outside it (simulated SPI 4 weeks 0.12 then 4.00
+  for a true 0.50); on the maintainer's series it is the weekly LPS plan;
+- the forecast: PD − ES from the file's baseline (what remains of the current plan) and the pace
+  from the window; `finish_at(pace)` exists, `evm.forecast_finishes(schedule, gains, data_date)`
+  can be added by that session on request.
+Every evm function already takes an explicit `Baseline`; nothing to expose. Invariants to pin in
+the golden: switch off, on the demo series with `Baseline.from_snapshot(store[0])`, `evm_series`
+rows and the last update's `earned_schedule(...).as_row()` equal what the page shows today when the
+sidebar holds that baseline; `weekly_gains` identical whatever the switch. Switch on:
+`ev_point(update, file_baseline).pv_hr` equals P6's PV (`pv_p6_comparison`); SPI(t) ≈ 1 and gap
+≈ 0 against a copy, by construction (the reason for the info note, not a value to pin). Sources that
+session verified for the rule: Lipke 2009 (ES reliability studies exclude re-planned projects),
+Ballard & Tommelein 2016 (the baseline schedule sets the production objectives); the Practice
+Standard for EVM and EIA-748 are cited in the readings only once read by the writer of the text.
+Roles: this branch wires the page, the switch, the banner and the "How to read" texts; the earned
+schedule session keeps `analysis/evm` and adds helpers with their hand tests on request.
+
 **Order of work.** The Earned value switch and the per-page rule are behaviour: they come after
 P6c (the baseline sidebar apart from the resolution) and ride on the other session's `kind`
 mechanism, rebased on this branch.
