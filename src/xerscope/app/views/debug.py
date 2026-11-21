@@ -50,7 +50,7 @@ with top:
         "Columns keep the XER and analysis field names.",
     )
 
-table = partial(ui.table, raw_labels=True)
+table = partial(ui.table, raw_labels=True, reading="debug")
 
 
 def zip_tag(anonymous: bool, *extra: object) -> tuple:

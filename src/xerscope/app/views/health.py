@@ -109,6 +109,7 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
         max_height=700,
         overrides=ui.count_columns(flagged="Items listed"),
         key="health_results",
+        reading="health_results",
     )
 
     # Every flagged item of every check in one file: the audit trail behind the scores.
@@ -241,6 +242,7 @@ def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
         culprits_first(result.flagged),
         max_height=420,
         key=f"flag_{metric.id}",
+        reading="check_flagged",
         open_task=partial(open_in_gantt, snapshot=snapshot),
     )
     if not downloads_ready(sources):
@@ -312,6 +314,7 @@ def show_trend(store, standard) -> None:
             # dates follow the id and check columns
             overrides=ui.number_columns("d2", *by_update.columns[2:]),
             key="health_trend",
+            reading="health_trend",
         )
 
 
@@ -379,6 +382,7 @@ def show_report_comparison(results, standard) -> None:
                 "match": st.column_config.CheckboxColumn("Match"),
             },
             key="health_report",
+            reading="health_report",
         )
 
 

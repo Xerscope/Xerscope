@@ -86,8 +86,9 @@ ui.section("Slippage", "Working days on each milestone's own calendar.")
 ui.table(
     slips,
     key="mta_slips",
+    reading="mta_slips",
     open_task=partial(open_in_gantt, snapshot=store.latest),
     overrides=ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
 )
 with st.expander("Data"):
-    ui.table(trend, max_height=640, key="mta_trend")
+    ui.table(trend, max_height=640, key="mta_trend", reading="mta_trend")

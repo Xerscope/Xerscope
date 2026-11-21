@@ -36,6 +36,7 @@ ui.table(
         **ui.count_columns(columns="Columns"),
     },
     key="export_tables",
+    reading="export_tables",
 )
 
 table_formats: list[Fmt] = ["parquet", "csv"]
@@ -54,7 +55,9 @@ download(
 )
 
 with st.expander("Preview fact_activity"):
-    ui.table(tables["fact_activity"].head(200), max_height=640, key="export_fact_activity")
+    ui.table(
+        tables["fact_activity"].head(200), max_height=640, key="export_fact_activity", reading="export_fact_activity"
+    )
 
 
 def _data_date(raw) -> pd.Timestamp | None:

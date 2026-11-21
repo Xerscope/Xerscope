@@ -44,10 +44,16 @@ PPC_TARGET = 80  # default PPC target, in percent
 DATE_AXIS = dict(hoverformat="%Y-%m-%d", tickformatstops=[dict(dtickrange=[None, 86_400_000], value="%d %b")])
 
 
-def _with_house_style(figure: go.Figure, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
+def _with_house_style(
+    figure: go.Figure, reading: str, height: int = 380, y_title: str = "", legend: bool = True
+) -> go.Figure:
     """House style: 13 px text, legend on top, room on the right for end labels. Text, grid and
-    axis colours come from the theme (st.plotly_chart's default theme="streamlit")."""
+    axis colours come from the theme (st.plotly_chart's default theme="streamlit").
+
+    ``reading`` is the key of the figure's "How to read" text (analysis/explain.py READINGS), kept in the
+    figure's layout for ``ui.chart``: viz imports nothing from analysis."""
     figure.update_layout(
+        meta={"reading": reading},
         height=height,
         margin=dict(l=10, r=110, t=56, b=10),
         showlegend=legend,
@@ -197,7 +203,7 @@ def build_scurve(
         _add_schedule_variance(figure, at_data_date, curve_scale, data_date, percent)
     _mark_data_date(figure, data_date)
     figure.update_traces(hovertemplate="%{y:,.1f}", selector=lambda trace: trace.name != "EV (earned)")
-    return _with_house_style(figure, 500, unit)
+    return _with_house_style(figure, "scurve", 500, unit)
 
 
 def _series_trace(x, y, name: str, colour: str, mode: str = "lines", **properties) -> go.Scatter:
@@ -269,7 +275,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
         annotation_text=f"{INDEX_ALERT:g}",
         annotation_position="bottom left",
     )
-    return _with_house_style(figure, 380, "index")
+    return _with_house_style(figure, "index_trend", 380, "index")
 
 
 # --- milestones ---------------------------------------------------------------------------------
@@ -337,7 +343,7 @@ def build_mta(
         label = _mta_end_label(code, shift_wd, move_colour)
         ends.append((drawn["data_date"].iloc[-1], drawn["forecast"].iloc[-1], label))
     _add_end_labels(figure, ends, (last_date - first_date).value)
-    figure = _with_house_style(figure, 760, "Forecast date")
+    figure = _with_house_style(figure, "mta", 760, "Forecast date")
     # same range and scale on both axes: the diagonal is at 45°, the plot square
     axis_range = [first_date, last_date]
     figure.update_xaxes(title="Reporting date (status date)", range=axis_range, constrain="domain")
@@ -409,7 +415,7 @@ def build_activity_dates(history: pd.DataFrame) -> go.Figure:
     """Forecast start and finish of one activity in every update."""
     figure = go.Figure([_line(history, "start", "Start", SERIES[0]), _line(history, "finish", "Finish", SERIES[1])])
     figure.update_xaxes(title="Status date")
-    figure = _with_house_style(figure, 380, "Forecast date")
+    figure = _with_house_style(figure, "activity_dates", 380, "Forecast date")
     figure.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
     # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
@@ -436,7 +442,7 @@ def build_activity_float(history: pd.DataFrame) -> go.Figure:
         annotation_position="bottom left",
     )
     figure.update_xaxes(title="Status date")
-    return _with_house_style(figure, 380, "Working days")
+    return _with_house_style(figure, "activity_float", 380, "Working days")
 
 
 def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
@@ -457,7 +463,7 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
         )
     )
     figure.update_xaxes(title="Status date")
-    figure = _with_house_style(figure, 380, "Forecast finish", legend=False)
+    figure = _with_house_style(figure, "finish_trend", 380, "Forecast finish", legend=False)
     figure.update_yaxes(**DATE_AXIS)
     figure.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
     if len(updates):  # one update: both axes would zoom on a point
@@ -542,7 +548,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         xshift=6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
-    figure = _with_house_style(figure, 400, "PPC (%)", legend=True)
+    figure = _with_house_style(figure, "ppc", 400, "PPC (%)", legend=True)
     figure.update_yaxes(range=[0, 105])
     figure.update_xaxes(title="Week ending (status date)", showspikes=False, type="category")
     return figure
@@ -575,7 +581,7 @@ def build_metric_trend(
             annotation_text=f"target {threshold_label}",
             annotation_position="top left",
         )
-    figure = _with_house_style(figure, 360, unit, legend=False)
+    figure = _with_house_style(figure, "metric_trend", 360, unit, legend=False)
     figure.update_layout(hovermode="closest")
     return figure
 
@@ -600,7 +606,7 @@ def build_half_step(steps: pd.DataFrame) -> go.Figure:
             hovertemplate="%{x}<br>Finish once applied %{customdata[0]}<br>%{customdata[1]} change(s)<extra></extra>",
         )
     )
-    figure = _with_house_style(figure, 320, "Finish shift (wd)", legend=False)
+    figure = _with_house_style(figure, "half_step", 320, "Finish shift (wd)", legend=False)
     figure.add_hline(y=0, line_color=NEUTRAL, line_width=1)
     figure.update_layout(margin=dict(l=10, r=20, t=30, b=10))
     return figure
@@ -621,7 +627,7 @@ def build_slip_trend(series: pd.DataFrame) -> go.Figure:
         ]
     )
     figure.update_xaxes(title="Status date")
-    figure = _with_house_style(figure, 380, "Finish")
+    figure = _with_house_style(figure, "slip_trend", 380, "Finish")
     figure.update_yaxes(**DATE_AXIS)
     finishes = rows[["finish", "finish_before_replanning"]]
     _widen_dates(figure.update_yaxes, finishes.min().min(), finishes.max().max())

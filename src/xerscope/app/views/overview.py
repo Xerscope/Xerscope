@@ -124,7 +124,7 @@ ui.section(
 ui.chart(build_finish_trend(summary))
 
 ui.section("Updates loaded")
-ui.table(summary.drop(columns=["snapshot_idx", "project"]), key="overview_updates")
+ui.table(summary.drop(columns=["snapshot_idx", "project"]), key="overview_updates", reading="overview_updates")
 
 limits = [warning for warning in store.warnings if LIMIT_MARK in warning]
 for warning in store.warnings:

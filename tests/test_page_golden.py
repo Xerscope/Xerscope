@@ -37,8 +37,16 @@ CHOICES = {"selectbox", "multiselect", "toggle", "checkbox", "text_input", "butt
 LAYOUT = {"column", "flex_container", "empty"}  # hold or reserve a place, show nothing themselves
 
 
+def is_reading(element) -> bool:
+    """The "How to read" popover of a chart or a table: listed by its label, its text is not (the texts are
+    analysis/explain.py READINGS, held by tests/test_readings.py)."""
+    return element.type == "popover" and element.proto.popover.label == "How to read"
+
+
 def _line(element) -> str:
     kind = element.type
+    if is_reading(element):
+        return "popover: How to read"
     if kind in TEXTS:
         return f"{kind}: {element.value}"
     if kind == "metric":
@@ -59,7 +67,8 @@ def shown(block) -> list[str]:
     for element in getattr(block, "children", {}).values():
         if element.type not in LAYOUT:
             lines.append(_line(element))
-        lines += shown(element)
+        if not is_reading(element):
+            lines += shown(element)
     return lines
 
 

@@ -208,14 +208,14 @@ def show_card(snapshot, task_code: str) -> None:
         if assigned.empty:
             st.caption("No resource assignment.")
         else:
-            ui.table(assigned, key="task_resources")
+            ui.table(assigned, key="task_resources", reading="task_resources")
     with logic_column:
         ui.section("Logic")
         links = logic(snapshot, task_code)
         if links.empty:
             st.caption("No relationship.")
         else:
-            ui.table(links, key="task_logic")
+            ui.table(links, key="task_logic", reading="task_logic")
 
 
 # --- history ----------------------------------------------------------------------------
@@ -252,4 +252,4 @@ def show_history(store, task_code: str) -> None:
         ui.section("Total float (working days)")
         ui.chart(build_activity_float(history))
     ui.section("By update")
-    ui.table(history, columns=HISTORY_COLUMNS, key="task_history")
+    ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")

@@ -106,7 +106,7 @@ def show_steps(read, old, new) -> None:
         "each bar is what that kind did to the finish.",
     )
     ui.chart(build_half_step(read.steps))
-    ui.table(read.steps, key="forensics_steps")
+    ui.table(read.steps, key="forensics_steps", reading="forensics_steps")
     if read.is_slip_beyond_period:
         ui.caveat(
             f"The progress step lost {abs(read.slip_wd):.1f} wd in a period of {read.period_wd:.1f} wd. "
@@ -192,7 +192,7 @@ def show_series(store) -> None:
     )
     series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
     ui.chart(build_slip_trend(series))
-    ui.table(series, key="forensics_series", max_height=480)
+    ui.table(series, key="forensics_series", reading="forensics_series", max_height=480)
     csv_download(series, "half_step_series.csv", "Download series (CSV)", sources=sources_of(*list(store)))
 
 

@@ -48,6 +48,7 @@ def show_categories(counts: pd.DataFrame) -> None:
     ui.table(
         category_totals(counts),
         key="changelog_categories",
+        reading="changelog_categories",
         overrides={
             **ui.count_columns(total="Changes"),
             "kinds": st.column_config.TextColumn("Kinds of change", width="large"),
@@ -74,7 +75,13 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
         f"{len(view):,} change(s) shown. Δ of a start or a finish: working days gained (+) or lost (−), a later "
         "date reads negative. Δ of the other rows: after minus before."
     )
-    ui.table(view, max_height=640, key="changelog_all", open_task=partial(open_in_gantt, snapshot=new))
+    ui.table(
+        view,
+        max_height=640,
+        key="changelog_all",
+        reading="changelog_all",
+        open_task=partial(open_in_gantt, snapshot=new),
+    )
     csv_download(
         log,
         f"changelog_{ui.stamp(old.data_date)}_{ui.stamp(new.data_date)}.csv",
@@ -87,7 +94,7 @@ def show_weekly(store) -> None:
     with st.expander("Every week, side by side"):
         weekly = memo(("changelog_weekly",), weekly_change_counts, store, baseline=False)
         wide = weekly_change_matrix(weekly)
-        ui.table(wide, max_height=640, key="changelog_weekly")
+        ui.table(wide, max_height=640, key="changelog_weekly", reading="changelog_weekly")
 
 
 store = require_store()

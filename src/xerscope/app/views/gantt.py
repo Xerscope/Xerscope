@@ -257,6 +257,8 @@ timescale = options.segmented_control(
     help="Week shows the 12 weeks around the status date",
     key="gantt_timescale",
 )
+with options:
+    ui.reading_popover("gantt")
 
 # st.selectbox types its value as None-able for an empty option list; nodes always holds the ROOT row
 branch_ids = set(nodes["wbs_id"]) if current == ROOT else subtree_ids(nodes, current)  # type: ignore[arg-type]
@@ -416,5 +418,5 @@ with st.expander("Table view"):
     ]
     # a finished task has no float or remaining duration: a dash, not "None"
     shown, overrides = ui.numbers_as_text(tasks[table_columns], ["total_float_d", "remaining_d"])
-    ui.table(shown, overrides=overrides, key="gantt_tasks")
+    ui.table(shown, overrides=overrides, key="gantt_tasks", reading="gantt_tasks")
     csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))

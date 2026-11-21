@@ -83,6 +83,7 @@ def show_ppc_weeks(ppc: pd.DataFrame) -> None:
             ppc.sort_values("data_date", ascending=False),
             columns=PPC_COLUMNS,
             key="ppc_weeks",
+            reading="ppc_weeks",
             overrides={
                 "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
                 "kept": count("Kept (starts + finishes)", format="%d"),
@@ -196,10 +197,17 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
         if commitments.empty:
             st.caption("Nothing was forecast to start or finish this week.")
         else:
-            ui.table(commitments.sort_values(["kept", "commitment"]), columns=COMMITMENT_COLUMNS, key="ppc_commitments")
+            ui.table(
+                commitments.sort_values(["kept", "commitment"]),
+                columns=COMMITMENT_COLUMNS,
+                key="ppc_commitments",
+                reading="ppc_commitments",
+            )
     with right:
         ui.section("Progress by WBS", "Points of % complete gained this week, weighted by labor hours.")
-        ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS, key="ppc_wbs")
+        ui.table(
+            wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS, key="ppc_wbs", reading="ppc_wbs"
+        )
 
 
 def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFrame) -> None:
@@ -213,7 +221,12 @@ def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFr
         if milestones.empty:
             st.caption("No milestone was forecast this week.")
         else:
-            ui.table(milestones.sort_values(["kept", "planned_date"]), columns=COMMITMENT_COLUMNS, key="ppc_milestones")
+            ui.table(
+                milestones.sort_values(["kept", "planned_date"]),
+                columns=COMMITMENT_COLUMNS,
+                key="ppc_milestones",
+                reading="ppc_milestones",
+            )
     with right:
         ui.section(
             "Unplanned work",
@@ -223,7 +236,12 @@ def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFr
         if unplanned.empty:
             st.caption("No new task started this week.")
         else:
-            ui.table(unplanned.sort_values("act_start_date"), columns=UNPLANNED_COLUMNS, key="ppc_unplanned")
+            ui.table(
+                unplanned.sort_values("act_start_date"),
+                columns=UNPLANNED_COLUMNS,
+                key="ppc_unplanned",
+                reading="ppc_unplanned",
+            )
 
 
 def show_renumbered(pairs: pd.DataFrame) -> None:
@@ -240,7 +258,7 @@ def show_renumbered(pairs: pd.DataFrame) -> None:
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
     moved = progressed_tasks(progress).sort_values("earned_hr_week", ascending=False)
-    ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS, key="ppc_progress")
+    ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS, key="ppc_progress", reading="ppc_progress")
     csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
@@ -252,7 +270,7 @@ def show_variances(variances: pd.DataFrame, sources: list[str], current) -> None
         "milestones have only their own end. Tasks that moved shown; the CSV has every task.",
     )
     moved = moved_variances(variances).sort_values(VARIANCE_COLUMNS)
-    ui.table(moved, max_height=640, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances")
+    ui.table(moved, max_height=640, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances", reading="ppc_variances")
     csv_download(
         variances,
         f"variances_{ui.stamp(current.data_date)}.csv",

@@ -31,6 +31,7 @@ def show_method(metric, explanation, parameters=()) -> None:
             pd.DataFrame(parameters, columns=["parameter", "value", "set by"]),
             max_height=260,
             key=f"params_{metric.id}",  # one table per check: filters keyed per check
+            reading="check_parameters",
         )
     source = ui.without_addresses(metric.source)
     if source:

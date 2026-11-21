@@ -46,7 +46,7 @@ def show_set(frame: pd.DataFrame, title: str, filename: str, key: str, sources: 
     if frame.empty:
         st.caption(f"No {title.lower()}.")
         return
-    ui.table(frame, max_height=480, key=f"table_{key}")
+    ui.table(frame, max_height=480, key=f"table_{key}", reading="check_sets")
     # anonymised or raw as the sidebar switch says; only the files behind this result are read
     csv_download(frame, filename, "Download CSV", key=f"dl_{key}", sources=sources)
 
@@ -60,6 +60,7 @@ def show_steps(funnel, key: str = "ask_funnel") -> None:
         pd.DataFrame(step_rows(funnel)),
         raw_labels=True,
         key=key,
+        reading="funnel",
         overrides=STEP_COUNT_COLUMNS,
     )
     st.caption(source_caption(funnel))
@@ -94,6 +95,7 @@ def show_funnel(result, snapshot, sources: list[str]) -> None:
         funnel_table(result.funnel, result.numerator),
         raw_labels=True,
         key="funnel",
+        reading="funnel",
         overrides=STEP_COUNT_COLUMNS,
     )
     if result.funnel.steps:

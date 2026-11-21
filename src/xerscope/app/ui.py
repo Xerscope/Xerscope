@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import functools
+import os
 import re
 import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -21,6 +22,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.explain import READINGS
 from xerscope.analysis.query import fold as _fold
 from xerscope.analysis.task_filters import search_mask as _search_mask
 from xerscope.app.glossary import GLOSSARY, spelled_out
@@ -58,6 +60,7 @@ GANTT = st.components.v2.component("xerscope_gantt", **gantt_assets())  # type: 
 
 
 STYLE = Path(__file__).parent / "style.css"
+STRICT_READINGS = "XERSCOPE_STRICT_READINGS"  # set by the tests: a figure without a reading raises
 STATIC = Path(__file__).parent / "static"
 # The theme's fonts (.streamlit/config.toml, [[theme.fontFaces]]): family -> file in app/static/.
 FONT_FILES = {"Onest": "Onest-latin-wght.woff2", "JetBrains Mono": "JetBrainsMono-latin-wght.woff2"}
@@ -345,13 +348,39 @@ def blank_missing(frame: pd.DataFrame, missing: str = MISSING) -> pd.DataFrame:
     return frame if out is None else out
 
 
-def chart(figure, **kwargs) -> None:
+def chart(figure, reading: str | None = None, **kwargs) -> None:
     """A Plotly figure in the house style: no mode bar (it stays on screen on a touch screen), the
-    hover text in the theme's text colour (Streamlit's Plotly theme fades it to 3.5:1)."""
+    hover text in the theme's text colour (Streamlit's Plotly theme fades it to 3.5:1).
+
+    A "How to read" popover goes above it: the READINGS key given as ``reading``, else the one the
+    builder set in the figure's layout. Under XERSCOPE_STRICT_READINGS=1 a figure with neither raises."""
+    key = reading
+    if key is None and figure.layout.meta:
+        key = figure.layout.meta.get("reading")
+    if key is None and os.environ.get(STRICT_READINGS) == "1":
+        raise ValueError("A figure without a reading key: its builder sets layout.meta['reading'].")
+    reading_popover(key)
     theme = getattr(st.context.theme, "type", None) or "light"
     figure.update_layout(hoverlabel=dict(font=dict(color=TEXT.get(theme, TEXT["light"]))))
     kwargs.setdefault("width", "stretch")
     st.plotly_chart(figure, config={"displayModeBar": False}, **kwargs)
+
+
+def reading_popover(key: str | None) -> None:
+    """A "How to read" popover with the paragraphs of ``READINGS[key]``, the empty ones left out;
+    nothing when ``key`` is None. The source is shown without web addresses, as ``show_method``
+    shows a check's."""
+    if key is None:
+        return
+    reading = READINGS[key]
+    paragraphs = {
+        "How to read": reading.how,
+        "What it means": reading.meaning,
+        "What to conclude": reading.conclude,
+        "Source": without_addresses(reading.source),
+    }
+    with st.popover("How to read", icon=":material/help:"):
+        st.markdown("\n\n".join(f"**{title}.** {text}" for title, text in paragraphs.items() if text))
 
 
 def table_height(rows: int, max_height: int) -> int:
@@ -756,6 +785,7 @@ def table(
     status: str | None = None,
     raw_labels: bool = False,
     open_task: Callable[[str], None] | None = None,
+    reading: str | None = None,
     **kwargs,
 ):
     """A labelled, formatted dataframe; height follows the rows up to ``max_height``.
@@ -764,8 +794,9 @@ def table(
     column names as headers (see ``column_config``). A table longer than
     ``Settings.table_filter_min_rows`` gets column filters, kept under ``key``, the table's own name on its page.
     ``open_task`` (state.open_in_gantt) makes the rows selectable: a selected row's Task ID gets a
-    button that opens the Gantt on it.
+    button that opens the Gantt on it. ``reading``, a READINGS key, puts a "How to read" popover above the table.
     """
+    reading_popover(reading)
     if columns is not None:
         frame = frame[[column for column in columns if column in frame.columns]]
     frame = blank_missing(frame.drop(columns=[column for column in HIDDEN if column in frame.columns]))

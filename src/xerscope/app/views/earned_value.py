@@ -368,6 +368,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
         ui.table(
             calculation,
             key="ev_calculation",
+            reading="ev_calculation",
             overrides={
                 "formula": st.column_config.TextColumn("Formula", width="large"),
                 "this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date)),
@@ -431,7 +432,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
     hidden = ["bac_hr", "vac_hr", "ac_baselined_hr"] + ([] if costs else COST_COLUMNS)
     # the first update has no PV yet: its indices are missing, written as a dash
     shown, overrides = ui.numbers_as_text(series.drop(columns=hidden), INDEX_COLUMNS)
-    ui.table(shown, overrides=overrides, key="ev_updates")
+    ui.table(shown, overrides=overrides, key="ev_updates", reading="ev_updates")
 
 
 def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame) -> None:
@@ -440,7 +441,7 @@ def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame)
         values = earned_values.reset_index().rename(columns=EV_BASIS_COLUMNS)
         # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
         activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
-        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640, key="ev_tasks")
+        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640, key="ev_tasks", reading="ev_tasks")
         st.caption(
             f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
             f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."

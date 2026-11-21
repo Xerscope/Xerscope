@@ -158,7 +158,11 @@ def show_sheet(standard, metric) -> None:
     with st.expander("Settings: how to change this check for good"):
         text_column = {"now": st.column_config.TextColumn("now")}  # ui.COLUMNS has a "now" that is a date
         ui.table(
-            settings_table(metric, standard[metric.id]), raw_labels=True, overrides=text_column, key="sheet_settings"
+            settings_table(metric, standard[metric.id]),
+            raw_labels=True,
+            overrides=text_column,
+            key="sheet_settings",
+            reading="sheet_settings",
         )
         where = standard.path or f"the built-in standards/{standard.id.lower()}.toml"
         st.markdown(
