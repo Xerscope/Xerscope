@@ -1,3 +1,5 @@
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
@@ -432,12 +434,12 @@ def show_chart(picked: str | None) -> None:
 
 def show_task_picker(picked: str | None) -> None:
     """The Task list under the chart, on the picked activity."""
-    names = dict(zip(tasks["task_code"], tasks["task_name"], strict=False))
+    names = tasks.set_index("task_code")["task_name"]  # the names of the update shown, not the latest ones
     st.session_state[PICK_KEY] = picked
     st.selectbox(
         "Task",
         tasks["task_code"].tolist(),
-        format_func=lambda code: f"{code} · {names.get(code, '')}",
+        format_func=partial(ui.code_label, names),
         placeholder="Click a task in the chart, or pick one here",
         key=PICK_KEY,
         on_change=_pick_from_list,
@@ -485,5 +487,12 @@ with st.expander("Table view"):
     ]
     # a finished task has no float or remaining duration: a dash, not "None"
     shown, overrides = ui.numbers_as_text(tasks[table_columns], ["total_float_d", "remaining_d"])
-    ui.table(shown, overrides=overrides, key="gantt_tasks", reading="gantt_tasks")
+    ui.table(
+        shown,
+        overrides=overrides,
+        key="gantt_tasks",
+        reading="gantt_tasks",
+        empty=f"No task of {snapshot.label} matches the filters above: widen the WBS branch, the status, the "
+        "category, the search, the code values or the Ask sentence.",
+    )
     csv_download(tasks[table_columns], f"gantt_{ui.stamp(snapshot.data_date)}.csv", sources=sources_of(snapshot))

@@ -45,7 +45,7 @@ from xerscope.app.downloads import (
     show_held,
     sources_of,
 )
-from xerscope.app.explanation_panel import show_calculation, show_method
+from xerscope.app.explanation_panel import metric_panel
 from xerscope.app.session import (
     SNAP_CHOICE,
 )
@@ -115,7 +115,6 @@ def show_summary(results, standard, snapshot, sources: list[str]) -> None:
         summary,
         status="status",
         max_height=ui.TABLE_LONG,
-        overrides=ui.count_columns(flagged="Items listed"),
         key="health_results",
         reading="health_results",
     )
@@ -270,12 +269,7 @@ def show_flagged(result, explanation, snapshot, sources: list[str]) -> None:
 def show_check(result, explanation, snapshot, expanded: bool, sources: list[str], standard=None) -> None:
     """One expander: what the check measures, its calculation, method and the flagged items."""
     with st.expander(check_title(result), expanded=expanded):
-        left, right = st.columns([3, 2], gap="large")
-        with left:
-            st.markdown(f"**What it measures** · {explanation.measured}")
-            show_calculation(result, explanation)
-        with right:
-            show_method(result.metric, explanation, explanation.parameters)
+        metric_panel(result, explanation, detailed=True)
         if standard is not None:
             show_links(result, snapshot, standard)
         show_flagged(result, explanation, snapshot, sources)
@@ -338,7 +332,7 @@ def show_trend(store, standard) -> None:
         ui.table(
             by_update,
             max_height=ui.TABLE_LONG,
-            # dates follow the id and check columns
+            # one column per update, named by its date: written with two decimals, a check's value
             overrides=ui.number_columns("d2", *by_update.columns[2:]),
             key="health_trend",
             reading="health_trend",
@@ -417,15 +411,8 @@ def show_report_comparison(results, standard) -> None:
             st.success(f"All {len(compared)} checks match the report", icon=":material/check_circle:")
         ui.table(
             compared,
-            overrides={
-                **ui.count_columns(
-                    found_exp="Found (report)",
-                    found="Found (xerscope)",
-                    total_exp="Total (report)",
-                    total="Total (xerscope)",
-                ),
-                "match": st.column_config.CheckboxColumn("Match"),
-            },
+            # found and total mean the report's in the editor above and xerscope's here
+            overrides=ui.count_columns(found="Found (xerscope)", total="Total (xerscope)"),
             key="health_report",
             reading="health_report",
         )

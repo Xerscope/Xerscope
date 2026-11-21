@@ -21,6 +21,23 @@ def show_calculation(result, explanation) -> None:
         st.markdown(f"**Baseline** · {ui.md_text(explanation.baseline)}")
 
 
+def metric_panel(result, explanation, reading: str | None = None, detailed: bool = False) -> None:
+    """Show the explanation of one check in two columns: the calculation, then the method.
+
+    ``explanation`` is ``explain(result)``, which the page holds already. ``reading``, a READINGS key, puts a
+    "How to read" popover above. ``detailed`` (Schedule health) adds what the check measures above the calculation
+    and the parameters table under the method; the Audit page, which sets the parameters itself, leaves both out.
+    """
+    ui.reading_popover(reading)
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        if detailed:
+            st.markdown(f"**What it measures** · {explanation.measured}")
+        show_calculation(result, explanation)
+    with right:
+        show_method(result.metric, explanation, explanation.parameters if detailed else ())
+
+
 def show_method(metric, explanation, parameters=()) -> None:
     """Show the method of a check, its parameters table when given, and its source."""
     st.markdown("**Method**")

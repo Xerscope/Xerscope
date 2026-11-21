@@ -104,7 +104,8 @@ ui.table(
     key="mta_slips",
     reading="mta_slips",
     open_task=partial(open_in_gantt, snapshot=store.latest),
-    overrides=ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
+    # in COLUMNS slip_wd is the slip of a finish due to progress (Delay analysis); here it runs since the first update
+    overrides=ui.number_columns("signed", slip_wd="Slip since first (wd)"),
 )
 with st.expander("Data"):
     ui.table(trend, max_height=ui.TABLE_LONG, key="mta_trend", reading="mta_trend")

@@ -32,7 +32,7 @@ from xerscope.app.cache import (
 from xerscope.app.downloads import (
     sources_of,
 )
-from xerscope.app.explanation_panel import show_calculation, show_method
+from xerscope.app.explanation_panel import metric_panel
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
     baseline_warnings,
@@ -179,15 +179,6 @@ def show_results(standard_result, audit_result) -> None:
     ui.kpis(items)
 
 
-def show_explanation(result) -> None:
-    explanation = explain(result)
-    left, right = st.columns([3, 2], gap="large")
-    with left:
-        show_calculation(result, explanation)
-    with right:
-        show_method(result.metric, explanation)
-
-
 def show_sheet(standard, metric) -> None:
     """How the check is set and where to change it for good."""
     with st.expander("Settings: how to change this check for good"):
@@ -284,7 +275,7 @@ if written is not None:
     with st.expander("Calculation sheet: population, fields, sources, worked example"):
         st.markdown(written)
 ui.section("Calculation", "With the settings of this page.")
-show_explanation(audit_result)
+metric_panel(audit_result, explain(audit_result))
 ui.section("Sets", "Every item the check looked at, so the count can be redone by hand.")
 show_funnel(audit_result, snapshot, SOURCES)
 show_sets(audit_result, snapshot, SOURCES)

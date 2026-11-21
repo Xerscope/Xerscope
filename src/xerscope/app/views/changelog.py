@@ -45,16 +45,14 @@ def show_kpis(log: pd.DataFrame, counts: pd.DataFrame) -> None:
     )
 
 
-def show_categories(counts: pd.DataFrame) -> None:
+def show_categories(counts: pd.DataFrame, old, new) -> None:
     ui.section("Changes by category")
     ui.table(
         category_totals(counts),
         key="changelog_categories",
         reading="changelog_categories",
-        overrides={
-            **ui.count_columns(total="Changes"),
-            "kinds": st.column_config.TextColumn("Kinds of change", width="large"),
-        },
+        empty=f"No change between {old.label} and {new.label}: no task, link, duration, date, resource or budget "
+        "differs, the tasks being matched by Task ID.",
     )
 
 
@@ -98,6 +96,9 @@ def show_all_changes(log: pd.DataFrame, counts: pd.DataFrame, old, new) -> None:
         key="changelog_all",
         reading="changelog_all",
         open_task=partial(open_in_gantt, snapshot=new),
+        empty=f"No change to list between {old.label} and {new.label}: the Category, Change and Search filters above "
+        "keep none of the log (the log itself is empty only when the two files hold the same tasks, links, dates "
+        "and resources).",
     )
     csv_download(
         log,
@@ -111,7 +112,13 @@ def show_weekly(store) -> None:
     with st.expander("Every week, side by side"):
         weekly = memo(("changelog_weekly",), weekly_change_counts, store, baseline=False)
         wide = weekly_change_matrix(weekly)
-        ui.table(wide, max_height=ui.TABLE_LONG, key="changelog_weekly", reading="changelog_weekly")
+        ui.table(
+            wide,
+            max_height=ui.TABLE_LONG,
+            key="changelog_weekly",
+            reading="changelog_weekly",
+            empty="No change was recorded between any two consecutive updates of the series.",
+        )
 
 
 store = require_store()
@@ -176,6 +183,6 @@ if old is new:
 log = memo(("changelog", old_label, new_label), changelog, old, new, baseline=False)
 counts = summary(log)
 show_kpis(log, counts)
-show_categories(counts)
+show_categories(counts, old, new)
 show_all_changes(log, counts, old, new)
 show_weekly(store)
