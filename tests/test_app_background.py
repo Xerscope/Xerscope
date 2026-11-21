@@ -14,8 +14,8 @@ from streamlit.testing.v1 import AppTest
 
 import xerscope
 from xerscope.analysis.checks import run_standard
-from xerscope.app import state
-from xerscope.app.state import most_recent_first
+from xerscope.app import cache
+from xerscope.app.files_window import most_recent_first
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 
@@ -112,8 +112,8 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
         gate.acquire()
         return run_standard(standard, context, **options)
 
-    monkeypatch.setattr(state, "run_standard", gated)
-    real_score_job = state.score_job
+    monkeypatch.setattr(cache, "run_standard", gated)
+    real_score_job = cache.score_job
 
     def score_job(*args):
         # the page has collected what was in; one more standard finishes before the next poll
@@ -126,7 +126,7 @@ def test_a_standard_finished_while_the_overview_is_shown_fills_its_card_without_
                 time.sleep(0.01)
         return job
 
-    monkeypatch.setattr(state, "score_job", score_job)
+    monkeypatch.setattr(cache, "score_job", score_job)
     at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
     _joined(at, "_load_job")
     files_done(at.run())  # the window opened on its Baseline section once the series was read
@@ -170,7 +170,7 @@ def test_the_score_cards_stop_polling_once_every_score_is_shown(sample_dir, monk
     # the next poll, as the browser's timer makes it: the page had found a score missing when it
     # armed the fragment, the fragment now finds them all
     page_saw_one_missing = []
-    held = state.standard_results_held
+    held = cache.standard_results_held
 
     def held_after_the_page_looked(standard, snapshot):
         if not page_saw_one_missing:
@@ -178,7 +178,7 @@ def test_the_score_cards_stop_polling_once_every_score_is_shown(sample_dir, monk
             return None
         return held(standard, snapshot)
 
-    monkeypatch.setattr(state, "standard_results_held", held_after_the_page_looked)
+    monkeypatch.setattr(cache, "standard_results_held", held_after_the_page_looked)
     reruns = []
     real_rerun = st.rerun
 
@@ -225,12 +225,12 @@ def test_a_score_job_cancelled_during_a_standard_runs_none_of_its_other_checks(m
     from xerkit import snap
 
     from xerscope.analysis import builtin_standards
-    from xerscope.app import state
+    from xerscope.app import cache
     from xerscope.store import SnapshotStore
 
     snapshot = snap([{"task_code": "A1"}])
     standards = {key: builtin_standards()[key] for key in ("P6", "DCMA")}
-    job = state.ScoreJob((), snapshot, SnapshotStore([snapshot]), None, standards)
+    job = cache.ScoreJob((), snapshot, SnapshotStore([snapshot]), None, standards)
     checks_run = []
 
     def run_metric(metric, context):

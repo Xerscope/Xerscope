@@ -159,3 +159,20 @@ def test_the_option_warns_when_the_baseline_has_no_guid(tmp_path, monkeypatch):
     assert not at.exception, [e.value for e in at.exception]
     (warning,) = _guid_warnings(at)
     assert "no GUID" in warning and "export.xml" in warning
+
+
+def test_linking_renames_the_tasks_of_the_baseline_file_too_so_the_checks_counting_them_agree():
+    """Baseline A and B; update A and B2 (B's GUID), both complete. P6 renumbers the baseline with the
+    activity ("Renumber Selected Activities in Baselines"), so its task list holds B2, not B: P6-13 counts
+    2 completed / 2 baseline tasks, none gone; the BEI whose due tasks are counted in the baseline finds 2."""
+    from xerscope.analysis.rules import RULES, AnalysisContext
+
+    done = dict(act_start_date="2026-03-02 08:00", act_end_date="2026-03-03 17:00", status_code="TK_Complete")
+    baseline = Baseline.from_snapshot(snap([todo("A", guid="g1", **WEEK), todo("B", guid="g2", **WEEK)]))
+    update = snap([todo("A", guid="g1", **done), todo("B2", guid="g2", **done)], data_date="2026-03-16 08:00")
+    linked = relinked(baseline, update)
+    assert sorted(linked.snapshot.activities["task_code"]) == ["A", "B2"]
+    p6_13 = RULES["p6_13_bei"].fn(AnalysisContext(update, None, linked))
+    assert (p6_13.numerator, p6_13.denominator) == (2, 2) and "no longer" not in p6_13.note
+    bei = RULES["bei"].fn(AnalysisContext(update, None, linked), due_from="baseline")
+    assert (bei.numerator, bei.denominator) == (2, 2)
