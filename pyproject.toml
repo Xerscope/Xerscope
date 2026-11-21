@@ -34,7 +34,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     # code fitness (scripts/fitness.py): exact versions, the baseline it checks against holds
     # their numbers and a new release can score the same code differently
-    "complexipy==8.3.0",
+    "complexipy==9.0.0",
     "deptry==0.25.1",
     "import-linter==2.16",
     "mypy==2.4.1",
@@ -45,7 +45,7 @@ dev = [
 # Accessibility check of the rendered pages (scripts/accessibility.py, workflow accessibility.yml).
 # Its own group: a browser driver no test of the suite needs. Exact version: the Chromium build
 # the workflow installs comes with it.
-accessibility = ["playwright==1.64.1"]
+accessibility = ["playwright==1.65.1"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
