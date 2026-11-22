@@ -107,13 +107,23 @@ class ScoreJob:
         self.done = True
 
 
+def _score_identity(snapshot: Snapshot, standards_: dict[str, Standard]) -> tuple:
+    """Return what a score job is computed on: the data set, the update and the standards as written.
+
+    A standard enters by its repr (its metrics, their parameters and targets), not its id alone: one
+    uploaded again under the same id with another threshold is another standard, and starts another job.
+    """
+    standards_as_written = tuple((key, repr(standard)) for key, standard in standards_.items())
+    return (*data_identity(ev_basis=False), snapshot.source, str(snapshot.data_date), standards_as_written)
+
+
 def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, Standard]) -> ScoreJob:
     """Return the job computing ``standards_`` on ``snapshot`` for the current data set, started on the first call.
 
-    A new data set or baseline starts another. The results already in are written to the memo, so Schedule
-    health reads them.
+    A new data set, baseline or standard (``_score_identity``) starts another. The results already in are
+    written to the memo, so Schedule health reads them.
     """
-    identity = (*data_identity(ev_basis=False), snapshot.source, str(snapshot.data_date), tuple(standards_))
+    identity = _score_identity(snapshot, standards_)
     job: ScoreJob | None = st.session_state.get("_score_job")
     if job is None or job.identity != identity:
         if job is not None:
@@ -127,6 +137,18 @@ def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, St
             hold_standard_results(job.standards[key], snapshot, results)
             job.held.add(key)
     return job
+
+
+def score_errors(snapshot: Snapshot, standards_: dict[str, Standard]) -> dict[str, str]:
+    """Return the message of each standard that raised in the score job of the current data set, by standard id.
+
+    Empty when no job was started for this data set and these standards. A standard in error has no result
+    to hold, so the Overview reads here that it is settled and stops polling for it. Starts nothing.
+    """
+    job: ScoreJob | None = st.session_state.get("_score_job")
+    if job is None or job.identity != _score_identity(snapshot, standards_):
+        return {}
+    return {key: results for key, results in job.results.items() if isinstance(results, str)}
 
 
 def standard_results_held(standard: Standard, snapshot: Snapshot) -> list[CheckResult] | None:
