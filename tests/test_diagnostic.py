@@ -564,7 +564,8 @@ def test_baseline_block_names_the_kind_basis_and_link_of_the_baseline_in_use():
     row = baseline_table(update, xml, updates=["b.xer"]).iloc[0]
     assert (row["kind"], row["source"]) == ("P6 XML baseline file", "P6 Project Baseline 370 from export.xml")
     assert baseline_table(update, xml, anonymous=True, updates=["b.xer"]).loc[0, "source"] == ""
-    fallback = dataclasses.replace(Baseline.planned(update), source="fallback (planned dates)")
+    # the app marks a fallback by its kind (analysis.baseline.KIND_FALLBACK), as baselines.py sets it
+    fallback = dataclasses.replace(Baseline.planned(update), source="fallback (planned dates)", kind="fallback")
     assert baseline_table(update, fallback).loc[0, "kind"] == "fallback, planned dates (target_*)"
 
 
@@ -716,4 +717,7 @@ def test_departure_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates(
     frames = diagnostic_frames(snap(tasks), None, builtin_standards()["P6"], anonymous=True)
     forms = frames["03c_departure_forms"]
     assert forms["tasks"].tolist() == [1]
+    steps = frames["03a_departure_steps"]  # counts are whole numbers: "850", not "850.0"; blank on the start row
+    assert str(steps["removed"].dtype) == "Int64" and str(steps["left"].dtype) == "Int64"
+    assert steps["left"].tolist() == [1, 1, 1, 1, 1, 1] and pd.isna(steps["removed"].iloc[0])
     assert "ZQ7" not in forms.to_csv() and "2026" not in forms.to_csv()

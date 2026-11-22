@@ -129,17 +129,38 @@ chosen for the user), gives the baseline of the updates whose file has no usable
 A separate baseline file may be a P6 XML export (`xer/pmxml.py`: its `BaselineProject` elements, converted
 to the XER tables `build_snapshot` reads; durations and units in hours, percentages x 100, calendar periods
 ending a minute later than the XML's last working minute). `load_snapshot(..., project_id=)` names the
-baseline; when the XML holds the one an update's file names, that update takes it (`_xml_baseline_of`).
+baseline. In the per-file mode the export is read for every update whose file holds none
+(`analysis/baseline_resolution.py`, applied by `state._resolved_baseline`): the baseline the update names when
+the export holds it (exact), else the loaded update whose project the update names, else the baseline the
+versions of the export created just before and after the update's project both hold (`content_digest`); the
+last two are "probable", their `source` says so and every page, warning and download repeats it. An undecided
+update (the versions around it hold different baselines) takes nothing, not even the fallback, until the
+window's Baseline section gets a choice for it (`bl_undecided`: one of the two candidate baselines, applied as
+"chosen" and alerted like a probable one, or the fallback). `Baseline.kind` says how the baseline relates to
+its update (`analysis.baseline.KIND_*`: in file, exact, probable, chosen, fallback, planned, series) and
+`found_by` what found it; every path that builds a Baseline in the app sets both, and `baselines.kind_of` is the
+one classifier the banner, the sidebar and the Debug page read. A baseline of the export that cannot be read leaves its
+update without one and is named in the sidebar (`_export_read_errors`). The Baseline section of the window
+lists, once the files are read, what each file names and what it is measured against, or would be in the
+per-file mode (`xml_baselines.baseline_per_file`), with the hint that P6 writes no baseline in an XER.
 `Baseline.source` says where the baseline of an update comes from; `run_metric` copies it to
-`CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the dangling logic and DCMA-08
-readers, the `duration` rule on the baseline), `"none"` when it needs one and has none. `explain` carries it, the
+`CheckResult.baseline` for every check the baseline changes (`needs_baseline`, the readers that do not declare
+it: the dangling logic, DCMA-08 and the CPLI margin, `checks.BASELINE_READERS`; the `duration` rule on the
+baseline), `"none"` when it needs one and has none. "Link renumbered tasks by GUID" (`baseline.relinked`) renames
+the baseline's frame, its assignment costs and the tasks of its own file alike, so the checks that count the
+baseline's tasks (P6-13, the BEI due in the baseline) agree with the earned value. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
 `baseline: <source>`. Every page opens with a one-line context banner (`state.page_header`): the projects
-read, the data date of the update shown, where the baseline `baseline_for` gives it comes from (in file,
-fallback, planned dates, a loaded update, a separate file, none), the EV basis, costs on or off, and the count of files and projects; its
-help reads "Baseline used for <update>: <source>", and pressing it opens the Files and baseline window. Health,
+read, the data date of the update shown, where the baseline the page reads comes from (in file,
+fallback, planned dates, a loaded update, a separate file, none) and the rule that picked it, the EV basis, costs on or off, and the count of files and projects; its
+help reads "Baseline used for <update>: <source>" and why the rule applies, and pressing it opens the Files and baseline window. The baseline is
+read per page (`app/baselines.py`): Health, Audit and the Gantt read the one assigned in the update's file when
+it holds one, else the window's choice (`baseline_for_checks`: P6 Check Schedule and the DCMA items are defined
+on it); Earned value reads the origin of the series (`origin_baseline`, the first update's baseline, which does
+not move) and, with its "P6 view" switch, the update's own (`baseline_for`), P6's Planned Value of the week; the
+four weeks' window reads the plan in force each week in both positions. Health,
 Audit and Earned value add the baseline's warnings under it (`state.baseline_warnings`; the Earned value curves
-measure every update against the baseline of the one shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
+measure every update against the origin, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
 baseline and what applies instead, a pointer that is not used and why (absent project, `orig_proj_id` of
 another project, no activities), a series that mixes sources; on the pages, a baseline whose data date is after
 the update's and a baseline that finds fewer than 90 % of the update's activities (the 06A501a / DCMA-11
@@ -153,7 +174,7 @@ carry no pointer logic of their own.
 | `evm.py` | baseline + series → PV curve, EV/AC/SPI per update, forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique); cost: BAC from `target_cost`, PV per assignment, EV = BAC × Performance %, SPI = EV cost / PV cost |
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
-| `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source | read-only account of a result, shown under every check in the app |
+| `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source; `READINGS`: the "How to read" text of each chart and table | read-only account of a result, shown under every check in the app; the popover of `ui.chart` and `ui.table` |
 | `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook: `llm_backend` asks a llama.cpp server (`XERSCOPE_QUERY_URL`, the optional `llm` service of `deploy/compose.yaml`) for JSON constrained by a schema, ids outside the vocabulary dropped; any failure or delay, and the grammar answers. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the model and the output seeing the new codes only) |
 
 Standards are data in `standards/*.toml`:
@@ -255,7 +276,32 @@ Outside `analysis/`:
 
 - **`streamlit_app.py`:** declares the pages (`st.navigation`); the Debug page is left out on a
   locked deployment unless `XERSCOPE_DEBUG_PAGE=1` (`state.debug_page`).
-- **`state.py`:** the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
+- **`baselines.py`:** which baseline each update is measured against, as the session chose it:
+  `baseline_for` (cached per data set), the paths that build the `Baseline` of one update (its file's,
+  the one resolved from the export, the one chosen for an undecided update, the fallback, the planned
+  dates, one baseline for the series), each setting `kind` and `found_by`; `kind_of`, the one
+  classifier; `data_identity` and `_baseline_identity` for the cache keys. Draws nothing.
+- **`baseline_file.py`:** the separate baseline file: picked in the folder, uploaded, or named by
+  `XERSCOPE_BASELINE`; `baseline_items` and `baseline_files_tag` for the downloads and the cache keys.
+- **`baseline_export.py`:** the P6 XML export in use: its index, what the resolution reads of it
+  (`export_contents`), the resolution of each update (`_resolution`, cached for the series), the
+  baselines read from it (`_export_baseline`, one read per baseline and basis) and the candidates of an
+  undecided update.
+- **`baseline_window.py`:** the window's Baseline section: the choices it offers and their names
+  (`_baseline_options`, `_baseline_short`, `banner_kind`), the fallback and the choice of each undecided
+  update, the per-file table.
+- **`baseline_warnings.py`:** the sidebar's Baseline line (`_baseline_picker`) and what the sidebar says
+  about the baseline in use: probable or chosen baselines, undecided updates, pointers not used, a series
+  that mixes sources, the Project Baselines the files name but do not hold, the renumbered tasks.
+- **`cache.py`:** the session's caches of what the pages compute: `memo` (keyed on `data_identity`),
+  `metric_result` and the standard results, `ScoreJob`.
+- **`session.py`:** the leaf the others read: the window's modes (`BL_*`) and drafts, the parse cache
+  (`_parse`, `_pmxml_index`), the digests, `_cache_for`, the locked deployment.
+- **`state.py`:** the page-level pieces only (context banner, page header, `baseline_warnings`, pickers,
+  `require_store`, `standards`); every other name a page reads comes from its defining module, which
+  `tests/test_architecture.py` guards (the app's import edges, written in the test; the baseline domain
+  reads none of the pages' machinery; `state.py` is imported by the pages only; no cycle). What follows
+  describes the sidebar, whose Files and Baseline lines open one window (`st.dialog`,
   `_window`: files read on Done, baseline selectors kept in session state while it is closed;
   shortcuts F, B and Ctrl+Enter for Done), pickers, a per-session cache keyed on the loaded
   files, and the list of standards (built-in, `XERSCOPE_STANDARDS`, uploaded). One update for
@@ -347,7 +393,7 @@ Outside `analysis/`:
   (P6 properties, resource assignments, logic) and its history across updates. Opened under
   the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
   the page only an activity the chart draws); every value is read from the snapshot or the
-  store, card text is escaped. The Task history page draws the same history.
+  store, card text is escaped.
 
 ### The Gantt "Ask" field: talking to the schedule without a model reading it
 

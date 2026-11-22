@@ -2,19 +2,22 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import (
-    anonymizer,
+from xerscope.app.baseline_file import (
     baseline_files_tag,
     baseline_items,
-    download,
-    fetch,
-    held,
-    hold,
+)
+from xerscope.app.cache import (
     memo,
+)
+from xerscope.app.downloads import (
+    anonymizer,
+    built_download,
+    download,
+    source_raws,
+)
+from xerscope.app.state import (
     page_header,
     require_store,
-    show_download,
-    source_raws,
 )
 from xerscope.export import Fmt, export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
@@ -33,16 +36,20 @@ ui.table(
     pd.DataFrame(
         [{"table": name, "rows": len(frame), "columns": len(frame.columns)} for name, frame in tables.items()]
     ),
-    overrides={
-        "table": st.column_config.TextColumn("Table"),
-        "rows": st.column_config.NumberColumn("Rows", format="%,d"),
-        "columns": st.column_config.NumberColumn("Columns", format="%d"),
-    },
+    # the Debug costs table writes its rows column as text, so COLUMNS holds no rows: its label and format stay here
+    overrides=ui.number_columns("thousands", rows="Rows"),
     key="export_tables",
+    reading="export_tables",
 )
 
 table_formats: list[Fmt] = ["parquet", "csv"]
-table_format = st.radio("Format", table_formats, horizontal=True)
+table_format = st.radio(
+    "Format",
+    table_formats,
+    horizontal=True,
+    help="Parquet keeps the column types (dates, numbers) for Power BI; CSV opens anywhere. "
+    "Pick Parquet for Power BI, CSV for a spreadsheet.",
+)
 download(
     f"Download {table_format.upper()} tables (.zip)",
     f"{store.latest.project_code}_xerscope_{table_format}.zip",
@@ -57,7 +64,12 @@ download(
 )
 
 with st.expander("Preview fact_activity"):
-    ui.table(tables["fact_activity"].head(200), max_height=640, key="export_fact_activity")
+    ui.table(
+        tables["fact_activity"].head(200),
+        max_height=ui.TABLE_LONG,
+        key="export_fact_activity",
+        reading="export_fact_activity",
+    )
 
 
 def _data_date(raw) -> pd.Timestamp | None:
@@ -69,26 +81,6 @@ def _data_date(raw) -> pd.Timestamp | None:
     return None if pd.isna(value) else value
 
 
-def build_anonymised_extract(store) -> None:
-    data_dates = {snapshot.source: snapshot.data_date for snapshot in store}
-    items = st.session_state.get("items") or []
-    baselines = baseline_items(st.session_state)  # the separate baseline file, each baseline of an XML
-    with st.spinner(f"Anonymizing {len(items) + len(baselines)} file(s)…"):
-        extract = fetch(
-            st.session_state,
-            None,
-            lambda anonymous: anonymous.zip_xers(
-                [
-                    *((parse_bytes(data, source=name), data_dates.get(name)) for name, data in items),
-                    *((raw, _data_date(raw)) for name, data in baselines for raw in source_raws(name, data)),
-                ]
-            ),
-            prepare=True,
-            anonymous=True,
-        )
-    hold(st.session_state, "anon_extract", baseline_files_tag(st.session_state), extract)
-
-
 ui.section(
     "Anonymized XER extract",
     "Every loaded file, and the separate baseline file (each baseline of a P6 XML export, as an XER), with "
@@ -96,27 +88,43 @@ ui.section(
     "free text or cost. Dates, durations, units and logic are unchanged, so P6 and xerscope compute "
     "the same results on it. The new IDs match the anonymized lists of Schedule health.",
 )
-if st.button("Build anonymized extract", icon=":material/visibility_off:", key="anon_build"):
-    build_anonymised_extract(store)
+data_dates = {snapshot.source: snapshot.data_date for snapshot in store}
+items = st.session_state.get("items") or []
+baselines = baseline_items(st.session_state)  # the separate baseline file, each baseline of an XML
 # built for the loaded files and the baseline file of that time: another baseline file asks for a new one
-extract = held(st.session_state, "anon_extract", baseline_files_tag(st.session_state))
-if extract is not None:
-    show_download(
-        extract,
-        "Download anonymized XER (.zip)",
-        "xerscope_anonymised_xer.zip",
-        "application/zip",
-        suffix=False,
-        key="anon_download",
-    )
-    if not extract.refused:
-        built = anonymizer()
-        report = built.report if built is not None else None
-        if report is not None and (report.dropped_tables or report.emptied_columns):
-            st.caption(
-                "Left out: tables "
-                + (", ".join(sorted(report.dropped_tables)) or "none")
-                + "; columns emptied "
-                + (", ".join(sorted(report.emptied_columns)) or "none")
-                + "."
-            )
+extract = built_download(
+    "anon_extract",
+    baseline_files_tag(st.session_state),
+    "Build anonymized extract",
+    "Download anonymized XER (.zip)",
+    "xerscope_anonymised_xer.zip",
+    "application/zip",
+    None,
+    lambda anonymous: anonymous.zip_xers(
+        [
+            *((parse_bytes(data, source=name), data_dates.get(name)) for name, data in items),
+            *((raw, _data_date(raw)) for name, data in baselines for raw in source_raws(name, data)),
+        ]
+    ),
+    None,
+    key="anon_download",
+    build_key="anon_build",
+    icon=":material/visibility_off:",
+    help_text="Rebuilds every loaded file and the separate baseline file with new Task IDs, WBS, project, "
+    "resource and calendar names; dates, durations, units and logic unchanged. Use it to share a schedule "
+    "P6 and xerscope compute the same results on.",
+    spinner=f"Anonymizing {len(items) + len(baselines)} file(s)…",
+    anonymous=True,
+    suffix=False,
+)
+if extract is not None and not extract.refused:
+    built = anonymizer()
+    report = built.report if built is not None else None
+    if report is not None and (report.dropped_tables or report.emptied_columns):
+        st.caption(
+            "Left out: tables "
+            + (", ".join(sorted(report.dropped_tables)) or "none")
+            + "; columns emptied "
+            + (", ".join(sorted(report.emptied_columns)) or "none")
+            + "."
+        )

@@ -14,6 +14,7 @@ from xerscope.analysis.forensics import (
     half_step,
     half_step_series,
     longest_path_float_d,
+    revisions_by_horizon,
 )
 from xerscope.analysis.longest_path import (
     SWITCHED,
@@ -22,18 +23,25 @@ from xerscope.analysis.longest_path import (
     longest_path_funnel,
     path_changes,
     path_churn,
+    path_commitments,
 )
+from xerscope.analysis.progress import kept_count
 from xerscope.app import ui
+from xerscope.app.cache import (
+    memo,
+)
+from xerscope.app.downloads import (
+    csv_download,
+    sources_of,
+)
 from xerscope.app.sets import show_steps as show_funnel_steps
 from xerscope.app.state import (
-    csv_download,
-    memo,
     open_in_gantt,
     page_header,
     require_store,
     snapshot_picker,
-    sources_of,
 )
+from xerscope.config import DEFAULT_SETTINGS
 from xerscope.viz.charts import build_half_step, build_slip_trend
 
 CASE_TEXT = {
@@ -64,7 +72,7 @@ def show_engine_gap(read, old, new) -> None:
         )
         if gap_wd != 0.0
     ]
-    st.warning(
+    ui.caveat(
         "xerscope does not recalculate the finish P6 stored in the file (" + "; ".join(gaps) + "). The shifts "
         "below may come from the recalculation and not from the schedule: read them as indications only. "
         "The Schedule health page, Integrity standard, lists the dates that differ; the Debug page, block 3, "
@@ -77,8 +85,16 @@ def show_kpis(read, new) -> None:
     float_d = longest_path_float_d(new)
     ui.kpis(
         [
-            ("Finish before replanning", ui.fmt_date(read.finish_before_replanning), f"{read.slip_wd:+.1f} wd"),
-            ("Finish shown", ui.fmt_date(read.new_finish), f"{read.replanning_wd:+.1f} wd by replanning"),
+            (
+                "Finish before replanning",
+                ui.fmt_date(read.finish_before_replanning),
+                ui.SHIFT_WD_FORMAT.format(read.slip_wd),
+            ),
+            (
+                "Finish shown",
+                ui.fmt_date(read.new_finish),
+                f"{ui.SHIFT_WD_FORMAT.format(read.replanning_wd)} by replanning",
+            ),
             ("Longest path float", ui.fmt_number(float_d, "{:.1f} wd")),
             ("Tasks matched", f"{read.matched}", f"{read.added} added, {read.deleted} deleted"),
         ],
@@ -94,15 +110,15 @@ def show_steps(read, old, new) -> None:
         "each bar is what that kind did to the finish.",
     )
     ui.chart(build_half_step(read.steps))
-    ui.table(read.steps, key="forensics_steps")
+    ui.table(read.steps, key="forensics_steps", reading="forensics_steps")
     if read.is_slip_beyond_period:
-        st.warning(
+        ui.caveat(
             f"The progress step lost {abs(read.slip_wd):.1f} wd in a period of {read.period_wd:.1f} wd. "
             "AACE 29R-03 3.4.K.4.g: a revision may sit in the half-step, or the lack of progress pushed work "
             "into a non-working stretch of a calendar."
         )
     if abs(read.residual_wd) > 0.005:
-        st.warning(
+        ui.caveat(
             f"Residual {read.residual_wd:+.1f} wd: the steps do not account for every change between the two "
             "files. A change the changelog does not list moved the finish."
         )
@@ -112,6 +128,37 @@ def show_steps(read, old, new) -> None:
         "Download steps (CSV)",
         sources=sources_of(old, new),
     )
+
+
+def show_horizon(old, new) -> None:
+    """Where the week's revisions fall: within the lookahead, where work is made ready, or beyond it."""
+    weeks = DEFAULT_SETTINGS.lookahead_weeks
+    horizon = memo(
+        ("forensics_horizon", old.label, new.label, weeks),
+        revisions_by_horizon, old, new, weeks, baseline=False, ev_basis=False,
+    )  # fmt: skip
+    st.caption(
+        f"Where the revisions fall: on tasks starting within {weeks:g} weeks of the status date (work under "
+        "way included), where a Last Planner team makes work ready, or beyond. Revisions that fall mostly "
+        "beyond reshape the far plan."
+    )
+    ui.table(horizon, key="forensics_horizon")
+
+
+def show_path_commitments(old, new) -> None:
+    """Show the week's commitments made on the previous update's longest path, kept or not."""
+    commitments = path_commitments(old, new)
+    st.caption(
+        f"Commitments of the week on the previous update's longest path: {kept_count(commitments)} kept of "
+        f"{len(commitments)}. PPC counts every commitment alike; a miss here moves the finish."
+    )
+    if not commitments.empty:
+        ui.table(
+            commitments.sort_values(["kept", "planned_date"]),
+            key="forensics_path_commitments",
+            max_height=ui.TABLE_SHORT,
+            open_task=partial(open_in_gantt, snapshot=new),
+        )
 
 
 def show_longest_path(old, new) -> None:
@@ -128,15 +175,16 @@ def show_longest_path(old, new) -> None:
     ui.table(
         changes,
         key="forensics_path",
-        max_height=420,
+        max_height=ui.TABLE_SHORT,
         open_task=partial(open_in_gantt, snapshot=new),
+        empty="No open task is on the longest path of either update: nothing entered, stayed on or left it.",
     )
 
 
 def show_path_series(store) -> None:
     """Longest path of every update against the one before it: table, CSV."""
     churn = memo(("forensics_path_churn",), path_churn, store, baseline=False, ev_basis=False)
-    ui.table(churn, key="forensics_path_churn", max_height=360)
+    ui.table(churn, key="forensics_path_churn", max_height=ui.TABLE_SHORT)
     csv_download(churn, "longest_path_churn.csv", "Download longest path (CSV)", sources=sources_of(*list(store)))
 
 
@@ -149,7 +197,7 @@ def show_series(store) -> None:
     )
     series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
     ui.chart(build_slip_trend(series))
-    ui.table(series, key="forensics_series", max_height=480)
+    ui.table(series, key="forensics_series", reading="forensics_series", max_height=ui.TABLE_SHORT)
     csv_download(series, "half_step_series.csv", "Download series (CSV)", sources=sources_of(*list(store)))
 
 
@@ -181,12 +229,14 @@ with top:
 try:
     read = memo(("forensics", old.label, new.label), half_step, old, new, baseline=False, ev_basis=False)
 except ScheduleError as error:
-    st.warning(f"These two updates cannot be read: {ui.without_addresses(str(error))}")
+    st.error(f"These two updates cannot be read: {ui.without_addresses(str(error))}", icon=":material/block:")
     st.stop()
 show_case(new)
 show_engine_gap(read, old, new)
 show_kpis(read, new)
 show_steps(read, old, new)
+show_horizon(old, new)
 show_longest_path(old, new)
+show_path_commitments(old, new)
 show_series(store)
 show_path_series(store)

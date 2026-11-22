@@ -92,7 +92,7 @@ def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
     assert texts == sorted(
         [
             "SAME",
-            f'<span style="color:{red}">▲</span> LATE (-2 wd)',
+            f'<span style="color:{red}">▲</span> LATE (-2.0 wd)',
             f'<span style="color:{green}">▼</span> EARLY (+1.5 wd)',
         ]
     )
@@ -356,8 +356,20 @@ def test_gantt_script_never_parses_text_as_html_nor_calls_out():
         "WebSocket",
         "sendBeacon",
         "import(",
+        "DOMParser",
+        'setAttribute("on',
+        "javascript:",
     ):
         assert unsafe not in script
+
+
+def test_gantt_script_writes_every_text_through_one_function():
+    """The component is not sandboxed: the only text write is the one in ``element``, which sets textContent."""
+    script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
+    assert script.count(".textContent =") == 1
+    assert "node.textContent = String(text)" in script
+    for other_text_write in ("innerText", "createTextNode", "insertAdjacentText"):
+        assert other_text_write not in script
 
 
 def test_gantt_timescales_and_links():

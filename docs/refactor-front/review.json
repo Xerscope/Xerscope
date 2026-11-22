@@ -1,0 +1,46 @@
+{
+ "missing_findings": [
+  "DP-09 — absent from every package and from the plan text (grep docs/refactor-front-plan.md: 0 hits); definition unverified (not in scratchpad/audit/)",
+  "RD-15 — absent from every package and from the plan text (0 hits); definition unverified",
+  "VB-12 — absent from every package and from the plan text (0 hits); definition unverified",
+  "DF-14 — excluded on purpose (plan appendix C, D 'excluded'), known backlog item",
+  "DF-15 — excluded on purpose (plan appendix B, D 'excluded'), false positives"
+ ],
+ "rule_violations": [
+  "P6a: >400 changed lines by design (~2000 moved; plan P6 option 1); only acceptable if same_code.py is the whole review",
+  "P11: mixes a move with a computed-value change — export._data_date (src/xerscope/app/views/export.py:63-69, no plan_start_date fallback) replaced by read_header (fallback in src/xerscope/xer/model.py:1496); plan cites 'model.py:1497-1503' but the module is xer/model.py; CONTRIBUTING rule 3 requires a failing-before test, plan gives none",
+  "P9: bundles a session-state behaviour change (Audit default standard + merge of health_std/audit_std keys, src/xerscope/app/views/audit.py:151-153 key='audit_std') and DF-04 n/a→– with visual fixes",
+  "P4: mixes renames (move) with turning gantt.css/gantt.js into templates filled by gantt_assets() (src/xerscope/viz/gantt.py:253-256, ROW_PX at gantt.py:36) — a rendering behaviour change inside a 'byte-identical figures' package",
+  "P12: mixes moves (ui.py:538-632 filters, ui.py:66-124 theme) with the conditional deletion of blank_missing (VB-15); plan's range 66-130 overshoots (ui.py:125-129 are ROW_HEIGHT/HEADER_HEIGHT/COLUMNS); tests/test_table_filters.py already exists (tests/test_table_filters.py:45-118), plan calls it 'new'",
+  "P7: functools.cache on builtin_standards adds process-wide state in a 'same results' package (design decision, not a computed-value change)",
+  "No package places a chart in views/ or adds a calculation to a page"
+ ],
+ "uncovered_files": [
+  "src/xerscope/app/code_picker.py (65 lines, imported by views/debug.py:12, views/earned_value.py:32, views/ppc.py:23, views/gantt.py:9) — never cited",
+  "src/xerscope/app/expected_finish_forms.py (78 lines, imported by diagnostic.py:35) — never cited; P11 moves diagnostic.py without it",
+  "src/xerscope/app/views/activity.py (24 lines) — cited only via its nav title (streamlit_app.py:35); no package owns its removal",
+  "src/xerscope/app/streamlit_app.py:29-52 navigation/page registration, debug_page() gate, ui.glossary() per page — cited once",
+  "src/xerscope/app/static/ (woff2 fonts, OFL) + ui.font_fallback_css (ui.py:75), ui.runtime_table (ui.py:90) — font loading not in LD lens",
+  "src/xerscope/viz/gantt.js (421 lines) — cited only for ROW_PX and 420px grid; no readability/duplication lens",
+  "src/xerscope/app/style.css (297 lines) — only lines 3, 105-107, 297 cited",
+  "tests/test_accessibility.py and scripts/accessibility.py — not used by any lens",
+  "src/xerscope/app/glossary.py, sets.py, reading.py, xml_baselines.py — one line each cited, not read as modules",
+  "src/xerscope/app/__init__.py, src/xerscope/viz/__init__.py — trivial, never cited"
+ ],
+ "safety_net_runs": [
+  "uv run pytest -rs → PASS (exit 0; 26 skips, all tests/test_reference.py 'reference missing', not MPXJ)",
+  "uv run pytest tests/test_characterization.py → PASS",
+  "uv run pytest tests/test_page_golden.py → PASS",
+  "uv run pytest tests/test_app.py -q -x → PASS",
+  "uv run pytest tests/test_app_parity.py -q → PASS",
+  "uv run pytest tests/test_app_cache.py tests/test_app_background.py -q → PASS",
+  "uv run python scripts/duplication.py src → RUNS (36 near clones) but default THRESHOLD=0.9 (scripts/duplication.py:26): none of the 0.81-0.87 app/viz pairs the packages promise to remove appear; the pass criterion is unreadable without --threshold 0.8",
+  "uv run python scripts/fitness.py --check tests/fitness_baseline.json → PASS (two 'better' in xer/pmxml.py)",
+  "uvx ruff check src tests scripts → PASS",
+  "uvx ruff format --check src tests scripts → PASS (226 files)",
+  "uv run python scripts/same_code.py origin/main → exit 1 (81 ADDED, 47 CHANGED, 2 REMOVED): branch is 36 commits ahead of origin/main; command works, 'pure move reports none' holds only against the package's own base",
+  "docs/refactor-front/time_pages.py → FAILS without argv[1] output folder (time_pages.py:12, IndexError); with a folder RUNS: Health rerun 0.22 s (plan quotes 0.24 s)",
+  "XERSCOPE_UPDATE_GOLDEN=1 pytest tests/test_page_golden.py → NOT RUN (rewrites tests/golden/pages.json)",
+  "Review section appended to docs/refactor-front-plan.md as '## Review of this plan'"
+ ]
+}

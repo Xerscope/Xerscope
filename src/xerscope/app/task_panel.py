@@ -1,8 +1,8 @@
 """One activity: its P6 properties in the update shown, then its history across every update.
 
-Drawn under the Gantt for the activity picked there, and by the Task history page. The
-activity is named by its Activity ID (task_code) only; every value shown is read from the
-loaded snapshot or store, nothing comes back from the browser but that ID.
+Drawn under the Gantt for the activity picked there. The activity is named by its Activity ID
+(task_code) only; every value shown is read from the loaded snapshot or store, nothing comes
+back from the browser but that ID.
 """
 
 from __future__ import annotations
@@ -50,19 +50,19 @@ def task_from_row_id(value: object) -> str | None:
 
 
 def _text(value) -> str:
-    return "–" if value is None or (not isinstance(value, str) and pd.isna(value)) or value == "" else str(value)
+    return ui.MISSING if value is None or (not isinstance(value, str) and pd.isna(value)) or value == "" else str(value)
 
 
 def _when(value) -> str:
-    return "–" if pd.isna(value) else pd.Timestamp(value).strftime(DATETIME_FMT)
-
-
-def _days(value) -> str:
-    return "–" if pd.isna(value) else f"{value:.1f} wd"
+    if pd.isna(value):
+        return ui.MISSING
+    return pd.Timestamp(value).strftime(DATETIME_FMT)
 
 
 def _yes(value) -> str:
-    return "–" if pd.isna(value) else ("Yes" if bool(value) else "No")
+    if pd.isna(value):
+        return ui.MISSING
+    return "Yes" if bool(value) else "No"
 
 
 def _constraint(kind, date) -> str:
@@ -110,11 +110,11 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
             "Status",
             [
                 ("Status", _text(task["status"])),
-                ("% complete", "–" if pd.isna(task["pct_complete"]) else f"{task['pct_complete']:.1f} %"),
-                ("Original duration", _days(task["original_d"])),
-                ("Remaining duration", _days(task["remaining_d"])),
-                ("Total float", _days(task["total_float_d"])),
-                ("Free float", _days(task["free_float_d"])),
+                ("% complete", ui.fmt_number(task["pct_complete"], "{:.1f} %")),
+                ("Original duration", ui.fmt_number(task["original_d"], "{:.1f} wd")),
+                ("Remaining duration", ui.fmt_number(task["remaining_d"], "{:.1f} wd")),
+                ("Total float", ui.fmt_number(task["total_float_d"], "{:.1f} wd")),
+                ("Free float", ui.fmt_number(task["free_float_d"], "{:.1f} wd")),
                 ("Critical", _yes(task["is_critical"])),
                 ("Longest path", _yes(task["on_longest_path"])),
             ],
@@ -208,14 +208,14 @@ def show_card(snapshot, task_code: str) -> None:
         if assigned.empty:
             st.caption("No resource assignment.")
         else:
-            ui.table(assigned, key="task_resources")
+            ui.table(assigned, key="task_resources", reading="task_resources")
     with logic_column:
         ui.section("Logic")
         links = logic(snapshot, task_code)
         if links.empty:
             st.caption("No relationship.")
         else:
-            ui.table(links, key="task_logic")
+            ui.table(links, key="task_logic", reading="task_logic")
 
 
 # --- history ----------------------------------------------------------------------------
@@ -237,12 +237,11 @@ def show_history(store, task_code: str) -> None:
             (
                 "Forecast finish",
                 ui.fmt_date(last["finish"], "—"),
-                None if slip is None else f"{slip:+.1f} wd since first",
-                "Working days gained (+) or lost (−) since the first forecast of this task, on its calendar: "
-                "a later finish reads negative",
+                None if slip is None else f"{ui.SHIFT_WD_FORMAT.format(slip)} since first",
+                f"Forecast finish against the first forecast of this task, on its own calendar. {ui.SHIFT_WD_SENTENCE}",
             ),
-            ("Total float", "–" if pd.isna(last["total_float_d"]) else f"{last['total_float_d']:.1f} wd"),
-            ("% complete", "–" if pd.isna(last["pct_complete"]) else f"{last['pct_complete']:.0f} %"),
+            ("Total float", ui.fmt_number(last["total_float_d"], "{:.1f} wd")),
+            ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),
         ]
     )
     dates_column, float_column = st.columns(2, gap="large")
@@ -253,4 +252,4 @@ def show_history(store, task_code: str) -> None:
         ui.section("Total float (working days)")
         ui.chart(build_activity_float(history))
     ui.section("By update")
-    ui.table(history, columns=HISTORY_COLUMNS, key="task_history")
+    ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")

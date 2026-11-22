@@ -11,7 +11,7 @@ from streamlit.testing.v1 import AppTest
 from xerkit import active, todo, xer_text
 
 import xerscope
-from xerscope.app.state import BL_PLANNED
+from xerscope.app.session import BL_PLANNED
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [

@@ -2169,3 +2169,11 @@ def test_lag_share_of_the_project_without_dates_is_not_applicable():
     assert s.project_work_hours() != s.project_work_hours()  # NaN
     r = RULES["lag"].fn(AnalysisContext(s), op=">", value=10, unit="project_pct", links="all")
     assert r.value is None and r.numerator is None and "planned start" in r.note
+
+
+def test_cpli_names_the_baseline_its_margin_was_taken_from():
+    """Without a Must Finish By the margin is read in the baseline: the result says which one, like every
+    check the baseline changes (``checks.uses_baseline``), so the pages and the downloads can name it."""
+    r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
+    assert r.baseline.startswith("BL ")
+    assert run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)])).baseline == "none"

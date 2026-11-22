@@ -217,15 +217,23 @@ class Step:
     name: str
     categories: tuple[str, ...]
     apply: Callable[[_Derivation, Snapshot], Snapshot]
+    # the kinds of the changelog's Tasks category the step carries: a rename or a move to
+    # another WBS is no input of the recalculation and belongs to no step
+    task_changes: tuple[str, ...] = ()
+
+    def is_carried(self, log: pd.DataFrame) -> pd.Series:
+        """Flag the rows of a changelog this step accounts for."""
+        in_tasks = (log["category"] == "Tasks") & log["change"].isin(self.task_changes)
+        return log["category"].isin(self.categories) | in_tasks
 
 
 STEPS = [
     Step("progress", ("Progress",), _apply_progress),
-    Step("scope", ("Scope",), _apply_scope),
+    Step("scope", ("Scope",), _apply_scope, task_changes=("type changed",)),
     Step("durations", ("Durations", "Resources"), _apply_durations),
     Step("logic", ("Relationships",), _apply_logic),
     Step("constraints", ("Constraints",), _apply_constraints),
-    Step("calendars and options", ("Calendars", "Options", "Tasks"), _apply_calendars_and_options),
+    Step("calendars and options", ("Calendars", "Options"), _apply_calendars_and_options, ("calendar changed",)),
 ]
 STEP_NAMES = [step.name for step in STEPS]
 STEP_COLUMNS = ["step", "finish", "shift_wd", "changes"]
@@ -328,7 +336,7 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
     for step in STEPS:
         derived = step.apply(derivation, derived)
         stepped_finish = schedule(derived).finish
-        changes = int(log["category"].isin(step.categories).sum())
+        changes = int(step.is_carried(log).sum())
         rows.append(_step_row(step.name, finish, stepped_finish, changes, new))
         finish = stepped_finish
     return HalfStep(
@@ -343,6 +351,51 @@ def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
         added=len(derivation.added),
         deleted=len(derivation.deleted),
     )
+
+
+# --- where the revisions fall ---------------------------------------------------------------------
+
+WITHIN_LOOKAHEAD = "within the lookahead"
+BEYOND_LOOKAHEAD = "beyond the lookahead"
+HORIZON_COLUMNS = ["step", WITHIN_LOOKAHEAD, BEYOND_LOOKAHEAD, "beyond_pct"]
+
+
+def revisions_by_horizon(old: Snapshot, new: Snapshot, lookahead_weeks: float) -> pd.DataFrame:
+    """Non-progress revisions of the week by step, split by where the revised activity sits in time.
+
+    One row per step after progress, then ``all``: the changelog rows the step carries that name
+    an activity, ``within the lookahead`` when the activity starts on or before the later status
+    date plus ``lookahead_weeks`` (work under way included), ``beyond the lookahead`` otherwise;
+    ``beyond_pct`` the share beyond. The start is the later update's, the earlier one's for an
+    activity deleted since; a row without an activity or a start is left out.
+
+    The lookahead is where a Last Planner team makes work ready; revisions mostly beyond it
+    reshape the far plan (docs/formulas.md 5.1: the source, and what is xerscope's reading).
+    """
+    log = changelog(old, new)
+    starts = new.by_code["start"].combine_first(old.by_code["start"])
+    start = log["task_code"].map(starts)
+    limit = new.data_date + pd.Timedelta(weeks=lookahead_weeks) if new.data_date is not None else pd.NaT
+    is_within = start <= limit
+    is_beyond = start > limit
+    rows = []
+    for step in STEPS[1:]:
+        carried = step.is_carried(log)
+        rows.append(_horizon_row(step.name, int((carried & is_within).sum()), int((carried & is_beyond).sum())))
+    rows.append(
+        _horizon_row("all", sum(row[WITHIN_LOOKAHEAD] for row in rows), sum(row[BEYOND_LOOKAHEAD] for row in rows))
+    )
+    return pd.DataFrame(rows, columns=HORIZON_COLUMNS)
+
+
+def _horizon_row(step: str, within: int, beyond: int) -> dict:
+    total = within + beyond
+    return {
+        "step": step,
+        WITHIN_LOOKAHEAD: within,
+        BEYOND_LOOKAHEAD: beyond,
+        "beyond_pct": 100 * beyond / total if total else None,
+    }
 
 
 # --- how the project's finish is held -----------------------------------------------------------

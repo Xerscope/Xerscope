@@ -305,9 +305,9 @@ def ppc_series(
                 "starts_kept": starts_kept,
                 "committed": planned,
                 "kept": kept,
-                "ppc_start": _share(starts_kept, len(starts)),
-                "ppc_finish": _share(finishes_kept, len(finishes)),
-                "ppc_week": _share(kept, planned),
+                "ppc_start": percent_kept(starts_kept, len(starts)),
+                "ppc_finish": percent_kept(finishes_kept, len(finishes)),
+                "ppc_week": percent_kept(kept, planned),
                 "note": _notes(store[index - 1], store[index]),
             }
         )
@@ -331,6 +331,90 @@ def ppc_series(
     )
 
 
+LOOKAHEAD_HORIZONS = (
+    1,
+    2,
+    4,
+    8,
+)  # updates before the plan of the week: Hamzeh et al. 2012 measure 2, Ballard & Tommelein 2016 1
+
+
+def planned_for_week(store: SnapshotStore, index: int, horizon: int, include_overdue: bool) -> pd.DataFrame:
+    """Return the plan of the update ``horizon`` updates before W-1 for the week to W (``store[index]``):
+    its commitments due by W's data date, read as `committed` reads W-1's, with their outcome in W.
+    With ``include_overdue`` False, only the dates after W-1's data date: the week itself. At horizon
+    0 this is `committed` (W-1, W)."""
+    plan, current = store[index - 1 - horizon], store[index]
+    commitments = committed(plan, current, include_overdue=True)
+    if not include_overdue and store[index - 1].data_date is not None:
+        commitments = commitments[commitments["planned_date"] > store[index - 1].data_date]
+    return commitments
+
+
+def _lookahead_row(store: SnapshotStore, index: int, horizon: int, include_overdue: bool, code_filter) -> dict:
+    """TA and TMR of the week to ``store[index]`` against the plan ``horizon`` updates before W-1
+    (Hamzeh, Ballard & Tommelein 2012, figure 5): TA = commitments of the weekly work plan the earlier
+    plan held / commitments of the weekly work plan; TMR = commitments of the earlier plan kept in W
+    / commitments of the earlier plan. Deleted activities are left out of both, as `ppc_series` does."""
+    week_plan = planned_for_week(store, index, 0, include_overdue)
+    lookahead = planned_for_week(store, index, horizon, include_overdue)
+    if code_filter is not None:
+        week_plan = code_filter.keep(week_plan, store[index - 1])
+        lookahead = code_filter.keep(lookahead, store[index - 1 - horizon])
+    week_plan, lookahead = week_plan[week_plan["in_update"]], lookahead[lookahead["in_update"]]
+    keys = ["task_code", "commitment"]
+    anticipated = week_plan.merge(lookahead[keys], on=keys, how="inner")
+    return {
+        "snapshot_idx": index,
+        "week_start": store[index - 1].data_date,
+        "data_date": store[index].data_date,
+        "horizon": horizon,
+        "lookahead_date": store[index - 1 - horizon].data_date,
+        "wwp": len(week_plan),
+        "anticipated": len(anticipated),
+        "ta_pct": percent_kept(len(anticipated), len(week_plan)),
+        "lookahead": len(lookahead),
+        "lookahead_kept": kept_count(lookahead),
+        "tmr_pct": percent_kept(kept_count(lookahead), len(lookahead)),
+        "ppc_week": percent_kept(kept_count(week_plan), len(week_plan)),
+    }
+
+
+LOOKAHEAD_COLUMNS = [
+    "snapshot_idx", "week_start", "data_date", "horizon", "lookahead_date", "wwp", "anticipated", "ta_pct",
+    "lookahead", "lookahead_kept", "tmr_pct", "ppc_week",
+]  # fmt: skip
+
+
+def lookahead_series(
+    store: SnapshotStore,
+    horizons: tuple[int, ...] = LOOKAHEAD_HORIZONS,
+    include_overdue: bool = True,
+    code_filter: CodeFilter | None = None,
+) -> pd.DataFrame:
+    """One row per week W (update 1 onward) and per horizon the series reaches: Tasks Anticipated and
+    Tasks Made Ready (Hamzeh, Ballard & Tommelein 2012, "Rethinking Lookahead Planning to Optimize
+    Construction Workflow", Lean Construction Journal, figure 5; first proposed by Ballard 1997).
+
+    A horizon is a number of updates before the plan of the week (W-1): weeks when the updates are
+    weekly, ``lookahead_date`` says which plan was read. The sources measure one week (Ballard &
+    Tommelein 2016) and two (Hamzeh et al. 2012); beyond, the reading is this project's. A commitment
+    (Start or Finish of a task) is the unit, as in `ppc_series`; the sources count tasks.
+    ``include_overdue``, ``code_filter``: as `ppc_series`."""
+    rows = [
+        _lookahead_row(store, index, horizon, include_overdue, code_filter)
+        for index in range(1, len(store))
+        for horizon in horizons
+        if index - 1 - horizon >= 0
+    ]
+    return pd.DataFrame(rows, columns=LOOKAHEAD_COLUMNS)
+
+
+def lookahead_of_week(series: pd.DataFrame, index: int) -> pd.DataFrame:
+    """Rows of `lookahead_series` for the week that ends at update ``index``, one per horizon."""
+    return series[series["snapshot_idx"] == index].reset_index(drop=True)
+
+
 def ppc_of_week(ppc: pd.DataFrame, index: int) -> pd.Series:
     """Row of `ppc_series` for the week that ends at update ``index``."""
     return ppc.set_index("snapshot_idx").loc[index]
@@ -341,7 +425,7 @@ def kept_count(commitments: pd.DataFrame) -> int:
     return int(commitments["kept"].sum())
 
 
-def _share(kept: int, committed: int) -> float | None:
+def percent_kept(kept: int, committed: int) -> float | None:
     """Percent kept, None when nothing was committed."""
     return 100 * kept / committed if committed else None
 
