@@ -252,6 +252,15 @@ def test_finish_case_last_activity_must_finish_by_and_mandatory_finish():
     assert finish_case(pinned) == (MANDATORY_FINISH, pd.Timestamp("2026-03-06 17:00"))
 
 
+@pytest.mark.oracle("standard")
+def test_a_completed_mandatory_finish_does_not_hold_the_finish():
+    """Oracle P6 help, Constraints: a completed activity is not scheduled, so its constraint binds
+    nothing (docs/cpm.md, Complete). M, achieved Fri 13 Feb with a Mandatory Finish on that day and
+    nothing after it, beside open A, Mon 2 - Fri 6 March: the finish is A's, Fri 6 March 17:00."""
+    achieved = snap([done("M", cstr_type="CS_MANDFIN", cstr_date="2026-02-13 17:00", **FM), todo("A", **week())])
+    assert finish_case(achieved) == (LAST_ACTIVITY, pd.Timestamp("2026-03-06 17:00"))
+
+
 @pytest.mark.oracle("p6")
 def test_longest_path_float_is_negative_past_a_must_finish_by():
     """A ends Fri 6 17:00, Must Finish By Thu 5 17:00: late finish Thu 17:00, total float -8 h = -1.0 d

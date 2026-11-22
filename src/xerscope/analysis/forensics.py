@@ -412,12 +412,13 @@ def finish_case(snapshot: Snapshot, recomputed: Schedule | None = None) -> tuple
     late dates only, so the early finish still moves and float turns negative past the date.
     ``mandatory finish``: an end point (nothing follows it) carries a Mandatory Finish; its date
     cannot move, and the delay shows in the float of what precedes it. ``last task``: the
-    finish is the latest early finish and moves freely.
+    finish is the latest early finish and moves freely. A completed activity holds nothing:
+    P6 does not schedule it, so its constraint has no effect (Oracle P6 help, Constraints).
     """
     must_finish_by = snapshot.options.get("must_finish_by")
     if must_finish_by is not None:
         return MUST_FINISH_BY, must_finish_by
-    activities = without(snapshot.activities, snapshot.data_date, ["loe"])
+    activities = without(snapshot.activities, snapshot.data_date, ["loe", "complete"])
     at_the_end = ~has_successor_in_project(snapshot, activities)
     mandatory = activities[at_the_end & (activities["cstr_type"] == "CS_MANDFIN")]
     if not mandatory.empty:
