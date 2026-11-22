@@ -1014,9 +1014,20 @@ def test_a_baseline_that_finds_few_activities_is_flagged_on_the_pages(tmp_path, 
 
 
 def test_the_pages_say_which_baseline_the_update_uses(tmp_path, monkeypatch):
+    """Health and Audit read the baseline assigned in b (none); Earned value reads the origin of the series,
+    a's own baseline, until its P6 view switch asks for b's."""
     at = _series(tmp_path, monkeypatch)
-    for page in ("views/health.py", "views/audit.py", "views/earned_value.py"):
+    for page in ("views/health.py", "views/audit.py"):
         assert "Baseline used for 2026-03-09: none" in _banner(at.switch_page(page).run()), page
+    at = at.switch_page("views/earned_value.py").run()
+    assert any(
+        line.startswith(
+            "Baseline used for 2026-03-09: origin of the series (a.xer): P6 Project Baseline in the file (BL"
+        )
+        for line in _banner(at)
+    )
+    at.toggle(key="ev_p6_view").set_value(True).run()
+    assert "Baseline used for 2026-03-09: none" in _banner(at)
 
 
 # --- a file exported with several projects -------------------------------------------------------------
@@ -1050,9 +1061,11 @@ def test_a_file_whose_baseline_copy_ties_on_activities_is_read_for_its_project(t
 
 
 def test_the_fallback_applies_on_the_earned_value_page_of_a_portfolio_file(tmp_path, monkeypatch):
+    """In the P6 view, which reads the update's own baseline: the default reads the origin of the series."""
     at = _portfolio(tmp_path, monkeypatch)
     baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     at = at.run().switch_page("views/earned_value.py").run()
+    at.toggle(key="ev_p6_view").set_value(True).run()
     assert any(
         m.startswith("Baseline used for 2026-03-09: fallback (Planned dates in each file (target_*))")
         for m in _banner(at)
@@ -1060,7 +1073,9 @@ def test_the_fallback_applies_on_the_earned_value_page_of_a_portfolio_file(tmp_p
 
 
 def test_an_update_without_baseline_says_where_to_pick_one(tmp_path, monkeypatch):
+    """In the P6 view of Earned value: by default the page reads the origin of the series, which b has."""
     at = _series(tmp_path, monkeypatch).switch_page("views/earned_value.py").run()
+    at.toggle(key="ev_p6_view").set_value(True).run()
     assert any(
         "b.xer: Baseline: none in file" in i and "When a file has no baseline" in i
         for i in (element.value.replace("\\", "") for element in at.info)
@@ -1180,7 +1195,7 @@ def test_the_banner_names_the_baseline_the_page_uses_when_the_file_baseline_cann
     baseline_box(at, "bl_fallback").select("Planned dates in each file (target_*)")
     at = _health(at.run(), "2026-03-02")
     label = at.button(key="context_banner").label.replace("\\", "")
-    assert " · BL fallback, planned dates · " in label
+    assert " · BL fallback, planned dates (the window's choice) · " in label
     assert "Baseline used for 2026-03-02: fallback (Planned dates in each file (target_*))" in _banner(at)
 
 

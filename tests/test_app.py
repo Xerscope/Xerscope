@@ -435,13 +435,13 @@ def test_the_context_banner_states_each_setting_and_follows_its_changes(app, sto
     first = store.labels[0].split(" · ")[0]
     code = store.latest.project_code
     assert _banner(app) == (
-        f"{code} · status date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
+        f"{code} · status date {ui.fmt_date(store.latest.data_date)} · BL update {first} (origin of the series) · "
         "EV budgeted, planned dates · costs off · 8 files · 1 project"
     )
     app.selectbox(key="ev_snap").set_value(store.labels[2]).run()
     assert f"status date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
     baseline_box(app).set_value(BL_PLANNED)
-    assert " · BL planned dates · " in _banner(app)
+    assert " · BL planned dates (origin of the series) · " in _banner(app)
     baseline_box(app, "ev_basis").set_value("at_completion_current")
     assert " · EV at completion, current dates · " in _banner(app)
     app.session_state["files_open"] = False  # baseline_box leaves the window open

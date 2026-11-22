@@ -10,7 +10,7 @@ import streamlit as st
 from xerscope.analysis import AnalysisContext, Baseline, Standard
 from xerscope.analysis.checks import CheckResult, run_metric, run_standard
 from xerscope.analysis.standards import Metric
-from xerscope.app.baselines import baseline_for, data_identity, snapshot_identity
+from xerscope.app.baselines import baseline_for_checks, data_identity, snapshot_identity
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot
 
@@ -44,18 +44,18 @@ def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = T
 
 
 def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep: bool = True) -> CheckResult:
-    """Return ``metric`` on ``snapshot`` against the sidebar's baseline for it, once per session.
+    """Return ``metric`` on ``snapshot`` against the baseline the checks read for it, once per session.
 
+    ``baseline_for_checks``: the one assigned in the update's file when it holds one, else the sidebar's.
     Health, Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
     written (rule, parameters, target, standard: its repr) and the update (file, data date). Not the EV
     basis: no rule reads what it sets (the ev_* columns, the assignment costs).
     """
-    return memo(
-        _metric_key(metric, snapshot),
-        lambda: run_metric(metric, AnalysisContext(snapshot, store, baseline_for(snapshot))),  # built on a miss only
-        keep=keep,
-        ev_basis=False,
-    )
+
+    def computed() -> CheckResult:  # built on a miss only
+        return run_metric(metric, AnalysisContext(snapshot, store, baseline_for_checks(snapshot)))
+
+    return memo(_metric_key(metric, snapshot), computed, keep=keep, ev_basis=False)
 
 
 def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
@@ -118,7 +118,7 @@ def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, St
     if job is None or job.identity != identity:
         if job is not None:
             job.cancelled = True  # its results are for another data set or baseline
-        job = ScoreJob(identity, snapshot, store, baseline_for(snapshot), dict(standards_))
+        job = ScoreJob(identity, snapshot, store, baseline_for_checks(snapshot), dict(standards_))
         job.thread = threading.Thread(target=job.run, name="xerscope-scores", daemon=True)
         job.thread.start()
         st.session_state["_score_job"] = job

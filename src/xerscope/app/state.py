@@ -8,13 +8,13 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, KIND_CHOSEN, KIND_PROBABLE
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, KIND_CHOSEN, KIND_IN_FILE, KIND_PROBABLE
 from xerscope.analysis.wbs import ROOT
 from xerscope.app import ui
 from xerscope.app.baseline_export import is_undecided
 from xerscope.app.baseline_warnings import MATCH_WARN_BELOW
 from xerscope.app.baseline_window import banner_kind
-from xerscope.app.baselines import baseline_for
+from xerscope.app.baselines import baseline_for, baseline_for_checks, kind_of
 from xerscope.app.downloads import (
     costs_shown,
 )
@@ -37,22 +37,51 @@ from xerscope.app.session import (
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot
 
+# The rule a page reads its baseline by, as the banner names it, and why (its help). Health, Audit and
+# the Gantt read the baseline assigned in the update (``baselines.baseline_for_checks``); Earned value
+# the origin of the series (``baselines.origin_baseline``), or this update's own with its P6 view switch.
+RULE_WINDOW = "the window's choice"
+RULE_CHECKS = "assigned in this update"
+RULE_ORIGIN = "origin of the series"
+RULE_P6_VIEW = "P6 view: this update's baseline"
+BASELINE_RULES = {
+    RULE_WINDOW: "the page reads the baseline the Baseline window gives this update.",
+    RULE_CHECKS: (
+        "the checks read the baseline assigned in this update, as P6 Check Schedule and the DCMA 14-Point "
+        "Assessment define their items."
+    ),
+    RULE_ORIGIN: (
+        "the cumulative figures read the origin baseline of the series: a cumulative index needs a baseline "
+        "that does not move (Lipke 2009: the Earned Schedule reliability studies exclude re-planned projects). "
+        "Switch to the P6 view to read the file's own Planned Value."
+    ),
+    RULE_P6_VIEW: "the cumulative figures read this update's own baseline: P6's Planned Value and BEI of the week.",
+}
 
-def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
+
+def checks_rule(baseline: Baseline | None) -> str:
+    """Return the rule Health, Audit and the Gantt read ``baseline`` by (``baseline_for_checks``).
+
+    The one assigned in the update when its file holds it, else the window's choice.
+    """
+    return RULE_CHECKS if kind_of(baseline) == KIND_IN_FILE else RULE_WINDOW
+
+
+def context_banner(store: SnapshotStore, snapshot: Snapshot, baseline: Baseline | None, rule: str) -> None:
     """Show one line under a page title.
 
-    What the page is computed from (projects read, data date of the update shown, the baseline
-    ``baseline_for`` gives it, EV basis, costs, files), the baseline's source in full in the help.
-    Pressing it opens the Files and baseline window.
+    What the page is computed from (projects read, data date of the update shown, ``baseline``, the one
+    the page reads, with ``rule``, the ``BASELINE_RULES`` key that picked it, EV basis, costs, files); the
+    baseline's source in full and why the rule applies in the help. Pressing it opens the Files and
+    baseline window.
     """
     codes = list(dict.fromkeys(update.project_code for update in store))
     projects = " + ".join(ui.md_text(code) for code in codes[:3]) + (f" +{len(codes) - 3}" if len(codes) > 3 else "")
-    baseline = baseline_for(snapshot)
     kind = banner_kind(baseline)
     basis = EV_BASIS_LABEL[st.session_state.get("ev_basis", DEFAULT_EV_BASIS)]
     costs = "on" if costs_shown() else "off"
     label = (
-        f"{projects} · status date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} · "
+        f"{projects} · status date {ui.fmt_date(snapshot.data_date)} · BL {ui.md_text(kind)} ({ui.md_text(rule)}) · "
         f"EV {basis.lower().replace(' · ', ', ')} · costs {costs} · {_files_count(store)}"
     )
     used = ui.md_text(baseline.source or baseline.label) if baseline is not None else ui.md_text(kind)
@@ -60,6 +89,7 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
         f"Project(s) read: {', '.join(ui.md_text(code) for code in codes)}",
         f"Status date of the update shown: {ui.fmt_date(snapshot.data_date)} ({ui.md_text(snapshot.source)})",
         f"Baseline used for {ui.stamp(snapshot.data_date)}: {used}",
+        f"Baseline rule: {rule} — {BASELINE_RULES[rule]}",
         f"Earned value basis: {basis}",
         f"Costs: {costs} (sidebar)",
         "Open to change the files, the project read from each file and the baseline.",
@@ -77,10 +107,24 @@ def context_banner(store: SnapshotStore, snapshot: Snapshot) -> None:
         st.warning(f"Baseline of this update: {used}.", icon=":material/warning:")
 
 
-def page_header(title: str, store: SnapshotStore, snapshot: Snapshot | None = None, lead: str = "") -> None:
-    """Show the page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead."""
+def page_header(
+    title: str,
+    store: SnapshotStore,
+    snapshot: Snapshot | None = None,
+    lead: str = "",
+    baseline: Baseline | None = None,
+    rule: str = RULE_WINDOW,
+) -> None:
+    """Show the page title, the context banner for ``snapshot`` (default: the latest update), then an optional lead.
+
+    ``baseline`` and ``rule``: what the page reads and the ``BASELINE_RULES`` key that picked it; a page
+    that passes none reads the window's choice.
+    """
+    shown = snapshot or store.latest
+    if baseline is None:
+        baseline = baseline_for(shown)
     st.title(title)
-    context_banner(store, snapshot or store.latest)
+    context_banner(store, shown, baseline, rule)
     if lead:
         st.caption(lead)
 
@@ -256,7 +300,7 @@ def compare_picker(store: SnapshotStore, current: Snapshot, key: str = "cmp") ->
         previous = store.previous(current)
         return (previous.activities if previous is not None else None), "previous update"
     if choice == COMPARE_BL:
-        baseline = baseline_for(current)
+        baseline = baseline_for_checks(current)  # the Gantt's baseline: the one assigned in the update
         if baseline is None:
             return None, ""
         activities = baseline.frame.rename(columns={"bl_start": "start", "bl_finish": "finish"}).reset_index()

@@ -3,7 +3,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import builtin_standards
+from xerscope.analysis import Baseline, builtin_standards
 from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import (
     EarnedSchedule,
@@ -32,6 +32,8 @@ from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING
 from xerscope.app import ui
 from xerscope.app.baselines import (
     baseline_for,
+    baseline_for_checks,
+    origin_baseline,
 )
 from xerscope.app.cache import (
     memo,
@@ -44,12 +46,16 @@ from xerscope.app.downloads import (
     sources_of,
 )
 from xerscope.app.state import (
+    RULE_ORIGIN,
+    RULE_P6_VIEW,
     baseline_warnings,
     page_header,
     require_store,
     snapshot_picker,
 )
+from xerscope.store import SnapshotStore
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
+from xerscope.xer import Snapshot
 
 COST_COLUMNS = ["bac_cost", "pv_cost", "ev_cost", "spi_cost"]
 COST_MEASURES = ["BAC cost", "PV cost", "EV cost", "SPI"]  # the rows of the calculation table that read costs
@@ -72,6 +78,21 @@ ACTIVITY_COLUMNS = [
 
 
 EV_BASIS_COLUMNS = {"bl_labor_hr": "ev_labor_hr", "bl_start": "ev_start", "bl_finish": "ev_finish"}
+
+
+def cumulative_baselines(
+    store: SnapshotStore, snapshot: Snapshot, p6_view: bool
+) -> tuple[Baseline | None, Baseline | None]:
+    """Return the baseline the cumulative figures of ``snapshot`` read, and the same not relinked.
+
+    PV, EV, SPI, the Earned Schedule and the S-curve read the origin of the series (``origin_baseline``): a
+    cumulative index needs a baseline that does not move. With ``p6_view`` they read this update's own
+    baseline, P6's Planned Value of the week. The second one is for ``evm_series``, which relinks each
+    update's renumbered tasks itself.
+    """
+    if p6_view:
+        return baseline_for(snapshot), baseline_for(snapshot, link=False)
+    return origin_baseline(store, snapshot), origin_baseline(store, snapshot, link=False)
 
 
 def format_points(change: float) -> str:
@@ -496,8 +517,20 @@ def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame)
 
 store = require_store()
 top = st.container()
-snapshot = snapshot_picker(store, "Update", key="ev_snap")
-baseline = baseline_for(snapshot)
+snapshot_column, view_column = st.columns([3, 1], vertical_alignment="bottom")
+with snapshot_column:
+    snapshot = snapshot_picker(store, "Update", key="ev_snap")
+with view_column:
+    p6_view = st.toggle(
+        "P6 view: the file's baseline",
+        value=False,
+        key="ev_p6_view",
+        help="Reads PV, EV, SPI, the Earned Schedule and the S-curve against this update's own baseline, as P6 "
+        "computes its Planned Value. Off, they read the origin of the series, the baseline that does not move "
+        "from one update to the next. The four weeks' window reads the plan in force each week either way.",
+    )
+baseline, series_baseline = cumulative_baselines(store, snapshot, p6_view)
+rule = RULE_P6_VIEW if p6_view else RULE_ORIGIN
 with top:
     page_header(
         "Earned value",
@@ -505,6 +538,8 @@ with top:
         snapshot,
         lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
+        baseline=baseline,
+        rule=rule,
     )
     baseline_warnings(snapshot, baseline, series=True)
 if baseline is None:
@@ -529,9 +564,10 @@ if code_filter is not None:
         st.stop()
 
 # which baseline: its label alone is not unique (two baselines of one P6 XML export with the same data
-# date); its source and the project it was read from are ("planned dates" baselines differ per update)
+# date); its source and the project it was read from are ("planned dates" baselines differ per update);
+# the switch too, so that a figure of one view is never read in the other
 identity = (baseline.label, baseline.source, baseline.snapshot.source, baseline.snapshot.project_id)
-cache_key = ("evm", *identity, baseline.ev_basis, code_filter)
+cache_key = ("evm", p6_view, *identity, baseline.ev_basis, code_filter)
 update_key = (snapshot.source, str(snapshot.data_date))
 # the update's lists (techniques not modelled, tasks not in the baseline, curves) as its KPIs computed them
 point = memo(cache_key + ("point", *update_key), ev_point, part, part_baseline)
@@ -551,20 +587,21 @@ series = memo(
     cache_key + ("series",),
     evm_series,
     store,
-    baseline_for(snapshot, link=False),  # each update linked to it on its own renumbered tasks
+    series_baseline,  # each update linked to it on its own renumbered tasks
     st.session_state.get("guid_link", False),
     code_filter,
 )
 standards = builtin_standards()
 bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
-# each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise; on a
-# task code, computed on its tasks (the cache holds the whole project's)
+# each update's BEI, a check, against the baseline assigned in that update (as Health computes it), from the
+# session's cache when Health or Audit computed it, not kept otherwise; on a task code, computed on its
+# tasks (the cache holds the whole project's)
 bei = memo(
     ("bei", repr(bei_metrics), code_filter),
     bei_series,
     store,
     bei_metrics,
-    baseline_for,
+    baseline_for_checks,
     partial(metric_result, store=store, keep=False),
     code_filter,
     ev_basis=False,

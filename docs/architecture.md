@@ -151,11 +151,16 @@ the baseline's frame, its assignment costs and the tasks of its own file alike, 
 baseline's tasks (P6-13, the BEI due in the baseline) agree with the earned value. `explain` carries it, the
 Health and Audit panels print it under the check, and the exported notes (summary CSV, all sets) end with
 `baseline: <source>`. Every page opens with a one-line context banner (`state.page_header`): the projects
-read, the data date of the update shown, where the baseline `baseline_for` gives it comes from (in file,
-fallback, planned dates, a loaded update, a separate file, none), the EV basis, costs on or off, and the count of files and projects; its
-help reads "Baseline used for <update>: <source>", and pressing it opens the Files and baseline window. Health,
+read, the data date of the update shown, where the baseline the page reads comes from (in file,
+fallback, planned dates, a loaded update, a separate file, none) and the rule that picked it, the EV basis, costs on or off, and the count of files and projects; its
+help reads "Baseline used for <update>: <source>" and why the rule applies, and pressing it opens the Files and baseline window. The baseline is
+read per page (`app/baselines.py`): Health, Audit and the Gantt read the one assigned in the update's file when
+it holds one, else the window's choice (`baseline_for_checks`: P6 Check Schedule and the DCMA items are defined
+on it); Earned value reads the origin of the series (`origin_baseline`, the first update's baseline, which does
+not move) and, with its "P6 view" switch, the update's own (`baseline_for`), P6's Planned Value of the week; the
+four weeks' window reads the plan in force each week in both positions. Health,
 Audit and Earned value add the baseline's warnings under it (`state.baseline_warnings`; the Earned value curves
-measure every update against the baseline of the one shown, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
+measure every update against the origin, the BEI against each update's own). Warnings name the files: in the sidebar, updates without a usable
 baseline and what applies instead, a pointer that is not used and why (absent project, `orig_proj_id` of
 another project, no activities), a series that mixes sources; on the pages, a baseline whose data date is after
 the update's and a baseline that finds fewer than 90 % of the update's activities (the 06A501a / DCMA-11

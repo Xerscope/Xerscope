@@ -10,7 +10,7 @@
  ],
  "overview": [
   "title: Overview",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: 8 weekly update(s) loaded, 31 Aug 2026 → 19 Oct 2026.",
   "metric: Forecast finish = 23 Mar 2027 (-2.0 wd vs previous update)",
   "metric: Shift since first update = -15.0 wd",
@@ -38,7 +38,7 @@
  ],
  "gantt": [
   "title: Gantt & WBS",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: Bars are coloured by float; the outline behind each bar is the same task in the comparison you pick, so slippage shows as the bar leaving its outline.",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
   "selectbox: Compare with = Previous update",
@@ -83,7 +83,7 @@
  ],
  "health": [
   "title: Schedule health",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "button_group: Standard = P6",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
   "toggle: Failed checks only = False",
@@ -446,7 +446,7 @@
  ],
  "audit": [
   "title: Audit",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: The sets behind a check, and the check re-run with other settings. Changes here stay on this page: Schedule health keeps the loaded standards.",
   "button_group: Standard = None",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
@@ -454,7 +454,7 @@
  ],
  "changelog": [
   "title: Changelog",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: Everything that changed between two XER files: tasks, durations, relationships, progress, dates, float, constraints, budgets and resource assignments. Tasks are matched by Task ID.",
   "selectbox: From (older) = 2026-10-12 · PRJ-ALPHA_2026-10-12.xer",
   "button: Previous",
@@ -506,7 +506,7 @@
  ],
  "forensics": [
   "title: Delay analysis",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: What moved the project finish since the previous update, kind of change by kind of change: the previous plan is rescheduled with this update's progress first (the half-step schedule), then its revisions. AACE RP 29R-03 MIP 3.4, contemporaneous split (half-stepped update analysis); the baseline is not read.",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
   "caption: Finish held by: **last task** (23 Mar 2027). In this case the finish is the latest early finish of the project and moves freely.",
@@ -548,9 +548,10 @@
  ],
  "earned_value": [
   "title: Earned value",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (origin of the series) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, earned value follows the % complete reported in the update.",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
+  "toggle: P6 view: the file's baseline = False",
   "metric: Percent complete = 21.0 % (+2.9 pts this week)",
   "metric: Percent scheduled = 30.8 %",
   "metric: SPI (labor units) = 0.68 (-0.07)",
@@ -625,7 +626,7 @@
  ],
  "milestones": [
   "title: Milestone trend",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: Each line is one milestone's forecast date in every update. Flat = stable, rising = slipping. A milestone complete before an update's status date is not drawn in that update.",
   "button: Finish milestones",
   "button: Critical milestones",
@@ -653,7 +654,7 @@
  ],
  "ppc": [
   "title: PPC & weekly progress",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: PPC Start = of the starts update W−1 planned on or before W's status date, the share W shows actually started by then; PPC Finish the same for finishes (Last Planner: complete / planned); PPC W/W−1 = both together. Milestones and LOE left out of the counts; milestones and unplanned work listed apart. Weekly progress = actual in W minus actual in W−1.",
   "number_input: PPC target (%)",
   "checkbox: Include commitments late at W−1 = True",
@@ -739,7 +740,7 @@
  ],
  "export": [
   "title: Export for Power BI",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: Star schema: relate dim_snapshot to every fact table on snapshot_idx, and use task_code to follow a task across weeks. Parquet keeps column types; CSV opens anywhere.",
   "popover: How to read",
   "dataframe: 4 rows | table, rows, columns",
@@ -799,7 +800,7 @@
  ],
  "debug": [
   "title: Debug",
-  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
   "caption: What xerscope read from this file and what it decided, to hold against P6. Read-only. Columns keep the XER and analysis field names.",
   "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
   "expander: 1 · Scheduling options (SCHEDOPTIONS, PROJECT)",

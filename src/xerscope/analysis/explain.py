@@ -456,6 +456,17 @@ class Reading:
 # Figures by the key their builder sets (viz/charts.py ``reading``), tables by the key a page passes
 # to ``ui.table``.
 
+# Which baseline a page's figures are computed against, and why (the baseline each page reads).
+CHECKS_BASELINE = (
+    "Against the baseline assigned in this update, as P6 Check Schedule and the DCMA 14-Point Assessment define "
+    "their items; the window's choice when the file holds none."
+)
+ORIGIN_BASELINE = (
+    "PV, EV, SPI and the Earned Schedule are computed against the origin baseline of the series: a cumulative "
+    "index needs a baseline that does not move (Lipke 2009: the Earned Schedule reliability studies exclude "
+    "re-planned projects); switch to the P6 view to read the file's own Planned Value."
+)
+
 FUNNEL_READING = Reading(
     how=(
         "start, then one row per population step: its label, the text it follows, rows removed, rows left; last row "
@@ -502,7 +513,7 @@ READINGS: dict[str, Reading] = {
             "EV under PV at the status date is work planned and not earned; AC above EV is hours spent for less "
             "work; the forecast end above BAC is an overrun in hours."
         ),
-        conclude="SV < 0 is behind plan in hours; the gap EV–PV read along x is the time behind.",
+        conclude=f"SV < 0 is behind plan in hours; the gap EV–PV read along x is the time behind. {ORIGIN_BASELINE}",
         source=(
             "Oracle P6 glossary definitions quoted in docs/formulas.md §3 (PV, EV, BAC, SPI); EVMS EIA-748 / PMI "
             "Practice Standard for EVM for the names (explain.py `EVMS`)."
@@ -516,7 +527,8 @@ READINGS: dict[str, Reading] = {
         ),
         meaning=(
             "1.0 = on plan; SPI < 1 = less earned than planned to date; SPI (4 weeks) = the last month alone "
-            "(`SPI_WINDOW_READING`, `explain.py:296`); BEI = tasks completed / tasks due."
+            f"(`SPI_WINDOW_READING`, `explain.py:296`); BEI = tasks completed / tasks due. {ORIGIN_BASELINE} "
+            "The BEI, a check, is computed against the baseline assigned in each update."
         ),
         conclude=(
             "BEI < 0.95 is flagged by DCMA 14-Point (PAM 200.1 §3.1.2.4, `dcma.toml:141`) and by P6 Check Schedule "
@@ -617,7 +629,7 @@ READINGS: dict[str, Reading] = {
             "x = status date, y = the check's value in its unit (%, count, ratio); the hover gives found / checked; "
             "a red dotted line at the target when the check has one (none for pass/fail)."
         ),
-        meaning="the same check, same standard, on every loaded update.",
+        meaning=f"the same check, same standard, on every loaded update. {CHECKS_BASELINE}",
         conclude=(
             "on the wrong side of the target line the check fails that week; the target and its direction are the "
             "TOML's (`standards/*.toml` `target`)."
@@ -669,7 +681,7 @@ READINGS: dict[str, Reading] = {
         ),
         meaning=(
             "slippage reads as the bar leaving its outline; red bars are the path that sets the finish; amber bars "
-            "are within 10 wd of it."
+            f"are within 10 wd of it. The baseline outline and the variance to BL: {CHECKS_BASELINE}"
         ),
         conclude=(
             "red bars not started before the data date line are the week's risk; the Float filter and the Ask field "
@@ -693,7 +705,7 @@ READINGS: dict[str, Reading] = {
         how=(
             "One row per check in the standard's order: status (pass red/green labels), id, group, check, result in "
             "its unit, found / checked, target, items listed. Fail = result on the wrong side of the target; info "
-            "and n/a are not scored."
+            f"and n/a are not scored. {CHECKS_BASELINE}"
         ),
         source="The standard's TOML `source` per check; `SCORE_HELP` (`ui.py:400-405`) for the score",
     ),
@@ -702,12 +714,13 @@ READINGS: dict[str, Reading] = {
         source="the TOML",
     ),
     "check_flagged": Reading(
-        how="The tasks or links the check lists, culprits first; select a row to open the Gantt.",
+        how=f"The tasks or links the check lists, culprits first; select a row to open the Gantt. {CHECKS_BASELINE}",
         source="the check's `source`",
     ),
     "health_trend": Reading(
         how=(
-            "One row per check, one column per update (value, `%.2f`). Read a row left to right as the check's history."
+            "One row per check, one column per update (value, `%.2f`). Read a row left to right as the check's "
+            f"history. {CHECKS_BASELINE}"
         ),
         source="the check's `source`",
     ),
@@ -723,7 +736,7 @@ READINGS: dict[str, Reading] = {
         source="`analysis/audit.settings_table`",
     ),
     "check_sets": Reading(
-        how="The three sets behind a count; nothing is recomputed (`audit.split`).",
+        how=f"The three sets behind a count; nothing is recomputed (`audit.split`). {CHECKS_BASELINE}",
         source="the check's `source`",
     ),
     "funnel": FUNNEL_READING,
@@ -760,21 +773,22 @@ READINGS: dict[str, Reading] = {
     ),
     "ev_calculation": Reading(
         how=(
-            "measure, P6 column, formula, value this update: each EV figure with its P6 name and the numbers behind it."
+            "measure, P6 column, formula, value this update: each EV figure with its P6 name and the numbers behind "
+            f"it. {ORIGIN_BASELINE}"
         ),
         source="Oracle P6 glossary (docs/formulas.md §3); EVMS EIA-748 names",
     ),
     "ev_updates": Reading(
         how=(
             "One row per update: PV, EV, AC, SV, SPI, SPI 4 weeks, BEI P6 / DCMA, CPI, EV / AC baselined; indices "
-            "written as text with a dash on the first update."
+            f"written as text with a dash on the first update. {ORIGIN_BASELINE}"
         ),
         source="docs/formulas.md §3; DCMA 14-Point item 14 (BEI)",
     ),
     "ev_tasks": Reading(
         how=(
             "Per baseline task present in the update: EV budget, schedule %, PV, technique, performance %, EV, "
-            "actual hours, EV finish."
+            f"actual hours, EV finish. {ORIGIN_BASELINE}"
         ),
         source="docs/formulas.md §3",
     ),
@@ -820,7 +834,7 @@ READINGS: dict[str, Reading] = {
     "gantt_tasks": Reading(
         how=(
             "The bars as rows: task, WBS, status, float category, dates, total float and remaining (wd, dash when "
-            "complete), % complete, budget hours, constraint."
+            f"complete), % complete, budget hours, constraint. {CHECKS_BASELINE}"
         ),
         source=(
             "Oracle P6 Professional Activities view and Define critical activities (via "

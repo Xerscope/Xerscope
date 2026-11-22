@@ -262,6 +262,58 @@ def _built_baseline(snapshot: Snapshot, link: bool) -> Baseline | None:
     return relinked(baseline, snapshot) if link and baseline is not None else baseline
 
 
+ORIGIN = "origin"  # ``Baseline.found_by`` of the series' origin, which the cumulative earned value reads
+
+
+def baseline_for_checks(snapshot: Snapshot, link: bool | None = None) -> Baseline | None:
+    """Return the baseline the schedule checks read for ``snapshot``.
+
+    Its file's own P6 Project Baseline when the file holds one, else the sidebar's (``baseline_for``):
+    P6 Check Schedule and the DCMA 14-Point Assessment define their items on the baseline assigned in
+    the update, whatever the window chose for the series. ``link``: as ``baseline_for``.
+    """
+    in_file = _file_baseline(snapshot)
+    if in_file is None:
+        return baseline_for(snapshot, link)
+    return linked_baseline("checks", in_file, snapshot, link)
+
+
+def origin_baseline(store: SnapshotStore, snapshot: Snapshot, link: bool | None = None) -> Baseline | None:
+    """Return the sidebar's baseline of the first update, as it applies to ``snapshot``.
+
+    The origin the cumulative earned value is read against: with "Baseline in each file" the first file's
+    baseline, with planned dates the first file's planned dates, with a series choice that choice. A
+    cumulative index needs a baseline that does not move. Kind ``KIND_SERIES``, found by ``ORIGIN``, unless
+    the origin is probable or chosen, kinds every page warns about; None when the first update has none.
+    ``link``: as ``baseline_for``.
+    """
+    origin = baseline_for(store.first, link=False)
+    if origin is None:
+        return None
+    kind = origin.kind if origin.kind in (KIND_PROBABLE, KIND_CHOSEN) else KIND_SERIES
+    source = f"origin of the series ({store.first.source}): {origin.source or origin.label}"
+    return linked_baseline("origin", replace(origin, kind=kind, found_by=ORIGIN, source=source), snapshot, link)
+
+
+def linked_baseline(rule: str, baseline: Baseline, snapshot: Snapshot, link: bool | None) -> Baseline:
+    """Return ``baseline`` as it applies to ``snapshot``, relinked once per data set under ``rule``.
+
+    With the tasks ``snapshot`` renumbered under their new IDs when ``link`` (None: the window's option
+    "Link renumbered tasks by GUID"); ``baseline`` itself otherwise. ``rule`` names the resolution that
+    asks ("checks", "origin"): the two read different baselines of one update.
+    """
+    if link is None:
+        link = st.session_state.get("guid_link", False)
+    if not link:
+        return baseline
+    cache = _cache_for("_linked_baselines", data_identity())
+    linked = cache.get((rule, snapshot.source))
+    if linked is None:
+        linked = relinked(baseline, snapshot)
+        cache[rule, snapshot.source] = linked
+    return linked
+
+
 def _per_file_baseline(snapshot: Snapshot) -> Baseline | None:
     """Return the baseline of ``snapshot`` in the per-file mode: its file's, else the one found, else the fallback.
 
