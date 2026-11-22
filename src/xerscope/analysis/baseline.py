@@ -182,11 +182,41 @@ def baseline_in_file(
     except XerError:
         return None
     updated = pointer.updated[:10] or "not recorded"
-    return replace(
-        Baseline.from_snapshot(held, ev_basis),
-        label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-        source=f"P6 Project Baseline in the file ({pointer.code}, last update {updated})",
-    )
+    name = baseline_name(held, pointer.code)
+    label = f"{pointer.code} (P6 Project Baseline in {snapshot.source})"
+    source = f"P6 Project Baseline in the file ({pointer.code}, last update {updated})"
+    if name:
+        label = f"{name} ({pointer.code}, P6 Project Baseline in {snapshot.source})"
+        source = f"P6 Project Baseline in the file ({name}, {pointer.code}, last update {updated})"
+    return replace(Baseline.from_snapshot(held, ev_basis), label=label, source=source)
+
+
+def baseline_name(held: Snapshot, code: str) -> str:
+    """The baseline's name as P6's Maintain Baselines shows it, or "" when the file holds none apart from its ID.
+
+    P6 names a baseline after the project it copies ("<project name> - B1"), and the name can be changed;
+    in the file it is the project node of the baseline project (PROJWBS.wbs_name where "Project Node" is Y),
+    which ``Snapshot.project_name`` reads, falling back on the Project ID when the file has no such node.
+    """
+    if held.project_name and held.project_name != code:
+        return held.project_name
+    return ""
+
+
+def last_updated(baseline: Baseline) -> pd.Timestamp | None:
+    """When P6's Update Baseline last changed the baseline project, None when the file does not say.
+
+    PROJECT.last_baseline_update_date of the baseline's own project ("Last Update Date", XER data map v23),
+    written by the XML reader from BaselineProject.LastBaselineUpdateDate. A baseline updated after an
+    update's status date may no longer be the plan that update was measured against (Oracle P6 help,
+    Update a baseline: "the module stores the date on which the baseline was last updated").
+    """
+    projects = baseline.snapshot.file_projects.set_index("proj_id")
+    if baseline.snapshot.project_id not in projects.index:
+        return None
+    stored = str(projects.loc[baseline.snapshot.project_id, "last_baseline_update_date"]).strip()
+    when = pd.to_datetime(stored, format="%Y-%m-%d %H:%M", errors="coerce") if stored else pd.NaT
+    return None if pd.isna(when) else when
 
 
 def uses_project_baseline(snapshot: Snapshot) -> bool | None:

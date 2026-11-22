@@ -494,6 +494,9 @@ def _project_rows(project: ET.Element, namespace: str, proj_id: str) -> tuple[li
         "clndr_id": _text(project, namespace, "ActivityDefaultCalendarObjectId"),
         "orig_proj_id": _text(project, namespace, "OriginalProjectObjectId"),
         "sum_base_proj_id": "",
+        # BaselineProject.LastBaselineUpdateDate, "the date this project baseline was last changed by Baseline
+        # Update" (P6 EPPM REST and Web Services references): the XER's last_baseline_update_date
+        "last_baseline_update_date": _xer_date(_text(project, namespace, "LastBaselineUpdateDate")),
     }
     wbs_rows = [
         {

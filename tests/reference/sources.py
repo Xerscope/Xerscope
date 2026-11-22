@@ -48,6 +48,16 @@ FILES: dict[str, tuple[str, str]] = {
         f"{_MPXJ}/assignment/resource-rates-test.xer",
         "7298574bb32ac3068b07b427a35cd2834308d2fcb0e2ac74fea4e013e738c62e",
     ),
+    # The same two projects exported by P6 as P6 XML (P6 20.12 and P6 8.4): the XML reader against the
+    # XER reader on files P6 wrote (tests/test_reference_pmxml.py).
+    "mpxj/resource-rates-test.xml": (
+        f"{_MPXJ}/assignment/resource-rates-test.xml",
+        "27f246caae2d28a5d524a733923747b54962c5f82f7fe61c0e8e7fef7d520daa",
+    ),
+    "mpxj/percent-complete-8.4.pmxml": (
+        f"{_MPXJ}/generated/task-percentcomplete/percent-complete-8.4.pmxml",
+        "16128fc7a00569c0724a28af5d7d08eb473513d6f38cb0266aba9f92d01f639b",
+    ),
     # 24-activity schedule whose every stored date xerlock's CPM engine reproduces,
     # plus xerlock's parse of it (its test_fixture.py asserts the JSON equals its parser).
     "xerlock/sample-schedule.xer": (
