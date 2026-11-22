@@ -295,8 +295,9 @@ Outside `analysis/`:
   that mixes sources, the Project Baselines the files name but do not hold, the renumbered tasks.
 - **`cache.py`:** the session's caches of what the pages compute: `memo` (keyed on `data_identity`),
   `metric_result` and the standard results, `ScoreJob`.
-- **`session.py`:** the leaf the others read: the window's modes (`BL_*`) and drafts, the parse cache
-  (`_parse`, `_pmxml_index`), the digests, `_cache_for`, the locked deployment.
+- **`session.py`:** read by the baseline domain, the windows and the pages; it reads `ui` only (for
+  `_section_title`): the window's modes (`BL_*`) and drafts, the parse cache (`_parse`, `_pmxml_index`),
+  the digests, `_cache_for`, the locked deployment.
 - **`state.py`:** the page-level pieces only (context banner, page header, `baseline_warnings`, pickers,
   `require_store`, `standards`); every other name a page reads comes from its defining module, which
   `tests/test_architecture.py` guards (the app's import edges, written in the test; the baseline domain
@@ -332,6 +333,15 @@ Outside `analysis/`:
 - **`ui.py`:** the shared look (the page header and its context banner are in `state.py`): the KPI
   readout (one line per figure, a change of zero drawn neutral), column filters on long tables, one column-label dictionary (`task_code` → "Activity ID", dates and units
   formatted the same everywhere), status colours (red / amber / green reserved for status).
+- **Import edges** (`APP_EDGES` in `tests/test_architecture.py`: one entry per module of `app/`, its edges
+  compared exactly, every import form read): `ui` is the shared look any module may read, and reads only
+  `glossary`, `table_filters` and `theme`. `code_picker`, `expected_finish_forms`, `glossary`, `reading`,
+  `recalculation_departures`, `table_filters` and `theme` read no app module. The baseline domain reads
+  `session`, `ui` and its own modules, never `state`, `loading` or `downloads`; `cache` reads `baselines`.
+  `diagnostic` reads `expected_finish_forms` and `recalculation_departures`; `sets` reads `downloads`;
+  `streamlit_app` reads `loading`, `session` and `theme`. `state` is read by the pages only. No module reads
+  a page and no page reads another. A new module or a new edge is written here and in `APP_EDGES` in the
+  same change.
 - **`.streamlit/config.toml`:** the light and dark themes (warm neutrals, petrol accent) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
