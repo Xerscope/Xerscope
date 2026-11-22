@@ -288,7 +288,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any("no activity shown" in m.value and "xyzzy" in m.value for m in app.markdown)
     app.text_input[0].set_value("commiss").run()  # a word nothing holds, close to Commissioning
     _ok(app)
-    app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()  # taught for the session
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
@@ -2078,7 +2078,7 @@ def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_ba
     sentence = "jalons commiss en retard"
     app.switch_page("views/gantt.py").run()
     app.text_input[0].set_value(sentence).run()
-    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()
     _ok(app)
     assert "WBS: COM · Commissioning" in _chips(app)
     written = (lexicon_root / "suggested" / "suggestions.toml").read_text(encoding="utf-8")
@@ -2102,7 +2102,7 @@ def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_r
     full.write_bytes(b"#" * suggested.MAX_BYTES)
     app.switch_page("views/gantt.py").run()
     app.text_input[0].set_value("commiss").run()
-    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]  # taught for the session all the same
     note = [c.value for c in app.caption if "not kept as a suggestion" in c.value]
