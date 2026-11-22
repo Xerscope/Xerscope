@@ -320,7 +320,7 @@ def _forget_previous_series() -> None:
         if job is not None and not job.done:
             job.cancelled = True
     st.session_state.update(_load_job=None, _score_job=None)
-    for cache in ("_memo", "_file_baselines", "_baselines_for", "_update_baselines"):
+    for cache in ("_memo", "_file_baselines", "_baselines_for", "_linked_baselines", "_update_baselines"):
         st.session_state.pop(cache, None)
 
 

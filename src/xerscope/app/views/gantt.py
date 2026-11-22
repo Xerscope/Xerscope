@@ -9,7 +9,7 @@ from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
 from xerscope.app.baselines import (
-    baseline_for,
+    baseline_for_checks,
 )
 from xerscope.app.cache import (
     memo,
@@ -27,6 +27,7 @@ from xerscope.app.loading import (
 )
 from xerscope.app.sets import show_steps
 from xerscope.app.state import (
+    checks_rule,
     compare_picker,
     page_header,
     require_store,
@@ -60,7 +61,7 @@ with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="gantt_snap")
 with compare_column:
     compare, compare_label = compare_picker(store, snapshot, key="gantt_cmp")
-baseline = baseline_for(snapshot)
+baseline = baseline_for_checks(snapshot)
 with top:
     page_header(
         "Gantt & WBS",
@@ -68,6 +69,8 @@ with top:
         snapshot,
         lead="Bars are coloured by float; the outline behind each bar is the same task in the "
         "comparison you pick, so slippage shows as the bar leaving its outline.",
+        baseline=baseline,
+        rule=checks_rule(baseline),
     )
 
 nodes = memo(

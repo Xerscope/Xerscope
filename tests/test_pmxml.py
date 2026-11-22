@@ -242,7 +242,8 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
 def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(tmp_path, monkeypatch):
     """a.xer names Project Baseline 370 (A1, 40 h), b.xer 380 (A1 and A2, 80 h); both baselines of the
     XML export have the same data date, so the same label. The Earned value page of b, opened after
-    a's, measures b against 380: BAC 80 h, not a's cached 40 h."""
+    a's, measures b against 380: BAC 80 h, not a's cached 40 h. Read in the P6 view: the page reads the
+    origin of the series (a's baseline) by default, and this test pins that b's own baseline is read."""
     from pathlib import Path
 
     from conftest import baseline_box, read_folder
@@ -265,6 +266,7 @@ def test_earned_value_of_two_updates_against_two_xml_baselines_of_the_same_date(
     baseline_box(at, "bl_choice").select(BL_EACH)
     baseline_box(at, "bl_fallback").select(BL_FILE)
     at.switch_page("views/earned_value.py").run()
+    at.toggle(key="ev_p6_view").set_value(True).run()
     bac = {}
     for stamp in ("2026-03-02", "2026-03-09"):
         picker = at.selectbox(key="ev_snap")

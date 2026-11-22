@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import Baseline
-from xerscope.analysis.baseline import EV_BASES, KIND_FALLBACK, KIND_NONE
+from xerscope.analysis.baseline import EV_BASES, KIND_FALLBACK, KIND_IN_FILE, KIND_NONE
 from xerscope.analysis.baseline_resolution import NOT_FOUND
 from xerscope.app import ui
 from xerscope.app.baseline_export import _is_named_in_export, _resolution, baseline_export, candidates, is_undecided
@@ -55,6 +55,8 @@ def banner_kind(baseline: Baseline | None) -> str:
     """
     if baseline is None:
         return KIND_NONE
+    if baseline.kind == KIND_IN_FILE:  # the checks read the file's own baseline whatever the window chose
+        return baseline.kind
     if st.session_state.get("baseline") != BL_EACH:  # one baseline for the series, or the planned dates
         return _baseline_short(st.session_state.get("bl_choice", BL_NONE))
     if baseline.kind == KIND_FALLBACK:

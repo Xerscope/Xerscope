@@ -28,7 +28,7 @@ from xerscope.analysis.explain import explain, noun
 from xerscope.analysis.rules import ACTIVITY_COLS, LINK_COLS
 from xerscope.app import ui
 from xerscope.app.baselines import (
-    baseline_for,
+    baseline_for_checks,
     data_identity,
 )
 from xerscope.app.cache import (
@@ -52,6 +52,7 @@ from xerscope.app.session import (
 from xerscope.app.sets import show_sets
 from xerscope.app.state import (
     baseline_warnings,
+    checks_rule,
     go_to,
     open_in_gantt,
     page_header,
@@ -504,10 +505,10 @@ with failed_column:
         help="Hides the checks in pass, info or n/a in the detail below. Use it to read what needs attention first.",
     )
 standard = available[standard_id or next(iter(available))]
-baseline = baseline_for(snapshot)
+baseline = baseline_for_checks(snapshot)
 
 with top:
-    page_header("Schedule health", store, snapshot)
+    page_header("Schedule health", store, snapshot, baseline=baseline, rule=checks_rule(baseline))
     baseline_warnings(snapshot, baseline)
 st.caption(standard.description or standard.name)
 if baseline is None:

@@ -24,7 +24,7 @@ from xerscope.analysis.explain import explain, settings_lines
 from xerscope.analysis.rules import RULES, is_read
 from xerscope.app import ui
 from xerscope.app.baselines import (
-    baseline_for,
+    baseline_for_checks,
 )
 from xerscope.app.cache import (
     metric_result,
@@ -36,6 +36,7 @@ from xerscope.app.explanation_panel import metric_panel
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
     baseline_warnings,
+    checks_rule,
     page_header,
     require_store,
     snapshot_picker,
@@ -219,7 +220,7 @@ standard_id = st.segmented_control(
 snapshot_column, check_column = st.columns(2, vertical_alignment="bottom")
 with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="audit_snap")
-baseline = baseline_for(snapshot)
+baseline = baseline_for_checks(snapshot)
 with top:
     page_header(
         "Audit",
@@ -227,6 +228,8 @@ with top:
         snapshot,
         lead="The sets behind a check, and the check re-run with other settings. Changes here stay on this "
         "page: Schedule health keeps the loaded standards.",
+        baseline=baseline,
+        rule=checks_rule(baseline),
     )
     baseline_warnings(snapshot, baseline)
 if standard_id is None:

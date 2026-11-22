@@ -1156,6 +1156,67 @@ Debug (5 today → the agreed number). `uv run pytest tests/test_app.py tests/te
 `milestones.py:52-58`), DF-13 (labels part), VB-11 / DP-14 (table part), DF-14 front share
 (memoised `latest_names`; the backlog item stays); A1 redesigns R1, R2 (help), R4.
 
+### P17 — The baseline each page reads (effort M, executor: senior; behaviour, `pages.json` regenerated once)
+
+**Problem.** Every page reads `baseline_for(snapshot)`, the window's one choice (section 6 "Baseline
+context"): Health, Audit and Gantt read a series origin when the user picked one, where P6 Check
+Schedule and the DCMA items are defined on the baseline assigned in the file; Earned value reads
+the file's copy when the user picked "Baseline in each file", where a cumulative SPI or Earned
+Schedule needs a baseline that does not move. The banner and the readings say "BL <kind>" without
+saying which rule the page applies.
+
+**Options.**
+1. Two resolutions in `app/baselines.py` beside `baseline_for`: `baseline_for_checks(snapshot,
+   link=None)` returns the file's own baseline (`_per_file_baseline`, `KIND_IN_FILE`) when the file
+   has one, else `baseline_for(snapshot)`; `origin_baseline(store, snapshot, link=None)` returns
+   `baseline_for(store.first)` relinked to `snapshot` (`relinked`), kind `KIND_SERIES`, `found_by`
+   "origin": with "Baseline in each file" it is the first file's baseline, with planned dates the
+   first file's planned dates, with a series choice that choice; in the common case (one baseline
+   assigned once and kept) every page reads the same one. Health, Audit, Gantt call
+   `baseline_for_checks`; Earned value calls `origin_baseline` for the cumulative figures
+   (`ev_point`, `earned_schedule`, `evm_series`, `copied_lag`, `schedule_gap_by_status`) and
+   `baseline_for(snapshot)` when the switch `st.toggle("P6 view: the file's baseline",
+   key="ev_p6_view")` is on; `weekly_gains` and `baseline_changes` keep `partial(baseline_for,
+   link=False)` in both positions (section 6: the window follows the plan in force each week);
+   `finish_at` keeps PD − ES of the baseline displayed. `context_banner(store, snapshot, baseline,
+   rule)` takes the baseline the page reads and a short rule ("assigned in this update", "origin of
+   the series", "P6 view: this update's baseline"), the help saying why (section 6 sentences);
+   `page_header` passes them. The `how`/`meaning`/`conclude` texts of section 6 go into
+   `explain.READINGS` for the Health, Audit and Gantt figures and tables and for the Earned value
+   figures (the only `analysis/` file written, texts only). The `info` note on cumulative EV figures
+   stays for probable, chosen and planned baselines. Cost: ~60 lines in baselines.py and state.py,
+   ~20 in earned_value.py, ~10 per page, texts.
+2. A per-page selectbox of the baseline mode. Cost: small; limit: four settings for one rule, the
+   user decides what the methods already decide.
+
+**Choice.** Option 1 (section 6, maintainer 2026-11-20; the earned schedule session's split of
+2026-11-21: origin for cumulative, per-file window, two explicit baseline arguments, no session
+state read inside `analysis/`). `analysis/evm` is not touched: every function takes an explicit
+`Baseline` already; `evm.forecast_finishes` is asked of that session only if the page needs it.
+
+**What changes for the user.** Health, Audit and Gantt read the baseline assigned in the file when
+there is one, whatever the window's choice; Earned value reads the origin of the series by default
+and the file's baseline with the switch; the banner says which rule and why; every reading says
+which baseline its figure is computed against.
+
+**Verification.** Failing-before tests in `tests/test_baseline_per_page.py`: on a built series whose
+second file carries a different assigned baseline and a series choice on the first update, Health
+reads the file's baseline (`baseline_for_checks(...).kind == KIND_IN_FILE`, the banner names it)
+while Earned value reads the origin (`origin_baseline(...).kind == KIND_SERIES`), the switch gives
+`ev_point(update, file_baseline).pv_hr == P6's PV` as `pv_p6_comparison` pins it; `weekly_gains`
+identical in both switch positions; a probable baseline keeps the info note. Invariants (section
+6): on the demo with the sidebar on the first update, `evm_series` rows and the last update's
+`earned_schedule(...).as_row()` identical to the base. `pages.json` regenerated once: every changed
+line is a banner label or help, a toggle, a reading popover line, or a Health/Audit/Gantt value that
+moved because the demo files carry an assigned baseline different from the sidebar's choice (listed
+per page in the commit, with the before and after baseline kind); Earned value lines identical to
+the base unless listed with the same reason. `standards.json` identical. Whole-app digest base vs
+tree: differences only at the listed elements; planted defect: Earned value reads
+`baseline_for_checks` → the per-page test and the `evm_series` invariant fail; revert.
+
+**Findings.** Section 6 "Baseline context" (decided), BL-01/BL-02 of the baselines session's note,
+P13/P14 explanation requirement.
+
 ### P16a — `gantt.js`, `gantt.css` and the small modules: names and duplicates (effort M, executor: mechanical executor; rename, output byte-identical)
 
 **Problem.** `viz/gantt.js` (421 lines) was never brought to the Names rules while its Python side
