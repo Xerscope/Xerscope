@@ -23,7 +23,6 @@ times on one-element arrays; the pages then run it many times.
 | APP-02 / FEAT-12 | `app/baseline_warnings.py:310` | "no task is linked" and "n tasks linked by GUID" drawn together; the GUID warning fires with nothing renumbered | one line per update, warning only when renumbered tasks stay unlinked (P18 appendix H) |
 | APP-03 | `app/views/gantt.py:202` | two "Did you mean" buttons share a key when a WBS node and a resource carry the same label: the page stops | key on kind + label |
 | TOOLS-01 | `cli.py:335` | `recalc FOLDER --out FILE` writes every file's CSV to one path | one file per input, or refuse `--out` with a folder |
-| TOOLS-03 / TST-02 | `docs/formulas.md:441` | sign of `finish_shift_wd` and `slip_wd` documented backwards from the code | correct the doc, a test reads the doc's sign against the function |
 | FEAT-02 | `app/views/forensics.py:145` | five tables without a reading, invisible to the coverage test | readings in `explain.READINGS`; test tightened to every `ui.table` |
 
 Risks to decide with the maintainer, same form: XER-01 (unreadable number or date reads as blank
@@ -109,6 +108,7 @@ goldens show them. After it, the features of Q4 and the readings of Q1 have a te
 
 ## Documentation and tests (tests session, tracks A and B)
 
-TST-01..08, TST-11..14, TST-16..18 and the six points of the front audit (import guard, docs
+TST-01..08 (TOOLS-03, the sign of `finish_shift_wd` in formulas.md, with them), TST-11..14, TST-16..18 and the six points of the front audit (import guard, docs
 artefacts, architecture.md and CHANGELOG drift, weak tests) are the tests session's tracks; this
-plan does not duplicate them. The full reports stay outside the repository.
+plan does not duplicate them. The full reports stay outside the repository. When an item is done its
+line leaves this file; what stays open at the end moves to `docs/backlog.md` and this file is deleted.
