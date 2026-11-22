@@ -308,51 +308,25 @@ def _baseline_line(line, choice: str) -> None:
 
 
 def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
-    """Show the tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``).
+    """Show one line on the tasks of the updates that carry a baseline task's GUID under a new Activity ID.
 
     A warning while they count as deleted and new, a caption once the option links them, nothing when
-    there are none.
+    there are none. A baseline without GUID gets no line: the baselines read are projects of the XER,
+    which carry their GUID, and P6 renumbers its baselines with the project when asked to.
     """
-    if st.session_state.get("guid_link"):
-        blank = memo(("baselines_without_guid",), _baselines_without_guid, store, ev_basis=False)
-        if blank:
-            sidebar.warning(
-                f"Link renumbered tasks by GUID is on, but the baseline has no GUID to match "
-                f"({ui.md_text(', '.join(blank))}): no task is linked. A P6 XML baseline carries none "
-                "xerscope compares; export the baseline as XER to link renumbered tasks.",
-                icon=":material/warning:",
-            )
     found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
     if not found:
         return
-    total = sum(found.values())
+    tasks = counted(sum(found.values()), "task")
     files = ui.md_text(", ".join(f"{name} ({count})" for name, count in found.items()))
-    tasks = counted(total, "task")
     if st.session_state.get("guid_link"):
-        sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
+        sidebar.caption(f"{tasks} renumbered since the baseline, matched by GUID.", help=f"Per update: {files}.")
         return
     sidebar.warning(
-        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Task ID "
-        f"({files}): against the baseline {'it counts' if total == 1 else 'they count'} as deleted and new. "
-        "Option in the Baseline window: Link renumbered tasks by GUID.",
+        f"{tasks} renumbered since the baseline: turn on Link by GUID in the Baseline window. Until then each "
+        f"counts as deleted and new ({files}).",
         icon=":material/warning:",
     )
-
-
-def _baselines_without_guid(store: SnapshotStore) -> list[str]:
-    """Return the labels of the baselines in use (other than an update itself) none of whose tasks has a TASK.guid.
-
-    The GUID link finds nothing against them (a P6 XML baseline: xer/pmxml.py).
-    """
-    labels = set()
-    for snapshot in store:
-        baseline = baseline_for(snapshot, link=False)
-        if baseline is None or baseline.snapshot is snapshot:
-            continue
-        tasks = baseline.snapshot.activities
-        if "guid" not in tasks or not (tasks["guid"].fillna("").astype(str).str.strip() != "").any():
-            labels.add(baseline.label)
-    return sorted(labels)
 
 
 def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:

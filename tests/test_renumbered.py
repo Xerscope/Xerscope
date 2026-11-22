@@ -96,7 +96,8 @@ def test_the_sidebar_names_renumbered_tasks_and_the_option_links_them(tmp_path, 
     at.button(key="files_done").click()
     at.run()
     assert not at.exception and not _guid_warnings(at)
-    assert any("linked to the baseline by GUID" in caption.value for caption in at.sidebar.caption)
+    renumbering = [caption.value for caption in at.sidebar.caption if "renumbered" in caption.value]
+    assert renumbering == ["1 task renumbered since the baseline, matched by GUID."]
 
 
 def test_no_guid_warning_when_nothing_is_renumbered(tmp_path, monkeypatch):
@@ -128,9 +129,11 @@ def test_the_debug_table_names_the_pairs_against_the_baseline_and_the_previous_u
     assert renumbered_table(week1, None, None).empty
 
 
-def test_the_option_warns_when_the_baseline_has_no_guid(tmp_path, monkeypatch):
-    """A P6 XML baseline carries no GUID xerscope can compare (xer/pmxml.py writes it blank): with the
-    option ticked nothing is linked, which the sidebar says instead of staying silent."""
+def test_a_baseline_without_guid_draws_no_renumbering_line(tmp_path, monkeypatch):
+    """A P6 XML baseline carries no GUID (xer/pmxml.py writes it blank), so no renumbered task can be found
+    against it, with the option on or off. The sidebar used to warn "no task is linked" with nothing
+    renumbered; it now says nothing: the baselines read are projects of the XER, which carry their GUID,
+    and P6 renumbers its baselines with the project when asked to (maintainer's decision, 2026-11-22)."""
     from pathlib import Path
 
     from conftest import read_folder
@@ -157,8 +160,8 @@ def test_the_option_warns_when_the_baseline_has_no_guid(tmp_path, monkeypatch):
     at.button(key="files_done").click()
     at.run()
     assert not at.exception, [e.value for e in at.exception]
-    (warning,) = _guid_warnings(at)
-    assert "no GUID" in warning and "export.xml" in warning
+    assert not _guid_warnings(at)
+    assert not [caption.value for caption in at.sidebar.caption if "renumbered" in caption.value]
 
 
 def test_linking_renames_the_tasks_of_the_baseline_file_too_so_the_checks_counting_them_agree():
