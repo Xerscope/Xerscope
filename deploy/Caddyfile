@@ -30,9 +30,12 @@
     header {                             # every response, 404 and 401 included
         Referrer-Policy no-referrer      # a link the page opens never carries the URL, i.e. the secret prefix
         X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
-        # no other site can frame the app (clickjacking); no plug-in content, and no <base> to move the
-        # page's relative URLs elsewhere (the page uses neither)
-        Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+        # the browser loads and contacts this site only: scripts, styles, fonts, images, the websocket
+        # (connect-src 'self' covers wss to the same host). blob: the Gantt component Streamlit loads as a
+        # module; the sha256 is Streamlit's one inline script (window.prerenderReady, tests/test_docker.py
+        # pins it to the installed version); styles stay inline (emotion, CSS-in-JS: injection of a style,
+        # not of code); no other site can frame the app; no plug-in content, no <base>
+        Content-Security-Policy "default-src 'self'; connect-src 'self'; script-src 'self' blob: 'sha256-THxz9J9+wf7rhwR2YkXJoSZ13UCmYyC+3lNDv2+8ugA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
         # the browser never tries the name over plain HTTP, nor a sub-domain of it: one answered in clear
         # by someone on the network could set a cookie for this name before the visit
         Strict-Transport-Security "max-age=31536000; includeSubDomains"

@@ -42,6 +42,10 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 - Standards: a metric's optional `item` ties it to a criterion of the source; the score counts
   criteria (an item fails when one of its metrics fails, the card names which). P6-10a and
   P6-10b are one item: the P6 score reads 17 criteria for 18 metrics (formulas.md §1.6).
+- Remote deployment: the Content-Security-Policy confines the page to the site (`default-src 'self'`,
+  `connect-src 'self'`, scripts from the app and Streamlit's one inline bootstrap by hash, fonts and
+  images from the app): the browser can contact no other host. The page icon is an emoji the browser
+  draws itself; the Material icon it replaced was fetched from fonts.gstatic.com on every visit.
 - Remote deployment: the HTML shell (`/`, `index.html`) is `Cache-Control: no-store` like the
   downloads; the browser keeps the public JS chunks only.
 - Remote deployment: `XERSCOPE_STANDARDS` points at the exports folder, so a standard of your
