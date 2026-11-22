@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import Baseline, Standard, discover_standards
-from xerscope.analysis.baseline import DEFAULT_EV_BASIS, KIND_CHOSEN, KIND_IN_FILE, KIND_PROBABLE
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS, KIND_CHOSEN, KIND_IN_FILE, KIND_PROBABLE, last_updated
 from xerscope.analysis.wbs import ROOT
 from xerscope.app import ui
 from xerscope.app.baseline_export import is_undecided
@@ -157,13 +157,7 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
         st.caption(
             "The PV, EV and SPI curves measure every update against this baseline; the BEI uses each update's own."
         )
-    baseline_date = baseline.snapshot.data_date
-    if baseline_date is not None and snapshot.data_date is not None and baseline_date > snapshot.data_date:
-        st.warning(
-            f"{name}: the baseline's status date ({ui.fmt_date(baseline_date)}) is after the update's "
-            f"({ui.fmt_date(snapshot.data_date)}): it compares against a plan that did not exist yet.",
-            icon=":material/warning:",
-        )
+    _date_warnings(name, snapshot, baseline)
     codes = set(snapshot.activities["task_code"])
     matched = len(codes) - len(baseline.unbaselined(snapshot))
     if codes and matched / len(codes) < MATCH_WARN_BELOW:
@@ -171,6 +165,26 @@ def baseline_warnings(snapshot: Snapshot, baseline: Baseline | None, series: boo
             f"{name}: the baseline finds {matched} of {len(codes)} tasks of the update "
             f"({100 * matched / len(codes):.0f} %, below {MATCH_WARN_BELOW:.0%}). Late tasks, BEI and "
             "earned value count the others as not baselined.",
+            icon=":material/warning:",
+        )
+
+
+def _date_warnings(name: str, snapshot: Snapshot, baseline: Baseline) -> None:
+    """Warn when the baseline is dated after the update: its status date, or P6's last Update Baseline."""
+    if snapshot.data_date is None:
+        return
+    baseline_date = baseline.snapshot.data_date
+    if baseline_date is not None and baseline_date > snapshot.data_date:
+        st.warning(
+            f"{name}: the baseline's status date ({ui.fmt_date(baseline_date)}) is after the update's "
+            f"({ui.fmt_date(snapshot.data_date)}): it compares against a plan that did not exist yet.",
+            icon=":material/warning:",
+        )
+    updated = last_updated(baseline)
+    if updated is not None and updated > snapshot.data_date:
+        st.warning(
+            f"{name}: the baseline was updated in P6 on {ui.fmt_date(updated)}, after the update's status date "
+            f"({ui.fmt_date(snapshot.data_date)}): it may not be the plan this update was measured against.",
             icon=":material/warning:",
         )
 

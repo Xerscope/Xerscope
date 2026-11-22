@@ -203,6 +203,22 @@ def baseline_name(held: Snapshot, code: str) -> str:
     return ""
 
 
+def last_updated(baseline: Baseline) -> pd.Timestamp | None:
+    """When P6's Update Baseline last changed the baseline project, None when the file does not say.
+
+    PROJECT.last_baseline_update_date of the baseline's own project ("Last Update Date", XER data map v23),
+    written by the XML reader from BaselineProject.LastBaselineUpdateDate. A baseline updated after an
+    update's status date may no longer be the plan that update was measured against (Oracle P6 help,
+    Update a baseline: "the module stores the date on which the baseline was last updated").
+    """
+    projects = baseline.snapshot.file_projects.set_index("proj_id")
+    if baseline.snapshot.project_id not in projects.index:
+        return None
+    stored = str(projects.loc[baseline.snapshot.project_id, "last_baseline_update_date"]).strip()
+    when = pd.to_datetime(stored, format="%Y-%m-%d %H:%M", errors="coerce") if stored else pd.NaT
+    return None if pd.isna(when) else when
+
+
 def uses_project_baseline(snapshot: Snapshot) -> bool | None:
     """PROJECT.use_project_baseline_flag of the analysed project: True (Y), False (N), None when
     blank or absent. Read as the Project Details > Settings choice of the baseline earned value uses:
