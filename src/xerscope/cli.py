@@ -313,7 +313,8 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
     from .analysis.cpm import compare_assignments, compare_with_stored, schedule
     from .xer import load_snapshot
 
-    for path in _expand(args.paths):
+    paths = _expand(args.paths)
+    for path in paths:
         snapshot = load_snapshot(path, args.project)
         recalculated = schedule(snapshot)
         comparison = compare_with_stored(snapshot, recalculated)
@@ -332,7 +333,7 @@ def _cmd_recalc(args: argparse.Namespace) -> int:
             print(f"  warning: {warning}")
         if args.out:
             out = recalculated.frame.join(snapshot.activities.set_index("task_code")[["task_name"]])
-            one_file = len(args.paths) == 1  # several files: one CSV each, named after its file
+            one_file = len(paths) == 1  # several files, given or found in a folder: one CSV each, named after its file
             dest = Path(args.out) if one_file else Path(args.out).with_name(f"{path.stem}_{Path(args.out).name}")
             _write_csv(out, dest, index=True)
             print(f"  written {dest}")
