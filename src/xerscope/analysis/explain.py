@@ -771,6 +771,40 @@ READINGS: dict[str, Reading] = {
         ),
         source="AACE RP 29R-03 MIP 3.4; `FINISH_CASES` text (`forensics.py:20-25`)",
     ),
+    "forensics_horizon": Reading(
+        how=(
+            "Per step after progress, then for all of them: revisions on tasks starting within the lookahead "
+            "(work under way included), revisions beyond it, and the share beyond (%). The lookahead runs from "
+            "the status date, 6 weeks unless set otherwise."
+        ),
+        source=(
+            "AACE RP 29R-03 3.4.K.4 (what counts as a revision); Last Planner (the lookahead); the split is "
+            "xerscope's reading, docs/formulas.md §5.1"
+        ),
+    ),
+    "forensics_path": Reading(
+        how=(
+            "One row per open task on the longest path of either update: its change (stayed, entered, left: "
+            "finished, left: still open, left: deleted), its total float in the earlier update, then the task as "
+            "the later update holds it."
+        ),
+        source="AACE RP 29R-03 3.4.E.9 and SVP 2.3.B.6; docs/formulas.md §5.2",
+    ),
+    "forensics_path_commitments": Reading(
+        how=(
+            "The week's commitments made on the earlier update's longest path, read as on the PPC page: each "
+            "task, what it committed and whether it was kept. A miss here moves the finish."
+        ),
+        source="Last Planner (PPC); restricted to the longest path, xerscope's reading, docs/formulas.md §5.2",
+    ),
+    "forensics_path_churn": Reading(
+        how=(
+            "Per update after the first: tasks on the longest path, stayed, entered, left finished, left still "
+            "open, left deleted, stability = stayed / (stayed + left still open), where the path was read, then "
+            "the week's PPC over every commitment and over those on the path."
+        ),
+        source="AACE RP 29R-03 SVP 2.3.B.6; docs/formulas.md §5.2",
+    ),
     "ev_calculation": Reading(
         how=(
             "measure, P6 column, formula, value this update: each EV figure with its P6 name and the numbers behind "
@@ -816,6 +850,16 @@ READINGS: dict[str, Reading] = {
     "ppc_unplanned": Reading(
         how="Tasks absent from W−1 with an actual start by W's status date: work done outside W−1's plan.",
         source="docs/formulas.md §4",
+    ),
+    "ppc_lookahead": Reading(
+        how=(
+            "Per week and horizon (updates ahead): the plan read, the week's commitments, those that plan already "
+            "held for the week (TA %), what that plan held for the week and how much of it was done (TMR %)."
+        ),
+        source=(
+            "Last Planner: Hamzeh, Ballard & Tommelein 2012 (TA and TMR one and two weeks ahead; four and eight "
+            "are xerscope's reading); docs/formulas.md §4"
+        ),
     ),
     "ppc_progress": Reading(
         how=(
