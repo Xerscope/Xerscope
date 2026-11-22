@@ -121,7 +121,12 @@ same file that owns activities and, when its `orig_proj_id` is filled, names the
 `note` says why not and the sidebar's choice applies. The app builds that project as a snapshot
 (`load_snapshot(..., project_id=)`, exact because a baseline copy may carry the code of the project it was
 copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
-Start / Finish). The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
+Start / Finish). It is named as P6's Maintain Baselines names it: the baseline project's name (the
+`wbs_name` of its project node, P6's default "<project name> - B1"), then its Project ID; the Project ID
+alone when the file holds no project node (`analysis.baseline.baseline_name`; Oracle P6 help, Create a
+baseline and Maintain Baselines dialog box). An update whose `use_project_baseline_flag` is N measures
+earned value against each user's primary baseline in P6 (Project Details > Settings), which the file does
+not carry: the sidebar says so in one line and xerscope reads the project baseline. The sidebar choice "Baseline in each file" is the default when a ticked file has one; a file
 without one has no baseline for that update (checks that need one are n/a), stated in the window's Selection details.
 The memo key holds the project each file names and the fallback. In that mode a second selector, "When a file
 has no baseline" (a separate baseline file, a loaded update, the planned dates, None; None by default, never

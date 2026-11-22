@@ -182,11 +182,25 @@ def baseline_in_file(
     except XerError:
         return None
     updated = pointer.updated[:10] or "not recorded"
-    return replace(
-        Baseline.from_snapshot(held, ev_basis),
-        label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-        source=f"P6 Project Baseline in the file ({pointer.code}, last update {updated})",
-    )
+    name = baseline_name(held, pointer.code)
+    label = f"{pointer.code} (P6 Project Baseline in {snapshot.source})"
+    source = f"P6 Project Baseline in the file ({pointer.code}, last update {updated})"
+    if name:
+        label = f"{name} ({pointer.code}, P6 Project Baseline in {snapshot.source})"
+        source = f"P6 Project Baseline in the file ({name}, {pointer.code}, last update {updated})"
+    return replace(Baseline.from_snapshot(held, ev_basis), label=label, source=source)
+
+
+def baseline_name(held: Snapshot, code: str) -> str:
+    """The baseline's name as P6's Maintain Baselines shows it, or "" when the file holds none apart from its ID.
+
+    P6 names a baseline after the project it copies ("<project name> - B1"), and the name can be changed;
+    in the file it is the project node of the baseline project (PROJWBS.wbs_name where "Project Node" is Y),
+    which ``Snapshot.project_name`` reads, falling back on the Project ID when the file has no such node.
+    """
+    if held.project_name and held.project_name != code:
+        return held.project_name
+    return ""
 
 
 def uses_project_baseline(snapshot: Snapshot) -> bool | None:

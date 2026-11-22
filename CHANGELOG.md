@@ -16,6 +16,10 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- Baselines: a P6 Project Baseline held in the file is named as P6's Maintain Baselines names it, its name
+  then its Project ID ("Terminal works - B1 (BL, P6 Project Baseline in two.xer)"); the Project ID alone
+  when the file holds no name. The sidebar says in one line when updates measure earned value against a
+  user's primary baseline in P6, which the file does not carry.
 - Baselines: `Baseline.kind` and `found_by` say how the baseline of an update relates to it (in file,
   exact, probable, chosen, fallback, planned, series) and what found it; set by every path of the app,
   read by one classifier (`app.baselines.kind_of`) for the context banner, the sidebar and the Debug
