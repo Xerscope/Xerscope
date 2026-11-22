@@ -209,6 +209,24 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     )
 
 
+def _primary_baseline_notice(sidebar, store: SnapshotStore) -> None:
+    """Show one line when updates measure earned value against each user's primary baseline in P6.
+
+    P6 Project Details > Settings, "Baseline for earned value calculation": the project baseline or your
+    primary baseline (Oracle P6 Professional help). A primary baseline is a user's choice the file does not
+    carry, so xerscope reads the project baseline and says so rather than guess. The flag read
+    (use_project_baseline_flag = N for the primary baseline) is unverified (``uses_project_baseline``).
+    """
+    primary = sum(uses_project_baseline(snapshot) is False for snapshot in store)
+    if not primary:
+        return
+    verb = "uses" if primary == 1 else "use"
+    sidebar.warning(
+        f"{counted(primary, 'update')} {verb} a user's primary baseline in P6: xerscope reads the project baseline.",
+        icon=":material/warning:",
+    )
+
+
 def _other_baseline_warning(sidebar, store: SnapshotStore, choice: str, baseline) -> None:
     """Show the warning on a separate baseline file or a loaded update in force.
 
@@ -289,6 +307,7 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if baseline == BL_EACH:
         _file_baseline_warnings(sidebar, store)
     _absent_baseline_help(sidebar, store)
+    _primary_baseline_notice(sidebar, store)
     _other_baseline_warning(sidebar, store, choice, baseline)
     _renumbered_notice(sidebar, store)
 
