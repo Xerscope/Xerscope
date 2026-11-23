@@ -132,8 +132,8 @@ def test_the_debug_table_names_the_pairs_against_the_baseline_and_the_previous_u
 def test_a_baseline_without_guid_draws_no_renumbering_line(tmp_path, monkeypatch):
     """A P6 XML baseline carries no GUID (xer/pmxml.py writes it blank), so no renumbered task can be found
     against it, with the option on or off. The sidebar used to warn "no task is linked" with nothing
-    renumbered; it now says nothing: the baselines read are projects of the XER, which carry their GUID,
-    and P6 renumbers its baselines with the project when asked to (maintainer's decision, 2026-11-22)."""
+    renumbered; it now says nothing rather than invent a renumbering it cannot see (maintainer's decision,
+    2026-11-22)."""
     from pathlib import Path
 
     from conftest import read_folder

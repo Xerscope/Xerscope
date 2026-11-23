@@ -211,11 +211,14 @@ with st.expander("5 · Baseline and calendars", key="debug_baseline"):
         "the Project Baseline it names (sum_base_proj_id), held by the file or not, and held or not by the "
         "P6 XML baseline file when one is in use (baseline_in_xml_file). use_project_baseline_flag "
         "as stored: unlabelled in the XER data map, read as the Project Details > Settings choice of the "
-        "baseline earned value uses (project baseline or each user's primary baseline), unverified."
+        "baseline earned value uses (project baseline or each user's primary baseline), unverified. project and "
+        "baseline_name: as P6 names them, name (Project ID); baseline_name is blank when neither a loaded file "
+        "nor the P6 XML file holds that project: P6 shows it in Project > Assign Baselines of the update's project."
     )
     export = baseline_export()
-    pointers = diagnostic.baseline_pointers(store, None if export is None else export[2].baselines)
-    table(pointers, key="debug_05_baseline_pointers")
+    xml_held = None if export is None else export[2].baselines
+    pointers = diagnostic.baseline_pointers(store, xml_held)
+    table(xml_baselines.with_names(pointers, store, xml_held), key="debug_05_baseline_pointers")
     if export is not None:
         st.caption(
             "The baselines of the P6 XML baseline file, in the order of the file: the id an update names "

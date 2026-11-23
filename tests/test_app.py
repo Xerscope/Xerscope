@@ -1290,6 +1290,8 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
     baseline_box(at, "bl_folder_file").set_value("")  # the folder's only export is picked by default
     pointers, listed, found = debug_tables(at)
     assert pointers["baseline_in_xml_file"].tolist() == ["–", "–"] and not listed  # blank: no P6 XML file
+    # what to look for in P6: the update's project, and 370 nowhere held, so only P6 can name it
+    assert pointers[["project", "baseline_name"]].values.tolist() == [["T", ""], ["T", ""]]
     assert found["found_by"].tolist() == ["not found", "not found"]
 
     at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
@@ -1298,6 +1300,7 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         ["w1.xer", "", False],
         ["w2.xer", "370", True],
     ]
+    assert pointers["baseline_name"].tolist() == ["", "BL-1 name (BL-1)"]  # as the export names 370
     assert listed[["object_id", "activities", "project_baseline", "updates_naming_it"]].values.tolist() == [
         ["370", 1, True, 1],
         ["371", 0, False, 0],

@@ -337,8 +337,9 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
     """Show one line on the tasks of the updates that carry a baseline task's GUID under a new Activity ID.
 
     A warning while they count as deleted and new, a caption once the option links them, nothing when
-    there are none. A baseline without GUID gets no line: the baselines read are projects of the XER,
-    which carry their GUID, and P6 renumbers its baselines with the project when asked to.
+    there are none. A baseline read from a P6 XML export gets no line: the XML reader writes its GUID
+    blank (``xer/pmxml.py``, the XML and the XER encode it differently), so no task can be told renumbered
+    against it, and nothing is said rather than a renumbering invented.
     """
     found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
     if not found:

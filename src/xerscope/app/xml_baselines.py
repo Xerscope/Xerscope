@@ -331,3 +331,30 @@ def baseline_used_table(
     ]
     frame = pd.DataFrame(rows, columns=BASELINE_USED_COLUMNS)
     return frame.drop(columns=["file", "baseline", "source"]) if anonymous else frame
+
+
+def with_names(pointers: pd.DataFrame, store: SnapshotStore, xml_baselines: list[XmlBaseline] | None) -> pd.DataFrame:
+    """Return ``diagnostic.baseline_pointers`` with the names to look for in P6, "name (Project ID)".
+
+    ``project``: the update's own project, as P6's Projects window shows it. ``baseline_name``: the
+    project its Project Baseline pointer names, when the P6 XML export or a loaded file holds it (an export's
+    baseline by its name and code, a loaded update's project by its name, another project of a file by its
+    code); blank when none does: only P6 then shows it (Project > Assign Baselines of the update's project).
+    """
+    known: dict[str, str] = {}
+    for snapshot in store:
+        for proj_id, code in zip(
+            snapshot.file_projects["proj_id"], snapshot.file_projects["proj_short_name"], strict=True
+        ):
+            known.setdefault(str(proj_id), str(code))
+    known |= {snapshot.project_id: named_with_id(snapshot) for snapshot in store}
+    for baseline in xml_baselines or ():
+        named = (
+            f"{baseline.name} ({baseline.code})" if baseline.name and baseline.name != baseline.code else baseline.code
+        )
+        known[baseline.object_id] = named
+    named = pointers.copy()
+    named.insert(named.columns.get_loc("proj_id") + 1, "project", [named_with_id(snapshot) for snapshot in store])
+    baseline_names = [known.get(str(pointer), "") for pointer in named["sum_base_proj_id"]]
+    named.insert(named.columns.get_loc("sum_base_proj_id") + 1, "baseline_name", baseline_names)
+    return named
