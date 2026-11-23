@@ -139,7 +139,7 @@ def drafted_baseline_file(exports: list[str]) -> tuple[str, bytes | DiskFile] | 
     """
     session = st.session_state
     name = session.get("draft_bl_folder_file") or ""
-    if name in exports:
+    if name and name in exports:  # "" is the window's "(none)"
         return _picked_folder_file({"files_source": session.get("files_source"), "bl_folder_file": name}, exports)
     upload = None if _data_locked() else session.get("bl_upload")
     if upload is not None:
