@@ -193,6 +193,20 @@ with st.expander("4 · Check Schedule parameters applied (P6 standard)", key="de
 with st.expander("5 · Baseline and calendars", key="debug_baseline"):
     table(frames["05_baseline"], key="debug_05_baseline")
     st.caption(
+        "The baseline each update of the series is measured against, as P6's Maintain Baselines names it: "
+        "name (Project ID). kind: in its file, exact (the one it names, from the P6 XML export), probable "
+        "(found by its content: a copy of the same generation, or the loaded update it names), chosen in the "
+        "window, fallback, planned dates, or none. last_update: P6's Last Update Date of the baseline, when "
+        "the file gives one. source: the sentence the pages show."
+    )
+    table(
+        memo(
+            ("debug_baseline_used",),
+            lambda: xml_baselines.baseline_used_table(store, [baseline_for(update, link=False) for update in store]),
+        ),
+        key="debug_05_baseline_used",
+    )
+    st.caption(
         "Every update of the series, by status date: the analysed project (proj_id, add_date 'Date Added') and "
         "the Project Baseline it names (sum_base_proj_id), held by the file or not, and held or not by the "
         "P6 XML baseline file when one is in use (baseline_in_xml_file). use_project_baseline_flag "

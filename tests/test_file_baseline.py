@@ -9,6 +9,7 @@ from conftest import baseline_box, files_done, pick_project, project_box, read_f
 from file_projects import BASELINE_DATE, two_projects
 
 from xerscope.analysis import builtin_standards
+from xerscope.analysis.baseline import KIND_EXACT, KIND_NONE, KIND_PROBABLE
 from xerscope.anonymize import Anonymizer
 from xerscope.app.diagnostic import (
     ANALYSED,
@@ -467,12 +468,12 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
         said_on_the_page[stamp] = [w.value.replace("\\", "") for w in at.main.warning if "probable" in w.value]
 
     assert used["2026-03-02"] == (
-        "probable: baseline V100 - B1 of export.xml, held by the versions created before and after the "
-        "update's project (100 and 200); the one its file names (151) is not in the export"
+        "probable: baseline V100 - B1 name (V100 - B1) of export.xml, held by the versions created before and "
+        "after the update's project (100 and 200); the one its file names (151) is not in the export"
     )
-    assert used["2026-03-09"] == "P6 Project Baseline V200 - B1 from export.xml"
+    assert used["2026-03-09"] == "P6 Project Baseline V200 - B1 name (V200 - B1) from export.xml"
     assert used["2026-03-16"] == "none"
-    assert used["2026-03-23"] == "P6 Project Baseline V400 - B1 from export.xml"
+    assert used["2026-03-23"] == "P6 Project Baseline V400 - B1 name (V400 - B1) from export.xml"
     # under the title of the page of the update concerned, in full, and of no other
     assert said_on_the_page["2026-03-02"] == [f"Baseline of this update: {used['2026-03-02']}."]
     assert not any(said_on_the_page[stamp] for stamp in ("2026-03-09", "2026-03-16", "2026-03-23"))
@@ -491,9 +492,9 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
     ), sidebar
     assert any("The series mixes baseline sources" in text and "a probable baseline" in text for text in sidebar)
 
-    # the baseline named is missing for a and c only: b and d are measured against the one they name
-    errors = [e.value.replace("\\", "") for e in at.sidebar.error]
-    assert any(text.startswith("P6 Project Baseline missing for 2 updates of 4") for text in errors), errors
+    # no update is said to have no baseline: b and d have the one they name, a a probable one, and c the
+    # candidates the window offers (counted as missing, a probable baseline told a user 14 of 20 were missing)
+    assert not any(text.startswith("No baseline in") for text in sidebar), sidebar
 
     # with the export as the fallback too, c stays undecided: nothing is applied in its place
     baseline_box(at, "bl_fallback").select(BL_FILE)
@@ -512,7 +513,7 @@ def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_ann
     choice.select("401")
     at.run()
     assert _baseline_used(at, "2026-03-16").startswith(
-        "chosen in the window: baseline V400 - B1 of export.xml, held by version 400; the versions around"
+        "chosen in the window: baseline V400 - B1 name (V400 - B1) of export.xml, held by version 400; the"
     )
     assert any(w.value.startswith("Baseline of this update: chosen in the window") for w in at.main.warning)
     assert any(
@@ -570,8 +571,17 @@ def test_each_baseline_of_the_export_is_read_once_for_the_pages_and_the_debug_ta
     assert not at.exception, [e.value for e in at.exception]
     at = at.switch_page("views/debug.py").run()
     assert not at.exception, [e.value for e in at.exception]
-    found = next(table.value for table in at.dataframe if "found_by" in table.value.columns)
+    found = next(table.value for table in at.dataframe if "version_before" in table.value.columns)
     assert found["found_by"].tolist() == [SAME_GENERATION, IN_EXPORT, UNDECIDED, IN_EXPORT]
+    # the baseline each update is measured against, by its P6 name and Project ID: c, undecided, has none
+    used = next(table.value for table in at.dataframe if "last_update" in table.value.columns)
+    assert used["kind"].tolist() == [KIND_PROBABLE, KIND_EXACT, KIND_NONE, KIND_EXACT]
+    assert used["baseline"].tolist() == [
+        "V100 - B1 name (V100 - B1)",
+        "V200 - B1 name (V200 - B1)",
+        "none",
+        "V400 - B1 name (V400 - B1)",
+    ]
     assert reads == {"101": 1, "201": 1, "401": 1}
 
 
@@ -934,7 +944,7 @@ def test_a_pointer_to_an_absent_project_is_named(tmp_path, monkeypatch):
 
 
 def _absent_baseline_boxes(at):
-    return [element.value.replace("\\", "") for element in at.sidebar.error if "Baseline missing" in element.value]
+    return [element.value.replace("\\", "") for element in at.sidebar.warning if "No baseline in" in element.value]
 
 
 def test_an_absent_baseline_is_asked_for_as_a_p6_xml_export(tmp_path, monkeypatch):
@@ -945,7 +955,7 @@ def test_an_absent_baseline_is_asked_for_as_a_p6_xml_export(tmp_path, monkeypatc
     boxes = _absent_baseline_boxes(_series(tmp_path, monkeypatch, {"a.xer": A, "c.xer": c, "d.xer": d}))
     assert len(boxes) == 1
     # counts and dates, no file name: a long series of long names made the line unreadable
-    assert "P6 Project Baseline missing for 2 updates of 3" in boxes[0]
+    assert "No baseline in 2 updates of 3" in boxes[0]
     unknown = "a project no loaded file holds (its code is unknown)"
     assert f"{unknown}, named by 2 updates (09 Mar 2026 → 16 Mar 2026" in boxes[0]
     assert "370" not in boxes[0]  # P6's internal project id: never shown

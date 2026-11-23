@@ -1090,7 +1090,7 @@ def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_
     _ok(at)
     assert any(error.value.startswith("Baseline not read: export") for error in at.sidebar.error)
     assert not [d for d in at.dataframe if "updates_naming_it" in d.value.columns]
-    found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+    found = next(d.value for d in at.dataframe if "version_before" in d.value.columns)
     assert found["found_by"].tolist() == ["not found", "not found"]
 
 
@@ -1215,7 +1215,7 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         _ok(at)
         pointers = next(d.value for d in at.dataframe if "baseline_in_file" in d.value.columns)
         listed = [d.value for d in at.dataframe if "updates_naming_it" in d.value.columns]
-        found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+        found = next(d.value for d in at.dataframe if "version_before" in d.value.columns)
         return pointers, listed, found
 
     at = _run(tmp_path, monkeypatch)
@@ -2586,7 +2586,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 46 and len(table_keys) == 46 and len(set(table_keys)) == 46
+    assert len(tables) == 47 and len(table_keys) == 47 and len(set(table_keys)) == 47
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)

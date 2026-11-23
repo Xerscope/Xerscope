@@ -19,6 +19,7 @@ from xerscope.analysis.baseline import (
     KIND_PROBABLE,
     KIND_SERIES,
     baseline_in_file,
+    named_with_id,
     relinked,
 )
 from xerscope.analysis.baseline_resolution import (
@@ -175,7 +176,7 @@ def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
     built = _read_export_baseline(export, found.baseline_id)
     if built is None:
         return None
-    code = built.snapshot.project_code
+    code = named_with_id(built.snapshot)
     if found.found_by == IN_EXPORT:
         source = f"P6 Project Baseline {code} from {export[0]}"
         return replace(built, kind=KIND_EXACT, found_by=IN_EXPORT, source=source)
@@ -203,7 +204,7 @@ def _chosen_baseline(snapshot: Snapshot) -> Baseline | None:
     if built is None:
         return None
     source = (
-        f"{CHOSEN_IN_THE_WINDOW}: baseline {built.snapshot.project_code} of {export[0]}, held by version "
+        f"{CHOSEN_IN_THE_WINDOW}: baseline {named_with_id(built.snapshot)} of {export[0]}, held by version "
         f"{held_by[choice]}; the versions around the update's project hold different baselines and the one "
         f"its file names ({snapshot.file_baseline.proj_id}) is not in the export"
     )

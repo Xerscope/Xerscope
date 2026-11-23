@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable
 
 import pandas as pd
 
-from xerscope.analysis.baseline import content_digest
+from xerscope.analysis.baseline import KIND_NONE, Baseline, content_digest, last_updated, named_with_id
 from xerscope.analysis.baseline_resolution import (
     IN_EXPORT,
     IN_FILE,
@@ -291,3 +291,43 @@ def baseline_per_file(
         for snapshot in store
     ]
     return pd.DataFrame(rows, columns=BASELINE_PER_FILE_COLUMNS)
+
+
+BASELINE_USED_COLUMNS = ["file", "data_date", "kind", "found_by", "baseline", "last_update", "source"]
+
+
+def _baseline_named(baseline: Baseline) -> str:
+    """Return the baseline as P6's Maintain Baselines names it, "name (Project ID)"; the label of planned dates."""
+    if baseline.is_planned:
+        return baseline.label
+    return named_with_id(baseline.snapshot)
+
+
+def _baseline_used(baseline: Baseline | None) -> dict:
+    """Return the columns of ``baseline_used_table`` after the update's file and status date."""
+    if baseline is None:
+        return {"kind": KIND_NONE, "found_by": "", "baseline": "none", "last_update": None, "source": ""}
+    return {
+        "kind": baseline.kind,
+        "found_by": baseline.found_by,
+        "baseline": _baseline_named(baseline),
+        "last_update": None if baseline.is_planned else last_updated(baseline),
+        "source": baseline.source,
+    }
+
+
+def baseline_used_table(
+    updates: Iterable[Snapshot], baselines: Iterable[Baseline | None], anonymous: bool = False
+) -> pd.DataFrame:
+    """Return one row per update: the baseline its pages are measured against, by its P6 name and Project ID.
+
+    ``baselines``: the baseline of each update, in the same order. ``kind``: ``analysis.baseline.KIND_*``;
+    ``found_by``: what found it; ``last_update``: P6's Last Update Date of the baseline project, when the
+    file gives one (``last_updated``). ``anonymous``: no file name, baseline name or source.
+    """
+    rows = [
+        {"file": update.source, "data_date": update.data_date, **_baseline_used(baseline)}
+        for update, baseline in zip(updates, baselines, strict=True)
+    ]
+    frame = pd.DataFrame(rows, columns=BASELINE_USED_COLUMNS)
+    return frame.drop(columns=["file", "baseline", "source"]) if anonymous else frame

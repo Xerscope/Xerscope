@@ -162,15 +162,21 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
         )
 
 
-def _updates_without_the_baseline_they_name(store: SnapshotStore) -> list[Snapshot]:
+def _updates_without_a_baseline(store: SnapshotStore) -> list[Snapshot]:
     """Return the updates ``_absent_baseline_help`` looks at.
 
-    All of them, less, in the per-file mode, those measured against the baseline they name, read from the
-    export.
+    All of them, less, in the per-file mode, those measured against a baseline: the one they name, a
+    probable one (said by ``_resolution_warnings``), and those left undecided, which the window offers
+    candidates for. Counting a probable baseline as missing told a user with 6 exact and 14 probable
+    baselines that 14 were missing.
     """
     if st.session_state.get("baseline") != BL_EACH:
         return list(store)
-    return [snapshot for snapshot in store if kind_of(baseline_for(snapshot, link=False)) != KIND_EXACT]
+    return [
+        snapshot
+        for snapshot in store
+        if kind_of(baseline_for(snapshot, link=False)) in (KIND_FALLBACK, KIND_NONE) and not is_undecided(snapshot)
+    ]
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
@@ -181,7 +187,7 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     only, no file name (a long series of long names made the line unreadable). No P6 steps: restoring or
     converting a baseline changes the project. Which file names which: Debug, block 5.
     """
-    absent = absent_project_baselines(_updates_without_the_baseline_they_name(store))
+    absent = absent_project_baselines(_updates_without_a_baseline(store))
     if not absent:
         return
     codes = project_codes(store)
@@ -199,13 +205,12 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     named = "; ".join(one(proj_id, snapshots) for proj_id, snapshots in shown)
     if len(absent) > ABSENT_BASELINES_SHOWN:
         named += f"; {len(absent) - ABSENT_BASELINES_SHOWN} more"
-    sidebar.error(
-        f"P6 Project Baseline missing for {counted(updates, 'update')} of {len(store)}: {named}. "
-        "P6 measures planned value, BEI, Late Activities and Missed tasks against it "
-        "(Project Details > Settings, use project baseline). P6 writes no baseline in an XER: export them "
-        "as P6 XML (Export > Primavera P6 XML, Baselines to Export) and put the file next to the updates. "
-        "Which file names which, and what each is measured against: the Files and baseline window.",
-        icon=":material/error:",
+    sidebar.warning(
+        f"No baseline in {counted(updates, 'update')} of {len(store)}: {named}. P6 measures planned value, BEI, "
+        "Late Activities and Missed tasks against it. P6 writes no baseline in an XER: put the P6 XML export of "
+        "the baselines (Export > Primavera P6 XML, Baselines to Export) next to the files. Which file names "
+        "which: the Files and baseline window.",
+        icon=":material/warning:",
     )
 
 

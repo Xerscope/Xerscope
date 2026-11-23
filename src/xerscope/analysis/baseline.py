@@ -203,6 +203,13 @@ def baseline_name(held: Snapshot, code: str) -> str:
     return ""
 
 
+def named_with_id(held: Snapshot) -> str:
+    """The baseline project ``held`` as Maintain Baselines names it: "name (Project ID)", or its Project ID alone."""
+    code = held.project_code
+    name = baseline_name(held, code)
+    return f"{name} ({code})" if name else code
+
+
 def last_updated(baseline: Baseline) -> pd.Timestamp | None:
     """When P6's Update Baseline last changed the baseline project, None when the file does not say.
 

@@ -76,3 +76,19 @@ def test_an_update_measured_against_a_users_primary_baseline_is_named(tmp_path, 
     user's primary baseline, which the file does not carry; Y (the project baseline) and blank say nothing."""
     warnings = _sidebar_warnings(tmp_path, monkeypatch, flag)
     assert [line for line in warnings if "primary baseline" in line] == expected
+
+
+def test_the_debug_table_names_the_baseline_of_each_update_by_its_name_and_project_id():
+    """Debug block 5, ``baseline_used_table``: one row per update, the baseline as Maintain Baselines names
+    it, "name (Project ID)", the Project ID alone when the file holds no other name, "none" without one.
+    The anonymous download keeps the kind and dates, not the file, the name or the sentence."""
+    from xerscope.app.xml_baselines import baseline_used_table
+
+    named = _baseline(_with_project_nodes(two_projects()))
+    bare = _baseline(two_projects())
+    update = load_snapshot(two_projects().encode(), name="two.xer")
+    table = baseline_used_table([update, update, update], [named, bare, None])
+    assert table["baseline"].tolist() == ["Terminal works - B1 (BL)", "BL", "none"]
+    assert table["last_update"].notna().tolist() == [True, True, False]
+    anonymous = baseline_used_table([update], [named], anonymous=True)
+    assert list(anonymous.columns) == ["data_date", "kind", "found_by", "last_update"]
