@@ -27,8 +27,9 @@ from xerscope.analysis.evm import (
     update_and_baseline_of_code,
     update_and_previous,
     weekly_gains,
+    window_weeks,
 )
-from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING
+from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING, schedule_reading
 from xerscope.app import ui
 from xerscope.app.baselines import (
     baseline_for,
@@ -194,16 +195,22 @@ def copied_lag_text(lagging: int, behind_hr: float) -> str | None:
 
 
 def show_earned_schedule(
-    schedule: EarnedSchedule, window: pd.Series | None, since_first: pd.Series, lag: tuple[int, float]
+    schedule: EarnedSchedule,
+    window: pd.Series | None,
+    since_first: pd.Series,
+    lag: tuple[int, float],
+    weeks: pd.DataFrame,
 ) -> None:
-    """Where the update stands on its plan in time, how the last four weeks went, when the plan ends.
+    """Where the update stands on its plan in time, at what pace, and whether it ends on the planned finish.
 
-    ``lag``: ``copied_lag`` of the update, warned about under the figures.
+    Three groups of figures, one per question, then the figures put in words (``schedule_reading``) and the
+    weeks the 4 weeks' figures add up (``window_weeks``). ``lag``: ``copied_lag`` of the update, warned
+    about under the figures.
     """
     ui.section(
         "Earned Schedule",
-        "The schedule read in time: the date at which the baseline planned the hours earned now, then the "
-        "finish at the pace of the last weeks.",
+        "The schedule read in time: where the project stands on its plan, at what pace it moves, and whether it "
+        "ends on the planned finish.",
     )
     if schedule.es_date is None:
         st.caption(f"Not computed: {schedule.note}.")
@@ -212,6 +219,8 @@ def show_earned_schedule(
     spi_4w = gain_ratio(window, "ev_gain_hr", "pv_gain_hr")
     pace_4w = gain_ratio(window, "es_gain_min", "at_gain_min")
     pace_all = gain_ratio(since_first, "es_gain_min", "at_gain_min")
+    finish_4w, finish_all = schedule.finish_at(pace_4w), schedule.finish_at(pace_all)
+    st.markdown("**Where the project stands**")
     ui.kpis(
         [
             (
@@ -236,23 +245,43 @@ def show_earned_schedule(
                 "Earned schedule / actual time; 1.00 = on plan. Unlike SPI it does not come back to 1 at the "
                 "end of a late project.",
             ),
+        ],
+        formulas=KPI_FORMULAS,
+    )
+    st.markdown("**At what pace**")
+    ui.kpis(
+        [
+            ("SPI (4 weeks)", ratio_text(spi_4w), None, SPI_WINDOW_READING),
             (
-                "SPI (4 weeks)",
-                ratio_text(spi_4w),
+                "Pace (4 weeks)",
+                ratio_text(pace_4w),
                 None,
-                SPI_WINDOW_READING,
+                "Plan time gained / time elapsed over the same weeks: 1.00 = the plan's pace.",
             ),
+            (
+                "Pace (all updates)",
+                ratio_text(pace_all),
+                None,
+                "The same over every week read since the first update loaded: steadier, slower to show a change.",
+            ),
+        ],
+        formulas=KPI_FORMULAS,
+    )
+    st.caption(window_text(window))
+    st.markdown("**Does it end on the planned finish**")
+    ui.kpis(
+        [
             ("Planned finish", ui.fmt_date(schedule.plan_finish), None, "The last planned finish of the baseline."),
             (
                 "Forecast finish (4 weeks)",
-                ui.fmt_date(schedule.finish_at(pace_4w), "n/a"),
+                ui.fmt_date(finish_4w, "n/a"),
                 None,
-                "When the plan ends if what is left of it is done at the pace of the last four weeks, given "
-                "under these figures. It moves a lot from week to week: read it with the one below.",
+                "When the plan ends if what is left of it is done at the pace of the last four weeks. It moves a "
+                "lot from week to week: read it with the one below.",
             ),
             (
                 "Forecast finish (all updates)",
-                ui.fmt_date(schedule.finish_at(pace_all), "n/a"),
+                ui.fmt_date(finish_all, "n/a"),
                 None,
                 "The same at the pace of every week read since the first update loaded: steadier, slower to "
                 "show a change.",
@@ -261,20 +290,32 @@ def show_earned_schedule(
                 "TSPI (planned finish)",
                 ratio_text(schedule.tspi),
                 None,
-                "The pace needed from now on to end on the planned finish, to set against the paces given "
-                "under these figures. Up to 1.00 the date holds; from 1.00 to 1.10 it can be caught up; "
-                "above 1.10 it rarely is (Lipke). Empty once the planned finish is passed.",
+                "The pace needed from now on to end on the planned finish, to set against the paces above. Up "
+                "to 1.00 the date holds; from 1.00 to 1.10 it can be caught up; above 1.10 it rarely is (Lipke). "
+                "Empty once the planned finish is passed.",
             ),
         ],
         formulas=KPI_FORMULAS,
     )
-    st.caption(
-        f"{window_text(window)} Pace, plan time gained / time elapsed: {ratio_text(pace_4w)} over the last 4 weeks, "
-        f"{ratio_text(pace_all)} since the first update loaded."
+    st.info(
+        schedule_reading(
+            gap,
+            ui.fmt_date(schedule.es_date),
+            pace_4w,
+            pace_all,
+            ui.fmt_date(finish_4w, ""),
+            ui.fmt_date(finish_all, ""),
+            ui.fmt_date(schedule.plan_finish),
+            schedule.tspi,
+        ),
+        icon=":material/schedule:",
     )
     lag_text = copied_lag_text(*lag)
     if lag_text is not None:
         st.warning(lag_text, icon=":material/warning:")
+    if not weeks.empty:
+        with st.expander("The weeks of the 4 weeks' figures", icon=":material/table_rows:"):
+            ui.table(weeks, key="ev_window_weeks", reading="ev_window_weeks")
 
 
 def show_costs_ignored(snapshot) -> None:
@@ -617,7 +658,11 @@ if not costs:
 show_calculation(row, baseline, snapshot, point, costs)
 lag = memo(cache_key + ("copied_lag", *update_key), copied_lag, part, part_baseline)
 show_earned_schedule(
-    schedule, moving_window(gains, snapshot.data_date), gains_since_first(gains, snapshot.data_date), lag
+    schedule,
+    moving_window(gains, snapshot.data_date),
+    gains_since_first(gains, snapshot.data_date),
+    lag,
+    window_weeks(gains, snapshot.data_date, schedule.hours_per_day),
 )
 show_charts(series, curve, part, part_baseline, costs, code_filter)
 show_activity_detail(snapshot, baseline, point, earned_values)

@@ -184,6 +184,8 @@ def test_earned_value_renders_with_a_single_update(one_file_app):
         "Time gap",
         "SPI(t)",
         "SPI (4 weeks)",
+        "Pace (4 weeks)",
+        "Pace (all updates)",
         "Planned finish",
         "Forecast finish (4 weeks)",
         "Forecast finish (all updates)",
@@ -790,10 +792,8 @@ def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_fini
     assert card("Planned finish") == "20 Mar 2026"
     assert (card("Forecast finish (4 weeks)"), card("Forecast finish (all updates)")) == ("02 Apr 2026", "02 Apr 2026")
     # 15 days of plan gained in the 20 of the four weeks, the same since the first update: pace 0.75
-    assert (
-        "Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since. Pace, plan time gained / time "
-        "elapsed: 0.75 over the last 4 weeks, 0.75 since the first update loaded."
-    ) in _caption_texts(at)
+    assert "Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since." in _caption_texts(at)
+    assert (card("Pace (4 weeks)"), card("Pace (all updates)")) == ("0.75", "0.75")
     # the planned finish, 03-20, is passed: no pace holds it
     assert card("TSPI (planned finish)") == "–"
     # the update of 03-06: 7.5 of the plan's 20 days reached in 10, 12.5 left for 10: TSPI 1.25; no update

@@ -418,6 +418,8 @@ KPI_FORMULAS: dict[str, dict[str, str]] = {
         LIPKE: "IEAC(t) long form, AT + (PD − ES) / PF(t), from the plan's start",
         XS: "PF(t) = Σ ΔES / Σ ΔAT over every week read since the first update loaded",
     },
+    "Pace (4 weeks)": {XS: "PF(t) = Σ ΔES / Σ ΔAT over the weeks of the SPI (4 weeks) window"},
+    "Pace (all updates)": {XS: "PF(t) = Σ ΔES / Σ ΔAT over every week read since the first update loaded"},
     "TSPI (planned finish)": {LIPKE: "TSPI = (PD − ES) / (TD − AT), the total duration wanted TD = PD"},
     "PPC Start": {
         XS: "Starts kept / starts committed: not started at W−1 with a W−1 start on or before W's status date; "
@@ -807,6 +809,16 @@ READINGS: dict[str, Reading] = {
         ),
         source="AACE RP 29R-03 SVP 2.3.B.6; docs/formulas.md §5.2",
     ),
+    "ev_window_weeks": Reading(
+        how=(
+            "One row per week of the SPI (4 weeks) window, oldest first: the hours earned and planned that week "
+            "(ev_gain_hr, pv_gain_hr), the plan days gained and elapsed (es_gain_plan_d, at_gain_plan_d), and "
+            "whether the baseline changed at the week's end."
+        ),
+        meaning="SPI (4 weeks) is the sum of ev_gain_hr over the sum of pv_gain_hr; the pace, the same in plan days.",
+        conclude="a week with few planned hours weighs little; the week with the largest gap is the one to look at.",
+        source="xerscope (docs/formulas.md, Earned Schedule): weekly gains, each week read on the plan in force.",
+    ),
     "ev_calculation": Reading(
         how=(
             "measure, P6 column, formula, value this update: each EV figure with its P6 name and the numbers behind "
@@ -900,3 +912,70 @@ READINGS: dict[str, Reading] = {
         source="Oracle P6 EPPM 26 help, Schedule Project Log; P6 XER data map",
     ),
 }
+
+
+TSPI_HOLDS, TSPI_CATCH_UP = 1.00, 1.10  # Lipke: up to 1.00 the date holds; above 1.10 it is rarely caught up
+
+
+def schedule_reading(
+    gap_d: float | None,
+    plan_reached: str,
+    pace_4w: float | None,
+    pace_all: float | None,
+    finish_4w: str,
+    finish_all: str,
+    plan_finish: str,
+    tspi: float | None,
+) -> str:
+    """The Earned Schedule figures of an update put into one paragraph, in the order a reader asks: where the
+    project stands, at what pace, whether it ends on the planned finish. Dates come formatted; a figure
+    missing leaves its sentence out. The only judgement is Lipke's TSPI band, which the TSPI help cites.
+    """
+    sentences = [
+        _standing(gap_d, plan_reached),
+        _pace(pace_4w, pace_all),
+        _forecasts(finish_4w, finish_all),
+        _tspi(tspi, plan_finish),
+    ]
+    return " ".join(sentence for sentence in sentences if sentence)
+
+
+def _standing(gap_d: float | None, plan_reached: str) -> str:
+    """Where the project stands on its plan, from the time gap in calendar days."""
+    if gap_d is None:
+        return "Every planned hour is earned."
+    if round(gap_d) == 0:
+        return f"On plan: the plan reached is the status date ({plan_reached})."
+    side = "behind" if gap_d < 0 else "ahead of"
+    return f"{abs(gap_d):.0f} calendar days {side} the plan: the work done was planned for {plan_reached}."
+
+
+def _pace(pace_4w: float | None, pace_all: float | None) -> str:
+    """The pace of the last four weeks against the pace since the first update; empty without both."""
+    if pace_4w is None or pace_all is None:
+        return ""
+    trend = "slower than" if pace_4w < pace_all else "faster than" if pace_4w > pace_all else "the same as"
+    return f"Pace over the last 4 weeks {pace_4w:.2f}, {trend} since the first update ({pace_all:.2f})."
+
+
+def _forecasts(finish_4w: str, finish_all: str) -> str:
+    """When the plan ends at each pace; empty without either forecast."""
+    forecasts = [
+        f"at the recent pace on {finish_4w}" if finish_4w else "",
+        f"at the overall pace on {finish_all}" if finish_all else "",
+    ]
+    forecasts = [text for text in forecasts if text]
+    return "The plan ends " + " and ".join(forecasts) + "." if forecasts else ""
+
+
+def _tspi(tspi: float | None, plan_finish: str) -> str:
+    """The pace the planned finish needs, read on Lipke's band; empty once the planned finish is passed."""
+    if tspi is None:
+        return ""
+    if tspi <= TSPI_HOLDS:
+        verdict = "the date holds"
+    elif tspi <= TSPI_CATCH_UP:
+        verdict = "it can be caught up"
+    else:
+        verdict = "it is rarely caught up (Lipke)"
+    return f"Ending on the planned finish ({plan_finish}) needs a pace of {tspi:.2f}: {verdict}."

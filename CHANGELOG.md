@@ -16,6 +16,11 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- Earned value: the Earned Schedule figures in three groups, one per question (where the project stands, at
+  what pace, whether it ends on the planned finish), the pace of the last four weeks and since the first
+  update as figures, a paragraph putting the figures in words (TSPI read on Lipke's band), and the weeks the
+  4 weeks' figures add up. No figure changes.
+
 - Baselines: a `baselines` subfolder of the updates' folder holds baseline files, .xer or P6 XML, offered as
   the separate baseline file under "baselines/<name>" and never read as updates, so a baseline exported as
   its own XER can be picked on a locked server even under the name of an update. A baseline XER that holds
