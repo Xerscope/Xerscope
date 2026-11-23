@@ -544,7 +544,9 @@ def _anonymous_outputs(anonymizer, raw, baseline=None):
         texts += [archive.read(name).decode("utf-8-sig") for name in archive.namelist()]
     context = AnalysisContext(snapshot, None, baseline)
     results = [result for standard in STANDARDS.values() for result in run_standard(standard, context)]
-    summary = results_frame(results).assign(note=[result.note_with_baseline for result in results])
+    summary = results_frame(results).assign(
+        baseline=[result.against for result in results], note=[result.note_with_baseline for result in results]
+    )
     texts.append(anonymizer.csv(summary).decode("utf-8-sig"))
     texts += [anonymizer.csv(result.flagged).decode("utf-8-sig") for result in results if not result.flagged.empty]
     return texts

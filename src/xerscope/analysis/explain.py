@@ -704,7 +704,9 @@ READINGS: dict[str, Reading] = {
     "health_results": Reading(
         how=(
             "One row per check in the standard's order: status (pass red/green labels), id, group, check, result in "
-            "its unit, found / checked, target, items listed. Fail = result on the wrong side of the target; info "
+            "its unit, found / checked, target, items listed, and for a check that reads a baseline the one it was "
+            "measured against: name (Project ID) · kind. Only kind exact or in file is the baseline P6 measured "
+            "against; probable is a copy found by its content. Fail = result on the wrong side of the target; info "
             f"and n/a are not scored. {CHECKS_BASELINE}"
         ),
         source="The standard's TOML `source` per check; `SCORE_HELP` (`ui.py:400-405`) for the score",

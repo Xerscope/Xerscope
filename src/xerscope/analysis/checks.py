@@ -18,7 +18,7 @@ import pandas as pd
 
 from ..store import SnapshotStore
 from ..xer import Snapshot
-from .baseline import Baseline
+from .baseline import Baseline, measured_against
 from .populations import Funnel
 from .rules import RULES, AnalysisContext
 from .standards import Metric, Standard
@@ -39,6 +39,7 @@ class CheckResult:
     counted: pd.DataFrame | None = None  # rows behind the numerator when they are not ``flagged``
     funnel: Funnel | None = None  # the named steps that cut ``checked`` from the file
     baseline: str = ""  # the baseline the result was computed on ("none" when it needs one and has none)
+    against: str = ""  # the same, short: "name (Project ID) · kind" (``measured_against``), for the results table
 
     @property
     def note_with_baseline(self) -> str:
@@ -65,13 +66,14 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
     A rule that needs a baseline and has none is "n/a"; a rule that raises is "error", its message
     in the note; a rule with nothing to check (no value, a denominator of 0) is "n/a".
     """
-    baseline = _baseline_named(metric, context.baseline)
+    baseline, against = _baseline_named(metric, context.baseline)
     if metric.needs_baseline and context.baseline is None:
-        return CheckResult(metric, "n/a", note="needs a baseline", baseline=baseline)
+        return CheckResult(metric, "n/a", note="needs a baseline", baseline=baseline, against=against)
     try:
         out = RULES[metric.rule].fn(context, **metric.params)
     except Exception as exc:  # noqa: BLE001 - reported in the result
-        return CheckResult(metric, "error", note=f"{type(exc).__name__}: {exc}", baseline=baseline)
+        note = f"{type(exc).__name__}: {exc}"
+        return CheckResult(metric, "error", note=note, baseline=baseline, against=against)
     value = _value(metric, out)
     status, note = out.status or metric.evaluate(value), out.note
     if value is None and out.denominator == 0:
@@ -88,15 +90,18 @@ def run_metric(metric: Metric, context: AnalysisContext) -> CheckResult:
         out.counted,
         out.funnel,
         baseline,
+        against,
     )
 
 
-def _baseline_named(metric: Metric, baseline) -> str:
-    """The baseline a result is computed on, for its note: "" when the metric does not read one,
-    "none" when it reads one and the file has none."""
+def _baseline_named(metric: Metric, baseline) -> tuple[str, str]:
+    """The baseline a result is computed on, in full for its note and short for the results table: "" when
+    the metric does not read one, "none" when it reads one and the file has none."""
     if not uses_baseline(metric):
-        return ""
-    return "none" if baseline is None else baseline.source or baseline.label
+        return "", ""
+    if baseline is None:
+        return "none", "none"
+    return baseline.source or baseline.label, measured_against(baseline)
 
 
 def _value(metric: Metric, out) -> float | None:
@@ -235,8 +240,11 @@ def status_counts(results: list[CheckResult]) -> dict[str, int]:
 
 def summary_frame(results: list[CheckResult]) -> pd.DataFrame:
     """`results_frame` for the summary and its export: with ``flagged``, the number of items each
-    check lists, and ``note`` naming the baseline the result was computed on."""
-    summary = results_frame(results).assign(flagged=[len(result.flagged) for result in results])
+    check lists, ``baseline``, the short name of the baseline the result was computed on ("" for a check
+    that reads none), and ``note`` naming it in full."""
+    summary = results_frame(results).assign(
+        flagged=[len(result.flagged) for result in results], baseline=[result.against for result in results]
+    )
     summary["note"] = [result.note_with_baseline for result in results]
     return summary
 

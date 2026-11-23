@@ -2401,7 +2401,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
 def test_health_summary_file_gains_the_notes(app, store, downloads):
     snapshot, results = _open_health(app, store, "DCMA", anonymous=False)
     summary = _csv(_download(app, downloads, "Summary (CSV)"))
-    assert list(summary.columns[-2:]) == ["flagged", "note"]
+    assert list(summary.columns[-3:]) == ["flagged", "baseline", "note"]
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
         expected = result.note_with_baseline  # a note starting with +/- is CSV-guarded (csv_safe)

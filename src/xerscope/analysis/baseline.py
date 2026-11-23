@@ -210,6 +210,17 @@ def named_with_id(held: Snapshot) -> str:
     return f"{name} ({code})" if name else code
 
 
+def measured_against(baseline: Baseline) -> str:
+    """Return the short name of what a result is measured against: "name (Project ID) · kind", or "planned dates".
+
+    The kind (``KIND_*``) is set by the app; a baseline built outside it (the command line) has none.
+    """
+    if baseline.is_planned:
+        return "planned dates"
+    named = named_with_id(baseline.snapshot)
+    return f"{named} · {baseline.kind}" if baseline.kind else named
+
+
 def last_updated(baseline: Baseline) -> pd.Timestamp | None:
     """When P6's Update Baseline last changed the baseline project, None when the file does not say.
 
