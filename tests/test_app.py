@@ -1077,6 +1077,53 @@ def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tm
         assert baseline_items({**session, "bl_folder_file": name}) == [], name
 
 
+def _a_baseline_xer_in_the_baselines_subfolder(folder, name="w1.xer"):
+    """``baselines/<name>``: A planned as the export's baseline (2 to 13 March, 80 h), as its own XER."""
+    held = folder / "baselines"
+    held.mkdir()
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-13 17:00", "target_work_qty": "80"}
+    (held / name).write_text(xer_text([todo("A", **week)], data_date="2026-02-23 08:00"), encoding="utf-8")
+
+
+def test_a_baseline_xer_of_the_baselines_subfolder_is_picked_under_the_name_of_an_update(tmp_path, monkeypatch):
+    """A locked server takes no upload, and a folder cannot hold two files of one name: the baseline exported
+    as its own XER goes in the ``baselines`` subfolder, under the name of an update if need be. It is listed
+    by its place there, never read as an update, and once picked is the baseline in force: 80 h, not the 40 h
+    of the update w1.xer it shares its name with."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    _a_baseline_xer_in_the_baselines_subfolder(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    assert files_line(at) == "Files · 2 files · 1 project"  # the subfolder is not read for updates
+    baseline_box(at).set_value(BL_FILE)
+    assert baseline_box(at, "bl_folder_file").options == ["(none)", "export.xml", "baselines/w1.xer"]
+    assert baseline_box(at, "bl_folder_file").value == "export.xml"  # the only P6 XML export, as before
+    _pick_the_folder_baseline_file(at, "baselines/w1.xer")
+    assert at.button(key="baseline_button").label == "Baseline · baselines/w1.xer"
+    baseline = at.session_state["baseline"]
+    assert isinstance(baseline, Baseline) and baseline.bac_hours == 80.0
+    assert baseline.snapshot.source == "baselines/w1.xer"  # never the update's own name
+    # a name built to leave the list reads nothing
+    for name in ("baselines/../w1.xer", "baselines/gone.xer"):
+        at.session_state["bl_folder_file"] = name
+        at.run()
+        _ok(at)
+        assert at.session_state["bl_folder_file"] == "export.xml", name
+
+
+def test_a_baseline_read_from_its_xer_or_from_the_p6_xml_export_is_the_same_baseline(tmp_path, monkeypatch):
+    """The same plan of A (2 to 13 March, 80 h), in the P6 XML export and as its own XER in the baselines
+    subfolder: picked as the separate baseline file, both give the same dates and hours to measure against."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    _a_baseline_xer_in_the_baselines_subfolder(tmp_path, "bl.xer")
+    from_xml = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml").session_state["baseline"]
+    from_xer = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "baselines/bl.xer").session_state["baseline"]
+    assert from_xml.bac_hours == from_xer.bac_hours == 80.0
+    columns = ["bl_start", "bl_finish"]
+    pd.testing.assert_frame_equal(from_xer.frame[columns], from_xml.frame[columns], check_index_type=False)
+
+
 def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_path, monkeypatch):
     """export.xml cut short, picked as the baseline file of two updates that name no baseline: the sidebar
     says it was not read, and the Debug page draws without the list of its baselines."""

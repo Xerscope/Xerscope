@@ -26,7 +26,7 @@ from xerscope.analysis.baseline import (
 )
 from xerscope.app import ui
 from xerscope.app.baseline_export import _export_in_use, is_undecided
-from xerscope.app.baseline_file import _folder_baseline_names
+from xerscope.app.baseline_file import _folder_baseline_names, is_xml_name
 from xerscope.app.baseline_window import _baseline_options, _baseline_short, _fallback_options
 from xerscope.app.baselines import _baseline_from_choice, _fallback_picker, baseline_for, kind_of
 from xerscope.app.cache import memo
@@ -286,7 +286,9 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if st.session_state.get("bl_folder_file") not in ["", *exports]:
         # never picked, or a file no longer in the folder: the folder's only export, unless the server
         # names its own baseline file (XERSCOPE_BASELINE)
-        st.session_state["bl_folder_file"] = exports[0] if len(exports) == 1 and not env_path else ""
+        # P6 XML: an XER of the baselines subfolder is a baseline the user picks, not an export to look in
+        xml = [name for name in exports if is_xml_name(name)]
+        st.session_state["bl_folder_file"] = xml[0] if len(xml) == 1 and not env_path else ""
     options, default = _baseline_options(store, env_path, exports)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default

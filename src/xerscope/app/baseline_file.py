@@ -1,4 +1,9 @@
-"""The separate baseline file: picked in the folder, uploaded in the window, or named by XERSCOPE_BASELINE."""
+"""The separate baseline file: picked in the folder, uploaded in the window, or named by XERSCOPE_BASELINE.
+
+In the folder: the P6 XML exports next to the updates, and every .xer and P6 XML file of its ``baselines``
+subfolder (``BASELINES_FOLDER``), which the updates are never read from. A baseline exported as its own
+XER can sit there under the name of an update.
+"""
 
 from __future__ import annotations
 
@@ -9,19 +14,34 @@ from pathlib import Path
 import streamlit as st
 
 from xerscope.app.session import BL_EACH, BL_FILE, _data_locked, _digest
-from xerscope.xer import is_pmxml, pmxml_files
+from xerscope.xer import is_pmxml, pmxml_files, xer_files
 from xerscope.xer.pmxml import DiskFile
+
+BASELINES_FOLDER = "baselines"  # the subfolder of the updates' folder that holds baseline files only
 
 
 def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
-    """Return the P6 XML exports next to the updates read from a folder, by name; none when the updates were uploaded.
+    """Return the baseline files of the folder the updates were read from; none when the updates were uploaded.
 
-    A P6 XML export holds a project's baselines, which its XER does not.
+    The P6 XML exports next to the updates, by name (a P6 XML export holds a project's baselines, which its
+    XER does not), then the .xer and P6 XML files of the ``baselines`` subfolder, as "baselines/<name>":
+    the folder of the updates is read for .xer files only, not its subfolders.
     """
     session = st.session_state if session is None else session
     source: tuple = session.get("files_source") or ("none",)
     root = Path(source[1]).expanduser() if source[0] == "folder" else None
-    return [path.name for path in pmxml_files(root)] if root is not None and root.is_dir() else []
+    if root is None or not root.is_dir():
+        return []
+    names = [path.name for path in pmxml_files(root)]
+    held = root / BASELINES_FOLDER
+    if held.is_dir():
+        names += [f"{BASELINES_FOLDER}/{path.name}" for path in sorted([*xer_files(held), *pmxml_files(held)])]
+    return names
+
+
+def is_xml_name(name: str) -> bool:
+    """Tell whether a name of ``_folder_baseline_names`` is a P6 XML file: one the updates can be looked for in."""
+    return name.lower().endswith(".xml")
 
 
 def _picked_folder_baseline(session: MutableMapping | None = None, exports: list[str] | None = None) -> Path | None:
@@ -46,14 +66,25 @@ def _is_baseline_file_offered(env_path: str, exports: list[str]) -> bool:
     return not _data_locked() or Path(env_path).is_file() or bool(exports)
 
 
-def _disk_baseline_file(path: Path) -> tuple[str, bytes | DiskFile]:
+def _disk_baseline_file(path: Path, name: str = "") -> tuple[str, bytes | DiskFile]:
     """Return a baseline file of the disk as (name, contents).
 
-    A P6 XML export is handed out to be read where asked, never whole: it runs to gigabytes, and a rerun
-    reads none of it once its baselines are built. An XER, a few megabytes, is read as it always was.
+    ``name``: the one it is listed under in the folder ("baselines/<name>" in the subfolder, so that it never
+    takes the name of an update), else the file's own. A P6 XML export is handed out to be read where asked,
+    never whole: it runs to gigabytes, and a rerun reads none of it once its baselines are built. An XER, a
+    few megabytes, is read as it always was.
     """
     export = DiskFile(path)
-    return path.name, export if is_pmxml(export) else path.read_bytes()
+    return name or path.name, export if is_pmxml(export) else path.read_bytes()
+
+
+def _picked_folder_file(session: MutableMapping | None = None, exports: list[str] | None = None):
+    """Return the baseline file picked in the folder as (name, contents), None when none is picked."""
+    picked = _picked_folder_baseline(session, exports)
+    if picked is None:
+        return None
+    session = st.session_state if session is None else session
+    return _disk_baseline_file(picked, session.get("bl_folder_file") or "")
 
 
 def _baseline_file_source(env_path: str | None, exports: list[str]) -> tuple[str, bytes | DiskFile] | None:
@@ -62,9 +93,9 @@ def _baseline_file_source(env_path: str | None, exports: list[str]) -> tuple[str
     The one picked in the folder (among ``exports``), else the one uploaded in the window, else
     XERSCOPE_BASELINE's.
     """
-    picked = _picked_folder_baseline(exports=exports)
+    picked = _picked_folder_file(exports=exports)
     if picked is not None:
-        return _disk_baseline_file(picked)
+        return picked
     source = None if _data_locked() else st.session_state.get("bl_file")
     env_path = os.environ.get("XERSCOPE_BASELINE", "") if env_path is None else env_path
     if source is None and env_path and Path(env_path).is_file():
@@ -81,8 +112,7 @@ def baseline_items(session: MutableMapping) -> list[tuple[str, bytes | DiskFile]
     is_the_baseline = session.get("bl_choice") == BL_FILE or session.get("bl_fallback") == BL_FILE
     if not is_the_baseline and session.get("bl_choice") != BL_EACH:
         return []
-    picked = _picked_folder_baseline(session)
-    held = _disk_baseline_file(picked) if picked is not None else None
+    held = _picked_folder_file(session)
     if held is None and not _data_locked():
         held = session.get("bl_file")
     env_path = os.environ.get("XERSCOPE_BASELINE", "")

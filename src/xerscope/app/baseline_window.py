@@ -14,10 +14,12 @@ from xerscope.analysis.baseline_resolution import NOT_FOUND
 from xerscope.app import ui
 from xerscope.app.baseline_export import _is_named_in_export, _resolution, baseline_export, candidates, is_undecided
 from xerscope.app.baseline_file import (
+    BASELINES_FOLDER,
     _baseline_file_source,
     _folder_baseline_names,
     _is_baseline_file_offered,
     _picked_folder_baseline,
+    is_xml_name,
 )
 from xerscope.app.baselines import UNDECIDED_FALLBACK, UNDECIDED_NONE
 from xerscope.app.session import (
@@ -77,7 +79,7 @@ def _baseline_options(store: SnapshotStore, env_path: str, exports: list[str]) -
         for snapshot in store
     )
     # an export the updates can be looked for in: the separate file, or one of the folder still to pick
-    export_at_hand = (source is not None and is_pmxml(source[1])) or bool(exports)
+    export_at_hand = (source is not None and is_pmxml(source[1])) or any(map(is_xml_name, exports))
     file_choice = _is_baseline_file_offered(env_path, exports)
     options = ([BL_EACH] if in_files or export_at_hand else []) + ([BL_FILE] if file_choice else []) + store.labels
     options += [BL_PLANNED, BL_NONE]
@@ -90,9 +92,8 @@ def _baseline_options(store: SnapshotStore, env_path: str, exports: list[str]) -
 def _baseline_short(choice: str) -> str:
     """Return the sidebar line's name for the baseline in use."""
     if choice == BL_FILE:
-        picked = _picked_folder_baseline()
-        if picked is not None:
-            return picked.name
+        if _picked_folder_baseline() is not None:
+            return st.session_state["bl_folder_file"]  # as listed: "baselines/<name>" in the subfolder
         held = None if _data_locked() else st.session_state.get("bl_file")
         env_path = os.environ.get("XERSCOPE_BASELINE", "")
         return held[0] if held else Path(env_path).name if Path(env_path).is_file() else "file missing"
@@ -133,9 +134,10 @@ def _baseline_file_fields(choice: str, folder_files: list[str]) -> None:
             key="draft_bl_folder_file",
             format_func=lambda name: name or "(none)",
             help="The P6 XML exports placed next to the .xer files (Export > Primavera P6 XML, Baselines to "
-            "Export). The one picked is the separate baseline file; it is never read as an update. With "
-            f"'{BL_EACH}', each update is looked for in it: the baseline its file names, else a copy of it "
-            "(Debug, block 5).",
+            f"Export), and the .xer and P6 XML files of the '{BASELINES_FOLDER}' subfolder, which can carry the "
+            "name of an update. The one picked is the separate baseline file; it is never read as an update. With "
+            f"'{BL_EACH}', each update is looked for in a P6 XML one: the baseline its file names, else a copy of "
+            "it (Debug, block 5).",
         )
     if wants_file and not _data_locked():
         st.file_uploader(
