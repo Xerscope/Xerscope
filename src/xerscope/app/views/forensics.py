@@ -142,7 +142,7 @@ def show_horizon(old, new) -> None:
         "way included), where a Last Planner team makes work ready, or beyond. Revisions that fall mostly "
         "beyond reshape the far plan."
     )
-    ui.table(horizon, key="forensics_horizon")
+    ui.table(horizon, key="forensics_horizon", reading="forensics_horizon")
 
 
 def show_path_commitments(old, new) -> None:
@@ -156,6 +156,7 @@ def show_path_commitments(old, new) -> None:
         ui.table(
             commitments.sort_values(["kept", "planned_date"]),
             key="forensics_path_commitments",
+            reading="forensics_path_commitments",
             max_height=ui.TABLE_SHORT,
             open_task=partial(open_in_gantt, snapshot=new),
         )
@@ -175,6 +176,7 @@ def show_longest_path(old, new) -> None:
     ui.table(
         changes,
         key="forensics_path",
+        reading="forensics_path",
         max_height=ui.TABLE_SHORT,
         open_task=partial(open_in_gantt, snapshot=new),
         empty="No open task is on the longest path of either update: nothing entered, stayed on or left it.",
@@ -184,7 +186,7 @@ def show_longest_path(old, new) -> None:
 def show_path_series(store) -> None:
     """Longest path of every update against the one before it: table, CSV."""
     churn = memo(("forensics_path_churn",), path_churn, store, baseline=False, ev_basis=False)
-    ui.table(churn, key="forensics_path_churn", max_height=ui.TABLE_SHORT)
+    ui.table(churn, key="forensics_path_churn", reading="forensics_path_churn", max_height=ui.TABLE_SHORT)
     csv_download(churn, "longest_path_churn.csv", "Download longest path (CSV)", sources=sources_of(*list(store)))
 
 

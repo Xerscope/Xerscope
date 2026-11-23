@@ -1217,6 +1217,66 @@ tree: differences only at the listed elements; planted defect: Earned value read
 **Findings.** Section 6 "Baseline context" (decided), BL-01/BL-02 of the baselines session's note,
 P13/P14 explanation requirement.
 
+### P18 — One message, one sentence, one action (effort M, executor: senior for the rule and the test, mechanical executor for the texts; behaviour, `pages.json` regenerated once)
+
+**Problem.** The 59 `st.error` / `st.warning` / `st.info` calls of `app/` (12 in
+`baseline_warnings.py`, 7 in `state.py`, 6 in `views/debug.py`, 5 in `views/health.py`, 4 each in
+`views/earned_value.py` and `files_window.py`, the rest spread) follow one model: what the tool
+found, the P6 cause, where to read more. Three ideas per message, in the tool's words
+("fallback", "undecided", "probable", "GUID", "the window's choice", "sum_base_proj_id",
+"use_project_baseline_flag", "Debug, block 5"), with no verb for the user. Seen on the maintainer's
+series (2026-11-22): `_absent_baseline_help` (`baseline_warnings.py:176-208`) prints a red error of
+six lines repeating "a project no loaded file holds (its code is unknown)" once per unknown
+`proj_id`, then three sentences of P6 lore; `_renumbered_notice` (`308-340`) prints "no task is
+linked" and, under it, "124 tasks renumbered …, linked by GUID": two true sentences about
+different files that contradict each other on screen, plus a reproach ("Link renumbered tasks by
+GUID is on") about the default setting. Severity is not graded: the missing XML export is red
+while nothing is broken. `KIND_TEXT` (8 labels) and `BASELINE_RULES` (4) feed the banner with the
+same vocabulary.
+
+**Options.**
+1. A message rule in CONTRIBUTING ("Messages"): one sentence of at most 15 words; a verb for the
+   user when the user can act ("Add …", "Pick …", "Untick …"); no internal name (the list in
+   `tests/test_messages.py`); the P6 cause, the figures it affects and the menu path go in the
+   `help=` of the widget that carries the message or in `READINGS`, never in the sentence; severity:
+   error = the page cannot be drawn, warning = a figure is to be read with care, info = a state or a
+   next step. `ui.notice(level, sentence, help_text)` draws it (one `st.<level>` call, the help as a
+   popover beside it, as `ui.panel` does), so the rule has one place. The 59 texts rewritten in
+   appendix H (current → sentence → help → level), `KIND_TEXT` and `BASELINE_RULES` shortened with
+   them, the banner reduced to project · status date · baseline (the rest in its help).
+   `_absent_baseline_help` merges the unknown-code groups into one line and drops to warning;
+   `_renumbered_notice` draws one line: a caption when the option links them, a warning naming the
+   baseline without GUID only when renumbered tasks stay unlinked in it, nothing else. Cost: texts
+   (~59), ~40 lines in `ui.py`, ~30 in `baseline_warnings.py`; `pages.json` regenerated once.
+2. Rewrite the texts only, no rule, no helper. Cost: texts; limit: the next message is written on
+   the old model, nothing fails.
+3. Translate the interface to French at the same time. Cost: every label, the lexicon test, every
+   golden; limit: a second package in itself, the maintainer's call (section 6).
+
+**Choice.** Option 1, English kept (option 3 stays a maintainer decision). No computed value moves;
+`analysis/` is not written except `explain.py` texts if a help text is a reading. The widgets, their
+keys and their order are unchanged except the three guided captions of the Files and baseline
+window (appendix H, last block). The texts of appendix H are the texts: the executor copies them,
+the reviewer diffs them.
+
+**What changes for the user.** Every message is one line that says what is wrong and what to do;
+the why and the P6 path are one click away; red means the page cannot be drawn.
+
+**Verification.** `tests/test_messages.py`, failing before: (a) AST, every `st.error/warning/info`
+call under `app/` goes through `ui.notice` or is listed as a plain state line; (b) every sentence of
+appendix H is at most 15 words and holds none of the forbidden words (fallback, undecided, probable,
+GUID, block, flag, proj_id, sum_base_proj_id, window's choice, assigned); (c) AppTest on a built
+series with a renumbered task and an XML baseline without GUID: exactly one renumbering line, never
+"no task is linked" beside "linked by GUID"; (d) AppTest on XER-only files: the absent-baseline line
+is a warning, one line, with the "Files and baseline" button beside it. `pages.json` regenerated
+once: every changed line is a message text, a help, a banner label or a caption, listed per page in
+the commit; no metric, dataframe or figure line. `test_lexicon` unchanged. Whole-app digest base vs
+tree: differences only at the listed elements; planted defect: one text of appendix H with 16 words
+→ (b) fails; revert.
+
+**Findings.** Maintainer's reading of 2026-11-22 (three messages pasted), P14/P15 help texts,
+section 6 "Baseline context".
+
 ### P16a — `gantt.js`, `gantt.css` and the small modules: names and duplicates (effort M, executor: mechanical executor; rename, output byte-identical)
 
 **Problem.** `viz/gantt.js` (421 lines) was never brought to the Names rules while its Python side
@@ -1830,6 +1890,62 @@ follows; `audit.py:61-75`), `finish_before_replanning` / `replanning_wd` / `resi
 `added` (half-step series, `forensics.py:32-48`, AACE RP 29R-03 MIP 3.4), `flagged` ("Items listed"),
 `found_exp` / `total_exp` / `match` (report comparison, `health.py:396-400`), `table` / `rows` /
 `columns` (export tables, `export.py:37-39`).
+
+### H. Messages (P18 texts, copied word for word)
+
+Columns: where · current text (shortened) · sentence · help (the why and the path) · level.
+A line marked **keep** is already on the rule. `{n}` counts, `{date}` a status date, `{file}` a
+file name, `{bl}` a baseline label.
+
+**Sidebar, baselines (`baseline_warnings.py`)**
+
+- `:42` "The baseline's status date (…) is after the first update's (…): BEI, missed tasks and PV before that date compare against a plan that did not exist yet." → **"Baseline dated {date}, after the first update: early figures are not comparable."** · help: "BEI, missed tasks and planned value before {date} compare against a plan that did not exist yet." · warning.
+- `:110` "Baselines export not read: {error}" → **"Baselines export not read."** · help: the parser's text · error.
+- `:112` "Baseline {id} of the export not read: {error}" → **"Baseline {bl} not read."** · help: the parser's text · error.
+- `:115` "{updates}: measured against a probable baseline, not the one {file} names. Which one and why: under the title of each page, and Debug, block 5." → **"{n} updates compared to an uncertain baseline. Pick the right one: Baseline window."** · help: "The baseline these files name is not in the export; the closest version is used. Which one per file: the Baseline window, per-file table." · warning.
+- `:122` "{updates}: the baseline {file} is not in the export, and the versions around it hold different baselines: not measured until one is chosen in the Baseline window. Debug, block 5." → **"{n} updates without a baseline: pick one in the Baseline window."** · help: "The baseline these files name is not in the export, and the versions around it differ; xerscope does not guess." · warning.
+- `:142` "No usable P6 Project Baseline in the file of {updates}: {instead}." → **"{n} updates have no baseline in their file: {instead}."** where `{instead}` is "baseline checks not computed" or "compared to {bl}" · help: "P6 writes no baseline in an XER." · warning.
+- `:151` "{updates}: {reason}. Not used." → **"{n} updates: baseline not used, {reason}."** · help: the reason in full · warning.
+- `:157` "The series mixes baseline sources, so its updates are not measured against the same plan: …" → **"Updates compared to different baselines: trends mix plans."** · help: the groups, one per line · warning.
+- `:202` "P6 Project Baseline missing for {n} of {m}: {named}. P6 measures planned value, BEI, Late Activities and Missed tasks against it (…). P6 writes no baseline in an XER: export them as P6 XML (…) and put the file next to the updates. Which file names which …" → **"No baseline in {n} of {m} updates. Add the P6 XML export of the baselines next to the files."** · help: "P6 writes no baseline in an XER. Export them (Export > Primavera P6 XML, Baselines to Export) and place the file next to the updates. Planned value, BEI, late and missed tasks need it. Named per project:" then one line per known code, and one line "{k} updates name a baseline absent from every file" for the unknown codes together · warning (was error).
+- `:239` "The {what} is {code}, status date {date}, but the updates name another P6 Project Baseline: {named}. Their planned value, BEI and late tasks will not match P6's. (Compared by P6's internal project id …) Ask for the export …" → **"Baseline {bl} is not the one the updates name: figures will differ from P6's."** · help: the current text · warning.
+- `:319` "Link renumbered tasks by GUID is on, but the baseline has no GUID to match ({files}): no task is linked. A P6 XML baseline carries none xerscope compares; export the baseline as XER …" → shown only when renumbered tasks stay unlinked: **"Baseline {bl} has no GUID: {n} renumbered tasks count as deleted and new."** · help: "A P6 XML export carries no GUID xerscope compares; export the baseline as XER to match renumbered tasks." · warning.
+- `:334` "{tasks} carry a baseline task's GUID under a new Task ID ({files}): against the baseline they count as deleted and new. Option in the Baseline window: Link renumbered tasks by GUID." → **"{n} tasks renumbered since the baseline: turn on Link by GUID in the Baseline window."** · help: "A task that carries a baseline task's GUID under a new Task ID counts as deleted and new until linked." · warning. Caption when linked: **"{n} tasks renumbered since the baseline, matched by GUID."** (one line, the files in its help).
+
+**Pages (`state.py`)**
+
+- `:107` "Baseline of this update: {used}." → **"Uncertain baseline: {bl}."** · help: why (rule text) · warning.
+- `:152` "{name}: {file_baseline.text}. To measure this update, {what_to_do}." → **"{file}: no baseline. {what_to_do}."** · help: `file_baseline.text` · info.
+- `:162` "{name}: the baseline's status date (…) is after the update's (…): it compares against a plan that did not exist yet." → **"Baseline dated after this update: figures not comparable."** · help: both dates · warning.
+- `:170` "{name}: the baseline finds {matched} of {len} tasks of the update ({pct} %, below …). Late tasks, BEI and earned value count the others as not baselined." → **"Only {pct} % of tasks found in the baseline: late tasks, BEI and EV are partial."** · help: the counts and the threshold · warning.
+- `:209` "Reading {n} updates… The page draws once the whole series is read (progress in the sidebar)." → **"Reading {n} files…"** · help: "The page draws once every file is read; progress in the sidebar." · info.
+- `:219` "{files} read. Choose the baseline in the window (the sidebar's Baseline line opens it again), then Done: the pages are computed once, against it." → **"{n} files read. Choose the baseline, then Done."** · help: current text · info.
+- `:229` "Load your weekly XER exports from the sidebar's Files line … Generate a demo set with …" → **"Load your weekly XER exports: sidebar, Files."** · help: the demo command · info. **keep** otherwise.
+- Banner label `:83-86` → **"{projects} · status date {date} · baseline {bl}"**; EV basis, costs, files count and the rule move to its help (already listed there).
+- `KIND_TEXT`: "the baseline of its file" → "its file's baseline"; "the baseline it names, from the export" → "named, from the export"; "a probable baseline" → "uncertain"; "a baseline chosen in the window" → "picked by hand"; "the fallback" → "the default baseline"; "its planned dates" → "planned dates"; "the baseline of the series" → "the series' baseline"; "no baseline" **keep**.
+- `BASELINE_RULES` labels: "the window's choice" → "window"; "assigned in this update" → "this file"; "origin of the series" → "series origin"; "P6 view: this update's baseline" → "P6 view". Their sentences stay in the banner help.
+
+**Files and baseline window (`files_window.py`, `baseline_window.py`)**
+
+- `:164` "Folder outside {root}: set XERSCOPE_FOLDER_ROOT to read another tree" → **"Folder outside {root}."** · help: "The server reads under {root} only (XERSCOPE_FOLDER_ROOT)." · error.
+- `:168` "Folder not found" / "No .xer file in that folder" **keep** · error.
+- `:189` "Tick at least one file to read" **keep** · info.
+- `:210` "{n} files named {name}: untick all but one" **keep** · error.
+- Three guided captions, one under each choice of the Baseline section, texts only: "XER files only: no baseline inside, pick the default below." / "P6 XML export next to the files: each update finds its baseline in it." / "Separate baseline file: every update is compared to it."
+
+**Views**
+
+- `debug.py:104` "Cannot schedule this file: {exc}" → **"This file cannot be scheduled."** · help: exc · error.
+- `debug.py:111` "Blank in the file, default applied: {options}. Check the Schedule Options dialog in P6 before comparing dates." → **"{n} schedule options blank in the file: P6 defaults applied."** · help: the list and the P6 dialog · warning.
+- `debug.py:123` "Not the same in this update and in its baseline file: {options}. Dates and floats of two files scheduled with different options do not compare." → **"{n} schedule options differ from the baseline: dates do not compare."** · help: the list · warning.
+- `debug.py:483` "Set aside: {a} rows without Activity ID, {b} repeated …, {c} unreadable numbers (counted as 0)." → **"{n} rows set aside."** · help: the three counts · warning.
+- `forensics.py:209` "The half-step reading compares consecutive updates: load at least two." → **"Load at least two updates."** · help: why · info. Same for `ppc.py:306`, `changelog.py:129`, `milestones.py:79`.
+- `forensics.py:215` **keep**. `forensics.py:232` "These two updates cannot be read: {error}" → **"These two updates cannot be compared."** · help: error · error.
+- `earned_value.py:402` "ETC / EAC computed as remaining hours; {n} WBS use a performance factor: {list}" → **"{n} WBS use a performance factor P6 applies and xerscope does not."** · help: the list and "ETC and EAC here are remaining hours" · warning.
+- `earned_value.py:549` "The baseline ({bl}) has no budgeted labor hours, so there is nothing to earn. Export the BL with resource assignments (…)." → **"Baseline {bl} has no labor hours: nothing to earn."** · help: "Export the baseline with its resource assignments (TASK.target_work_qty, TASKRSRC)." · warning.
+- `earned_value.py:563` → **"No labor hours in the tasks picked."** · info.
+- `ppc.py:255` "{n} Task ID(s) changed since W−1 (same GUID or P6 task_id): each counts as deleted, its commitments out of the PPC, and new in W. {listed}" → **"{n} Task IDs changed since last week: their commitments leave the PPC."** · help: current text and the list · warning.
+- `health.py:351,355,410,467,472`, `audit.py:267`, `overview.py:93,147,151`, `gantt.py:154`, `task_panel.py:197`, `downloads.py:154`, `loading.py:401`, `baselines.py:78`, `ui.py:679,684` (`ui.note`, `ui.caveat`: callers' texts checked by (b)): **keep** the sentence, pass the detail as help where the text exceeds 15 words (`task_panel.py:197` → "Task ID {code} is on {n} rows: no card drawn." · help: "A Task ID names one task of a project.").
 
 ### G. Corrections from `partly` votes, applied
 

@@ -31,13 +31,18 @@ hand-made schedule per difference.
 
 Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 101393).
 
-**Baseline for P6-12 and P6-13: choose "Planned dates in each file (target_*)".** P6's "BL Project
-Start / Finish" are the Planned Start / Finish of the project baseline, and when the project is its
-own baseline they are the file's own planned dates. P6 moves the planned dates of a not-started
+**Baseline for P6-12 and P6-13: the Project Baseline assigned in the update** (Project > Assign
+Baselines, `PROJECT.sum_base_proj_id`): "Baseline in each file", with the P6 XML export of the baselines
+when the XER does not hold them. Choose "Planned dates in each file (target_*)" only for an update that
+is its own baseline. P6's "BL Project Start / Finish" are the Planned Start / Finish of the project
+baseline, and when the project is its own baseline they are the file's own planned dates. P6 moves the planned dates of a not-started
 activity with the schedule and freezes them when the activity starts, so only activities in progress
 (or finished) can drift from them. Checked against report R1 (see Sources): with this choice Late
 Activities lists the same activities with the same finish variance (to the hour) and BEI gives the
-same ratio; with the project's own current dates or another baseline file it does not.
+same ratio; with the project's own current dates or another baseline file it does not. Against a
+separate Project Baseline, planned dates measure the update against itself: a not-started activity
+moved later is never late. The Health page names, on each check that reads a baseline, the one it was
+measured against (name (Project ID) · kind); only kind exact or in file is the one P6 used.
 Populations from the P6 Professional 24 help of the Check Schedule dialog
 ([101248](https://docs.oracle.com/cd/F88968_01/client_help/en_US/101248.htm)); where it is
 silent, from the P6 EPPM help of each report section (pages 46277–46291), which differs in

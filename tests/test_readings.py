@@ -112,6 +112,37 @@ def test_a_figure_without_a_reading_key_raises_when_readings_are_strict(monkeypa
         ui.chart(go.Figure())
 
 
+# Tables that are no metric table: the Files and baseline window's per-file settings.
+TABLES_WITHOUT_READING = {"baseline_per_file"}
+
+
+def tables_without_reading(source: str) -> list[str]:
+    """The ``key`` of each ``ui.table`` call of ``source`` that passes no ``reading``, or a constant one
+    READINGS does not hold. A table drawn only on a series the demo lacks is caught here, not on the page."""
+    calls = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call)]
+    tables = [call for call in calls if getattr(call.func, "attr", "") == "table"]
+    tables = [call for call in tables if getattr(getattr(call.func, "value", None), "id", "") == "ui"]
+    missing = []
+    for call in tables:
+        keywords = {keyword.arg: keyword.value for keyword in call.keywords}
+        key = ast.unparse(keywords["key"]) if "key" in keywords else "?"
+        reading = keywords.get("reading")
+        if reading is None or (isinstance(reading, ast.Constant) and reading.value not in READINGS):
+            missing.append(key.strip("'\""))
+    return missing
+
+
+def test_every_table_of_the_app_passes_a_reading():
+    files = sorted((PACKAGE / "app").rglob("*.py"))
+    missing = {key for path in files for key in tables_without_reading(path.read_text(encoding="utf-8"))}
+    assert missing == TABLES_WITHOUT_READING
+
+
+def test_a_table_planted_without_a_reading_is_found():
+    planted = 'ui.table(frame, key="planted")\nui.table(frame, key="named", reading="not_a_reading")\n'
+    assert tables_without_reading(planted) == ["planted", "named"]
+
+
 @pytest.fixture(scope="module")
 def pages(sample_dir):
     """Every element of each page on the demo series, visited in the order of the menu, and the ``key`` and

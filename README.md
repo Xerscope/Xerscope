@@ -144,6 +144,14 @@ it as the separate baseline file; with "Baseline in each file", each update whos
 baseline it does not export takes that baseline from the XML, so a series whose Project Baseline
 changed over time is measured update by update.
 
+**Baseline files in the folder.** On a server that reads a folder (locked or not), the window offers as
+the separate baseline file the P6 XML exports next to the updates and every .xer or P6 XML file of a
+`baselines` subfolder, which is never read for updates. A baseline restored and exported as its own XER
+goes there, under the name of an update if need be (`baselines/2026-06-12.xer`); it is listed and named
+by that place. Only a name of that list is taken: no path is typed. Measured against, an XER and a P6 XML
+of the same plan give the same baseline; only a P6 XML can be looked in update by update, an XER of a
+baseline carrying a new project id.
+
 - **Checks:** the 17 of `standards/p6.toml`, in Oracle's groups: the 14 of the P6
   Professional 24 dialog help, plus out of sequence and dangling start / finish as a P6
   Professional report prints them.

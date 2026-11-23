@@ -103,9 +103,10 @@ def show_kpis(results, standard) -> None:
 def show_summary(results, standard, snapshot, sources: list[str]) -> None:
     full = summary_frame(results)  # its note names the baseline, for the export
     full["target"] = full["target"].map(typeset)
-    columns = ["status", "id", "group", "check", "result", "count", "target", "flagged"]
-    if not full["group"].astype(bool).any():
-        columns.remove("group")
+    columns = ["status", "id", "group", "check", "result", "count", "target", "flagged", "baseline"]
+    for optional in ("group", "baseline"):  # a standard without groups, or none of whose checks reads a baseline
+        if not full[optional].astype(bool).any():
+            columns.remove(optional)
     summary = full[columns]
 
     ui.section(

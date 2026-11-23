@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import baseline_box, read_folder
+import streamlit as st
+from conftest import baseline_box, files_done, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
@@ -558,6 +559,102 @@ def test_overview_shows_the_scores_schedule_health_computed_without_running_a_ch
     assert not app.exception and len(runs) == computed
     assert not [b for b in app.button if b.key == "overview_scores"]
     assert _score_cards(app) == health == _expected_scores(app, store)
+
+
+def _joined(at, key: str):
+    """Wait for the thread of the job under ``key`` and return the job, done."""
+    job = at.session_state[key]
+    assert job is not None and job.thread is not None
+    job.thread.join(timeout=300)
+    assert job.done
+    return job
+
+
+def _overview_with_scores(at):
+    """Read the sample folder, then the run after the score job finished: the cards are filled."""
+    at = read_folder(at.run())
+    _joined(at, "_load_job")
+    files_done(at.run())
+    _joined(at, "_score_job")
+    at.run()
+    assert not at.exception
+    return at
+
+
+def _own_standard(standard_id: str, name: str):
+    """The first two P6 checks as a standard uploaded under ``standard_id``, scored 50 % on the sample
+    (P6-01 fails at 8.7 %, P6-02 passes). Its metrics carry its id: the memo holds a metric by its definition,
+    and P6's own results must not stand for this standard's."""
+    p6 = builtin_standards()["P6"]
+    metrics = tuple(dataclasses.replace(metric, standard=standard_id) for metric in p6.metrics[:2])
+    return dataclasses.replace(p6, id=standard_id, name=name, metrics=metrics)
+
+
+@pytest.mark.oracle("property")
+def test_a_standard_uploaded_again_under_its_id_is_scored_again(sample_dir, monkeypatch):
+    """The score job was keyed on the standards' ids: a standard uploaded again under the same id with
+    another threshold kept the first score. The card now reads the score of the standard as uploaded
+    last, the one a fresh calculation gives."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    first = _own_standard("MINE", "Mine")
+    # P6-01 (Logic) is at 8.7 % on the sample: below 10 % it passes, and the score goes from 1/2 to 2/2
+    relaxed = dataclasses.replace(
+        first, metrics=(dataclasses.replace(first.metrics[0], threshold=10.0), first.metrics[1])
+    )
+    at = AppTest.from_file(APP, default_timeout=300)
+    at.session_state["uploaded_standards"] = {"MINE": first}
+    at = _overview_with_scores(at)
+    assert _score_cards(at)["Mine score"] == ("50 %", "2 evaluated · 1 fail: P6-01")
+
+    at.session_state["uploaded_standards"] = {"MINE": relaxed}
+    at.run()  # the page starts a job for the standard as it now reads
+    _joined(at, "_score_job")
+    at.run()
+    assert not at.exception
+    assert _score_cards(at)["Mine score"] == ("100 %", "2 evaluated · 0 fail")
+
+
+@pytest.mark.oracle("property")
+def test_the_score_cards_stop_polling_once_a_standard_settled_in_error(sample_dir, monkeypatch):
+    """A standard that raised in the score job has no result to hold, so the page found a score missing
+    on every run and the cards polled every second for as long as the Overview stayed open. A standard
+    in error is settled: once the job is done the page draws the cards, the error, and no fragment."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    broken = _own_standard("BROKEN", "Broken")
+    real_run_standard = cache.run_standard
+
+    def run_standard(standard, context, stopped):
+        if standard.id == "BROKEN":
+            raise RuntimeError("Broken: a rule failed")
+        return real_run_standard(standard, context, stopped=stopped)
+
+    monkeypatch.setattr(cache, "run_standard", run_standard)
+    fragments = []
+    real_fragment = st.fragment
+
+    def fragment(*args, **kwargs):
+        fragments.append(kwargs.get("run_every"))
+        return real_fragment(*args, **kwargs)
+
+    monkeypatch.setattr(st, "fragment", fragment)
+    at = AppTest.from_file(APP, default_timeout=300)
+    at.session_state["uploaded_standards"] = {"BROKEN": broken}
+    at = _overview_with_scores(at)
+    job = at.session_state["_score_job"]
+    assert job.done and job.results["BROKEN"] == "Broken: a rule failed" and len(job.results) == 5
+
+    fragments.clear()
+    at.run()  # the job is done and every standard is held or in error: no fragment is armed
+    assert not at.exception
+    assert fragments == []
+    assert [error.value for error in at.error] == ["Broken: a rule failed"]
+    cards = _score_cards(at)
+    assert cards["Broken score"] == ("–", "not computed yet")
+    assert all(value.endswith("%") for label, (value, _) in cards.items() if label != "Broken score")
 
 
 # --- the GUID link option -------------------------------------------------------------------------

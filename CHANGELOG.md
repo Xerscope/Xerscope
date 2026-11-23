@@ -16,6 +16,13 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- Baselines: a `baselines` subfolder of the updates' folder holds baseline files, .xer or P6 XML, offered as
+  the separate baseline file under "baselines/<name>" and never read as updates, so a baseline exported as
+  its own XER can be picked on a locked server even under the name of an update. A baseline XER that holds
+  several projects (the project and the baseline exported with it) gets a project picker in the window.
+- Health: each check that reads a baseline names in its row the one it was measured against, "name
+  (Project ID) · kind"; Debug block 5 lists the baseline used by each update.
+
 - Baselines: a P6 Project Baseline held in the file is named as P6's Maintain Baselines names it, its name
   then its Project ID ("Terminal works - B1 (BL, P6 Project Baseline in two.xer)"); the Project ID alone
   when the file holds no name. The sidebar says in one line when updates measure earned value against a

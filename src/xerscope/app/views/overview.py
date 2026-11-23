@@ -6,6 +6,7 @@ from xerscope.analysis.explain import KPI_FORMULAS, critical_definition
 from xerscope.analysis.progress import finish_shift_since_first
 from xerscope.app import ui
 from xerscope.app.cache import (
+    score_errors,
     score_job,
     standard_results,
     standard_results_held,
@@ -85,12 +86,11 @@ def score_section(polling: bool) -> None:
     not drawn again (``poll_scores``)."""
     held = {key: standard_results_held(standard, latest) for key, standard in available.items()}
     missing = [key for key, results in held.items() if results is None]
+    for message in score_errors(latest, available).values():
+        st.error(message, icon=":material/error:")
     if missing and polling:
         job = score_job(latest, store, available)
         held = {key: standard_results_held(standard, latest) for key, standard in available.items()}
-        failed = [str(job.results[key]) for key in missing if isinstance(job.results.get(key), str)]
-        for message in failed:
-            st.error(message, icon=":material/error:")
         if not job.done:
             st.caption(f"Computing the scores · {len(job.held)}/{len(available)} standards")
     elif (
@@ -112,8 +112,14 @@ def score_section(polling: bool) -> None:
 
 
 def is_a_score_missing() -> bool:
-    """Whether a listed standard has a check that is not computed yet."""
-    return any(standard_results_held(standard, latest) is None for standard in available.values())
+    """Whether a listed standard has a check that is not computed yet.
+
+    A standard the score job settled in error is not missing: nothing more will come for it.
+    """
+    settled = score_errors(latest, available)
+    return any(
+        key not in settled and standard_results_held(standard, latest) is None for key, standard in available.items()
+    )
 
 
 def poll_scores() -> None:

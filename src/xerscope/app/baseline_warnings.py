@@ -26,7 +26,7 @@ from xerscope.analysis.baseline import (
 )
 from xerscope.app import ui
 from xerscope.app.baseline_export import _export_in_use, is_undecided
-from xerscope.app.baseline_file import _folder_baseline_names
+from xerscope.app.baseline_file import _folder_baseline_names, is_xml_name
 from xerscope.app.baseline_window import _baseline_options, _baseline_short, _fallback_options
 from xerscope.app.baselines import _baseline_from_choice, _fallback_picker, baseline_for, kind_of
 from xerscope.app.cache import memo
@@ -162,15 +162,21 @@ def _file_baseline_warnings(sidebar, store: SnapshotStore) -> None:
         )
 
 
-def _updates_without_the_baseline_they_name(store: SnapshotStore) -> list[Snapshot]:
+def _updates_without_a_baseline(store: SnapshotStore) -> list[Snapshot]:
     """Return the updates ``_absent_baseline_help`` looks at.
 
-    All of them, less, in the per-file mode, those measured against the baseline they name, read from the
-    export.
+    All of them, less, in the per-file mode, those measured against a baseline: the one they name, a
+    probable one (said by ``_resolution_warnings``), and those left undecided, which the window offers
+    candidates for. Counting a probable baseline as missing told a user with 6 exact and 14 probable
+    baselines that 14 were missing.
     """
     if st.session_state.get("baseline") != BL_EACH:
         return list(store)
-    return [snapshot for snapshot in store if kind_of(baseline_for(snapshot, link=False)) != KIND_EXACT]
+    return [
+        snapshot
+        for snapshot in store
+        if kind_of(baseline_for(snapshot, link=False)) in (KIND_FALLBACK, KIND_NONE) and not is_undecided(snapshot)
+    ]
 
 
 def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
@@ -181,7 +187,7 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     only, no file name (a long series of long names made the line unreadable). No P6 steps: restoring or
     converting a baseline changes the project. Which file names which: Debug, block 5.
     """
-    absent = absent_project_baselines(_updates_without_the_baseline_they_name(store))
+    absent = absent_project_baselines(_updates_without_a_baseline(store))
     if not absent:
         return
     codes = project_codes(store)
@@ -199,13 +205,12 @@ def _absent_baseline_help(sidebar, store: SnapshotStore) -> None:
     named = "; ".join(one(proj_id, snapshots) for proj_id, snapshots in shown)
     if len(absent) > ABSENT_BASELINES_SHOWN:
         named += f"; {len(absent) - ABSENT_BASELINES_SHOWN} more"
-    sidebar.error(
-        f"P6 Project Baseline missing for {counted(updates, 'update')} of {len(store)}: {named}. "
-        "P6 measures planned value, BEI, Late Activities and Missed tasks against it "
-        "(Project Details > Settings, use project baseline). P6 writes no baseline in an XER: export them "
-        "as P6 XML (Export > Primavera P6 XML, Baselines to Export) and put the file next to the updates. "
-        "Which file names which, and what each is measured against: the Files and baseline window.",
-        icon=":material/error:",
+    sidebar.warning(
+        f"No baseline in {counted(updates, 'update')} of {len(store)}: {named}. P6 measures planned value, BEI, "
+        "Late Activities and Missed tasks against it. P6 writes no baseline in an XER: put the P6 XML export of "
+        "the baselines (Export > Primavera P6 XML, Baselines to Export) next to the files. Which file names "
+        "which: the Files and baseline window.",
+        icon=":material/warning:",
     )
 
 
@@ -281,7 +286,9 @@ def _baseline_picker(store: SnapshotStore) -> None:
     if st.session_state.get("bl_folder_file") not in ["", *exports]:
         # never picked, or a file no longer in the folder: the folder's only export, unless the server
         # names its own baseline file (XERSCOPE_BASELINE)
-        st.session_state["bl_folder_file"] = exports[0] if len(exports) == 1 and not env_path else ""
+        # P6 XML: an XER of the baselines subfolder is a baseline the user picks, not an export to look in
+        xml = [name for name in exports if is_xml_name(name)]
+        st.session_state["bl_folder_file"] = xml[0] if len(xml) == 1 and not env_path else ""
     options, default = _baseline_options(store, env_path, exports)
     if st.session_state.get("bl_choice") not in options:
         st.session_state["bl_choice"] = default
@@ -327,51 +334,25 @@ def _baseline_line(line, choice: str) -> None:
 
 
 def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
-    """Show the tasks of the updates that carry a baseline task's GUID under a new Activity ID (``renumbered``).
+    """Show one line on the tasks of the updates that carry a baseline task's GUID under a new Activity ID.
 
     A warning while they count as deleted and new, a caption once the option links them, nothing when
-    there are none.
+    there are none. A baseline without GUID gets no line: the baselines read are projects of the XER,
+    which carry their GUID, and P6 renumbers its baselines with the project when asked to.
     """
-    if st.session_state.get("guid_link"):
-        blank = memo(("baselines_without_guid",), _baselines_without_guid, store, ev_basis=False)
-        if blank:
-            sidebar.warning(
-                f"Link renumbered tasks by GUID is on, but the baseline has no GUID to match "
-                f"({ui.md_text(', '.join(blank))}): no task is linked. A P6 XML baseline carries none "
-                "xerscope compares; export the baseline as XER to link renumbered tasks.",
-                icon=":material/warning:",
-            )
     found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
     if not found:
         return
-    total = sum(found.values())
+    tasks = counted(sum(found.values()), "task")
     files = ui.md_text(", ".join(f"{name} ({count})" for name, count in found.items()))
-    tasks = counted(total, "task")
     if st.session_state.get("guid_link"):
-        sidebar.caption(f"{tasks} renumbered since the baseline, linked to the baseline by GUID: {files}.")
+        sidebar.caption(f"{tasks} renumbered since the baseline, matched by GUID.", help=f"Per update: {files}.")
         return
     sidebar.warning(
-        f"{tasks} {'carries' if total == 1 else 'carry'} a baseline task's GUID under a new Task ID "
-        f"({files}): against the baseline {'it counts' if total == 1 else 'they count'} as deleted and new. "
-        "Option in the Baseline window: Link renumbered tasks by GUID.",
+        f"{tasks} renumbered since the baseline: turn on Link by GUID in the Baseline window. Until then each "
+        f"counts as deleted and new ({files}).",
         icon=":material/warning:",
     )
-
-
-def _baselines_without_guid(store: SnapshotStore) -> list[str]:
-    """Return the labels of the baselines in use (other than an update itself) none of whose tasks has a TASK.guid.
-
-    The GUID link finds nothing against them (a P6 XML baseline: xer/pmxml.py).
-    """
-    labels = set()
-    for snapshot in store:
-        baseline = baseline_for(snapshot, link=False)
-        if baseline is None or baseline.snapshot is snapshot:
-            continue
-        tasks = baseline.snapshot.activities
-        if "guid" not in tasks or not (tasks["guid"].fillna("").astype(str).str.strip() != "").any():
-            labels.add(baseline.label)
-    return sorted(labels)
 
 
 def _renumbered_counts(store: SnapshotStore) -> dict[str, int]:

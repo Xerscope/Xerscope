@@ -19,6 +19,7 @@ from xerscope.analysis.baseline import (
     KIND_PROBABLE,
     KIND_SERIES,
     baseline_in_file,
+    named_with_id,
     relinked,
 )
 from xerscope.analysis.baseline_resolution import (
@@ -50,6 +51,7 @@ from xerscope.app.session import (
 )
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot, XerError, is_pmxml
+from xerscope.xer.pmxml import DiskFile
 
 
 def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str, env_path: str, exports: list[str]):
@@ -72,7 +74,7 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
         return None
     try:
         # a P6 XML export holds the baselines themselves: the one the latest update names, if it is there
-        pointer = _xml_baseline_id(source, store.latest.file_baseline.proj_id)
+        pointer = _xml_baseline_id(source, store.latest.file_baseline.proj_id) or file_project(source)
         snapshot = _parse(*source, project_id=pointer)
     except XerError as exc:
         sidebar.error(f"Baseline not read: {ui.md_text(exc)}")
@@ -80,6 +82,17 @@ def _baseline_from_choice(sidebar, store: SnapshotStore, choice: str, basis: str
     if is_pmxml(source[1]):
         sidebar.caption(f"P6 XML baseline {ui.md_text(snapshot.project_code)}")
     return _series(Baseline.from_snapshot(snapshot, basis), choice)
+
+
+def file_project(source: tuple[str, bytes | DiskFile]) -> str | None:
+    """Return the project picked in the window for a separate baseline XER of several projects, None for its default.
+
+    Only one of the file's own projects is taken; a P6 XML file is read by the baseline the update names.
+    """
+    chosen = st.session_state.get("bl_file_project")
+    if not chosen or is_pmxml(source[1]):
+        return None
+    return chosen if chosen in set(_parse(*source).file_projects["proj_id"]) else None
 
 
 def _series(baseline: Baseline, choice: str) -> Baseline:
@@ -175,7 +188,7 @@ def _resolved_baseline(snapshot: Snapshot) -> Baseline | None:
     built = _read_export_baseline(export, found.baseline_id)
     if built is None:
         return None
-    code = built.snapshot.project_code
+    code = named_with_id(built.snapshot)
     if found.found_by == IN_EXPORT:
         source = f"P6 Project Baseline {code} from {export[0]}"
         return replace(built, kind=KIND_EXACT, found_by=IN_EXPORT, source=source)
@@ -203,7 +216,7 @@ def _chosen_baseline(snapshot: Snapshot) -> Baseline | None:
     if built is None:
         return None
     source = (
-        f"{CHOSEN_IN_THE_WINDOW}: baseline {built.snapshot.project_code} of {export[0]}, held by version "
+        f"{CHOSEN_IN_THE_WINDOW}: baseline {named_with_id(built.snapshot)} of {export[0]}, held by version "
         f"{held_by[choice]}; the versions around the update's project hold different baselines and the one "
         f"its file names ({snapshot.file_baseline.proj_id}) is not in the export"
     )
@@ -330,18 +343,19 @@ def _baseline_identity(ev_basis: bool = True) -> tuple:
 
     The choice, the EV basis (None when ``ev_basis`` is False) with the GUID link option (always:
     ``baseline_for`` relinks the baseline whatever the analysis reads), and, for an uploaded file, its
-    bytes.
+    bytes and the project read from it.
     """
     baseline = st.session_state.get("baseline")
+    project = st.session_state.get("bl_file_project")
     basis = (st.session_state.get("ev_basis") if ev_basis else None, st.session_state.get("guid_link", False))
     if isinstance(baseline, Baseline):
-        return baseline.label, basis, st.session_state.get("baseline_digest")
+        return baseline.label, basis, st.session_state.get("baseline_digest"), project
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
         store = st.session_state.get("store")
         pointers = tuple(
             (snapshot.source, snapshot.file_baseline.proj_id, snapshot.file_baseline.usable) for snapshot in store or ()
         )
-        fallback = (st.session_state.get("bl_fallback"), st.session_state.get("baseline_digest"))
+        fallback = (st.session_state.get("bl_fallback"), st.session_state.get("baseline_digest"), project)
         chosen = tuple(sorted(st.session_state.get("bl_undecided", {}).items()))
         export = baseline_files_tag(st.session_state)  # the export the updates are looked for in
         return baseline, basis, pointers, fallback, chosen, export

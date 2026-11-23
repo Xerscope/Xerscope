@@ -199,7 +199,7 @@ if ask is not None:
                 for kind, label, _ratio in offers:
                     if st.button(
                         ui.md_text(label),
-                        key=f"teach_{word}_{label}",
+                        key=f"teach_{word}_{kind}_{label}",  # a WBS node and a resource may share a label
                         type="tertiary",
                         help="Teaches, for this session, that the word you typed means this label of the file. "
                         "Click the right one; a pick is kept for review in the lexicon folder of the server.",

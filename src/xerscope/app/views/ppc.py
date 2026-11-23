@@ -130,6 +130,7 @@ def show_lookahead(week_rows: pd.DataFrame, series: pd.DataFrame) -> None:
             series.sort_values(["data_date", "horizon"], ascending=[False, True]),
             columns=LOOKAHEAD_COLUMNS_SHOWN,
             key="ppc_lookahead",
+            reading="ppc_lookahead",
             overrides={
                 "data_date": WEEK_ENDING,
                 "lookahead_date": st.column_config.DateColumn("Plan read", format="YYYY-MM-DD"),

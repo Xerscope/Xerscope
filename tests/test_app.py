@@ -288,7 +288,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any("no activity shown" in m.value and "xyzzy" in m.value for m in app.markdown)
     app.text_input[0].set_value("commiss").run()  # a word nothing holds, close to Commissioning
     _ok(app)
-    app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()  # taught for the session
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
@@ -1077,6 +1077,74 @@ def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tm
         assert baseline_items({**session, "bl_folder_file": name}) == [], name
 
 
+def _a_baseline_xer_in_the_baselines_subfolder(folder, name="w1.xer"):
+    """``baselines/<name>``: A planned as the export's baseline (2 to 13 March, 80 h), as its own XER."""
+    held = folder / "baselines"
+    held.mkdir()
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-13 17:00", "target_work_qty": "80"}
+    (held / name).write_text(xer_text([todo("A", **week)], data_date="2026-02-23 08:00"), encoding="utf-8")
+
+
+def test_a_baseline_xer_of_the_baselines_subfolder_is_picked_under_the_name_of_an_update(tmp_path, monkeypatch):
+    """A locked server takes no upload, and a folder cannot hold two files of one name: the baseline exported
+    as its own XER goes in the ``baselines`` subfolder, under the name of an update if need be. It is listed
+    by its place there, never read as an update, and once picked is the baseline in force: 80 h, not the 40 h
+    of the update w1.xer it shares its name with."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    _a_baseline_xer_in_the_baselines_subfolder(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    assert files_line(at) == "Files · 2 files · 1 project"  # the subfolder is not read for updates
+    baseline_box(at).set_value(BL_FILE)
+    assert baseline_box(at, "bl_folder_file").options == ["(none)", "export.xml", "baselines/w1.xer"]
+    assert baseline_box(at, "bl_folder_file").value == "export.xml"  # the only P6 XML export, as before
+    _pick_the_folder_baseline_file(at, "baselines/w1.xer")
+    assert at.button(key="baseline_button").label == "Baseline · baselines/w1.xer"
+    baseline = at.session_state["baseline"]
+    assert isinstance(baseline, Baseline) and baseline.bac_hours == 80.0
+    assert baseline.snapshot.source == "baselines/w1.xer"  # never the update's own name
+    # a name built to leave the list reads nothing
+    for name in ("baselines/../w1.xer", "baselines/gone.xer"):
+        at.session_state["bl_folder_file"] = name
+        at.run()
+        _ok(at)
+        assert at.session_state["bl_folder_file"] == "export.xml", name
+
+
+def test_the_project_read_from_a_baseline_xer_of_several_is_picked_in_the_window(tmp_path, monkeypatch):
+    """A baseline XER exported with the project it copies holds two projects: the analysed one (UPD: A1, A2)
+    and the baseline (BL: A1 only). The window offers both, the file's default first; the one picked is
+    the baseline in force, and only one of the file's own projects is taken."""
+    from file_projects import two_projects
+
+    _updates_and_a_p6_xml_export(tmp_path)
+    (tmp_path / "baselines").mkdir()
+    (tmp_path / "baselines" / "two.xer").write_text(two_projects(baseline_ids=("A1",)), encoding="utf-8")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "baselines/two.xer")
+    assert baseline_box(at, "bl_file_project").options == ["UPD", "BL"]
+    assert len(at.session_state["baseline"].frame) == 2  # the default project, UPD
+    baseline_box(at, "bl_file_project").set_value("2")
+    _ok(at)
+    assert list(at.session_state["baseline"].frame.index) == ["A1"]  # BL
+    at.session_state["bl_file_project"] = "9"  # no project of the file: its default
+    at.run()
+    _ok(at)
+    assert len(at.session_state["baseline"].frame) == 2
+
+
+def test_a_baseline_read_from_its_xer_or_from_the_p6_xml_export_is_the_same_baseline(tmp_path, monkeypatch):
+    """The same plan of A (2 to 13 March, 80 h), in the P6 XML export and as its own XER in the baselines
+    subfolder: picked as the separate baseline file, both give the same dates and hours to measure against."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    _a_baseline_xer_in_the_baselines_subfolder(tmp_path, "bl.xer")
+    from_xml = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml").session_state["baseline"]
+    from_xer = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "baselines/bl.xer").session_state["baseline"]
+    assert from_xml.bac_hours == from_xer.bac_hours == 80.0
+    columns = ["bl_start", "bl_finish"]
+    pd.testing.assert_frame_equal(from_xer.frame[columns], from_xml.frame[columns], check_index_type=False)
+
+
 def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_path, monkeypatch):
     """export.xml cut short, picked as the baseline file of two updates that name no baseline: the sidebar
     says it was not read, and the Debug page draws without the list of its baselines."""
@@ -1090,7 +1158,7 @@ def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_
     _ok(at)
     assert any(error.value.startswith("Baseline not read: export") for error in at.sidebar.error)
     assert not [d for d in at.dataframe if "updates_naming_it" in d.value.columns]
-    found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+    found = next(d.value for d in at.dataframe if "version_before" in d.value.columns)
     assert found["found_by"].tolist() == ["not found", "not found"]
 
 
@@ -1215,7 +1283,7 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         _ok(at)
         pointers = next(d.value for d in at.dataframe if "baseline_in_file" in d.value.columns)
         listed = [d.value for d in at.dataframe if "updates_naming_it" in d.value.columns]
-        found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+        found = next(d.value for d in at.dataframe if "version_before" in d.value.columns)
         return pointers, listed, found
 
     at = _run(tmp_path, monkeypatch)
@@ -2078,7 +2146,7 @@ def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_ba
     sentence = "jalons commiss en retard"
     app.switch_page("views/gantt.py").run()
     app.text_input[0].set_value(sentence).run()
-    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()
     _ok(app)
     assert "WBS: COM · Commissioning" in _chips(app)
     written = (lexicon_root / "suggested" / "suggestions.toml").read_text(encoding="utf-8")
@@ -2102,7 +2170,7 @@ def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_r
     full.write_bytes(b"#" * suggested.MAX_BYTES)
     app.switch_page("views/gantt.py").run()
     app.text_input[0].set_value("commiss").run()
-    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]  # taught for the session all the same
     note = [c.value for c in app.caption if "not kept as a suggestion" in c.value]
@@ -2401,7 +2469,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
 def test_health_summary_file_gains_the_notes(app, store, downloads):
     snapshot, results = _open_health(app, store, "DCMA", anonymous=False)
     summary = _csv(_download(app, downloads, "Summary (CSV)"))
-    assert list(summary.columns[-2:]) == ["flagged", "note"]
+    assert list(summary.columns[-3:]) == ["flagged", "baseline", "note"]
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
         expected = result.note_with_baseline  # a note starting with +/- is CSV-guarded (csv_safe)
@@ -2586,7 +2654,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 46 and len(table_keys) == 46 and len(set(table_keys)) == 46
+    assert len(tables) == 47 and len(table_keys) == 47 and len(set(table_keys)) == 47
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)

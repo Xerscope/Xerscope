@@ -76,3 +76,38 @@ def test_an_update_measured_against_a_users_primary_baseline_is_named(tmp_path, 
     user's primary baseline, which the file does not carry; Y (the project baseline) and blank say nothing."""
     warnings = _sidebar_warnings(tmp_path, monkeypatch, flag)
     assert [line for line in warnings if "primary baseline" in line] == expected
+
+
+def test_the_debug_table_names_the_baseline_of_each_update_by_its_name_and_project_id():
+    """Debug block 5, ``baseline_used_table``: one row per update, the baseline as Maintain Baselines names
+    it, "name (Project ID)", the Project ID alone when the file holds no other name, "none" without one.
+    The anonymous download keeps the kind and dates, not the file, the name or the sentence."""
+    from xerscope.app.xml_baselines import baseline_used_table
+
+    named = _baseline(_with_project_nodes(two_projects()))
+    bare = _baseline(two_projects())
+    update = load_snapshot(two_projects().encode(), name="two.xer")
+    table = baseline_used_table([update, update, update], [named, bare, None])
+    assert table["baseline"].tolist() == ["Terminal works - B1 (BL)", "BL", "none"]
+    assert table["last_update"].notna().tolist() == [True, True, False]
+    anonymous = baseline_used_table([update], [named], anonymous=True)
+    assert list(anonymous.columns) == ["data_date", "kind", "found_by", "last_update"]
+
+
+def test_a_check_that_reads_a_baseline_names_it_in_the_results_table():
+    """Health page, ``summary_frame``: P6-13 reads the Project Baseline, so its row names it, "name (Project ID)"
+    and how it was found; P6-01 reads none, so its cell stays empty. Planned dates are named as such."""
+    import dataclasses
+
+    from xerscope.analysis import AnalysisContext, builtin_standards, run_standard
+    from xerscope.analysis.baseline import KIND_PROBABLE, Baseline
+    from xerscope.analysis.checks import summary_frame
+
+    update = load_snapshot(two_projects().encode(), name="two.xer")
+    baseline = dataclasses.replace(_baseline(_with_project_nodes(two_projects())), kind=KIND_PROBABLE)
+    p6 = builtin_standards()["P6"]
+    against = summary_frame(run_standard(p6, AnalysisContext(update, None, baseline))).set_index("id")["baseline"]
+    assert against["P6-13"] == "Terminal works - B1 (BL) · probable"
+    assert against["P6-01"] == ""
+    planned = summary_frame(run_standard(p6, AnalysisContext(update, None, Baseline.planned(update))))
+    assert planned.set_index("id").loc["P6-13", "baseline"] == "planned dates"
