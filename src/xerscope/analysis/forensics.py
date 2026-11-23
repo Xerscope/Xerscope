@@ -408,23 +408,35 @@ MANDATORY_FINISH = "mandatory finish"
 def finish_case(snapshot: Snapshot, recomputed: Schedule | None = None) -> tuple[str, pd.Timestamp | None]:
     """How the finish of ``snapshot`` is held, and the date that holds it.
 
-    ``must finish by``: the project has one (PROJECT.plan_end_date); a Must Finish By bounds the
-    late dates only, so the early finish still moves and float turns negative past the date.
-    ``mandatory finish``: an end point (nothing follows it) carries a Mandatory Finish; its date
-    cannot move, and the delay shows in the float of what precedes it. ``last task``: the
-    finish is the latest early finish and moves freely. A completed activity holds nothing:
-    P6 does not schedule it, so its constraint has no effect (Oracle P6 help, Constraints).
+    The project's finish is its latest early finish (Oracle P6 help, Activity Dates).
+    ``mandatory finish``: an open end point (nothing follows it) carries a Mandatory Finish and its early
+    finish is the project's: the constraint "sets its early and late finish dates equal to the date you
+    specify", "regardless of its effect on network logic" (Oracle P6 help, Mandatory finish constraint), so
+    the date cannot move and the delay shows in the float of what precedes it. It is read first: a Must
+    Finish By does not move an early date. ``must finish by``: the project has one (PROJECT.plan_end_date),
+    the project's late finish (P6 Web Services reference, Project Fields): the early finish still moves and
+    float turns negative past the date. ``last task``: the finish moves freely.
+    A completed activity holds nothing: its finish is its actual finish, which "is not changed by the project
+    scheduler" (Oracle P6 help, Activity dates).
     """
+    recomputed = schedule(snapshot) if recomputed is None else recomputed
+    pinned = _mandatory_finish_at_the_end(snapshot, recomputed)
+    if pinned is not None:
+        return MANDATORY_FINISH, pinned
     must_finish_by = snapshot.options.get("must_finish_by")
     if must_finish_by is not None:
         return MUST_FINISH_BY, must_finish_by
+    return LAST_ACTIVITY, recomputed.finish
+
+
+def _mandatory_finish_at_the_end(snapshot: Snapshot, recomputed: Schedule) -> pd.Timestamp | None:
+    """Return the Mandatory Finish date of an open end point whose early finish is the project's, or None."""
     activities = without(snapshot.activities, snapshot.data_date, ["loe", "complete"])
     at_the_end = ~has_successor_in_project(snapshot, activities)
     mandatory = activities[at_the_end & (activities["cstr_type"] == "CS_MANDFIN")]
-    if not mandatory.empty:
-        return MANDATORY_FINISH, mandatory["cstr_date"].max()
-    recomputed = schedule(snapshot) if recomputed is None else recomputed
-    return LAST_ACTIVITY, recomputed.finish
+    early_finish = recomputed.frame["ef"].reindex(mandatory["task_code"]).to_numpy()
+    holding = mandatory[early_finish == recomputed.finish]
+    return None if holding.empty else holding["cstr_date"].max()
 
 
 def longest_path_float_d(snapshot: Snapshot, recomputed: Schedule | None = None) -> float | None:

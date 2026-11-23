@@ -254,11 +254,53 @@ def test_finish_case_last_activity_must_finish_by_and_mandatory_finish():
 
 @pytest.mark.oracle("standard")
 def test_a_completed_mandatory_finish_does_not_hold_the_finish():
-    """Oracle P6 help, Constraints: a completed activity is not scheduled, so its constraint binds
-    nothing (docs/cpm.md, Complete). M, achieved Fri 13 Feb with a Mandatory Finish on that day and
-    nothing after it, beside open A, Mon 2 - Fri 6 March: the finish is A's, Fri 6 March 17:00."""
+    """Oracle P6 help, Activity dates: a completed activity's finish is its Actual Finish, "not changed by
+    the project scheduler", so its constraint binds nothing (docs/cpm.md, Complete). M, achieved Fri 13 Feb
+    with a Mandatory Finish on that day and nothing after it, beside open A, Mon 2 - Fri 6 March: the finish
+    is A's, Fri 6 March 17:00."""
     achieved = snap([done("M", cstr_type="CS_MANDFIN", cstr_date="2026-02-13 17:00", **FM), todo("A", **week())])
     assert finish_case(achieved) == (LAST_ACTIVITY, pd.Timestamp("2026-03-06 17:00"))
+
+
+@pytest.mark.oracle("standard")
+def test_a_mandatory_finish_holds_the_finish_before_a_must_finish_by():
+    """Oracle P6 help, Mandatory finish constraint: it "sets its early and late finish dates equal to the date
+    you specify", "regardless of its effect on network logic"; the project's Must Finish By is the project's
+    late finish (Web Services reference, Project Fields). A ends Fri 6 March 17:00, then M, a finish
+    milestone with a Mandatory Finish that day; Must Finish By Thu 5 March 17:00. The early finish is
+    pinned by M: the finish is held by the Mandatory Finish, not by the Must Finish By."""
+    both = snap(
+        [todo("A", **week()), todo("M", cstr_type="CS_MANDFIN", cstr_date="2026-03-06 17:00", **FM)],
+        chain("A", "M"),
+        project={"plan_end_date": "2026-03-05 17:00"},
+    )
+    assert finish_case(both) == (MANDATORY_FINISH, pd.Timestamp("2026-03-06 17:00"))
+
+
+@pytest.mark.oracle("standard")
+def test_a_mandatory_finish_before_the_project_finish_holds_nothing():
+    """Oracle P6 help, Activity Dates: "The end of the project is determined as the latest early finish date
+    of all activities". M, an end point with a Mandatory Finish on Wed 4 March 17:00, beside open A, Mon 2 -
+    Fri 6 March, with nothing between them: the project ends with A, Fri 6 March 17:00, which nothing holds."""
+    earlier = snap([todo("A", **week()), todo("M", cstr_type="CS_MANDFIN", cstr_date="2026-03-04 17:00", **FM)])
+    assert finish_case(earlier) == (LAST_ACTIVITY, pd.Timestamp("2026-03-06 17:00"))
+
+
+@pytest.mark.oracle("standard")
+def test_a_mandatory_finish_completed_on_the_project_finish_holds_nothing():
+    """Oracle P6 help, Activity dates: a completed activity's finish is its Actual Finish, "not changed by the
+    project scheduler". M completed Mon 2 March 08:00, the status date, with a Mandatory Finish then; X, an
+    open finish milestone, also ends Mon 2 March 08:00. M's early finish equals the project's, yet M holds
+    nothing: the finish is the last task's."""
+    achieved = done(
+        "M",
+        act_start_date="2026-02-23 08:00",
+        act_end_date="2026-03-02 08:00",
+        cstr_type="CS_MANDFIN",
+        cstr_date="2026-03-02 08:00",
+        **FM,
+    )
+    assert finish_case(snap([achieved, todo("X", **FM)])) == (LAST_ACTIVITY, pd.Timestamp("2026-03-02 08:00"))
 
 
 @pytest.mark.oracle("p6")
