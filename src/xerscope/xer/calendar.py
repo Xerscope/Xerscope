@@ -17,6 +17,7 @@ Working periods are kept per day, so working hours between two timestamps are ex
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -436,6 +437,9 @@ class TimeAxis:
         self.ends = ends
         lengths = self.ends - self.starts
         self.cum = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int64)  # work before period i
+        # the same three columns as Python lists, for ``work`` on one timestamp: a numpy call per value costs
+        # more than the search itself, and ``work`` is called a few hundred thousand times per schedule
+        self.starts_list, self.ends_list, self.cum_list = starts.tolist(), ends.tolist(), self.cum.tolist()
         self.base = int(self._raw(np.array([(self.anchor_ns - self.t0_ns) // 60_000_000_000]))[0])
 
     def _raw(self, m: np.ndarray) -> np.ndarray:
@@ -444,6 +448,16 @@ class TimeAxis:
         ic = np.minimum(i, len(self.starts) - 1)
         w = np.where(m <= self.starts[ic], self.cum[ic], self.cum[ic] + (m - self.starts[ic]))
         return np.where(i >= len(self.starts), self.cum[-1], w)
+
+    def _raw_one(self, m: int) -> int:
+        """``_raw`` for one minute offset, on the lists: the same search (searchsorted on the left is
+        bisect_left), the same three cases."""
+        i = bisect_left(self.ends_list, m)  # first period ending at/after m
+        if i >= len(self.starts_list):
+            return self.cum_list[-1]
+        if m <= self.starts_list[i]:
+            return self.cum_list[i]
+        return self.cum_list[i] + (m - self.starts_list[i])
 
     def _grow(self, earlier: bool) -> None:
         """Double the window towards the past or the future, up to the dates the axis can hold."""
@@ -476,8 +490,7 @@ class TimeAxis:
 
     def work(self, ts) -> int:
         """Working minutes from the anchor (the first origin) to ``ts``."""
-        m = self.minute(ts)
-        return int(self._raw(np.array([m]))[0]) - self.base
+        return self._raw_one(self.minute(ts)) - self.base
 
     def work_many(self, stamps) -> np.ndarray:
         """``work`` for an array of timestamps at once (NaT -> 0, check for NaT yourself)."""

@@ -86,6 +86,9 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Changed
 
+- CPM: `TimeAxis.work` reads one timestamp with `bisect` on lists kept with the axis instead of a numpy
+  call per value: a recalculation of the Hotel reference file (4 217 activities) takes 0.38 s instead of
+  1.0 s, every schedule of the reference data and the P6 corpus unchanged to the minute.
 - The pages, `streamlit_app.py` and the tests import each name from the module that defines it;
   `app/state.py` no longer re-exports what the other modules define. `tests/test_architecture.py`
   guards the app's import graph: the edges between the app modules written in the test, the baseline
