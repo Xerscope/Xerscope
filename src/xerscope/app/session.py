@@ -46,6 +46,7 @@ DRAFTS = {
     "ev_basis": "draft_ev_basis",
     "bl_fallback": "draft_bl_fallback",
     "bl_folder_file": "draft_bl_folder_file",
+    "bl_file_project": "draft_bl_file_project",  # the project read from a separate baseline XER of several
     "guid_link": "draft_guid_link",
 }
 UNDECIDED_DRAFT = "draft_bl_undecided:"  # + file name: the choice for an undecided update (``bl_undecided``)

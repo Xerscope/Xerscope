@@ -1112,6 +1112,27 @@ def test_a_baseline_xer_of_the_baselines_subfolder_is_picked_under_the_name_of_a
         assert at.session_state["bl_folder_file"] == "export.xml", name
 
 
+def test_the_project_read_from_a_baseline_xer_of_several_is_picked_in_the_window(tmp_path, monkeypatch):
+    """A baseline XER exported with the project it copies holds two projects: the analysed one (UPD: A1, A2)
+    and the baseline (BL: A1 only). The window offers both, the file's default first; the one picked is
+    the baseline in force, and only one of the file's own projects is taken."""
+    from file_projects import two_projects
+
+    _updates_and_a_p6_xml_export(tmp_path)
+    (tmp_path / "baselines").mkdir()
+    (tmp_path / "baselines" / "two.xer").write_text(two_projects(baseline_ids=("A1",)), encoding="utf-8")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "baselines/two.xer")
+    assert baseline_box(at, "bl_file_project").options == ["UPD", "BL"]
+    assert len(at.session_state["baseline"].frame) == 2  # the default project, UPD
+    baseline_box(at, "bl_file_project").set_value("2")
+    _ok(at)
+    assert list(at.session_state["baseline"].frame.index) == ["A1"]  # BL
+    at.session_state["bl_file_project"] = "9"  # no project of the file: its default
+    at.run()
+    _ok(at)
+    assert len(at.session_state["baseline"].frame) == 2
+
+
 def test_a_baseline_read_from_its_xer_or_from_the_p6_xml_export_is_the_same_baseline(tmp_path, monkeypatch):
     """The same plan of A (2 to 13 March, 80 h), in the P6 XML export and as its own XER in the baselines
     subfolder: picked as the separate baseline file, both give the same dates and hours to measure against."""

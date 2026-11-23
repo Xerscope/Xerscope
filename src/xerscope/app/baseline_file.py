@@ -129,3 +129,19 @@ def baseline_files_tag(session: MutableMapping) -> tuple[tuple[str, str], ...]:
     With the signature, which files an anonymizer or an extract was built from.
     """
     return tuple((name, _digest(data)) for name, data in baseline_items(session))
+
+
+def drafted_baseline_file(exports: list[str]) -> tuple[str, bytes | DiskFile] | None:
+    """Return the separate baseline file the window's drafts point at, before Done applies them.
+
+    The one drafted in the folder's list, else the one uploaded now, else the one in force (held or named
+    by XERSCOPE_BASELINE).
+    """
+    session = st.session_state
+    name = session.get("draft_bl_folder_file") or ""
+    if name in exports:
+        return _picked_folder_file({"files_source": session.get("files_source"), "bl_folder_file": name}, exports)
+    upload = None if _data_locked() else session.get("bl_upload")
+    if upload is not None:
+        return upload.name, upload.getvalue()
+    return _baseline_file_source(None, [])

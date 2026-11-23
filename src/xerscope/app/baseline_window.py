@@ -19,6 +19,7 @@ from xerscope.app.baseline_file import (
     _folder_baseline_names,
     _is_baseline_file_offered,
     _picked_folder_baseline,
+    drafted_baseline_file,
     is_xml_name,
 )
 from xerscope.app.baselines import UNDECIDED_FALLBACK, UNDECIDED_NONE
@@ -32,11 +33,12 @@ from xerscope.app.session import (
     EV_BASIS_LABEL,
     UPLOAD_TYPES,
     _data_locked,
+    _parse,
     _section_title,
 )
 from xerscope.app.xml_baselines import baseline_per_file
 from xerscope.store import SnapshotStore
-from xerscope.xer import Snapshot, is_pmxml
+from xerscope.xer import Snapshot, XerError, is_pmxml
 
 
 def _fallback_options(store: SnapshotStore, exports: list[str]) -> list[str]:
@@ -116,7 +118,8 @@ def _reset_stale_drafts(options: list[str], fallback_options: list[str], folder_
         "draft_guid_link": [True, False],
     }
     for key, draft in DRAFTS.items():
-        if st.session_state.get(draft) not in offered[draft]:
+        # the project of a baseline XER is checked against that file's projects by its own picker
+        if draft in offered and st.session_state.get(draft) not in offered[draft]:
             st.session_state[draft] = st.session_state[key]
 
 
@@ -150,6 +153,36 @@ def _baseline_file_fields(choice: str, folder_files: list[str]) -> None:
         held = st.session_state.get("bl_file")
         if held:
             st.caption(f"Held: {ui.md_text(held[0])}")
+    if wants_file:
+        _baseline_file_project(folder_files)
+
+
+def _baseline_file_project(folder_files: list[str]) -> None:
+    """Show the project to read from a separate baseline XER that holds several, its default first picked.
+
+    A P6 XML file is read by the baseline the updates name, an XER of one project has nothing to pick.
+    """
+    source = drafted_baseline_file(folder_files)
+    if source is None or is_pmxml(source[1]):
+        return
+    try:
+        snapshot = _parse(*source)
+    except XerError:
+        return  # the sidebar says why it is not read
+    projects = snapshot.file_projects
+    if len(projects) < 2:
+        return
+    codes = dict(zip(projects["proj_id"], projects["proj_short_name"], strict=True))
+    if st.session_state.get("draft_bl_file_project") not in codes:
+        st.session_state["draft_bl_file_project"] = snapshot.project_id
+    st.selectbox(
+        "Project read from the baseline file",
+        list(codes),
+        key="draft_bl_file_project",
+        format_func=lambda proj_id: codes[proj_id] or proj_id,
+        help="The baseline XER holds several projects (a project and the baselines exported with it): the one "
+        "picked is the baseline. By default, the project the file is read for when no choice is made.",
+    )
 
 
 def _baseline_fields(store: SnapshotStore) -> None:
