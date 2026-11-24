@@ -24,8 +24,16 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from .changelog import changelog
-from .cpm import H24, Schedule, ScheduleError, schedule
-from .forensics import AS_SCHEDULED, STEP_COLUMNS, STEPS, progress_shift_wd, replanning_shift_wd, step_schedules
+from .cpm import H24, Schedule, schedule
+from .forensics import (
+    AS_SCHEDULED,
+    STEP_COLUMNS,
+    STEPS,
+    pairwise_series,
+    progress_shift_wd,
+    replanning_shift_wd,
+    step_schedules,
+)
 
 # the date a link reads on the predecessor and the date it bounds on the successor, by link type
 LINK_DATES = {"FS": ("ef", "es"), "SS": ("es", "es"), "FF": ("ef", "ef"), "SF": ("es", "ef")}
@@ -218,14 +226,9 @@ def activity_half_step_series(store: SnapshotStore, task_code: str) -> pd.DataFr
     of the later update and its driving predecessors. A week the activity is missing from, or that
     cannot be scheduled, keeps its row with the reason in ``note`` and no figure.
     """
-    rows = []
-    for index in range(1, len(store)):
-        old, new = store[index - 1], store[index]
-        try:
-            rows.append(_series_row(activity_half_step(old, new, task_code), new))
-        except ScheduleError as error:
-            rows.append({"data_date": new.data_date, "note": f"not read: {error}"})
-    return pd.DataFrame(rows, columns=SERIES_COLUMNS)
+    return pairwise_series(
+        store, lambda old, new: _series_row(activity_half_step(old, new, task_code), new), SERIES_COLUMNS
+    )
 
 
 def _series_row(read: ActivityHalfStep, new: Snapshot) -> dict:

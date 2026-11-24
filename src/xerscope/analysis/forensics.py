@@ -241,12 +241,16 @@ STEP_COLUMNS = ["step", "finish", "shift_wd", "changes"]
 
 def progress_shift_wd(steps: pd.DataFrame) -> float:
     """Shift of the progress step in a ``steps`` frame: what the week's progress did."""
-    return float(steps.set_index("step").loc[STEP_NAMES[0], "shift_wd"])
+    return _shift_of(steps, STEP_NAMES[:1])
 
 
 def replanning_shift_wd(steps: pd.DataFrame) -> float:
     """Shifts of every step after progress in a ``steps`` frame, summed: what the replanning did."""
-    return float(steps.set_index("step").loc[STEP_NAMES[1:], "shift_wd"].sum())
+    return _shift_of(steps, STEP_NAMES[1:])
+
+
+def _shift_of(steps: pd.DataFrame, names: list[str]) -> float:
+    return float(steps.set_index("step").loc[names, "shift_wd"].sum())
 
 
 @dataclass(frozen=True)
@@ -510,14 +514,24 @@ def half_step_series(store: SnapshotStore) -> pd.DataFrame:
     itself, or a step: links carried one kind at a time can close a loop the two updates do not
     have) keeps its row, with the reason in ``note`` and no figure.
     """
+    return pairwise_series(store, _series_row, SERIES_COLUMNS)
+
+
+def pairwise_series(
+    store: SnapshotStore, row: Callable[[Snapshot, Snapshot], dict], columns: list[str]
+) -> pd.DataFrame:
+    """``row(old, new)`` for each update after the first, read against the update before it.
+
+    A pair that cannot be scheduled keeps its row: its data date and the reason in ``note``.
+    """
     rows = []
     for index in range(1, len(store)):
         old, new = store[index - 1], store[index]
         try:
-            rows.append(_series_row(old, new))
+            rows.append(row(old, new))
         except ScheduleError as error:
             rows.append({"data_date": new.data_date, "note": f"not read: {error}"})
-    return pd.DataFrame(rows, columns=SERIES_COLUMNS)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _series_row(old: Snapshot, new: Snapshot) -> dict:

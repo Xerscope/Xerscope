@@ -672,8 +672,8 @@ def _args_ask_bench(parser: argparse.ArgumentParser) -> None:
 
 
 def _anonymised_bench(path: Path, cases: list[dict]):
-    """The anonymised file's snapshot and the cases rewritten for it: a WBS code, a resource, a
-    code value or a name in a sentence or an expectation becomes its new code; a case that
+    """The anonymised file's snapshot and the cases rewritten for it: a WBS code, a resource, an
+    Activity ID, a code value or a name in a sentence or an expectation becomes its new code; a case that
     searches activity names is set aside (their words are rebuilt labels, not words); a
     sentence that still holds an original text value is refused. Returns (snapshot, cases,
     set aside, refused)."""
@@ -692,6 +692,7 @@ def _anonymised_bench(path: Path, cases: list[dict]):
         names += [(code, anonymous.code("W", code)), (name, anonymous.code("W", code))]
     for short, name in query.vocabulary(real).resources.values():
         names += [(short, anonymous.code("R", short)), (name, anonymous.code("R", short))]
+    names += [(code, anonymous.code("A", code)) for code in real.activities["task_code"].dropna().astype(str)]
     names = [(text, new) for text, new in names if text and new]
     names.sort(key=lambda pair: -len(pair[0]))
 
@@ -728,10 +729,23 @@ def _anonymised_case(case: dict, names: list[tuple[str, str]], anonymous) -> dic
         new_case["wbs"] = anonymous.code("W", case["wbs"])
     if case.get("resources"):
         new_case["resources"] = [anonymous.code("R", name) for name in case["resources"]]
+    new_case.update(_anonymised_activity(case, anonymous))
     wanted = [new_case.get("wbs") or "", *new_case.get("resources", [])]
     if any(code and code not in text for code in wanted):  # "mécanique", "achats": a synonym or a part of a name
         return NAMES_BY_SYNONYM
     return new_case
+
+
+def _anonymised_activity(case: dict, anonymous) -> dict:
+    """The Activity ID a case expects, renamed with the activity: ``task_code`` and the ``id:``
+    clauses. Empty when the case names no activity."""
+    if not case.get("task_code"):
+        return {}
+    clauses = [clause.partition(":") for clause in case.get("clauses", [])]
+    return {
+        "task_code": anonymous.code("A", case["task_code"]),
+        "clauses": [f"id:{anonymous.code('A', v)}" if k == "id" else k + sep + v for k, sep, v in clauses],
+    }
 
 
 def _cmd_ask_bench(args: argparse.Namespace) -> int:
