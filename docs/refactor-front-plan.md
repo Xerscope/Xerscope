@@ -1,5 +1,79 @@
 # Front refactoring plan (`app/`, `viz/`)
 
+## Status against the code
+
+Each package below was checked against the current tree (modules, functions and tests named in
+the evidence column). Done: the Choice is in the code. Partial: part of it is, the rest is said.
+Open: nothing of the Choice is in the code (the package still waits for the maintainer or for an
+executor).
+
+| Package | Status | Evidence |
+|---|---|---|
+| P1 formatting helpers | Done | `earned_value.format_number` is gone; pages write `ui.MISSING`, `ui.fmt_number`, `ui.fmt_date`, `ui.stamp` (`app/ui.py`); `ppc._pct` is `ui.fmt_number(value, "{:.0f} %")` |
+| P2 one explanation panel | Done | `app/explanation_panel.py` (`show_calculation`, `show_method`, and P15's `metric_panel`), called by `views/health.py` and `views/audit.py` |
+| P3 small duplicates of `state.py` | Done | `session.counted`, `baseline_warnings._date_span`, `cache._metric_key` with its docstring |
+| P4a Gantt and chart helpers | Done | `viz/gantt.py` `_iso_text`, `_rounded_number` and their `_column` forms; `viz/charts.py` `DAY`, `_series_trace`, `_mta_trace` |
+| P4b one row-size constant | Done (inside B12) | `gantt_data` sends `rowPx`, `chromePx` (`viz/gantt.py` `ROW_PX`, `CHROME_PX`); `gantt.js` writes `--row`, `gantt.css` reads `var(--row)`; `tests/test_app.py` `test_gantt_payload_carries_the_row_size_the_height_cap_and_an_epoch_that_follows_the_filters`, `tests/test_analysis_and_viz.py` (no `const ROW =`) |
+| P5 Debug and `diagnostic.py` duplicates | Done | `diagnostic._differences_wide`, `diagnostic._column_or`, `views/debug.zip_tag`, `baselines.snapshot_identity` |
+| P6-0 exception markers of `state.py` | Done | `state._page_title` catches `(ImportError, AttributeError, KeyError)`; the `ScoreJob` thread `noqa: BLE001` kept, now in `app/cache.py` |
+| P6-1 docstrings of `state.py` | Done | no `state.py` entry left in the per-file ignores of `pyproject.toml` |
+| P6a split of `state.py` (the move) | Done | `app/session.py`, `files_window.py`, `loading.py`, `downloads.py`; `state.py` is 325 lines (2101 before); the baseline half was cut again by P6c |
+| P6b long functions split | Done | `loading.load_series` / `draw_sidebar`, `files_window._draw_sections` / `_on_done` / `_doubles_by_date` / `_select_all_line`, `baseline_window._reset_stale_drafts` / `_baseline_file_fields`, `reading._read_on_workers`, `health._uploaded_counts` |
+| P6c baseline domain by responsibility | Partial | `app/baseline_file.py`, `baseline_export.py`, `baselines.py`, `baseline_window.py`, `baseline_warnings.py`, `cache.py` exist. Differs from the specification: `_parse` and `_pmxml_index` stayed in `session.py`, `data_identity` is in `baselines.py`, `EV_BASIS_LABEL` in `session.py`, `_baseline_picker`, `_baseline_line`, `_renumbered_notice`, `_renumbered_counts` in `baseline_warnings.py` (not `state.py`), `_baselines_without_guid` no longer exists; the edges are `cache -> baselines` and `baseline_warnings -> cache, baseline_window` (`APP_EDGES`, `tests/test_architecture.py`) |
+| P6d pages import from the defining module | Done | `tests/test_architecture.py` `test_the_app_modules_import_one_way_and_the_pages_read_each_name_from_its_module` (only `streamlit_app` and the pages import `state`; no cycle) and `test_every_form_of_an_import_of_an_app_module_is_read` |
+| P7 no baseline rebuilt on rerun | Done | `tests/test_app_cache.py` `test_a_rerun_with_nothing_changed_builds_no_baseline_and_lists_the_folder_once`, `test_the_digest_of_the_uploaded_baseline_is_computed_once_when_it_is_held`, `test_a_series_change_reads_only_the_files_the_session_has_not_parsed` |
+| P7b cache policy | Open | `session._parse` still clears its dict past 64 entries; no shared LRU helper; `builtin_standards` not cached |
+| P8 downloads and column builders | Done | `downloads.built_download`, `downloads.download_text`, `ui.count_columns`, `ui.number_columns`; one `st.download_button` in `app/` (`downloads.py`) |
+| P9a visual consistency | Done | `views/activity.py` removed (the task panel is `app/task_panel.py`, opened from the Gantt); `ui.need`, `ui.caveat`, `ui.SHIFT_WD_FORMAT`, `ui.SHIFT_WD_SENTENCE`; `first_forecast` and `slip_wd` in `ui.COLUMNS` |
+| P9b Audit default standard, one key | Open | `views/audit.py` `st.segmented_control("Standard", …, key="audit_std")` has no default; Health keeps `key="health_std"` |
+| P10 chart house style and tokens | Done | `charts._with_house_style`, `END_LABEL_MARGIN_PX` / `PLAIN_MARGIN_PX`; `--status-*` written by `theme.apply_style`, read by `style.css`; `"muted"` in `charts.STATUS`; `ui.TABLE_SHORT = 420`, `ui.TABLE_LONG = 640`; one `@media (max-width: 640px)` in `style.css`; `--grid-w: min(420px, 55vw)` in `gantt.css` |
+| P11a layer rules, computations out of pages | Open | `app/diagnostic.py` and `expected_finish_forms.py` still in `app/` (`cli` imports `app.diagnostic`, `LAYERS` in `tests/test_architecture.py`); `INDEX_ALERT`, `PPC_TARGET` still in `viz/charts.py`; no `Settings.index_alert` |
+| P11b export data date from the model | Open | `views/export._data_date` still reads `last_recalc_date` only |
+| P12a `ui.py` split | Partial | `app/theme.py` (`apply_style`, `font_fallback_css`), `app/table_filters.py`; `ui.py` keeps `runtime_table` and the entry point `filter_rows`, and is 985 lines. Differs from the Choice: the dispatch is `table_filters.keep_mask(kind, text, values)`, not `_mask`, and `tests/test_table_filters.py` still imports `ui`, not the new module |
+| P12b one missing-value mechanism | Open | `ui.blank_missing`, `ui.numbers_as_text` and the `placeholder` all still in `ui.py` |
+| P13 readings | Done | `analysis/explain.py` `Reading`, `READINGS` (51 keys); `ui.chart(figure, reading=…)`, `ui.reading_popover`, `ui.table(…, reading=…)`; `tests/test_readings.py`; `XERSCOPE_STRICT_READINGS` set by `tests/conftest.py` |
+| P14 widget help texts | Done | `tests/test_widget_help.py` (every page, the Files window, every widget call of `app/`) |
+| P15 Panel, Download, Table contracts | Done | `explanation_panel.metric_panel`; `help_text` on `downloads.show_download` / `built_download`; `ui.COLUMNS` entries are `(label, kind, help)`; `ui.table(…, empty=…)`; `tests/test_table_contract.py` |
+| P16a `gantt.js` names, small modules | Done | whole-word names in `viz/gantt.js`; `sets.show_steps(funnel, key)`; `tests/test_viz.py` `test_gantt_script_never_parses_text_as_html_nor_calls_out` (with `DOMParser`) and `test_gantt_script_writes_every_text_through_one_function` (SE-02 option 2) |
+| P16b `gantt.js` per event | Open | `drawLinks` still walks every link per row window; `resize` still calls `render()` unthrottled |
+| P17 baseline each page reads | Done | `baselines.baseline_for_checks`, `baselines.origin_baseline`; the `ev_p6_view` toggle on Earned value; `tests/test_baseline_per_page.py` |
+| P18 one message, one sentence | Open | no `ui.notice`, no `tests/test_messages.py`, no "Messages" rule in `CONTRIBUTING.md` |
+| 2bis SE-05a lexicon click | Done | the "Did you mean" help on the Gantt says "a pick is kept for review in the lexicon folder of the server" (`views/gantt.py`); `docs/deploy.md` §10 documents `suggested/` |
+| 2bis folder typed under one root | Done | `session.folder_root` (`XERSCOPE_FOLDER_ROOT`, else `XERSCOPE_DATA`, else home); `tests/test_folder_root.py` |
+| §6 B12 Gantt height | Done | `openEpoch`, `maxHeight` in `gantt_data`; `gantt.js` drops `host.xsOpen` on a new epoch and sets the height after `visibleRows()` |
+| §6 U1 loading order | Done | `loading.load_series(on_file)`, `loading.draw_sidebar(store, files_line)`, `loading.sidebar_loader`; `tests/test_loading.py` |
+| §6 Baseline context | Done | P17 |
+| §6 File picker slow to open | Open | `xer/parser.py` `_Reader.run` still reads to `%E`; `files_window._header` keeps the session cache (cleared past 256) |
+
+**Line numbers in the rest of this plan** are those of the tree it was audited on, before the split
+of `state.py` (2101 lines). They locate the code as it was; the functions they name now live as
+follows (moved: now the path on the right):
+
+| Cited as | Now |
+|---|---|
+| `state.py:72-128` (`_parse`, `_pmxml_index`, parse cache) | `app/session.py` |
+| `state.py:117-257` (`_build`, lexicon, `teach`, `LoadJob`, `_start_load`, `_poll_load`) | `app/loading.py` |
+| `state.py:258-553` (`_header`, `most_recent_first`, `_describe_file`, `_folder_boxes`, `_files_section`, `_projects_fields`, `_window`) | `app/files_window.py`; `_section_title` (`432`) in `app/session.py` |
+| `state.py:568-767` (`_chosen_items`, `_read_ticked`, `sidebar_loader`) | `app/loading.py` |
+| `state.py:639-657` (`debug_page`, `_data_locked`) | `app/session.py` |
+| `state.py:840-872` (baseline folder and file), `1854-1870`, `1908-1911` (`baseline_items`, `baseline_files_tag`) | `app/baseline_file.py`; `1873-1905` (`baseline_export`, `export_contents`, `_export_in_use`) in `app/baseline_export.py` |
+| `state.py:954-1115` (`_which_updates`, `_dates_or_file`, `_absent_baseline_help`, `_other_baseline_warning`, `_count`) | `app/baseline_warnings.py`; `_count` became `session.counted` |
+| `state.py:1142-1150` (`context_banner`), `1591-1602` (`require_store`), `1653` (`open_in_gantt`) | `app/state.py` |
+| `state.py:920` (`_fallback_options`), `1377-1447` (`_baseline_fields`) | `app/baseline_window.py` |
+| `state.py:1543-1567` (`_file_baseline`, `baseline_for`), `1698` (`_baseline_identity`) | `app/baselines.py`; `standards` (`1570-1576`) stays in `app/state.py` |
+| `state.py:1717-1835` (`memo`, `metric_result`, `_metric_key`, `ScoreJob`, `score_job`) | `app/cache.py` |
+| `state.py:1836-1845` (`anonymous_exports`, `costs_shown`), `1848-1851`, `1914-2101` (`sources_of`, `source_raws`, `anonymizer`, `hold`, `held`, `show_download`, `download`, `csv_download`) | `app/downloads.py` |
+| `ui.py:66-124` (CSS, fonts, `apply_style`) | `app/theme.py` |
+| `ui.py:533-633` (`FILTER_HINT`, `filter_rows`, `_number_test`, `_date_test`) | `app/table_filters.py` (`ui.filter_rows` keeps the entry point) |
+| `views/activity.py` | removed (P9a); its panel is `app/task_panel.py` |
+
+The evidence scripts of this folder are kept as written and are not part of the test suite:
+`docs/refactor-front/time_pages.py` no longer starts (it uses `Path` on line 5 before importing it
+on line 6, patches `state._parse` and `state.Baseline`, and lists the removed `activity` page);
+`docs/refactor-front/no_exceptions.sh` changes to a fixed checkout path before it runs.
+
+---
+
 Scope: `src/xerscope/app/**` and `src/xerscope/viz/**`. The CPM engine, the parser and the
 analyses are out of scope; a package that touches `analysis/` does so only to receive code
 moved out of a page, never to change a computed value. The one exception (P11b, the data date
@@ -17,7 +91,7 @@ documentation task.
 The front was audited through six lenses (duplicate functions `DF`, duplicate features `DP`,
 readability `RD`, visual bugs `VB`, loading and caching `LD`, layer rules `AR`), each finding
 tied to `file:line` ranges opened by the auditor, cross-checked with the AST near-clone report
-(`scripts/duplication.py` on `app/` and `viz/` (threshold 0.80), threshold 0.80) and `scripts/fitness.py`
+(`scripts/duplication.py` on `app/` and `viz/`, threshold 0.80) and `scripts/fitness.py`
 output. `refactor-front/findings.json` holds 94 ids. 80 received four independent skeptic votes
 (confirmed / partly / rejected, with the lines re-opened and, where a claim was a measurement,
 re-run under `AppTest`); the other 14 carry no vote because they describe the same lines as a
@@ -26,7 +100,7 @@ when at least three of four votes confirm it or confirm it in part (consensus ru
 voter said `partly`, its corrected locations and reduced impact replace the auditor's (appendix G
 lists every correction and where it was applied). All 80 voted findings reached consensus; none
 was rejected (appendix A is empty and kept as a record). Items already listed in
-`docs/backlog.md` "Structure" (lines 200-211) are cited as known (appendix C), not re-reported.
+`docs/backlog.md` "Structure" are cited as known (appendix C), not re-reported.
 
 A second review (`refactor-front/review.json`, `refactor-front/redesign-and-readings.md`, `refactor-front/security-and-uncovered.md`) then read
 the plan against the repository rules: a package mixes no move with a behaviour change (skill,
@@ -36,14 +110,14 @@ that fails before (CONTRIBUTING rule 3); a pull request aims at 400 lines (stand
 schedule data, activity name, project code or file path anywhere (rule 1); identity is
 `task_code`, hours in the model, `_d` and `wd` are working days of the activity's own calendar.
 Sources are named, never linked (the TOML `source` fields carry addresses; the plan, the readings
-and the help texts do not, and `ui.without_addresses`, `ui.py:328`, strips them at display).
+and the help texts do not, and `ui.without_addresses`, `ui.py:550`, strips them at display).
 
 Naming in this plan: "Pna" is a move or a rename, output byte-identical, proven by
 `scripts/same_code.py` and the goldens; "Pnb" is a behaviour change, presented Problem / Options
 / Choice / Verification, with the test that fails before it. "mechanical executor" marks mechanical moves
 and renames where the target is fully specified; "senior" marks a package where a behaviour or a
-design decision is taken. **`state.py` is changed only with the maintainer (Quentin): nothing in
-P6, P7, P9b or U1 is coded before his agreement on the Problem / Options / Choice of that package.**
+design decision is taken. **`state.py` is changed only with the maintainer: nothing in
+P6, P7, P9b or U1 is coded before their agreement on the Problem / Options / Choice of that package.**
 
 ## 2. Safety net first
 
@@ -92,8 +166,9 @@ for: the old module loaded from the package base beside the new one, the same de
 (`uv run xerscope sample`) through both, whole outputs compared (figure JSON digest for
 `viz/`, `AppTest` element list for `app/`), then one planted defect per rewritten function,
 each of which must fail the comparison. The script
-`docs/refactor-front/time_pages.py` (LD-13) is kept as the perf smoke reference; it takes the
-output folder as its first argument (`time_pages.py:12`), and its counters (`baseline_for`,
+`docs/refactor-front/time_pages.py` (LD-13) is kept as the perf smoke reference (it no longer starts
+on the current tree: see the status at the top); it takes the output folder as its first argument
+(`time_pages.py:12`), and its counters (`baseline_for`,
 `Baseline.from_snapshot`, `run_metric` per rerun) become assertions in `tests/test_app_cache.py`
 in P7. Note that `pages.json` lists labels, values, texts, table columns and trace types
 (`tests/test_page_golden.py:3-6`), not widget `help`: a help text is pinned by an AppTest of its
@@ -110,14 +185,14 @@ Premise corrected: there is no `components.html` call in `app/` or `viz/`; the H
 
 | Sink | What reaches the browser | Serialisation | Pinned by |
 |---|---|---|---|
-| `state.py:432` `_section_title` | two fixed strings of the Files window | `html.escape` on both | — |
-| `state.py:536` | the literal `<hr class="xd-rule">` | constant | — |
-| `ui.py:122` `apply_style` | `style.css` (repo file), CSS variables from `viz/charts.py` constants (`ui.py:118-121`), inlined fonts (`ui.py:75-88`) | constant text, no file data | — |
-| `task_panel.py:203` `card_html` | every label and value of the activity card, from the XER | `html.escape` on title, label, value (`task_panel.py:148-153`) | `tests/test_app_robustness.py:69` |
-| `ui.py:57` `GANTT = st.components.v2.component(...)`, called at `views/gantt.py:328-342` | `gantt_data` rows (names, codes, dates, numbers) as `data=` | JSON by Streamlit; the markup is the fixed `<div id="gantt"></div>` (`viz/gantt.py:257`) | `tests/test_viz.py:336, 345` |
+| `state.py:432` `_section_title` (now `session.py`) | two fixed strings of the Files window | `html.escape` on both | — |
+| `state.py:536` (now `files_window._draw_sections`) | the literal `<hr class="xd-rule">` | constant | — |
+| `ui.py:122` `apply_style` (now `theme.py`) | `style.css` (repo file), CSS variables from `viz/charts.py` constants, inlined fonts (`theme.font_fallback_css`) | constant text, no file data | — |
+| `task_panel.py:203` `card_html` | every label and value of the activity card, from the XER | `html.escape` on title, label, value (`task_panel.py:148-153`) | `tests/test_app_robustness.py:70` |
+| `ui.py:57` (now `ui.py:53`) `GANTT = st.components.v2.component(...)`, called in `views/gantt.py` (`ui.GANTT(`) | `gantt_data` rows (names, codes, dates, numbers) as `data=` | JSON by Streamlit; the markup is the fixed `<div id="gantt"></div>` (`gantt_assets`, `viz/gantt.py`) | `tests/test_viz.py` `test_gantt_keeps_schedule_text_out_of_the_markup`, `test_gantt_script_never_parses_text_as_html_nor_calls_out` |
 
 Every Markdown a page writes goes through `ui.md_text` (links broken, specials escaped), checked by
-`tests/test_app_robustness.py:69-96` on a crafted table name and file name.
+`tests/test_app_robustness.py:70-91` on a crafted table name and file name.
 
 - **SE-01 — `gantt.js` DOM sinks: checked, no issue.** Every text node is created by `el()` with
   `textContent` (`gantt.js:20-25`); no `innerHTML`, `insertAdjacentHTML`, `outerHTML`, `srcdoc`,
@@ -235,7 +310,7 @@ the shape duplication is smaller than claimed, the `n/a` vs `–` inconsistency 
 **Choice.** Option 1 (CONTRIBUTING Readable 5: no helper duplicated; Readable 1). `ppc._pct`
 keeps `n/a` in this package (output byte-identical); the `n/a` → `–` wording change is a
 one-line follow-up in P9a (visual fixes). The `viz/charts.py:580` date variant is handled in
-P4a (viz may not import `app`, `docs/architecture.md:180`). Moving the formatters out of `ui.py`
+P4a (viz may not import `app`, `docs/architecture.md`, "Layer rules"). Moving the formatters out of `ui.py`
 into their own module (A1 redesign R3, option 1) is P12a's business, not P1's.
 
 **Verification.** `uv run pytest tests/test_app.py tests/test_page_golden.py -q`:
@@ -246,7 +321,7 @@ into their own module (A1 redesign R3, option 1) is P12a's business, not P1's.
 **Findings.** DF-02 (`earned_value.py:78-79`, `ui.py:262, 278-280`), DF-03
 (`task_panel.py:53-65, 113, 244-245`), DF-04 (`ppc.py:72-73, 127`, `gantt.py:225`,
 `task_panel.py:113, 244-245`; corrected list), DF-12 app share (`xml_baselines.py:65, 153` →
-`ui.stamp`), RD-05 only as "fix on touch": no mass rename of `fmt_*` (CONTRIBUTING:49-51;
+`ui.stamp`), RD-05 only as "fix on touch": no mass rename of `fmt_*` (`CONTRIBUTING.md`, "Readable code";
 voters count 33 or 39 call sites, both too many for a rename). Merged, unvoted: DP-02, DP-03,
 VB-03, VB-04, AR-05 (same lines, appendix B).
 
@@ -277,7 +352,7 @@ Audit). `duplication.py --threshold 0.8` diff: the 0.81 `show_explanation`/`show
 
 **Findings.** DF-01 / DP-01 (`audit.py:103-123`, `health.py:239-251, 281-302`).
 
-### P3 — `state.py` small duplicates and names (effort S, executor: mechanical executor, with Quentin; move, byte-identical)
+### P3 — `state.py` small duplicates and names (effort S, executor: mechanical executor, with the maintainer; move, byte-identical)
 
 **Problem.** `_dates_or_file` is `_which_updates` without the count (`state.py:954-969`) and
 the span is inlined a third time at `1056`; `_count` (`1115-1116`) exists but `1337` and
@@ -295,7 +370,7 @@ the span is inlined a third time at `1056`; `_count` (`1115-1116`) exists but `1
    limit: a boolean parameter that changes what the function does (Readable 1).
 
 **Choice.** Option 1 (Readable 1, 3; Names 1, 2). `state.py` is touched: the list of lines above
-is agreed with Quentin before the branch is opened.
+is agreed with the maintainer before the branch is opened.
 
 **Verification.** `pages.json` identical (the strings `"3 files"`, `"1 task"`,
 `" · + baseline copy"` unchanged, checked by grep on the golden). `same_code.py` reports the
@@ -382,7 +457,7 @@ the Debug page, one nested in an expander body (`debug.py:389-391, 427-429`), wi
 1. `_differences_wide(comparison, key, fields)` returning `out`; module-level
    `_column_or(frame, column, convert, fill)` replacing the two closures (contracts differ,
    `dropna` vs `fillna(0.0)`, so `_numbers_of` stays); `snapshot_identity(snapshot)` in
-   `state.py` (with Quentin); one module-level `zip_tag(anonymous, *extra)` in `debug.py`. Cost:
+   `state.py` (with the maintainer); one module-level `zip_tag(anonymous, *extra)` in `debug.py`. Cost:
    ~120 lines.
 2. Leave the closures (one voter rates them a different contract) and do the pivot only.
    Cost: smaller; limit: Readable 2 (nested defs in a 60-line function) remains.
@@ -398,7 +473,7 @@ pivot) fails it. `duplication.py --threshold 0.8` diff: the 0.87 and 0.85/0.84 p
 **Findings.** DF-08, DF-09 (`692-700`, corrected), DF-07 (`debug.py:389-391, 427-429`,
 `state.py:1759-1760`). Merged, unvoted: DP-06 (DF-07), DP-12 (DF-08), RD-14 (DF-09).
 
-### P6-0 — The four exception markers of `state.py` (effort S, executor: mechanical executor, with Quentin; rewrite, output byte-identical)
+### P6-0 — The four exception markers of `state.py` (effort S, executor: mechanical executor, with the maintainer; rewrite, output byte-identical)
 
 **Problem.** `state.py` carries four markers that a move would carry into new files, where the
 guard `docs/refactor-front/no_exceptions.sh` counts them as added: `state.py:938` (`fmt: skip`
@@ -427,7 +502,7 @@ removed `except` clause itself (AppTest with no page context must still render).
 
 **Findings.** None (prerequisite of P6a).
 
-### P6-1 — The docstrings of `state.py` brought to form (effort M, executor: mechanical executor, with Quentin; docstrings only, output byte-identical)
+### P6-1 — The docstrings of `state.py` brought to form (effort M, executor: mechanical executor, with the maintainer; docstrings only, output byte-identical)
 
 **Problem.** `state.py` is exempted from five docstring rules in `pyproject.toml`
 (D102, D103, D205, D209, D401): 236 findings. `tests/test_docstrings.py` counts the
@@ -458,7 +533,7 @@ count down by five. Planted defect: one summary left in the indicative, ruff nam
 
 **Findings.** None (prerequisite of P6a).
 
-### P6a — Split `state.py` by concern: the move (effort L, executor: senior, with Quentin; move, byte-identical)
+### P6a — Split `state.py` by concern: the move (effort L, executor: senior, with the maintainer; move, byte-identical)
 
 **Problem.** `state.py` is 2101 lines, MI 0 (rank C, the only one in the front), docstring
 "Data loading shared by every page" (`state.py:1`) while holding the parse cache (`72-128`),
@@ -524,7 +599,7 @@ unchanged). Planted defect: one re-export left out of `state.py`, the suite name
 
 **Findings.** RD-09, RD-16, LD-08 (keys module, now `session.py`).
 
-### P6b — Split the four long functions of `state.py`, and the same pattern elsewhere (effort M, executor: senior, with Quentin; rewrite, output byte-identical)
+### P6b — Split the four long functions of `state.py`, and the same pattern elsewhere (effort M, executor: senior, with the maintainer; rewrite, output byte-identical)
 
 **Problem.** `sidebar_loader` is the only C901 hit in the front (`state.py:691-767`, ruff 12 > 10,
 radon 17; voters: one hit in a composer is medium, not high), `_window` nests five levels
@@ -619,7 +694,7 @@ imports from `xerscope.app.state`; (b) the baseline domain (`baseline_file`, `ba
 `downloads` nor `cache`; (c) the graph of `app/*.py` has no cycle (AST walk). Until P6d lands, no
 new import of `state` from a module of the baseline domain.
 
-### P7 — Caching: no baseline rebuilt on rerun (effort M, executor: senior, with Quentin; same results)
+### P7 — Caching: no baseline rebuilt on rerun (effort M, executor: senior, with the maintainer; same results)
 
 **Problem.** `metric_result` evaluates `AnalysisContext(snapshot, store, baseline_for(snapshot))`
 before `memo` checks its cache (`state.py:1749-1756`, cache check `1731-1735`):
@@ -666,7 +741,7 @@ Gantt, Overview. `pages.json` and `standards.json` identical.
 **Findings.** LD-01, LD-02, LD-03, LD-05, LD-06, LD-07 (known family), LD-11, LD-12, LD-13
 (script kept).
 
-### P7b — Cache policy decisions (effort S, executor: senior, with Quentin; behaviour)
+### P7b — Cache policy decisions (effort S, executor: senior, with the maintainer; behaviour)
 
 **Problem.** Three per-session caching policies: `_parse` (`state.py:72-83`, dict cleared past 64:
 a 65-file series re-parses the whole series on the next rerun, `79-80`), `memo` (`1717-1741`, LRU
@@ -785,7 +860,7 @@ list of `tests/test_page_golden.py:33` updated if the Activity page goes.
 **Findings.** VB-13 / UF-03, VB-02 (corrected list), VB-06, DF-04 (`n/a`), VB-16, DP-13
 (corrected), VB-11 (labels; corrected), DP-14 (corrected), VB-01 (decision only).
 
-### P9b — Audit opens on a default standard, one session key (effort S, executor: senior, with Quentin; behaviour)
+### P9b — Audit opens on a default standard, one session key (effort S, executor: senior, with the maintainer; behaviour)
 
 **Problem.** Audit opens empty with no default standard (`audit.py:151-153`
 `st.segmented_control("Standard", …, key="audit_std")`, `167-169`) while Health defaults to P6
@@ -1001,7 +1076,7 @@ builders (`128, 242, 280, 402, 421, 434, 483, 543, 572, 598`), plus the Gantt.
    `"activity_dates"`, `"activity_float"`, `"finish_trend"`, `"ppc"`, `"metric_trend"`,
    `"half_step"`, `"slip_trend"`, `"gantt"`) and by table key (`"health_results"`, …). Each
    `build_*` sets `figure.update_layout(meta={"reading": "<key>"})` (viz imports nothing from
-   `analysis/`, `docs/architecture.md:180`). `ui.chart(fig, reading=None)` reads
+   `analysis/`, `docs/architecture.md`, "Layer rules"). `ui.chart(fig, reading=None)` reads
    `reading or READINGS[fig.layout.meta["reading"]]` and draws, beside the section title, a
    `st.popover("How to read", icon=":material/help:")` with four short paragraphs; the Gantt page
    draws the same popover beside its toolbar from `READINGS["gantt"]`; `ui.table(..., reading=…)`
@@ -1018,7 +1093,7 @@ builders (`128, 242, 280, 402, 421, 434, 483, 543, 572, 598`), plus the Gantt.
 **Choice.** Option 1 (CONTRIBUTING "A metric's explanation → `analysis/explain.py`"; the same
 shape as `KPI_FORMULAS` + `_formulas_popover`, `ui.py:388-397`; `SPI_WINDOW_READING`,
 `explain.py:296`, already is a reading kept there). The `source` field holds names only;
-`ui.without_addresses` (`ui.py:328`) is applied as `show_method` does (`health.py:249-251`).
+`ui.without_addresses` (`ui.py:550`) is applied as `show_method` does (`health.py:249-251`).
 The senior writes the dataclass, `ui.chart`/`ui.table` slots and the coverage test; the mechanical executor
 dev copies the texts of appendix E into `READINGS`, word for word.
 
@@ -1343,7 +1418,7 @@ Order of merge:
 
 1. **P1, P2, P3, P4a, P5** are independent of each other and of everything else; merge first
    in any order (small, mechanical, output byte-identical). P3 and P5's `snapshot_identity`
-   touch `state.py`: agreed with Quentin first.
+   touch `state.py`: agreed with the maintainer first.
 2. **P6-0** (markers), **P6-1** (docstrings) then **P6a** (state move) after P3 (so the renamed helpers move once); **P6b** after P6a and after
    the U1 decision (section 6).
 3. **P7** after P6a (both caches and the baseline resolution in `app/baselines.py`); **P7b** after P7, on the maintainer's choice.
@@ -1376,8 +1451,8 @@ What must not change, in every "a" package and in P1, P2, P3, P5, P7, P8:
 - `tests/fitness_baseline.json` is not edited by a package; an improvement is regenerated by
   the maintainer after merge.
 - No mass rename (`fmt_date`, `fmt_number` keep their names; renames happen on touch only,
-  CONTRIBUTING:49-51).
-- `state.py` is changed only with the maintainer (Quentin).
+  `CONTRIBUTING.md`, "Readable code").
+- `state.py` is changed only with the maintainer.
 
 The "b" packages (P4b, P7b, P9a, P9b, P10, P11b, P12b, P13, P14, P15, P16b) change what the user
 sees or how the app behaves and list every change in section 3; each waits for the maintainer's
@@ -1416,7 +1491,7 @@ are listed under DF-15 and excluded from every package: `ui.code_label` vs `stat
 vs `unknown_acronyms`; `ui._number_test` vs `_date_test`; `ppc.show_progress_by_activity` vs
 `show_variances`; `viz/gantt._iso_column` vs `_number_column`.
 
-### C. Already known (docs/backlog.md "Structure", lines 200-211)
+### C. Already known (docs/backlog.md "Structure")
 
 - `set_index("task_code")` duplication: front share at `ui.py:746-748`, `viz/gantt.py:86`,
   `diagnostic.py:958` (DF-14, AR-15). `Snapshot.by_code` (`model.py:603-606`) keeps the first row
@@ -1428,7 +1503,7 @@ vs `unknown_acronyms`; `ui._number_test` vs `_date_test`; `ppc.show_progress_by_
 - Computations inside `app/views` (changelog, health, ppc, gantt): the PPC `progress_delta`
   memo (LD-07) belongs to this family; P11a adds `earned_value`, `milestones`, `overview` to
   the list the backlog names.
-- `build_gantt` complexity 16 (backlog): not touched by P4a, which renames and extracts
+- `build_gantt` complexity 16 (backlog; no `build_gantt` is left in the code, the Gantt rows are built by `viz/gantt.gantt_rows`): not touched by P4a, which renames and extracts
   converters only.
 
 ### D. Findings covered, by package
@@ -1467,12 +1542,14 @@ from the first version, are in P15, P6b and P15.
 
 ### E. Readings (P13 texts, copied word for word into `explain.READINGS`)
 
-Thresholds and sources are those the repository names: `INDEX_ALERT = 0.95` (`charts.py:39`),
-`PPC_TARGET = 80` (`charts.py:40`), `critical_float_days = 0`, `near_critical_float_days = 10`
-(`config.py:12-13`), DCMA-06 `total_float_d > 44` (`standards/dcma.toml:70`), BEI ≥ 0.95
-(`dcma.toml:141`; P6-13 > 0.95 `p6.toml:164`), CPLI ≥ 0.95 (`dcma.toml:132`), `EVMS = "DCMA EVMS
-(EIA-748)"`, `LPS = "Last Planner (PPC)"`, `LIPKE = "Earned Schedule (Lipke)"` (`explain.py:288-291`),
-AACE RP 29R-03 MIP 3.4 (`docs/formulas.md:477`). No source in the repository sets a threshold for
+Thresholds and sources are those the repository names: `INDEX_ALERT = 0.95` (`charts.py:50`),
+`PPC_TARGET = 80` (`charts.py:51`), `critical_float_days = 0`, `near_critical_float_days = 10`
+(`config.py:12-13`), DCMA-06 `limit_days = 44` (`standards/dcma.toml:68`), BEI ≥ 0.95
+(`dcma.toml:140`; P6-13 > 0.95 `p6.toml:163`), CPLI ≥ 0.95 (`dcma.toml:131`), `EVMS = "DCMA EVMS
+(EIA-748)"`, `LPS = "Last Planner (PPC)"`, `LIPKE = "Earned Schedule (Lipke)"` (`explain.py:315-317`),
+AACE RP 29R-03 MIP 3.4 (`docs/formulas.md` section 5.1). The figure
+texts of E.1 are those `explain.READINGS` carries, line references included: those inside the texts
+point at the tree the plan was audited on. No source in the repository sets a threshold for
 SPI or CPI: 0.95 on the indices chart is xerscope's alert line, said as such.
 
 #### E.1 Figures
@@ -1657,7 +1734,7 @@ Sites carried by a wrapper (4 + 5 generic):
 - `state.py:2038` (`show_download`): a `help` parameter on `show_download` (`2024-2033`) and
   `csv_download`, defaulting to "Downloads this table as it is shown; with Anonymous exports on
   (sidebar), Task IDs and names are replaced as in every other download of the session."
-  (`docs/architecture.md:201-214`). The 25 download sites then need no text.
+  (`docs/architecture.md`, the `anonymize.py` entry). The 25 download sites then need no text.
 - `audit.py:45, 47, 49, 50` (`parameter_widget`): the label is the rule parameter's name; propose
   `help=parameter_help(rule_name, name)` reading the rule's docstring `Parameters` section or the
   notes `explain._population` already writes (`explain.py:205-209`, `_limit_note` `149-152`), so the
@@ -1816,7 +1893,7 @@ Sites carried by a wrapper (4 + 5 generic):
 `_column_for` (`ui.py:501-515`) gives `help=spelled_out(label)`: 46 of the 130 columns get an
 acronym gloss, 84 get none. For the 46, the gloss stays and the text below is prepended. Unit and
 P6 field named where the model gives one; "(model.py not reopened)" marks a field name taken from
-the P6 vocabulary rather than read in `xer/model.py` this session.
+the P6 vocabulary rather than read in `xer/model.py`.
 
 | Column | Label | help= |
 |---|---|---|
@@ -1961,7 +2038,7 @@ file name, `{bl}` a baseline label.
 | DP-13 | three different figures, shared sentence and format only; `overview.py:40-52`, `changelog.py:28-31`, `forensics.py:84-87` | P9a |
 | DP-14 | `data_date` label at `ui.py:208`, not 218; `first_forecast`/`latest_forecast` absent from `COLUMNS`, the overrides supply a label; KPI long date vs ISO tables is a documented pair | P9a, P15 |
 | RD-01 | one C901 hit in a composer: medium | P6b |
-| RD-05 | 33 or 39 call sites; a rename is the mass rename CONTRIBUTING:50-51 forbids | P1 (on touch) |
+| RD-05 | 33 or 39 call sites; a rename is the mass rename `CONTRIBUTING.md` "Readable code" forbids | P1 (on touch) |
 | RD-17 | depth 3, fitness cognitive 10, not 14; `ui.py:571, 612-632` | P12a |
 | RD-18 | ranges swapped: `build_scurve` 128-207 (blocks 155-184), `build_mta` 280-360 (body 323-355); cognitive 10 | P4a |
 | VB-02 | `charts.py:197` has its unit on the axis; kept `charts.py:423, 431`, `forensics.py:43, 99-102`, `earned_value.py:181` | P9a |
@@ -2018,7 +2095,7 @@ first-paint estimate only; no JS test runner in the repo (unverified).
 (`views/gantt.py:299`) and the Ask text (`asked`, 99); send `D.openEpoch` (a counter bumped in
 session state when `filtering` flips or `asked` changes) and in `gantt.js:49`: `if (host.xsEpoch !==
 D.openEpoch) host.xsOpen = null; host.xsEpoch = D.openEpoch;` before the merge. Cost: ~6 lines JS +
-~4 lines Python (with Quentin: a session key). Keeps "the branches opened by the viewer stay open
+~4 lines Python (with the maintainer: a session key). Keeps "the branches opened by the viewer stay open
 across reruns" for picks and toggles (the comment's own cases, 45-47) and drops them exactly when the
 server recomputed the tree. Limit: the server height is still only right for the branches it opened.
 Options 2 and 3 are not exclusive.
@@ -2039,7 +2116,7 @@ tests/test_app.py -q`; by hand on the sample series: Gantt page → type a word 
 few tasks → erase it → the chart shows the focus node's rows at the height of those rows (or the
 cap), not 4 rows with an inner scroll. Screenshot before/after in the PR (CONTRIBUTING Readable 6).
 
-### U1 — "loading order" (`state.py`: with Quentin only)
+### U1 — "loading order" (`state.py`: with the maintainer only)
 
 **Problem.** `sidebar_loader` (`state.py:691-767`, radon C 17, ruff C901 12 > 10) does four things
 in one body: (a) the load decision, `_chosen_items()` → `_forget_previous_series()` → three branches
@@ -2184,7 +2261,7 @@ same folder anyway (`XERSCOPE_DATA`, `state.py:440`).
 box with its label from `_describe_file` (`state.py:276-300`); with a `LoadJob`-like thread (or the
 existing pool of `reading.py`) filling `_headers` and a `st.fragment(run_every=1.0)` like
 `_poll_load` (`state.py:245-256`), the window opens at once with "reading…" labels that fill in.
-Cost: ~40 lines in `state.py` (with Quentin); limit: more state (a job slot), and a tick before the
+Cost: ~40 lines in `state.py` (with the maintainer); limit: more state (a job slot), and a tick before the
 header is known must still be accepted (`most_recent_first`, `state.py:200-205`, re-reads the header
 from bytes anyway). Options 1 and 3 compose; 1 is the cheapest and keeps the invariants.
 
@@ -2226,7 +2303,7 @@ again (`sed -n`, `grep -n`) before being written.
   `build_scurve`/`build_mta` ranges unswapped; every `partly` correction of appendix G applied in the
   package text.
 - **P6a above 400 lines.** The review method is now explicit in P6a: `same_code.py <base>` is the
-  whole review; `state.py` is changed only with the maintainer (Quentin); nothing is coded before his
+  whole review; `state.py` is changed only with the maintainer; nothing is coded before their
   Problem / Options / Choice agreement; the same sentence in section 1 and section 4.
 - **Safety net.** `--threshold 0.8` on `duplication.py`; `same_code.py` against the package base, not
   `origin/main`; `time_pages.py` takes its output folder; `bandit` added; the golden's content
@@ -2245,7 +2322,8 @@ again (`sed -n`, `grep -n`) before being written.
 
 ### Still open
 
-- **Nine choices wait for the maintainer**: P4b (row constant), P7b (cache policy, process-wide
+- **Nine choices waited for the maintainer** when this review was written (the status at the top of
+  this plan says which are now in the code): P4b (row constant), P7b (cache policy, process-wide
   standards cache), P9a (Activity page: remove or retitle; unit vocabulary; severity rule), P9b
   (Audit default and key), P11b (data-date rule), P12b (`blank_missing`), P15 (`empty=` sentences,
   Debug grids), P16b (render loop), and section 6 (B12, U1, file picker). None is coded before.
@@ -2278,7 +2356,7 @@ again (`sed -n`, `grep -n`) before being written.
 | `uvx bandit -r src -ll` | pass ("No issues identified", second pass) |
 | `uv run pytest tests/test_app_robustness.py tests/test_fuzz_parser.py -q` | pass (second pass) |
 | `uv run python scripts/same_code.py origin/main` | exit 1: 81 ADDED, 47 CHANGED, 2 REMOVED, the branch being 36 commits ahead of `origin/main`: section 2 now says "the base of the package branch" |
-| `docs/refactor-front/time_pages.py <folder>` | runs with an output folder (`time_pages.py:12`): Health rerun 0.22 s, in line with the 0.24 s quoted in P7 |
+| `docs/refactor-front/time_pages.py <folder>` | at the time of the review, ran with an output folder (`time_pages.py:12`); it no longer starts on the current tree (status at the top): Health rerun 0.22 s, in line with the 0.24 s quoted in P7 |
 | `XERSCOPE_UPDATE_GOLDEN=1 ...` (P9a) | not run: it rewrites `tests/golden/pages.json` |
 
 Everything else in section 2 is runnable as written.

@@ -45,31 +45,36 @@ in, as coded (the `source` strings in `decm.toml` still call it unsaid).
 
 ## CPM: where the engine still differs from P6 23.12
 
-Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
+Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`): 54,726 values, 99.6 %
+identical (234 differ).
 
-- [ ] **Resource-dependent work**: 81 % of the corpus values (`cpm.py rsrc_early`,
-      `place_late`). Still open: what a successor sees of an activity whose placement
-      was pushed by a finish bound (H14-02 A1220 wants its FF predecessor one hour
-      earlier than displayed; H10-10 A1140 a lead four days earlier); started
-      resource-dependent work under Retained Logic (late dates 60 %); the late start
-      bound's instant on the activity calendar (H22-03 A1070 against H13-10).
+- [ ] **Resource-dependent work**: 99.3 % of its 12,858 values (`cpm.py rsrc_early`,
+      `place_late`, `analysis/resource_placement.py`). What still differs lies mostly on the
+      late side: late dates and total float of unstarted work at 97.9 to 98.9 %, of started work
+      under Retained Logic at 98.8 to 99.2 % (H10-07 A1160, H26-09 A1200); early dates at 99.6 to
+      99.9 % (H24-01 A1170, started, Retained Logic, FT_Min, differs on its early dates too).
+- [ ] **Task-dependent work**: 99.7 % of its 41,868 values; the differences gather in H29,
+      H16, H10, H24 and H27, mostly late dates and total float (H10-07 A1110 to A1280: late
+      dates two hours later than P6's, on a chain that also holds resource-dependent work;
+      H16-04, H27-07). The deciding factor is not found.
+- [ ] **Total float under FT_Start, FT_Total and FT_Min**: 8 activities have P6's four dates
+      and another total float. 7 are resource-dependent, under FT_Start (H27-04 A1220, H29-03
+      A1470, H29-04 A1440, H29-05 A1560, H30-05 A1550) and FT_Total (H30-06 A1450, H30-07
+      A1580); 1 is task-dependent, under FT_Min (H22-10 A1180). `tests/test_p6_heldout.py`
+      requires the agreement under FT_FF and FT_SS only.
 - [ ] **Rules observed, not explained** (`cpm.py expected_finish`, `successor_limits`,
-      `backward`, `floats`): started work under Progress Override with an FF/SF
-      predecessor keeps its remaining duration when the expected finish is earlier; the
-      free float of started work under Progress Override, with counter-examples H4-08
-      A1010, H12-07 A1120, H17-04 A1040; no free float where the expected finish applies
-      (265 of 265); under an expected finish earlier than a Mandatory Finish the
-      successors drive the late dates, capped by the expected finish on task-dependent
-      work but by the mandatory date on resource-dependent work (H25-05 A1150, 3 cases).
-- [ ] **Mandatory dates and the late dates**: pinned in both passes here, and that is
-      right in most of the corpus, but P6 lets successors drive the late dates of some
-      unstarted Mandatory Start / Finish activities (H12-09 A1330 under Progress
-      Override, H25-03 A1180 against H10-05 A1180): letting successors drive under
-      Progress Override alone loses 678 values for 407. The deciding factor is not found.
-- [ ] Free float of unstarted mandatory-constrained work: 0 in P6 for 538 of 570 values,
-      positive here; the 32 positive ones differ from the engine's too (H23-08 A1220).
+      `late_bounds`, `floats`): each agrees with the corpus and no Oracle page states it.
+      Started work under Progress Override with an FF/SF predecessor keeps its remaining
+      duration when the expected finish is earlier; the free float of started work under
+      Progress Override runs past its start-type links and finished successors (H2-05 A1030;
+      the former counter-examples H4-08 A1010, H12-07 A1120, H17-04 A1040 now agree); no free
+      float on unstarted work under a primary Mandatory Start or Finish (508 of 508) nor where
+      an expected finish is in force (707 of 707); with an expected finish in force a
+      Mandatory Finish no longer pins unstarted work, the late finish is the lesser of the
+      successors' bound and the date (H25-05 A1150); the project's late finish caps a pinned
+      date (H12-09 A1330). P6 Professional 26.8 is measured on none of them.
 - [ ] The corpus is synthetic, one generator, scheduled by 23.12: shapes it never draws
-      are untested. No public 24 export exists; 23.12 and 25.12 bracket it.
+      are untested. No public P6 Professional 24 export exists; 23.12 and 25.12 bracket it.
 - [ ] Sub-minute durations and lags: `TimeAxis.at` rounds half minutes to even, so 7.5 min
       lands on 7 or 8 depending on the axis anchor (other activities' dates), and the two passes
       can round apart (negative float on an unconstrained network). The corpus draws whole
@@ -78,21 +83,24 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
 ## Checks and earned value
 
 - [ ] **P6 Check Schedule readings a real report has not settled** (evidence so far: the
-      P6 Professional 24 help 101248 and one P6 Professional r22.12 report analysed by Ten Six,
-      https://tensix.com/using-the-p6-check-schedule-tool/; the standard targets Pro 24):
+      P6 Professional 24 help 101248, report R1 and the P6 Professional 26.8 report of
+      `tests/test_p6_checksched.py` (docs/standards.md, Sources), and one P6 Professional
+      r22.12 report analysed by Ten Six, https://tensix.com/using-the-p6-check-schedule-tool/;
+      the standard targets P6 Professional 24):
       - P6-02 / P6-03 count the secondary constraint (`cstr_type2`); the help is silent.
       - P6-11: 101248 counts an expense as cost loading; Ten Six writes that fixed-price
         (lump sum) costs do not register. The help is followed.
-      - P6-13: in that report P6 Professional showed BEI 6 / 6 = 1.0 where 11 activities
-        were due (P6 EPPM gave 0.55 on the same schedule); R1
-        divides by every baseline activity, which xerscope follows. The r22.12 figure fits
-        neither reading and is not explained.
+      - P6-13: R1 and the 26.8 report divide by every baseline activity, which xerscope
+        follows, but both measure a project that is its own baseline. In the r22.12 report,
+        with a separate baseline, P6 Professional showed BEI 6 / 6 = 1.0 where 11 activities
+        were due (P6 EPPM gave 0.55 on the same schedule): a figure that fits neither reading.
+        A 26.8 report on a project with a separate baseline assigned settles it.
 
 - [ ] **Earned value against Oracle P6** (pages under docs.oracle.com/cd/F88968_01/client_help/en_US/):
-      - PV: Labor Units: per activity (Pro 26 glossary); Cost: per assignment (Pro 26 glossary),
-        implemented for the cost SPI (`planned_value_cost`). The date difference of that
-        formula is taken in working time (assumed, unverified); `PV_COST_WORKING_TIME`
-        switches to calendar time if a P6 Professional report contradicts it.
+      - PV: Labor Units: per activity (P6 Professional 26 glossary); Cost: per assignment
+        (P6 Professional 26 glossary), implemented for the cost SPI (`planned_value_cost`).
+        The date difference of that formula is taken in working time (assumed, unverified);
+        `PV_COST_WORKING_TIME` switches to calendar time if a P6 Professional report contradicts it.
       - Manual future-period buckets are not modelled.
       - Schedule % Complete: which finish? The P6 Professional 26 help (G57535-02, glossary)
         gives two. Planned Value Labor Units: "how much of the activity's baseline duration has
@@ -107,8 +115,10 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       - BAC, PV and EV cost are modelled (cost SPI); Actual Cost, CPI (cost) and EAC (cost) are
         not: AC, CPI and EAC stay in labour hours.
       - Cost uses the budgeted values (`target_cost`) whatever the EV basis.
-      - Resource curves are treated as a technique (`EvPoint.not_modelled`); curves under
-        Units are not reported.
+      - Resource curves are not modelled: as an EV technique they fall back to activity %
+        complete and are listed (`EvPoint.not_modelled`); on an assignment they are listed for
+        PV cost (`EvPoint.not_modelled_cost`) and only counted for PV labour units (Debug
+        block 9, `evm.pv_labor_check`).
       - The ETC technique "PF x (BAC - EV)" is not applied (EAC = AC + remaining); the technique
         of each WBS is read and reported (Debug block 8, warning on the Earned value page).
       - 0/100 and 50/50 with a non-physical % complete are untested.
@@ -120,20 +130,18 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       (Oracle, Time Periods tab - Admin Preferences); the XER does not carry that setting.
 - [ ] DCMA-13 CPLI divides the finish driver's float, measured on its own calendar, by the
       project calendar's hours per day.
-- [ ] Finish variance sign: shown as finish - BL finish (late positive). P6 Professional's
-      "Variance - BL Project Finish Date" is BL - finish (Finish Date Variance help, Ten Six);
-      EPPM page 47223 writes finish - BL. A P6 report settles it.
 - [ ] INT-08 compares clock times. Across calendars P6 writes an FF 0 successor finish at
       Mon 16:00 before its predecessor's Mon 17:00 (H20-12 A1170), the same working minute on
-      the successor's calendar; the engine gives Tue 08:00 there, so no false positive shows
-      yet. Compare on the lag calendar when the engine reaches P6's date.
+      the successor's calendar. The engine now gives P6's date there (`crosscheck --p6`), so
+      INT-08 can list such a link as broken: compare on the lag calendar.
 
 ## App
 
 - [ ] Not reachable by AppTest: the upload path (`file_uploader`) and a WBS row selection
       (`on_select`); both are checked by hand before a release.
-- [ ] Baseline file: the sidebar re-hashes its bytes on every rerun (`_parse` key);
-      noticeable above ~50 MB only.
+- [ ] Baseline file: an XER picked in the folder or named by `XERSCOPE_BASELINE` is read and
+      hashed again on every rerun (`_disk_baseline_file`, the `_parse` key); an upload and a P6
+      XML file keep their digest. Noticeable above ~50 MB only.
 - [ ] Memory per loaded file: a synthetic 43 MB export (97,121 activities) holds about
       0.65 GB parsed, plus its raw bytes in session state. This sets how many weeks fit under
       the NAS's memory cap (docs/deploy.md §7): drop the bytes once parsed.
@@ -144,39 +152,41 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       0.95 and passes > 0.95); Python rounds half to even, Streamlit tables half away from zero
       (2.5 h: 2 on a card, 3 in a table); the Gantt % has no decimals (99.6 % shows 100 %).
 - [ ] Gantt "Ask", a model: none deployed (docs/deploy.md §10 holds the measurements:
-      55 % understanding, a third of grounded summaries misusing a value, on a CPU without
-      AVX2). What would change the measurement, in order: a per-request literal grammar
+      55 % understanding, a third of grounded summaries misusing a value, on a 4-core x86
+      faster than the NAS). What would change the measurement, in order: a per-request literal grammar
       (IDs, dates, floats as the only alternatives in a fixed sentence frame) with a role
       check; `ngram-simple` speculation and `-lm mmap+mlock` on llama-server; a fine-tuned
       Flan-T5-small on synthetic pairs under ONNX Runtime; or a GPU host on the tailnet. The
-      measurement client (`query.llm_backend`, `ask-bench --url --summary`) is in place.
-- [ ] CSV downloads write raw float digits (0.30000000000000004) and two date formats.
-- [ ] Parser: a tab or a line break inside a text value shifts or drops the row's later
-      fields without a warning; coerced numbers and dates are not counted in the warnings; a
-      duplicate task_id raises a pandas error. None in the 394 reference files.
+      measurement client has been removed: a new measurement needs one again (`ask-bench`
+      scores the grammar only).
+- [ ] Parser: a tab inside a text value shifts the row's later fields (only fields beyond
+      the %F width are warned of); a line break inside one cuts the row, its first part padded
+      and the rest passed over, without a warning. None in the 407 XER files of
+      `tests/reference`.
+- [ ] Parser (XER-05 / XER-06, docs/quality-plan.md): `%E` followed by a tab reads as a file
+      cut short and two trailing tabs on a `%F` line as a column named twice; both refuse a
+      file P6 may write.
 
 ## Deployment and CI
 
 - [ ] Verify on the NAS, after the next pull: `TS_AUTH_ONCE` across a restart; the Docker
-      Hub login step now conditioned on a job-level secret; the tailscale state folder is
-      a bind mount writable by uid 65532; the hardened sidecars (`cap_drop`, Caddy
-      read-only) still start.
-- [ ] Tailscale in `deploy/compose.yaml` and the two caddy bases of `deploy/caddy/Dockerfile`
-      pinned by tag, not digest (the app's Dockerfile is): `docker buildx imagetools
-      inspect` each tag once and write `@sha256:` after it (Dependabot keeps tag and digest
+      Hub login step now conditioned on a job-level secret; the tailscale state in its
+      named volume (`tailscale-state`) kept across a Build; the hardened sidecars
+      (`cap_drop`, Caddy read-only) still start.
+- [ ] Tailscale in `deploy/compose.yaml` pinned by tag, not digest (the app's Dockerfile and
+      the two caddy bases of `deploy/caddy/Dockerfile` are): `docker buildx imagetools
+      inspect` the tag once and write `@sha256:` after it (Dependabot keeps tag and digest
       together).
 - [ ] Verify on the NAS: the `xerscope-caddy` image starts with the capabilities of
       `deploy/compose.yaml` (cap_drop ALL + NET_BIND_SERVICE, like the stock image), and a
       wrong password in a loop from a PC ends in 429.
-- [ ] Caddy image: 9 Trivy findings (7 CVEs) accepted until 2026-12-02 (`deploy/caddy.trivyignore.yaml`,
-      none reachable in this stack). At expiry the CI job `deploy` turns red: move to a
-      Caddy release that fixes them, or renew each entry with its reason.
 - [ ] Caddy image: `deploy/caddy/Dockerfile` replaces golang.org/x/net by v0.63.0 (CVE-2026-78661;
       Caddy 2.11.8 and 2.11.9 pin v0.60.0). Drop the replace once a Caddy release requires
       x/net >= 0.62.0: a replace pins one version and would hold back a newer one.
 - [ ] Tailscale image: CVE-2026-78661 (golang.org/x/net/html, fixed in x/net 0.62.0, in no
-      Tailscale release yet) accepted until 2026-12-09 (`deploy/tailscale.trivyignore.yaml`, the
-      only scan exception). The CI job `deploy` proves the parser absent from the image's
+      Tailscale release yet) accepted until 2026-12-09 (`deploy/tailscale.trivyignore.yaml`; the
+      repository's other scan exception is `.github/trivy/self.trivyignore.yaml`, for the
+      Trivy image itself). The CI job `deploy` proves the parser absent from the image's
       binaries on every run. Move to the first Tailscale release with x/net >= 0.62.0 as soon as
       it is out and delete the file with that bump: the job turns red at expiry, and as soon as
       the finding is gone from the image.
@@ -192,20 +202,19 @@ Measured by `tests/test_p6_heldout.py` (`xerscope crosscheck --p6`).
       into a memory cost against Caddy's 256 MB cap.
 - [ ] One login shared by every visitor: one `basic_auth` account each would let one be
       revoked, and told apart in the log, alone.
-- [ ] The published image carries no SBOM attestation and no signature: `sbom: true` and a
-      keyless cosign step in `image.yml` (verified from a PC; Container Manager checks none).
-- [ ] The container job in CI starts the app image but opens no page: an AppTest-like
-      request through the published port would catch a broken runtime.
+- [ ] The published image carries an SBOM and provenance (`image.yml`, docs/deploy.md §7) but
+      no signature: a keyless cosign step (verified from a PC; Container Manager checks none).
+- [ ] The container job in CI starts the app image and reads its health endpoint
+      (`/_stcore/health`) but runs no page: an AppTest-like request through the published port
+      would catch a broken runtime.
 
 ## Structure (only once the above is done, at constant output)
 
-- [ ] Complexity hotspots still above 10 (`ruff check src --select C901`): `parse_text` 17,
-      `build_gantt` 16, and in the CPM `pred_bounds`, `forward`, `successor_limits`, `backward`,
-      `longest_path`; `sample.py` (`_cpm`, `_progress`, `generate`). CPM internals and
-      `sample.py` are left as they are.
-- [ ] Duplications: `set_index("task_code")` in 13 places where `Snapshot.by_code` could
-      serve; three changelog row builders (`_change`, `assignment_change`,
-      `relationship_change`).
+- [ ] Complexity hotspots still above 10 (`ruff check src --select C901`): `_code_items` 15
+      (`analysis/ask/lexer.py`), `_parse_metric` 12 (`analysis/standards.py`).
+- [ ] Duplications: `set_index("task_code")` in 18 places where `Snapshot.by_code` could
+      serve; three changelog row builders (`_change`, `assignment_change` inside
+      `_assignment_changes`, `_relationship_change`).
 - [ ] Computations still inside `app/views` (changelog, health, ppc, gantt): pure
       functions per page would be testable without AppTest. One cache policy
       (`_parse` and `memo`, both in session state).

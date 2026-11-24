@@ -1,11 +1,36 @@
 # Task A — Redesign where two things do the same thing, and sourced tooltips
 
+## Status against the code
+
+What became of each proposal, checked against the current tree (the packages are those of
+`docs/refactor-front-plan.md`, whose status table gives the evidence in full).
+
+| Proposal | Package | Status | Evidence |
+|---|---|---|---|
+| A1.1 duplicate findings DF-01 to DF-13, DP-01, DP-04, DP-07, DP-09, DP-13, DP-14, VB-11 | P1, P2, P3, P4a, P5, P8, P9a, P15 | Done | `ui.fmt_number` / `ui.MISSING` everywhere, `app/explanation_panel.py`, `session.counted`, `viz/charts.DAY`, `diagnostic._differences_wide`, `downloads.built_download`, `ui.COLUMNS` with a help field, `ui.code_label` in the Gantt task picker |
+| A1.1 DF-14, DP-08 | backlog, P7b | Open | `drop_duplicates(…).set_index("task_code")` in `ui.latest_names`; `session._parse` still cleared past 64 entries |
+| A1.1 AR-04, AR-08 | P11b, P11a | Open | `views/export._data_date` reads `last_recalc_date` only; PPC help texts still in `views/ppc.py` |
+| A1.1 AR-10 | P4b | Done | `rowPx` / `chromePx` sent in `gantt_data`; `gantt.js` writes `--row` (option 2 of the plan, not the template of this note) |
+| R1 Panel | P2, P15 | Done | `explanation_panel.metric_panel(result, explanation, reading=None, detailed=False)` |
+| R2 Download | P8, P15 | Done | `downloads.built_download`, `downloads.download_text`, `help_text` on `show_download` |
+| R3 one formatting module | P1, P12a | Partial | one owner, `app/ui.py` (`MISSING`, `fmt_date`, `fmt_number`, `stamp`, `numbers_as_text`); no separate `app/format.py`; viz keeps `charts.DAY` and `charts.format_shift` |
+| R4 table contract | P15 | Done | `ui.COLUMNS` entries are `(label, kind, help)`; `ui.table(…, empty=…)`; `tests/test_table_contract.py` |
+| R5 per-session cache primitive | P7b | Open | no `_lru` helper; `_parse` (`session.py`), `memo` (`cache.py`, `MEMO_SIZE = 128`) and `hold` / `held` (`downloads.py`) keep three policies |
+| A2 widget help texts | P14 | Done | `tests/test_widget_help.py`; `parameter_help` was not added: `views/audit.parameter_widget` writes one help per kind of input |
+| A3 readings | P13 | Done | `analysis/explain.py` `Reading`, `READINGS` (51 keys); each builder sets `layout.meta["reading"]` through `charts._with_house_style`; `ui.chart(figure, reading=None)` takes a `READINGS` key (not a `Reading` as in A3.3) and draws `ui.reading_popover`; `tests/test_readings.py` |
+
+Line numbers below locate the code on the tree this note was written on, before the split of
+`state.py`; the table "Line numbers in the rest of this plan" at the top of
+`docs/refactor-front-plan.md` gives where each cited `state.py` function lives now, and
+`views/activity.py` has been removed.
+
+---
+
 Scope: `src/xerscope/app/**`, `src/xerscope/viz/**`. Inputs: `docs/refactor-front/findings.json`
-(94 findings, 4 votes each), `critic.json`, `widgets_without_help.txt` (70 call sites),
-`docs/refactor-front-plan.md` (P1–P12). Every line number below was read in this session with
-`sed -n` or `grep -n` on the current tree unless marked *(not reopened: location from the finding)*.
-Nothing is decided here: each change is a proposal and waits for the maintainer. No file other than
-this one was written.
+(94 findings, 4 votes each), `docs/refactor-front/review.json`, `docs/refactor-front/widgets-without-help.txt`
+(70 call sites), `docs/refactor-front-plan.md` (P1–P12). Every line number below was read with
+`sed -n` or `grep -n` on that tree unless marked *(not reopened: location from the finding)*.
+Nothing is decided here: each change is a proposal and waits for the maintainer.
 
 Conventions kept throughout: identity is `task_code`; durations and floats are hours in the model,
 `_d` and `wd` columns are working days of the activity's own calendar (`CONTRIBUTING.md`, Units);
@@ -29,7 +54,7 @@ For each: what the merge is, the optimisation the merge enables, and the gain co
 | DF-01 / DP-01 | `audit.py:103-123` (`show_explanation`, 21 lines), `health.py:281-302` (`show_check`, 22 lines), `health.py:239-251` (`show_method`, 13 lines) | One `show_calculation(result, explanation)` for the left column; Audit calls `show_method` instead of `audit.py:118-123` | `explain(result)` is called once per panel and the same `Explanation` object feeds the calculation, the method and (A3) the reading; a wording change is one edit | Lines: 21 + 22 → ~8 + 8 call sites, −27 lines; copies of the "Note not in formula" guard 2 → 1; copies of the Method/Source caption 2 → 1 |
 | DF-02 | `earned_value.py:78-79` (`format_number`), `ui.py:278-280` (`fmt_number`), call sites `earned_value.py:114, 121, 276, 332, 339` | Delete `format_number`; 5 call sites call `ui.fmt_number(value, "{:.2f}")` | One dash constant (`ui.MISSING`, `ui.py:262`) and one `None`/NaN rule for the whole page | −3 lines; dash literals in `earned_value.py` 1 → 0 |
 | DF-03 | `task_panel.py:52-65` (`_text`, `_when`, `_days`, `_yes`), `task_panel.py:113`, `244-245` | `_when` → `ui.fmt_date` with a `DATETIME_FMT` template argument (format unchanged); `_days` → `ui.fmt_number(value, "{:.1f} wd")`; lines 113, 244, 245 → `ui.fmt_number(value, PY_FORMATS["pct"])` | One formatting module for the card and the history readout | Dash literals in `task_panel.py` 7 → 0 (4 helpers + 3 inline); −10 lines |
-| DF-04 | `overview.py:48`, `forensics.py:99`, `ppc.py:72-73` (`_pct`, writes `n/a`), `ppc.py:127`, `task_panel.py:113, 244-245`, `charts.py:580` (date variant, `build_half_step`); `gantt.py:225` *(not reopened)* | Every KPI value through `ui.fmt_number(value, PY_FORMATS[kind])`; `charts.py:580` through one `DAY` constant in viz (viz may not import app, `docs/architecture.md:180`) | One formatting module (redesign R3); the `pct` template exists once (`ui.py:490-498`) | `grep -rn '"–" if\|"n/a" if' app viz`: 16 lines today → 0 outside `ui.py`; two spellings of a missing value (`–`, `n/a`) → one (the `n/a` → `–` change is a visible change, planned in P9) |
+| DF-04 | `overview.py:48`, `forensics.py:99`, `ppc.py:72-73` (`_pct`, writes `n/a`), `ppc.py:127`, `task_panel.py:113, 244-245`, `charts.py:580` (date variant, `build_half_step`); `gantt.py:225` *(not reopened)* | Every KPI value through `ui.fmt_number(value, PY_FORMATS[kind])`; `charts.py:580` through one `DAY` constant in viz (viz may not import app, `docs/architecture.md`, "Layer rules") | One formatting module (redesign R3); the `pct` template exists once (`ui.py:490-498`) | `grep -rn '"–" if\|"n/a" if' app viz`: 16 lines today → 0 outside `ui.py`; two spellings of a missing value (`–`, `n/a`) → one (the `n/a` → `–` change is a visible change, planned in P9) |
 | DF-05 | `state.py:954-969`, `1025`, `1056` *(not reopened)* | One `_date_span(snapshots)`; `_which_updates` = count + span | None beyond readability | −8 lines, per the finding |
 | DF-06 | `state.py:1115-1116`, `1337` *(not reopened)*, `state.py:472` (opened: `" · + baseline copy" if aside == 1 else …`) | `counted(number, word, plural=None)` | None | 3 hand-written plural branches → 1 helper |
 | DF-07 | `debug.py:389-391` (`calendar_zip_tag`, nested in a `with` body), `debug.py:427-429` (`zip_tag`), `state.py:1759-1760` *(not reopened)* | `snapshot_identity(snapshot)` in `state.py`; one module-level `zip_tag(anonymous, *extra)` | `data_identity()` is called twice per rerun for the calendar zip (`debug.py:397` and `406`); one tag object computed once per rerun and reused for `hold` and `held` | 2 tag builders → 1; `data_identity()` calls per rerun of the Debug page for the two zips 3 → 2 (one per zip) |
@@ -46,9 +71,9 @@ For each: what the merge is, the optimisation the merge enables, and the gain co
 | DP-09 | `gantt.py:350-358` (`names = dict(zip(...))`, lambda label), `ui.py:746-753` (`latest_names`, `code_label`), `activity.py:22-23`, `milestones.py:51-57` | `show_task_picker` passes `format_func=partial(ui.code_label, names)` with `names` a Series indexed by `task_code` | One label builder; with DF-14 memoised, zero per-rerun dict builds for the three pickers | Label builders 2 → 1; per-rerun name dict builds on the Gantt page 1 → 0 |
 | DP-13 | `overview.py:40-52` (sentence twice, format `{round(shift, 1):+g} wd`), `changelog.py:26-32` (`{:+.1f} wd`), `forensics.py:82-89` (`{:+.1f} wd`), `task_panel.py:237-243` (a fourth copy, `{:+.1f} wd since first`); `charts.py:461-463` (`format_shift`, `{round(shift_wd, 1):+g} wd`) | `ui.finish_kpi(label, finish, shift_wd, first_sentence)` with one base sentence and one wd format; the viz `format_shift` stays (layer rule) and the two formats are aligned in P9 | One help sentence (A2/A3 can then cite the calendar and the sign once) | Sentence copies 5 → 1; wd formats in the front 3 (`+g`, `+.1f`, `+.1f … since first`) → 1 in `app/`, 1 in `viz/` |
 | DP-14 / VB-11 | `milestones.py:91-94` (labels + `YYYY-MM-DD`), `ppc.py:84` (`data_date` → "Week ending"), `forensics.py:26-48` + `122`, `152` (`rename` before `ui.table`), `ui.py:129-258` (`COLUMNS`: `data_date` → "Status date"; no `first_forecast`, `latest_forecast`, `slip_wd`, `last_week_wd`, `total`, `kinds`, `step`, `finish_before_replanning`, …) | Redesign R4: the missing keys go in `COLUMNS`; `forensics` passes the raw frame; a page-specific label (PPC "Week ending") stays an explicit `overrides` entry, listed as such | The filter popover and the CSV read the same field names; `rename` copies disappear | DataFrame copies per rerun: `forensics.py:122` and `152` (`rename`) 2 → 0, `ppc.py:153` (`rename`) 1 → 0; label tables 3 (`STEP_LABELS`, `SERIES_LABELS`, `COLUMNS`) → 1 |
-| AR-04 | `export.py:63-69` (`_data_date`: `last_recalc_date` only), `xer/model.py:1496-1503` *(not reopened; the voters opened it)* | `read_header(raw).data_date` from the model | One data-date rule (`CONTRIBUTING.md`, Where a change goes) | Rules 2 → 1; the result can move for a baseline file whose `last_recalc_date` is blank (then `plan_start_date`): a computed-value change, so a test fails first (`critic.json`, P11 note) |
+| AR-04 | `export.py:63-69` (`_data_date`: `last_recalc_date` only), `xer/model.py:1496-1503` *(not reopened; the voters opened it)* | `read_header(raw).data_date` from the model | One data-date rule (`CONTRIBUTING.md`, Where a change goes) | Rules 2 → 1; the result can move for a baseline file whose `last_recalc_date` is blank (then `plan_start_date`): a computed-value change, so a test fails first (`review.json`, P11 note) |
 | AR-08 | `ppc.py:91-133` (help texts of the three PPC cards), `ppc.py:139-146` (Commitments caption), `explain.py` `KPI_FORMULAS` PPC entries (within 280-420) | Page help keeps the population caveat only ("n/a when nothing was due"); the Commitments caption is a template over `KPI_FORMULAS` + the week's numbers | The explanation lives in `explain.py` only (`CONTRIBUTING.md`, "A metric's explanation") | Formula wordings 3 → 1 |
-| AR-10 | `viz/gantt.py:36` (`ROW_PX = 26`), `viz/gantt.js:9` (`const ROW = 26`), `gantt.css:35, 39-40, 46` *(not reopened)* | `gantt_assets()` (`gantt.py:253-260`) substitutes `--row-px` in the CSS and `ROW_PX` in the JS from the Python constant | `fitted_height` (`gantt.py:203-206`) and the browser agree by construction | Literals 6 → 1; `critic.json` notes this turns the assets into templates, a rendering change inside a "byte-identical" package: the AppTest Gantt test must read the rendered component |
+| AR-10 | `viz/gantt.py:36` (`ROW_PX = 26`), `viz/gantt.js:9` (`const ROW = 26`), `gantt.css:35, 39-40, 46` *(not reopened)* | `gantt_assets()` (`gantt.py:253-260`) substitutes `--row-px` in the CSS and `ROW_PX` in the JS from the Python constant | `fitted_height` (`gantt.py:203-206`) and the browser agree by construction | Literals 6 → 1; `review.json` notes this turns the assets into templates, a rendering change inside a "byte-identical" package: the AppTest Gantt test must read the rendered component |
 
 ### A1.2 Five larger redesigns the duplicates point to
 
@@ -120,7 +145,7 @@ hits).
 and rewritten at `earned_value.py:78-79`, `task_panel.py:52-65, 113, 244-245`, `overview.py:48`,
 `forensics.py:99`, `ppc.py:72-73, 127`, `charts.py:580` (16 `"–" if` / `"n/a" if` lines in `app/`
 and `viz/`); the day stamp at `ui.py:273-275`, `charts.py:493, 580`; the wd shift in three formats
-(DP-13). Two layers are involved: `viz/` may not import `app/` (`docs/architecture.md:180`).
+(DP-13). Two layers are involved: `viz/` may not import `app/` (`docs/architecture.md`, "Layer rules").
 
 **Options.**
 1. `app/format.py` (moved out of `ui.py:262-308`: `MISSING`, `fmt_date`, `stamp`, `fmt_number`,
@@ -145,7 +170,7 @@ the `format_number` / `fmt_number` pair.
 
 **Problem.** `ui.COLUMNS` (`ui.py:129-258`, 130 columns) owns label and kind, `_column_for`
 (`501-515`) builds the Streamlit column with `help=spelled_out(label)` (an acronym gloss only, 46 of
-130 columns get one, 84 get none: computed in this session from the table and `glossary.spelled_out`,
+130 columns get one, 84 get none: computed from the table and `glossary.spelled_out`,
 `glossary.py:124-127`). Views then bypass it: 25 hand-written `column_config.*Column` constructors in
 9 files (DF-13), two label tables in `forensics.py:26-48` applied by `rename` (`122`, `152`), one in
 `ppc.py:84`, and `numbers_as_text` (`ui.py:283-295`) rewrites columns as text to get a dash. Each
@@ -214,7 +239,7 @@ loading 65 small `xerkit` files and counting `load_snapshot` calls across a reru
 
 ## A2. Widgets without a help tooltip
 
-Method: each of the 70 call sites of `widgets_without_help.txt` was opened with its surrounding lines
+Method: each of the 70 call sites of `widgets-without-help.txt` was opened with its surrounding lines
 (each call site read with 7 lines before, 4 after). The text proposed for `help=` is two
 sentences: what the widget does, when to use it. Markdown is accepted by Streamlit's `help`.
 
@@ -229,7 +254,7 @@ Sites skipped because a wrapper should carry the help once (4 + 5 generic):
 - `state.py:2038` (`show_download`): add a `help` parameter to `show_download` (`2024-2033`) and to
   `csv_download`, defaulting to "Downloads this table as it is shown; with Anonymous exports on
   (sidebar), Task IDs and names are replaced as in every other download of the session."
-  (`docs/architecture.md:201-214`). The 25 download sites then need no text.
+  (`docs/architecture.md`, the `anonymize.py` entry). The 25 download sites then need no text.
 - `audit.py:45, 47, 49, 50` (`parameter_widget`): the label is the rule parameter's name; propose
   `help=parameter_help(rule_name, name)` reading the rule's docstring `Parameters` section or the
   notes `explain._population` already writes (`explain.py:205-209`, `_limit_note` `149-152`), so the
@@ -389,7 +414,7 @@ Sites skipped because a wrapper should carry the help once (4 + 5 generic):
 acronym gloss, 84 get none (computed from `ui.py:129-258` and `glossary.spelled_out`). For the 46,
 the gloss stays and the text below is prepended. Unit and P6 field named where the model gives one;
 "(model.py not reopened)" marks a field name taken from the P6 vocabulary rather than read in
-`xer/model.py` this session.
+`xer/model.py`.
 
 | Column | Label | help= |
 |---|---|---|
@@ -472,12 +497,14 @@ follows; `audit.py:61-75`), `finish_before_replanning` / `replanning_wd` / `resi
 434, 483, 543, 572, 598`), not 12; plus the Gantt (`viz/gantt.py`, `gantt.js`). The reading of each
 below, then the design.
 
-Thresholds and sources are those the repository names: `INDEX_ALERT = 0.95` (`charts.py:39`),
-`PPC_TARGET = 80` (`charts.py:40`), `critical_float_days = 0`, `near_critical_float_days = 10`
-(`config.py:12-13`), DCMA-06 `total_float_d > 44` (`standards/dcma.toml:70`), BEI ≥ 0.95
-(`dcma.toml:141`, P6-13 > 0.95 `p6.toml:164`), CPLI ≥ 0.95 (`dcma.toml:132`), `EVMS = "DCMA EVMS
-(EIA-748)"`, `LPS = "Last Planner (PPC)"`, `LIPKE = "Earned Schedule (Lipke)"` (`explain.py:288-291`),
-AACE RP 29R-03 MIP 3.4 (`docs/formulas.md:477`). No source in the repository sets a threshold for SPI
+Thresholds and sources are those the repository names: `INDEX_ALERT = 0.95` (`charts.py:50`),
+`PPC_TARGET = 80` (`charts.py:51`), `critical_float_days = 0`, `near_critical_float_days = 10`
+(`config.py:12-13`), DCMA-06 `limit_days = 44` (`standards/dcma.toml:68`), BEI ≥ 0.95
+(`dcma.toml:140`, P6-13 > 0.95 `p6.toml:163`), CPLI ≥ 0.95 (`dcma.toml:131`), `EVMS = "DCMA EVMS
+(EIA-748)"`, `LPS = "Last Planner (PPC)"`, `LIPKE = "Earned Schedule (Lipke)"` (`explain.py:315-317`),
+AACE RP 29R-03 MIP 3.4 (`docs/formulas.md` section 5.1). The line
+references inside the reading texts below are those `explain.READINGS` carries; they point at the
+tree this note was written on. No source in the repository sets a threshold for SPI
 or CPI: 0.95 on the indices chart is xerscope's alert line, said as such.
 
 ### A3.1 Figures
@@ -661,7 +688,7 @@ change goes) is not met for figures.
    `"mta"`, `"activity_dates"`, `"activity_float"`, `"finish_trend"`, `"ppc"`, `"metric_trend"`,
    `"half_step"`, `"slip_trend"`, `"gantt"`) and by table key (`"health_results"`, …). Each
    `build_*` sets `figure.update_layout(meta={"reading": "<key>"})` (viz keeps importing nothing from
-   `analysis/`, `docs/architecture.md:180`). `ui.chart(fig, reading: Reading | None = None)` reads
+   `analysis/`, `docs/architecture.md`, "Layer rules"). `ui.chart(fig, reading: Reading | None = None)` reads
    `reading or READINGS[fig.layout.meta["reading"]]`, and draws, beside the section title, a
    `st.popover("How to read", icon=":material/help:")` with four short paragraphs; the Gantt page draws
    the same popover beside its toolbar from `READINGS["gantt"]`. Tables: `ui.table(..., reading=…)`
@@ -679,7 +706,7 @@ change goes) is not met for figures.
 
 **Choice.** Option 1 (CONTRIBUTING "A metric's explanation → `analysis/explain.py`"; the same shape as
 `KPI_FORMULAS` + `_formulas_popover`, `ui.py:388-397`; `SPI_WINDOW_READING` already is a reading kept in
-`explain.py:296`). The `source` field holds names only; `ui.without_addresses` (`ui.py:328`) is applied
+`explain.py:296`). The `source` field holds names only; `ui.without_addresses` (`ui.py:550`) is applied
 anyway, as `show_method` does for the TOML `source` (`health.py:249-251`).
 
 **Coverage test** (`tests/test_readings.py`, in the spirit of `tests/test_accessibility.py`, which
