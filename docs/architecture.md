@@ -183,7 +183,7 @@ carry no pointer logic of their own.
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source; `READINGS`: the "How to read" text of each chart and table | read-only account of a result, shown under every check in the app; the popover of `ui.chart` and `ui.table` |
-| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook: `llm_backend` asks a llama.cpp server (`XERSCOPE_QUERY_URL`, the optional `llm` service of `deploy/compose.yaml`) for JSON constrained by a schema, ids outside the vocabulary dropped; any failure or delay, and the grammar answers. "why did A1020 slip" / "historique de A1020" set `Filter.intent` (`slip`, `history`) and `Filter.task_code` from the file's Activity IDs; `activity_answer` says the move of that activity in one sentence from `activity_forensics.activity_half_step`, the page draws its steps and the history card. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the model and the output seeing the new codes only) |
+| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named); no model is called (`scripts/llm_study.py` measures one, outside the app). "why did A1020 slip" / "historique de A1020" set `Filter.intent` (`slip`, `history`) and `Filter.task_code` from the file's Activity IDs; `activity_answer` says the move of that activity in one sentence from `activity_forensics.activity_half_step`, the page draws its steps and the history card. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the output seeing the new codes only) |
 
 Standards are data in `standards/*.toml`:
 
@@ -217,8 +217,7 @@ checks the code against it, so a change here must be made there too):
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
 - `cli.py` is the entry point: it imports every layer, `app/diagnostic.py` included (`pv-compare`
-  reads the same frames as the Debug page), `anonymize.py` (`ask-bench --anonymize`) and
-  `viz/` (`ask-bench --summary` categorises the float as the Gantt does).
+  reads the same frames as the Debug page), `anonymize.py` (`ask-bench --anonymize`).
 
 Outside `analysis/`:
 
@@ -479,10 +478,12 @@ sentence ─▶ keyword grammar over the file's lexicon ─▶ Filter ─▶ fun
   measures every layer on sentences with known filters (`tests/ask/dev.toml` tuned on,
   `heldout.toml` written blind, floors in `tests/test_ask_bench.py`), per field and per
   confidence bucket; `--anonymize` runs it on a real file with every name replaced.
-- **No model is deployed.** `query.llm_backend` (a llama.cpp client: ask, warm, summarise)
-  and `query.facts` / `query.grounded` stay as the measurement path of `ask-bench --url`
-  and `--summary`; nothing in `app/` calls them (`tests/test_docker.py`), and the deployed
-  app has no outbound code. The figures of the last measurement are in docs/deploy.md §10.
+- **No model is deployed.** The app has no outbound code (`tests/test_docker.py`). Whether a
+  local model could answer about the series is measured outside it by `scripts/llm_study.py`,
+  which asks a llama.cpp server on the maintainer's own machine (`compose.gpu.yaml`, docs/deploy.md
+  §12) the same questions from the facts xerscope computed and from the raw series, and checks the
+  replies against xerscope's values. The figures of the earlier CPU measurement are in
+  docs/deploy.md §10.
 
 **Why the latest small Qwen (or any 1-4B model) alone does not help here.**
 
@@ -505,7 +506,7 @@ sentence ─▶ keyword grammar over the file's lexicon ─▶ Filter ─▶ fun
    check and the confidence bucket catch; it cannot invent a date.
 4. *Measurability.* The grammar and the embeddings are scored on held-out sentences with
    floors a change cannot lower. A model's answers vary with the quantisation, the build and
-   the prompt; it can be scored the same way (`ask-bench --url`) but not pinned as a floor
+   the prompt; it can be scored the same way (`scripts/llm_study.py`) but not pinned as a floor
    in the suite, so it stays the optional last layer, on the few sentences left unsure, with
    a prompt of 20 pre-chosen labels (hundreds of tokens, about 10 s), not the lexicon.
 

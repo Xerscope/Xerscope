@@ -16,6 +16,12 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- A feasibility study of a local model on a weekly series (docs/deploy.md §12): `scripts/llm_study.py`
+  asks a llama.cpp server, on the loopback only, questions whose answers xerscope computes (an
+  activity's history and slip, the project finish and its slip, the longest path), from the computed
+  facts and from the raw series, and reports the share correct and the share with an invented value;
+  `compose.gpu.yaml` runs that server on the maintainer's own machine. Nothing changes in the app.
+
 - Earned value: the Earned Schedule figures in three groups, one per question (where the project stands, at
   what pace, whether it ends on the planned finish), the pace of the last four weeks and since the first
   update as figures, a paragraph putting the figures in words (TSPI read on Lipke's band), and the weeks the

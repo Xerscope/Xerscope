@@ -837,3 +837,26 @@ def test_no_lexicon_file_goes_into_the_image():
         assert "standard" in data or path.name == "config.toml", path
     ignore = (ROOT / ".dockerignore").read_text().splitlines()
     assert [x for x in ignore if x.startswith("!")] == ["!pyproject.toml", "!uv.lock", "!README.md", "!src/"]
+
+
+@pytest.mark.oracle("standard")
+def test_the_local_model_service_is_loopback_pinned_offline_and_leaves_the_app_alone():
+    """compose.gpu.yaml (docs/deploy.md §12) adds the llama.cpp server for the feasibility study and
+    nothing else: the xerscope service is not in it, the port is on the host's loopback, the image is
+    a required pinned variable, the model is a read-only mount that nothing downloads."""
+    gpu = (ROOT / "compose.gpu.yaml").read_text()
+    assert re.findall(r"^  (\w+):", gpu[gpu.index("\nservices:") :], re.M) == ["llm"]  # not xerscope, nor any other
+    llm = _service(gpu, "llm")
+    ports = [line.strip() for line in llm.splitlines() if line.strip().startswith('- "') and ":8080" in line]
+    assert ports == ['- "127.0.0.1:8080:8080"']
+    assert "image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}" in llm
+    assert "- ${XERSCOPE_MODELS:?folder of .gguf files}:/models:ro" in llm
+    flags = re.findall(r"^\s+- (--[\w-]+|-hf\b)", llm, re.M)
+    assert not {"-hf", "--hf-repo", "--hf-file", "--model-url", "-mu"} & set(flags) and "--model" in flags
+    assert "http" not in re.search(r"--model\n\s+- (\S+)", llm).group(1)  # a path in /models, not a URL
+    assert "driver: nvidia" in llm and "capabilities: [gpu]" in llm
+    for hardening in ("read_only: true", "- /tmp", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]'):
+        assert hardening in llm, hardening
+    assert "mem_limit:" in llm and "pids_limit:" in llm and "restart: unless-stopped" in llm
+    assert "privileged" not in llm and "network_mode" not in llm
+    assert "compose.gpu.yaml" not in (ROOT / ".github" / "workflows" / "image.yml").read_text()  # nothing is pushed

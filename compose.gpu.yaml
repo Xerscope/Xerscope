@@ -1,0 +1,46 @@
+# The local model study on your own machine (docs/deploy.md §12); built and run by you only, no image
+# is pushed anywhere:
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+#   uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md
+#
+# An override of compose.yaml: it adds one service and leaves the xerscope service as it is, since the
+# app never talks to the model. Required variables (Compose stops without them):
+#   XERSCOPE_LLM_IMAGE   the llama.cpp CUDA server image, pinned by digest
+#   XERSCOPE_MODELS      the folder of .gguf files, mounted read-only
+#   XERSCOPE_MODEL_FILE  the .gguf to serve, in that folder
+# Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_MEM_LIMIT (16g).
+services:
+  llm:
+    image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}
+    # No -hf / --hf-repo and no model URL: the server downloads nothing, it reads the file you put in the folder.
+    command:
+      - --model
+      - /models/${XERSCOPE_MODEL_FILE:?name of the .gguf file in XERSCOPE_MODELS}
+      - --host
+      - 0.0.0.0  # inside the container; the port below is published on the host's loopback only
+      - --port
+      - "8080"
+      - --n-gpu-layers
+      - "99"
+      - --ctx-size
+      - ${XERSCOPE_LLM_CTX:-16384}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ${XERSCOPE_MODELS:?folder of .gguf files}:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-16g}
+    pids_limit: 256
+    restart: unless-stopped

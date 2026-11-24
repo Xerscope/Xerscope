@@ -465,3 +465,76 @@ misused a value when read. The backlog says what would change that measurement.
 | app lists no file | `XERSCOPE_EXPORTS` path/case, or permission | §5 |
 | the app container restarts while files load (Container Manager: exited, then running) | the memory cap: the kernel killed it | load fewer weeks at once, or raise `XERSCOPE_MEM_LIMIT` in `.env` within the NAS's free RAM (§7), Build |
 | old node still listed in the admin console | state folder emptied | delete the stale machine there |
+
+## 12. Local GPU study (own machine)
+
+A feasibility study, not a deployment: it measures whether a local model, served by llama.cpp,
+can answer questions about a weekly series. It runs on your PC (Intel 285K, 64 GB, RTX 5070
+12 GB), never on the NAS, and the app is not involved: `src/` has no network code
+(`tests/test_docker.py::test_nothing_in_src_reaches_the_network`) and the app does not call the
+model. The model server is `compose.gpu.yaml`, an override of the root `compose.yaml` that you
+build and run yourself; no image is pushed anywhere (`image.yml` does not know it).
+
+**Prerequisites.**
+
+- NVIDIA Container Toolkit on Linux, or Docker Desktop with WSL2 and the NVIDIA driver on Windows.
+- A llama.cpp CUDA image built for CUDA 12.8 or newer: the RTX 50 series is Blackwell (compute
+  capability 12.0, `sm_120`), which older CUDA builds cannot run. Pin the image by digest, taken
+  from the registry page of the tag you chose (`docker buildx imagetools inspect <tag>`).
+- A `.gguf` file, downloaded by you into a folder of its own. The container downloads nothing (no
+  `-hf`, no model URL) and the folder is mounted read-only.
+
+**Model to try first.** An 8B model in Q4_K_M (about 5 GB; the context's cache and the compute
+buffers fit in 12 GB with the default 16,384 tokens), then a 14B in Q4_K_M (about 9 GB: lower the
+context, or the study's `--max-rows`). The same two questions every time: does the grounded mode
+hold, and does the raw mode, which the 8B is not expected to do, hold at all.
+
+**The two commands**, from the repository root (the three variables are required, Compose stops
+and says which is missing):
+
+```
+export XERSCOPE_LLM_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>
+export XERSCOPE_MODELS=<folder of .gguf files>
+export XERSCOPE_MODEL_FILE=<model>.gguf
+docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md
+```
+
+The server answers on `127.0.0.1:8080` only, and `llm_study.py` refuses any `--url` whose host is
+not exactly `127.0.0.1`, `::1` or `localhost` (`127.0.0.2` is refused too; a redirect is not
+followed and the machine's proxy is not used): no external call is possible. Without `--data` it
+builds the demo series (`xerscope sample`). `--data <folder>` reads your own weekly exports; the
+files stay local and the report names no activity, project or file (activities are numbered by
+the order the study picked them: the open ones with the least total float). The questions are
+generic templates in `tests/llm_study/questions.toml`. `--max-rows` (400 by default, about
+25 tokens a row) bounds the raw series; raise it together with `XERSCOPE_LLM_CTX`.
+
+**How to read the report.** One table per mode, then one line per question:
+
+| Column | Meaning |
+|---|---|
+| correct | share of replies that hold the truth xerscope computed: a date written exactly, a number within the question's tolerance (0.5 working day for a shift, none for a count). A reply listing several numbers counts if one matches |
+| invented value | share of replies quoting an Activity ID, a date or (grounded mode only) a number that is not in what the model was given. In raw mode the numbers are the model's own computation, so only IDs and dates are checked |
+| latency, prompt tokens, tokens/s | from the server's `usage` and `timings`; `n/a` when the server sends none |
+
+The *grounded* mode gives the model the figures xerscope computed (`store.history`, the activity
+half-step series, `half_step_series`, `path_churn`) and asks it to read one out. The *raw* mode
+gives it the series as CSV and asks it to compute the same figure. A model that answers grounded
+questions right and raw questions wrong is a good phrasing layer over xerscope's numbers and not
+a calculator, which is what the checker is there to show.
+
+**Would documentation retrieval (RAG) let the model compute the series?** Retrieval fetches text.
+A planning guide or the app's "How to read" entries would help the model use the right words
+(slip, replanning, residual, driving predecessor); they would not make it add working days on a
+calendar or compare 8 updates of 5,000 activities, which is what the raw mode asks and what the
+study measures. What retrieval can do is hand the model the computed facts, and that is the
+grounded mode. The study says which of the two a given model can carry; retrieval over
+documentation is a third mode, to add only if the first two leave a gap it would close.
+
+**Decision rule.** Nothing is integrated into the app on the strength of an opinion. Integration
+is considered only after this study, in a separate change, and only for a mode whose report on
+the maintainer's machine shows every reply correct and no invented value over the questions and a
+real series (`--data`); the other mode stays a measurement. A grounded mode that holds would still
+need the store, the answer and the page to give the model nothing but computed values, a design
+presented before it is coded (CONTRIBUTING.md). The measurements of §10 (a CPU, a 2B model) stay
+the reference for the NAS.

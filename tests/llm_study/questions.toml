@@ -1,0 +1,61 @@
+# Question templates of scripts/llm_study.py, generic: the Activity IDs and the dates are filled
+# from the series studied, nothing here names a schedule. {task_code} is the Activity ID of one of the
+# open activities with the least total float, {date} the latest update (the first one when `date =
+# "first"`), {previous_date} the update before the latest.
+#
+# source:      the xerscope table that holds the answer (SOURCES in the script): "history" (the
+#              activity's rows of SnapshotStore.history), "activity" (activity_half_step_series),
+#              "project" (forensics.half_step_series), "path" (longest_path.path_churn).
+# column:      the column of that table, in the row dated {date}, that is the truth.
+# tolerance:   the answer counts as right when within this of the truth, in `unit` (0 for a date or a count).
+# raw_columns: the columns of SnapshotStore.history the raw mode sends as CSV.
+
+[[question]]
+id = "finish_in_first_update"
+text = "What is the finish date of {task_code} in the update dated {date}? Answer with one date, written YYYY-MM-DD."
+source = "history"
+column = "finish"
+date = "first"
+tolerance = 0
+unit = "date"
+raw_columns = ["data_date", "task_code", "finish"]
+
+[[question]]
+id = "activity_slip_by_progress"
+text = "Between the updates dated {previous_date} and {date}, by how many working days did the finish of {task_code} move because of the week's progress? Answer with one signed number: negative when the finish moved later, zero when it did not move."
+source = "activity"
+column = "slip_wd"
+date = "latest"
+tolerance = 0.5
+unit = "working days"
+raw_columns = ["data_date", "task_code", "finish", "remaining_d", "pct_complete"]
+
+[[question]]
+id = "project_finish"
+text = "What is the project finish date in the update dated {date}, the latest finish of any activity? Answer with one date, written YYYY-MM-DD."
+source = "project"
+column = "finish"
+date = "latest"
+tolerance = 0
+unit = "date"
+raw_columns = ["data_date", "task_code", "finish"]
+
+[[question]]
+id = "project_slip_by_progress"
+text = "Between the updates dated {previous_date} and {date}, by how many working days did the project finish move because of the week's progress? Answer with one signed number: negative when the finish moved later, zero when it did not move."
+source = "project"
+column = "slip_wd"
+date = "latest"
+tolerance = 0.5
+unit = "working days"
+raw_columns = ["data_date", "task_code", "finish", "remaining_d", "pct_complete"]
+
+[[question]]
+id = "activities_on_longest_path"
+text = "How many activities that are not complete are on the longest path in the update dated {date}? Answer with one number."
+source = "path"
+column = "on_path"
+date = "latest"
+tolerance = 0
+unit = "activities"
+raw_columns = ["data_date", "task_code", "status", "on_longest_path"]
