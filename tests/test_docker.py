@@ -840,23 +840,65 @@ def test_no_lexicon_file_goes_into_the_image():
 
 
 @pytest.mark.oracle("standard")
-def test_the_local_model_service_is_loopback_pinned_offline_and_leaves_the_app_alone():
-    """compose.gpu.yaml (docs/deploy.md §12) adds the llama.cpp server for the feasibility study and
-    nothing else: the xerscope service is not in it, the port is on the host's loopback, the image is
-    a required pinned variable, the model is a read-only mount that nothing downloads."""
+def test_the_local_model_service_is_pinned_offline_and_reads_a_local_file():
+    """compose.gpu.yaml (docs/deploy.md §12) serves the model with llama.cpp: the image is a required
+    pinned variable, the model a read-only mount that nothing downloads, the container hardened."""
     gpu = (ROOT / "compose.gpu.yaml").read_text()
-    assert re.findall(r"^  (\w+):", gpu[gpu.index("\nservices:") :], re.M) == ["llm"]  # not xerscope, nor any other
     llm = _service(gpu, "llm")
-    ports = [line.strip() for line in llm.splitlines() if line.strip().startswith('- "') and ":8080" in line]
-    assert ports == ['- "127.0.0.1:8080:8080"']
     assert "image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}" in llm
     assert "- ${XERSCOPE_MODELS:?folder of .gguf files}:/models:ro" in llm
     flags = re.findall(r"^\s+- (--[\w-]+|-hf\b)", llm, re.M)
     assert not {"-hf", "--hf-repo", "--hf-file", "--model-url", "-mu"} & set(flags) and "--model" in flags
     assert "http" not in re.search(r"--model\n\s+- (\S+)", llm).group(1)  # a path in /models, not a URL
     assert "driver: nvidia" in llm and "capabilities: [gpu]" in llm
-    for hardening in ("read_only: true", "- /tmp", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]'):
-        assert hardening in llm, hardening
-    assert "mem_limit:" in llm and "pids_limit:" in llm and "restart: unless-stopped" in llm
-    assert "privileged" not in llm and "network_mode" not in llm
+    for name in ("llm", "gate-app", "gate-llm"):
+        block = _service(gpu, name)
+        for hardening in ("read_only: true", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]'):
+            assert hardening in block, (name, hardening)
+        assert "mem_limit:" in block and "pids_limit:" in block and "restart: unless-stopped" in block
+        assert "privileged" not in block and "network_mode" not in block
+    assert "image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}" in _service(gpu, "gate-app")
     assert "compose.gpu.yaml" not in (ROOT / ".github" / "workflows" / "image.yml").read_text()  # nothing is pushed
+
+
+def test_the_app_and_the_model_have_no_route_out(tmp_path):
+    """With compose.gpu.yaml the app and the model sit on an internal network only (no default
+    route, docs/deploy.md §12) and publish no port; the two gates, the only services on a second
+    network, publish one port each on the host's loopback and forward it to one fixed service."""
+    import json
+    import shutil
+    import subprocess
+
+    if not shutil.which("docker"):
+        pytest.skip("docker CLI not installed")
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "XERSCOPE_LLM_IMAGE": "llm@sha256:0",
+        "XERSCOPE_GATE_IMAGE": "gate@sha256:0",
+        "XERSCOPE_MODELS": str(tmp_path),
+        "XERSCOPE_MODEL_FILE": "model.gguf",
+    }
+    files = ("-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "compose.gpu.yaml"))
+    done = subprocess.run(
+        ["docker", "compose", *files, "config", "--format", "json"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    if "unknown command" in done.stderr or "is not a docker command" in done.stderr:
+        pytest.skip("docker compose plugin not installed")
+    assert done.returncode == 0, done.stderr
+    config = json.loads(done.stdout)
+    services, networks = config["services"], config["networks"]
+    assert networks["silo"].get("internal") is True and not networks["edge"].get("internal")
+    for name in ("xerscope", "llm"):
+        assert list(services[name]["networks"]) == ["silo"] and not services[name].get("ports"), name
+    gates = {"gate-app": ("8501", "xerscope:8501"), "gate-llm": ("8080", "llm:8080")}
+    assert sorted(services) == sorted(["xerscope", "llm", *gates])
+    for name, (port, target) in gates.items():
+        gate = services[name]
+        assert sorted(gate["networks"]) == ["edge", "silo"]
+        assert [(p["host_ip"], p["published"], p["target"]) for p in gate["ports"]] == [("127.0.0.1", port, int(port))]
+        assert gate["command"] == [f"TCP-LISTEN:{port},fork,reuseaddr", f"TCP:{target}"]

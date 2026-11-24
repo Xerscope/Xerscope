@@ -4,13 +4,23 @@
 #   docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
 #   uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md
 #
-# An override of compose.yaml: it adds one service and leaves the xerscope service as it is, since the
-# app never talks to the model. Required variables (Compose stops without them):
+# An override of compose.yaml. The app and the model sit on `silo`, an internal network: no route
+# out of the machine, no DNS beyond the two services. Two gates, the only containers on a second
+# network, forward one port each from the host's loopback into the silo and nothing else: the
+# app's 8501 and the model's 8080. No Caddy, no Tailscale.
+#
+# Required variables (Compose stops without them):
 #   XERSCOPE_LLM_IMAGE   the llama.cpp CUDA server image, pinned by digest
+#   XERSCOPE_GATE_IMAGE  a socat image, pinned by digest
 #   XERSCOPE_MODELS      the folder of .gguf files, mounted read-only
 #   XERSCOPE_MODEL_FILE  the .gguf to serve, in that folder
-# Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_MEM_LIMIT (16g).
+# Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_KV (cache type of keys and values,
+# q8_0), XERSCOPE_LLM_MEM_LIMIT (16g).
 services:
+  xerscope:
+    ports: !reset []  # reached through gate-app only
+    networks: [silo]
+
   llm:
     image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}
     # No -hf / --hf-repo and no model URL: the server downloads nothing, it reads the file you put in the folder.
@@ -18,15 +28,20 @@ services:
       - --model
       - /models/${XERSCOPE_MODEL_FILE:?name of the .gguf file in XERSCOPE_MODELS}
       - --host
-      - 0.0.0.0  # inside the container; the port below is published on the host's loopback only
+      - 0.0.0.0  # inside the silo; gate-llm is the only way in
       - --port
       - "8080"
       - --n-gpu-layers
       - "99"
       - --ctx-size
       - ${XERSCOPE_LLM_CTX:-16384}
-    ports:
-      - "127.0.0.1:8080:8080"
+      - --flash-attn
+      - "on"
+      - --cache-type-k
+      - ${XERSCOPE_LLM_KV:-q8_0}  # half the cache of f16 for the same context (§12, sizing)
+      - --cache-type-v
+      - ${XERSCOPE_LLM_KV:-q8_0}
+    networks: [silo]
     volumes:
       - ${XERSCOPE_MODELS:?folder of .gguf files}:/models:ro
     deploy:
@@ -44,3 +59,36 @@ services:
     mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-16g}
     pids_limit: 256
     restart: unless-stopped
+
+  gate-app:
+    image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}
+    command: ["TCP-LISTEN:8501,fork,reuseaddr", "TCP:xerscope:8501"]
+    ports:
+      - "127.0.0.1:8501:8501"
+    networks: [silo, edge]
+    depends_on: [xerscope]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 64
+    restart: unless-stopped
+
+  gate-llm:
+    image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}
+    command: ["TCP-LISTEN:8080,fork,reuseaddr", "TCP:llm:8080"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [silo, edge]
+    depends_on: [llm]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 64
+    restart: unless-stopped
+
+networks:
+  silo:
+    internal: true  # no default route: nothing on it reaches the host's network card
+  edge: {}          # the gates only: what Docker needs to publish their port on 127.0.0.1

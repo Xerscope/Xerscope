@@ -475,6 +475,29 @@ can answer questions about a weekly series. It runs on your PC (Intel 285K, 64 G
 model. The model server is `compose.gpu.yaml`, an override of the root `compose.yaml` that you
 build and run yourself; no image is pushed anywhere (`image.yml` does not know it).
 
+**Network silo.** With the override, the app and the model sit on `silo`, a Docker network
+created `internal: true`: no default route, so no packet from either reaches the PC's network
+card, whatever the code inside tries. They publish no port. Two `socat` gates, the only
+containers also on a second network, publish one port each on `127.0.0.1` and forward it to one
+fixed service: `8501` to the app, `8080` to the model. No Caddy, no Tailscale
+(`tests/test_docker.py::test_the_app_and_the_model_have_no_route_out` pins the merged
+configuration). Three proofs, to run once the stack is up:
+
+```
+docker network inspect xerscope_silo --format '{{.Internal}}'
+```
+
+prints `true`.
+
+```
+docker compose -f compose.yaml -f compose.gpu.yaml exec xerscope /app/.venv/bin/python -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)"
+```
+
+fails with `Network is unreachable` (the same from `llm` with any tool its image has). Last, a
+capture on the host during a session (Wireshark on `vEthernet (WSL)` under Windows, or
+`tcpdump -i any not host 127.0.0.1` under Linux) shows nothing leaving the containers. Unplugging
+the cable changes nothing in the app: that is the point.
+
 **Prerequisites.**
 
 - NVIDIA Container Toolkit on Linux, or Docker Desktop with WSL2 and the NVIDIA driver on Windows.
@@ -484,23 +507,38 @@ build and run yourself; no image is pushed anywhere (`image.yml` does not know i
 - A `.gguf` file, downloaded by you into a folder of its own. The container downloads nothing (no
   `-hf`, no model URL) and the folder is mounted read-only.
 
+**Sizing for 12 GB of VRAM.** The weights and the context's cache (KV) share the card. The cache
+grows with the context: 2 × layers × KV heads × head size × bytes per value, per token. With
+`--flash-attn on` and a `q8_0` cache (the override's default, half of `f16`):
+
+| Model (GGUF Q4_K_M) | Weights | KV per 1k tokens (q8_0) | Context that fits |
+|---|---|---|---|
+| 8B dense (Qwen3-8B class) | ~5 GB | ~72 MB | 32k and more |
+| 14B dense | ~9 GB | ~80 MB | ~20k |
+| 30B MoE, 3B active | ~18 GB | ~48 MB | experts kept in RAM (`--n-cpu-moe`), not measured here |
+
+A schedule of 3,000 activities is about 110k tokens per update and 2M for a series: no context
+holds it raw. That is why the study's raw mode is bounded (`--max-rows`) and its grounded mode
+hands the model only the figures xerscope computed.
+
 **Model to try first.** An 8B model in Q4_K_M (about 5 GB; the context's cache and the compute
 buffers fit in 12 GB with the default 16,384 tokens), then a 14B in Q4_K_M (about 9 GB: lower the
 context, or the study's `--max-rows`). The same two questions every time: does the grounded mode
 hold, and does the raw mode, which the 8B is not expected to do, hold at all.
 
-**The two commands**, from the repository root (the three variables are required, Compose stops
+**The two commands**, from the repository root (the four variables are required, Compose stops
 and says which is missing):
 
 ```
 export XERSCOPE_LLM_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>
+export XERSCOPE_GATE_IMAGE=alpine/socat@sha256:<digest>
 export XERSCOPE_MODELS=<folder of .gguf files>
 export XERSCOPE_MODEL_FILE=<model>.gguf
 docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
 uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md
 ```
 
-The server answers on `127.0.0.1:8080` only, and `llm_study.py` refuses any `--url` whose host is
+The server answers on `127.0.0.1:8080` only, through its gate, and `llm_study.py` refuses any `--url` whose host is
 not exactly `127.0.0.1`, `::1` or `localhost` (`127.0.0.2` is refused too; a redirect is not
 followed and the machine's proxy is not used): no external call is possible. Without `--data` it
 builds the demo series (`xerscope sample`). `--data <folder>` reads your own weekly exports; the
