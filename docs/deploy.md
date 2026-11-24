@@ -475,11 +475,12 @@ can answer questions about a weekly series. It runs on your PC (Intel 285K, 64 G
 model. The model server is `compose.gpu.yaml`, an override of the root `compose.yaml` that you
 build and run yourself; no image is pushed anywhere (`image.yml` does not know it).
 
-**Network silo.** With the override, the app and the model sit on `silo`, a Docker network
-created `internal: true`: no default route, so no packet from either reaches the PC's network
-card, whatever the code inside tries. They publish no port. Two `socat` gates, the only
-containers also on a second network, publish one port each on `127.0.0.1` and forward it to one
-fixed service: `8501` to the app, `8080` to the model. No Caddy, no Tailscale
+**Network silo.** With the override, the app, the model and the study sit on `silo`, a Docker
+network created `internal: true`: no default route, so no packet from any of them reaches the
+PC's network card, whatever the code inside tries. None publishes a port: the model is reached
+as `http://llm:8080` from a container on the silo, never from the PC itself. One `socat` gate,
+the only container also on a second network, publishes `127.0.0.1:8501` and forwards it to the
+app, and nothing else. No Caddy, no Tailscale
 (`tests/test_docker.py::test_the_app_and_the_model_have_no_route_out` pins the merged
 configuration). Three proofs, to run once the stack is up:
 
@@ -493,7 +494,8 @@ prints `true`.
 docker compose -f compose.yaml -f compose.gpu.yaml exec xerscope /app/.venv/bin/python -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)"
 ```
 
-fails with `Network is unreachable` (the same from `llm` with any tool its image has). Last, a
+fails with `Network is unreachable` (the same from `llm` with any tool its image has), and
+`curl http://127.0.0.1:8080` from the PC is refused: the model has no port on the host. Last, a
 capture on the host during a session (Wireshark on `vEthernet (WSL)` under Windows, or
 `tcpdump -i any not host 127.0.0.1` under Linux) shows nothing leaving the containers. Unplugging
 the cable changes nothing in the app: that is the point.
@@ -526,8 +528,8 @@ buffers fit in 12 GB with the default 16,384 tokens), then a 14B in Q4_K_M (abou
 context, or the study's `--max-rows`). The same two questions every time: does the grounded mode
 hold, and does the raw mode, which the 8B is not expected to do, hold at all.
 
-**The two commands**, from the repository root (the four variables are required, Compose stops
-and says which is missing):
+**The commands**, from the repository root (the four variables are required, Compose stops and
+says which is missing):
 
 ```
 export XERSCOPE_LLM_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>
@@ -535,13 +537,16 @@ export XERSCOPE_GATE_IMAGE=alpine/socat@sha256:<digest>
 export XERSCOPE_MODELS=<folder of .gguf files>
 export XERSCOPE_MODEL_FILE=<model>.gguf
 docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md
+docker compose -f compose.yaml -f compose.gpu.yaml run --rm study
 ```
 
-The server answers on `127.0.0.1:8080` only, through its gate, and `llm_study.py` refuses any `--url` whose host is
-not exactly `127.0.0.1`, `::1` or `localhost` (`127.0.0.2` is refused too; a redirect is not
-followed and the machine's proxy is not used): no external call is possible. Without `--data` it
-builds the demo series (`xerscope sample`). `--data <folder>` reads your own weekly exports; the
+The study runs in the `study` service, on the silo, with the app's image and the repository's
+`scripts/` and `tests/llm_study/` mounted read-only; its report lands in `./study/report.md`
+(the folder must be writable by uid 65532 on Linux). `llm_study.py` refuses any `--url` whose
+host is not exactly `llm` or a loopback name (`127.0.0.2` is refused too; a redirect is not
+followed and no proxy is used): no external call is possible. Without `--data` it builds the
+demo series (`xerscope sample`). `run --rm study --data /data` reads your weekly exports from
+`./exports`, mounted read-only; the
 files stay local and the report names no activity, project or file (activities are numbered by
 the order the study picked them: the open ones with the least total float). The questions are
 generic templates in `tests/llm_study/questions.toml`. `--max-rows` (400 by default, about

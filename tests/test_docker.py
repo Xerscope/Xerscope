@@ -851,20 +851,21 @@ def test_the_local_model_service_is_pinned_offline_and_reads_a_local_file():
     assert not {"-hf", "--hf-repo", "--hf-file", "--model-url", "-mu"} & set(flags) and "--model" in flags
     assert "http" not in re.search(r"--model\n\s+- (\S+)", llm).group(1)  # a path in /models, not a URL
     assert "driver: nvidia" in llm and "capabilities: [gpu]" in llm
-    for name in ("llm", "gate-app", "gate-llm"):
+    for name in ("llm", "gate-app", "study"):
         block = _service(gpu, name)
         for hardening in ("read_only: true", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]'):
             assert hardening in block, (name, hardening)
-        assert "mem_limit:" in block and "pids_limit:" in block and "restart: unless-stopped" in block
+        assert "mem_limit:" in block and "pids_limit:" in block
         assert "privileged" not in block and "network_mode" not in block
     assert "image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}" in _service(gpu, "gate-app")
     assert "compose.gpu.yaml" not in (ROOT / ".github" / "workflows" / "image.yml").read_text()  # nothing is pushed
 
 
 def test_the_app_and_the_model_have_no_route_out(tmp_path):
-    """With compose.gpu.yaml the app and the model sit on an internal network only (no default
-    route, docs/deploy.md §12) and publish no port; the two gates, the only services on a second
-    network, publish one port each on the host's loopback and forward it to one fixed service."""
+    """With compose.gpu.yaml the app, the model and the study sit on an internal network only (no
+    default route, docs/deploy.md §12) and publish no port: the model is reached from the silo,
+    never from the host. One gate, the only service on a second network, publishes the app's port
+    on the host's loopback and forwards it to the app."""
     import json
     import shutil
     import subprocess
@@ -879,7 +880,7 @@ def test_the_app_and_the_model_have_no_route_out(tmp_path):
         "XERSCOPE_MODELS": str(tmp_path),
         "XERSCOPE_MODEL_FILE": "model.gguf",
     }
-    files = ("-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "compose.gpu.yaml"))
+    files = ("-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "compose.gpu.yaml"), "--profile", "study")
     done = subprocess.run(
         ["docker", "compose", *files, "config", "--format", "json"],
         capture_output=True,
@@ -893,12 +894,11 @@ def test_the_app_and_the_model_have_no_route_out(tmp_path):
     config = json.loads(done.stdout)
     services, networks = config["services"], config["networks"]
     assert networks["silo"].get("internal") is True and not networks["edge"].get("internal")
-    for name in ("xerscope", "llm"):
+    assert sorted(services) == ["gate-app", "llm", "study", "xerscope"]
+    for name in ("xerscope", "llm", "study"):
         assert list(services[name]["networks"]) == ["silo"] and not services[name].get("ports"), name
-    gates = {"gate-app": ("8501", "xerscope:8501"), "gate-llm": ("8080", "llm:8080")}
-    assert sorted(services) == sorted(["xerscope", "llm", *gates])
-    for name, (port, target) in gates.items():
-        gate = services[name]
-        assert sorted(gate["networks"]) == ["edge", "silo"]
-        assert [(p["host_ip"], p["published"], p["target"]) for p in gate["ports"]] == [("127.0.0.1", port, int(port))]
-        assert gate["command"] == [f"TCP-LISTEN:{port},fork,reuseaddr", f"TCP:{target}"]
+    gate = services["gate-app"]
+    assert sorted(gate["networks"]) == ["edge", "silo"]
+    assert [(p["host_ip"], p["published"], p["target"]) for p in gate["ports"]] == [("127.0.0.1", "8501", 8501)]
+    assert gate["command"] == ["TCP-LISTEN:8501,fork,reuseaddr", "TCP:xerscope:8501"]
+    assert "--url" in services["study"]["entrypoint"] and "http://llm:8080" in services["study"]["entrypoint"]

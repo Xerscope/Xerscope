@@ -2,12 +2,14 @@
 # is pushed anywhere:
 #
 #   docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-#   uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md
+#   docker compose -f compose.yaml -f compose.gpu.yaml run --rm study            # the demo series
+#   docker compose -f compose.yaml -f compose.gpu.yaml run --rm study --data /data   # ./exports
 #
-# An override of compose.yaml. The app and the model sit on `silo`, an internal network: no route
-# out of the machine, no DNS beyond the two services. Two gates, the only containers on a second
-# network, forward one port each from the host's loopback into the silo and nothing else: the
-# app's 8501 and the model's 8080. No Caddy, no Tailscale.
+# An override of compose.yaml. The app, the model and the study sit on `silo`, an internal network:
+# no route out of the machine. The model publishes no port: only a container on the silo reaches
+# it, never the host. One gate, the only container on a second network, forwards the app's 8501
+# from the host's loopback into the silo and nothing else. No Caddy, no Tailscale. The study's
+# report lands in ./study (writable by the image's user, uid 65532).
 #
 # Required variables (Compose stops without them):
 #   XERSCOPE_LLM_IMAGE   the llama.cpp CUDA server image, pinned by digest
@@ -28,7 +30,7 @@ services:
       - --model
       - /models/${XERSCOPE_MODEL_FILE:?name of the .gguf file in XERSCOPE_MODELS}
       - --host
-      - 0.0.0.0  # inside the silo; gate-llm is the only way in
+      - 0.0.0.0  # inside the silo only: no port is published, the host cannot reach it
       - --port
       - "8080"
       - --n-gpu-layers
@@ -74,21 +76,27 @@ services:
     pids_limit: 64
     restart: unless-stopped
 
-  gate-llm:
-    image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}
-    command: ["TCP-LISTEN:8080,fork,reuseaddr", "TCP:llm:8080"]
-    ports:
-      - "127.0.0.1:8080:8080"
-    networks: [silo, edge]
+  study:  # the feasibility study (scripts/llm_study.py), run on demand; it reaches the model as http://llm:8080
+    image: xerscope:latest
+    profiles: [study]
+    entrypoint: ["/app/.venv/bin/python", "/study/scripts/llm_study.py", "--url", "http://llm:8080", "--out", "/out/report.md"]
+    command: []
+    networks: [silo]
     depends_on: [llm]
+    volumes:
+      - ./scripts:/study/scripts:ro
+      - ./tests/llm_study:/study/tests/llm_study:ro
+      - ./exports:/data:ro
+      - ./study:/out
     read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=1777
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 64m
-    pids_limit: 64
-    restart: unless-stopped
+    mem_limit: 8g
+    pids_limit: 128
 
 networks:
   silo:
     internal: true  # no default route: nothing on it reaches the host's network card
-  edge: {}          # the gates only: what Docker needs to publish their port on 127.0.0.1
+  edge: {}          # the gate only: what Docker needs to publish the app's port on 127.0.0.1

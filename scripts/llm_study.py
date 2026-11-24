@@ -1,10 +1,11 @@
 """Feasibility study: can a local model answer questions about a weekly schedule series?
 
-    uv run python scripts/llm_study.py --url http://127.0.0.1:8080 --out report.md [--data FOLDER]
+    docker compose -f compose.yaml -f compose.gpu.yaml run --rm study [--data /data]
 
-Run on the maintainer's own machine against a llama.cpp ``llama-server`` (docs/deploy.md §12).
-Nothing here is part of the app: ``src/`` has no network import, and this script talks to a
-loopback address only (``is_loopback_url``).
+Run on the maintainer's own machine, inside the silo network of ``compose.gpu.yaml``, against a
+llama.cpp ``llama-server`` that only the silo reaches (docs/deploy.md §12). Nothing here is part
+of the app: ``src/`` has no network import, and this script talks to ``llm`` on the silo or to a
+loopback address only (``is_model_url``; a loopback URL serves the tests' fake server).
 
 Each question is asked twice, from the same series:
 
@@ -52,9 +53,11 @@ ROOT = Path(__file__).resolve().parent.parent
 QUESTIONS = ROOT / "tests" / "llm_study" / "questions.toml"
 GROUNDED, RAW = "grounded", "raw"
 MODES = (GROUNDED, RAW)
-# Exactly these three hosts: 127.0.0.2 and the rest of 127.0.0.0/8 are loopback too, but the
-# study's compose file publishes 127.0.0.1 only, and a list of names is easier to audit than a range.
+# Exactly these names: 127.0.0.2 and the rest of 127.0.0.0/8 are loopback too, but a list of names
+# is easier to audit than a range.
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
+SILO_HOST = "llm"  # compose.gpu.yaml: the model's name on the internal network, unknown outside it
+MODEL_HOSTS = (*LOOPBACK_HOSTS, SILO_HOST)
 TIMEOUT_S = 600  # a raw prompt of 15,000 tokens can take a minute to read on a 12 GB card
 SYSTEM_PROMPT = "Answer from the data given only, in one sentence. Write every date as YYYY-MM-DD."
 DAY_FORMAT = "%Y-%m-%d"
@@ -111,23 +114,24 @@ def is_correct(reply: str, truth: str | float, tolerance: float) -> bool:
     return any(abs(number - truth) <= tolerance for number in found.numbers)
 
 
-# --- the loopback guard and the model call ---------------------------------------------------
+# --- the host guard and the model call ---------------------------------------------------
 
 
-def is_loopback_url(url: str) -> bool:
-    """The URL is http(s) and its host (not a userinfo, not a prefix of a longer name) is a loopback name."""
+def is_model_url(url: str) -> bool:
+    """The URL is http(s) and its host (not a userinfo, not a prefix of a longer name) is a loopback
+    name, or ``llm``, the model's name on the silo network, which nothing outside it resolves."""
     parsed = urllib.parse.urlparse(url)
-    return parsed.scheme in ("http", "https") and parsed.hostname in LOOPBACK_HOSTS
+    return parsed.scheme in ("http", "https") and parsed.hostname in MODEL_HOSTS
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """A 3xx is an error: a loopback server cannot send the study elsewhere."""
+    """A 3xx is an error: the model server cannot send the study elsewhere."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
 
-# ProxyHandler({}): the machine's HTTP(S)_PROXY must not carry a loopback request to a proxy.
+# ProxyHandler({}): an HTTP(S)_PROXY in the environment must not carry the request to a proxy.
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
@@ -398,7 +402,9 @@ def render_report(model: str, store: SnapshotStore, results: list[Result]) -> st
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Study a local llama-server on a weekly schedule series.")
-    parser.add_argument("--url", required=True, help="llama-server base URL, loopback only (http://127.0.0.1:8080)")
+    parser.add_argument(
+        "--url", required=True, help="llama-server base URL: http://llm:8080 in the silo, or a loopback URL"
+    )
     parser.add_argument("--out", type=Path, default=Path("report.md"), help="Markdown report to write")
     parser.add_argument("--data", type=Path, help="folder of weekly .xer files; default: the demo series")
     parser.add_argument("--questions", type=Path, default=QUESTIONS, help="question templates (TOML)")
@@ -418,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run the study; returns the exit code."""
     parser = _parser()
     args = parser.parse_args(argv)
-    if not is_loopback_url(args.url):
+    if not is_model_url(args.url):
         parser.error(f"--url must be http(s) on {', '.join(LOOPBACK_HOSTS)}: the study makes no external call")
     try:
         if args.data:

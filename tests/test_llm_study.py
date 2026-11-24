@@ -1,4 +1,4 @@
-"""scripts/llm_study.py: the checker, the truths on the demo series, the loopback guard.
+"""scripts/llm_study.py: the checker, the truths on the demo series, the host guard.
 
 No server and no network: the model call is a stub that answers from the case it is given.
 The truths are read from xerscope's own tables (the "characterization" values come from the demo
@@ -217,15 +217,16 @@ def test_main_runs_the_study_on_a_data_folder_and_writes_the_report(sample_dir, 
     assert "stub.gguf" in out.read_text(encoding="utf-8")
 
 
-# --- the loopback guard -----------------------------------------------------------------------
+# --- the host guard --------------------------------------------------------------------------
 
 
 @pytest.mark.oracle("property")
 @pytest.mark.parametrize(
-    "url", ["http://127.0.0.1:8080", "http://localhost:8080", "http://[::1]:8080", "https://localhost"]
+    "url",
+    ["http://llm:8080", "http://127.0.0.1:8080", "http://localhost:8080", "http://[::1]:8080", "https://localhost"],
 )
-def test_a_loopback_url_is_accepted(url):
-    assert study.is_loopback_url(url)
+def test_the_silo_model_or_a_loopback_url_is_accepted(url):
+    assert study.is_model_url(url)
 
 
 @pytest.mark.oracle("property")
@@ -234,6 +235,8 @@ def test_a_loopback_url_is_accepted(url):
     [
         "https://10.0.0.1",
         "http://localhost.example.com:8080",  # a longer name that starts with localhost
+        "http://llm.example.com:8080",  # a longer name that starts with the silo's
+        "http://llm@example.com",  # llm is the userinfo
         "http://127.0.0.1.example.com",
         "http://127.0.0.1@example.com",  # 127.0.0.1 is the userinfo, the host is example.com
         "http://127.0.0.2:8080",  # decision: only the three names; 127.0.0.0/8 is not accepted
@@ -245,7 +248,7 @@ def test_a_loopback_url_is_accepted(url):
     ],
 )
 def test_any_other_url_is_refused(url):
-    assert not study.is_loopback_url(url)
+    assert not study.is_model_url(url)
 
 
 @pytest.mark.oracle("property")
