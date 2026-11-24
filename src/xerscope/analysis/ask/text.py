@@ -25,9 +25,9 @@ SURE = 0.9  # confidence at or above which the page shows no "unsure" mark
 _STOP_WORDS = """
     a au aux avec ce ces cette d de des du en l la le les pour qui que quoi sur un une tout toute
     tous toutes dans lot phase partie est sont ont c qu celles ceux montre montrer affiche afficher voir
-    filtre filtrer activite activites tache taches noeud branche moi
+    filtre filtrer activite activites tache taches noeud branche moi pourquoi ete
     the an of in on for with all every any at to from by is are that which ones show list display
-    filter task tasks activity activities wbs node branch me
+    filter task tasks activity activities wbs node branch me why did does has was
     """
 STOP = frozenset(_STOP_WORDS.split())
 

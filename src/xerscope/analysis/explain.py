@@ -767,6 +767,19 @@ READINGS: dict[str, Reading] = {
         how="step, finish once applied, shift (wd), changes applied: the table of the half-step bars.",
         source="AACE RP 29R-03 MIP 3.4",
     ),
+    "activity_steps": Reading(
+        how=(
+            "One activity, asked in the Gantt's Ask field (\"why did A1020 slip\"): the step, the activity's early "
+            "finish once that kind of change is applied to the previous update, its shift (working days of its own "
+            "calendar, days lost negative) and the changes of that kind the activity carries. The first row is the "
+            "previous update as scheduled; progress is the slip, every later step is replanning."
+        ),
+        conclude=(
+            "a shift on one step names the kind of change that moved the activity; a recalculated finish that "
+            "differs from the one P6 stored in the file (the note under the sentence) makes the shifts indications."
+        ),
+        source="AACE RP 29R-03 MIP 3.4 on one activity (analysis/activity_forensics.py); docs/formulas.md §5.1.",
+    ),
     "forensics_series": Reading(
         how=(
             "One row per update: finish held by (last activity, Must Finish By, Mandatory Finish), finish shown, "

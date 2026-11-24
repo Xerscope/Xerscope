@@ -216,6 +216,9 @@ ATOMS = {  # atom kind -> the rows it names
     "word": lambda rows, value, context: all_words(rows, [value]),
     "late": _late,  # finish later than the baseline finish (P6-12); "negative float" is a tf comparison
     "id": lambda rows, value, context: rows["task_code"] == value,
+    "intent": lambda rows, value, context: pd.Series(
+        True, index=rows.index
+    ),  # a reading, not a set: NOT of it is nothing
     "cmp": _compare,
     "date": _dated,
     "constraint": _constrained,

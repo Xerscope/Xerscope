@@ -102,3 +102,22 @@ search = "handover"
 text = "achevées en ingénierie"
 wbs = "ENG"
 status = ["Complete"]
+
+# written before the slip and history grammar existed; the activity is read from the file's Activity IDs
+[[case]]
+text = "why has C3020 slipped"
+intent = "slip"
+task_code = "C3020"
+clauses = ["id:C3020"]
+
+[[case]]
+text = "show me the history of C3020"
+intent = "history"
+task_code = "C3020"
+clauses = ["id:C3020"]
+
+[[case]]
+text = "pourquoi C3020 a été repoussée"
+intent = "slip"
+task_code = "C3020"
+clauses = ["id:C3020"]

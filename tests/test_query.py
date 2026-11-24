@@ -660,3 +660,46 @@ def test_a_chosen_type_offers_its_values_then_the_value_filters():
     ]
     got = query.parse_keywords("Phase", vocab, {"Phase": GLOBAL_P1})
     assert got.code_type == "Phase (global)" and got.code_ids == frozenset({GLOBAL_P1}) and got.clarify == ()
+
+
+ACTIVITY_VOCAB = Vocabulary(wbs=VOCAB.wbs, ids={("a1020",): "A1020", ("a1030",): "A1030"}, lexicon=LEXICON)
+
+
+@pytest.mark.oracle("characterization")
+@pytest.mark.parametrize(
+    ("text", "intent", "task_code"),
+    [
+        ("why did A1020 slip", "slip", "A1020"),
+        ("A1020 slipped", "slip", "A1020"),
+        ("pourquoi A1020 a glissé", "slip", "A1020"),
+        ("A1020 repoussée", "slip", "A1020"),
+        ("history of A1020", "history", "A1020"),
+        ("historique de A1020", "history", "A1020"),
+        ("histroy of A1020", "history", "A1020"),  # a typo on the grammar's word, read by the existing fuzzy rule
+        ("A1020", "", "A1020"),  # an Activity ID alone filters; it asks no reading
+        ("why did slip", "slip", ""),  # no Activity ID: the page asks for one
+        ("why did A1020 slip A1030", "slip", ""),  # two IDs: no single activity to read; both still filter
+    ],
+)
+def test_a_slip_or_history_sentence_carries_its_intent_and_the_activity_said(text, intent, task_code):
+    """Hand-written expectations: the sentence's words, the Activity IDs of the file; no stop word is left over."""
+    got = query.parse_keywords(text, ACTIVITY_VOCAB)
+    assert (got.intent, got.task_code, got.ignored) == (intent, task_code, ())
+
+
+@pytest.mark.oracle("characterization")
+def test_the_reading_is_a_chip_that_can_be_taken_off_and_the_activity_still_filters():
+    got = query.parse_keywords("why did A1020 slip", ACTIVITY_VOCAB)
+    assert got.matched == ("Activity ID A1020", "Reading: Why it slipped")
+    assert query.canonical(got, ACTIVITY_VOCAB) == "id:A1020"  # the intent is not a set of activities
+    dropped = query.without(got, "Reading: Why it slipped", ACTIVITY_VOCAB)
+    assert (dropped.intent, dropped.task_code) == ("", "A1020")
+    no_activity = query.without(got, "Activity ID A1020", ACTIVITY_VOCAB)
+    assert (no_activity.intent, no_activity.task_code) == ("slip", "")
+
+
+@pytest.mark.oracle("characterization")
+def test_a_negated_reading_filters_nothing():
+    """NOT of a reading is not a set of activities: the activity alone stays asked."""
+    got = query.parse_keywords("not slipped A1020", ACTIVITY_VOCAB)
+    assert query.canonical(got, ACTIVITY_VOCAB) == "id:A1020" and got.intent == ""

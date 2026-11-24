@@ -14,7 +14,19 @@ from .parser import parse_keywords
 from .text import STOP, SURE, fold, words_of
 from .vocab import Vocabulary
 
-FIELDS = ("wbs_id", "status", "categories", "code_ids", "resources", "milestones", "loe", "search", "clauses")
+FIELDS = (
+    "wbs_id",
+    "status",
+    "categories",
+    "code_ids",
+    "resources",
+    "milestones",
+    "loe",
+    "search",
+    "intent",
+    "task_code",
+    "clauses",
+)
 
 _SAID = {  # one phrase per status and float category, in each language: what a planner says
     "Not started": ["not started", "non démarré"],
@@ -96,6 +108,8 @@ def expected_filter(case: Mapping, vocab: Vocabulary) -> Filter:
         milestones=bool(case.get("milestones", False)),
         loe=bool(case.get("loe", False)),
         search=fold(case.get("search", "")),
+        intent=case.get("intent", ""),
+        task_code=case.get("task_code", ""),
     )
 
 

@@ -12,8 +12,12 @@ import html
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis import query
+from xerscope.analysis.activity_forensics import activity_half_step
+from xerscope.analysis.cpm import ScheduleError
 from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
+from xerscope.app.cache import memo
 from xerscope.config import DATETIME_FMT
 from xerscope.viz.charts import build_activity_dates, build_activity_float
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
@@ -253,3 +257,33 @@ def show_history(store, task_code: str) -> None:
         ui.chart(build_activity_float(history))
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")
+
+
+# --- why the activity moved ----------------------------------------------------------------
+
+
+def show_slip(store, snapshot, task_code: str, lang: str) -> None:
+    """The Ask field's answer on one activity: a sentence, then the steps of its move since the
+    previous update (the series is the history card under the Gantt). One update loaded: the
+    sentence says a second is needed."""
+    previous = store.previous(snapshot)
+    if not task_code or previous is None:
+        st.markdown(ui.md_text(query.activity_answer(task_code, None, lang)))
+        return
+    try:
+        read = memo(
+            ("activity_half_step", previous.label, snapshot.label, task_code),
+            activity_half_step,
+            previous,
+            snapshot,
+            task_code,
+            baseline=False,
+            ev_basis=False,
+        )
+    except ScheduleError as error:
+        st.error(f"These two updates cannot be read: {ui.without_addresses(str(error))}", icon=":material/block:")
+        return
+    sentence = ui.md_text(query.activity_answer(task_code, read, lang))
+    (st.markdown if read.is_finish_reproduced else ui.caveat)(sentence)
+    if not read.missing_from:
+        ui.table(read.steps, key="activity_steps", reading="activity_steps")

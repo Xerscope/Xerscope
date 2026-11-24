@@ -33,7 +33,7 @@ from xerscope.app.state import (
     require_store,
     snapshot_picker,
 )
-from xerscope.app.task_panel import show_card, show_history, task_from_row_id
+from xerscope.app.task_panel import show_card, show_history, show_slip, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER, open_row_ids
 from xerscope.xer.model import STATUS
@@ -49,6 +49,7 @@ PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
 CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
+ASKED_TASK_KEY = "gantt_ask_task"  # the sentence whose Activity ID was already picked: another sentence picks again
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
@@ -354,6 +355,11 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
                 on_click=_clear_ask,
                 help="Empties the Ask field and its filters; every task of the branch is drawn again.",
             )
+        if ask.intent:  # "why did A1020 slip", "history of A1020": the reading, and the activity's card below
+            show_slip(store, snapshot, ask.task_code, query.language(asked))
+            if ask.task_code and st.session_state.get(ASKED_TASK_KEY) != asked:
+                st.session_state[TASK_KEY] = ask.task_code
+                st.session_state[ASKED_TASK_KEY] = asked
         how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)

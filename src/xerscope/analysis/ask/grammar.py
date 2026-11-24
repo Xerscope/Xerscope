@@ -104,6 +104,14 @@ MILESTONE_PHRASES = {
     "fr": ["jalon", "jalons", "evenement", "evenements"],
 }
 LOE_PHRASES = {"en": ["loe", "level of effort", "hammock", "hammocks"], "fr": ["niveau d effort", "hamac", "hamacs"]}
+# the per-activity readings (analysis/activity_forensics.py): why an activity moved, and its history
+INTENT_PHRASES = {
+    "slip": {
+        "en": ["slip", "slips", "slipped", "slipping", "slippage"],
+        "fr": [*_forms(("glisse", "repousse", "decale")), "glissement", "glissements"],
+    },
+    "history": {"en": ["history", "histories"], "fr": ["historique", "historiques"]},
+}
 OPERATORS = {  # NOT, OR, AND: the words that join or negate what they stand next to
     "not": {
         "en": ["not", "no", "without", "except", "excluding", "neither", "nor"],
@@ -297,7 +305,12 @@ def _entries() -> list[tuple[str, object, Mapping[str, list[str]]]]:
     for kind, date_words in (("prep", PREPOSITIONS), ("period", PERIODS), ("month", MONTHS), ("edge", EDGES)):
         entries += [(kind, value, phrases) for value, phrases in date_words.items()]
     entries.append(("between", None, BETWEEN))
-    return entries + _anchors(entries)
+    return entries + _readings() + _anchors(entries)
+
+
+def _readings() -> list:
+    """The per-activity readings: "slip" and "history" (``Filter.intent``)."""
+    return [("x", Atom("intent", intent), phrases) for intent, phrases in INTENT_PHRASES.items()]
 
 
 def _anchors(entries) -> list:

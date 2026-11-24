@@ -7,6 +7,7 @@ import re
 
 import pandas as pd
 
+from ..activity_forensics import ActivityHalfStep
 from ..populations import Funnel
 from .filters import Filter, said
 from .lexer import phrase_languages
@@ -75,6 +76,16 @@ WORDS = {
         "nothing": "Nothing understood: no activity shown.",
         "unknown_one": " The word {words} is in neither this file nor the lexicon.",
         "unknown_many": " The words {words} are in neither this file nor the lexicon.",
+        "no_code": 'Name an Activity ID to read why it moved or its history, for example "why did A1020 slip".',
+        "second_update": "{code}: a second update is needed to read why it moved; only one is loaded.",
+        "absent": "{code} is missing from {absent}: nothing to compare.",
+        "unchanged": "{code} has not moved since the previous update (finish {date}).",
+        "moved": "{code} finishes {days} wd {direction} than in the previous update ({date}): progress {slip} wd, "
+        "replanning {replanning} wd, residual {residual} wd.",
+        "later": "later",
+        "earlier": "earlier",
+        "unreliable": " Read as an indication: the recalculation does not reproduce the finish P6 stored "
+        "(gap {old} wd in the earlier update, {new} wd in the later one).",
     },
     "fr": {
         "none": "Aucune activité ne correspond.",
@@ -93,6 +104,18 @@ WORDS = {
         "nothing": "Rien de compris : aucune activité affichée.",
         "unknown_one": " Le mot {words} n'est ni dans ce fichier ni dans le lexique.",
         "unknown_many": " Les mots {words} ne sont ni dans ce fichier ni dans le lexique.",
+        "no_code": "Nommez un code d'activité pour lire pourquoi elle a bougé ou son historique, par exemple "
+        "« pourquoi A1020 a glissé ».",
+        "second_update": "{code} : une seconde mise à jour est nécessaire pour lire pourquoi elle a bougé ; "
+        "une seule est chargée.",
+        "absent": "{code} est absente de {absent} : rien à comparer.",
+        "unchanged": "{code} n'a pas bougé depuis la mise à jour précédente (fin {date}).",
+        "moved": "{code} finit {days} j {direction} qu'à la mise à jour précédente ({date}) : avancement {slip} j, "
+        "replanification {replanning} j, résidu {residual} j.",
+        "later": "plus tard",
+        "earlier": "plus tôt",
+        "unreliable": " À lire comme une indication : le recalcul ne reproduit pas la fin que P6 a stockée "
+        "(écart {old} j à la mise à jour précédente, {new} j à la dernière).",
     },
 }
 
@@ -113,6 +136,37 @@ def answer(ask: Filter, funnel: Funnel, vocab: Vocabulary, lang: str = "en") -> 
     sentence += "".join(", " + said(expr, vocab, lang) for _, expr in ask.clauses)
     details = _details(rows, words)
     return sentence + ("; " + ", ".join(details) if details else "") + "." + unknown
+
+
+def activity_answer(task_code: str, read: ActivityHalfStep | None, lang: str = "en") -> str:
+    """One sentence on why ``task_code`` moved since the previous update, in ``lang``: its finish,
+    the shift split into progress, replanning and residual (working days of its calendar, the
+    signs as ``ActivityHalfStep`` gives them, a day lost negative), and the reliability note when
+    an engine gap is non-zero. ``read`` None: only one update is loaded; no code: none was named."""
+    words = WORDS["fr" if lang == "fr" else "en"]
+    if not task_code:
+        return words["no_code"]
+    if read is None:
+        return words["second_update"].format(code=task_code)
+    if read.missing_from:
+        return words["absent"].format(code=task_code, absent=read.missing_from)
+    date = f"{read.new_finish:%d/%m/%Y}"
+    if read.total_shift_wd == 0:
+        return words["unchanged"].format(code=task_code, date=date)
+    direction = words["later"] if read.total_shift_wd < 0 else words["earlier"]
+    sentence = words["moved"].format(
+        code=task_code,
+        days=f"{abs(read.total_shift_wd):.1f}",
+        direction=direction,
+        date=date,
+        slip=f"{read.slip_wd:+.1f}",
+        replanning=f"{read.replanning_wd:+.1f}",
+        residual=f"{read.residual_wd:+.1f}",
+    )
+    if read.is_finish_reproduced:
+        return sentence
+    old, new = f"{read.old_engine_gap_wd:+.1f}", f"{read.new_engine_gap_wd:+.1f}"
+    return sentence + words["unreliable"].format(old=old, new=new)
 
 
 def _unknown_note(ask: Filter, words: dict) -> str:

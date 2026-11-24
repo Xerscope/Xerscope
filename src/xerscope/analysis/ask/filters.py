@@ -40,6 +40,8 @@ class Filter:
     milestones: bool = False  # milestones only
     loe: bool = False  # level-of-effort activities only
     search: str = ""  # words each found in the Activity ID or name, in any order
+    intent: str = ""  # "slip" (why an activity moved) or "history" (its series), when the sentence asks one
+    task_code: str = ""  # the Activity ID the sentence names, which the intent reads; "" when none
     clauses: tuple[tuple[str, Expr], ...] = ()  # (label, expression), intersected with the facets
     matched: tuple[str, ...] = ()  # the phrases understood, in reading order, for the page's chips
     ignored: tuple[str, ...] = ()  # words nothing reads (the file, the lexicon, the grammar)
@@ -60,6 +62,9 @@ class Filter:
 def resource_name(rsrc_id: str, vocab: Vocabulary) -> str:
     short, name = vocab.resources.get(rsrc_id, ("", rsrc_id))
     return short or name
+
+
+INTENT_LABELS = {"slip": "Why it slipped", "history": "History"}
 
 
 @dataclass
@@ -131,6 +136,20 @@ class _Facets:
         self.matched.append((position, label))
         return True
 
+    def _intent(self, position: int, values: list) -> bool:
+        if len(values) > 1:
+            return False
+        if "intent" not in self.fields:  # the first reading said is kept; a repeat adds no chip
+            self.fields["intent"] = values[0]
+            self.matched.append((position, f"Reading: {INTENT_LABELS[values[0]]}"))
+        return True
+
+    def _id(self, position: int, values: list) -> bool:
+        """The one Activity ID a sentence names is the one an intent reads; it still filters, as a clause."""
+        if len(values) == 1:
+            self.fields["task_code"] = values[0]
+        return False
+
     def _word(self, position: int, values: list) -> bool:
         if len(values) > 1:
             return False
@@ -157,8 +176,14 @@ def to_filter(conjuncts: list[tuple[int, Expr]], ignored: list[str], confidence:
     """The sentence's conjuncts as a Filter: one facet's positive atoms in its field, the rest as clauses."""
     facets = _Facets(vocab)
     for position, expr in conjuncts:
-        facets.add(position, expr)
+        if not _is_negated_reading(expr):
+            facets.add(position, expr)
     return facets.filter(ignored, confidence)
+
+
+def _is_negated_reading(expr: Expr) -> bool:
+    """NOT of a reading ("not slipped"): a reading is no set of activities, so its negation asks nothing."""
+    return isinstance(expr, Not) and isinstance(expr.item, Atom) and expr.item.kind == "intent"
 
 
 def conjuncts(ask: Filter) -> list[Expr]:
@@ -371,7 +396,11 @@ def without(ask: Filter, label: str, vocab: Vocabulary) -> Filter:
     chip a user takes off the page."""
     kind, _, value = label.partition(": ")
     if any(c[0] == label for c in ask.clauses):
-        out = replace(ask, clauses=tuple(c for c in ask.clauses if c[0] != label))
+        out = replace(
+            ask,
+            clauses=tuple(c for c in ask.clauses if c[0] != label),
+            task_code=_kept_task_code(ask, label, vocab),
+        )
     elif kind == ask.code_type and kind:  # "Zone: B2"
         kept = frozenset(c for c in ask.code_ids if vocab.codes.get(c, ("", "", ""))[1] != value)
         out = replace(ask, code_ids=kept, code_type=ask.code_type if kept else None)
@@ -379,6 +408,11 @@ def without(ask: Filter, label: str, vocab: Vocabulary) -> Filter:
         drop = _DROP.get(kind) or _DROP.get(label)
         out = drop(ask, value, vocab) if drop else ask
     return replace(out, matched=tuple(m for m in ask.matched if m != label)) if out != ask else ask
+
+
+def _kept_task_code(ask: Filter, label: str, vocab: Vocabulary) -> str:
+    """The Activity ID a reading is about, unless the chip taken off is that activity's."""
+    return "" if label == say_label(Atom("id", ask.task_code), vocab) else ask.task_code
 
 
 _DROP = {
@@ -391,4 +425,5 @@ _DROP = {
     "Milestones": lambda f, value, vocab: replace(f, milestones=False),
     "Level of effort": lambda f, value, vocab: replace(f, loe=False),
     "Search": lambda f, value, vocab: replace(f, search=""),
+    "Reading": lambda f, value, vocab: replace(f, intent=""),
 }

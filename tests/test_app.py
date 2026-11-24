@@ -307,6 +307,37 @@ def test_gantt_wbs_choice_filters_and_options(app):
     _ok(app)
 
 
+@pytest.mark.oracle("characterization")
+def test_gantt_ask_reads_why_an_activity_slipped_in_the_sentence_language(app):
+    """C3010 of the demo series: its early finish moves 7 wd between the last two updates, all at the
+    progress step (demo calendar: 7 days a week, so 7 calendar days are 7 wd). The sentence, the steps
+    table and the history card (the picked task) answer; a French sentence answers in French."""
+    app.switch_page("views/gantt.py").run()
+    app.text_input[0].set_value("why did C3010 slip").run()
+    _ok(app)
+    answers = [_shown(m.value) for m in app.markdown if _shown(m.value).startswith("C3010 finishes 7.0 wd later")]
+    assert answers and answers[0].endswith("progress -7.0 wd, replanning +0.0 wd, residual +0.0 wd.")
+    assert _chips(app) == ["Activity ID C3010", "Reading: Why it slipped"]
+    steps = next(frame.value for frame in app.dataframe if "shift_wd" in frame.value.columns)
+    assert steps["step"].tolist()[:2] == ["as scheduled (earlier update)", "progress"]
+    assert steps["shift_wd"].tolist()[1] == -7.0
+    assert app.session_state["gantt_task"] == "C3010"
+    assert "History across updates" in [subheader.value for subheader in app.subheader]
+    app.text_input[0].set_value("pourquoi C3010 a glissé").run()
+    _ok(app)
+    assert any(_shown(m.value).startswith("C3010 finit 7.0 j plus tard") for m in app.markdown)
+
+
+@pytest.mark.oracle("characterization")
+def test_gantt_ask_on_one_update_says_a_second_one_is_needed(one_file_app):
+    one_file_app.switch_page("views/gantt.py").run()
+    one_file_app.text_input[0].set_value("history of C3010").run()
+    _ok(one_file_app)
+    sentence = "C3010: a second update is needed to read why it moved; only one is loaded."
+    assert any(_shown(m.value) == sentence for m in one_file_app.markdown)
+    assert one_file_app.session_state["gantt_task"] == "C3010"
+
+
 @pytest.mark.parametrize("std", ["P6", "DCMA", "INTEGRITY"])
 @pytest.mark.parametrize("baseline", ["Planned dates in each file (target_*)", "None"])
 def test_health_standards_and_baselines(app, std, baseline):

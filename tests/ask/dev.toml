@@ -167,3 +167,45 @@ status = ["Not started"]
 text = "vendeur en cours"
 status = ["In progress"]
 resources = ["VENDOR"]
+
+# the per-activity readings: the Activity ID is the file's, the intent says which reading is asked
+[[case]]
+text = "why did C3010 slip"
+intent = "slip"
+task_code = "C3010"
+clauses = ["id:C3010"]
+
+[[case]]
+text = "pourquoi C3010 a glissé"
+intent = "slip"
+task_code = "C3010"
+clauses = ["id:C3010"]
+
+[[case]]
+text = "C3010 repoussée"
+intent = "slip"
+task_code = "C3010"
+clauses = ["id:C3010"]
+
+[[case]]
+text = "history of C3010"
+intent = "history"
+task_code = "C3010"
+clauses = ["id:C3010"]
+
+[[case]]
+text = "historique de C3010"
+intent = "history"
+task_code = "C3010"
+clauses = ["id:C3010"]
+
+[[case]]
+text = "why did c3010 slip"   # case is folded: the Activity ID is read as the file spells it
+intent = "slip"
+task_code = "C3010"
+clauses = ["id:C3010"]
+
+[[case]]
+text = "C3010"   # an Activity ID alone is a filter, not a reading
+task_code = "C3010"
+clauses = ["id:C3010"]

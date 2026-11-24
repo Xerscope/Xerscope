@@ -183,7 +183,7 @@ carry no pointer logic of their own.
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source; `READINGS`: the "How to read" text of each chart and table | read-only account of a result, shown under every check in the app; the popover of `ui.chart` and `ui.table` |
-| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook: `llm_backend` asks a llama.cpp server (`XERSCOPE_QUERY_URL`, the optional `llm` service of `deploy/compose.yaml`) for JSON constrained by a schema, ids outside the vocabulary dropped; any failure or delay, and the grammar answers. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the model and the output seeing the new codes only) |
+| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named), with a `Backend` hook: `llm_backend` asks a llama.cpp server (`XERSCOPE_QUERY_URL`, the optional `llm` service of `deploy/compose.yaml`) for JSON constrained by a schema, ids outside the vocabulary dropped; any failure or delay, and the grammar answers. "why did A1020 slip" / "historique de A1020" set `Filter.intent` (`slip`, `history`) and `Filter.task_code` from the file's Activity IDs; `activity_answer` says the move of that activity in one sentence from `activity_forensics.activity_half_step`, the page draws its steps and the history card. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the model and the output seeing the new codes only) |
 
 Standards are data in `standards/*.toml`:
 
@@ -411,7 +411,8 @@ Outside `analysis/`:
   (P6 properties, resource assignments, logic) and its history across updates. Opened under
   the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
   the page only an activity the chart draws); every value is read from the snapshot or the
-  store, card text is escaped.
+  store, card text is escaped. `show_slip` is the Ask field's answer on one activity: the sentence of
+  `query.activity_answer` and the steps table of `activity_half_step`, memoised per pair of updates.
 
 ### The Gantt "Ask" field: talking to the schedule without a model reading it
 

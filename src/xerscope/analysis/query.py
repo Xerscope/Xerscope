@@ -15,7 +15,7 @@ from __future__ import annotations
 import pandas as pd
 
 from ..xer import Snapshot
-from .ask.answer import SUGGEST, WORDS, answer, language, suggestions, worst_float_first
+from .ask.answer import SUGGEST, WORDS, activity_answer, answer, language, suggestions, worst_float_first
 from .ask.bench import (
     FIELDS,
     by_confidence,
@@ -42,8 +42,8 @@ from .populations import Funnel
 __all__ = [
     "CATEGORIES", "CURATED", "GENERATED", "SUGGESTED",
     "FIELDS", "FUZZY", "MARGIN", "MAX_CHARS", "MAX_FUZZY", "STATUSES", "SUGGEST", "SURE", "WORDS", "And", "Atom",
-    "Choice", "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "answer", "apply", "by_confidence",
-    "canonical", "conjuncts", "coverage", "expected_filter", "facts", "fold", "funnel_line",
+    "Choice", "Expr", "Filter", "Lexicon", "Not", "Or", "Vocabulary", "activity_answer", "answer", "apply",
+    "by_confidence", "canonical", "conjuncts", "coverage", "expected_filter", "facts", "fold", "funnel_line",
     "json_quote", "language", "learn", "lexicon_from_groups", "load_cases", "load_lexicon", "mask", "parse_keywords",
     "ratios", "said", "score", "self_cases",
     "suggestions", "understood", "vocabulary", "without", "written", "variants", "lexicons",
