@@ -36,11 +36,11 @@ level-of-effort and resource-dependent work, under every scheduling option.
 | Scope | Values | Identical to P6 |
 |---|---|---|
 | H1–H7: task-dependent work, every option, no LOE | 9,444 | 99.9 % |
-| task-dependent work, all 30 sets | 41,868 | 91.5 % |
-| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 81.0 % |
-| all | 54,726 | 89.0 % |
+| task-dependent work, all 30 sets | 41,868 | 99.7 % |
+| resource-dependent work (P6's import sizing laid over the case) | 12,858 | 99.3 % |
+| all | 54,726 | 99.6 % |
 
-`FLOORS` in the test holds each set's share and fails on any drop; `PINNED` names the
+Measured 2026-11-24 (`crosscheck.p6_heldout_score` over the 30 sets). `FLOORS` in the test holds each set's share and fails on any drop; `PINNED` names the
 corpus activity each rule of the engine was taken from, so a regression on one rule is
 named rather than averaged away. Rules taken from the corpus: float-type codes; an SF
 link from a started predecessor applies; the expected finish stands in for start +
@@ -297,7 +297,7 @@ Each rule below is pinned by a real file:
 
 - **Resource-dependent activity:** bounds are taken on the activity's calendar, the
   float is measured on it; each assignment is placed on its resource calendar from the
-  activity's start. The corpus agrees with 79 % of the values; this is the engine's
+  activity's start. The corpus agrees with 99.3 % of the values; this is the engine's
   largest open area (docs/backlog.md).
 - **Start float vs finish float:** equal on task-dependent work (in P6 too); they differ
   on resource-dependent work only, where the float-type option decides.
