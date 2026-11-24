@@ -16,6 +16,10 @@ Conformity work from the audit of 2026-11 (`audit-report.md`, `conformity-plan.m
 
 ### Added
 
+- Reader (XER-01): a cell the file fills but the reader cannot type (a number or a date it cannot read, an
+  infinite number, a date outside 1900-2200) still reads as blank, and is now warned of by table, column,
+  count and Activity ID; an unreadable PROJECT.last_recalc_date says where the status date was taken from.
+
 - Earned value: the Earned Schedule figures in three groups, one per question (where the project stands, at
   what pace, whether it ends on the planned finish), the pace of the last four weeks and since the first
   update as figures, a paragraph putting the figures in words (TSPI read on Lipke's band), and the weeks the

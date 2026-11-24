@@ -64,6 +64,35 @@ def blank_timezones(
     return frame
 
 
+def unreadable_cells(
+    written: pd.Series, typed: pd.Series, where: str, codes: pd.Series, source: str, warnings: list[str]
+) -> None:
+    """Warn of the cells of ``where`` ("TABLE.column") the file fills but typing read as blank.
+
+    ``written``: the column as the file holds it; ``typed``: the same once typed (a number or a date).
+    A text that is no number or date, an infinite number, or a date outside the range the model reads
+    (``model.EARLIEST_DATE`` to ``LATEST_DATE``) is read as blank, as a cell left empty: the warning says
+    which tasks, by ``codes``, so that the value is not mistaken for an absent one.
+    """
+    filled = written.notna() & (written.astype(str).str.strip() != "")
+    lost = filled & typed.isna()
+    if lost.any():
+        warnings.append(
+            f"{source}: {where}: {int(lost.sum())} value(s) unreadable or out of range, read as blank "
+            f"{_listed(codes[lost])}"
+        )
+
+
+def unreadable_status_date(project_row: pd.Series, taken_from: str, source: str, warnings: list[str]) -> None:
+    """Warn when PROJECT.last_recalc_date is filled but unreadable, so that the status date comes from
+    ``taken_from`` (plan_start_date, or "" for none) instead of the date P6 last scheduled the project."""
+    written = str(project_row.get("last_recalc_date") or "").strip()
+    if not written or taken_from == "last_recalc_date":
+        return
+    instead = {"": "none read"}.get(taken_from, f"taken from {taken_from}")
+    warnings.append(f"{source}: PROJECT.last_recalc_date {written!r} unreadable or out of range: status date {instead}")
+
+
 def bounded_sequence(values: pd.Series, table: str, source: str, warnings: list[str]) -> pd.Series:
     """``seq_num`` as integers in [0, MAX_SEQUENCE]: blank or text is 0, beyond the bound is clipped."""
     numbers = pd.to_numeric(values, errors="coerce").fillna(0)
