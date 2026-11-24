@@ -239,6 +239,16 @@ STEP_NAMES = [step.name for step in STEPS]
 STEP_COLUMNS = ["step", "finish", "shift_wd", "changes"]
 
 
+def progress_shift_wd(steps: pd.DataFrame) -> float:
+    """Shift of the progress step in a ``steps`` frame: what the week's progress did."""
+    return float(steps.set_index("step").loc[STEP_NAMES[0], "shift_wd"])
+
+
+def replanning_shift_wd(steps: pd.DataFrame) -> float:
+    """Shifts of every step after progress in a ``steps`` frame, summed: what the replanning did."""
+    return float(steps.set_index("step").loc[STEP_NAMES[1:], "shift_wd"].sum())
+
+
 @dataclass(frozen=True)
 class HalfStep:
     """One week read step by step.
@@ -274,12 +284,12 @@ class HalfStep:
     @property
     def slip_wd(self) -> float:
         """What the week's progress did to the finish: the shift of the progress step."""
-        return float(self.steps.set_index("step").loc["progress", "shift_wd"])
+        return progress_shift_wd(self.steps)
 
     @property
     def replanning_wd(self) -> float:
         """What the replanning did: the shifts of every step after progress, summed."""
-        return float(self.steps.set_index("step").loc[STEP_NAMES[1:], "shift_wd"].sum())
+        return replanning_shift_wd(self.steps)
 
     @property
     def is_finish_reproduced(self) -> bool:
@@ -321,24 +331,40 @@ def _step_row(name: str, before: pd.Timestamp | None, after: pd.Timestamp | None
     return {"step": name, "finish": after, "shift_wd": _shift_wd(new, before, after), "changes": changes}
 
 
+def _derivation_of(old: Snapshot, new: Snapshot) -> _Derivation:
+    return _Derivation(old, new, sorted(set(old.by_code.index) & set(new.by_code.index)))
+
+
+def step_schedules(old: Snapshot, new: Snapshot) -> list[Schedule]:
+    """Recalculation of ``old`` after each of ``STEPS``, in order, each step applied on the one before.
+
+    Every reading of a week (the project's finish, one activity's) takes its figures from these, so
+    a derived snapshot is scheduled once. Raises ``ScheduleError`` when a derived snapshot cannot be.
+    """
+    derivation = _derivation_of(old, new)
+    schedules, derived = [], old
+    for step in STEPS:
+        derived = step.apply(derivation, derived)
+        schedules.append(schedule(derived))
+    return schedules
+
+
 def half_step(old: Snapshot, new: Snapshot) -> HalfStep:
     """Finish of ``old`` rescheduled with ``new``'s changes applied one step at a time (``STEPS``).
 
     Raises ``ScheduleError`` when one of the snapshots, or a derived one, cannot be scheduled.
     """
-    derivation = _Derivation(old, new, sorted(set(old.by_code.index) & set(new.by_code.index)))
+    derivation = _derivation_of(old, new)
     log = changelog(old, new)
     old_schedule, new_schedule = schedule(old), schedule(new)
     old_finish, new_finish = old_schedule.finish, new_schedule.finish
     period_wd = float("nan") if old.data_date is None else new.project_working_days(old.data_date, new.data_date)
     rows = [{"step": AS_SCHEDULED, "finish": old_finish, "shift_wd": float("nan"), "changes": 0}]
-    derived, finish = old, old_finish
-    for step in STEPS:
-        derived = step.apply(derivation, derived)
-        stepped_finish = schedule(derived).finish
+    finish = old_finish
+    for step, stepped in zip(STEPS, step_schedules(old, new), strict=True):
         changes = int(step.is_carried(log).sum())
-        rows.append(_step_row(step.name, finish, stepped_finish, changes, new))
-        finish = stepped_finish
+        rows.append(_step_row(step.name, finish, stepped.finish, changes, new))
+        finish = stepped.finish
     return HalfStep(
         steps=pd.DataFrame(rows, columns=STEP_COLUMNS),
         old_finish=old_finish,
