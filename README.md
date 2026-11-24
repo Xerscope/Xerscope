@@ -12,9 +12,11 @@ read in P6, each traced to a formula, a population and a source:
   your own standard written in TOML.
 - **P6-exact recalculation:** early / late dates, floats, longest path and resource
   assignments, compared with the dates stored in the file.
-- **Weekly series:** changelog between updates, earned value in labour hours with
-  S-curve, milestone trend, PPC (finish and start commitments), Gantt with WBS explorer.
-- **Export:** Power BI star schema (Parquet or CSV).
+- **Weekly series:** changelog between updates, delay analysis (half-stepped update
+  analysis, longest path of each update), earned value in labour hours with S-curve and
+  Earned Schedule, milestone trend, PPC (finish and start commitments), Gantt with WBS
+  explorer and a sentence field that sets its filters ("Ask the schedule", no model).
+- **Export:** Power BI star schema (Parquet or CSV), anonymised XER extract.
 
 ## Contents
 
@@ -75,20 +77,25 @@ Any CLI command runs in the image:
 
 | Command | Does |
 |---|---|
-| `app` | launch the web app on localhost (`--data`, `--baseline`, `--standards`, `--port`, `--host`) |
-| `check` | run a standard and print the P6-style summary (`--baseline` / `--planned-baseline` / `--baseline-in-file`, `--out`, `--flagged DIR`, `--expect CSV`, `--fail-on`) |
-| `recalc` | reschedule like P6 and compare with the stored dates (`--out`, `--report`, `--show N`) |
-| `changelog` | every change between two files |
-| `standards` | list standards and rules (`--rules`), or write a template (`--template`) |
-| `export` | Power BI tables |
-| `crosscheck` | compare with MPXJ, needs Java (`--cpm`: MPXJ's scheduler; `--p6`: the P6 held-out corpus) |
+| `app` | launch the web app on localhost (`--data`, `--baseline`, `--standards`, `--port`, default 8501, `--host`, default `localhost`) |
 | `info` | one line per snapshot |
-| `sample` | generate the demo series |
+| `check` | run a standard and print the P6-style summary (`--standard`, `--baseline` / `--planned-baseline` / `--baseline-in-file`, `--out`, `--flagged DIR`, `--expect CSV`, `--fail-on none\|fail\|error`) |
+| `standards` | list standards and rules (`--rules`), or write a template (`--template [FILE]`) |
+| `recalc` | reschedule like P6 and compare with the stored dates (`--out`, `--report`, `--show N`) |
+| `changelog` | every change between two files (`--out`) |
+| `export` | Power BI tables (`--out`, default `export`; `--format parquet\|csv`) |
+| `crosscheck` | compare with MPXJ, needs Java (`--cpm`: MPXJ's scheduler; `--p6`: the P6 held-out corpus) |
+| `pv-compare` | PV and EV labour units against a P6 Activities view saved as CSV (below) |
+| `sample` | generate the demo series (`--out`, default `data/sample`; `--weeks`, default 8) |
+| `ask-bench` | score the Gantt "Ask the schedule" parsers on sentences with known filters (`--cases`, `--self`, `--anonymize`, `--lexicon`) |
+| `lexicon` | list or check the trade words the Ask field reads as one; `lexicon build FOLDER --out LEXICON` writes the exports' own variants (docs/deploy.md §10) |
 
-`uv run xerscope <command> --help` lists every option.
+`info`, `check`, `recalc`, `changelog`, `export` and `pv-compare` take `--project` (the
+project short name) for a file that holds several projects. `uv run xerscope <command> --help` lists every option.
 
-Exit codes: `0` done, `1` a finding (`check --fail-on`, `--expect`), `2` input that cannot be
-used (a missing path, a file cut short or damaged, an unknown standard), with one line on stderr.
+Exit codes: `0` done, `1` a finding (`check --fail-on`, `check --expect`, a `crosscheck`
+difference, a `lexicon` file that does not load), `2` input that cannot be used (a missing
+path, a file cut short or damaged, an unknown standard), with one line on stderr.
 
 ### Recalculate like P6
 
@@ -154,9 +161,12 @@ baseline carrying a new project id.
 
 - **Checks:** the 17 of `standards/p6.toml`, in Oracle's groups: the 14 of the P6
   Professional 24 dialog help, plus out of sequence and dangling start / finish as a P6
-  Professional report prints them.
-- **Targets:** the dialog's documented defaults (< 5 %, < 1 % for the inaccuracy checks,
-  FS > 90 %, BEI > 0.95 as a P6 Professional report prints it). Copy `src/xerscope/standards/p6.toml` and set them to yours.
+  Professional report prints them; Invalid Progress Dates takes two lines (P6-10a before,
+  P6-10b after the data date), as P6 Professional 26.8 prints it, so the summary has 18.
+- **Targets:** the dialog's documented defaults (< 5 %; < 1 % for hard constraints, large
+  float, negative float and the inaccuracy checks; FS > 90 %; BEI > 0.95 as a P6
+  Professional report prints it), with < 2 % for out of sequence and 0 % for dangling
+  start / finish. Copy `src/xerscope/standards/p6.toml` and set them to yours.
 - **Validation:** `--flagged out/` writes the items found per check; `--expect report.csv`
   diffs the counts against the ones typed from P6's summary (exit 1 on a difference; exit 2 and
   one `xerscope: ...` line on stderr for a bad file or option).
