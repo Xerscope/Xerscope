@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from ..xer import Snapshot
-from .query import fold
+from .ask.text import fold
 
 
 def search_mask(frame: pd.DataFrame, columns: Sequence[str], text: str) -> pd.Series:
