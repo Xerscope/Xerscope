@@ -283,8 +283,10 @@ hr.xd-rule { margin: 0.5rem 0; border: 0; border-top: 1px solid var(--xs-hairlin
    label and value side by side */
 .xs-card { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem 2rem; }
 .xs-card h4 { margin: 0 0 0.35rem; padding: 0; font-size: 0.9rem; font-weight: 600; }
-.xs-card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.2rem 1rem; margin: 0; }
-.xs-card dt { opacity: 0.7; }
+/* The label column is capped at half the card: at max-content, a long label ("Hard constraint (DCMA-05 set)")
+   left the value a column one letter wide. A label longer than that wraps between words. */
+.xs-card dl { display: grid; grid-template-columns: fit-content(50%) minmax(0, 1fr); gap: 0.2rem 1rem; margin: 0; }
+.xs-card dt { opacity: 0.7; overflow-wrap: break-word; }
 .xs-card dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 /* Gantt Ask: the answer banner, as the Schedule health focus; amber when a word was left out
