@@ -282,6 +282,17 @@ def test_local_load_workers_are_sized_to_the_machine_within_a_memory_cap():
     assert "- ${XERSCOPE_EXPORTS:-./exports}:/data:ro" in app  # the NAS's variable names the folder here too
 
 
+def test_the_local_build_reads_the_lexicon_as_the_nas_does():
+    """compose.yaml mounts the Ask lexicon as deploy/compose.yaml does (docs/deploy.md §10): curated/ and
+    generated/ read-only in the app, suggested/ writable; lexicon-init on demand, with no network."""
+    local = (ROOT / "compose.yaml").read_text()
+    app, init = _service(local, "xerscope"), _service(local, "lexicon-init")
+    assert "- ${XERSCOPE_LEXICON_DIR:-./lexicon}:/lexicon:ro" in app and "XERSCOPE_LEXICON: /lexicon" in app
+    assert "- ${XERSCOPE_LEXICON_DIR:-./lexicon}/suggested:/lexicon/suggested" in app
+    assert "/generated:/lexicon/generated" not in app  # the app never writes generated/
+    assert "network_mode: none" in init and "profiles: [lexicon]" in init and "read_only: true" in init
+
+
 def test_remote_app_settings_reach_streamlit():
     """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
     import os
@@ -860,13 +871,14 @@ def test_the_local_model_service_is_pinned_offline_and_reads_a_local_file():
     assert not {"-hf", "--hf-repo", "--hf-file", "--model-url", "-mu"} & set(flags) and "--model" in flags
     assert "http" not in re.search(r"--model\n\s+- (\S+)", llm).group(1)  # a path in /models, not a URL
     assert "driver: nvidia" in llm and "capabilities: [gpu]" in llm
-    for name in ("llm", "gate-app", "study"):
-        block = _service(gpu, name)
+    silo = (ROOT / "compose.silo.yaml").read_text()
+    for name, text in (("llm", gpu), ("study", gpu), ("gate-app", silo)):
+        block = _service(text, name)
         for hardening in ("read_only: true", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]'):
             assert hardening in block, (name, hardening)
         assert "mem_limit:" in block and "pids_limit:" in block
         assert "privileged" not in block and "network_mode" not in block
-    assert "image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}" in _service(gpu, "gate-app")
+    assert "image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}" in _service(silo, "gate-app")
     assert "compose.gpu.yaml" not in (ROOT / ".github" / "workflows" / "image.yml").read_text()  # nothing is pushed
 
 
@@ -889,7 +901,8 @@ def test_the_app_and_the_model_have_no_route_out(tmp_path):
         "XERSCOPE_MODELS": str(tmp_path),
         "XERSCOPE_MODEL_FILE": "model.gguf",
     }
-    files = ("-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "compose.gpu.yaml"), "--profile", "study")
+    files = ("-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "compose.silo.yaml"))
+    files += ("-f", str(ROOT / "compose.gpu.yaml"), "--profile", "study")
     done = subprocess.run(
         ["docker", "compose", *files, "config", "--format", "json"],
         capture_output=True,
@@ -903,7 +916,7 @@ def test_the_app_and_the_model_have_no_route_out(tmp_path):
     config = json.loads(done.stdout)
     services, networks = config["services"], config["networks"]
     assert networks["silo"].get("internal") is True and not networks["edge"].get("internal")
-    assert sorted(services) == ["gate-app", "llm", "study", "xerscope"]
+    assert sorted(services) == ["gate-app", "llm", "study", "xerscope"]  # lexicon-init: its own profile
     for name in ("xerscope", "llm", "study"):
         assert list(services[name]["networks"]) == ["silo"] and not services[name].get("ports"), name
     gate = services["gate-app"]

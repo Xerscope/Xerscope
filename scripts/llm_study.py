@@ -1,6 +1,6 @@
 """Feasibility study: can a local model answer questions about a weekly schedule series?
 
-    docker compose -f compose.yaml -f compose.gpu.yaml run --rm study [--data /data]
+    docker compose -f compose.yaml -f compose.silo.yaml -f compose.gpu.yaml run --rm study [--data /data]
 
 Run on the maintainer's own machine, inside the silo network of ``compose.gpu.yaml``, against a
 llama.cpp ``llama-server`` that only the silo reaches (docs/deploy.md §12). Nothing here is part

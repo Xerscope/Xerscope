@@ -1,0 +1,34 @@
+# The app with no route out of the machine (docs/deploy.md §12); built and run by you only:
+#
+#   docker compose -f compose.yaml -f compose.silo.yaml up -d --build   ->  http://127.0.0.1:8501
+#
+# An override of compose.yaml. The app sits on `silo`, a Docker network created internal: no default
+# route, so nothing in it reaches the host's network card. It publishes no port. One gate, the only
+# container also on a second network, forwards 127.0.0.1:8501 from the host's loopback to the app
+# and nothing else. No Caddy, no Tailscale. compose.gpu.yaml adds the local model on the same silo.
+#
+# Required variable (Compose stops without it):
+#   XERSCOPE_GATE_IMAGE  a socat image, pinned by digest
+services:
+  xerscope:
+    ports: !reset []  # reached through gate-app only
+    networks: [silo]
+
+  gate-app:
+    image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}
+    command: ["TCP-LISTEN:8501,fork,reuseaddr", "TCP:xerscope:8501"]
+    ports:
+      - "127.0.0.1:8501:8501"
+    networks: [silo, edge]
+    depends_on: [xerscope]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 64
+    restart: unless-stopped
+
+networks:
+  silo:
+    internal: true  # no default route: nothing on it reaches the host's network card
+  edge: {}          # the gate only: what Docker needs to publish the app's port on 127.0.0.1

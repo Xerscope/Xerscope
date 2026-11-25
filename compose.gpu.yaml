@@ -1,28 +1,23 @@
 # The local model study on your own machine (docs/deploy.md §12); built and run by you only, no image
 # is pushed anywhere:
 #
-#   docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-#   docker compose -f compose.yaml -f compose.gpu.yaml run --rm study            # the demo series
-#   docker compose -f compose.yaml -f compose.gpu.yaml run --rm study --data /data   # ./exports
+#   docker compose -f compose.yaml -f compose.silo.yaml -f compose.gpu.yaml up -d --build
+#   docker compose -f compose.yaml -f compose.silo.yaml -f compose.gpu.yaml run --rm study   # demo series
+#   ... run --rm study --data /data   # your exports
 #
-# An override of compose.yaml. The app, the model and the study sit on `silo`, an internal network:
-# no route out of the machine. The model publishes no port: only a container on the silo reaches
-# it, never the host. One gate, the only container on a second network, forwards the app's 8501
-# from the host's loopback into the silo and nothing else. No Caddy, no Tailscale. The study's
-# report lands in ./study (writable by the image's user, uid 65532).
+# An override of compose.yaml and compose.silo.yaml: the model and the study join the app on `silo`,
+# the internal network that file creates, so none of them has a route out of the machine. The model
+# publishes no port: only a container on the silo reaches it, never the host. The study's report
+# lands in ./study (writable by the image's user, uid 65532).
 #
 # Required variables (Compose stops without them):
 #   XERSCOPE_LLM_IMAGE   the llama.cpp CUDA server image, pinned by digest
-#   XERSCOPE_GATE_IMAGE  a socat image, pinned by digest
+#   XERSCOPE_GATE_IMAGE  a socat image, pinned by digest (compose.silo.yaml)
 #   XERSCOPE_MODELS      the folder of .gguf files, mounted read-only
 #   XERSCOPE_MODEL_FILE  the .gguf to serve, in that folder
 # Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_KV (cache type of keys and values,
 # q8_0), XERSCOPE_LLM_MEM_LIMIT (16g).
 services:
-  xerscope:
-    ports: !reset []  # reached through gate-app only
-    networks: [silo]
-
   llm:
     image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}
     # No -hf / --hf-repo and no model URL: the server downloads nothing, it reads the file you put in the folder.
@@ -62,20 +57,6 @@ services:
     pids_limit: 256
     restart: unless-stopped
 
-  gate-app:
-    image: ${XERSCOPE_GATE_IMAGE:?pin alpine/socat@sha256:<digest>}
-    command: ["TCP-LISTEN:8501,fork,reuseaddr", "TCP:xerscope:8501"]
-    ports:
-      - "127.0.0.1:8501:8501"
-    networks: [silo, edge]
-    depends_on: [xerscope]
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: 64m
-    pids_limit: 64
-    restart: unless-stopped
-
   study:  # the feasibility study (scripts/llm_study.py), run on demand; it reaches the model as http://llm:8080
     image: xerscope:latest
     profiles: [study]
@@ -96,7 +77,3 @@ services:
     mem_limit: 8g
     pids_limit: 128
 
-networks:
-  silo:
-    internal: true  # no default route: nothing on it reaches the host's network card
-  edge: {}          # the gate only: what Docker needs to publish the app's port on 127.0.0.1

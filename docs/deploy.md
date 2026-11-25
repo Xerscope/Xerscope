@@ -475,8 +475,14 @@ can answer questions about a weekly series. It runs on your PC (Intel 285K, 64 G
 model. The model server is `compose.gpu.yaml`, an override of the root `compose.yaml` that you
 build and run yourself; no image is pushed anywhere (`image.yml` does not know it).
 
-**Network silo.** With the override, the app, the model and the study sit on `silo`, a Docker
-network created `internal: true`: no default route, so no packet from any of them reaches the
+**Network silo.** `compose.silo.yaml` puts the app on `silo`, a Docker network created
+`internal: true`, with or without the model: `docker compose -f compose.yaml -f compose.silo.yaml
+up -d --build` (one variable, `XERSCOPE_GATE_IMAGE`, a socat image pinned by digest);
+`compose.gpu.yaml`, added after it, puts the model and the study on the same network. The folders
+are the NAS's: the exports in `XERSCOPE_EXPORTS` (default `./exports`), the Ask lexicon in
+`XERSCOPE_LEXICON_DIR` (default `./lexicon`, with `curated/`, `generated/` and `suggested/` made by
+hand, §10; `docker compose run --rm lexicon-init` rebuilds `generated/`, with no network). On the
+silo, the app, the model and the study sit on an internal network: no default route, so no packet from any of them reaches the
 PC's network card, whatever the code inside tries. None publishes a port: the model is reached
 as `http://llm:8080` from a container on the silo, never from the PC itself. One `socat` gate,
 the only container also on a second network, publishes `127.0.0.1:8501` and forwards it to the
@@ -491,7 +497,7 @@ docker network inspect xerscope_silo --format '{{.Internal}}'
 prints `true`.
 
 ```
-docker compose -f compose.yaml -f compose.gpu.yaml exec xerscope /app/.venv/bin/python -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)"
+docker compose -f compose.yaml -f compose.silo.yaml exec xerscope /app/.venv/bin/python -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)"
 ```
 
 fails with `Network is unreachable` (the same from `llm` with any tool its image has), and
@@ -542,8 +548,8 @@ export XERSCOPE_LLM_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>
 export XERSCOPE_GATE_IMAGE=alpine/socat@sha256:<digest>
 export XERSCOPE_MODELS=<folder of .gguf files>
 export XERSCOPE_MODEL_FILE=<model>.gguf
-docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
-docker compose -f compose.yaml -f compose.gpu.yaml run --rm study
+docker compose -f compose.yaml -f compose.silo.yaml -f compose.gpu.yaml up -d --build
+docker compose -f compose.yaml -f compose.silo.yaml -f compose.gpu.yaml run --rm study
 ```
 
 The study runs in the `study` service, on the silo, with the app's image and the repository's

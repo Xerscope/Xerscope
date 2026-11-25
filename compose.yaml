@@ -1,9 +1,30 @@
 # docker compose up -d   ->  http://localhost:8501
+# docker compose -f compose.yaml -f compose.silo.yaml up -d --build   ->  the same, with no route out (§12)
 #
 # Your weekly XER exports go in ./exports, or the folder XERSCOPE_EXPORTS names (read-only). Optional:
 # ./exports/BL.xer as the baseline (uncomment XERSCOPE_BASELINE), ./standards for your
-# own TOML standards.
+# own TOML standards. The Ask lexicon is ./lexicon, or the folder XERSCOPE_LEXICON_DIR names, with
+# curated/, generated/ and suggested/ in it (docs/deploy.md §10); `docker compose run --rm lexicon-init`
+# rebuilds generated/ from the exports.
 services:
+  lexicon-init:  # on demand only (profile lexicon): writes generated/, purges suggested/; no network at all
+    profiles: [lexicon]
+    image: xerscope:latest
+    command: ["lexicon", "build", "/data", "--out", "/lexicon"]
+    volumes:
+      - ${XERSCOPE_EXPORTS:-./exports}:/data:ro
+      - ${XERSCOPE_LEXICON_DIR:-./lexicon}:/lexicon:ro  # curated/ stays read-only
+      - ${XERSCOPE_LEXICON_DIR:-./lexicon}/generated:/lexicon/generated
+      - ${XERSCOPE_LEXICON_DIR:-./lexicon}/suggested:/lexicon/suggested
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true  # the image's healthcheck polls the app's port
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-16g}
+    restart: "no"
+
   xerscope:
     build: .
     image: xerscope:latest
@@ -13,9 +34,12 @@ services:
       - "127.0.0.1:8501:8501"
     volumes:
       - ${XERSCOPE_EXPORTS:-./exports}:/data:ro  # your folder of exports, as XERSCOPE_EXPORTS on the NAS
+      - ${XERSCOPE_LEXICON_DIR:-./lexicon}:/lexicon:ro
+      - ${XERSCOPE_LEXICON_DIR:-./lexicon}/suggested:/lexicon/suggested  # Ask corrections, appended
       # - ./standards:/standards:ro
     environment:
       XERSCOPE_DATA: /data
+      XERSCOPE_LEXICON: /lexicon  # the Ask field reads curated/ and generated/ (docs/deploy.md §10)
       # files read at once: auto = as many as the cores and the memory cap allow (docs/deploy.md §12)
       XERSCOPE_LOAD_WORKERS: ${XERSCOPE_LOAD_WORKERS:-auto}
       # XERSCOPE_BASELINE: /data/BL.xer
