@@ -542,19 +542,21 @@ def _codes_mpxj_places_elsewhere(snapshot, frame: pd.DataFrame, mpxj_results: pd
     tasks = snapshot.by_code
     moved = set()
     for task_code in frame.index:
-        if task_code not in mpxj_results.index:
-            moved.add(task_code)
-            continue
         axis = axes.of(tasks.at[task_code, "clndr_id"])
-        start = frame.at[task_code, "remaining_start"]
-        start = frame.at[task_code, "es"] if pd.isna(start) else start
-        for mine, theirs in (
-            (start, mpxj_results.at[task_code, "es"]),
-            (frame.at[task_code, "ef"], mpxj_results.at[task_code, "ef"]),
+        if task_code not in mpxj_results.index or _is_placed_elsewhere(
+            axis, frame.loc[task_code], mpxj_results.loc[task_code]
         ):
-            if not (same_value(mine, theirs) or _is_same_work(axis, mine, theirs)):
-                moved.add(task_code)
+            moved.add(task_code)
     return moved
+
+
+def _is_placed_elsewhere(axis, mine: pd.Series, theirs: pd.Series) -> bool:
+    """Return whether MPXJ's start or early finish of one activity is another instant of work than xerscope's."""
+    start = mine["es"] if pd.isna(mine["remaining_start"]) else mine["remaining_start"]
+    for own, other in ((start, theirs["es"]), (mine["ef"], theirs["ef"])):
+        if not (same_value(own, other) or _is_same_work(axis, own, other)):
+            return True
+    return False
 
 
 def _as_late_as_possible(snapshot) -> set[str]:
