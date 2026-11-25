@@ -540,11 +540,12 @@ decoding, which fails with a JSON schema (llama.cpp issue 30419).
 
 **Using the whole machine.** No memory cap is set by default (`mem_limit` 0): the app, the model and
 the study take what the machine gives. Under Docker Desktop that is what WSL 2 gives its virtual
-machine, half the RAM by default; to give it more, write `%UserProfile%\.wslconfig`:
+machine, half the RAM by default; to give it more, write `%UserProfile%\.wslconfig` (64 GB
+machine, 12 GB kept for Windows):
 
 ```
 [wsl2]
-memory=56GB
+memory=52GB
 processors=24
 ```
 
