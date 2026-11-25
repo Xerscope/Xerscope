@@ -15,6 +15,7 @@ from xerscope.analysis.activity_trail import (
     UPSTREAM,
     constraint_history,
     linked_chain,
+    logic_by_update,
     trail_by_update,
 )
 from xerscope.store import SnapshotStore
@@ -104,3 +105,40 @@ def test_constraint_history_lists_the_changelog_change_with_its_data_date():
 def test_constraint_history_of_a_single_update_is_empty():
     store = SnapshotStore([snap([todo("A", **hours(8))])])
     assert constraint_history(store, "A").empty
+
+
+@pytest.mark.oracle("property")
+def test_logic_by_update_follows_each_update_s_own_links():
+    """Update 1: A -> B. Update 2 adds C -> B and puts a Start On or After on C. B's rows: itself in
+    both updates, A in both, C in the second only, with its constraint; A (40 h, finishing Fri 03-06
+    17:00 in update 1) drives B, which starts Mon 08:00 (tests/test_driving.py, first case)."""
+    first = snap([todo("A", **hours(40)), todo("B", **hours(8))], [("A", "B", "FS", 0)], data_date="2026-03-02 08:00")
+    second = snap(
+        [
+            todo("A", **hours(40)),
+            todo("B", **hours(8)),
+            todo("C", cstr_type="CS_MSOA", cstr_date="2026-03-16 08:00", **hours(8)),
+        ],
+        [("A", "B", "FS", 0), ("C", "B", "FS", 0)],
+        data_date="2026-03-09 08:00",
+    )
+    logic = logic_by_update(SnapshotStore([first, second]), "B")
+    rows = list(zip(logic["data_date"].dt.day, logic["role"], logic["task_code"], strict=True))
+    assert rows == [
+        (2, "task", "B"),
+        (2, "predecessor", "A"),
+        (9, "task", "B"),
+        (9, "predecessor", "A"),
+        (9, "predecessor", "C"),
+    ]
+    first_link = logic[(logic["task_code"] == "A") & (logic["data_date"].dt.day == 2)].iloc[0]
+    assert first_link["link_type"] == "FS" and first_link["driving_link"] is True
+    c_row = logic[logic["task_code"] == "C"].iloc[0]
+    assert c_row["primary"] == "Start on or after 2026-03-16 08:00"
+    assert pd.isna(logic.loc[logic["role"] == "task", "driving_link"]).all()
+
+
+@pytest.mark.oracle("property")
+def test_logic_by_update_skips_an_update_without_the_task():
+    store = SnapshotStore([snap([todo("A", **hours(8))], data_date="2026-03-02 08:00")])
+    assert logic_by_update(store, "missing").empty

@@ -575,24 +575,20 @@ READINGS: dict[str, Reading] = {
         ),
         source="xerscope (`store.history`); P6 fields Start / Finish as docs/architecture.md defines them.",
     ),
-    "activity_float": Reading(
+    "activity_logic_float": Reading(
         how=(
-            "x = status date, y = total float in working days of the task's calendar; a red dotted line at 0 "
-            'labelled "critical".'
+            "x = status date, y = total float in working days; the task's line is thick and solid, each direct "
+            "predecessor dotted, each successor dashed, drawn in the updates whose relationships link it. A faded "
+            "point: that link does not drive in that update (recalculated by the CPM: the XER does not export "
+            "P6's Driving flag); a diamond: the activity carries a constraint, named in the hover. A red dotted "
+            'line at 0 labelled "critical".'
         ),
         meaning=(
-            "float is the delay the task can take without moving the project finish (or its Must Finish By); "
-            "negative float = the project is already late against that date."
+            "the float of the work around the task, update after update: a predecessor whose float falls with "
+            "the task's is likely what pushes it; a constraint that appears where a line breaks may explain it."
         ),
-        conclude=(
-            "≤ 0 d is critical (`config.py:12`; P6 Define critical activities, read by "
-            "`explain.critical_definition`); > 44 wd is high float for DCMA 14-Point, item 6 (`dcma.toml:70`), and "
-            "P6 Check Schedule Large Float (`p6.toml:86`)."
-        ),
-        source=(
-            "DCMA 14-Point Assessment, items 6 and 7; P6 Professional Check Schedule report (Large Float, Negative "
-            "Float)."
-        ),
+        conclude="compare the lines at each status date; open a neighbour from Logic to follow it further.",
+        source="P6 TASK (total_float_hr_cnt, cstr_type, cstr_type2) and TASKPRED of each update; xerscope CPM",
     ),
     "finish_trend": Reading(
         how=(
@@ -908,6 +904,15 @@ READINGS: dict[str, Reading] = {
             "with its date. Select a row to open that task."
         ),
         source="P6 TASK (total_float_hr_cnt, free_float_hr_cnt, cstr_type, cstr_date, cstr_type2, cstr_date2)",
+    ),
+    "task_logic_by_update": Reading(
+        how=(
+            "the task, then its direct predecessors and successors, one row each; one column per update: the "
+            "link as that update holds it (type, and driving when it sets the successor's date: recalculated by "
+            "the CPM, the XER does not export it), P6's total float (TF) and free float (FF) in working days, "
+            "the constraints. A blank cell: the activity is not linked to the task in that update."
+        ),
+        source="P6 TASK and TASKPRED of each update; driving: xerscope CPM (`cpm.Schedule.links`)",
     ),
     "task_constraints": Reading(
         how=(

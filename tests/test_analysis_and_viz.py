@@ -14,6 +14,7 @@ from rulekit import STANDARDS, codes, run_on_store
 
 import xerscope
 from xerscope.analysis import Baseline, health_history
+from xerscope.analysis.activity_trail import logic_by_update
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
 from xerscope.viz import categorise, gantt_assets, gantt_data, gantt_rows
@@ -25,7 +26,7 @@ from xerscope.viz.charts import (
     STATUS,
     TEXT,
     build_activity_dates,
-    build_activity_float,
+    build_activity_logic_float,
 )
 
 
@@ -94,12 +95,17 @@ def test_gantt_compare_with_no_common_tasks(store):
 
 
 def test_activity_charts_follow_the_history(store):
-    code = store.latest.activities["task_code"].iloc[0]
+    """The float chart draws the task first (one point per update holding it), then one line per direct
+    predecessor and successor, named with its role."""
+    code = "C3020"  # demo: predecessors C3010, E1020; successors C3030, C3040
     history = store.history
     history = history[history["task_code"] == code].sort_values("data_date")
-    dates, float_chart = build_activity_dates(history), build_activity_float(history)
+    dates = build_activity_dates(history)
+    float_chart = build_activity_logic_float(logic_by_update(store, code))
     assert [trace.name for trace in dates.data] == ["Start", "Finish"]
-    assert [trace.name for trace in float_chart.data] == ["Total float"]
+    names = [trace.name for trace in float_chart.data]
+    assert names[0] == "C3020 · task"
+    assert {"C3010 · pred", "E1020 · pred", "C3030 · succ", "C3040 · succ"} <= set(names[1:])
     assert len(float_chart.data[0].x) == len(history)
     assert float_chart.layout.yaxis.title.text == "Working days"
 

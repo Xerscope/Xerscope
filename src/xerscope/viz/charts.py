@@ -456,18 +456,65 @@ def _widen_dates(update_axis, low, high) -> None:
         update_axis(range=[low - DATE_PAD, high + DATE_PAD])
 
 
-def build_activity_float(history: pd.DataFrame) -> go.Figure:
-    """Total float of one activity in every update, zero marked as critical."""
-    figure = go.Figure(
-        _line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} wd<extra></extra>")
-    )
+# How each kind of line of the float chart is drawn: the task, then its neighbours (the roles of
+# analysis.activity_trail.logic_by_update, written here as text: viz does not import that module).
+LOGIC_DASH = {"task": "solid", "predecessor": "dot", "successor": "dash"}
+LOGIC_ROLE = {"task": "task", "predecessor": "pred", "successor": "succ"}
+NOT_DRIVING_OPACITY = 0.35  # a point whose link does not drive, still readable on both themes
+
+
+def build_activity_logic_float(logic: pd.DataFrame) -> go.Figure:
+    """Total float of one activity and of its direct predecessors and successors, in every update.
+
+    ``logic``: rows of ``activity_trail.logic_by_update``. One line per neighbour and role; a neighbour
+    is drawn in the updates whose relationships link it. A faded point: the link does not drive that
+    update; a diamond: the activity carries a constraint there (named in the hover).
+    """
+    figure = go.Figure()
+    neighbours = logic[logic["role"] != "task"].drop_duplicates(["role", "task_code"])
+    lines = [("task", logic.loc[logic["role"] == "task", "task_code"].iloc[0])] if len(logic) else []
+    lines += list(zip(neighbours["role"], neighbours["task_code"], strict=True))
+    for number, (role, code) in enumerate(lines):
+        rows = logic[(logic["role"] == role) & (logic["task_code"] == code)].sort_values("data_date")
+        figure.add_trace(_logic_line(rows, role, code, SERIES[number % len(SERIES)]))
     figure.add_hline(
         y=0,
         line=dict(color=STATUS["critical"], width=1, dash="dot"),
         annotation_text="critical",
         annotation_position="bottom left",
     )
-    return _with_house_style(figure, "activity_float", 380, "Working days")
+    figure = _with_house_style(figure, "activity_logic_float", 420, "Working days", legend=True)
+    figure.update_layout(hovermode="closest")
+    return figure
+
+
+def _logic_line(rows: pd.DataFrame, role: str, code: str, colour: str) -> go.Scatter:
+    """One activity's total float across the updates, as ``build_activity_logic_float`` draws it."""
+    constraints = [
+        _constraints_text(primary, secondary)
+        for primary, secondary in zip(rows["primary"], rows["secondary"], strict=True)
+    ]
+    driving = rows["driving_link"].map({True: "driving", False: "not driving"}).fillna("")
+    return go.Scatter(
+        x=rows["data_date"],
+        y=rows["total_float_d"],
+        name=f"{code} · {LOGIC_ROLE[role]}",
+        mode="lines+markers",
+        line=dict(color=colour, width=LINE * 2 if role == "task" else LINE, dash=LOGIC_DASH[role]),
+        marker=dict(
+            size=9,
+            symbol=["diamond" if text else "circle" for text in constraints],
+            opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in rows["driving_link"]],
+        ),
+        customdata=np.stack([rows["link_type"].fillna(""), driving, constraints], axis=-1),
+        hovertemplate=f"{code} · {LOGIC_ROLE[role]}"
+        + " %{customdata[0]} %{customdata[1]}<br>%{x|%Y-%m-%d}: TF %{y} wd<br>%{customdata[2]}<extra></extra>",
+    )
+
+
+def _constraints_text(primary, secondary) -> str:
+    """The constraints of one activity in one update, "" without one."""
+    return " / ".join(text for text in (primary, secondary) if isinstance(text, str))
 
 
 def build_finish_trend(summary: pd.DataFrame) -> go.Figure:

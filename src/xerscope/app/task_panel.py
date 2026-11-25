@@ -13,12 +13,23 @@ from collections.abc import Callable
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis.activity_trail import BOTH, DOWNSTREAM, UPSTREAM, constraint_history, trail_by_update
+from xerscope.analysis.activity_trail import (
+    BOTH,
+    DOWNSTREAM,
+    PREDECESSOR,
+    SUCCESSOR,
+    TASK,
+    UPSTREAM,
+    constraint_history,
+    driving_flags,
+    logic_by_update,
+    trail_by_update,
+)
 from xerscope.analysis.cpm import ScheduleError, schedule
 from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
 from xerscope.config import DATETIME_FMT
-from xerscope.viz.charts import build_activity_dates, build_activity_float
+from xerscope.viz.charts import build_activity_dates, build_activity_logic_float
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
 # The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
@@ -28,6 +39,7 @@ HARD_CONSTRAINT_LABEL = "Hard constraint (DCMA-05 set)"
 ROW_PREFIX = "a:"  # Gantt row id of an activity (viz/gantt.py); "w:" is a WBS row
 MAX_ID = 200  # characters: longer than any Activity ID P6 stores, shorter than a forged payload
 
+ROLE_ORDER = {TASK: 0, PREDECESSOR: 1, SUCCESSOR: 2}  # rows of Logic by update: the task, then its neighbours
 CHAIN_DIRECTIONS = {UPSTREAM: "Predecessors", DOWNSTREAM: "Successors", BOTH: "Both"}
 CHAIN_DEPTH = 3  # links followed by default: a reader's usual look around a task, a few dozen tasks at most
 CHAIN_MAX_DEPTH = 10
@@ -185,15 +197,6 @@ def recalculated_links(snapshot) -> pd.DataFrame | None:
         return None
 
 
-def driving_flags(snapshot) -> dict[tuple[str, str, str], bool]:
-    """Driving flag of each relationship (predecessor, successor, type); empty without a recalculation."""
-    links = recalculated_links(snapshot)
-    if links is None:
-        return {}
-    keys = zip(links["pred_code"], links["succ_code"], links["type"], strict=True)
-    return dict(zip(keys, links["driving"], strict=True))
-
-
 def logic(snapshot, task_code: str) -> pd.DataFrame:
     """Predecessors then successors of the activity: the other Activity ID, link type, lag, whether the
     link drives, and the other activity's longest path flag, total float and dates as P6 stored them."""
@@ -304,6 +307,33 @@ def show_trail(store, trail: list[str], open_task: Callable[[str], None]) -> Non
     ui.table(matrix.reset_index(), key="task_trail", reading="task_trail", open_task=open_task)
 
 
+def show_logic_by_update(logic: pd.DataFrame) -> None:
+    """The task and its direct neighbours, a column per status date: the link as that update holds it
+    (type, driving), P6's total and free float, the constraints. A blank cell: not linked that update."""
+    cells = logic.assign(
+        cell=[_logic_cell(row) for row in logic.itertuples()],
+        status_date=logic["data_date"].map(ui.fmt_date),
+    )
+    matrix = cells.pivot_table(index=["role", "task_code"], columns="status_date", values="cell", aggfunc="first")
+    order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
+    rows = logic[["role", "task_code"]].drop_duplicates()
+    rows = rows.sort_values("role", key=lambda roles: roles.map(ROLE_ORDER), kind="stable")
+    matrix = matrix.reindex(index=pd.MultiIndex.from_frame(rows), columns=order)
+    ui.table(matrix.reset_index(), key="task_logic_by_update", reading="task_logic_by_update")
+
+
+def _logic_cell(row) -> str:
+    link = _link_text(row.link_type, row.driving_link)
+    return f"{link} · {_trail_cell(row)}" if link else _trail_cell(row)
+
+
+def _link_text(link_type, driving) -> str:
+    """The link as one update holds it ("FS driving", "SS"); "" on the task's own row."""
+    if not isinstance(link_type, str):
+        return ""
+    return f"{link_type} driving" if driving is True else link_type
+
+
 def _trail_cell(row) -> str:
     total = ui.fmt_number(row.total_float_d, "{:.1f}")
     free = ui.fmt_number(row.free_float_d, "{:.1f}")
@@ -337,13 +367,13 @@ def show_history(store, task_code: str) -> None:
             ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),
         ]
     )
-    dates_column, float_column = st.columns(2, gap="large")
-    with dates_column:
-        ui.section("Forecast start and finish")
-        ui.chart(build_activity_dates(history))
-    with float_column:
-        ui.section("Total float (working days)")
-        ui.chart(build_activity_float(history))
+    logic = logic_by_update(store, task_code)
+    ui.section("Total float with predecessors and successors (working days)")
+    ui.chart(build_activity_logic_float(logic))
+    ui.section("Logic by update")
+    show_logic_by_update(logic)
+    ui.section("Forecast start and finish")
+    ui.chart(build_activity_dates(history))
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")
     ui.section("Constraint changes")

@@ -8,6 +8,8 @@
   update, as P6 stored them.
 - ``constraint_history``: every change of an activity's constraints from one update to the next,
   the rows of the changelog (``analysis.changelog.constraint_changes``).
+- ``logic_by_update``: in each update, the activity and its direct predecessors and successors as
+  that update links them, with floats, constraints and whether each link drives.
 """
 
 from __future__ import annotations
@@ -19,11 +21,28 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer.model import CONSTRAINT
 from .changelog import constraint_changes
+from .cpm import ScheduleError, schedule
 
 UPSTREAM = "upstream"
 DOWNSTREAM = "downstream"
 BOTH = "both"
 TRAIL_COLS = ["task_code", "data_date", "update", "total_float_d", "free_float_d", "primary", "secondary"]
+TASK = "task"
+PREDECESSOR = "predecessor"
+SUCCESSOR = "successor"
+LOGIC_COLS = [
+    "data_date",
+    "update",
+    "role",
+    "task_code",
+    "task_name",
+    "link_type",
+    "driving_link",
+    "total_float_d",
+    "free_float_d",
+    "primary",
+    "secondary",
+]
 
 
 def linked_chain(links: pd.DataFrame, task_code: str, direction: str, depth: int, driving_only: bool) -> list[str]:
@@ -113,3 +132,59 @@ def constraint_history(store: SnapshotStore, task_code: str) -> pd.DataFrame:
         frames.append(changes.assign(data_date=current.data_date)[["data_date", "field", "change", "before", "after"]])
     columns = ["data_date", "field", "change", "before", "after"]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
+
+
+def logic_by_update(store: SnapshotStore, task_code: str) -> pd.DataFrame:
+    """Return, for each update holding ``task_code``, the activity and its direct neighbours (LOGIC_COLS).
+
+    ``role`` is TASK, PREDECESSOR or SUCCESSOR, read from that update's relationships, so a link added
+    or deleted shows as a neighbour present in some updates only. Floats and constraints are P6's;
+    ``driving_link`` is the recalculated flag (P6 does not export it), None when the update cannot be
+    scheduled and on the activity's own row.
+    """
+    rows = []
+    for snapshot in store:
+        if task_code not in snapshot.by_code.index:
+            continue
+        driving = driving_flags(snapshot)
+        rows.append(_logic_row(snapshot, task_code, TASK, None, None))
+        links = snapshot.relationships
+        for role, mine, other in ((PREDECESSOR, "succ_code", "pred_code"), (SUCCESSOR, "pred_code", "succ_code")):
+            for link in links[links[mine] == task_code].itertuples():
+                neighbour = getattr(link, other)
+                flag = driving.get((link.pred_code, link.succ_code, link.type))
+                rows.append(_logic_row(snapshot, neighbour, role, link.type, flag))
+    return pd.DataFrame(rows, columns=LOGIC_COLS)
+
+
+def driving_flags(snapshot) -> dict[tuple[str, str, str], bool]:
+    """Return the recalculated driving flag of each relationship (predecessor, successor, type).
+
+    Empty when the update cannot be scheduled. P6 does not export its own (TASKPRED has no such field).
+    """
+    try:
+        links = schedule(snapshot).links
+    except ScheduleError:
+        return {}
+    keys = zip(links["pred_code"], links["succ_code"], links["type"], strict=True)
+    return dict(zip(keys, links["driving"], strict=True))
+
+
+def _logic_row(snapshot, code: str, role: str, link_type: str | None, driving: bool | None) -> dict:
+    """One activity of one update; an activity of another project (``[ext]``) has no values."""
+    tasks = snapshot.by_code
+    known = code in tasks.index
+    task = tasks.loc[code] if known else pd.Series(dtype=object)
+    return {
+        "data_date": snapshot.data_date,
+        "update": snapshot.label,
+        "role": role,
+        "task_code": code,
+        "task_name": task.get("task_name"),
+        "link_type": link_type,
+        "driving_link": driving,
+        "total_float_d": task.get("total_float_d"),
+        "free_float_d": task.get("free_float_d"),
+        "primary": _constraint_text(task.get("cstr_type"), task.get("cstr_date")),
+        "secondary": _constraint_text(task.get("cstr_type2"), task.get("cstr_date2")),
+    }
