@@ -134,8 +134,14 @@ class _Table:
         self.ignoring = False  # rows under a %F line that contradicts the table's columns
 
     def fields(self, names: list[str], capacity: int) -> None:
-        """A %F line: the table's columns when it has none yet, else it must repeat them."""
+        """A %F line: the table's columns when it has none yet, else it must repeat them.
+
+        Blank names at the end of the line (tabs an editor left after the last column) name no column and
+        are dropped; a blank or repeated name before the last column is refused, as it would shift them.
+        """
         names = [name.strip() for name in names]
+        while names and not names[-1]:
+            names.pop()
         twice = sorted({name for name in names if names.count(name) > 1})
         if twice:  # P6 names each column once; a second one would shadow the first (#133)
             raise XerError(f"{self.where}: table {self.name} names column {twice[0]} twice")
@@ -243,7 +249,7 @@ class _Reader:
                 end = length
             line = text[pos:end].rstrip("\r")
             pos = end + 1
-            if line == "%E":
+            if line.rstrip(" \t") == "%E":  # an editor may leave a tab or a space after the end tag
                 self.ended = True
                 break
             if line:

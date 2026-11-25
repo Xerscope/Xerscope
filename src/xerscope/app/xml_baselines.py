@@ -12,11 +12,14 @@ from collections.abc import Callable, Iterable
 
 import pandas as pd
 
-from xerscope.analysis.baseline import content_digest
+from xerscope.analysis.baseline import KIND_NONE, Baseline, content_digest, last_updated, named_with_id
 from xerscope.analysis.baseline_resolution import (
     IN_EXPORT,
+    IN_FILE,
     LOADED_UPDATE,
+    NOT_FOUND,
     SAME_GENERATION,
+    UNDECIDED,
     Export,
     Resolution,
     Version,
@@ -26,6 +29,7 @@ from xerscope.analysis.baseline_resolution import (
 from xerscope.app import ui
 from xerscope.store import SnapshotStore
 from xerscope.xer import Snapshot, load_snapshot
+from xerscope.xer.model import FileBaseline
 from xerscope.xer.parser import XerError
 from xerscope.xer.pmxml import DiskFile, PmxmlIndex, XmlBaseline
 
@@ -209,3 +213,148 @@ def resolution_table(store: SnapshotStore, export: Export | None, index: PmxmlIn
         for update, found in zip(store, resolutions(store, export), strict=True)
     ]
     return pd.DataFrame(rows, columns=RESOLUTION_COLUMNS)
+
+
+BASELINE_PER_FILE_COLUMNS = ["file", "data_date", "names", "measured_against", "found_by"]
+THE_FALLBACK = "the fallback"
+
+
+def _baseline_row(
+    snapshot: Snapshot, found: Resolution | None, fallback_label: str, unreadable: frozenset, chosen: str = ""
+) -> dict:
+    """Return one row of ``baseline_per_file``: what the update names and what it is measured against.
+
+    ``chosen``: for an undecided update, the baseline id or the fallback picked in the window, blank for none.
+    """
+    pointer = snapshot.file_baseline
+    names = f"{pointer.code} ({pointer.proj_id})" if pointer.code else pointer.proj_id
+    against, found_by = _measured_against(pointer, found, fallback_label, unreadable, chosen)
+    return {
+        "file": snapshot.source,
+        "data_date": snapshot.data_date,
+        "names": names,
+        "measured_against": against,
+        "found_by": found_by,
+    }
+
+
+def _measured_against(
+    pointer: FileBaseline, found: Resolution | None, fallback_label: str, unreadable: frozenset, chosen: str
+) -> tuple[str, str]:
+    """Return what an update is measured against and what found it, as the window's table words them."""
+    if pointer.usable:
+        return f"{pointer.code}, in its file", IN_FILE
+    if found is None:
+        return _nothing(pointer.note), NOT_FOUND
+    unreadable_baseline = found.baseline_id in unreadable
+    if found.found_by in (IN_EXPORT, SAME_GENERATION, LOADED_UPDATE) and not unreadable_baseline:
+        return _found_baseline(found), found.found_by
+    undecided = found.found_by == UNDECIDED
+    if undecided and chosen not in ("", "fallback"):
+        return f"chosen: baseline {chosen} of the export", "chosen in the window"
+    if fallback_label and (not undecided or chosen == "fallback"):
+        return f"fallback: {fallback_label}", THE_FALLBACK
+    if unreadable_baseline:
+        return _nothing(f"baseline {found.baseline_id} of the export cannot be read"), NOT_FOUND
+    return _nothing(found.note or pointer.note), NOT_FOUND
+
+
+def _found_baseline(found: Resolution) -> str:
+    """Return the baseline the resolution found, exact from the export or probable, as the table words it."""
+    where = "a loaded update" if found.found_by == LOADED_UPDATE else "the export"
+    probable = "" if found.found_by == IN_EXPORT else "probable: "
+    return f"{probable}baseline {found.baseline_id} of {where}"
+
+
+def _nothing(why: str) -> str:
+    """Return "none", with ``why`` in brackets when there is one."""
+    return "none" + (f" ({why})" if why else "")
+
+
+def baseline_per_file(
+    store: SnapshotStore,
+    found: dict[str, Resolution | None],
+    fallback_label: str = "",
+    unreadable: frozenset = frozenset(),
+    chosen: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """Return one row per update: what its file names, what it is measured against and what found it.
+
+    By status date. ``found``: the resolution of each update by file name (``resolutions``), None for an
+    update outside the series. ``fallback_label``: what applies when nothing is found, blank for none.
+    ``unreadable``: the baselines of the export that could not be read; an update that names one has none.
+    ``chosen``: by file name, what the window picked for an undecided update (a baseline id, or "fallback").
+    """
+    picked = chosen or {}
+    rows = [
+        _baseline_row(snapshot, found.get(snapshot.source), fallback_label, unreadable, picked.get(snapshot.source, ""))
+        for snapshot in store
+    ]
+    return pd.DataFrame(rows, columns=BASELINE_PER_FILE_COLUMNS)
+
+
+BASELINE_USED_COLUMNS = ["file", "data_date", "kind", "found_by", "baseline", "last_update", "source"]
+
+
+def _baseline_named(baseline: Baseline) -> str:
+    """Return the baseline as P6's Maintain Baselines names it, "name (Project ID)"; the label of planned dates."""
+    if baseline.is_planned:
+        return baseline.label
+    return named_with_id(baseline.snapshot)
+
+
+def _baseline_used(baseline: Baseline | None) -> dict:
+    """Return the columns of ``baseline_used_table`` after the update's file and status date."""
+    if baseline is None:
+        return {"kind": KIND_NONE, "found_by": "", "baseline": "none", "last_update": None, "source": ""}
+    return {
+        "kind": baseline.kind,
+        "found_by": baseline.found_by,
+        "baseline": _baseline_named(baseline),
+        "last_update": None if baseline.is_planned else last_updated(baseline),
+        "source": baseline.source,
+    }
+
+
+def baseline_used_table(
+    updates: Iterable[Snapshot], baselines: Iterable[Baseline | None], anonymous: bool = False
+) -> pd.DataFrame:
+    """Return one row per update: the baseline its pages are measured against, by its P6 name and Project ID.
+
+    ``baselines``: the baseline of each update, in the same order. ``kind``: ``analysis.baseline.KIND_*``;
+    ``found_by``: what found it; ``last_update``: P6's Last Update Date of the baseline project, when the
+    file gives one (``last_updated``). ``anonymous``: no file name, baseline name or source.
+    """
+    rows = [
+        {"file": update.source, "data_date": update.data_date, **_baseline_used(baseline)}
+        for update, baseline in zip(updates, baselines, strict=True)
+    ]
+    frame = pd.DataFrame(rows, columns=BASELINE_USED_COLUMNS)
+    return frame.drop(columns=["file", "baseline", "source"]) if anonymous else frame
+
+
+def with_names(pointers: pd.DataFrame, store: SnapshotStore, xml_baselines: list[XmlBaseline] | None) -> pd.DataFrame:
+    """Return ``diagnostic.baseline_pointers`` with the names to look for in P6, "name (Project ID)".
+
+    ``project``: the update's own project, as P6's Projects window shows it. ``baseline_name``: the
+    project its Project Baseline pointer names, when the P6 XML export or a loaded file holds it (an export's
+    baseline by its name and code, a loaded update's project by its name, another project of a file by its
+    code); blank when none does: only P6 then shows it (Project > Assign Baselines of the update's project).
+    """
+    known: dict[str, str] = {}
+    for snapshot in store:
+        for proj_id, code in zip(
+            snapshot.file_projects["proj_id"], snapshot.file_projects["proj_short_name"], strict=True
+        ):
+            known.setdefault(str(proj_id), str(code))
+    known |= {snapshot.project_id: named_with_id(snapshot) for snapshot in store}
+    for baseline in xml_baselines or ():
+        named = (
+            f"{baseline.name} ({baseline.code})" if baseline.name and baseline.name != baseline.code else baseline.code
+        )
+        known[baseline.object_id] = named
+    named = pointers.copy()
+    named.insert(named.columns.get_loc("proj_id") + 1, "project", [named_with_id(snapshot) for snapshot in store])
+    baseline_names = [known.get(str(pointer), "") for pointer in named["sum_base_proj_id"]]
+    named.insert(named.columns.get_loc("sum_base_proj_id") + 1, "baseline_name", baseline_names)
+    return named

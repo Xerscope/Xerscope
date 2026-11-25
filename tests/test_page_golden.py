@@ -30,15 +30,23 @@ pytestmark = pytest.mark.oracle("characterization")
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 GOLDEN = Path(__file__).parent / "golden" / "pages.json"
-PAGES = ["overview", "gantt", "activity", "health", "audit", "changelog", "forensics", "earned_value",
+PAGES = ["overview", "gantt", "health", "audit", "changelog", "forensics", "earned_value",
          "milestones", "ppc", "export", "debug"]  # fmt: skip
 TEXTS = {"title", "header", "subheader", "caption", "markdown", "info", "warning", "error", "success", "code"}
 CHOICES = {"selectbox", "multiselect", "toggle", "checkbox", "text_input", "button_group"}
 LAYOUT = {"column", "flex_container", "empty"}  # hold or reserve a place, show nothing themselves
 
 
+def is_reading(element) -> bool:
+    """The "How to read" popover of a chart or a table: listed by its label, its text is not (the texts are
+    analysis/explain.py READINGS, held by tests/test_readings.py)."""
+    return element.type == "popover" and element.proto.popover.label == "How to read"
+
+
 def _line(element) -> str:
     kind = element.type
+    if is_reading(element):
+        return "popover: How to read"
     if kind in TEXTS:
         return f"{kind}: {element.value}"
     if kind == "metric":
@@ -59,7 +67,8 @@ def shown(block) -> list[str]:
     for element in getattr(block, "children", {}).values():
         if element.type not in LAYOUT:
             lines.append(_line(element))
-        lines += shown(element)
+        if not is_reading(element):
+            lines += shown(element)
     return lines
 
 

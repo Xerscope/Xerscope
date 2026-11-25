@@ -17,10 +17,22 @@ from streamlit.delta_generator import DeltaGenerator
 from xerscope.analysis import query
 from xerscope.analysis.ask import suggested
 from xerscope.app import ui
-from xerscope.app.baselines import _ask_for_the_baseline, _baseline_picker, _files_count, _parse
+from xerscope.app.baseline_warnings import _baseline_picker
 from xerscope.app.files_window import _window, most_recent_first
 from xerscope.app.reading import read_update, read_updates, store_of
-from xerscope.app.session import _digest, _file_choices, _file_digest, _open_window, _period, folder_under_root
+from xerscope.app.session import (
+    BASELINE_ALONE,
+    BASELINE_ASKED,
+    BASELINE_SET,
+    _digest,
+    _file_choices,
+    _file_digest,
+    _open_window,
+    _parse,
+    _period,
+    counted,
+    folder_under_root,
+)
 from xerscope.store import DuplicateDataDate, SnapshotStore
 from xerscope.xer import Snapshot, xer_files
 
@@ -308,7 +320,7 @@ def _forget_previous_series() -> None:
         if job is not None and not job.done:
             job.cancelled = True
     st.session_state.update(_load_job=None, _score_job=None)
-    for cache in ("_memo", "_file_baselines", "_baselines_for", "_update_baselines"):
+    for cache in ("_memo", "_file_baselines", "_baselines_for", "_linked_baselines", "_update_baselines"):
         st.session_state.pop(cache, None)
 
 
@@ -422,3 +434,19 @@ def sidebar_loader() -> None:
         with sidebar:
             _poll_load()
     draw_sidebar(store, files_line)
+
+
+def _ask_for_the_baseline() -> None:
+    """Open the window on its Baseline section, once per choice of files, until Done sets the baseline."""
+    if not st.session_state.get(BASELINE_SET) and not st.session_state.get(BASELINE_ASKED):
+        st.session_state[BASELINE_ASKED] = True
+        _open_window(BASELINE_ALONE)
+
+
+def _files_count(store: SnapshotStore) -> str:
+    """Return ``N files · K projects``: K is the projects read, in the alert colour when the series mixes several."""
+    count = len({snapshot.project_code for snapshot in store})
+    projects = counted(count, "project")
+    if count > 1:
+        projects = f":orange[{projects}]"
+    return f"{counted(len(store), 'file')} · {projects}"

@@ -341,7 +341,29 @@ def _typed_dates(frame: pd.DataFrame, columns: list[str], table: str, inputs: _B
     """Type the date ``columns`` of ``frame`` in place; a time-zoned cell reads as NaT, with a warning."""
     validate.blank_timezones(frame, columns, table, inputs.source, inputs.warnings)
     for column in columns:
-        frame[column] = to_datetime(frame[column])
+        written = frame[column]
+        frame[column] = to_datetime(written)
+        validate.unreadable_cells(
+            written, frame[column], f"{table}.{column}", _codes(frame), inputs.source, inputs.warnings
+        )
+
+
+def _typed_numbers(frame: pd.DataFrame, columns: list[str], table: str, inputs: _BuildInputs) -> None:
+    """Type the number ``columns`` of ``frame`` in place; a filled cell read as blank is warned of."""
+    for column in columns:
+        written = frame[column]
+        frame[column] = to_number(written)
+        validate.unreadable_cells(
+            written, frame[column], f"{table}.{column}", _codes(frame), inputs.source, inputs.warnings
+        )
+
+
+def _codes(frame: pd.DataFrame) -> pd.Series:
+    """What names a row of ``frame`` in a warning: its Activity ID, else its task_id, else its position."""
+    for column in ("task_code", "task_id"):
+        if column in frame.columns:
+            return frame[column]
+    return pd.Series(frame.index, index=frame.index)
 
 
 def _taskpred_table(raw: RawXer, all_tasks: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
@@ -946,8 +968,7 @@ def _assignments(inputs: _BuildInputs, tasks: pd.DataFrame) -> pd.DataFrame:
     )
     assignments = assignments[assignments["task_id"].isin(tasks["task_id"])]
     assignments["task_code"] = assignments["task_id"].map(tasks.set_index("task_id")["task_code"])
-    for column in ASSIGNMENT_NUM_COLS:
-        assignments[column] = to_number(assignments[column])
+    _typed_numbers(assignments, ASSIGNMENT_NUM_COLS, "TASKRSRC", inputs)
     _typed_dates(assignments, ASSIGNMENT_DATE_COLS, "TASKRSRC", inputs)
     assignments["act_qty"] = assignments["act_reg_qty"].fillna(0) + assignments["act_ot_qty"].fillna(0)
 
@@ -1277,8 +1298,7 @@ def _task_frame(inputs: _BuildInputs, wbs: pd.DataFrame, options: dict) -> pd.Da
         + TASK_NUM_COLS,
     )
     _typed_dates(tasks, TASK_DATE_COLS, "TASK", inputs)
-    for column in TASK_NUM_COLS:
-        tasks[column] = to_number(tasks[column])
+    _typed_numbers(tasks, TASK_NUM_COLS, "TASK", inputs)
     # The remaining duration drives the CPM and the % complete: unusable values read as 0, said once.
     remaining = validate.usable_hours(
         tasks["remain_drtn_hr_cnt"], "activity remaining duration", tasks["task_code"], source, inputs.warnings
@@ -1621,6 +1641,7 @@ def build_snapshot(
     )
     planned_start = _parse_date(project_row["plan_start_date"])
     data_date, data_date_source = _data_date(project_row)
+    validate.unreadable_status_date(project_row, data_date_source, raw.source, warnings)
     if data_date is None:
         warnings.append(f"{raw.source}: no status date (last_recalc_date / plan_start_date blank)")
     calendars, hours_per_day, work_calendars = _calendars(raw, settings, warnings)

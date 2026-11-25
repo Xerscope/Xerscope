@@ -23,8 +23,11 @@ from xerscope.analysis.progress import (
     unplanned_work,
 )
 from xerscope.app import ui
+from xerscope.app.baselines import baseline_for
+from xerscope.app.cache import memo
 from xerscope.app.code_picker import pick_code_filter
-from xerscope.app.state import baseline_for, csv_download, memo, page_header, require_store, sources_of
+from xerscope.app.downloads import csv_download, sources_of
+from xerscope.app.state import page_header, require_store
 from xerscope.viz.charts import PPC_TARGET, build_ppc
 
 COMMITMENT_COLUMNS = [
@@ -53,6 +56,8 @@ PPC_COLUMNS = [
     "ppc_week",
     "note",
 ]
+# the status date of a week's row is the week it closes: COLUMNS calls data_date "Status date"
+WEEK_ENDING = st.column_config.DateColumn("Week ending", format="YYYY-MM-DD")
 VARIANCE_TABLE_COLUMNS = ["task_code", "task_name", "status", "start", "finish", *VARIANCE_COLUMNS, "wbs_code"]
 WBS_COLUMNS = ["wbs_code", "progress_pts", "earned_hr_week", "actual_hr_week", "budget_hr", "activities_progressed"]
 ACTIVITY_COLUMNS = [
@@ -73,20 +78,20 @@ ACTIVITY_COLUMNS = [
 
 
 def _pct(value) -> str:
-    return ui.fmt_number(value, "{:.0f} %", missing="n/a")
+    return ui.fmt_number(value, "{:.0f} %")
 
 
 def show_ppc_weeks(ppc: pd.DataFrame) -> None:
     with st.expander("Every week: counts behind the three PPC"):
-        count = st.column_config.NumberColumn
         ui.table(
             ppc.sort_values("data_date", ascending=False),
             columns=PPC_COLUMNS,
             key="ppc_weeks",
+            reading="ppc_weeks",
             overrides={
-                "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
-                "kept": count("Kept (starts + finishes)", format="%d"),
-                "committed": count("Committed (starts + finishes)", format="%d"),
+                "data_date": WEEK_ENDING,
+                # elsewhere kept is yes / no per commitment; here the weeks' counts of starts and finishes together
+                **ui.count_columns(kept="Kept (starts + finishes)", committed="Committed (starts + finishes)"),
             },
         )
 
@@ -121,18 +126,14 @@ def show_lookahead(week_rows: pd.DataFrame, series: pd.DataFrame) -> None:
         )
     ui.kpis(items, formulas=KPI_FORMULAS)
     with st.expander("Every week: counts behind TA and TMR"):
-        count = st.column_config.NumberColumn
         ui.table(
             series.sort_values(["data_date", "horizon"], ascending=[False, True]),
             columns=LOOKAHEAD_COLUMNS_SHOWN,
             key="ppc_lookahead",
+            reading="ppc_lookahead",
             overrides={
-                "data_date": st.column_config.DateColumn("Week ending", format="YYYY-MM-DD"),
-                "horizon": count("Updates ahead", format="%d"),
+                "data_date": WEEK_ENDING,
                 "lookahead_date": st.column_config.DateColumn("Plan read", format="YYYY-MM-DD"),
-                "wwp": count("Weekly plan", format="%d"),
-                "ta_pct": count("TA (%)", format="%.0f"),
-                "tmr_pct": count("TMR (%)", format="%.0f"),
             },
         )
 
@@ -196,10 +197,22 @@ def show_commitments_and_wbs(commitments: pd.DataFrame, wbs_progress: pd.DataFra
         if commitments.empty:
             st.caption("Nothing was forecast to start or finish this week.")
         else:
-            ui.table(commitments.sort_values(["kept", "commitment"]), columns=COMMITMENT_COLUMNS, key="ppc_commitments")
+            ui.table(
+                commitments.sort_values(["kept", "commitment"]),
+                columns=COMMITMENT_COLUMNS,
+                key="ppc_commitments",
+                reading="ppc_commitments",
+            )
     with right:
         ui.section("Progress by WBS", "Points of % complete gained this week, weighted by labor hours.")
-        ui.table(wbs_progress.rename(columns={"wbs_l1": "wbs_code"}), columns=WBS_COLUMNS, key="ppc_wbs")
+        ui.table(
+            wbs_progress.rename(columns={"wbs_l1": "wbs_code"}),
+            columns=WBS_COLUMNS,
+            key="ppc_wbs",
+            reading="ppc_wbs",
+            empty="No task to roll up by WBS: the progress table of the week (W−1 against W, after the code filter) "
+            "holds no task.",
+        )
 
 
 def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFrame) -> None:
@@ -213,7 +226,12 @@ def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFr
         if milestones.empty:
             st.caption("No milestone was forecast this week.")
         else:
-            ui.table(milestones.sort_values(["kept", "planned_date"]), columns=COMMITMENT_COLUMNS, key="ppc_milestones")
+            ui.table(
+                milestones.sort_values(["kept", "planned_date"]),
+                columns=COMMITMENT_COLUMNS,
+                key="ppc_milestones",
+                reading="ppc_milestones",
+            )
     with right:
         ui.section(
             "Unplanned work",
@@ -223,7 +241,12 @@ def show_milestones_and_unplanned(milestones: pd.DataFrame, unplanned: pd.DataFr
         if unplanned.empty:
             st.caption("No new task started this week.")
         else:
-            ui.table(unplanned.sort_values("act_start_date"), columns=UNPLANNED_COLUMNS, key="ppc_unplanned")
+            ui.table(
+                unplanned.sort_values("act_start_date"),
+                columns=UNPLANNED_COLUMNS,
+                key="ppc_unplanned",
+                reading="ppc_unplanned",
+            )
 
 
 def show_renumbered(pairs: pd.DataFrame) -> None:
@@ -240,7 +263,14 @@ def show_renumbered(pairs: pd.DataFrame) -> None:
 def show_progress_by_activity(progress: pd.DataFrame, previous, current) -> None:
     ui.section("Progress by task", "Tasks whose % complete, earned or actual hours moved this week.")
     moved = progressed_tasks(progress).sort_values("earned_hr_week", ascending=False)
-    ui.table(moved, max_height=640, columns=ACTIVITY_COLUMNS, key="ppc_progress")
+    ui.table(
+        moved,
+        max_height=ui.TABLE_LONG,
+        columns=ACTIVITY_COLUMNS,
+        key="ppc_progress",
+        reading="ppc_progress",
+        empty="No task moved this week: none has a % complete, earned hours or actual hours different from W−1's.",
+    )
     csv_download(progress, f"progress_{ui.stamp(current.data_date)}.csv", sources=sources_of(previous, current))
 
 
@@ -252,7 +282,14 @@ def show_variances(variances: pd.DataFrame, sources: list[str], current) -> None
         "milestones have only their own end. Tasks that moved shown; the CSV has every task.",
     )
     moved = moved_variances(variances).sort_values(VARIANCE_COLUMNS)
-    ui.table(moved, max_height=640, columns=VARIANCE_TABLE_COLUMNS, key="ppc_variances")
+    ui.table(
+        moved,
+        max_height=ui.TABLE_LONG,
+        columns=VARIANCE_TABLE_COLUMNS,
+        key="ppc_variances",
+        reading="ppc_variances",
+        empty="No task moved against W−1 or W−2: every start and finish variance is zero or blank.",
+    )
     csv_download(
         variances,
         f"variances_{ui.stamp(current.data_date)}.csv",
@@ -271,7 +308,16 @@ if len(store) < 2:
     st.stop()
 
 target_column, overdue_column, week_column = st.columns([1, 1, 2], vertical_alignment="bottom")
-target = target_column.number_input("PPC target (%)", 0, 100, PPC_TARGET, step=5)
+target = target_column.number_input(
+    "PPC target (%)",
+    0,
+    100,
+    PPC_TARGET,
+    step=5,
+    help="The dotted line of the chart: the share of commitments kept you aim for, in percent. 80 is "
+    "xerscope's default (`PPC_TARGET`); Last Planner System (PPC) sets no fixed target in the sources this "
+    "repository names.",
+)
 include_overdue = overdue_column.checkbox(
     "Include commitments late at W−1",
     value=True,
@@ -280,7 +326,14 @@ include_overdue = overdue_column.checkbox(
     "for the week. Unchecked: only those forecast after W−1's status date commit.",
 )
 week_labels = store.labels[1:]
-week = week_column.selectbox("Week ending", week_labels, index=len(week_labels) - 1, key="ppc_week")
+week = week_column.selectbox(
+    "Week ending",
+    week_labels,
+    index=len(week_labels) - 1,
+    key="ppc_week",
+    help="The update W whose commitments are read: what W−1 forecast to start or finish by W's status date, "
+    "against what W reports done. Pick a week; the first update has no W−1.",
+)
 week_index = store.labels.index(week)
 previous, current = store[week_index - 1], store[week_index]
 with top:

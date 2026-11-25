@@ -4,7 +4,8 @@ import streamlit as st
 
 from xerscope.analysis.progress import milestone_codes, milestone_slips, milestone_trend, plotted_trend
 from xerscope.app import ui
-from xerscope.app.state import memo, open_in_gantt, page_header, require_store
+from xerscope.app.cache import memo
+from xerscope.app.state import open_in_gantt, page_header, require_store
 from xerscope.viz.charts import SERIES, build_mta
 
 store = require_store()
@@ -45,9 +46,22 @@ def _keep_picks() -> None:
 st.session_state.setdefault(SAVED, _finish_milestones(critical_only=False))
 st.session_state["mta_pick"] = [code for code in st.session_state[SAVED] if code in all_ms or code in others]
 with st.container(horizontal=True, gap="small"):
-    st.button("Finish milestones", key="mta_finish", on_click=_set_picks, args=(_finish_milestones(False),))
-    st.button("Critical milestones", key="mta_critical", on_click=_set_picks, args=(_finish_milestones(True),))
-    st.button("Clear", key="mta_clear", on_click=_set_picks, args=([],))
+    st.button(
+        "Finish milestones",
+        key="mta_finish",
+        on_click=_set_picks,
+        args=(_finish_milestones(False),),
+        help="Picks every finish milestone of the latest update. Use it as the usual MTA set.",
+    )
+    st.button(
+        "Critical milestones",
+        key="mta_critical",
+        on_click=_set_picks,
+        args=(_finish_milestones(True),),
+        help="Picks the critical finish milestones only. "
+        "Use it on a large schedule where every milestone would crowd the chart.",
+    )
+    st.button("Clear", key="mta_clear", on_click=_set_picks, args=([],), help="Empties the pick.")
 picked = st.multiselect(
     f"Milestones and key tasks (up to {cap})",
     all_ms + others,
@@ -55,6 +69,8 @@ picked = st.multiselect(
     format_func=partial(ui.code_label, names),
     key="mta_pick",
     on_change=_keep_picks,
+    help=f"The milestones and tasks whose forecast date is followed update by update; each keeps the colour of "
+    f"its tag in the chart. Up to {cap} at a time; a task's finish is used, a start milestone's start.",
 )
 if not picked:
     st.info("Pick at least one milestone or task.")
@@ -86,12 +102,10 @@ ui.section("Slippage", "Working days on each milestone's own calendar.")
 ui.table(
     slips,
     key="mta_slips",
+    reading="mta_slips",
     open_task=partial(open_in_gantt, snapshot=store.latest),
-    overrides={
-        "first_forecast": st.column_config.DatetimeColumn("First forecast", format="YYYY-MM-DD"),
-        "latest_forecast": st.column_config.DatetimeColumn("Latest forecast", format="YYYY-MM-DD"),
-        **ui.number_columns("signed", slip_wd="Slip since first (wd)", last_week_wd="Last update (wd)"),
-    },
+    # in COLUMNS slip_wd is the slip of a finish due to progress (Delay analysis); here it runs since the first update
+    overrides=ui.number_columns("signed", slip_wd="Slip since first (wd)"),
 )
 with st.expander("Data"):
-    ui.table(trend, max_height=640, key="mta_trend")
+    ui.table(trend, max_height=ui.TABLE_LONG, key="mta_trend", reading="mta_trend")

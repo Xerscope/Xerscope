@@ -7,15 +7,16 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import baseline_box, read_folder
+import streamlit as st
+from conftest import baseline_box, files_done, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, health_history
 from xerscope.analysis import baseline as analysis_baseline
 from xerscope.analysis.checks import run_metric
-from xerscope.app import baselines, diagnostic, loading, session, state
-from xerscope.app.state import BL_EACH, BL_PLANNED
+from xerscope.app import baseline_file, baseline_warnings, cache, diagnostic, loading, session
+from xerscope.app.session import BL_EACH, BL_PLANNED
 from xerscope.store import SnapshotStore
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
@@ -27,13 +28,13 @@ HIGH_DURATION = builtin_standards()["DCMA"]["DCMA-08"]  # reads the baseline, ha
 def runs(monkeypatch):
     """Every metric the app computes: (standard, metric id, file)."""
     calls = []
-    original = baselines.run_metric
+    original = cache.run_metric  # the module whose metric_result calls it
 
     def counting(metric, context):
         calls.append((metric.standard, metric.id, context.snapshot.source))
         return original(metric, context)
 
-    monkeypatch.setattr(baselines, "run_metric", counting)
+    monkeypatch.setattr(cache, "run_metric", counting)
     return calls
 
 
@@ -61,7 +62,7 @@ def same_result(cached, fresh) -> None:
 def _metric_script():
     import streamlit as st
 
-    from xerscope.app.state import metric_result
+    from xerscope.app.cache import metric_result
 
     store = st.session_state["store"]
     metric_result(st.session_state["metric"], store.by_label(st.session_state["update"]), store)
@@ -135,11 +136,11 @@ def test_metric_result_runs_once_then_again_for_any_other_input(store, runs, cha
 
 def test_metric_result_runs_again_for_another_fallback(store, runs):
     at = _metric_app(store, BL_EACH)
-    at.session_state["fallback_choice"] = BL_PLANNED
+    at.session_state["bl_fallback"] = BL_PLANNED
     at.run()
     at.run()
     assert len(runs) == 1
-    at.session_state["fallback_choice"] = store.labels[0]
+    at.session_state["bl_fallback"] = store.labels[0]
     at.run()
     assert not at.exception and len(runs) == 2
 
@@ -182,7 +183,7 @@ def test_every_check_gives_the_same_result_whatever_the_ev_basis(store, planned)
 def _fill_script():
     import streamlit as st
 
-    from xerscope.app.state import MEMO_SIZE, memo
+    from xerscope.app.cache import MEMO_SIZE, memo
 
     runs = st.session_state.setdefault("runs", [])
     memo(("entry", 0), lambda: runs.append(0))
@@ -194,9 +195,9 @@ def _fill_script():
 def test_memo_drops_the_least_recently_used_entry_past_its_size():
     at = AppTest.from_function(_fill_script, default_timeout=120).run()
     assert not at.exception
-    cache = at.session_state["_memo"]
-    assert len(cache) == state.MEMO_SIZE
-    kept = {key[-1] for key in cache}
+    entries = at.session_state["_memo"]
+    assert len(entries) == cache.MEMO_SIZE
+    kept = {key[-1] for key in entries}
     assert 0 in kept and 1 not in kept  # entry 1 was the oldest unread one
     assert at.session_state["runs"].count(0) == 1
 
@@ -258,7 +259,7 @@ def test_audit_computes_a_check_with_other_settings_once(app, store, monkeypatch
         return original(metric, context)
 
     monkeypatch.setattr(checks, "run_metric", counting)  # the name the Audit page imports
-    monkeypatch.setattr(baselines, "run_metric", counting)  # the name the session's cache calls
+    monkeypatch.setattr(cache, "run_metric", counting)  # the name the session's cache calls
     app.switch_page("views/audit.py").run()
     app.get("button_group")[0].set_value("P6").run()
     app.selectbox(key="audit_check:P6").set_value("P6-04").run()
@@ -459,13 +460,13 @@ def test_a_folder_file_replaced_under_the_same_name_and_time_is_read_again(sampl
     shutil.copy2(week1, folder / "a.xer")
     shutil.copy2(week2, folder / "b.xer")
     parsed = []
-    original = baselines.load_snapshot
+    original = session.load_snapshot
 
     def counting(data, *args, name=None, **kwargs):
         parsed.append(name)
         return original(data, *args, name=name, **kwargs)
 
-    monkeypatch.setattr(baselines, "load_snapshot", counting)
+    monkeypatch.setattr(session, "load_snapshot", counting)
     monkeypatch.setenv("XERSCOPE_DATA", str(folder))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = read_folder(AppTest.from_file(APP, default_timeout=300).run())
@@ -560,13 +561,110 @@ def test_overview_shows_the_scores_schedule_health_computed_without_running_a_ch
     assert _score_cards(app) == health == _expected_scores(app, store)
 
 
+def _joined(at, key: str):
+    """Wait for the thread of the job under ``key`` and return the job, done."""
+    job = at.session_state[key]
+    assert job is not None and job.thread is not None
+    job.thread.join(timeout=300)
+    assert job.done
+    return job
+
+
+def _overview_with_scores(at):
+    """Read the sample folder, then the run after the score job finished: the cards are filled."""
+    at = read_folder(at.run())
+    _joined(at, "_load_job")
+    files_done(at.run())
+    _joined(at, "_score_job")
+    at.run()
+    assert not at.exception
+    return at
+
+
+def _own_standard(standard_id: str, name: str):
+    """The first two P6 checks as a standard uploaded under ``standard_id``, scored 50 % on the sample
+    (P6-01 fails at 8.7 %, P6-02 passes). Its metrics carry its id: the memo holds a metric by its definition,
+    and P6's own results must not stand for this standard's."""
+    p6 = builtin_standards()["P6"]
+    metrics = tuple(dataclasses.replace(metric, standard=standard_id) for metric in p6.metrics[:2])
+    return dataclasses.replace(p6, id=standard_id, name=name, metrics=metrics)
+
+
+@pytest.mark.oracle("property")
+def test_a_standard_uploaded_again_under_its_id_is_scored_again(sample_dir, monkeypatch):
+    """The score job was keyed on the standards' ids: a standard uploaded again under the same id with
+    another threshold kept the first score. The card now reads the score of the standard as uploaded
+    last, the one a fresh calculation gives."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    first = _own_standard("MINE", "Mine")
+    # P6-01 (Logic) is at 8.7 % on the sample: below 10 % it passes, and the score goes from 1/2 to 2/2
+    relaxed = dataclasses.replace(
+        first, metrics=(dataclasses.replace(first.metrics[0], threshold=10.0), first.metrics[1])
+    )
+    at = AppTest.from_file(APP, default_timeout=300)
+    at.session_state["uploaded_standards"] = {"MINE": first}
+    at = _overview_with_scores(at)
+    assert _score_cards(at)["Mine score"] == ("50 %", "2 evaluated · 1 fail: P6-01")
+
+    at.session_state["uploaded_standards"] = {"MINE": relaxed}
+    at.run()  # the page starts a job for the standard as it now reads
+    _joined(at, "_score_job")
+    at.run()
+    assert not at.exception
+    assert _score_cards(at)["Mine score"] == ("100 %", "2 evaluated · 0 fail")
+
+
+@pytest.mark.oracle("property")
+def test_the_score_cards_stop_polling_once_a_standard_settled_in_error(sample_dir, monkeypatch):
+    """A standard that raised in the score job has no result to hold, so the page found a score missing
+    on every run and the cards polled every second for as long as the Overview stayed open. A standard
+    in error is settled: once the job is done the page draws the cards, the error, and no fragment."""
+    monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "1")
+    monkeypatch.delenv("XERSCOPE_SYNC_LOAD", raising=False)
+    broken = _own_standard("BROKEN", "Broken")
+    real_run_standard = cache.run_standard
+
+    def run_standard(standard, context, stopped):
+        if standard.id == "BROKEN":
+            raise RuntimeError("Broken: a rule failed")
+        return real_run_standard(standard, context, stopped=stopped)
+
+    monkeypatch.setattr(cache, "run_standard", run_standard)
+    fragments = []
+    real_fragment = st.fragment
+
+    def fragment(*args, **kwargs):
+        fragments.append(kwargs.get("run_every"))
+        return real_fragment(*args, **kwargs)
+
+    monkeypatch.setattr(st, "fragment", fragment)
+    at = AppTest.from_file(APP, default_timeout=300)
+    at.session_state["uploaded_standards"] = {"BROKEN": broken}
+    at = _overview_with_scores(at)
+    job = at.session_state["_score_job"]
+    assert job.done and job.results["BROKEN"] == "Broken: a rule failed" and len(job.results) == 5
+
+    fragments.clear()
+    at.run()  # the job is done and every standard is held or in error: no fragment is armed
+    assert not at.exception
+    assert fragments == []
+    assert [error.value for error in at.error] == ["Broken: a rule failed"]
+    cards = _score_cards(at)
+    assert cards["Broken score"] == ("–", "not computed yet")
+    assert all(value.endswith("%") for label, (value, _) in cards.items() if label != "Broken score")
+
+
 # --- the GUID link option -------------------------------------------------------------------------
 
 
 def _missed_tasks_script():
     import streamlit as st
 
-    from xerscope.app.state import data_identity, metric_result
+    from xerscope.app.baselines import data_identity
+    from xerscope.app.cache import metric_result
 
     store = st.session_state["store"]
     st.session_state["identity"] = data_identity(ev_basis=False)  # the score job's identity starts with it
@@ -626,9 +724,9 @@ def builds(monkeypatch):
 
     counting(Baseline, "from_snapshot", "Baseline.from_snapshot")
     counting(Baseline, "planned", "Baseline.planned")
-    for module in (analysis_baseline, baselines, diagnostic):
+    for module in (analysis_baseline, baseline_warnings, diagnostic):  # the sidebar notice reads renumbered
         counting(module, "renumbered", "renumbered")
-    counting(baselines, "pmxml_files", "folder listings")
+    counting(baseline_file, "pmxml_files", "folder listings")
     return counts
 
 

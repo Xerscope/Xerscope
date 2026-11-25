@@ -4,14 +4,27 @@ Given, in this order, to whoever implements or reviews a package of
 `docs/refactor-front-plan.md`. It adds nothing to the repository's rules; it says which ones
 bind a package and in what order they are read.
 
+## Status against the code
+
+The brief applies to the packages the plan's status table (top of `docs/refactor-front-plan.md`)
+marks Open or Partial: P6c (the assignments left in `session.py`, `baselines.py` and
+`baseline_warnings.py`), P7b, P9b, P11a, P11b, P12a (the test imports), P12b, P16b, P18 and the file picker of section 6.
+Checked against the repository: the ruff and bandit versions below are those of
+`.github/workflows/tests.yml` (ruff 0.17.4, bandit 1.9.4); CI runs the fitness check and
+`uv run pytest -rs -n auto --dist loadfile`, while `scripts/duplication.py`, `scripts/same_code.py`
+and the diff checks are run by the executor, not by CI; `scripts/same_code.py` takes `base`, an optional `head` and
+`--ignore-docstrings`; `scripts/duplication.py` defaults to `--threshold 0.9`; the protected files
+named below exist. `tests/test_architecture.py` also pins the app-internal import graph
+(`APP_EDGES`) and the rule that only `streamlit_app.py` and the pages import `state.py`.
+
 ## Read first
 
 1. The project skill (`xerscope`), whole file: non-negotiables, where things go, the
    verification gate, engineering standards, readable code, names, writing.
 2. `CONTRIBUTING.md`, whole file. When the skill and this file differ, the file wins and the
    difference is reported in the package's commit message.
-3. `docs/architecture.md`, the layers: `app/` composes analyses and figures and computes
-   nothing; `viz/` draws frames and imports only `config.py` and `analysis.wbs.ROOT`; a page
+3. `docs/architecture.md`, the layers: `app/` composes analyses and figures (some computation
+   still sits in the views, see `docs/backlog.md` "Structure" and package P11a); `viz/` draws frames and imports only `config.py` and `analysis.wbs.ROOT`; a page
    never imports another page.
 4. The package's section of the plan: Problem / Options / Choice / Verification / Findings. The
    Choice is made: the package implements exactly that option, nothing more, nothing less. A
@@ -39,7 +52,7 @@ bind a package and in what order they are read.
 - No session narration and no tool mention in code, docstrings, tests or commit text.
 - Git: the package branch only, no push by the executor, no force. The executor leaves the
   working tree with the package's changes and commits nothing; the reviewer commits once the
-  gate is green, author `Mishima <beatsgr3y@gmail.com>`.
+  gate is green, under the maintainer's git identity.
 
 ## Method of the executor
 
@@ -61,7 +74,7 @@ A passing subset is not the suite.
 uv run pytest -rs -p no:cacheprovider                 # whole suite; the skips named
 uvx ruff@0.17.4 check src tests scripts
 uvx ruff@0.17.4 format --check src tests scripts
-uvx bandit -r src -ll
+uvx bandit@1.9.4 -r src -ll
 uv run python scripts/fitness.py --check tests/fitness_baseline.json
 uv run python scripts/duplication.py src --threshold 0.8 | diff <report on the base> -   # removed lines only
 uv run python scripts/same_code.py <base commit>      # a move reports none; a rewrite only what the package says

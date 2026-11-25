@@ -6,11 +6,15 @@
 
 <!-- What changes, file by file or rule by rule. Source for any P6 or standard behaviour (Oracle page, DECM metric ID, 14-Point item). -->
 
-<!-- A value moved in tests/golden/standards.json, FLOORS or a standard TOML: one line each, as the
-values workflow prints them (scripts/check_value_justification.py), e.g.
+<!-- A value moved in tests/golden/standards.json, FLOORS or a standard TOML, or a measure of
+tests/fitness_baseline.json made worse: one line each, as the values workflow prints them
+(scripts/check_value_justification.py), e.g.
 FLOORS/H10: 0.96 -> 0.97 — held-out corpus, test_p6_heldout at this commit
 dcma/DCMA-01.target: "<= 5%" -> "<= 4%" — DCMA-EA PAM 200.1 §4.1
+fitness/<module>.<measure>: old -> new — why, and the pull request that brings it back
 -->
+
+<!-- A technical decision the code alone does not explain: the record added in docs/adr/. -->
 
 ## Verification
 
@@ -18,14 +22,17 @@ dcma/DCMA-01.target: "<= 5%" -> "<= 4%" — DCMA-EA PAM 200.1 §4.1
 
 ```
 uv run pytest -rs
-uvx ruff check src tests scripts
+uvx ruff@0.17.4 check src tests scripts
+uvx ruff@0.17.4 format --check src tests scripts
+uvx bandit@1.9.4 -r src -ll
 ```
 
 ## Checklist
 
 - [ ] No real schedule, activity name, project code, company name or file path in the diff, the tests or this description
 - [ ] A moved number comes with a test that fails before and passes after, and its evidence (P6 export, held-out corpus, MPXJ, hand calculation)
-- [ ] `tests/golden/standards.json` unchanged, or its diff reviewed and each moved value justified above (`ID: old -> new — source`)
+- [ ] `tests/golden/standards.json` unchanged, or its diff reviewed and each moved value justified above (`ID: old -> new — source`); `tests/golden/pages.json` unchanged, or its diff reviewed
 - [ ] No `FLOORS` value lowered in `tests/test_p6_heldout.py`; a raised one justified above
 - [ ] Each function written or modified reads without help: one role, a name that says it, two levels of nesting at most, whole-word names (CONTRIBUTING.md, Readable code)
-- [ ] Docs updated where behaviour changed (`docs/standards.md`, `docs/formulas.md`, `docs/cpm.md`, `docs/backlog.md`)
+- [ ] Docs updated where behaviour changed (`docs/standards.md`, `docs/formulas.md`, `docs/cpm.md`, `docs/backlog.md`, `src/xerscope/sheets/P6/`), and a decision recorded in `docs/adr/` where one was taken
+- [ ] Author and committer are my own name and email; no tool attribution trailer or generated-by line (`attribution` workflow)

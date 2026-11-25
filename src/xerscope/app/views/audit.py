@@ -23,16 +23,23 @@ from xerscope.analysis.checks import results_frame
 from xerscope.analysis.explain import explain, settings_lines
 from xerscope.analysis.rules import RULES, is_read
 from xerscope.app import ui
-from xerscope.app.explanation_panel import show_calculation, show_method
+from xerscope.app.baselines import (
+    baseline_for_checks,
+)
+from xerscope.app.cache import (
+    metric_result,
+)
+from xerscope.app.downloads import (
+    sources_of,
+)
+from xerscope.app.explanation_panel import metric_panel
 from xerscope.app.sets import show_funnel, show_sets
 from xerscope.app.state import (
-    baseline_for,
     baseline_warnings,
-    metric_result,
+    checks_rule,
     page_header,
     require_store,
     snapshot_picker,
-    sources_of,
     standards,
 )
 
@@ -46,12 +53,39 @@ def parameter_widget(rule_name: str, name: str, current, key: str):
     """Draw one parameter by what it accepts (several names, one of a list, yes / no, a number); return its value."""
     allowed = choices(rule_name, name)
     if is_list(rule_name, name):
-        return st.multiselect(name, allowed or list(current), default=list(current), key=key)
+        return st.multiselect(
+            name,
+            allowed or list(current),
+            default=list(current),
+            key=key,
+            help="The values this parameter accepts (several at a time), starting from the standard's. "
+            "Change them to see the check re-run with another population; the standard itself is not changed.",
+        )
     if allowed is not None:
-        return st.selectbox(name, allowed, index=allowed.index(current), key=key)
+        return st.selectbox(
+            name,
+            allowed,
+            index=allowed.index(current),
+            key=key,
+            help="One of the values this parameter accepts, starting from the standard's. "
+            "Change it to re-run the check with another reading; the standard itself is not changed.",
+        )
     if isinstance(current, bool):
-        return st.checkbox(name, value=current, key=key)
-    return st.number_input(name, value=float(current), format="%g", key=key)  # %g: 44, not 44.00
+        return st.checkbox(
+            name,
+            value=current,
+            key=key,
+            help="Switches this parameter on or off for the audit, starting from the standard's value. "
+            "The standard itself is not changed.",
+        )
+    return st.number_input(
+        name,
+        value=float(current),
+        format="%g",  # %g: 44, not 44.00
+        key=key,
+        help="The threshold of this parameter, in the unit its name says (`limit_hours`: hours as P6 stores "
+        "them; `limit_days`: working days of each task's calendar). Change it to see what the count becomes.",
+    )
 
 
 def draw_row(metric, prefix: str, row: tuple[str, ...], values: dict, saved: dict) -> None:
@@ -94,6 +128,8 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
         saved.get(f"{prefix}:target", metric.threshold_label),
         key=f"{prefix}:target",
         label_visibility="collapsed",
+        help=f"The result that passes, written as: {TARGET_FORMS}. Change it to see the status the check would "
+        "have; the standard itself is not changed.",
     )
     saved[f"{prefix}:target"] = target
     return target, kept_params(metric, values)
@@ -144,21 +180,16 @@ def show_results(standard_result, audit_result) -> None:
     ui.kpis(items)
 
 
-def show_explanation(result) -> None:
-    explanation = explain(result)
-    left, right = st.columns([3, 2], gap="large")
-    with left:
-        show_calculation(result, explanation)
-    with right:
-        show_method(result.metric, explanation)
-
-
 def show_sheet(standard, metric) -> None:
     """How the check is set and where to change it for good."""
     with st.expander("Settings: how to change this check for good"):
         text_column = {"now": st.column_config.TextColumn("now")}  # ui.COLUMNS has a "now" that is a date
         ui.table(
-            settings_table(metric, standard[metric.id]), raw_labels=True, overrides=text_column, key="sheet_settings"
+            settings_table(metric, standard[metric.id]),
+            raw_labels=True,
+            overrides=text_column,
+            key="sheet_settings",
+            reading="sheet_settings",
         )
         where = standard.path or f"the built-in standards/{standard.id.lower()}.toml"
         st.markdown(
@@ -179,12 +210,17 @@ available = standards()
 top = st.container()
 # the standards on a row of their own (as on Schedule health): in a column their names were cut
 standard_id = st.segmented_control(
-    "Standard", list(available), format_func=lambda key: available[key].name, key="audit_std"
+    "Standard",
+    list(available),
+    format_func=lambda key: available[key].name,
+    key="audit_std",
+    help="The standard whose checks can be audited: P6 Check Schedule, DCMA 14-Point, DCMA DECM v8.0, "
+    "Integrity, or an uploaded one. Pick the one your report follows.",
 )
 snapshot_column, check_column = st.columns(2, vertical_alignment="bottom")
 with snapshot_column:
     snapshot = snapshot_picker(store, "Update", key="audit_snap")
-baseline = baseline_for(snapshot)
+baseline = baseline_for_checks(snapshot)
 with top:
     page_header(
         "Audit",
@@ -192,10 +228,12 @@ with top:
         snapshot,
         lead="The sets behind a check, and the check re-run with other settings. Changes here stay on this "
         "page: Schedule health keeps the loaded standards.",
+        baseline=baseline,
+        rule=checks_rule(baseline),
     )
     baseline_warnings(snapshot, baseline)
 if standard_id is None:
-    st.info("Pick a standard, then a check.", icon=":material/fact_check:")
+    ui.need("Pick a standard, then a check.")
     st.stop()
 standard = available[standard_id]
 with check_column:
@@ -205,9 +243,12 @@ with check_column:
         index=None,
         format_func=lambda key: f"{key} · {standard[key].name}",
         key=f"audit_check:{standard_id}",
+        help="One check of the standard: its sets (counted, checked but not counted, excluded), its population "
+        "step by step and the same check re-run with the settings below. Use it to explain one number of "
+        "Schedule health.",
     )
 if metric_id is None:
-    st.info("Pick a check.", icon=":material/fact_check:")
+    ui.need("Pick a check.")
     st.stop()
 
 metric = standard[metric_id]
@@ -237,7 +278,7 @@ if written is not None:
     with st.expander("Calculation sheet: population, fields, sources, worked example"):
         st.markdown(written)
 ui.section("Calculation", "With the settings of this page.")
-show_explanation(audit_result)
+metric_panel(audit_result, explain(audit_result))
 ui.section("Sets", "Every item the check looked at, so the count can be redone by hand.")
 show_funnel(audit_result, snapshot, SOURCES)
 show_sets(audit_result, snapshot, SOURCES)

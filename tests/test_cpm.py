@@ -412,7 +412,7 @@ def test_expected_finish_reports_the_remaining_it_set():
 @pytest.mark.parametrize("rate", ["0.3333333333333333", "0.33333333", "0.333333"])
 def test_an_expected_finish_on_the_natural_finish_applies_to_resource_dependent_work(rate):
     """A: 8 units at 1/3 unit per hour = 24 h of work, Mon 2 08:00 -> Wed 4 17:00 on C8, and its
-    expected finish is that same date. As on task-dependent work (docs/cpm.md, 265 of 265), the
+    expected finish is that same date. As on task-dependent work (docs/cpm.md, 707 of 707), the
     expected finish applies: no free float (C holds B to Fri 6 17:00, 16 h after A), and the
     remaining it stands in for is reported. P6 23.12: free float 0 on H26-03 A1300, H29-02
     A1300, H29-10 A1410, H30-06 A1260, H30-12 A1600. It used to apply only when it changed the

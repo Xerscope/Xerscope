@@ -19,10 +19,7 @@ from xerscope.analysis.audit import (
 from xerscope.analysis.explain import noun
 from xerscope.analysis.populations import STEP_SOURCES
 from xerscope.app import ui
-from xerscope.app.state import csv_download
-
-# the funnel tables of the Ask field and of a check's population write both counts as whole numbers
-STEP_COUNT_COLUMNS = ui.count_columns("removed", "left")
+from xerscope.app.downloads import csv_download
 
 
 def source_text(key: str, own_source: str = "") -> str:
@@ -46,22 +43,17 @@ def show_set(frame: pd.DataFrame, title: str, filename: str, key: str, sources: 
     if frame.empty:
         st.caption(f"No {title.lower()}.")
         return
-    ui.table(frame, max_height=480, key=f"table_{key}")
+    ui.table(frame, max_height=ui.TABLE_SHORT, key=f"table_{key}", reading="check_sets")
     # anonymised or raw as the sidebar switch says; only the files behind this result are read
     csv_download(frame, filename, "Download CSV", key=f"dl_{key}", sources=sources)
 
 
-def show_steps(funnel, key: str = "ask_funnel") -> None:
+def show_steps(funnel, key: str) -> None:
     """A funnel's steps as a table, each step with the text it follows.
 
     Used by the Gantt Ask field and by the longest path of Delay analysis; ``key`` keeps two tables apart.
     """
-    ui.table(
-        pd.DataFrame(step_rows(funnel)),
-        raw_labels=True,
-        key=key,
-        overrides=STEP_COUNT_COLUMNS,
-    )
+    ui.table(pd.DataFrame(step_rows(funnel)), raw_labels=True, key=key, reading="funnel")
     st.caption(source_caption(funnel))
 
 
@@ -71,7 +63,12 @@ def show_removed(result, snapshot, sources: list[str]) -> None:
     if not removing:
         return
     label = st.selectbox(
-        "Rows removed by", [step.label for step in removing], index=None, key=f"funnel_step:{result.metric.id}"
+        "Rows removed by",
+        [step.label for step in removing],
+        index=None,
+        key=f"funnel_step:{result.metric.id}",
+        help="Lists the rows one population step took out of this check's denominator (the steps are in the "
+        "funnel table above). Use it to see which tasks or links an exclusion removed, and why.",
     )
     if label is None:
         return
@@ -94,7 +91,7 @@ def show_funnel(result, snapshot, sources: list[str]) -> None:
         funnel_table(result.funnel, result.numerator),
         raw_labels=True,
         key="funnel",
-        overrides=STEP_COUNT_COLUMNS,
+        reading="funnel",
     )
     if result.funnel.steps:
         st.caption(source_caption(result.funnel, result.metric.source))

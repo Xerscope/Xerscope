@@ -20,7 +20,8 @@ from xerscope.analysis.checks import results_frame, run_metric
 from xerscope.analysis.evm import bei_series, evm_series
 from xerscope.analysis.explain import fmt_value
 from xerscope.analysis.progress import ppc_series
-from xerscope.app.state import BL_NONE, BL_PLANNED
+from xerscope.app import ui
+from xerscope.app.session import BL_NONE, BL_PLANNED
 from xerscope.app.ui import md_text, status_label
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
@@ -134,7 +135,7 @@ def test_ppc_kpis_equal_ppc_series(app, store):
         assert shown["Starts kept"] == f"{row['starts_kept']} / {row['starts_committed']}", label
         tiles = (("PPC Start", "ppc_start"), ("PPC Finish", "ppc_finish"), ("PPC W/W−1", "ppc_week"))
         for tile, column in tiles:
-            assert shown[tile] == ("n/a" if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
+            assert shown[tile] == (ui.MISSING if pd.isna(row[column]) else f"{row[column]:.0f} %"), (label, tile)
 
 
 def test_ppc_leaves_a_deleted_commitment_out(tmp_path, monkeypatch):
@@ -363,7 +364,7 @@ def test_baseline_in_each_file_equals_check_baseline_in_file(tmp_path, monkeypat
     from file_projects import two_projects
 
     from xerscope import cli
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     data, out_dir = tmp_path / "data", tmp_path / "out"
     data.mkdir()

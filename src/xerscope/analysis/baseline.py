@@ -38,6 +38,16 @@ EV_BASES = {
     "at_completion_current": "At Completion values with current dates",
 }
 DEFAULT_EV_BASIS = "budgeted_planned"
+# How the baseline of an update relates to it (``Baseline.kind``), as the app chose it. Shown with every
+# result; "none" stands for no baseline. Only "in file" and "exact" are what P6 measured against.
+KIND_IN_FILE = "in file"  # the P6 Project Baseline held by the update's own file
+KIND_EXACT = "exact"  # the baseline the update names, read from the P6 XML export
+KIND_PROBABLE = "probable"  # a copy of the same generation, or the loaded update the pointer names
+KIND_CHOSEN = "chosen"  # one of the candidates of an undecided update, chosen in the window
+KIND_FALLBACK = "fallback"  # the window's "When a file has no baseline"
+KIND_PLANNED = "planned"  # the planned dates (target_*) of the update itself
+KIND_SERIES = "series"  # one baseline for every update: a separate file or a loaded update
+KIND_NONE = "none"
 
 
 def _frame(activities: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) -> pd.DataFrame:
@@ -118,6 +128,8 @@ class Baseline:
     ev_basis: str = DEFAULT_EV_BASIS
     is_planned: bool = False  # the planned dates (target_*) of the snapshot itself, no baseline file
     source: str = ""  # where it comes from, when the app chose it for an update (shown with every result)
+    kind: str = ""  # how it relates to the update (KIND_*), set by the app; "" when built outside it
+    found_by: str = ""  # what found it: a baseline_resolution constant, or the window's choice
     assignment_costs: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=ASSIGNMENT_COST_COLS))
 
     @classmethod
@@ -170,11 +182,59 @@ def baseline_in_file(
     except XerError:
         return None
     updated = pointer.updated[:10] or "not recorded"
-    return replace(
-        Baseline.from_snapshot(held, ev_basis),
-        label=f"{pointer.code} (P6 Project Baseline in {snapshot.source})",
-        source=f"P6 Project Baseline in the file ({pointer.code}, last update {updated})",
-    )
+    name = baseline_name(held, pointer.code)
+    label = f"{pointer.code} (P6 Project Baseline in {snapshot.source})"
+    source = f"P6 Project Baseline in the file ({pointer.code}, last update {updated})"
+    if name:
+        label = f"{name} ({pointer.code}, P6 Project Baseline in {snapshot.source})"
+        source = f"P6 Project Baseline in the file ({name}, {pointer.code}, last update {updated})"
+    return replace(Baseline.from_snapshot(held, ev_basis), label=label, source=source)
+
+
+def baseline_name(held: Snapshot, code: str) -> str:
+    """The baseline's name as P6's Maintain Baselines shows it, or "" when the file holds none apart from its ID.
+
+    P6 names a baseline after the project it copies ("<project name> - B1"), and the name can be changed;
+    in the file it is the project node of the baseline project (PROJWBS.wbs_name where "Project Node" is Y),
+    which ``Snapshot.project_name`` reads, falling back on the Project ID when the file has no such node.
+    """
+    if held.project_name and held.project_name != code:
+        return held.project_name
+    return ""
+
+
+def named_with_id(held: Snapshot) -> str:
+    """The baseline project ``held`` as Maintain Baselines names it: "name (Project ID)", or its Project ID alone."""
+    code = held.project_code
+    name = baseline_name(held, code)
+    return f"{name} ({code})" if name else code
+
+
+def measured_against(baseline: Baseline) -> str:
+    """Return the short name of what a result is measured against: "name (Project ID) · kind", or "planned dates".
+
+    The kind (``KIND_*``) is set by the app; a baseline built outside it (the command line) has none.
+    """
+    if baseline.is_planned:
+        return "planned dates"
+    named = named_with_id(baseline.snapshot)
+    return f"{named} · {baseline.kind}" if baseline.kind else named
+
+
+def last_updated(baseline: Baseline) -> pd.Timestamp | None:
+    """When P6's Update Baseline last changed the baseline project, None when the file does not say.
+
+    PROJECT.last_baseline_update_date of the baseline's own project ("Last Update Date", XER data map v23),
+    written by the XML reader from BaselineProject.LastBaselineUpdateDate. A baseline updated after an
+    update's status date may no longer be the plan that update was measured against (Oracle P6 help,
+    Update a baseline: "the module stores the date on which the baseline was last updated").
+    """
+    projects = baseline.snapshot.file_projects.set_index("proj_id")
+    if baseline.snapshot.project_id not in projects.index:
+        return None
+    stored = str(projects.loc[baseline.snapshot.project_id, "last_baseline_update_date"]).strip()
+    when = pd.to_datetime(stored, format="%Y-%m-%d %H:%M", errors="coerce") if stored else pd.NaT
+    return None if pd.isna(when) else when
 
 
 def uses_project_baseline(snapshot: Snapshot) -> bool | None:
@@ -306,14 +366,17 @@ def restricted(baseline: Baseline, task_codes: Collection[str]) -> Baseline:
 
 def relinked(baseline: Baseline, snapshot: Snapshot) -> Baseline:
     """``baseline`` with each task ``snapshot`` renumbered (``renumbered``) under its new Activity ID, as
-    P6 has it when the renumbering was carried to the baseline; ``baseline`` itself when none is."""
+    P6 has it when the renumbering was carried to the baseline: its frame, its assignment costs and the
+    tasks of its own file, which the checks that count the baseline's tasks read (P6-13, the BEI due in
+    the baseline); ``baseline`` itself when none is."""
     pairs = renumbered(baseline.snapshot, snapshot)
     if pairs.empty:
         return baseline
     mapping = dict(zip(pairs["old_code"], pairs["new_code"], strict=True))
-    costs = baseline.assignment_costs
+    costs, tasks = baseline.assignment_costs, baseline.snapshot.tasks
     return replace(
         baseline,
         frame=baseline.frame.rename(index=mapping),
         assignment_costs=costs.assign(task_code=costs["task_code"].replace(mapping)),
+        snapshot=replace(baseline.snapshot, tasks=tasks.assign(task_code=tasks["task_code"].replace(mapping))),
     )

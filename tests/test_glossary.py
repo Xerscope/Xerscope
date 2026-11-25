@@ -10,7 +10,6 @@ from xerscope.app.ui import COLUMNS
 PAGES = [
     "views/overview.py",
     "views/gantt.py",
-    "views/activity.py",
     "views/health.py",
     "views/audit.py",
     "views/changelog.py",
@@ -30,7 +29,9 @@ def test_spelled_out_names_each_acronym_once():
 
 
 def test_every_column_label_is_in_the_glossary():
-    unknown = {label: unknown_acronyms(label) for label, _kind in COLUMNS.values() if unknown_acronyms(label)}
+    unknown: dict[str, list[str]] = {
+        label: unknown_acronyms(label) for label, _kind, _help in COLUMNS.values() if unknown_acronyms(label)
+    }
     assert not unknown
 
 

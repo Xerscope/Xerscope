@@ -1,9 +1,10 @@
 /* What .streamlit/config.toml cannot set: the KPI readout, heading tracking, the selected segment in
-   the accent, a fainter chart grid, the milestone picker's tags in the colour of their line, a
-   square box for the MTA chart, the sidebar's current page, and short transitions and fades. --accent and --s1..--s6 are written by ui.apply_style() from
-   viz/charts.py: --s* hold on both themes, --accent is a light-dark() pair that follows the
-   color-scheme Streamlit sets on the app. Everything else is mixed with transparency or
-   inherits the page's text colour, so a theme switch needs no rerun.
+   the accent, a fainter chart grid, the milestone picker's tags in the colour of their line, the
+   sidebar's current page, and short transitions and fades. --accent, --s1..--s6 and --status-*
+   are written by ui.apply_style() from viz/charts.py: --s* and --status-* hold on both themes,
+   --accent is a light-dark() pair that follows the color-scheme Streamlit sets on the app.
+   Everything else is mixed with transparency or inherits the page's text colour, so a theme
+   switch needs no rerun.
    Selectors under a widget's key class (st-key-…, documented) and Streamlit's data-testid /
    data-tag attributes, which a Streamlit upgrade can move: the app then shows the plain theme,
    nothing else changes. */
@@ -71,10 +72,6 @@
   overflow: visible !important;
   text-overflow: clip !important;
 }
-@media (max-width: 640px) {
-  [class*="st-key-kpis_"] [data-testid="stMetric"] > div { grid-template-columns: minmax(0, 1fr) auto; }
-  [class*="st-key-kpis_"] [data-testid="stMetric"] > div > div:last-child { grid-column: 1 / -1; }
-}
 /* Neutral changes (delta_color "off": a change of zero, a count, "not computed yet"): Streamlit draws
    them in a fixed grey at 60 % (#31333F, 3.4:1 on its chip in the light theme); the page's text colour
    at 78 % reads at 6:1 or more on both themes. ui.kpis marks them with a kpi_off_ key, the score cards
@@ -111,8 +108,6 @@
 .st-key-mta_pick [data-tag-index="3"] { --tag: var(--s4); }
 .st-key-mta_pick [data-tag-index="4"] { --tag: var(--s5); }
 .st-key-mta_pick [data-tag-index="5"] { --tag: var(--s6); }
-
-/* MTA: the chart box as tall as it is wide, so its square plot (1:1 dates) fills the width */
 
 /* Score cards (ui.score_cards): the value never cut, a lift on hover */
 .st-key-score_cards [data-testid="stMetricValue"] { overflow: visible; }
@@ -235,58 +230,49 @@ hr.xd-rule { margin: 0.5rem 0; border: 0; border-top: 1px solid var(--xs-hairlin
   [data-testid="stDialog"]:has(.st-key-files_sheet) > div { animation: none; }
 }
 
-/* the sidebar lines that open the window: left aligned, the theme's face */
-.st-key-files_button button,
-.st-key-baseline_button button {
-  justify-content: flex-start;
-  min-height: 0;
-  padding: 0.35rem 0.5rem;
-  border-left: 2px solid var(--xd-line, var(--xs-hairline));
-  border-radius: 0;
-  text-align: left;
-}
-.st-key-files_button button:hover,
-.st-key-baseline_button button:hover {
-  --xd-line: var(--accent);
-  background: color-mix(in srgb, currentColor 5%, transparent);
-}
-.st-key-files_button button > div,
-.st-key-baseline_button button > div { justify-content: flex-start; width: 100%; }
-.st-key-files_button button p,
-.st-key-baseline_button button p { font-size: 0.86rem; text-align: left; }
-/* the shortcut badges (F, B) mean nothing on a phone */
-@media (max-width: 640px) {
-  .st-key-files_button button kbd,
-  .st-key-baseline_button button kbd { display: none; }
-}
 /* ==== end Files and baseline window ============================================== */
 
-/* the context banner under each page title (state.context_banner): one line in the theme's face,
-   cut with an ellipsis when the page is narrow, wrapped on a phone where the cut would hide most of
-   it; it opens the window like the sidebar lines */
+/* The buttons that open the window, in the theme's face with a bar on the left: the sidebar lines
+   (Files, Baseline) and the context banner under each page title (state.context_banner), one line
+   cut with an ellipsis when the page is narrow. */
+.st-key-files_button button,
+.st-key-baseline_button button,
 .st-key-context_banner button {
   justify-content: flex-start;
   min-height: 0;
-  margin-top: -0.6rem;
-  padding: 0.3rem 0.6rem;
   border-left: 2px solid var(--xd-line, var(--xs-hairline));
   border-radius: 0;
-  background: var(--xs-panel);
 }
+.st-key-files_button button:hover,
+.st-key-baseline_button button:hover,
 .st-key-context_banner button:hover {
   --xd-line: var(--accent);
   background: color-mix(in srgb, currentColor 5%, transparent);
 }
-.st-key-context_banner button > div { justify-content: flex-start; width: 100%; min-width: 0; }
+.st-key-files_button button > div,
+.st-key-baseline_button button > div,
+.st-key-context_banner button > div { justify-content: flex-start; width: 100%; }
+.st-key-files_button button p,
+.st-key-baseline_button button p,
+.st-key-context_banner button p { text-align: left; }
+.st-key-files_button button,
+.st-key-baseline_button button {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+.st-key-files_button button p,
+.st-key-baseline_button button p { font-size: 0.86rem; }
+.st-key-context_banner button {
+  margin-top: -0.6rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--xs-panel);
+}
+.st-key-context_banner button > div { min-width: 0; }
 .st-key-context_banner button p {
   overflow: hidden;
   font-size: 0.88rem;
-  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-@media (max-width: 640px) {
-  .st-key-context_banner button p { white-space: normal; overflow-wrap: anywhere; }
 }
 
 /* Tables: no search button in the toolbar. It highlights a matching cell anywhere in the grid;
@@ -302,6 +288,16 @@ hr.xd-rule { margin: 0.5rem 0; border: 0; border-top: 1px solid var(--xs-hairlin
 .xs-card dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 /* Gantt Ask: the answer banner, as the Schedule health focus; amber when a word was left out
-   or the reading is unsure (STATUS warning in viz/charts.py). */
+   or the reading is unsure (--status-warning, STATUS["warning"] in viz/charts.py). */
 .st-key-ask_banner { box-shadow: inset 3px 0 0 var(--accent); border-radius: 8px; }
-.st-key-ask_banner_warn { box-shadow: inset 3px 0 0 #a15c00; border-radius: 8px; }
+.st-key-ask_banner_warn { box-shadow: inset 3px 0 0 var(--status-warning); border-radius: 8px; }
+
+/* Narrow screens (a phone): the KPI readout on two lines, the shortcut badges (F, B) of the sidebar
+   buttons hidden, and the context banner wrapped, where the cut would hide most of it */
+@media (max-width: 640px) {
+  [class*="st-key-kpis_"] [data-testid="stMetric"] > div { grid-template-columns: minmax(0, 1fr) auto; }
+  [class*="st-key-kpis_"] [data-testid="stMetric"] > div > div:last-child { grid-column: 1 / -1; }
+  .st-key-files_button button kbd,
+  .st-key-baseline_button button kbd { display: none; }
+  .st-key-context_banner button p { white-space: normal; overflow-wrap: anywhere; }
+}

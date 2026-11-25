@@ -2,16 +2,22 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.app import ui
-from xerscope.app.state import (
-    anonymizer,
+from xerscope.app.baseline_file import (
     baseline_files_tag,
     baseline_items,
+)
+from xerscope.app.cache import (
+    memo,
+)
+from xerscope.app.downloads import (
+    anonymizer,
     built_download,
     download,
-    memo,
+    source_raws,
+)
+from xerscope.app.state import (
     page_header,
     require_store,
-    source_raws,
 )
 from xerscope.export import Fmt, export_tables, zip_tables
 from xerscope.xer.parser import parse_bytes
@@ -30,16 +36,20 @@ ui.table(
     pd.DataFrame(
         [{"table": name, "rows": len(frame), "columns": len(frame.columns)} for name, frame in tables.items()]
     ),
-    overrides={
-        "table": st.column_config.TextColumn("Table"),
-        "rows": st.column_config.NumberColumn("Rows", format="%,d"),
-        **ui.count_columns(columns="Columns"),
-    },
+    # the Debug costs table writes its rows column as text, so COLUMNS holds no rows: its label and format stay here
+    overrides=ui.number_columns("thousands", rows="Rows"),
     key="export_tables",
+    reading="export_tables",
 )
 
 table_formats: list[Fmt] = ["parquet", "csv"]
-table_format = st.radio("Format", table_formats, horizontal=True)
+table_format = st.radio(
+    "Format",
+    table_formats,
+    horizontal=True,
+    help="Parquet keeps the column types (dates, numbers) for Power BI; CSV opens anywhere. "
+    "Pick Parquet for Power BI, CSV for a spreadsheet.",
+)
 download(
     f"Download {table_format.upper()} tables (.zip)",
     f"{store.latest.project_code}_xerscope_{table_format}.zip",
@@ -54,7 +64,12 @@ download(
 )
 
 with st.expander("Preview fact_activity"):
-    ui.table(tables["fact_activity"].head(200), max_height=640, key="export_fact_activity")
+    ui.table(
+        tables["fact_activity"].head(200),
+        max_height=ui.TABLE_LONG,
+        key="export_fact_activity",
+        reading="export_fact_activity",
+    )
 
 
 def _data_date(raw) -> pd.Timestamp | None:
@@ -95,6 +110,9 @@ extract = built_download(
     key="anon_download",
     build_key="anon_build",
     icon=":material/visibility_off:",
+    help_text="Rebuilds every loaded file and the separate baseline file with new Task IDs, WBS, project, "
+    "resource and calendar names; dates, durations, units and logic unchanged. Use it to share a schedule "
+    "P6 and xerscope compute the same results on.",
     spinner=f"Anonymizing {len(items) + len(baselines)} file(s)…",
     anonymous=True,
     suffix=False,
