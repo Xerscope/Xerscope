@@ -32,6 +32,9 @@ The XER format is tab-separated:
 - **Structure P6 never writes:** a table written twice or a column named twice in a `%F` line
   raises `XerError`; so does a file with neither `ERMHDR` header nor table. Lines after `%E` are
   not read.
+- **Tabs an editor leaves:** spaces or tabs after `%E` still end the file, and blank names after
+  the last column of a `%F` line are dropped (`_Table.fields`); a blank or repeated name before
+  the last column is still refused (XER-05/06).
 
 Output: `RawXer(tables: {name: DataFrame[str]}, source, version, export_date, encoding, warnings, header, ended)`.
 `ended` is False when the file has no `%E` line; the parse still succeeds (the file picker reads

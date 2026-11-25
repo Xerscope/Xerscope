@@ -32,8 +32,8 @@ Risks to decide with the maintainer, same form:
 
 - XER-01 (unreadable number or date reads as blank with no warning; one `validate.py` rule).
   Done in a122f44 (#349): `validate.unreadable_cells` and `validate.unreadable_status_date`.
-- XER-05/06 (`%E` followed by a tab, two trailing tabs on `%F` refuse a valid file). Open
-  (`xer/parser.py`; in docs/backlog.md, App).
+- XER-05/06 (`%E` followed by a tab, two trailing tabs on `%F` refuse a valid file).
+  Done in 4bed62e (#350): `xer/parser.py`, `tests/test_trailing_tabs.py`.
 - ANALYSIS-10 (06A506a flags rows outside its checked population). Open.
 - TOOLS-05 (anonymiser never searches numeric Activity IDs). Open.
 - TOOLS-11 (a `v*` tag publishes without the pull-request gates). Open.

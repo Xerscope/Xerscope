@@ -163,9 +163,6 @@ identical (234 differ).
       the %F width are warned of); a line break inside one cuts the row, its first part padded
       and the rest passed over, without a warning. None in the 407 XER files of
       `tests/reference`.
-- [ ] Parser (XER-05 / XER-06, docs/quality-plan.md): `%E` followed by a tab reads as a file
-      cut short and two trailing tabs on a `%F` line as a column named twice; both refuse a
-      file P6 may write.
 
 ## Deployment and CI
 
